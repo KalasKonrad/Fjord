@@ -178,14 +178,16 @@
 //                         callbacks (2026-08-07, rebind-collision confirm — see keys.rs's
 //                         PendingKeybindRebind); settings-row-focused(string) callback (mouse
 //                         click on a SettingsRow, keeps settings-focused-visual-index in sync)
-//   Nav helpers           section-len, find-first/next/prev-section, section-card-id
+//   Nav helpers           section-len, find-first/next/prev-section, section-card-item
 //                         (2026-07-20: nav 0/1/2 each gained an explicit s==4 branch + a new
-//                         s==5 Watchlist-row branch in section-len/section-card-id/section-
-//                         card-item — these 3 are hand-enumerated ternary chains with an
-//                         IMPLICIT trailing else, so the s==4 case had to be made explicit
-//                         before appending s==5 or it would silently alias to the new row's
-//                         data instead of failing to compile; find-first/next/prev-section use
-//                         a different section-len(N)/from±N pattern, bounds bumped 4->5 there)
+//                         s==5 Watchlist-row branch in section-len/section-card-item — these 2
+//                         are hand-enumerated ternary chains with an IMPLICIT trailing else, so
+//                         the s==4 case had to be made explicit before appending s==5 or it
+//                         would silently alias to the new row's data instead of failing to
+//                         compile; find-first/next/prev-section use a different
+//                         section-len(N)/from±N pattern, bounds bumped 4->5 there.
+//                         section-card-id was a 3rd such chain until removed 2026-09-16 — see
+//                         section-card-item's own doc comment)
 //   Callbacks — auth      do-login, sign-out, quit, toggle-fullscreen
 //   Callbacks — browse    nav-selected, filter-changed, browse-search-*, library-search-*
 //   Callbacks — play      item-play, play/resume-detail, open-detail/series, open-album, play-album-track
@@ -1915,27 +1917,28 @@ export global AppState {
     callback connect-seerr-quickconnect-poll(string, string);    // url, secret
 
     // ── Nav helper pure functions (used by MainWindow keyboard handler) ──────────
-    // Watchlist row (2026-07-20, nav 0/1/2 only): 3 of these 6 functions
-    // (section-len, section-card-id, section-card-item) are ternary chains
-    // keyed on `s == N`, each ending in an IMPLICIT trailing else that
-    // silently covered "any s >= 4" — extending to a 6th row (s==5)
-    // requires an EXPLICIT `s == 4` branch inserted before the new else, in
-    // all 3 nav branches, across those 3 functions — otherwise s==5
-    // silently reads s==4's own data instead of failing to compile (caught
-    // by an independent plan review before this row was added). The other 3
-    // functions (find-first/next/prev-section) use a different literal
-    // pattern (`section-len(N)`/`from ± N`) and were extended separately —
-    // their own bound bumped from 4 to 5.
+    // Watchlist row (2026-07-20, nav 0/1/2 only): 2 of these 6 functions
+    // (section-len, section-card-item) are ternary chains keyed on `s == N`,
+    // each ending in an IMPLICIT trailing else that silently covered "any
+    // s >= 4" — extending to a 6th row (s==5) requires an EXPLICIT `s == 4`
+    // branch inserted before the new else, in all 3 nav branches, across
+    // both functions — otherwise s==5 silently reads s==4's own data
+    // instead of failing to compile (caught by an independent plan review
+    // before this row was added). The other 4 functions
+    // (find-first/next/prev-section, section-card-id at the time) use a
+    // different literal pattern (`section-len(N)`/`from ± N`) or were
+    // extended separately — their own bound bumped from 4 to 5.
     //
     // Coming Up row (2026-08-02, nav 0/1/2 only, 7th row): the exact same
     // extension repeated one row further — an explicit branch for row index
     // five inserted before a new trailing else (row index six), in all 3
-    // nav branches of the 3 ternary-chain functions, and the
-    // find-first/next/prev-section bound bumped from 5 to 6. Self-check:
-    // grepping for the literal five-equality comparison used in the 3
-    // ternary chains below should show exactly 9 hits in the code (3
-    // functions × 3 navs) — the same shape the Watchlist row's own
-    // self-check established one row earlier.
+    // nav branches of the (then 3, now 2 — see section-card-item's own doc
+    // comment) ternary-chain functions, and the find-first/next/prev-section
+    // bound bumped from 5 to 6. Self-check: grepping for the literal
+    // five-equality comparison used in the ternary chains below should show
+    // exactly 6 hits in the code (2 functions × 3 navs, down from 9 once
+    // section-card-id was removed 2026-09-16) — the same shape the
+    // Watchlist row's own self-check established one row earlier.
     public pure function section-len(s: int) -> int {
         if active-nav == 0 {
             s == 0 ? continue-watching.length :
@@ -2011,47 +2014,14 @@ export global AppState {
         return -1;
     }
 
-    public pure function section-card-id(s: int, c: int) -> string {
-        if active-nav == 0 {
-            s == 0 ? continue-watching[c].id :
-            s == 1 ? next-up[c].id :
-            s == 2 ? recently-added[c].id :
-            s == 3 ? recently-added-movies[c].id :
-            s == 4 ? recently-added-albums[c].id :
-            s == 5 ? discover-watchlist-mixed[c].id :
-                     discover-coming-up-mixed[c].id
-        } else if active-nav == 1 {
-            // TV Shows
-            s == 0 ? continue-watching-tv[c].id :
-            s == 1 ? next-up[c].id :
-            s == 2 ? recently-added-tv[c].id :
-            s == 3 ? not-watched-tv[c].id :
-            s == 4 ? favorite-series[c].id :
-            s == 5 ? discover-watchlist-tv[c].id :
-                     discover-coming-up-tv[c].id
-        } else if active-nav == 2 {
-            // Movies
-            s == 0 ? continue-watching-movies[c].id :
-            s == 2 ? recently-added-movies[c].id :
-            s == 3 ? not-watched-movies[c].id :
-            s == 4 ? favorite-movies[c].id :
-            s == 5 ? discover-watchlist-movies[c].id :
-                     discover-coming-up-movies[c].id
-        } else if active-nav == 3 {
-            // Collections dashboard
-            s == 0 ? recently-added-collections[c].id :
-                     unwatched-collections[c].id
-        } else if active-nav == 4 {
-            // Music dashboard
-            s == 0 ? recently-added-albums[c].id :
-            s == 1 ? recently-played-albums[c].id :
-            s == 2 ? favorite-albums[c].id :
-                     music-playlists[c].id
-        } else {
-            ""
-        }
-    }
-
+    // section-card-id was removed 2026-09-16 — it was a byte-for-byte
+    // duplicate ternary chain of section-card-item below (same routing,
+    // just returning .id instead of the whole CardItem), kept in sync by
+    // hand for no reason once its one Rust caller (dispatch_dashboard's
+    // Confirm arm, keys.rs) was fixed to need the full card (to branch on
+    // item-type for Discover-sourced rows) and switched to calling
+    // section-card-item directly instead. One fewer of these ladder
+    // functions to keep in lockstep whenever a dashboard row changes.
     public pure function section-card-item(s: int, c: int) -> CardItem {
         if active-nav == 0 {
             s == 0 ? continue-watching[c] :
