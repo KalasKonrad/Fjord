@@ -21,7 +21,13 @@
 //                    passthrough was on; wrong, since it's also the fallback curve mpv
 //                    uses when target-colorspace-hint-strict rejects the passthrough hint),
 //                    opengl-early-flush, video-latency-hacks (virtual — only while
-//                    video-sync == display-resample)
+//                    video-sync == display-resample); display_sync_enabled (2026-09-18 —
+//                    native resolution/refresh-rate/HDR/WCG matching to source via
+//                    kscreen-doctor, see display_sync.rs) + 10 virtual sub-rows shown only
+//                    while it's on: screen (dynamic dropdown), sync_resolution/
+//                    sync_refresh_rate (toggles), default_resolution/default_hz/scale_4k/
+//                    scale_1080p, 4k_odd_fps_mode (virtual — only while sync_resolution is
+//                    on), hdr_mode, wcg_mode
 //       Audio        audio-device, audio-channels, SPDIF, AC3, EAC3, DTS, DTS-HD, TrueHD,
 //                    passthrough-device (hidden when SPDIF off), alsa-irq-scheduling (virtual,
 //                    hidden when SPDIF off or non-PipeWire device), skip-fade-mute (virtual,
@@ -775,6 +781,88 @@ export component SettingsScreen inherits Rectangle {
 
                     if AppState.settings-video-sync == "display-resample": SettingsRow { key: "video.video_latency_hacks"; title: "Video latency hacks"; subtitle: "Compensate for imprecise Wayland vsync timestamps (NVIDIA 5xx legacy) — mpv's own manual: known to break other options such as interpolation, not recommended unless you need it"; indent: true;
                         ToggleSwitch { checked <=> AppState.settings-video-latency-hacks; toggled => { AppState.settings-changed(); AppState.refocus(); } }
+                    }
+
+                    SectionHeader { text: "DISPLAY SYNC"; }
+
+                    // display_sync (2026-09-18) — native resolution/refresh-rate/
+                    // HDR/WCG matching to source via kscreen-doctor (KDE Plasma
+                    // Wayland only). See CLAUDE.md's own display_sync section and
+                    // display_sync.rs's module doc comment for the full design.
+                    SettingsRow { key: "video.display_sync_enabled"; title: "Sync display to source"; subtitle: "Switch the physical display's resolution/refresh-rate/HDR to match whatever's playing, then revert on stop — KDE Plasma Wayland only, silently does nothing elsewhere";
+                        ToggleSwitch { checked <=> AppState.settings-display-sync-enabled; toggled => { AppState.settings-changed(); AppState.refocus(); } }
+                    }
+
+                    if AppState.settings-display-sync-enabled: SettingsRow { key: "video.display_sync_screen"; title: "Output"; subtitle: "The kscreen-doctor connector to switch — never auto-detected at runtime, only pre-filled once at startup if exactly one output was connected"; indent: true;
+                        SettingsDropdown {
+                            model <=> AppState.settings-display-sync-screen-options;
+                            current-value: AppState.settings-display-sync-screen-name != "" ? AppState.settings-display-sync-screen-name : "(not detected)";
+                            selected(v) => { AppState.display-sync-screen-selected(v); AppState.refocus(); }
+                        }
+                    }
+
+                    if AppState.settings-display-sync-enabled: SettingsRow { key: "video.display_sync_sync_resolution"; title: "Sync resolution"; subtitle: "Off = resolution always stays pinned to the default below, only refresh rate varies by source"; indent: true;
+                        ToggleSwitch { checked <=> AppState.settings-display-sync-sync-resolution; toggled => { AppState.settings-changed(); AppState.refocus(); } }
+                    }
+
+                    if AppState.settings-display-sync-enabled: SettingsRow { key: "video.display_sync_sync_refresh_rate"; title: "Sync refresh rate"; subtitle: "Off = refresh rate always stays pinned to the default Hz below, only resolution varies by source"; indent: true;
+                        ToggleSwitch { checked <=> AppState.settings-display-sync-sync-refresh-rate; toggled => { AppState.settings-changed(); AppState.refocus(); } }
+                    }
+
+                    if AppState.settings-display-sync-enabled: SettingsRow { key: "video.display_sync_default_resolution"; title: "Default resolution"; subtitle: "Used for non-4K content, and as the fallback whenever a computed target mode isn't supported"; indent: true;
+                        SettingsDropdown {
+                            model: ["1920x1080","3840x2160","1280x720"];
+                            current-value: AppState.settings-display-sync-default-resolution;
+                            selected(v) => { AppState.settings-display-sync-default-resolution = v; AppState.settings-changed(); AppState.refocus(); }
+                        }
+                    }
+
+                    if AppState.settings-display-sync-enabled: SettingsRow { key: "video.display_sync_default_hz"; title: "Default refresh rate"; subtitle: "Used whenever the source's own framerate doesn't match a known cadence"; indent: true;
+                        SettingsDropdown {
+                            model: ["23.98","24.00","25.00","29.97","50.00","59.94","60.00"];
+                            current-value: AppState.settings-display-sync-default-hz;
+                            selected(v) => { AppState.settings-display-sync-default-hz = v; AppState.settings-changed(); AppState.refocus(); }
+                        }
+                    }
+
+                    if AppState.settings-display-sync-enabled: SettingsRow { key: "video.display_sync_scale_4k"; title: "Desktop scale at 4K"; subtitle: "Applied alongside every switch to a 4K mode, matching what the proven external script this ports always did"; indent: true;
+                        SettingsDropdown {
+                            model: ["1.0","1.25","1.5","1.75","2.0"];
+                            current-value: AppState.settings-display-sync-scale-4k;
+                            selected(v) => { AppState.settings-display-sync-scale-4k = v; AppState.settings-changed(); AppState.refocus(); }
+                        }
+                    }
+
+                    if AppState.settings-display-sync-enabled: SettingsRow { key: "video.display_sync_scale_1080p"; title: "Desktop scale at 1080p"; subtitle: "Applied alongside every switch to a non-4K mode"; indent: true;
+                        SettingsDropdown {
+                            model: ["1.0","1.25","1.5","1.75","2.0"];
+                            current-value: AppState.settings-display-sync-scale-1080p;
+                            selected(v) => { AppState.settings-display-sync-scale-1080p = v; AppState.settings-changed(); AppState.refocus(); }
+                        }
+                    }
+
+                    if AppState.settings-display-sync-enabled && AppState.settings-display-sync-sync-resolution: SettingsRow { key: "video.display_sync_4k_odd_fps_mode"; title: "4K at an unusual framerate"; subtitle: "4K content whose framerate doesn't match a known cadence (23.98/25/29.97) either falls back to the default resolution, or stays at 4K using the closest supported Hz"; indent: true;
+                        SettingsDropdown {
+                            model: ["Fallback to default resolution","Stay at 4K"];
+                            current-value: AppState.settings-display-sync-4k-odd-fps-mode == "stay_4k" ? "Stay at 4K" : "Fallback to default resolution";
+                            selected(v) => { AppState.settings-display-sync-4k-odd-fps-mode = v == "Stay at 4K" ? "stay_4k" : "fallback"; AppState.settings-changed(); AppState.refocus(); }
+                        }
+                    }
+
+                    if AppState.settings-display-sync-enabled: SettingsRow { key: "video.display_sync_hdr_mode"; title: "HDR"; subtitle: "Match source = enable HDR only for genuinely HDR/HLG content; Always/Never override that per-item decision entirely"; indent: true;
+                        SettingsDropdown {
+                            model: ["Match source","Never","Always"];
+                            current-value: AppState.settings-display-sync-hdr-mode == "no" ? "Never" : AppState.settings-display-sync-hdr-mode == "always" ? "Always" : "Match source";
+                            selected(v) => { AppState.settings-display-sync-hdr-mode = v == "Never" ? "no" : v == "Always" ? "always" : "yes"; AppState.settings-changed(); AppState.refocus(); }
+                        }
+                    }
+
+                    if AppState.settings-display-sync-enabled: SettingsRow { key: "video.display_sync_wcg_mode"; title: "Wide color gamut"; subtitle: "Follow HDR (default) turns WCG on exactly when HDR is on for this item; Always/Never override that";  indent: true;
+                        SettingsDropdown {
+                            model: ["Follow HDR","Always","Never"];
+                            current-value: AppState.settings-display-sync-wcg-mode == "yes" ? "Always" : AppState.settings-display-sync-wcg-mode == "no" ? "Never" : "Follow HDR";
+                            selected(v) => { AppState.settings-display-sync-wcg-mode = v == "Always" ? "yes" : v == "Never" ? "no" : "auto"; AppState.settings-changed(); AppState.refocus(); }
+                        }
                     }
                 }
 
