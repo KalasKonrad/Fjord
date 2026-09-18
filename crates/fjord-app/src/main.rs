@@ -2691,6 +2691,59 @@ fn rotate_logs(log_dir: &std::path::Path, keep: usize) {
     }
 }
 
+/// Fetches `display_sync::supported_resolutions_and_hz(screen)` off-thread
+/// and patches `settings-display-sync-resolution-options`/`-hz-options` —
+/// called once at startup for whichever output ends up effective, and again
+/// every time the Output row's own selection actually changes (a previous
+/// output's supported modes are meaningless for a different display). Never
+/// clears an already-populated list on a failed/empty query (missing
+/// binary, unknown output name) — same "don't stomp a working value over a
+/// transient/absent query" precedent `list_output_names`'s own screen-name
+/// pre-fill already follows.
+fn spawn_display_sync_modes_fetch(
+    ww: slint::Weak<MainWindow>,
+    rt_handle: tokio::runtime::Handle,
+    screen: String,
+) {
+    debug!("display_sync: fetching supported resolutions/Hz for output {screen:?}");
+    rt_handle.spawn(async move {
+        let screen2 = screen.clone();
+        let (resolutions, hz) =
+            tokio::task::spawn_blocking(move || display_sync::supported_resolutions_and_hz(&screen2))
+                .await
+                .unwrap_or_default();
+        if resolutions.is_empty() && hz.is_empty() {
+            warn!(
+                "display_sync: no supported modes found for output {screen:?} — leaving \
+                 Default resolution/Hz dropdowns unchanged (missing kscreen-doctor, or this \
+                 output name isn't currently reported by it — see the log lines just above \
+                 for the actual cause)"
+            );
+            return;
+        }
+        info!(
+            "display_sync: output {screen:?}: {} resolution(s), {} Hz value(s) — {resolutions:?} / {hz:?}",
+            resolutions.len(),
+            hz.len()
+        );
+        let _ = slint::invoke_from_event_loop(move || {
+            if let Some(w) = ww.upgrade() {
+                let g = AppState::get(&w);
+                if !resolutions.is_empty() {
+                    let r: Vec<slint::SharedString> =
+                        resolutions.iter().map(|s| slint::SharedString::from(s.as_str())).collect();
+                    g.set_settings_display_sync_resolution_options(slint::ModelRc::new(slint::VecModel::from(r)));
+                }
+                if !hz.is_empty() {
+                    let h: Vec<slint::SharedString> =
+                        hz.iter().map(|s| slint::SharedString::from(s.as_str())).collect();
+                    g.set_settings_display_sync_hz_options(slint::ModelRc::new(slint::VecModel::from(h)));
+                }
+            }
+        });
+    });
+}
+
 fn main() -> Result<()> {
     let cache_dir = std::env::var("XDG_CACHE_HOME")
         .map(std::path::PathBuf::from)
@@ -5260,26 +5313,46 @@ fn main() -> Result<()> {
     // comment: guessing among 2+ plausible outputs would be wrong the
     // instant a second display is connected) — and persists it immediately
     // via `invoke_settings_changed()` so this one-time detection never runs
-    // again for this install.
+    // again for this install. Also kicks off the resolution/Hz modes fetch
+    // below for whichever screen name ends up effective (the already-stored
+    // one, or the just-autodetected sole candidate) — real dev-machine
+    // report: the original fixed 3-resolution/7-Hz lists were both too
+    // narrow AND not guaranteed to contain anything the actual display
+    // supports.
     {
-        let ww_ds  = window.as_weak();
-        let cfg_ds = state.lock().unwrap().config.device.display_sync_screen_name.clone();
+        let ww_ds     = window.as_weak();
+        let rt_ds     = rt.handle().clone();
+        let cfg_ds    = state.lock().unwrap().config.device.display_sync_screen_name.clone();
+        let cfg_ds2   = cfg_ds.clone();
         rt.spawn(async move {
             let names = tokio::task::spawn_blocking(display_sync::list_output_names).await.unwrap_or_default();
+            debug!("display_sync: kscreen-doctor reports {} enabled+connected output(s): {names:?}", names.len());
+            let effective_screen = if !cfg_ds.is_empty() {
+                Some(cfg_ds)
+            } else if names.len() == 1 {
+                Some(names[0].clone())
+            } else {
+                None
+            };
+            debug!("display_sync: effective screen for the startup modes fetch: {effective_screen:?}");
+            let ww_ds_evt = ww_ds.clone();
             let _ = slint::invoke_from_event_loop(move || {
-                if let Some(w) = ww_ds.upgrade() {
+                if let Some(w) = ww_ds_evt.upgrade() {
                     let g = AppState::get(&w);
                     let display: Vec<slint::SharedString> =
                         names.iter().map(|n| slint::SharedString::from(n.as_str())).collect();
                     g.set_settings_display_sync_screen_options(
                         slint::ModelRc::new(slint::VecModel::from(display)),
                     );
-                    if cfg_ds.is_empty() && names.len() == 1 {
+                    if cfg_ds2.is_empty() && names.len() == 1 {
                         g.set_settings_display_sync_screen_name(ss(&names[0]));
                         g.invoke_settings_changed();
                     }
                 }
             });
+            if let Some(screen) = effective_screen {
+                spawn_display_sync_modes_fetch(ww_ds, rt_ds, screen);
+            }
         });
     }
 
@@ -5287,13 +5360,42 @@ fn main() -> Result<()> {
     // desc IS the value (a real kscreen-doctor connector name) — unlike
     // audio-device/font-family, there's no separate name<->desc lookup table
     // to resolve here, so this is a direct set + persist, same shape as the
-    // plain toggle/dropdown rows elsewhere in this file.
+    // plain toggle/dropdown rows elsewhere in this file. Also re-fetches
+    // resolution/Hz options for the newly-selected output — the previous
+    // output's own supported modes are meaningless for a different display.
     {
         let ww_dss = window.as_weak();
+        let rt_dss = rt.handle().clone();
         AppState::get(&window).on_display_sync_screen_selected(move |desc| {
             if let Some(w) = ww_dss.upgrade() {
                 let g = AppState::get(&w);
-                g.set_settings_display_sync_screen_name(desc);
+                g.set_settings_display_sync_screen_name(desc.clone());
+                g.invoke_settings_changed();
+            }
+            spawn_display_sync_modes_fetch(ww_dss.clone(), rt_dss.clone(), desc.to_string());
+        });
+    }
+
+    // ── display_sync resolution/hz selected callbacks ─────────────────────────
+    // Both dynamic dropdowns' desc IS the value (a real resolution/Hz
+    // string reported by kscreen-doctor) — same direct set-and-persist
+    // shape as the screen-selected callback just above.
+    {
+        let ww_dsr = window.as_weak();
+        AppState::get(&window).on_display_sync_resolution_selected(move |desc| {
+            if let Some(w) = ww_dsr.upgrade() {
+                let g = AppState::get(&w);
+                g.set_settings_display_sync_default_resolution(desc);
+                g.invoke_settings_changed();
+            }
+        });
+    }
+    {
+        let ww_dsh = window.as_weak();
+        AppState::get(&window).on_display_sync_hz_selected(move |desc| {
+            if let Some(w) = ww_dsh.upgrade() {
+                let g = AppState::get(&w);
+                g.set_settings_display_sync_default_hz(desc);
                 g.invoke_settings_changed();
             }
         });

@@ -21,6 +21,15 @@
 //   get_supported_modes    kscreen-doctor -o output parse -> {(res, hz)} —
 //                          plain string parsing, no regex dependency added
 //                          for this one narrow, well-known CLI format
+//   supported_resolutions_ derived, sorted Vecs over get_supported_modes'
+//     and_hz                own set — backs the "Default resolution"/
+//                          "Default refresh rate" Settings dropdowns
+//                          (main.rs), fetched at startup and again whenever
+//                          Output changes, replacing 2026-09-18's original
+//                          fixed 3-resolution/7-Hz compile-time lists (a
+//                          real dev-machine report: too few choices, and
+//                          none of them guaranteed to be modes the actual
+//                          display supports)
 //   list_output_names      Settings-dropdown option list AND (via its own
 //                          length at the call site) the one-shot "exactly
 //                          one candidate" pre-fill check — never read at
@@ -293,8 +302,11 @@ fn kscreen_doctor_o() -> Option<String> {
 /// the named output supports. `hz` stays in the real fractional form
 /// (`"23.98"`) matching the tool's own display — a *separate*, integer-
 /// rounded form is only ever needed for the literal `mode.<res>@<hz>`
-/// argument (`apply_display_mode`), never for matching/logging.
-fn get_supported_modes(screen: &str) -> HashSet<(String, String)> {
+/// argument (`apply_display_mode`), never for matching/logging. `pub(crate)`
+/// (not just used internally by `compute_target_mode`'s own fallback chain)
+/// since `supported_resolutions_and_hz` below is a thin derived view over
+/// this same parse, not a second one.
+pub(crate) fn get_supported_modes(screen: &str) -> HashSet<(String, String)> {
     let Some(output) = kscreen_doctor_o() else {
         return HashSet::new();
     };
@@ -320,6 +332,40 @@ fn get_supported_modes(screen: &str) -> HashSet<(String, String)> {
         }
     }
     modes
+}
+
+/// Distinct resolutions and Hz values `screen` genuinely supports, each in a
+/// sensible dropdown order — resolutions by pixel count descending (largest,
+/// most likely intentional choice first), Hz ascending. Backs the Settings
+/// screen's "Default resolution"/"Default refresh rate" dynamic dropdowns
+/// (`main.rs`, same shape as the Output row's own `list_output_names` fetch)
+/// — a plain derived view over `get_supported_modes`'s own already-parsed
+/// set, not a second `kscreen-doctor` shell-out. Both empty when the query
+/// itself failed (missing binary, unknown output name) — callers leave
+/// whatever the dropdown already showed untouched in that case, the same
+/// "don't clear a working value over a transient/absent query" precedent
+/// `list_output_names`'s own screen-name pre-fill already follows.
+pub(crate) fn supported_resolutions_and_hz(screen: &str) -> (Vec<String>, Vec<String>) {
+    let modes = get_supported_modes(screen);
+    let mut resolutions: Vec<String> =
+        modes.iter().map(|(res, _)| res.clone()).collect::<HashSet<_>>().into_iter().collect();
+    resolutions.sort_by_key(|res| std::cmp::Reverse(pixel_count(res)));
+    let mut hz: Vec<String> =
+        modes.iter().map(|(_, hz)| hz.clone()).collect::<HashSet<_>>().into_iter().collect();
+    hz.sort_by(|a, b| {
+        a.parse::<f64>()
+            .unwrap_or(0.0)
+            .partial_cmp(&b.parse::<f64>().unwrap_or(0.0))
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    (resolutions, hz)
+}
+
+fn pixel_count(res: &str) -> u64 {
+    res.split_once('x')
+        .and_then(|(w, h)| Some((w.parse::<u64>().ok()?, h.parse::<u64>().ok()?)))
+        .map(|(w, h)| w * h)
+        .unwrap_or(0)
 }
 
 /// Every output name currently reported both `enabled` and `connected` by

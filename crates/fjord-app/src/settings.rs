@@ -44,14 +44,16 @@
 //                right pane / keybindings; Enter opens dropdown popup;
 //                Up/Down/Enter/Esc navigate popup).
 //   dropdown_model(key)         static model strings for a row (None for
-//                toggle/button/action rows and for the 7 dynamic-dropdown
+//                toggle/button/action rows and for the 12 dynamic-dropdown
 //                rows, whose list comes from an AppState property instead).
-//   is_dynamic_dropdown(key)    the 9 rows whose list/current-desc are
+//   is_dynamic_dropdown(key)    the 12 rows whose list/current-desc are
 //                fetched at runtime (Default Profile/Default Account — built
 //                from Config.profiles itself, not a network fetch — audio
 //                device ×2, font family, Seerr streaming region/display
-//                language/discover language/discover region) rather than a
-//                fixed compile-time list.
+//                language/discover language/discover region, and display_sync's
+//                own output/default-resolution/default-hz ×3 — kscreen-doctor,
+//                re-fetched whenever the selected output changes) rather than
+//                a fixed compile-time list.
 //   open_dropdown_popup(key, g)   populates settings-dropdown-model/-cursor/
 //                -display and opens the popup — used by both keyboard
 //                Confirm and mouse click-to-open (main.rs wires the latter
@@ -623,15 +625,17 @@ const TSCALE_MODEL: &[&str] = &[
 const TONE_MAPPING_MODEL: &[&str] = &[
     "auto","hable","bt.2390","reinhard","mobius","clip","gamma","linear",
 ];
-// display_sync (2026-09-18) — a small, pragmatic static list rather than a
-// live-fetched one (unlike VID_DISPLAY_SYNC_SCREEN below, whose options
-// genuinely depend on what's connected): the target resolution/Hz/scale are
-// deliberately hand-picked common values, not queried from
-// display_sync::get_supported_modes (private to display_sync.rs, and tied to
-// whichever screen happens to be selected — re-fetching it here every time
-// the screen changes was judged disproportionate for a v1 Settings row).
-const DISPLAY_SYNC_RESOLUTION_MODEL: &[&str] = &["1920x1080", "3840x2160", "1280x720"];
-const DISPLAY_SYNC_HZ_MODEL: &[&str] = &["23.98", "24.00", "25.00", "29.97", "50.00", "59.94", "60.00"];
+// display_sync (2026-09-18) — Default resolution/Default refresh rate
+// started as a small, pragmatic static list here (hand-picked common
+// values, since display_sync::get_supported_modes was private to
+// display_sync.rs at the time) but a real dev-machine report ("not many
+// choices... none of them necessarily even valid for my display") showed
+// that was the wrong trade-off — both are now genuinely dynamic dropdowns
+// (VID_DISPLAY_SYNC_DEFAULT_RESOLUTION/_HZ in is_dynamic_dropdown below),
+// sourced from display_sync::supported_resolutions_and_hz for whichever
+// screen is actually selected, the same shape VID_DISPLAY_SYNC_SCREEN
+// already used. Scale still has no per-output "supported scales" concept
+// to query, so it stays a plain static list.
 const DISPLAY_SYNC_SCALE_MODEL: &[&str] = &["1.0", "1.25", "1.5", "1.75", "2.0"];
 const DISPLAY_SYNC_4K_ODD_FPS_MODEL: &[&str] = &["fallback", "stay_4k"];
 const DISPLAY_SYNC_HDR_MODE_MODEL: &[&str] = &["yes", "no", "always"];
@@ -797,8 +801,6 @@ fn dropdown_model(key: &str) -> Option<&'static [&'static str]> {
         PLY_SKIP_FADE_MS   => Some(SKIP_FADE_MS_MODEL),
         UI_SCROLL_SPEED | UI_ANIMATION_SPEED => Some(SPEED_PCT_MODEL),
         INT_TRAILER_QUALITY => Some(TRAILER_QUALITY_MODEL),
-        VID_DISPLAY_SYNC_DEFAULT_RESOLUTION => Some(DISPLAY_SYNC_RESOLUTION_MODEL),
-        VID_DISPLAY_SYNC_DEFAULT_HZ => Some(DISPLAY_SYNC_HZ_MODEL),
         VID_DISPLAY_SYNC_SCALE_4K | VID_DISPLAY_SYNC_SCALE_1080P => Some(DISPLAY_SYNC_SCALE_MODEL),
         VID_DISPLAY_SYNC_4K_ODD_FPS_MODE => Some(DISPLAY_SYNC_4K_ODD_FPS_MODEL),
         VID_DISPLAY_SYNC_HDR_MODE => Some(DISPLAY_SYNC_HDR_MODE_MODEL),
@@ -809,14 +811,14 @@ fn dropdown_model(key: &str) -> Option<&'static [&'static str]> {
 
 // Rows whose option list + current display value come from an AppState
 // property populated by an async fetch (mpv --audio-device=help, fc-list,
-// or Seerr's own settings/regions/languages endpoints) rather than a fixed
-// compile-time list.
+// Seerr's own settings/regions/languages endpoints, or kscreen-doctor)
+// rather than a fixed compile-time list.
 fn is_dynamic_dropdown(key: &str) -> bool {
     matches!(key,
         PROF_DEFAULT_PROFILE | PROF_DEFAULT_ACCOUNT
         | AUD_AUDIO_DEVICE | AUD_PASSTHROUGH_DEVICE | UI_FONT_FAMILY
         | INT_STREAMING_REGION | INT_DISPLAY_LANGUAGE | INT_DISCOVER_LANGUAGE | INT_DISCOVER_REGION
-        | VID_DISPLAY_SYNC_SCREEN
+        | VID_DISPLAY_SYNC_SCREEN | VID_DISPLAY_SYNC_DEFAULT_RESOLUTION | VID_DISPLAY_SYNC_DEFAULT_HZ
     )
 }
 
@@ -869,8 +871,6 @@ fn current_value_str(key: &str, g: &crate::AppState<'_>) -> String {
         INT_STREAMING_REGION => g.get_settings_streaming_region_desc().to_string(),
         INT_TRAILER_QUALITY  => g.get_settings_trailer_quality().to_string(),
         INT_DISCOVER_REGION  => g.get_settings_discover_region_desc().to_string(),
-        VID_DISPLAY_SYNC_DEFAULT_RESOLUTION => g.get_settings_display_sync_default_resolution().to_string(),
-        VID_DISPLAY_SYNC_DEFAULT_HZ         => g.get_settings_display_sync_default_hz().to_string(),
         VID_DISPLAY_SYNC_SCALE_4K           => g.get_settings_display_sync_scale_4k().to_string(),
         VID_DISPLAY_SYNC_SCALE_1080P        => g.get_settings_display_sync_scale_1080p().to_string(),
         VID_DISPLAY_SYNC_4K_ODD_FPS_MODE    => g.get_settings_display_sync_4k_odd_fps_mode().to_string(),
@@ -899,10 +899,13 @@ pub(crate) fn open_dropdown_popup(key: &str, g: &crate::AppState<'_>) {
         // list — the two settings share one region catalog, just a
         // different desc value for which one's currently set.
         INT_DISCOVER_REGION    => Some((g.get_settings_streaming_region_display(), g.get_settings_discover_region_desc())),
-        // desc IS the value here (a real kscreen-doctor connector name) —
-        // see display-sync-screen-selected's own doc comment in
-        // app_state.slint for why this needs no separate name<->desc table.
+        // desc IS the value here (a real kscreen-doctor connector name/
+        // resolution/Hz string) — see display-sync-screen-selected's own
+        // doc comment in app_state.slint for why these need no separate
+        // name<->desc lookup table.
         VID_DISPLAY_SYNC_SCREEN => Some((g.get_settings_display_sync_screen_options(), g.get_settings_display_sync_screen_name())),
+        VID_DISPLAY_SYNC_DEFAULT_RESOLUTION => Some((g.get_settings_display_sync_resolution_options(), g.get_settings_display_sync_default_resolution())),
+        VID_DISPLAY_SYNC_DEFAULT_HZ => Some((g.get_settings_display_sync_hz_options(), g.get_settings_display_sync_default_hz())),
         _ => None,
     };
     if let Some((display, current_desc)) = dynamic {
@@ -984,6 +987,16 @@ pub(crate) fn apply_dropdown_selection(key: &str, cursor: i32, g: &crate::AppSta
         VID_DISPLAY_SYNC_SCREEN => {
             let display = g.get_settings_display_sync_screen_options();
             if let Some(desc) = display.row_data(cursor as usize) { g.invoke_display_sync_screen_selected(desc); }
+            return;
+        }
+        VID_DISPLAY_SYNC_DEFAULT_RESOLUTION => {
+            let display = g.get_settings_display_sync_resolution_options();
+            if let Some(desc) = display.row_data(cursor as usize) { g.invoke_display_sync_resolution_selected(desc); }
+            return;
+        }
+        VID_DISPLAY_SYNC_DEFAULT_HZ => {
+            let display = g.get_settings_display_sync_hz_options();
+            if let Some(desc) = display.row_data(cursor as usize) { g.invoke_display_sync_hz_selected(desc); }
             return;
         }
         _ => {}
@@ -1167,12 +1180,14 @@ fn settings_row_action(key: &str, g: &crate::AppState<'_>) {
             g.invoke_settings_changed();
         }
         VID_DISPLAY_SYNC_DEFAULT_RESOLUTION => {
-            let v = cycle(g.get_settings_display_sync_default_resolution().as_str(), DISPLAY_SYNC_RESOLUTION_MODEL);
-            g.set_settings_display_sync_default_resolution(v.into()); g.invoke_settings_changed();
+            if let Some(desc) = cycle_dynamic(g.get_settings_display_sync_resolution_options(), g.get_settings_display_sync_default_resolution().as_str()) {
+                g.invoke_display_sync_resolution_selected(desc);
+            }
         }
         VID_DISPLAY_SYNC_DEFAULT_HZ => {
-            let v = cycle(g.get_settings_display_sync_default_hz().as_str(), DISPLAY_SYNC_HZ_MODEL);
-            g.set_settings_display_sync_default_hz(v.into()); g.invoke_settings_changed();
+            if let Some(desc) = cycle_dynamic(g.get_settings_display_sync_hz_options(), g.get_settings_display_sync_default_hz().as_str()) {
+                g.invoke_display_sync_hz_selected(desc);
+            }
         }
         VID_DISPLAY_SYNC_SCALE_4K => {
             let v = cycle(g.get_settings_display_sync_scale_4k().as_str(), DISPLAY_SYNC_SCALE_MODEL);

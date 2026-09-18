@@ -1668,10 +1668,18 @@ export global AppState {
     // (main.rs); screen-name is the actual persisted value, never auto-
     // re-detected at runtime — see display_sync::detect_active_output's own
     // doc comment for why guessing every run would be wrong the moment a
-    // second output exists.
+    // second output exists. resolution-options/hz-options are likewise
+    // fetched at startup (for whichever screen ends up selected) AND
+    // re-fetched every time the Output selection actually changes — a
+    // previous output's supported modes are meaningless for a different
+    // display — via display_sync::supported_resolutions_and_hz; both are
+    // real per-output query results, not the fixed 3-resolution/7-Hz
+    // compile-time lists this originally shipped with.
     in-out property <bool>   settings-display-sync-enabled:            false;
     in-out property <string> settings-display-sync-screen-name:        "";
     in-out property <[string]> settings-display-sync-screen-options:   [];
+    in-out property <[string]> settings-display-sync-resolution-options: [];
+    in-out property <[string]> settings-display-sync-hz-options:         [];
     in-out property <string> settings-display-sync-default-resolution: "1920x1080";
     in-out property <string> settings-display-sync-default-hz:         "59.94";
     in-out property <string> settings-display-sync-scale-4k:           "1.0";
@@ -1685,8 +1693,13 @@ export global AppState {
     // Left/Right cycle (same shape as e.g. default-profile-selected below) —
     // desc IS the value here (a kscreen-doctor connector name), so the
     // handler in main.rs just persists it directly, no name<->desc lookup
-    // table needed the way audio-device/font-family need.
+    // table needed the way audio-device/font-family need. The resolution/hz
+    // pair below are the identical "desc is the value" shape, one per
+    // dynamic dropdown, and additionally re-fetch resolution-options/
+    // hz-options for the newly-selected screen.
     callback display-sync-screen-selected(string);
+    callback display-sync-resolution-selected(string);
+    callback display-sync-hz-selected(string);
 
     // ── Library prewarm progress (Phase 104) ──────────────────────────────────
     in-out property <bool>   prewarm-metadata-running: false;
