@@ -1658,6 +1658,36 @@ export global AppState {
     in-out property <bool>   settings-video-behind:         false;
     in-out property <string> settings-log-level:            "info"; // applies on next launch, not live
 
+    // ── display_sync (2026-09-18) — resolution/refresh-rate/HDR/WCG matched
+    // to source, ported from the user's proven external media_display_sync
+    // script (kscreen-doctor on KDE Plasma Wayland). See CLAUDE.md's own
+    // display_sync section for the full design, including why this is
+    // gated on two separate one-shot flags in wire_mpv_timer (playback.rs)
+    // rather than folded into HDR Stage 3's own trigger. screen-options is
+    // populated once at startup by shelling out to `kscreen-doctor -o`
+    // (main.rs); screen-name is the actual persisted value, never auto-
+    // re-detected at runtime — see display_sync::detect_active_output's own
+    // doc comment for why guessing every run would be wrong the moment a
+    // second output exists.
+    in-out property <bool>   settings-display-sync-enabled:            false;
+    in-out property <string> settings-display-sync-screen-name:        "";
+    in-out property <[string]> settings-display-sync-screen-options:   [];
+    in-out property <string> settings-display-sync-default-resolution: "1920x1080";
+    in-out property <string> settings-display-sync-default-hz:         "59.94";
+    in-out property <string> settings-display-sync-scale-4k:           "1.0";
+    in-out property <string> settings-display-sync-scale-1080p:        "1.0";
+    in-out property <bool>   settings-display-sync-sync-resolution:    true;
+    in-out property <bool>   settings-display-sync-sync-refresh-rate:  true;
+    in-out property <string> settings-display-sync-4k-odd-fps-mode:    "fallback";
+    in-out property <string> settings-display-sync-hdr-mode:           "yes";
+    in-out property <string> settings-display-sync-wcg-mode:           "auto";
+    // Fired for both the dynamic dropdown's popup-confirm AND its plain
+    // Left/Right cycle (same shape as e.g. default-profile-selected below) —
+    // desc IS the value here (a kscreen-doctor connector name), so the
+    // handler in main.rs just persists it directly, no name<->desc lookup
+    // table needed the way audio-device/font-family need.
+    callback display-sync-screen-selected(string);
+
     // ── Library prewarm progress (Phase 104) ──────────────────────────────────
     in-out property <bool>   prewarm-metadata-running: false;
     in-out property <int>    prewarm-metadata-total:   0;

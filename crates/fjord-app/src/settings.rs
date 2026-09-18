@@ -157,6 +157,26 @@ const VID_TONE_MAPPING:        &str = "video.tone_mapping";        // always vis
 const VID_OPENGL_EARLY_FLUSH:  &str = "video.opengl_early_flush";
 const VID_VIDEO_LATENCY_HACKS: &str = "video.video_latency_hacks"; // virtual — only when video-sync == display-resample
 
+// display_sync (2026-09-18) — native resolution/refresh-rate/HDR/WCG matched
+// to source. See CLAUDE.md's own display_sync section and display_sync.rs's
+// module doc comment for the full design. Every row below the master toggle
+// is virtual (hidden while the toggle is off) — see section_row_keys' own
+// SECTION_VIDEO arm.
+const VID_DISPLAY_SYNC_ENABLED:           &str = "video.display_sync_enabled";
+const VID_DISPLAY_SYNC_SCREEN:            &str = "video.display_sync_screen"; // dynamic dropdown
+const VID_DISPLAY_SYNC_SYNC_RESOLUTION:   &str = "video.display_sync_sync_resolution";
+const VID_DISPLAY_SYNC_SYNC_REFRESH_RATE: &str = "video.display_sync_sync_refresh_rate";
+const VID_DISPLAY_SYNC_DEFAULT_RESOLUTION: &str = "video.display_sync_default_resolution";
+const VID_DISPLAY_SYNC_DEFAULT_HZ:        &str = "video.display_sync_default_hz";
+const VID_DISPLAY_SYNC_SCALE_4K:          &str = "video.display_sync_scale_4k";
+const VID_DISPLAY_SYNC_SCALE_1080P:       &str = "video.display_sync_scale_1080p";
+// Only consulted when VID_DISPLAY_SYNC_SYNC_RESOLUTION is true — see
+// compute_target_mode's own doc comment for why (structurally inapplicable
+// otherwise, not just hidden for tidiness).
+const VID_DISPLAY_SYNC_4K_ODD_FPS_MODE:   &str = "video.display_sync_4k_odd_fps_mode";
+const VID_DISPLAY_SYNC_HDR_MODE:          &str = "video.display_sync_hdr_mode";
+const VID_DISPLAY_SYNC_WCG_MODE:          &str = "video.display_sync_wcg_mode";
+
 // ── Audio section rows ────────────────────────────────────────────────────────
 const AUD_AUDIO_DEVICE:  &str = "audio.device";
 const AUD_CHANNELS:      &str = "audio.channels";
@@ -279,6 +299,21 @@ fn section_row_keys(section: &str, g: &crate::AppState<'_>) -> Vec<&'static str>
             rows.push(VID_OPENGL_EARLY_FLUSH);
             if g.get_settings_video_sync().as_str() == "display-resample" {
                 rows.push(VID_VIDEO_LATENCY_HACKS);
+            }
+            rows.push(VID_DISPLAY_SYNC_ENABLED);
+            if g.get_settings_display_sync_enabled() {
+                rows.push(VID_DISPLAY_SYNC_SCREEN);
+                rows.push(VID_DISPLAY_SYNC_SYNC_RESOLUTION);
+                rows.push(VID_DISPLAY_SYNC_SYNC_REFRESH_RATE);
+                rows.push(VID_DISPLAY_SYNC_DEFAULT_RESOLUTION);
+                rows.push(VID_DISPLAY_SYNC_DEFAULT_HZ);
+                rows.push(VID_DISPLAY_SYNC_SCALE_4K);
+                rows.push(VID_DISPLAY_SYNC_SCALE_1080P);
+                if g.get_settings_display_sync_sync_resolution() {
+                    rows.push(VID_DISPLAY_SYNC_4K_ODD_FPS_MODE);
+                }
+                rows.push(VID_DISPLAY_SYNC_HDR_MODE);
+                rows.push(VID_DISPLAY_SYNC_WCG_MODE);
             }
             rows
         }
@@ -588,6 +623,19 @@ const TSCALE_MODEL: &[&str] = &[
 const TONE_MAPPING_MODEL: &[&str] = &[
     "auto","hable","bt.2390","reinhard","mobius","clip","gamma","linear",
 ];
+// display_sync (2026-09-18) — a small, pragmatic static list rather than a
+// live-fetched one (unlike VID_DISPLAY_SYNC_SCREEN below, whose options
+// genuinely depend on what's connected): the target resolution/Hz/scale are
+// deliberately hand-picked common values, not queried from
+// display_sync::get_supported_modes (private to display_sync.rs, and tied to
+// whichever screen happens to be selected — re-fetching it here every time
+// the screen changes was judged disproportionate for a v1 Settings row).
+const DISPLAY_SYNC_RESOLUTION_MODEL: &[&str] = &["1920x1080", "3840x2160", "1280x720"];
+const DISPLAY_SYNC_HZ_MODEL: &[&str] = &["23.98", "24.00", "25.00", "29.97", "50.00", "59.94", "60.00"];
+const DISPLAY_SYNC_SCALE_MODEL: &[&str] = &["1.0", "1.25", "1.5", "1.75", "2.0"];
+const DISPLAY_SYNC_4K_ODD_FPS_MODEL: &[&str] = &["fallback", "stay_4k"];
+const DISPLAY_SYNC_HDR_MODE_MODEL: &[&str] = &["yes", "no", "always"];
+const DISPLAY_SYNC_WCG_MODE_MODEL: &[&str] = &["auto", "yes", "no"];
 const SUB_TYPE_MODEL:   &[&str] = &["Any","Normal","Forced","Hearing Impaired"];
 // "0" = mpv's own huge default (effectively unlimited, capped by
 // CACHE_MAX_MB_MODEL below) — displayed as "Unlimited" via display_val.
@@ -694,6 +742,29 @@ fn display_val<'a>(val: &'a str, key: &str) -> &'a str {
             _             => val,
         };
     }
+    if key == VID_DISPLAY_SYNC_4K_ODD_FPS_MODE {
+        return match val {
+            "fallback" => "Fallback to default resolution",
+            "stay_4k"  => "Stay at 4K",
+            _          => val,
+        };
+    }
+    if key == VID_DISPLAY_SYNC_HDR_MODE {
+        return match val {
+            "yes"    => "Match source",
+            "no"     => "Never",
+            "always" => "Always",
+            _        => val,
+        };
+    }
+    if key == VID_DISPLAY_SYNC_WCG_MODE {
+        return match val {
+            "auto" => "Follow HDR",
+            "yes"  => "Always",
+            "no"   => "Never",
+            _      => val,
+        };
+    }
     val
 }
 
@@ -726,6 +797,12 @@ fn dropdown_model(key: &str) -> Option<&'static [&'static str]> {
         PLY_SKIP_FADE_MS   => Some(SKIP_FADE_MS_MODEL),
         UI_SCROLL_SPEED | UI_ANIMATION_SPEED => Some(SPEED_PCT_MODEL),
         INT_TRAILER_QUALITY => Some(TRAILER_QUALITY_MODEL),
+        VID_DISPLAY_SYNC_DEFAULT_RESOLUTION => Some(DISPLAY_SYNC_RESOLUTION_MODEL),
+        VID_DISPLAY_SYNC_DEFAULT_HZ => Some(DISPLAY_SYNC_HZ_MODEL),
+        VID_DISPLAY_SYNC_SCALE_4K | VID_DISPLAY_SYNC_SCALE_1080P => Some(DISPLAY_SYNC_SCALE_MODEL),
+        VID_DISPLAY_SYNC_4K_ODD_FPS_MODE => Some(DISPLAY_SYNC_4K_ODD_FPS_MODEL),
+        VID_DISPLAY_SYNC_HDR_MODE => Some(DISPLAY_SYNC_HDR_MODE_MODEL),
+        VID_DISPLAY_SYNC_WCG_MODE => Some(DISPLAY_SYNC_WCG_MODE_MODEL),
         _ => None,
     }
 }
@@ -739,6 +816,7 @@ fn is_dynamic_dropdown(key: &str) -> bool {
         PROF_DEFAULT_PROFILE | PROF_DEFAULT_ACCOUNT
         | AUD_AUDIO_DEVICE | AUD_PASSTHROUGH_DEVICE | UI_FONT_FAMILY
         | INT_STREAMING_REGION | INT_DISPLAY_LANGUAGE | INT_DISCOVER_LANGUAGE | INT_DISCOVER_REGION
+        | VID_DISPLAY_SYNC_SCREEN
     )
 }
 
@@ -791,6 +869,13 @@ fn current_value_str(key: &str, g: &crate::AppState<'_>) -> String {
         INT_STREAMING_REGION => g.get_settings_streaming_region_desc().to_string(),
         INT_TRAILER_QUALITY  => g.get_settings_trailer_quality().to_string(),
         INT_DISCOVER_REGION  => g.get_settings_discover_region_desc().to_string(),
+        VID_DISPLAY_SYNC_DEFAULT_RESOLUTION => g.get_settings_display_sync_default_resolution().to_string(),
+        VID_DISPLAY_SYNC_DEFAULT_HZ         => g.get_settings_display_sync_default_hz().to_string(),
+        VID_DISPLAY_SYNC_SCALE_4K           => g.get_settings_display_sync_scale_4k().to_string(),
+        VID_DISPLAY_SYNC_SCALE_1080P        => g.get_settings_display_sync_scale_1080p().to_string(),
+        VID_DISPLAY_SYNC_4K_ODD_FPS_MODE    => g.get_settings_display_sync_4k_odd_fps_mode().to_string(),
+        VID_DISPLAY_SYNC_HDR_MODE           => g.get_settings_display_sync_hdr_mode().to_string(),
+        VID_DISPLAY_SYNC_WCG_MODE           => g.get_settings_display_sync_wcg_mode().to_string(),
         _ => String::new(),
     }
 }
@@ -814,6 +899,10 @@ pub(crate) fn open_dropdown_popup(key: &str, g: &crate::AppState<'_>) {
         // list — the two settings share one region catalog, just a
         // different desc value for which one's currently set.
         INT_DISCOVER_REGION    => Some((g.get_settings_streaming_region_display(), g.get_settings_discover_region_desc())),
+        // desc IS the value here (a real kscreen-doctor connector name) —
+        // see display-sync-screen-selected's own doc comment in
+        // app_state.slint for why this needs no separate name<->desc table.
+        VID_DISPLAY_SYNC_SCREEN => Some((g.get_settings_display_sync_screen_options(), g.get_settings_display_sync_screen_name())),
         _ => None,
     };
     if let Some((display, current_desc)) = dynamic {
@@ -890,6 +979,11 @@ pub(crate) fn apply_dropdown_selection(key: &str, cursor: i32, g: &crate::AppSta
         INT_DISCOVER_REGION => {
             let display = g.get_settings_streaming_region_display();
             if let Some(desc) = display.row_data(cursor as usize) { g.invoke_discover_region_selected(desc); }
+            return;
+        }
+        VID_DISPLAY_SYNC_SCREEN => {
+            let display = g.get_settings_display_sync_screen_options();
+            if let Some(desc) = display.row_data(cursor as usize) { g.invoke_display_sync_screen_selected(desc); }
             return;
         }
         _ => {}
@@ -1054,6 +1148,51 @@ fn settings_row_action(key: &str, g: &crate::AppState<'_>) {
         VID_VIDEO_LATENCY_HACKS if g.get_settings_video_sync().as_str() == "display-resample" => {
             g.set_settings_video_latency_hacks(!g.get_settings_video_latency_hacks());
             g.invoke_settings_changed();
+        }
+        VID_DISPLAY_SYNC_ENABLED => {
+            g.set_settings_display_sync_enabled(!g.get_settings_display_sync_enabled());
+            g.invoke_settings_changed();
+        }
+        VID_DISPLAY_SYNC_SCREEN => {
+            if let Some(desc) = cycle_dynamic(g.get_settings_display_sync_screen_options(), g.get_settings_display_sync_screen_name().as_str()) {
+                g.invoke_display_sync_screen_selected(desc);
+            }
+        }
+        VID_DISPLAY_SYNC_SYNC_RESOLUTION => {
+            g.set_settings_display_sync_sync_resolution(!g.get_settings_display_sync_sync_resolution());
+            g.invoke_settings_changed();
+        }
+        VID_DISPLAY_SYNC_SYNC_REFRESH_RATE => {
+            g.set_settings_display_sync_sync_refresh_rate(!g.get_settings_display_sync_sync_refresh_rate());
+            g.invoke_settings_changed();
+        }
+        VID_DISPLAY_SYNC_DEFAULT_RESOLUTION => {
+            let v = cycle(g.get_settings_display_sync_default_resolution().as_str(), DISPLAY_SYNC_RESOLUTION_MODEL);
+            g.set_settings_display_sync_default_resolution(v.into()); g.invoke_settings_changed();
+        }
+        VID_DISPLAY_SYNC_DEFAULT_HZ => {
+            let v = cycle(g.get_settings_display_sync_default_hz().as_str(), DISPLAY_SYNC_HZ_MODEL);
+            g.set_settings_display_sync_default_hz(v.into()); g.invoke_settings_changed();
+        }
+        VID_DISPLAY_SYNC_SCALE_4K => {
+            let v = cycle(g.get_settings_display_sync_scale_4k().as_str(), DISPLAY_SYNC_SCALE_MODEL);
+            g.set_settings_display_sync_scale_4k(v.into()); g.invoke_settings_changed();
+        }
+        VID_DISPLAY_SYNC_SCALE_1080P => {
+            let v = cycle(g.get_settings_display_sync_scale_1080p().as_str(), DISPLAY_SYNC_SCALE_MODEL);
+            g.set_settings_display_sync_scale_1080p(v.into()); g.invoke_settings_changed();
+        }
+        VID_DISPLAY_SYNC_4K_ODD_FPS_MODE => {
+            let v = cycle(g.get_settings_display_sync_4k_odd_fps_mode().as_str(), DISPLAY_SYNC_4K_ODD_FPS_MODEL);
+            g.set_settings_display_sync_4k_odd_fps_mode(v.into()); g.invoke_settings_changed();
+        }
+        VID_DISPLAY_SYNC_HDR_MODE => {
+            let v = cycle(g.get_settings_display_sync_hdr_mode().as_str(), DISPLAY_SYNC_HDR_MODE_MODEL);
+            g.set_settings_display_sync_hdr_mode(v.into()); g.invoke_settings_changed();
+        }
+        VID_DISPLAY_SYNC_WCG_MODE => {
+            let v = cycle(g.get_settings_display_sync_wcg_mode().as_str(), DISPLAY_SYNC_WCG_MODE_MODEL);
+            g.set_settings_display_sync_wcg_mode(v.into()); g.invoke_settings_changed();
         }
 
         AUD_AUDIO_DEVICE => {

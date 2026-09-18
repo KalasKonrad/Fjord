@@ -201,6 +201,7 @@ mod config;
 mod context_menu;
 mod controls;
 mod detail;
+mod display_sync;
 mod hdr;
 mod home;
 mod keys;
@@ -1116,6 +1117,17 @@ pub(crate) fn apply_settings_to_window(w: &MainWindow, s: &FjordState) {
     g.set_settings_video_behind(c.video_behind);
     g.set_settings_launch_fullscreen(c.launch_fullscreen);
     g.set_settings_log_level(ss(&c.log_level));
+    g.set_settings_display_sync_enabled(c.display_sync_enabled);
+    g.set_settings_display_sync_screen_name(ss(&c.display_sync_screen_name));
+    g.set_settings_display_sync_default_resolution(ss(&c.display_sync_default_resolution));
+    g.set_settings_display_sync_default_hz(ss(&c.display_sync_default_hz));
+    g.set_settings_display_sync_scale_4k(ss(&c.display_sync_scale_4k));
+    g.set_settings_display_sync_scale_1080p(ss(&c.display_sync_scale_1080p));
+    g.set_settings_display_sync_sync_resolution(c.display_sync_sync_resolution);
+    g.set_settings_display_sync_sync_refresh_rate(c.display_sync_sync_refresh_rate);
+    g.set_settings_display_sync_4k_odd_fps_mode(ss(&c.display_sync_4k_odd_fps_mode));
+    g.set_settings_display_sync_hdr_mode(ss(&c.display_sync_hdr_mode));
+    g.set_settings_display_sync_wcg_mode(ss(&c.display_sync_wcg_mode));
     g.set_settings_sub_enabled(cp.sub_enabled);
     g.set_settings_sub_lang(ss(&cp.sub_lang));
     g.set_settings_sub_lang2(ss(&cp.sub_lang2));
@@ -1224,6 +1236,17 @@ fn read_settings_from_window(w: &MainWindow, s: &mut FjordState) {
     c.default_profile_id     = g.get_settings_default_profile_id().to_string();
     c.account_launch_policy  = g.get_settings_account_launch_policy().to_string();
     c.default_account_id     = g.get_settings_default_account_id().to_string();
+    c.display_sync_enabled            = g.get_settings_display_sync_enabled();
+    c.display_sync_screen_name        = g.get_settings_display_sync_screen_name().to_string();
+    c.display_sync_default_resolution = g.get_settings_display_sync_default_resolution().to_string();
+    c.display_sync_default_hz         = g.get_settings_display_sync_default_hz().to_string();
+    c.display_sync_scale_4k           = g.get_settings_display_sync_scale_4k().to_string();
+    c.display_sync_scale_1080p        = g.get_settings_display_sync_scale_1080p().to_string();
+    c.display_sync_sync_resolution    = g.get_settings_display_sync_sync_resolution();
+    c.display_sync_sync_refresh_rate  = g.get_settings_display_sync_sync_refresh_rate();
+    c.display_sync_4k_odd_fps_mode    = g.get_settings_display_sync_4k_odd_fps_mode().to_string();
+    c.display_sync_hdr_mode           = g.get_settings_display_sync_hdr_mode().to_string();
+    c.display_sync_wcg_mode           = g.get_settings_display_sync_wcg_mode().to_string();
 
     let cp = s.config.active_mut();
     cp.sub_enabled            = g.get_settings_sub_enabled();
@@ -5227,6 +5250,55 @@ fn main() -> Result<()> {
         });
     }
 
+    // ── display_sync output list: fetch once at startup ───────────────────────
+    // Same shape as the system-font fetch just above (shell out once, patch
+    // the dropdown's display list in whenever it lands) — this one queries
+    // `kscreen-doctor -o` for every currently enabled+connected output name.
+    // If the stored screen name is still empty (a fresh install, or one that
+    // predates this feature), pre-fills it here — but only when exactly one
+    // candidate exists (`DeviceConfig.display_sync_screen_name`'s own doc
+    // comment: guessing among 2+ plausible outputs would be wrong the
+    // instant a second display is connected) — and persists it immediately
+    // via `invoke_settings_changed()` so this one-time detection never runs
+    // again for this install.
+    {
+        let ww_ds  = window.as_weak();
+        let cfg_ds = state.lock().unwrap().config.device.display_sync_screen_name.clone();
+        rt.spawn(async move {
+            let names = tokio::task::spawn_blocking(display_sync::list_output_names).await.unwrap_or_default();
+            let _ = slint::invoke_from_event_loop(move || {
+                if let Some(w) = ww_ds.upgrade() {
+                    let g = AppState::get(&w);
+                    let display: Vec<slint::SharedString> =
+                        names.iter().map(|n| slint::SharedString::from(n.as_str())).collect();
+                    g.set_settings_display_sync_screen_options(
+                        slint::ModelRc::new(slint::VecModel::from(display)),
+                    );
+                    if cfg_ds.is_empty() && names.len() == 1 {
+                        g.set_settings_display_sync_screen_name(ss(&names[0]));
+                        g.invoke_settings_changed();
+                    }
+                }
+            });
+        });
+    }
+
+    // ── display_sync screen selected callback ─────────────────────────────────
+    // desc IS the value (a real kscreen-doctor connector name) — unlike
+    // audio-device/font-family, there's no separate name<->desc lookup table
+    // to resolve here, so this is a direct set + persist, same shape as the
+    // plain toggle/dropdown rows elsewhere in this file.
+    {
+        let ww_dss = window.as_weak();
+        AppState::get(&window).on_display_sync_screen_selected(move |desc| {
+            if let Some(w) = ww_dss.upgrade() {
+                let g = AppState::get(&w);
+                g.set_settings_display_sync_screen_name(desc);
+                g.invoke_settings_changed();
+            }
+        });
+    }
+
     // ── default profile selected callback (Bonfire Phase 1, step 7) ──────────
     // 100% local, no network round trip — same shape as font-family above.
     // Resolves the selected display label back to a user_id (duplicate
@@ -5858,7 +5930,7 @@ fn main() -> Result<()> {
     window.invoke_grab_keyboard_focus();
     window.run()?;
     // Send stop report and release screensaver inhibitor if a video was playing when the user quit.
-    quit_cleanup(&video, &rt);
+    quit_cleanup(&video, &rt, &state);
     Ok(())
 }
 

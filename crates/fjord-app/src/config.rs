@@ -24,7 +24,11 @@
 //                   redesign — profile.rs's StartupGate doc comment has the full resolution order)
 //                   are the identical 3-way shape one tier UP: which ACCOUNT (a plain login, or a
 //                   whole Bonfire household) to resolve silently at startup, before ever touching
-//                   which profile within it.
+//                   which profile within it. display_sync_* (2026-09-18) — native resolution/
+//                   refresh-rate/HDR/WCG matching to source via kscreen-doctor (see display_sync.rs),
+//                   opt-in/off by default; enabled/screen_name/default_resolution/default_hz/
+//                   scale_4k/scale_1080p/sync_resolution/sync_refresh_rate/4k_odd_fps_mode/
+//                   hdr_mode/wcg_mode.
 //   ProfileSettings settings that follow the SIGNED-IN PERSON — auth (server_url/user_id/token),
 //                   subtitle/audio language, library sort, Seerr connection, Discover filters,
 //                   skip_*_mode/_secs, trailer_quality. keyed by user_id (also
@@ -421,6 +425,54 @@ pub(crate) struct DeviceConfig {
     // root user_id (the master's, or a standalone plain profile's own).
     #[serde(default = "default_launch_policy")] pub account_launch_policy: String,
     #[serde(default)] pub default_account_id: String,
+
+    // ── display_sync (2026-09-18) — native resolution/refresh-rate/HDR/WCG
+    // matching to source, replacing the external `media_display_sync`
+    // script's own job for this exact machine. Device-scoped: which KDE
+    // output exists and what modes it supports is a hardware fact, same
+    // reasoning as `target_colorspace_hint`/`seek_step_secs` above. Opt-in,
+    // off by default — see `display_sync.rs`'s own module doc comment and
+    // CLAUDE.md's dated section for the full design, including the real
+    // ordering fix this needed against the pre-existing HDR Stage 3 hook.
+    #[serde(default)] pub display_sync_enabled: bool,
+    // Not auto-detected at runtime — only auto-pre-filled once, at startup,
+    // while still empty (`main.rs`'s `display_sync::list_output_names()`
+    // fetch, only when it returns exactly one candidate); stored and used as
+    // an explicit string from then on, same reasoning the external script's
+    // own hard-required SCREEN_NAME config key already established (a
+    // "first enabled+connected output" heuristic picks wrong the moment
+    // there's a second output). Editable any time via Settings' own dynamic
+    // dropdown, which always shows every currently connected output.
+    #[serde(default)] pub display_sync_screen_name: String,
+    #[serde(default = "default_display_sync_resolution")] pub display_sync_default_resolution: String,
+    #[serde(default = "default_display_sync_hz")]         pub display_sync_default_hz: String,
+    // Always applied alongside every mode switch, matching the proven
+    // external script's own `run_kscreen` — dropping this would leave KDE's
+    // desktop scale wherever it was for the previous resolution, a real,
+    // visible regression versus what the script already does today.
+    #[serde(default = "default_scale")] pub display_sync_scale_4k: String,
+    #[serde(default = "default_scale")] pub display_sync_scale_1080p: String,
+    // When false, resolution is always pinned to display_sync_default_resolution
+    // (never switches to 4K regardless of source width) and only refresh
+    // rate varies by cadence — see display_sync::compute_target_mode's own
+    // doc comment for why this is defined as "pinned," not "leave whatever
+    // KDE is currently at alone" (the latter has no mechanism behind it).
+    #[serde(default = "default_true")] pub display_sync_sync_resolution: bool,
+    // When false, refresh rate stays pinned to display_sync_default_hz and
+    // only resolution varies (4K vs. the configured default).
+    #[serde(default = "default_true")] pub display_sync_sync_refresh_rate: bool,
+    // "fallback" (default, matches the proven script exactly — 4K content
+    // at a non-film/NTSC/PAL framerate drops to the default 1080p
+    // resolution@59.94) or "stay_4k" (pick the closest supported Hz at 4K
+    // instead). Only consulted when display_sync_sync_resolution is true.
+    #[serde(default = "default_4k_odd_fps_mode")] pub display_sync_4k_odd_fps_mode: String,
+    // "yes" (HDR on exactly when the source is HDR) | "no" (never) |
+    // "always". No "manual" value — display_sync_enabled=false already IS
+    // "never touch HDR/WCG", making a 4th value redundant.
+    #[serde(default = "default_display_sync_hdr_mode")] pub display_sync_hdr_mode: String,
+    // "auto" (follows HDR state, matching the proven script's own default) |
+    // "yes" | "no".
+    #[serde(default = "default_display_sync_wcg_mode")] pub display_sync_wcg_mode: String,
 }
 
 impl Default for DeviceConfig {
@@ -449,11 +501,28 @@ impl Default for DeviceConfig {
             default_profile_id: String::new(),
             account_launch_policy: default_launch_policy(),
             default_account_id: String::new(),
+            display_sync_enabled: false,
+            display_sync_screen_name: String::new(),
+            display_sync_default_resolution: default_display_sync_resolution(),
+            display_sync_default_hz: default_display_sync_hz(),
+            display_sync_scale_4k: default_scale(),
+            display_sync_scale_1080p: default_scale(),
+            display_sync_sync_resolution: true,
+            display_sync_sync_refresh_rate: true,
+            display_sync_4k_odd_fps_mode: default_4k_odd_fps_mode(),
+            display_sync_hdr_mode: default_display_sync_hdr_mode(),
+            display_sync_wcg_mode: default_display_sync_wcg_mode(),
         }
     }
 }
 
 fn default_launch_policy() -> String { "always_ask".into() }
+fn default_display_sync_resolution() -> String { "1920x1080".into() }
+fn default_display_sync_hz()         -> String { "59.94".into() }
+fn default_scale()                   -> String { "1.0".into() }
+fn default_4k_odd_fps_mode()         -> String { "fallback".into() }
+fn default_display_sync_hdr_mode()   -> String { "yes".into() }
+fn default_display_sync_wcg_mode()   -> String { "auto".into() }
 
 #[derive(Clone, Serialize, Deserialize)]
 pub(crate) struct ProfileSettings {
@@ -929,6 +998,21 @@ fn migrate_legacy_config(l: LegacyConfig) -> Config {
         default_profile_id: String::new(),
         account_launch_policy: default_launch_policy(),
         default_account_id: String::new(),
+        // No legacy equivalent — display_sync shipped well after the last
+        // flat config.json shape, same treatment as the fields just above.
+        // Defaults regardless of migration path, matching every fresh
+        // install — off, and every other field at its own module default.
+        display_sync_enabled: false,
+        display_sync_screen_name: String::new(),
+        display_sync_default_resolution: default_display_sync_resolution(),
+        display_sync_default_hz: default_display_sync_hz(),
+        display_sync_scale_4k: default_scale(),
+        display_sync_scale_1080p: default_scale(),
+        display_sync_sync_resolution: true,
+        display_sync_sync_refresh_rate: true,
+        display_sync_4k_odd_fps_mode: default_4k_odd_fps_mode(),
+        display_sync_hdr_mode: default_display_sync_hdr_mode(),
+        display_sync_wcg_mode: default_display_sync_wcg_mode(),
     };
     let profile = ProfileSettings {
         user_id: l.user_id, server_url: l.server_url, token: l.token,
@@ -1978,6 +2062,14 @@ pub(crate) struct FjordState {
     // local-machine fact, not tied to Seerr connection state, not reset on
     // sign-out/disconnect.
     pub yt_dlp_available: bool,
+    // display_sync (2026-09-18) — "what's currently applied to the physical
+    // output," so a same-mode item (e.g. back-to-back episodes of one show)
+    // never redundantly re-switches and re-pays the 3s settle. `None` means
+    // "not yet applied this session" (always a genuine change the first
+    // time). Never persisted, never reset on sign-out/profile-switch — this
+    // is a fact about the physical display, not about who's signed in.
+    pub display_sync_current_mode: Option<(String, String)>,
+    pub display_sync_current_hdr: Option<bool>,
 }
 
 impl FjordState {
@@ -2061,6 +2153,8 @@ impl FjordState {
             blocklist_loading_more: false,
             seerr_admin_last_refresh: None,
             yt_dlp_available: false,
+            display_sync_current_mode: None,
+            display_sync_current_hdr: None,
         }
     }
 

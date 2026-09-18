@@ -141,6 +141,7 @@ Every module that accesses the global imports `use slint::Global;` and uses
 | `settings.rs` | **Phase 0 rewrite, 2026-08-07** (Bonfire prep, full data-driven redesign — see the Settings section of this doc and the Bonfire integration note for the full "why"): every section (`SECTION_GENERAL/PROFILES/VIDEO/AUDIO/PLAYER_CFG/KEYBINDINGS/UI/INTEGRATIONS`, `ALL_SECTIONS` = sidebar order) and every row (`GEN_*`/`PROF_*`/`VID_*`/`AUD_*`/`PLY_*`/`UI_*`/`INT_*`) now has a stable `&'static str` key ("general.launch_fullscreen", "video", ...) instead of a positional `int` — immune to insertion-order drift, since nothing else's identity depends on a row's numeric position anymore. `section_row_keys(section, g) -> Vec<&'static str>` is the single function per section that replaces the old ~15 hand-duplicated Up/Down skip-blocks — pushes a row's key only when its visibility condition holds, mirroring `settings.slint`'s own `if` conditions 1:1 (still two places to keep in sync by hand — Slint can't ask Rust "is this visible" and vice versa — but now exactly one place per direction instead of two). `dispatch_settings` steps through whatever that returns; `settings_row_action(key, g)` (was `(sf: i32, forward: bool, ss: i32, ...)` — `forward` was dropped, its `false` branch was dead code, confirmed by checking both of its only two call sites always passed `true`) is the flat per-row Confirm/Right handler; `dropdown_model(key)`/`current_value_str(key, g)`/`display_val(val, key)`/`apply_dropdown_selection(key, cursor, g)`/`open_dropdown_popup(key, g)` are the re-keyed dropdown helpers — the 7 dynamic-dropdown rows (audio device ×2, font family, Seerr streaming/display-language/discover-language/discover-region) are consolidated behind `is_dynamic_dropdown(key)` rather than duplicated per-row special-casing. New **Profiles** section (`profiles.sign_out`, the only row today) holds Sign Out, moved out of General — Phase 1 of the Bonfire plan populates it further. `AppState.settings-focused`/`settings-section` are now `string` (see `app_state.slint`); `settings-focused-visual-index: int` is a Rust-maintained companion (`set_focused`/`row_focused` helpers) purely for the right pane's scroll-to-view approximation. |
 | `pipewire_fix.rs` | `is_pipewire_device` (true for `""` / `pipewire` / `pipewire/*`), `apply_alsa_irq_scheduling` (writes/deletes `~/.config/wireplumber/wireplumber.conf.d/fjord-alsa-irq.conf` and restarts WirePlumber) |
 | `hdr.rs` | Real Wayland `color-management-v1` HDR10 negotiation, merged to `main` 2026-09-17 (was on the now-deleted `hdr` branch). `spawn_worker`/`run_worker`: attaches a second `wayland-client` event queue to the same connection winit already owns, binds `wp_color_manager_v1` if advertised (logs the real capability set either way), wraps Fjord's own `wl_surface` as a typed proxy, then blocks forever on `for cmd in rx` — `HdrCommand::SetHdr(HdrParams)` negotiates and applies a real `wp_image_description_v1` (PQ + BT.2020 only in v1 — this exact compositor doesn't advertise `Hlg`), `HdrCommand::Unset` clears it (synchronously resetting `HdrStatus::Idle` on the calling thread first, Stage 4 — see `send_command`'s own doc comment for the race this closes). `HdrStatus`/`status_text()`/`is_active()`/`send_command`/`maybe_negotiate`/`set_status_disabled` are the module's public surface, called from `playback.rs`'s `wire_mpv_timer`/`tear_down_player`. See CLAUDE.md's own dated `hdr` branch sections for the full design/history — Stage 1+2 (capability diagnostic) and Stage 3 (real negotiation) are both confirmed live on the real HTPC; Stage 4 (mpv-side real HDR output — widened FBO + `Player::apply_hdr_output`) negotiates cleanly on real hardware but the full picture-correctness confirmation is still open. Known limitation, confirmed live: while the toggle (opt-in, off by default) is on, UI chrome drawn over/alongside the video renders with wrong colors — Fjord's whole window is one Wayland surface, so tagging it as PQ/BT.2020 for the video also misinterprets Slint's own plain sRGB UI pixels; the real fix needs video on its own subsurface, deliberately deferred (see the dated section's own "Update, 2026-09-17" paragraphs). |
+| `display_sync.rs` | Native resolution/refresh-rate/HDR/WCG matching to source via `kscreen-doctor`, replacing the user's external `media_display_sync` Python script for Fjord's own playback (2026-09-18, `hdr` branch). `compute_target_mode` (pure, unit-tested) ports the proven script's own fps→Hz cadence table + fallback chain (exact mode → closest Hz at the same resolution → the configured default); `sync_to_source`/`revert_to_default` do the actual `kscreen-doctor` orchestration, tracking "what's currently applied" in `FjordState.display_sync_current_mode`/`_current_hdr` so a same-mode item never redundantly re-switches. Triggered from `playback.rs`'s `wire_mpv_timer` as **Branch B**, structurally separate from HDR Stage 3's own **Branch A** — see the dated section below for why folding the two into one condition would delay HDR negotiation even with this feature disabled. `list_output_names` backs the Settings screen dropdown (`display_sync_screen_name`); never read at runtime — see the field's own doc comment in `config.rs`. |
 | `ws.rs` | `start_websocket` → spawns reconnect loop, returns `AbortHandle` (stored in `FjordState.ws_abort`, aborted on sign-out). Connects to `ws[s]://host/socket?api_key=…&deviceId=…`. **Incremental delta sync (Phase 89)**: `pending_upsert_ids: Arc<Mutex<HashSet<String>>>` accumulates `LibraryChanged` `ItemsAdded`/`ItemsUpdated` ids, drained by the shared debounced (5 s) `maybe_spawn_delta_refresh` task — `fetch_home_data` (unconditional; already covers Recently Added/Favorites/Continue Watching/Not Watched/Recently Played Albums/Playlists correctly sorted from the server, so no bespoke upsert is needed for any of those rows) + `client.get_items_by_ids(pending_upsert_ids)` bucketed by type into the six flat library lists (`upsert_media_item` into `FjordState.all_X` + on-disk cache + `upsert_library_bucket` into the Slint model/`library-display`, §0 focus-re-anchored via `reanchor_focus`) + `Episode` (fetches any parent series missing from the batch by `series_id` so the unplayed-count badge doesn't depend on Jellyfin separately reporting the series, then `sync_open_episodes` upserts into `series_episode_cache`/the live `series-episode-cards` model — re-sorted by `index_number` — if that exact series+season is on screen, §0 re-anchored) + `movie_collections` reconciliation for any `BoxSet` in the batch (`get_boxset_items`, upsert current members, drop stale ones for that box set) + (Phase 103) a parallel `get_items_by_ids_detailed(upsert_ids)` piggybacked onto the same batch, refreshing `item_detail_cache` for a genuine delta, plus invalidating (not re-fetching) any of the 5 relationship caches keyed by an upsert id. Session-guarded via `Arc::ptr_eq` against the live `FjordState.client` before and after the fetch (CR11-2). `LibraryChanged` handling: clears all `*_fetched` flags, purges removed ids from FjordState vecs + every visible model immediately (`remove_item_from_all_models` — now also clamps `library-focused`/`series-focused-ep`/`season-focused-ep` if the removed row was the focused one, §0) + their poster/backdrop cache files + all six screen-open caches (Phase 103 — a deleted item/container can't stay cached anywhere), then merges added/updated ids into `pending_upsert_ids` and calls `maybe_spawn_delta_refresh` — no more immediate full re-fetch of an open grid, and `get_all_series` is gone (it had a latent bug: its `items_to_model` path never set `poster`/`has_poster`, so the TV grid went poster-less after every WS-driven series change — six-bucket upsert fixes this too). `UserDataChanged`: patches played/fav via `update_card_in_all_models` (unchanged) + removes the changed id from `item_detail_cache` (Phase 103 — cheap invalidate, no extra network call, self-heals on next open), then immediate fetch-free removal (`remove_from_dynamic_rows` on played/position=0, `remove_from_favorites` on unfavorite) plus a transition-gated (`row_has_id` — only fires on a genuine first transition into resumable/favorited, not every playback-position tick) call to the same `maybe_spawn_delta_refresh` so a favorite/resume change made from another client reaches Favorites/Continue Watching within ~5 s. `ForceKeepAlive`/`KeepAlive` ignored — the session sends its own KeepAlive every 30 s; replying to the server's acks looped at wire speed, Phase 62. Reconnects with exponential backoff 1 s → 60 s. |
 | `home.rs` (timer) | `wire_nw_timer`: 30 s not-watched refresh poll |
 | `prewarm.rs` | Phase 104, opt-in one-time library prewarm — two independent, user-triggered actions (Settings → General buttons). `spawn_metadata_prewarm`: batches `item_detail_cache` for every top-level library item (`all_movies`/`all_series`/`all_collections`/`all_artists`/`all_albums`/`all_playlists`, via `get_items_by_ids_detailed`), derives unique cast-member ids from the movie/series results and batches their own detail too, then rate-limits (`Semaphore(6)`) the 5 relationship caches — one request per boxset/artist/album/playlist/person/movie/series, since none of those have a batch endpoint. Raises each cache's `cap` (`BoundedCache::set_cap`) to fit what it's about to insert before inserting, so nothing gets FIFO-evicted mid-sweep. `spawn_image_prewarm`: backdrops + cast portraits for whatever's currently in `item_detail_cache` (populated by metadata prewarm, ordinary lazy use, or both) — reuses the existing tag-revalidated/disk-check-first fetch functions, so a re-run only does real network work for what changed. Both track request counts by category + wall-clock elapsed, logging one `info!` cost summary on completion (`FjordState.prewarm_metadata_summary`/`prewarm_image_summary`, also shown in the Settings row's subtitle) — read by `main.rs::wire_prewarm_progress_timer` (1s repeating, decouples UI updates from the actual fetch rate). |
@@ -2486,6 +2487,156 @@ Fixed at the source: `send_command` now special-cases `Unset` to synchronously s
 **Confirmed there's no cheap single-surface fix, including the compositor's own "mixed HDR+SDR content" mechanism.** This compositor advertises `windows_scrgb` (seen in Stage 2's own capability dump) — a real protocol request (`create_windows_scrgb`, `color-management-v1.xml`) specifically designed for mixing real HDR highlights with ordinary SDR content on one swapchain, the same trick Windows itself uses to composite HDR video next to an SDR desktop. Read the actual protocol text directly: it uses "sRGB (BT.709) color primaries" but "the transfer characteristic is extended linear," requiring "a pixel format that can represent [values beyond 0-1], e.g. floating-point 16 bits per channel." This doesn't help Fjord: Slint renders its UI in ordinary gamma-encoded sRGB (the universal desktop-toolkit convention), not linear light — tagging the whole surface as extended-linear would just trade the current hue-shift for a different misinterpretation (washed-out/wrong-brightness instead), since Slint's own rendering pipeline has no exposed way to emit already-linearized output. The only architecturally correct fix is putting the video on its own Wayland **subsurface**, tagged independently from the surface the UI chrome lives on (which would stay untagged/plain sRGB exactly as it works today) — a large, foundational rendering-pipeline change (bigger than anything in Stages 1-4, since it means giving mpv's own render-API output a genuinely separate presentation path from Slint's), deliberately scoped **out** of this stage and deferred — see PLAN.md's Deferred/future section for the tracking entry. Since the "HDR passthrough" toggle stays opt-in and off by default, this doesn't block shipping Stages 1-4 as they are — but it's a real, confirmed cost of turning the toggle on today, and should stay documented as a known limitation until a subsurface-based fix is built.
 
 **Decision, 2026-09-17: land Stages 1-4 first, defer the subsurface split entirely.** Given the subsurface split is a large, separate rendering-architecture effort with its own real unknowns (GL/EGL context sharing between the main window's renderer and a second surface's own swapchain, keeping the subsurface's position/size in sync with wherever Slint's layout would otherwise have drawn the video, transparent-hole compositing) — and Stages 1-4 are themselves confirmed working (negotiation clean on real hardware, toggle opt-in and off by default) — merged `hdr` → `main` at this point rather than piling more risk onto an unmerged branch. The subsurface work is tracked as its own future item, to start on a fresh branch once picked up (not a continuation of `hdr`, which no longer exists as a distinct branch once merged).
+
+### Native display-mode-sync (display_sync): resolution/refresh-rate/HDR/WCG matched to source (2026-09-18)
+
+**Context.** The user runs a mature, working external Python script
+(`media_display_sync`) on the real HTPC that polls for active playback and
+switches the physical display's resolution/refresh-rate/HDR/WCG via
+`kscreen-doctor` to match. Its own Jellyfin-API polling path is the confirmed
+suspect behind an earlier HTPC hitch (a 5s timeout briefly reverted then
+re-switched the display mid-playback). The user confirmed (2026-09-17) Fjord
+is now the *only* player used on that HTPC — this let the whole external
+polling/detection subsystem be eliminated for Fjord's own playback: Fjord
+already knows synchronously, from its own mpv instance, exactly what's
+playing and at what resolution/fps/HDR type the instant `VideoReconfig`
+fires, the same moment HDR Stage 3 already reads its own source metadata.
+Full script source was read before designing anything — this ports its
+proven mode-selection/`kscreen-doctor` mechanism, not its detection
+mechanism, which Fjord doesn't need.
+
+**Scope decision, matching the exact reasoning already used for HDR**: ship
+the achievable version now (trigger *after* `VideoReconfig`, reusing the
+Stage 3 hook shape), defer the fully-correct pre-fetch-before-`Player::new()`
+version (would need new `fjord-api` model structs against Jellyfin's
+`MediaStreams`/`PlaybackInfo`, live-verification-required field names, and
+restructuring `start_playback` — a plain sync function called from 21 sites)
+as a documented future refinement. v1 means the display mode switches
+*while the video has already started decoding* at the old mode — a real,
+brief transition, but the same one the external script already does in
+daily use today, not a new problem this introduces.
+
+**Verified mechanism, ported from the proven script, not re-derived**:
+`kscreen-doctor output.<name>.mode.<res>@<hz_int>` needs Hz rounded to an
+**integer** for this exact argument (supported-mode matching/logging stays
+in the real fractional form, `"23.98"`, matching `kscreen-doctor -o`'s own
+output — conflating the two silently stops mode-sets from matching a real
+mode); `.scale.<n>` is **always** set alongside every mode switch, not
+optional — dropping it is a real, visible regression (KDE's desktop scale
+stays wrong after a resolution change); `.hdr.enable|disable`/
+`.wcg.enable|disable`; a 3-second sleep after every mode-set ("allow HDMI
+link to renegotiate," a real, load-bearing settle delay in the proven
+script); fps→Hz cadence table (4K: 23/24→23.98, 25→25.00, 29/30→29.97, else
+→ configurable fallback-to-default-resolution or stay-at-4K; non-4K:
+resolution stays the configured default, Hz varies the same way plus
+59/60→59.94); fallback chain when the computed target isn't a supported mode
+(exact → closest Hz at the same resolution → the configured default mode
+entirely).
+
+**Module: `display_sync.rs`** — modeled on `pipewire_fix.rs`'s shape (plain
+sync/async functions, `std::process::Command`/`spawn_blocking`), not
+`hdr.rs`'s persistent-worker-thread pattern, which exists there specifically
+to hold live Wayland protocol object state across repeated calls — every
+`kscreen-doctor` invocation here is fully stateless. `compute_target_mode`
+is a pure, unit-tested port of the proven script's own cadence table +
+fallback chain (9 unit tests: each cadence-matched fps at 4K and non-4K, the
+odd-fps fallback in both configured modes, both sync-toggle-disabled cases,
+the fallback chain's two tiers, and the ANSI-strip helper). `sync_to_source`
+does the actual per-item orchestration (get supported modes → compute target
+→ apply mode+scale, sleeping 3s only if it actually changed → apply HDR/WCG
+only if that changed), tracking "what's currently applied" in
+`FjordState.display_sync_current_mode`/`_current_hdr` so a same-mode item
+(back-to-back episodes of one show) never redundantly re-switches and re-pays
+the 3s settle. `revert_to_default` is the mirror, called on a genuine stop.
+
+**Trigger: two mutually exclusive branches at the same `wire_mpv_timer` hook
+site HDR Stage 3 already uses, not one merged condition.** The natural-
+looking design — fold display_sync's own `elapsed_ok` timing requirement
+into Stage 3's *existing* trigger condition — would delay HDR's own
+negotiation by ~2 seconds even with display_sync completely disabled (the
+shipped default), a real regression to already-shipped behavior. **Branch A**
+is the pre-existing HDR-only code, gaining exactly one new term
+(`!display_sync_enabled`) — with the toggle off, this is the *only* branch
+that can ever run, byte-for-byte identical to before this feature existed.
+**Branch B** fires only when `display_sync_enabled`, additionally gated on
+`elapsed_ok` (mpv's own `estimated-vf-fps` is a rolling, measured estimate —
+not safe to read the instant `VideoReconfig` fires, confirmed by this
+project's own pre-existing `elapsed_ok`/`decoder_logged` gate already
+established for exactly this property). The instant Branch B's condition is
+true, **synchronously, before spawning anything**, it claims both one-shot
+flags at once (`display_sync_attempted` and `hdr_negotiation_attempted`) —
+without this, every one of the ~180 ticks display_sync's own 3s settle can
+take would re-satisfy the trigger and spawn a redundant, concurrent
+`sync_to_source`/`hdr::maybe_negotiate` call, since `hdr::maybe_negotiate`
+has no internal idempotency guard of its own. Only the actual
+`hdr::maybe_negotiate` call is deferred, to the tail of the spawned
+continuation, which re-checks `playback_generation` first (the same
+staleness-guard pattern this file already uses for the natural-EOF
+fallback-advance branch) — a stopped/replaced item during the settle can
+never have its stale metadata wrongly applied to whatever's playing by then.
+This ordering is deliberate and load-bearing: `kscreen-doctor
+output.X.hdr.enable` is a connector/DRM-level operation, the same *class* of
+heavyweight operation already suspected as the cause of the *original* HTPC
+hitch — settling the display BEFORE HDR Stage 3 negotiates prevents that
+exact race from recurring **between two of Fjord's own subsystems** instead
+of between an external script and mpv.
+
+**Revert on stop, not on replace-in-place.** `quit_cleanup`/
+`do_stop_playback` revert immediately after `tear_down_player` returns —
+unambiguous, nothing else is about to start. `start_playback`'s own
+replace-in-place teardown and `play_trailer`'s never revert (a new
+`Player::new()` always follows synchronously). The natural-EOF branch in
+`wire_mpv_timer` is genuinely ambiguous at its own `tear_down_player` call
+site — the real "is anything next" decision resolves one of three different
+ways further down the same function, one of them via a fully async Jellyfin
+round trip — so rather than hook a precise check at each of those points,
+it captures `playback_generation` and defers a single check (~5s, generous
+enough to cover the slowest real path) that reverts only if the generation
+is still unchanged, correctly handling all three sub-cases uniformly with no
+changes needed to the existing advance-decision branching.
+
+**Settings** — Settings → Video → "DISPLAY SYNC" (11 new rows, all virtual
+except the master toggle, gated behind it): Output (a dynamic dropdown,
+`list_output_names()` fetched once at startup via `kscreen-doctor -o`,
+pre-filling the stored screen name only when exactly one candidate exists —
+never re-detected at runtime, since guessing among 2+ plausible outputs
+would be wrong the instant a second display is connected, the same reasoning
+the proven external script's own hard-required `SCREEN_NAME` config key
+already established), Sync resolution / Sync refresh rate (independent
+toggles, direct user request — off pins that axis to its own configured
+default instead of ever varying it), Default resolution/Hz, Desktop scale at
+4K/1080p (small static option lists — deliberately not live-fetched from
+`get_supported_modes`, which is private to `display_sync.rs` and tied to
+whichever screen happens to be selected; re-fetching on every screen change
+was judged disproportionate for a v1 row), 4K at an unusual framerate
+(virtual — only when Sync resolution is on, since it's structurally
+inapplicable otherwise), HDR mode (Match source/Never/Always), Wide color
+gamut (Follow HDR/Always/Never).
+
+**Explicitly out of scope for v1, documented not dropped**: pre-fetch-
+before-`Player::new()` timing; fullscreen-state gating (the master toggle
+alone is the escape hatch); audio-reinit-after-mode-change (the proven
+script's own equivalent is itself a no-op stub, nothing real to port);
+Kodi/JDA/Jellyfin-API external-player detection (structurally irrelevant —
+Fjord already knows synchronously what it's playing).
+
+`cargo build`/`clippy --workspace --all-targets`/`test --workspace` clean
+throughout (36/36 tests, including the 9 new `compute_target_mode`/
+`strip_ansi` unit tests). **Not live-tested** — same standing sandboxed-
+environment limitation as every platform-specific feature in this project.
+With `display_sync_enabled = false` (the shipped default), behavior should
+be byte-for-byte identical to before this feature — no `kscreen-doctor`
+calls ever made, HDR Stage 3 still fires synchronously with no delay. Worth
+confirming on the real HTPC, roughly in priority order: back-to-back
+episodes of the same show/resolution never trigger a redundant `kscreen-
+doctor` call (no repeated 3s stall); a genuine stop reverts to the
+configured default within a few seconds, a replace-in-place never does; HDR
+content still reaches `Active (HDR10)` in the stats overlay, now visibly
+*after* the display's own mode-switch settles (confirm via `fjord.log`
+timestamps: `sync_to_source` completing before `hdr worker: negotiated...`);
+a real 4K HDR title followed immediately by a plain 1080p SDR item (or vice
+versa) exercises the full mode+HDR/WCG transition in both directions with no
+stale state left behind.
 
 ### Playback resilience: network outages (2026-08-09)
 
