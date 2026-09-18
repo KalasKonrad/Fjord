@@ -417,6 +417,14 @@ pub(crate) struct VideoState {
     // Player — see hdr::send_command's own doc comment for the synchronous-
     // Idle-reset half of that fix.
     pub hdr_output_applied: bool,
+    // display_sync feature (2026-09-18) — Branch B's own one-shot guard,
+    // paired with hdr_negotiation_attempted: Branch B claims BOTH flags
+    // together, synchronously, the instant its own trigger condition is
+    // true (before spawning anything) — see wire_mpv_timer's own display_sync
+    // hook for why this ordering matters (a race this project has already
+    // been bitten by once for a very similar reason, see hdr_output_applied's
+    // own doc comment above).
+    pub display_sync_attempted: bool,
     pub tracks_loaded:      bool,
     pub pos_tick:           u32,
     pub controls_idle_ticks:  u32,
@@ -565,6 +573,7 @@ impl Default for VideoState {
             hdr_negotiation_attempted: false,
             wide_color_fbo: false,
             hdr_output_applied: false,
+            display_sync_attempted: false,
             tracks_loaded: false, pos_tick: 0,
             controls_idle_ticks: 0,
             seek_pending_secs: 0.0, seek_pending_ticks: 0,
@@ -788,7 +797,11 @@ pub(crate) fn tear_down_player(vs: &mut VideoState)
 // The 16 ms timer has stopped so tear_down_player will never run via the
 // normal finished path. We do it here synchronously so the stop report
 // reaches Jellyfin before the runtime drops and cancels in-flight tasks.
-pub(crate) fn quit_cleanup(video: &Arc<Mutex<VideoState>>, rt: &tokio::runtime::Runtime) {
+pub(crate) fn quit_cleanup(
+    video: &Arc<Mutex<VideoState>>,
+    rt: &tokio::runtime::Runtime,
+    state: &Arc<Mutex<FjordState>>,
+) {
     let (dropped, dec_dropped) = video.lock().unwrap().player.as_ref()
         .map(|p| p.get_drop_counts()).unwrap_or((0, 0));
     info!("playback stats at quit: frame-drops={} decoder-drops={}", dropped, dec_dropped);
@@ -809,6 +822,24 @@ pub(crate) fn quit_cleanup(video: &Arc<Mutex<VideoState>>, rt: &tokio::runtime::
             }
         });
     }
+    // display_sync: revert the physical output before Fjord exits, same
+    // reasoning as the bounded report_playback_stopped wait just above —
+    // this function's own doc comment already establishes that anything not
+    // explicitly awaited here risks being cancelled once the runtime drops
+    // right after this function returns, so this is genuinely block_on'd
+    // (not fire-and-forget like do_stop_playback's own equivalent call),
+    // bounded the same 5s way so an unreachable/hung kscreen-doctor can't
+    // stall app exit indefinitely. A no-op fast-return inside
+    // revert_to_default when the feature is off or nothing was ever applied
+    // this session, so this costs nothing for the overwhelmingly common case.
+    let state2 = Arc::clone(state);
+    rt.block_on(async move {
+        if tokio::time::timeout(std::time::Duration::from_secs(5), crate::display_sync::revert_to_default(state2))
+            .await.is_err()
+        {
+            warn!("display_sync: revert_to_default (quit) timed out after 5 s");
+        }
+    });
 }
 
 // ── reset_playback_ui ─────────────────────────────────────────────────────────
@@ -897,6 +928,14 @@ pub(crate) fn do_stop_playback(
     info!("playback stopped: frame-drops={} decoder-drops={}", dropped, dec_dropped);
     let (item_id, client, ss_cookie, final_ticks) = tear_down_player(&mut video.lock().unwrap());
     uninhibit_screensaver(ss_cookie);
+
+    // display_sync: a genuine user-initiated stop, never a replace-in-place
+    // — unambiguous, nothing else is ever about to start. Fire-and-forget
+    // (unlike quit_cleanup's own bounded block_on): the app keeps running,
+    // so there's no risk of the runtime dropping this task before it
+    // finishes. No-op fast-return inside revert_to_default when the feature
+    // is off or nothing was ever applied this session.
+    rt_handle.spawn(crate::display_sync::revert_to_default(Arc::clone(state)));
 
     // User-initiated stop keeps the playlist and queue (Phase 56): the panel
     // stays reachable via `q` while idle and Enter resumes from it. Clear All
@@ -994,6 +1033,7 @@ fn reset_video_state_for_playback(vs: &mut VideoState, player: Player, config: &
     // can't be conditioned on per-item source eligibility instead.
     vs.wide_color_fbo        = config.target_colorspace_hint;
     vs.hdr_output_applied    = false;
+    vs.display_sync_attempted = false;
     vs.tracks_loaded         = false;
     vs.pos_tick              = 0;
     vs.controls_idle_ticks   = 0;
@@ -2264,7 +2304,28 @@ pub(crate) fn wire_mpv_timer(
                 // here mirrors the identical shape already used a few lines
                 // up in this same closure and again below for
                 // remembered_tracks.
-                if !vs.current_is_audio && !vs.hdr_negotiation_attempted {
+                //
+                // display_sync (2026-09-18) split this into two mutually
+                // exclusive branches, Branch A (below, unchanged from the
+                // pre-display_sync shape apart from one new `!display_sync_
+                // enabled` term) and Branch B (further down). This is
+                // deliberate, not an arbitrary refactor: folding display_
+                // sync's own `elapsed_ok` timing requirement (needed because
+                // estimated-vf-fps isn't safe to read the instant
+                // VideoReconfig fires — see query_video_dimensions' own doc
+                // comment) into a single merged condition would delay HDR's
+                // own negotiation by ~2s even with display_sync completely
+                // disabled, the shipped default — a real regression to
+                // already-shipped, already-working behavior for the
+                // overwhelmingly common case. With the toggle off, Branch A
+                // is the *only* branch that can ever run, byte-for-byte
+                // identical to before this feature existed.
+                let (display_sync_enabled, hdr_toggle_enabled) = {
+                    let s = state_timer.lock().unwrap();
+                    (s.config.device.display_sync_enabled, s.config.device.target_colorspace_hint)
+                };
+
+                if !vs.current_is_audio && !vs.hdr_negotiation_attempted && !display_sync_enabled {
                     // Read what's needed from `p` first, inside its own
                     // borrow scope, then set the one-shot flag afterward —
                     // `p` borrows vs.player immutably, so it can't still be
@@ -2274,12 +2335,64 @@ pub(crate) fn wire_mpv_timer(
                     });
                     if let Some(meta) = source_meta {
                         vs.hdr_negotiation_attempted = true;
-                        let enabled = state_timer.lock().unwrap().config.device.target_colorspace_hint;
-                        if enabled {
+                        if hdr_toggle_enabled {
                             crate::hdr::maybe_negotiate(meta);
                         } else {
                             crate::hdr::set_status_disabled();
                         }
+                    }
+                }
+
+                // Branch B — display_sync enabled: settle the physical
+                // display's mode/HDR/WCG BEFORE HDR Stage 3 ever negotiates,
+                // so the two heavyweight Wayland/DRM operations (a live
+                // connector mode-set and a color-management surface
+                // negotiation) never race each other — see CLAUDE.md's own
+                // display_sync section for the exact class of bug (between
+                // an external script and mpv, originally) this ordering
+                // avoids reintroducing between two of Fjord's own
+                // subsystems. Both one-shot flags are claimed synchronously,
+                // in this tick, the instant this condition is true — BEFORE
+                // spawning anything — so the ~180 ticks display_sync's own
+                // 3s settle can take never re-satisfy this same trigger and
+                // spawn a redundant, concurrent sync_to_source/maybe_negotiate
+                // call. Only the actual hdr::maybe_negotiate call itself is
+                // deferred, to the tail of the spawned continuation, which
+                // re-checks playback_generation first — the established
+                // staleness-guard pattern this file already uses for the
+                // natural-EOF fallback-advance branch — so a stopped/
+                // replaced item during the settle can never have its stale
+                // metadata wrongly applied to whatever's playing by then.
+                if !vs.current_is_audio && !vs.display_sync_attempted && display_sync_enabled {
+                    let ready = elapsed_ok
+                        && vs.player.as_ref().is_some_and(|p| p.has_seen_video_reconfig());
+                    if ready {
+                        let (meta, dims) = {
+                            let p = vs.player.as_ref().unwrap();
+                            (p.query_source_hdr_metadata(), p.query_video_dimensions())
+                        };
+                        vs.display_sync_attempted    = true;
+                        vs.hdr_negotiation_attempted = true;
+                        let gen = vs.playback_generation;
+                        let ds_settings = crate::display_sync::DisplaySyncSettings::from_device_config(
+                            &state_timer.lock().unwrap().config.device,
+                        );
+                        let video2 = Arc::clone(&video_timer);
+                        let state2 = Arc::clone(&state_timer);
+                        rt_handle.spawn(async move {
+                            crate::display_sync::sync_to_source(state2, dims, meta.clone(), ds_settings).await;
+                            if video2.lock().unwrap().playback_generation != gen {
+                                // Stopped/replaced while the mode switch was
+                                // settling — whatever's playing now already
+                                // ran (or will run) its own Branch B trigger.
+                                return;
+                            }
+                            if hdr_toggle_enabled {
+                                crate::hdr::maybe_negotiate(meta);
+                            } else {
+                                crate::hdr::set_status_disabled();
+                            }
+                        });
                     }
                 }
 
@@ -3284,6 +3397,38 @@ pub(crate) fn wire_mpv_timer(
             };
             let finished_item_id = item_id.clone();
             uninhibit_screensaver(ss_cookie);
+
+            // display_sync: genuinely ambiguous here whether anything is
+            // about to start next — the actual decision resolves up to 3
+            // different ways further down this same `if finished` block
+            // (synchronously with nothing next, a same-tick deferred
+            // start_playback, or a fully async Jellyfin round trip via
+            // resolve_true_next_episode). Rather than hook a precise "did we
+            // decide not to advance" check at each of those points (one of
+            // which can't know its own answer yet), capture
+            // playback_generation now — bumped only by a genuine new-item-
+            // start (start_playback/play_trailer/the gapless track-commit
+            // path), never by tear_down_player itself — and let a deferred
+            // check decide once every path has had time to resolve.
+            let display_sync_gen = video_timer.lock().unwrap().playback_generation;
+            {
+                let state2 = Arc::clone(&state_timer);
+                let video2 = Arc::clone(&video_timer);
+                rt_handle.spawn(async move {
+                    // Generous enough to cover the slowest real path (the
+                    // async fallback's own network round trip) without
+                    // leaving the display wrong for long when genuinely
+                    // nothing is next.
+                    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                    if video2.lock().unwrap().playback_generation != display_sync_gen {
+                        // Something genuinely started next — that new
+                        // item's own display_sync trigger already handles
+                        // whatever the display needs, don't fight it.
+                        return;
+                    }
+                    crate::display_sync::revert_to_default(state2).await;
+                });
+            }
 
             // Duration guard: a genuine natural end always lands with position
             // at (or very near) the real duration — mpv doesn't stop mid-stream

@@ -50,6 +50,8 @@
 //                   query_source_hdr_metadata: one-shot gamma/primaries/min-max-luma/CLL/FALL
 //                     read for hdr.rs's Wayland color-management negotiation worker (hdr branch,
 //                     Stage 3) — call once, after has_seen_video_reconfig() first goes true
+//                   query_video_dimensions: (width, height, fps) for display_sync — call only
+//                     after wire_mpv_timer's own ~2s elapsed_ok gate (fps needs to settle first)
 //                   get_chapter_count: chapter-list/count (cheap — used for polling)
 //                   get_chapters: Vec<(start_secs, title)> for all chapters
 //                   chapter_step: add chapter ±1 (next/prev chapter navigation)
@@ -707,6 +709,28 @@ impl Player {
             max_cll:   g_f("video-params/max-cll"),
             max_fall:  g_f("video-params/max-fall"),
         }
+    }
+
+    /// display_sync feature — real decoded frame dimensions + mpv's own
+    /// measured fps, for picking a matching display mode. Deliberately a
+    /// plain tuple, not folded into `SourceHdrMetadata` (that struct is
+    /// tightly scoped to the HDR worker's own 4 luma/CLL/FALL fields per its
+    /// own doc comment). Reuses the exact same property names/idiom
+    /// `log_decoder_info`/`poll_stats` already use for `width`/`height`/
+    /// `estimated-vf-fps` — NOT the external `media_display_sync` script's
+    /// own `video-params/w`/`h` naming, no reason to introduce a second
+    /// convention for the same data in this codebase.
+    ///
+    /// Callers must not read this until `estimated-vf-fps` has had a chance
+    /// to settle — mpv's own measured/rolling fps estimate, unlike
+    /// `video-params/gamma`/`primaries`, is not reliable at the exact
+    /// instant `VideoReconfig` fires (the same reason `log_decoder_info`
+    /// itself is gated behind `wire_mpv_timer`'s own ~2s `elapsed_ok` check).
+    pub fn query_video_dimensions(&self) -> (i64, i64, f64) {
+        let w   = self.mpv.get_property::<i64>("width").unwrap_or(0);
+        let h   = self.mpv.get_property::<i64>("height").unwrap_or(0);
+        let fps = self.mpv.get_property::<f64>("estimated-vf-fps").unwrap_or(0.0);
+        (w, h, fps)
     }
 
     pub fn log_decoder_info(&self) {
