@@ -25,9 +25,12 @@
 //                    native resolution/refresh-rate/HDR/WCG matching to source via
 //                    kscreen-doctor, see display_sync.rs) + 10 virtual sub-rows shown only
 //                    while it's on: screen (dynamic dropdown), sync_resolution/
-//                    sync_refresh_rate (toggles), default_resolution/default_hz/scale_4k/
-//                    scale_1080p, 4k_odd_fps_mode (virtual — only while sync_resolution is
-//                    on), hdr_mode, wcg_mode
+//                    sync_refresh_rate (toggles), default_resolution/default_hz (both
+//                    dynamic dropdowns too as of the same day — real per-output modes via
+//                    display_sync::supported_resolutions_and_hz, not a fixed compile-time
+//                    list; refetched whenever screen changes), scale_4k/scale_1080p,
+//                    4k_odd_fps_mode (virtual — only while sync_resolution is on),
+//                    hdr_mode, wcg_mode
 //       Audio        audio-device, audio-channels, SPDIF, AC3, EAC3, DTS, DTS-HD, TrueHD,
 //                    passthrough-device (hidden when SPDIF off), alsa-irq-scheduling (virtual,
 //                    hidden when SPDIF off or non-PipeWire device), skip-fade-mute (virtual,
@@ -809,19 +812,19 @@ export component SettingsScreen inherits Rectangle {
                         ToggleSwitch { checked <=> AppState.settings-display-sync-sync-refresh-rate; toggled => { AppState.settings-changed(); AppState.refocus(); } }
                     }
 
-                    if AppState.settings-display-sync-enabled: SettingsRow { key: "video.display_sync_default_resolution"; title: "Default resolution"; subtitle: "Used for non-4K content, and as the fallback whenever a computed target mode isn't supported"; indent: true;
+                    if AppState.settings-display-sync-enabled: SettingsRow { key: "video.display_sync_default_resolution"; title: "Default resolution"; subtitle: "Used for non-4K content, and as the fallback whenever a computed target mode isn't supported — real modes for the Output above, not a fixed list"; indent: true;
                         SettingsDropdown {
-                            model: ["1920x1080","3840x2160","1280x720"];
+                            model <=> AppState.settings-display-sync-resolution-options;
                             current-value: AppState.settings-display-sync-default-resolution;
-                            selected(v) => { AppState.settings-display-sync-default-resolution = v; AppState.settings-changed(); AppState.refocus(); }
+                            selected(v) => { AppState.display-sync-resolution-selected(v); AppState.refocus(); }
                         }
                     }
 
-                    if AppState.settings-display-sync-enabled: SettingsRow { key: "video.display_sync_default_hz"; title: "Default refresh rate"; subtitle: "Used whenever the source's own framerate doesn't match a known cadence"; indent: true;
+                    if AppState.settings-display-sync-enabled: SettingsRow { key: "video.display_sync_default_hz"; title: "Default refresh rate"; subtitle: "Used whenever the source's own framerate doesn't match a known cadence — real rates for the Output above, not a fixed list"; indent: true;
                         SettingsDropdown {
-                            model: ["23.98","24.00","25.00","29.97","50.00","59.94","60.00"];
+                            model <=> AppState.settings-display-sync-hz-options;
                             current-value: AppState.settings-display-sync-default-hz;
-                            selected(v) => { AppState.settings-display-sync-default-hz = v; AppState.settings-changed(); AppState.refocus(); }
+                            selected(v) => { AppState.display-sync-hz-selected(v); AppState.refocus(); }
                         }
                     }
 

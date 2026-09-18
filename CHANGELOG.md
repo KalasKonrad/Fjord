@@ -23,6 +23,13 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Fixed: the new "Sync display to source" feature's "Default
+  resolution"/"Default refresh rate" rows only offered a small, fixed
+  list of common values — some of which your actual screen might not
+  even support.** Both now list whatever your connected display genuinely
+  reports it can do (queried live, the same way the "Output" row above
+  them already does), and refresh automatically if you switch which
+  output display sync targets.
 - **Fixed: pressing Enter (or the `I`/`C` shortcuts) on a Watchlist or
   "Coming Up" card on the Home/TV Shows/Movies dashboards — for something
   requested but not yet in your library — tried to play it instead of
