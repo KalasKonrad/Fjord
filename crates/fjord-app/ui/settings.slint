@@ -796,10 +796,10 @@ export component SettingsScreen inherits Rectangle {
                         ToggleSwitch { checked <=> AppState.settings-display-sync-enabled; toggled => { AppState.settings-changed(); AppState.refocus(); } }
                     }
 
-                    if AppState.settings-display-sync-enabled: SettingsRow { key: "video.display_sync_screen"; title: "Output"; subtitle: "The kscreen-doctor connector to switch — never auto-detected at runtime, only pre-filled once at startup if exactly one output was connected"; indent: true;
+                    if AppState.settings-display-sync-enabled: SettingsRow { key: "video.display_sync_screen"; title: "Output"; subtitle: "The kscreen-doctor connector to switch — never auto-detected at runtime, only pre-filled once at startup if exactly one output was connected. Whichever one KDE reports as its primary display is marked (Primary)"; indent: true;
                         SettingsDropdown {
                             model <=> AppState.settings-display-sync-screen-options;
-                            current-value: AppState.settings-display-sync-screen-name != "" ? AppState.settings-display-sync-screen-name : "(not detected)";
+                            current-value: AppState.settings-display-sync-screen-desc != "" ? AppState.settings-display-sync-screen-desc : "(not detected)";
                             selected(v) => { AppState.display-sync-screen-selected(v); AppState.refocus(); }
                         }
                     }
