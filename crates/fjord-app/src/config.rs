@@ -1729,6 +1729,7 @@ pub(crate) struct FjordState {
     pub last_nw_mov_refresh:    Option<Instant>,
     pub last_nw_tv_refresh:   Option<Instant>,
     pub audio_devices:        Vec<(String, String)>,  // (mpv name, description)
+    pub display_sync_outputs: Vec<(String, String)>,  // (kscreen-doctor connector name, display label incl. "(Primary)")
     pub system_fonts:         Vec<(String, String)>,  // (value, display) — see fetch_system_fonts
     pub movie_collections:    std::collections::HashMap<String, (String, String)>, // movie_id → (boxset_id, boxset_name)
     // Per-series audio/subtitle language remembered from a manual S/A panel
@@ -2091,6 +2092,7 @@ impl FjordState {
             last_nw_mov_refresh: None,
             last_nw_tv_refresh: None,
             audio_devices: vec![],
+            display_sync_outputs: vec![],
             system_fonts: vec![],
             movie_collections: std::collections::HashMap::new(),
             remembered_tracks: std::collections::HashMap::new(),

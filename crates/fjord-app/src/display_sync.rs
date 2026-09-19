@@ -30,11 +30,14 @@
 //                          real dev-machine report: too few choices, and
 //                          none of them guaranteed to be modes the actual
 //                          display supports)
-//   list_output_names      Settings-dropdown option list AND (via its own
-//                          length at the call site) the one-shot "exactly
-//                          one candidate" pre-fill check — never read at
-//                          runtime by this module itself, only at startup
-//                          (main.rs)
+//   list_outputs_with_       Settings-dropdown option list, paired with each
+//     priority               output's real KDE priority (1 = primary,
+//                          confirmed against libkscreen/kscreen source) so
+//                          main.rs can label it "(Primary)" — AND (via its
+//                          own length at the call site) the one-shot
+//                          "exactly one candidate" pre-fill check — never
+//                          read at runtime by this module itself, only at
+//                          startup (main.rs)
 //   apply_display_mode/    thin kscreen-doctor wrappers — best-effort logged,
 //   apply_display_color    a missing binary is a silent one-time-logged no-op
 //   sync_to_source         the real per-item orchestration: get supported
@@ -338,13 +341,13 @@ pub(crate) fn get_supported_modes(screen: &str) -> HashSet<(String, String)> {
 /// sensible dropdown order — resolutions by pixel count descending (largest,
 /// most likely intentional choice first), Hz ascending. Backs the Settings
 /// screen's "Default resolution"/"Default refresh rate" dynamic dropdowns
-/// (`main.rs`, same shape as the Output row's own `list_output_names` fetch)
-/// — a plain derived view over `get_supported_modes`'s own already-parsed
-/// set, not a second `kscreen-doctor` shell-out. Both empty when the query
-/// itself failed (missing binary, unknown output name) — callers leave
-/// whatever the dropdown already showed untouched in that case, the same
-/// "don't clear a working value over a transient/absent query" precedent
-/// `list_output_names`'s own screen-name pre-fill already follows.
+/// (`main.rs`, same shape as the Output row's own `list_outputs_with_priority`
+/// fetch) — a plain derived view over `get_supported_modes`'s own already-
+/// parsed set, not a second `kscreen-doctor` shell-out. Both empty when the
+/// query itself failed (missing binary, unknown output name) — callers
+/// leave whatever the dropdown already showed untouched in that case, the
+/// same "don't clear a working value over a transient/absent query" precedent
+/// `list_outputs_with_priority`'s own screen-name pre-fill already follows.
 pub(crate) fn supported_resolutions_and_hz(screen: &str) -> (Vec<String>, Vec<String>) {
     let modes = get_supported_modes(screen);
     let mut resolutions: Vec<String> =
@@ -368,49 +371,152 @@ fn pixel_count(res: &str) -> u64 {
         .unwrap_or(0)
 }
 
-/// Every output name currently reported both `enabled` and `connected` by
-/// `kscreen-doctor -o`, in the order it lists them. Used by
-/// `list_output_names` below for both the Settings dropdown's full option
-/// list AND (by checking the returned `Vec`'s own length at the call site,
-/// `main.rs`'s startup fetch) the one-shot "exactly one candidate" pre-fill
-/// check — deliberately one shell-out serving both purposes rather than two.
-fn enabled_connected_outputs() -> Vec<String> {
+/// Every output currently reported both `enabled` and `connected` by
+/// `kscreen-doctor -o`, paired with its real KDE `priority` (lower = more
+/// preferred; `priority 1` is specifically what `kscreenctl set-primary`
+/// sets to make an output primary — confirmed directly from KDE's own
+/// libkscreen/kscreen source, not assumed), in the order `-o` lists them.
+/// Used by `list_outputs_with_priority` below for both the Settings
+/// dropdown's full option list AND (by checking the returned `Vec`'s own
+/// length at the call site, `main.rs`'s startup fetch) the one-shot "exactly
+/// one candidate" pre-fill check — deliberately one shell-out serving both
+/// purposes rather than two.
+fn enabled_connected_outputs() -> Vec<(String, u32)> {
     let Some(output) = kscreen_doctor_o() else { return Vec::new() };
     let mut candidates = Vec::new();
     let mut current: Option<String> = None;
-    let (mut enabled, mut connected) = (false, false);
-    let flush = |current: &mut Option<String>, enabled: bool, connected: bool, out: &mut Vec<String>| {
+    let (mut enabled, mut connected, mut priority) = (false, false, u32::MAX);
+    let flush = |current: &mut Option<String>, enabled: bool, connected: bool, priority: u32, out: &mut Vec<(String, u32)>| {
         if let (Some(name), true, true) = (current.take(), enabled, connected) {
-            out.push(name);
+            out.push((name, priority));
         }
     };
     for line in output.lines() {
         let trimmed = line.trim();
         if let Some(rest) = trimmed.strip_prefix("Output:") {
-            flush(&mut current, enabled, connected, &mut candidates);
+            flush(&mut current, enabled, connected, priority, &mut candidates);
             current = rest.split_whitespace().nth(1).map(str::to_string);
             enabled = false;
             connected = false;
+            priority = u32::MAX;
         } else if trimmed == "enabled" {
             enabled = true;
         } else if trimmed == "connected" {
             connected = true;
+        } else if let Some(rest) = trimmed.strip_prefix("priority ") {
+            priority = rest.trim().parse().unwrap_or(u32::MAX);
         }
     }
-    flush(&mut current, enabled, connected, &mut candidates);
+    flush(&mut current, enabled, connected, priority, &mut candidates);
     candidates
 }
 
 /// Settings-dropdown option list for `display_sync_screen_name` — every
-/// currently enabled+connected output. Read only at app startup (`main.rs`),
-/// never at runtime by `display_sync.rs` itself (see
-/// `DeviceConfig.display_sync_screen_name`'s own doc comment for why
-/// re-detecting on every playback would be wrong the moment a second output
-/// exists) — the caller also uses this same list's length to decide whether
-/// to auto-pre-fill an still-empty stored value (exactly one candidate) or
-/// leave it for the user to pick explicitly (zero or 2+ candidates).
-pub(crate) fn list_output_names() -> Vec<String> {
+/// currently enabled+connected output, paired with its real KDE priority
+/// (`main.rs` marks whichever one has `priority == 1` as "(Primary)") AND a
+/// best-effort friendly "Vendor Model" name read directly from that
+/// output's own EDID (see `friendly_output_name`'s own doc comment — direct
+/// user request: "what is conneceted to the output"). Neither annotation
+/// ever reaches the persisted value itself — `display_sync_screen_name` is
+/// always the bare connector name, same as before either was added. Read
+/// only at app startup (`main.rs`), never at runtime by `display_sync.rs`
+/// itself (see `DeviceConfig.display_sync_screen_name`'s own doc comment
+/// for why re-detecting on every playback would be wrong the moment a
+/// second output exists) — the caller also uses this same list's length to
+/// decide whether to auto-pre-fill an still-empty stored value (exactly one
+/// candidate) or leave it for the user to pick explicitly (zero or 2+
+/// candidates).
+pub(crate) fn list_outputs_with_priority() -> Vec<(String, u32, Option<String>)> {
     enabled_connected_outputs()
+        .into_iter()
+        .map(|(name, priority)| {
+            let friendly = friendly_output_name(&name);
+            (name, priority, friendly)
+        })
+        .collect()
+}
+
+/// Best-effort "Vendor Model" friendly name for a kscreen-doctor connector
+/// name (e.g. "HDMI-A-2"), read directly from the standard Linux DRM sysfs
+/// EDID attribute (`/sys/class/drm/cardN-<connector>/edid`) and decoded per
+/// the VESA E-EDID standard's Display Product Name descriptor (tag 0xFC) —
+/// no dependency on `kscreen-console` (a separate-package internal KDE
+/// debug tool this project tried and couldn't get to produce any output at
+/// all) or any new external binary, just a plain sysfs file read + a small,
+/// self-contained parser. Confirmed correct against this dev machine's own
+/// 3 real monitors, cross-checked directly against KDE's own Display
+/// Configuration panel (which reads the identical EDID data, just via
+/// libkscreen's C++ API rather than sysfs directly): `card0-HDMI-A-2` →
+/// "Philips 245P", `card1-DP-3` → "HP ZR24w", `card1-HDMI-A-1` → "Philips
+/// 245P" (a second, different physical unit of the same model — its own
+/// distinct serial-number descriptor is deliberately not surfaced here,
+/// since the connector name Fjord already always prefixes the label with
+/// is itself a sufficient, always-unique disambiguator; KDE's own panel
+/// needs the serial specifically because ITS list has no such prefix).
+/// `None` on any failure (missing/unreadable/malformed EDID, no matching
+/// sysfs entry, no Display Product Name descriptor present at all — some
+/// real monitors simply don't carry one) — this is a display nicety layered
+/// on top of the already-working connector-name-based flow, never load-
+/// bearing for anything.
+fn friendly_output_name(connector: &str) -> Option<String> {
+    let path = find_edid_sysfs_path(connector)?;
+    let data = std::fs::read(path).ok()?;
+    parse_edid_product_name(&data)
+}
+
+/// `/sys/class/drm` entries are named `cardN-<connector>` (e.g.
+/// `card1-DP-3`) — kscreen-doctor's own connector names never carry the
+/// `cardN-` prefix, so this matches on everything after the *first* `-`
+/// only (safe for multi-hyphen connector names like `HDMI-A-2`, since
+/// `split_once` splits at the first occurrence). On a system with 2+ GPUs
+/// that happen to expose an identically-named connector on each (a real
+/// possibility DRM's own per-card naming doesn't rule out, though not
+/// something this dev machine's own 2-GPU setup actually hits), this
+/// returns whichever sysfs entry is listed first — a known, accepted
+/// best-effort limitation, not a correctness requirement.
+fn find_edid_sysfs_path(connector: &str) -> Option<std::path::PathBuf> {
+    let entries = std::fs::read_dir("/sys/class/drm").ok()?;
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let name = name.to_str()?;
+        if name.split_once('-').map(|(_, suffix)| suffix) == Some(connector) {
+            let path = entry.path().join("edid");
+            if path.is_file() {
+                return Some(path);
+            }
+        }
+    }
+    None
+}
+
+/// Pure EDID parser — the VESA E-EDID base block's Display Product Name
+/// descriptor. A 128-byte base block starts with an 8-byte magic header,
+/// then four 18-byte descriptor blocks at offset 54; a descriptor whose
+/// first 3 bytes are 0 is a non-timing one, tagged by its 4th byte — 0xFC
+/// is Display Product Name, an ASCII string in the descriptor's last 13
+/// bytes, `\n`-terminated and space-padded. Confirmed against this dev
+/// machine's own real EDID bytes in the unit tests below — sysfs may report
+/// a longer file (a base block plus one or more 128-byte CTA extension
+/// blocks) but the product name descriptor only ever lives in the base
+/// block, so anything past the first 128 bytes is ignored.
+fn parse_edid_product_name(data: &[u8]) -> Option<String> {
+    const HEADER: [u8; 8] = [0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00];
+    if data.len() < 128 || data[0..8] != HEADER {
+        return None;
+    }
+    for i in 0..4 {
+        let off = 54 + i * 18;
+        let block = &data[off..off + 18];
+        if block[0] == 0 && block[1] == 0 && block[2] == 0 && block[3] == 0xfc {
+            let text = &block[5..18];
+            let end = text.iter().position(|&b| b == b'\n').unwrap_or(text.len());
+            let name = String::from_utf8_lossy(&text[..end]).trim().to_string();
+            if !name.is_empty() {
+                return Some(name);
+            }
+        }
+    }
+    None
 }
 
 fn apply_display_mode(screen: &str, resolution: &str, hz_frac: &str, scale: &str) {
@@ -557,6 +663,62 @@ pub(crate) async fn revert_to_default(state: Arc<Mutex<FjordState>>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // Real 128-byte EDID base blocks, captured directly from
+    // /sys/class/drm/*/edid on the dev machine that verified this whole
+    // friendly_output_name feature (2026-09-19) — cross-checked against
+    // KDE's own Display Configuration panel, which shows the identical
+    // vendor/model/serial for these exact 3 real monitors. Plain hardware
+    // identifiers, nothing sensitive, kept as a permanent regression fixture
+    // rather than a one-off diagnostic.
+    const EDID_PHILIPS_245P_A: [u8; 128] = [
+        0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x41, 0x0c, 0x9e, 0x08, 0x41, 0x33, 0x0f, 0x00,
+        0x1e, 0x15, 0x01, 0x03, 0x80, 0x34, 0x20, 0x78, 0xee, 0x9f, 0xf5, 0xa6, 0x56, 0x4b, 0x9a, 0x25,
+        0x12, 0x50, 0x54, 0xbf, 0xef, 0x80, 0x71, 0x40, 0x81, 0xc0, 0x81, 0x40, 0x95, 0x00, 0x95, 0x0f,
+        0xb3, 0x00, 0x01, 0x01, 0x01, 0x01, 0x28, 0x3c, 0x80, 0xa0, 0x70, 0xb0, 0x23, 0x40, 0x30, 0x20,
+        0x36, 0x00, 0x07, 0x44, 0x21, 0x00, 0x00, 0x1a, 0x00, 0x00, 0x00, 0xff, 0x00, 0x44, 0x4c, 0x34,
+        0x31, 0x31, 0x33, 0x30, 0x39, 0x39, 0x36, 0x31, 0x36, 0x31, 0x00, 0x00, 0x00, 0xfc, 0x00, 0x50,
+        0x68, 0x69, 0x6c, 0x69, 0x70, 0x73, 0x20, 0x32, 0x34, 0x35, 0x50, 0x0a, 0x00, 0x00, 0x00, 0xfd,
+        0x00, 0x30, 0x55, 0x18, 0x5e, 0x11, 0x00, 0x0a, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x00, 0x66,
+    ];
+    const EDID_HP_ZR24W: [u8; 128] = [
+        0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x22, 0xf0, 0x69, 0x28, 0x01, 0x01, 0x01, 0x01,
+        0x0d, 0x15, 0x01, 0x04, 0xa5, 0x36, 0x23, 0x78, 0x2e, 0xfc, 0x81, 0xa4, 0x55, 0x4d, 0x9d, 0x25,
+        0x12, 0x50, 0x54, 0x21, 0x08, 0x00, 0x81, 0x40, 0x81, 0x80, 0x95, 0x00, 0xa9, 0x40, 0xb3, 0x00,
+        0xd1, 0xc0, 0x01, 0x01, 0x01, 0x01, 0x28, 0x3c, 0x80, 0xa0, 0x70, 0xb0, 0x23, 0x40, 0x30, 0x20,
+        0x36, 0x00, 0x22, 0x60, 0x21, 0x00, 0x00, 0x1a, 0x00, 0x00, 0x00, 0xfd, 0x00, 0x3b, 0x3d, 0x18,
+        0x50, 0x11, 0x00, 0x0a, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x00, 0x00, 0x00, 0xfc, 0x00, 0x48,
+        0x50, 0x20, 0x5a, 0x52, 0x32, 0x34, 0x77, 0x0a, 0x20, 0x20, 0x20, 0x20, 0x00, 0x00, 0x00, 0xff,
+        0x00, 0x43, 0x4e, 0x54, 0x31, 0x31, 0x33, 0x31, 0x30, 0x42, 0x46, 0x0a, 0x20, 0x20, 0x00, 0x33,
+    ];
+
+    #[test]
+    fn parses_display_product_name_from_real_edid() {
+        assert_eq!(parse_edid_product_name(&EDID_PHILIPS_245P_A), Some("Philips 245P".to_string()));
+        assert_eq!(parse_edid_product_name(&EDID_HP_ZR24W), Some("HP ZR24w".to_string()));
+    }
+
+    #[test]
+    fn rejects_bad_header_and_short_data() {
+        let mut corrupted = EDID_HP_ZR24W;
+        corrupted[0] = 0x01; // real header starts 0x00 0xff...
+        assert_eq!(parse_edid_product_name(&corrupted), None);
+        assert_eq!(parse_edid_product_name(&EDID_HP_ZR24W[..100]), None);
+    }
+
+    #[test]
+    fn missing_product_name_descriptor_returns_none() {
+        // A real EDID whose only non-timing descriptors are a serial number
+        // (0xff) and range limits (0xfd) — no 0xfc block at all, a genuine
+        // shape some real monitors ship (not every EDID carries a product
+        // name descriptor). Descriptor block 2 (offset 90) is the real
+        // 0xfc block in this fixture — its tag byte is offset 90+3=93,
+        // confirmed directly against the real bytes, not assumed.
+        let mut no_name = EDID_HP_ZR24W;
+        assert_eq!(no_name[93], 0xfc);
+        no_name[93] = 0xfe; // retag so the parser skips this block on its tag, not its zero-prefix
+        assert_eq!(parse_edid_product_name(&no_name), None);
+    }
 
     fn settings() -> DisplaySyncSettings {
         DisplaySyncSettings {

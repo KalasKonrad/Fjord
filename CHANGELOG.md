@@ -30,6 +30,12 @@ are bumped together as one step, not separately.
   reports it can do (queried live, the same way the "Output" row above
   them already does), and refresh automatically if you switch which
   output display sync targets.
+- **New: "Sync display to source"'s "Output" row now marks whichever
+  display KDE considers primary, and shows the actual monitor model next
+  to each connector name** (e.g. "DP-3 — HP ZR24w (Primary)") instead of
+  just a bare connector name like "DP-3". Makes it much easier to tell
+  which entry in the list is which physical screen when more than one
+  display is connected.
 - **Fixed: pressing Enter (or the `I`/`C` shortcuts) on a Watchlist or
   "Coming Up" card on the Home/TV Shows/Movies dashboards — for something
   requested but not yet in your library — tried to play it instead of

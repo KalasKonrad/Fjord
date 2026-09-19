@@ -1668,15 +1668,22 @@ export global AppState {
     // (main.rs); screen-name is the actual persisted value, never auto-
     // re-detected at runtime — see display_sync::detect_active_output's own
     // doc comment for why guessing every run would be wrong the moment a
-    // second output exists. resolution-options/hz-options are likewise
-    // fetched at startup (for whichever screen ends up selected) AND
-    // re-fetched every time the Output selection actually changes — a
-    // previous output's supported modes are meaningless for a different
-    // display — via display_sync::supported_resolutions_and_hz; both are
-    // real per-output query results, not the fixed 3-resolution/7-Hz
-    // compile-time lists this originally shipped with.
+    // second output exists. screen-options' entries can be annotated
+    // ("HDMI-A-2 (Primary)" for whichever output KDE reports as priority 1)
+    // — screen-desc is the CURRENTLY selected entry's own annotated label,
+    // kept separate from screen-name (always the bare connector name) the
+    // same way audio-device-desc is kept separate from the raw device name
+    // main.rs resolves it back to via FjordState.display_sync_outputs.
+    // resolution-options/hz-options are likewise fetched at startup (for
+    // whichever screen ends up selected) AND re-fetched every time the
+    // Output selection actually changes — a previous output's supported
+    // modes are meaningless for a different display — via
+    // display_sync::supported_resolutions_and_hz; both are real per-output
+    // query results, not the fixed 3-resolution/7-Hz compile-time lists
+    // this originally shipped with.
     in-out property <bool>   settings-display-sync-enabled:            false;
     in-out property <string> settings-display-sync-screen-name:        "";
+    in-out property <string> settings-display-sync-screen-desc:        "";
     in-out property <[string]> settings-display-sync-screen-options:   [];
     in-out property <[string]> settings-display-sync-resolution-options: [];
     in-out property <[string]> settings-display-sync-hz-options:         [];

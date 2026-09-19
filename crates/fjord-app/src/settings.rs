@@ -899,11 +899,15 @@ pub(crate) fn open_dropdown_popup(key: &str, g: &crate::AppState<'_>) {
         // list — the two settings share one region catalog, just a
         // different desc value for which one's currently set.
         INT_DISCOVER_REGION    => Some((g.get_settings_streaming_region_display(), g.get_settings_discover_region_desc())),
-        // desc IS the value here (a real kscreen-doctor connector name/
-        // resolution/Hz string) — see display-sync-screen-selected's own
-        // doc comment in app_state.slint for why these need no separate
-        // name<->desc lookup table.
-        VID_DISPLAY_SYNC_SCREEN => Some((g.get_settings_display_sync_screen_options(), g.get_settings_display_sync_screen_name())),
+        // Output's own desc is the annotated display label ("HDMI-A-2
+        // (Primary)"), not the raw connector name — a real name<->desc
+        // lookup exists for this one (FjordState.display_sync_outputs,
+        // resolved in main.rs's own on_display_sync_screen_selected), same
+        // shape as audio-device/font-family. Resolution/Hz's own desc IS
+        // still the value directly (a plain resolution/Hz string, nothing
+        // to annotate) — see display-sync-hz/resolution-selected's own doc
+        // comments in app_state.slint.
+        VID_DISPLAY_SYNC_SCREEN => Some((g.get_settings_display_sync_screen_options(), g.get_settings_display_sync_screen_desc())),
         VID_DISPLAY_SYNC_DEFAULT_RESOLUTION => Some((g.get_settings_display_sync_resolution_options(), g.get_settings_display_sync_default_resolution())),
         VID_DISPLAY_SYNC_DEFAULT_HZ => Some((g.get_settings_display_sync_hz_options(), g.get_settings_display_sync_default_hz())),
         _ => None,
@@ -1167,7 +1171,7 @@ fn settings_row_action(key: &str, g: &crate::AppState<'_>) {
             g.invoke_settings_changed();
         }
         VID_DISPLAY_SYNC_SCREEN => {
-            if let Some(desc) = cycle_dynamic(g.get_settings_display_sync_screen_options(), g.get_settings_display_sync_screen_name().as_str()) {
+            if let Some(desc) = cycle_dynamic(g.get_settings_display_sync_screen_options(), g.get_settings_display_sync_screen_desc().as_str()) {
                 g.invoke_display_sync_screen_selected(desc);
             }
         }
