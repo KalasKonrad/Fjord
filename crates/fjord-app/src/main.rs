@@ -2698,8 +2698,8 @@ fn rotate_logs(log_dir: &std::path::Path, keep: usize) {
 /// output's supported modes are meaningless for a different display). Never
 /// clears an already-populated list on a failed/empty query (missing
 /// binary, unknown output name) — same "don't stomp a working value over a
-/// transient/absent query" precedent `list_output_names`'s own screen-name
-/// pre-fill already follows.
+/// transient/absent query" precedent `list_outputs_with_priority`'s own
+/// screen-name pre-fill already follows.
 fn spawn_display_sync_modes_fetch(
     ww: slint::Weak<MainWindow>,
     rt_handle: tokio::runtime::Handle,
@@ -5306,7 +5306,22 @@ fn main() -> Result<()> {
     // ── display_sync output list: fetch once at startup ───────────────────────
     // Same shape as the system-font fetch just above (shell out once, patch
     // the dropdown's display list in whenever it lands) — this one queries
-    // `kscreen-doctor -o` for every currently enabled+connected output name.
+    // `kscreen-doctor -o` for every currently enabled+connected output name,
+    // paired with its real KDE priority AND a best-effort friendly "Vendor
+    // Model" name read straight from that output's own EDID via sysfs (see
+    // `display_sync::friendly_output_name`'s own doc comment) — direct user
+    // requests: "mark witch output is the primary" and "what is conneceted
+    // to the output". Priority `== 1` (confirmed against libkscreen/kscreen
+    // source: exactly what `kscreenctl set-primary` sets — not guessed)
+    // gets labeled "(Primary)"; the friendly name, when found, is appended
+    // as "{connector} — {model}" (e.g. "DP-3 — HP ZR24w (Primary)"). Both
+    // annotations are display-only — `FjordState.display_sync_outputs`
+    // (name, label) is the lookup `on_display_sync_screen_selected` below
+    // resolves a picked label back to the real connector name with, mirroring
+    // `audio_devices`'/`on_audio_device_selected`'s own established shape
+    // exactly, since `display_sync_screen_name` must always persist the bare
+    // connector name, never an annotated label.
+    //
     // If the stored screen name is still empty (a fresh install, or one that
     // predates this feature), pre-fills it here — but only when exactly one
     // candidate exists (`DeviceConfig.display_sync_screen_name`'s own doc
@@ -5322,11 +5337,28 @@ fn main() -> Result<()> {
     {
         let ww_ds     = window.as_weak();
         let rt_ds     = rt.handle().clone();
+        let state_ds  = Arc::clone(&state);
         let cfg_ds    = state.lock().unwrap().config.device.display_sync_screen_name.clone();
         let cfg_ds2   = cfg_ds.clone();
         rt.spawn(async move {
-            let names = tokio::task::spawn_blocking(display_sync::list_output_names).await.unwrap_or_default();
-            debug!("display_sync: kscreen-doctor reports {} enabled+connected output(s): {names:?}", names.len());
+            let mut outputs = tokio::task::spawn_blocking(display_sync::list_outputs_with_priority)
+                .await
+                .unwrap_or_default();
+            outputs.sort_by_key(|(_, priority, _)| *priority);
+            debug!("display_sync: kscreen-doctor reports {} enabled+connected output(s): {outputs:?}", outputs.len());
+            let names: Vec<String> = outputs.iter().map(|(n, ..)| n.clone()).collect();
+            let lookup: Vec<(String, String)> = outputs
+                .into_iter()
+                .map(|(name, priority, friendly)| {
+                    let base = match friendly {
+                        Some(f) => format!("{name} — {f}"),
+                        None => name.clone(),
+                    };
+                    let label = if priority == 1 { format!("{base} (Primary)") } else { base };
+                    (name, label)
+                })
+                .collect();
+            state_ds.lock().unwrap().display_sync_outputs = lookup.clone();
             let effective_screen = if !cfg_ds.is_empty() {
                 Some(cfg_ds)
             } else if names.len() == 1 {
@@ -5340,12 +5372,18 @@ fn main() -> Result<()> {
                 if let Some(w) = ww_ds_evt.upgrade() {
                     let g = AppState::get(&w);
                     let display: Vec<slint::SharedString> =
-                        names.iter().map(|n| slint::SharedString::from(n.as_str())).collect();
+                        lookup.iter().map(|(_, label)| slint::SharedString::from(label.as_str())).collect();
                     g.set_settings_display_sync_screen_options(
                         slint::ModelRc::new(slint::VecModel::from(display)),
                     );
+                    if let Some((_, label)) = lookup.iter().find(|(n, _)| n.as_str() == cfg_ds2.as_str()) {
+                        g.set_settings_display_sync_screen_desc(slint::SharedString::from(label.as_str()));
+                    }
                     if cfg_ds2.is_empty() && names.len() == 1 {
                         g.set_settings_display_sync_screen_name(ss(&names[0]));
+                        if let Some((_, label)) = lookup.first() {
+                            g.set_settings_display_sync_screen_desc(slint::SharedString::from(label.as_str()));
+                        }
                         g.invoke_settings_changed();
                     }
                 }
@@ -5357,22 +5395,33 @@ fn main() -> Result<()> {
     }
 
     // ── display_sync screen selected callback ─────────────────────────────────
-    // desc IS the value (a real kscreen-doctor connector name) — unlike
-    // audio-device/font-family, there's no separate name<->desc lookup table
-    // to resolve here, so this is a direct set + persist, same shape as the
-    // plain toggle/dropdown rows elsewhere in this file. Also re-fetches
-    // resolution/Hz options for the newly-selected output — the previous
-    // output's own supported modes are meaningless for a different display.
+    // desc is the annotated display label ("DP-3 (Primary)"), resolved back
+    // to the real bare connector name via FjordState.display_sync_outputs —
+    // same shape as on_audio_device_selected's own name<->desc lookup,
+    // needed here (unlike this row's original "desc is the value" design)
+    // specifically because the label can now differ from the persisted
+    // value. Also re-fetches resolution/Hz options for the newly-selected
+    // output — the previous output's own supported modes are meaningless
+    // for a different display.
     {
-        let ww_dss = window.as_weak();
-        let rt_dss = rt.handle().clone();
+        let ww_dss    = window.as_weak();
+        let rt_dss    = rt.handle().clone();
+        let state_dss = Arc::clone(&state);
         AppState::get(&window).on_display_sync_screen_selected(move |desc| {
+            let name = {
+                let s = state_dss.lock().unwrap();
+                s.display_sync_outputs.iter()
+                    .find(|(_, label)| label.as_str() == desc.as_str())
+                    .map(|(n, _)| n.clone())
+                    .unwrap_or_else(|| desc.to_string())
+            };
             if let Some(w) = ww_dss.upgrade() {
                 let g = AppState::get(&w);
-                g.set_settings_display_sync_screen_name(desc.clone());
+                g.set_settings_display_sync_screen_name(slint::SharedString::from(name.as_str()));
+                g.set_settings_display_sync_screen_desc(desc);
                 g.invoke_settings_changed();
             }
-            spawn_display_sync_modes_fetch(ww_dss.clone(), rt_dss.clone(), desc.to_string());
+            spawn_display_sync_modes_fetch(ww_dss.clone(), rt_dss.clone(), name);
         });
     }
 
