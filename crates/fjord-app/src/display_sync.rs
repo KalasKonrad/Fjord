@@ -623,12 +623,25 @@ pub(crate) async fn revert_to_default(state: Arc<Mutex<FjordState>>) {
         if !s.config.device.display_sync_enabled {
             return;
         }
-        let needs_revert =
-            s.display_sync_current_mode.is_some() || s.display_sync_current_hdr == Some(true);
+        let default_res = s.config.device.display_sync_default_resolution.clone();
+        let default_hz = s.config.device.display_sync_default_hz.clone();
+        // Compare against the real default target, not just "was anything
+        // ever applied" — `display_sync_current_mode` is set to
+        // Some((default_res, default_hz)) by this very function once it has
+        // already reverted once, and a bare `.is_some()` check stayed true
+        // forever after that first revert, making every later stop in the
+        // session re-run the kscreen-doctor calls below even though the
+        // display was provably already sitting at default (confirmed live,
+        // 2026-09-24: two genuine-stop reverts 9s apart both fired the real
+        // mode/HDR-off apply calls, though the display never moved between
+        // them).
+        let needs_revert = s.display_sync_current_mode.as_ref()
+            != Some(&(default_res.clone(), default_hz.clone()))
+            || s.display_sync_current_hdr != Some(false);
         (
             s.config.device.display_sync_screen_name.clone(),
-            s.config.device.display_sync_default_resolution.clone(),
-            s.config.device.display_sync_default_hz.clone(),
+            default_res,
+            default_hz,
             needs_revert,
         )
     };
