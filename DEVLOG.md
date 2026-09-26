@@ -2712,6 +2712,14 @@ let needs_revert =
 
 `cargo build`/`clippy --workspace --all-targets`/`test --workspace` clean (19 fjord-api + 28 fjord-app tests). **Not live-tested** — see PLAN.md's Live-test checklist entry for the exact sequence.
 
+### Music dashboard Playlists row lagged ~40 s behind a new playlist (2026-09-26)
+
+**Report (HTPC, r1025):** the Playlists row on the Music dashboard didn't update after adding a playlist. The log shows the create at 11:40:03 (`Created playlist test2`); the library grid's Playlists view had it immediately (`refresh_library_display … 3 card(s)` at 11:40:31, via `context_menu::refresh_playlists`), but Jellyfin's `LibraryChanged — 1 added` only arrived at 11:40:33, and the resulting WS delta refresh reloaded the home rows at 11:40:42 (`spawn_poster_loading: … 141 item(s)`, up from 140). So the row did catch up — about 40 s later.
+
+**Root cause.** `refresh_playlists` (called after create, add-to-playlist, and remove-entry) updated `FjordState.all_playlists`, the playlists cache, `AppState.all-playlists` (library grid), the picker, and a matching open playlist screen — but not `AppState.music-playlists`, the dashboard row. That row is `HomeData.playlists`, refreshed only by `fetch_home_data` (login, playback stop, WS delta refresh).
+
+**Fix.** Same function, same fetched list (`get_all_playlists`, which is also what `fetch_home_data` uses, so order and content match the later delta refresh): the row is rebuilt through `home::refresh_row_preserving_posters` (keeps existing posters/identity, updates the "N tracks" subtitle), and posters from `poster::fetch_posters_for_delta` are patched into rows that don't have one yet. The later WS delta refresh then finds the same shape and is a no-op visually.
+
 ### Repeat One ignored songs played on their own (2026-09-26)
 
 **Report (HTPC, r1025):** "repeat 1 song doesn't work if you just play it — may work in a playlist." The log showed one audio item playing to `end-of-file`, then `playback finished` and nothing else. Repeat changes weren't logged at all, so the mode couldn't be confirmed from the log.
