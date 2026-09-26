@@ -32,6 +32,11 @@ are bumped together as one step, not separately.
   spinner meanwhile). If that takes longer than 20 seconds, playback
   starts anyway. Music is never affected, and nothing changes while the
   feature is off.
+- **Fixed: a new playlist didn't show up in the Music dashboard's
+  Playlists row until about 40 seconds later.** The library grid updated
+  right away, but the dashboard row waited for Jellyfin's own change
+  notification. It now updates immediately, including the playlist's
+  artwork and track counts after adding or removing tracks.
 - **Fixed: Repeat One did nothing for a song played on its own.** The
   song just stopped at the end. And if an album was still loaded in the
   queue, Repeat One replayed that album's track instead of the song you
