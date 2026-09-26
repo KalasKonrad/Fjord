@@ -1046,6 +1046,12 @@ fn reset_video_state_for_playback(vs: &mut VideoState, player: Player, config: &
     // has resolved, for the deferred path. Every play_start-gated consumer
     // in this file already treats None as "not started yet" — see
     // start_playback's own eligible/non-eligible branches and play_trailer.
+    // It MUST be cleared here, though: left alone it kept the PREVIOUS item's
+    // timestamp, so during the display-sync wait every play_start-gated check
+    // (chapter poll, decoder log, no-VideoReconfig warning, stall watchdog,
+    // first-frame log) ran against the old item's clock — seen live on the
+    // HTPC: the chapter poll gave up before the file was even loaded.
+    vs.play_start            = None;
     vs.first_frame_logged    = false;
     vs.stall_last_progress_pos = config.start_position_secs.unwrap_or(0.0);
     vs.stall_last_progress_at  = None; // re-armed on the first tick after this player starts
