@@ -11,7 +11,7 @@
 //                   playlist fields: media_type, playlist_item_id (entry id for removal), child_count
 //                   media_streams: Vec<MediaStream> (Fields=MediaStreams only); video_stream_info() ->
 //                   Option<VideoStreamInfo> (width/fps/is_hdr) — display-mode-sync's pre-decode switch
-//   MediaStream     one MediaStreams[] entry (video/audio/subtitle mixed) — Type/Width/Height/
+//   MediaStream     one MediaStreams[] entry — only Video entries are kept (video_streams_only) — Type/Width/Height/
 //                   RealFrameRate/AverageFrameRate/VideoRange; no per-file mastering-luminance/CLL/FALL
 //   VideoStreamInfo extracted width/fps/is_hdr summary returned by MediaItem::video_stream_info()
 // ─────────────────────────────────────────────────────────────────────────────
@@ -69,6 +69,15 @@ pub struct VideoStreamInfo {
     pub width: i64,
     pub fps: f64,
     pub is_hdr: bool,
+}
+
+fn video_streams_only<'de, D>(d: D) -> Result<Vec<MediaStream>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let mut v: Vec<MediaStream> = Option::deserialize(d)?.unwrap_or_default();
+    v.retain(|s| s.stream_type == "Video");
+    Ok(v)
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, Default)]
@@ -182,7 +191,12 @@ pub struct MediaItem {
     // reliable; per-file mastering-luminance/MaxCLL/MaxFALL are NOT exposed
     // here at all (confirmed absent from a real Dolby Vision item's raw
     // response) — see video_stream_info()'s own doc comment.
-    #[serde(rename = "MediaStreams", default)]
+    // Only Type=="Video" entries are kept (video_streams_only): MediaItems
+    // with this field end up in item_detail_cache, which is persisted to
+    // screen_caches.json and can hold the whole library after a prewarm —
+    // keeping every audio/subtitle entry would bloat it for data nothing reads.
+    #[serde(rename = "MediaStreams", default, deserialize_with = "video_streams_only",
+            skip_serializing_if = "Vec::is_empty")]
     pub media_streams: Vec<MediaStream>,
 }
 
@@ -443,6 +457,22 @@ mod tests {
         let json = r#"{"Id":"m1","Name":"M","Type":"Movie"}"#;
         let item: MediaItem = serde_json::from_str(json).unwrap();
         assert!(item.video_stream_info().is_none());
+    }
+
+    #[test]
+    fn media_streams_keeps_only_video_entries() {
+        let json = r#"{"Id":"m1","Name":"M","Type":"Movie","MediaStreams":[
+            {"Type":"Audio"},{"Type":"Subtitle"},
+            {"Type":"Video","Width":1920,"RealFrameRate":24.0},
+            {"Type":"Subtitle"}
+        ]}"#;
+        let item: MediaItem = serde_json::from_str(json).unwrap();
+        assert_eq!(item.media_streams.len(), 1);
+        assert_eq!(item.media_streams[0].stream_type, "Video");
+
+        let null = r#"{"Id":"m1","Name":"M","Type":"Movie","MediaStreams":null}"#;
+        let item: MediaItem = serde_json::from_str(null).unwrap();
+        assert!(item.media_streams.is_empty());
     }
 
     #[test]

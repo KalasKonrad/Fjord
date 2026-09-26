@@ -84,7 +84,9 @@
 //                           display-mode-prefetch (2026-09-25): with display sync on (non-Audio), holds back
 //                           pending_load_url/play_start and spawns a task that switches the display first
 //                           (display_sync::sync_before_load, 20 s cap), then releases the load; video_info
-//                           param (from MediaStreams) skips the fallback item-detail fetch when known
+//                           param (from MediaStreams) skips the fallback item-detail fetch when known;
+//                           skipped when replacing a live player for the SAME item (stall reload); a stop
+//                           mid-switch reverts the display from inside the task
 //   prestart_still_current  that task's staleness check — generation unchanged AND vs.player still set
 //                           (Stop doesn't bump the generation)
 //   reset_video_state_for_playback  shared "fresh playback baseline" reset (screensaver inhibit,
@@ -1064,7 +1066,12 @@ fn reset_video_state_for_playback(vs: &mut VideoState, player: Player, config: &
     vs.tracks_loaded         = false;
     vs.pos_tick              = 0;
     vs.controls_idle_ticks   = 0;
-    vs.last_known_pos_ticks  = 0;
+    // Seeded with the start position, not 0: a stop (or stall reload) before
+    // mpv ever reports a position — e.g. during display_sync's pre-decode
+    // wait — would otherwise report 0 to Jellyfin and wipe the resume point.
+    vs.last_known_pos_ticks  = config.start_position_secs
+        .map(|s| (s * 10_000_000.0) as i64)
+        .unwrap_or(0);
     // For Episodes: intro_timestamps/intro_skip_shown/credits_start were reset
     // before the fetch tasks were spawned — don't clear them here or a fast
     // response would be silently wiped. For everything else (movies, trailers):
@@ -1277,6 +1284,16 @@ pub(crate) fn start_playback(
         });
     }
 
+    // display-mode-prefetch: replacing a LIVE player for this same item (the
+    // stall-recovery reload, or re-picking what's already playing) — the
+    // display is already in this item's mode, so skip the pre-decode wait.
+    // Without this, a stall reload during a network outage would first wait
+    // on an item-detail fetch that is likely to hang (up to the 20 s cap).
+    let same_item_live = {
+        let vs = video.lock().unwrap();
+        vs.player.is_some() && vs.item_id.as_deref() == Some(item_id.as_str())
+    };
+
     let (dropped, dec_dropped) = video.lock().unwrap().player.as_ref()
         .map(|p| p.get_drop_counts()).unwrap_or((0, 0));
     info!("playback replaced: frame-drops={} decoder-drops={}", dropped, dec_dropped);
@@ -1328,7 +1345,7 @@ pub(crate) fn start_playback(
                 // spawned task below has settled the display's mode/HDR/WCG
                 // ahead of decode; otherwise behave exactly as before this
                 // feature existed (immediate load, play_start stamped now).
-                let eligible = !is_audio && {
+                let eligible = !is_audio && !same_item_live && {
                     let s = state.lock().unwrap();
                     s.config.device.display_sync_enabled
                 };
@@ -1361,12 +1378,17 @@ pub(crate) fn start_playback(
                         let resolved = match video_info {
                             Some(vi) => Some(vi),
                             None => {
-                                let cached = state_ds.lock().unwrap().item_detail_cache.get(&item_id_ds);
-                                let item = match cached {
-                                    Some(i) => Some(i),
-                                    None => client_ds.get_item_detail(&item_id_ds).await.ok(),
-                                };
-                                item.and_then(|i| i.video_stream_info())
+                                // A cache hit only counts if it actually carries
+                                // stream info — entries written by older builds
+                                // (screen_caches.json) have no MediaStreams.
+                                let cached = state_ds.lock().unwrap().item_detail_cache
+                                    .get(&item_id_ds)
+                                    .and_then(|i| i.video_stream_info());
+                                match cached {
+                                    Some(vi) => Some(vi),
+                                    None => client_ds.get_item_detail(&item_id_ds).await.ok()
+                                        .and_then(|i| i.video_stream_info()),
+                                }
                             }
                         };
                         let Some(vi) = resolved else { return };
@@ -1406,6 +1428,20 @@ pub(crate) fn start_playback(
                     // blink this feature exists to remove, just moved later.
                     if tokio::time::timeout(Duration::from_secs(20), prestart).await.is_err() {
                         warn!("display_sync prestart timed out — starting playback at whatever mode is current");
+                    }
+                    // Stopped (same generation, player gone) while the switch
+                    // was in flight: sync_to_source only records the new mode
+                    // after its 3 s settle, so the stop's own revert_to_default
+                    // saw the old mode and did nothing. Revert here instead —
+                    // a cheap no-op if nothing was actually switched.
+                    let stopped = {
+                        let vs = video_ds.lock().unwrap();
+                        vs.playback_generation == my_gen && vs.player.is_none()
+                    };
+                    if stopped {
+                        info!("display_sync prestart: playback stopped during the switch — reverting");
+                        crate::display_sync::revert_to_default(Arc::clone(&state_ds)).await;
+                        return;
                     }
                     if !prestart_still_current(&video_ds, my_gen) { return; }
                     let _ = slint::invoke_from_event_loop(move || {
