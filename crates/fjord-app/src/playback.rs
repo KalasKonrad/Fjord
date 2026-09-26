@@ -3,6 +3,8 @@
 //   RepeatMode              Off / All / One — queue repeat behaviour
 //   repeat_one_target       Repeat One replays now_playing (the song actually playing), with or without a
 //                           playlist — used by natural end, the gapless peek, and commit_natural_next
+//   repeat_all_ring /       Repeat All with no album playlist: the queue is a ring (ended song → back of
+//     take_repeat_all_ring_next  the queue, head plays) — natural end, gapless peek/commit and ⏭ Next
 //   VideoState              mpv Player + MpvRenderCtx, GL FBOs, playback metadata
 //                           playlist: Vec<QueueItem> — ordered track list for album/artist playback
 //                           playlist_index: usize — currently-playing position in playlist
@@ -1750,10 +1752,35 @@ fn repeat_one_target(vs: &VideoState) -> Option<QueueItem> {
     }
 }
 
+// Repeat All with no album playlist: the queue is a ring. The song that just
+// ended goes to the back of the queue before the head plays, so a set of
+// queued songs keeps going round and a lone song loops. (Queue items are
+// removed as they play, so without this Repeat All had nothing to repeat and
+// just stopped.) Not applied when the queue head is a video — class-gated
+// like every other advance.
+fn repeat_all_ring(vs: &VideoState) -> bool {
+    vs.current_is_audio
+        && vs.repeat_mode == RepeatMode::All
+        && vs.playlist.is_empty()
+        && vs.queue.first().is_none_or(|q| q.item_type == "Audio")
+}
+
+// One step of the Repeat All ring: re-queue the song that just ended, play the head.
+fn take_repeat_all_ring_next(vs: &mut VideoState) -> Option<QueueItem> {
+    if let Some(np) = vs.now_playing.clone().filter(|q| q.item_type == "Audio") {
+        vs.queue.push(np);
+    }
+    if vs.queue.is_empty() { None } else { Some(vs.queue.remove(0)) }
+}
+
 // Non-mutating preview of what natural end will play (class-gated like the
 // timer's advance). Used by the gapless preload check.
 pub(crate) fn peek_natural_next(vs: &VideoState) -> Option<QueueItem> {
     if let Some(q) = repeat_one_target(vs) { return Some(q); }
+    if repeat_all_ring(vs) {
+        return vs.queue.first().cloned()
+            .or_else(|| vs.now_playing.clone().filter(|q| q.item_type == "Audio"));
+    }
     let ended_audio = vs.current_is_audio;
     let queue_head_matches = vs.queue.first()
         .map(|q| (q.item_type == "Audio") == ended_audio)
@@ -1771,6 +1798,13 @@ pub(crate) fn peek_natural_next(vs: &VideoState) -> Option<QueueItem> {
 fn commit_natural_next(vs: &mut VideoState, qi: &QueueItem) {
     // Repeat One replayed the same song: playlist position and queue unchanged.
     if repeat_one_target(vs).is_some_and(|q| q.id == qi.id) { return; }
+    if repeat_all_ring(vs) {
+        let next = take_repeat_all_ring_next(vs);
+        if next.as_ref().map(|q| q.id.as_str()) != Some(qi.id.as_str()) {
+            warn!("gapless: repeat-all ring head {:?} != preloaded {}", next.map(|q| q.id), qi.id);
+        }
+        return;
+    }
     if vs.current_is_audio && !vs.playlist.is_empty() {
         if let Some(i) = natural_next_index(vs) {
             if vs.playlist.get(i).map(|q| q.id == qi.id).unwrap_or(false) {
@@ -1819,6 +1853,8 @@ pub(crate) fn playlist_next(vs: &mut VideoState) -> Option<QueueItem> {
         // Before this fix the queue only played when the playlist was EMPTY,
         // so queued items never played after an album finished.
     }
+    // ⏭ under Repeat All with no album playlist: keep the skipped song in the loop.
+    if repeat_all_ring(vs) { return take_repeat_all_ring_next(vs); }
     if vs.queue.is_empty() { None } else { Some(vs.queue.remove(0)) }
 }
 
@@ -3735,6 +3771,13 @@ pub(crate) fn wire_mpv_timer(
                         // without a playlist loaded (see repeat_one_target).
                         info!("repeat one: replaying {}", q.id);
                         Some(q)
+                    } else if repeat_all_ring(&vs) {
+                        // Repeat All, no album playlist: rotate the queue ring.
+                        let next = take_repeat_all_ring_next(&mut vs);
+                        if let Some(q) = &next {
+                            info!("repeat all: next {} ({} song(s) in the loop)", q.id, vs.queue.len() + 1);
+                        }
+                        next
                     } else if ended_audio && !vs.playlist.is_empty() {
                         // Playlist mode (album/artist): advance with repeat/shuffle logic.
                         let len      = vs.playlist.len();
@@ -3935,5 +3978,62 @@ mod tests {
         let mut vs = playing("m", RepeatMode::One);
         vs.current_is_audio = false;
         assert!(repeat_one_target(&vs).is_none());
+    }
+
+    #[test]
+    fn repeat_all_loops_a_lone_song() {
+        let vs = playing("a", RepeatMode::All);
+        assert_eq!(peek_natural_next(&vs).map(|q| q.id), Some("a".into()));
+    }
+
+    #[test]
+    fn repeat_all_plays_queued_audio_before_looping() {
+        let mut vs = playing("a", RepeatMode::All);
+        vs.queue = vec![song("q")];
+        assert_eq!(peek_natural_next(&vs).map(|q| q.id), Some("q".into()));
+    }
+
+    #[test]
+    fn repeat_all_ring_loops_the_whole_queued_set() {
+        let mut vs = playing("a", RepeatMode::All);
+        vs.queue = vec![song("b"), song("c")];
+        let order: Vec<String> = (0..6).map(|_| {
+            let q = take_repeat_all_ring_next(&mut vs).unwrap();
+            vs.now_playing = Some(q.clone());
+            q.id
+        }).collect();
+        assert_eq!(order, ["b", "c", "a", "b", "c", "a"]);
+    }
+
+    #[test]
+    fn repeat_all_gapless_commit_rotates_the_ring() {
+        let mut vs = playing("a", RepeatMode::All);
+        vs.queue = vec![song("b")];
+        commit_natural_next(&mut vs, &song("b"));
+        assert_eq!(vs.queue.iter().map(|q| q.id.as_str()).collect::<Vec<_>>(), ["a"]);
+    }
+
+    #[test]
+    fn repeat_all_next_button_keeps_skipped_song_in_the_loop() {
+        let mut vs = playing("a", RepeatMode::All);
+        vs.queue = vec![song("b")];
+        assert_eq!(playlist_next(&mut vs).map(|q| q.id), Some("b".into()));
+        assert_eq!(vs.queue.iter().map(|q| q.id.as_str()).collect::<Vec<_>>(), ["a"]);
+    }
+
+    #[test]
+    fn repeat_all_ring_stops_at_a_queued_video() {
+        let mut vs = playing("a", RepeatMode::All);
+        vs.queue = vec![QueueItem { item_type: "Movie".into(), ..song("m") }];
+        assert!(!repeat_all_ring(&vs));
+        assert!(peek_natural_next(&vs).is_none());
+    }
+
+    #[test]
+    fn repeat_all_with_playlist_wraps_the_playlist() {
+        let mut vs = playing("b", RepeatMode::All);
+        vs.playlist = vec![song("a"), song("b")];
+        vs.playlist_index = 1;
+        assert_eq!(peek_natural_next(&vs).map(|q| q.id), Some("a".into()));
     }
 }
