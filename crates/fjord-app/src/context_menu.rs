@@ -66,7 +66,9 @@
 //                                   playlist-picker-create (POST /Playlists);
 //                                   resolve_music_ids expands MusicAlbum → track ids (empty result toasts, CR11-14);
 //                                   refresh_playlists updates state/cache/models after change, and reopens the
-//                                   playlist detail screen if it's showing the just-mutated playlist (CR11-7)
+//                                   playlist detail screen if it's showing the just-mutated playlist (CR11-7);
+//                                   also refreshes the Music dashboard Playlists row (music-playlists) with
+//                                   posters, instead of waiting ~30 s for Jellyfin's LibraryChanged (2026-09-26)
 //   handle_key                      keyboard dispatch for the context-menu overlay
 //                                   (row 7 = Add to Playlist, music items only); branches
 //                                   entirely to handle_key_discover_menu when
@@ -1391,6 +1393,10 @@ fn refresh_playlists(
                     s.playlists_fetched = true;
                 }
                 crate::home::save_playlists_cache(&user_id, &playlists);
+                // Posters for the Music dashboard's Playlists row, so a just-
+                // created playlist shows up there with its art right away
+                // (disk-cache hits for the ones already shown).
+                let posters = crate::poster::fetch_posters_for_delta(&client, &playlists).await;
                 let state2 = Arc::clone(&state);
                 let ww2    = ww.clone();
                 let rt2    = rt_task.clone();
@@ -1398,6 +1404,21 @@ fn refresh_playlists(
                     let Some(w) = ww.upgrade() else { return };
                     let g = AppState::get(&w);
                     g.set_all_playlists(crate::items_to_model(&playlists, &std::collections::HashSet::new()));
+                    // Music dashboard "Playlists" row (HomeData.playlists — the same
+                    // get_all_playlists list). Without this it only caught up via
+                    // the WS LibraryChanged → delta refresh, which Jellyfin sends
+                    // ~30 s after a playlist is created (seen live on the HTPC).
+                    let row = crate::home::refresh_row_preserving_posters(&g.get_music_playlists(), &playlists);
+                    for i in 0..row.row_count() {
+                        let Some(mut card) = row.row_data(i) else { continue };
+                        if card.has_poster { continue; }
+                        if let Some(buf) = posters.get(card.id.as_str()) {
+                            card.poster     = slint::Image::from_rgba8(buf.clone());
+                            card.has_poster = true;
+                            row.set_row_data(i, card);
+                        }
+                    }
+                    g.set_music_playlists(row);
                     if g.get_show_playlist_picker() {
                         g.set_playlist_picker_items(playlist_items_model(&playlists));
                     }
