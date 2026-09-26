@@ -4783,6 +4783,7 @@ fn main() -> Result<()> {
                     RepeatMode::All => RepeatMode::One,
                     RepeatMode::One => RepeatMode::Off,
                 };
+                info!("repeat mode -> {:?}", vs.repeat_mode);
                 vs.repeat_mode as i32
             };
             if let Some(w) = ww_cr.upgrade() {

@@ -32,6 +32,10 @@ are bumped together as one step, not separately.
   spinner meanwhile). If that takes longer than 20 seconds, playback
   starts anyway. Music is never affected, and nothing changes while the
   feature is off.
+- **Fixed: Repeat One did nothing for a song played on its own.** The
+  song just stopped at the end. And if an album was still loaded in the
+  queue, Repeat One replayed that album's track instead of the song you
+  had just played. It now always repeats the song that's playing.
 - **Fixed: pressing Stop right after Play (before the video had actually
   started) could reset a movie's or episode's resume position to the
   beginning.** It now keeps the position you started from.
