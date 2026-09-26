@@ -23,6 +23,19 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Improved: "Sync display to source" now switches the display *before*
+  the video starts, instead of a couple of seconds into playback.** The
+  resolution/refresh-rate/HDR change used to make the screen blank and
+  relink while the movie was already playing. Fjord now reads the video's
+  resolution, frame rate and HDR type from Jellyfin first, sets the
+  display, and only then starts the video (showing the usual "Loading…"
+  spinner meanwhile). If that takes longer than 20 seconds, playback
+  starts anyway. Music is never affected, and nothing changes while the
+  feature is off.
+- **Docs:** `CLAUDE.md` is now a short rules-and-pointers file; the full
+  design and bug-investigation history moved to `DEVLOG.md`, and the Slint
+  gotcha write-ups moved to `SLINT.md`.
+
 - **Fixed: the new "Sync display to source" feature's "Default
   resolution"/"Default refresh rate" rows only offered a small, fixed
   list of common values — some of which your actual screen might not

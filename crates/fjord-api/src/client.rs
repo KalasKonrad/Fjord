@@ -31,6 +31,9 @@
 //     server        get_system_info (name + version via /System/Info/Public), get_plugins
 //                   (best-effort — empty Vec on any failure, never propagates an error)
 //     websocket     ws_url() → ws[s]://host/socket?api_key=…&deviceId=…
+//   MediaStreams  added to Fields of get_item_detail, get_items_by_ids_detailed (kept in sync),
+//                 get_next_up_for_series and get_series_episodes (2026-09-25, display-mode-prefetch —
+//                 MediaItem::video_stream_info() needs Width/RealFrameRate/VideoRange before playback)
 // ─────────────────────────────────────────────────────────────────────────────
 use anyhow::Result;
 use reqwest::StatusCode;
@@ -236,7 +239,8 @@ impl JellyfinClient {
             "Fields",
             "Overview,RunTimeTicks,SeriesName,SeasonName,IndexNumber,ParentIndexNumber,\
              ProductionYear,UserData,Genres,OfficialRating,CommunityRating,\
-             BackdropImageTags,People,Taglines,Studios,RecursiveItemCount,ProviderIds",
+             BackdropImageTags,People,Taglines,Studios,RecursiveItemCount,ProviderIds,\
+             MediaStreams",
         );
         Ok(self
             .http
@@ -296,7 +300,7 @@ impl JellyfinClient {
         let mut url = self.api_url(&format!("/Shows/{}/Episodes", series_id))?;
         url.query_pairs_mut()
             .append_pair("userId", &self.user_id)
-            .append_pair("Fields", "SeriesId,SeriesName,IndexNumber,ParentIndexNumber,UserData,RunTimeTicks");
+            .append_pair("Fields", "SeriesId,SeriesName,IndexNumber,ParentIndexNumber,UserData,RunTimeTicks,MediaStreams");
         Ok(self
             .http
             .get(url)
@@ -456,7 +460,7 @@ impl JellyfinClient {
         url.query_pairs_mut()
             .append_pair("UserId", &self.user_id)
             .append_pair("SeriesId", series_id)
-            .append_pair("Fields", "SeriesId,SeriesName,IndexNumber,ParentIndexNumber,UserData,RunTimeTicks")
+            .append_pair("Fields", "SeriesId,SeriesName,IndexNumber,ParentIndexNumber,UserData,RunTimeTicks,MediaStreams")
             .append_pair("Limit", "1");
         let resp = self
             .http
@@ -689,7 +693,7 @@ impl JellyfinClient {
             .append_pair("Fields", "Overview,RunTimeTicks,SeriesName,SeriesId,SeasonName,SeasonId,\
                 IndexNumber,ParentIndexNumber,ProductionYear,UserData,Genres,OfficialRating,\
                 CommunityRating,BackdropImageTags,People,Taglines,Studios,RecursiveItemCount,\
-                AlbumArtist,ChildCount,DateCreated");
+                AlbumArtist,ChildCount,DateCreated,MediaStreams");
         Ok(self.http.get(url).header("Authorization", self.auth_header())
             .send().await?.error_for_status()?.json::<ItemsResponse>().await?.items)
     }

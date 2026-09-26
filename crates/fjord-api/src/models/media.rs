@@ -9,6 +9,11 @@
 //                   detail fields: genres, rating, backdrop, people, taglines, studios, recursive_item_count
 //                   music fields: album_artist, album (track → parent album name, index_number = track #)
 //                   playlist fields: media_type, playlist_item_id (entry id for removal), child_count
+//                   media_streams: Vec<MediaStream> (Fields=MediaStreams only); video_stream_info() ->
+//                   Option<VideoStreamInfo> (width/fps/is_hdr) — display-mode-sync's pre-decode switch
+//   MediaStream     one MediaStreams[] entry (video/audio/subtitle mixed) — Type/Width/Height/
+//                   RealFrameRate/AverageFrameRate/VideoRange; no per-file mastering-luminance/CLL/FALL
+//   VideoStreamInfo extracted width/fps/is_hdr summary returned by MediaItem::video_stream_info()
 // ─────────────────────────────────────────────────────────────────────────────
 use serde::{Deserialize, Serialize};
 
@@ -36,6 +41,34 @@ pub struct UserData {
 pub struct StudioInfo {
     #[serde(rename = "Name", default)]
     pub name: String,
+}
+
+// One entry of MediaItem.media_streams — video/audio/subtitle tracks mixed
+// together on the wire; only Type=="Video" entries are consumed today (see
+// MediaItem::video_stream_info()).
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
+pub struct MediaStream {
+    #[serde(rename = "Type", default)]
+    pub stream_type: String,
+    #[serde(rename = "Width", default)]
+    pub width: Option<i64>,
+    #[serde(rename = "Height", default)]
+    pub height: Option<i64>,
+    #[serde(rename = "RealFrameRate", default)]
+    pub real_frame_rate: Option<f64>,
+    #[serde(rename = "AverageFrameRate", default)]
+    pub average_frame_rate: Option<f64>,
+    #[serde(rename = "VideoRange", default)]
+    pub video_range: Option<String>,
+}
+
+// Extracted, ready-to-use summary of a MediaItem's primary video stream —
+// exactly what display_sync's pre-decode mode-switch needs, nothing else.
+#[derive(Debug, Clone, Copy)]
+pub struct VideoStreamInfo {
+    pub width: i64,
+    pub fps: f64,
+    pub is_hdr: bool,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, Default)]
@@ -143,6 +176,14 @@ pub struct MediaItem {
     // WS-added/updated episode into the right series_episode_cache entry.
     #[serde(rename = "SeasonId", default)]
     pub season_id: Option<String>,
+    // Per-stream codec/resolution/HDR info — only populated when Fields
+    // includes MediaStreams. Live-verified against a real server (2026-09-25):
+    // Width/Height/RealFrameRate/AverageFrameRate/VideoRange ("HDR"/"SDR") are
+    // reliable; per-file mastering-luminance/MaxCLL/MaxFALL are NOT exposed
+    // here at all (confirmed absent from a real Dolby Vision item's raw
+    // response) — see video_stream_info()'s own doc comment.
+    #[serde(rename = "MediaStreams", default)]
+    pub media_streams: Vec<MediaStream>,
 }
 
 impl MediaItem {
@@ -165,6 +206,22 @@ impl MediaItem {
     pub fn resume_position_secs(&self) -> Option<f64> {
         let ticks = self.user_data.playback_position_ticks;
         if ticks > 0 { Some(ticks as f64 / 10_000_000.0) } else { None }
+    }
+
+    /// Extracts the primary video stream's resolution/fps/HDR-ness, for
+    /// display-mode-sync's pre-decode switch. `None` when this MediaItem was
+    /// fetched without `Fields=MediaStreams`, has no video stream at all, or
+    /// the stream is missing enough data to be useful (no real width, or
+    /// neither RealFrameRate nor AverageFrameRate present) — callers should
+    /// treat `None` as "not enough info, skip the pre-decode switch" rather
+    /// than guessing. Prefers RealFrameRate over AverageFrameRate when both
+    /// are present (they agree in the overwhelming majority of real files;
+    /// live-verified, not assumed).
+    pub fn video_stream_info(&self) -> Option<VideoStreamInfo> {
+        let v = self.media_streams.iter().find(|s| s.stream_type == "Video")?;
+        let width = v.width.filter(|w| *w > 0)?;
+        let fps = v.real_frame_rate.or(v.average_frame_rate)?;
+        Some(VideoStreamInfo { width, fps, is_hdr: v.video_range.as_deref() == Some("HDR") })
     }
 
     pub fn display_name(&self) -> String {
@@ -314,5 +371,87 @@ mod tests {
         let json = r#"{"Id":"","Name":"","Type":"Movie","RunTimeTicks":54000000000}"#;
         let item: MediaItem = serde_json::from_str(json).unwrap();
         assert_eq!(item.runtime_string(), Some("1h 30m".to_string()));
+    }
+
+    // ── video_stream_info() — display-mode-prefetch (2026-09-25) ───────────
+    // MediaStream shapes below mirror the real, live-verified server
+    // response (see DEVLOG.md's display-mode-prefetch section): Type,
+    // Width, Height, RealFrameRate, AverageFrameRate, VideoRange.
+
+    #[test]
+    fn video_stream_info_real_frame_rate_preferred() {
+        let json = r#"{"Id":"m1","Name":"M","Type":"Movie","MediaStreams":[
+            {"Type":"Audio"},
+            {"Type":"Video","Width":3840,"Height":2160,"RealFrameRate":23.976025,"AverageFrameRate":23.9,"VideoRange":"HDR"}
+        ]}"#;
+        let item: MediaItem = serde_json::from_str(json).unwrap();
+        let info = item.video_stream_info().expect("should find the video stream");
+        assert_eq!(info.width, 3840);
+        assert!((info.fps - 23.976025).abs() < 0.0001);
+        assert!(info.is_hdr);
+    }
+
+    #[test]
+    fn video_stream_info_falls_back_to_average_frame_rate() {
+        let json = r#"{"Id":"m1","Name":"M","Type":"Movie","MediaStreams":[
+            {"Type":"Video","Width":1920,"Height":1080,"AverageFrameRate":29.97,"VideoRange":"SDR"}
+        ]}"#;
+        let item: MediaItem = serde_json::from_str(json).unwrap();
+        let info = item.video_stream_info().expect("should find the video stream");
+        assert_eq!(info.width, 1920);
+        assert!((info.fps - 29.97).abs() < 0.0001);
+        assert!(!info.is_hdr);
+    }
+
+    #[test]
+    fn video_stream_info_none_when_both_frame_rates_missing() {
+        let json = r#"{"Id":"m1","Name":"M","Type":"Movie","MediaStreams":[
+            {"Type":"Video","Width":1920,"Height":1080,"VideoRange":"SDR"}
+        ]}"#;
+        let item: MediaItem = serde_json::from_str(json).unwrap();
+        assert!(item.video_stream_info().is_none());
+    }
+
+    #[test]
+    fn video_stream_info_none_when_width_missing_or_zero() {
+        let missing = r#"{"Id":"m1","Name":"M","Type":"Movie","MediaStreams":[
+            {"Type":"Video","RealFrameRate":24.0,"VideoRange":"SDR"}
+        ]}"#;
+        let item: MediaItem = serde_json::from_str(missing).unwrap();
+        assert!(item.video_stream_info().is_none());
+
+        let zero = r#"{"Id":"m1","Name":"M","Type":"Movie","MediaStreams":[
+            {"Type":"Video","Width":0,"RealFrameRate":24.0,"VideoRange":"SDR"}
+        ]}"#;
+        let item: MediaItem = serde_json::from_str(zero).unwrap();
+        assert!(item.video_stream_info().is_none());
+    }
+
+    #[test]
+    fn video_stream_info_none_when_no_video_stream_present() {
+        let json = r#"{"Id":"m1","Name":"M","Type":"Movie","MediaStreams":[
+            {"Type":"Audio"},
+            {"Type":"Subtitle"}
+        ]}"#;
+        let item: MediaItem = serde_json::from_str(json).unwrap();
+        assert!(item.video_stream_info().is_none());
+    }
+
+    #[test]
+    fn video_stream_info_none_when_media_streams_absent_entirely() {
+        // No Fields=MediaStreams requested — media_streams defaults to empty.
+        let json = r#"{"Id":"m1","Name":"M","Type":"Movie"}"#;
+        let item: MediaItem = serde_json::from_str(json).unwrap();
+        assert!(item.video_stream_info().is_none());
+    }
+
+    #[test]
+    fn video_stream_info_video_range_absent_is_not_hdr() {
+        let json = r#"{"Id":"m1","Name":"M","Type":"Movie","MediaStreams":[
+            {"Type":"Video","Width":1280,"RealFrameRate":25.0}
+        ]}"#;
+        let item: MediaItem = serde_json::from_str(json).unwrap();
+        let info = item.video_stream_info().expect("should find the video stream");
+        assert!(!info.is_hdr);
     }
 }
