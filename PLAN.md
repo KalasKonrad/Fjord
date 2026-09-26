@@ -24,8 +24,11 @@ Full curated version history: [CHANGELOG.md](CHANGELOG.md) (git tags `v0.1.0`–
   - Play a 1080p24 movie while the display is at the default mode → the display switches (with the "Loading…" spinner) and the **first frame appears only after** the switch; no blink mid-playback. In `fjord.log`, `display_sync: setting display mode` comes before `mpv player started`.
   - Same with a 4K HDR title → mode + HDR/WCG switch before the first frame; HDR stats row still reaches `Active (HDR10)`.
   - Press Play then Stop within ~2 s → the display must not switch afterwards (nothing left in the item's mode).
+  - Press Play, then Stop *while the screen is blanking/relinking* (mid-switch) → the display returns to the default mode a few seconds later (`display_sync prestart: playback stopped during the switch — reverting` in the log).
+  - Resume a Continue Watching movie, press Stop during the switch → its resume position is still there afterwards (not reset to 0).
   - Press Play on item A, then quickly Play on item B → only B's video plays; no stray load of A.
   - Queue prev/next/jump and Detail → Play (the fallback-fetch paths) still start promptly.
+  - A stall-recovery reload (pull the network briefly mid-playback) reloads immediately — no extra display-switch wait.
   - Next episode of the same show → no second `kscreen-doctor` mode-set (cached no-op).
   - Toggle OFF → playback starts exactly as before (no spinner delay, no `display_sync` lines).
   - Music tracks start immediately regardless of the toggle.

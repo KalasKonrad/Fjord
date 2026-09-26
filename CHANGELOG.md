@@ -32,6 +32,9 @@ are bumped together as one step, not separately.
   spinner meanwhile). If that takes longer than 20 seconds, playback
   starts anyway. Music is never affected, and nothing changes while the
   feature is off.
+- **Fixed: pressing Stop right after Play (before the video had actually
+  started) could reset a movie's or episode's resume position to the
+  beginning.** It now keeps the position you started from.
 - **Docs:** `CLAUDE.md` is now a short rules-and-pointers file; the full
   design and bug-investigation history moved to `DEVLOG.md`, and the Slint
   gotcha write-ups moved to `SLINT.md`.
