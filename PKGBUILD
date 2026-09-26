@@ -18,7 +18,9 @@ provides=('fjord')
 conflicts=('fjord')
 install=fjord.install
 options=('!debug')
-source=("fjord::git+https://github.com/KalasKonrad/Fjord.git")
+# TEMPORARY: builds the display-mode-prefetch branch for HTPC testing.
+# Remove the #branch= fragment (on main) once testing is done or the branch is merged.
+source=("fjord::git+https://github.com/KalasKonrad/Fjord.git#branch=display-mode-prefetch")
 sha256sums=('SKIP')
 
 pkgver() {
