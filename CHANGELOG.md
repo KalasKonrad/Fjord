@@ -41,6 +41,10 @@ are bumped together as one step, not separately.
   song just stopped at the end. And if an album was still loaded in the
   queue, Repeat One replayed that album's track instead of the song you
   had just played. It now always repeats the song that's playing.
+- **Improved: Repeat All now keeps going when you're not playing an album.**
+  A single song loops, and songs added with "Add to Queue" play round in
+  order instead of stopping after the last one. Skipping with ⏭ keeps the
+  skipped song in the loop. Albums and playlists wrap around as before.
 - **Fixed: pressing Stop right after Play (before the video had actually
   started) could reset a movie's or episode's resume position to the
   beginning.** It now keeps the position you started from.
