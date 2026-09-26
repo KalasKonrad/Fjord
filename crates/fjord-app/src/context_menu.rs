@@ -751,6 +751,7 @@ pub(crate) fn wire_context_menu(
                 let video2 = Arc::clone(&video);
                 let ww2    = ww.clone();
                 let rt2    = rt.clone();
+                let state2 = Arc::clone(&state);
                 rt.spawn(async move {
                     let tracks = match music_container_tracks(&client, &id, &ctype).await {
                         Ok(v) if !v.is_empty() => v,
@@ -777,7 +778,7 @@ pub(crate) fn wire_context_menu(
                         }
                         start_playback(url, first.id.clone(), "Audio", first.title.clone(),
                                        config, client, None, first.audio_meta.clone(),
-                                       &video2, &ww2, &rt2);
+                                       &video2, &ww2, &rt2, &state2, None);
                     });
                 });
                 return;
@@ -805,9 +806,11 @@ pub(crate) fn wire_context_menu(
                         let url       = cli2.direct_play_url(&next.id);
                         let title     = next.display_name();
                         let ep_id     = next.id.clone();
+                        let video_info = next.video_stream_info();
                         let _ = slint::invoke_from_event_loop(move || {
                             start_playback(url, ep_id, "Episode", title, config, cli2,
-                                           Some(id), None, &video2, &ww2, &rt2);
+                                           Some(id), None, &video2, &ww2, &rt2,
+                                           &state2, video_info);
                         });
                     } else {
                         let _ = slint::invoke_from_event_loop(move || {
@@ -825,6 +828,7 @@ pub(crate) fn wire_context_menu(
             let video2   = Arc::clone(&video);
             let ww2      = ww.clone();
             let rt2      = rt.clone();
+            let state2   = Arc::clone(&state);
             rt.spawn(async move {
                 let detail    = client.get_item_detail(&id).await
                     .inspect_err(|e| warn!("play-from-start: get_item_detail({id}) failed: {e:#}"))
@@ -834,10 +838,12 @@ pub(crate) fn wire_context_menu(
                 if item_type == "Episode" && series_id.is_none() {
                     warn!("play-from-start: episode {} has no SeriesId — Up Next will be disabled for this session", id);
                 }
+                let video_info = detail.as_ref().and_then(|i| i.video_stream_info());
                 let title     = detail.map(|i| i.display_name()).unwrap_or_else(|| id.clone());
                 let _ = slint::invoke_from_event_loop(move || {
                     start_playback(play_url, id, &item_type, title, config, client,
-                                   series_id, None, &video2, &ww2, &rt2);
+                                   series_id, None, &video2, &ww2, &rt2,
+                                   &state2, video_info);
                 });
             });
         });

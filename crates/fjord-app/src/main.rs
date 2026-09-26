@@ -3497,13 +3497,15 @@ fn main() -> Result<()> {
             let video2b   = Arc::clone(&video2);
             let ww2       = window_weak.clone();
             let rth2      = rt_handle.clone();
+            let state2b   = Arc::clone(&state);
             rt_handle.spawn(async move {
-                let pos = client.get_item_detail(&item_id).await
-                    .ok().and_then(|i| i.resume_position_secs());
-                config.start_position_secs = pos;
+                let detail     = client.get_item_detail(&item_id).await.ok();
+                let video_info = detail.as_ref().and_then(|i| i.video_stream_info());
+                config.start_position_secs = detail.and_then(|i| i.resume_position_secs());
                 let _ = slint::invoke_from_event_loop(move || {
                     start_playback(play_url, item_id, &item_type, item_title, config, client,
-                                   series_id, None, &video2b, &ww2, &rth2);
+                                   series_id, None, &video2b, &ww2, &rth2,
+                                   &state2b, video_info);
                 });
             });
         });
@@ -3574,9 +3576,11 @@ fn main() -> Result<()> {
                         let title     = next.display_name();
                         let ep_id     = next.id.clone();
                         let series_id = next.series_id.clone();
+                        let video_info = next.video_stream_info();
                         let _ = slint::invoke_from_event_loop(move || {
                             start_playback(url, ep_id, "Episode", title, config, cli2,
-                                           series_id, None, &video4, &ww2, &rt_handle2);
+                                           series_id, None, &video4, &ww2, &rt_handle2,
+                                           &state2, video_info);
                         });
                     } else {
                         let _ = slint::invoke_from_event_loop(move || {
@@ -3590,6 +3594,7 @@ fn main() -> Result<()> {
             let mut config  = s.player_config();
             let state_album = Arc::clone(&state);
             let state_purge = Arc::clone(&state);
+            let state_play  = Arc::clone(&state);
             drop(s);
             let play_url = client.direct_play_url(&item_id);
             let video3b  = Arc::clone(&video3);
@@ -3609,6 +3614,7 @@ fn main() -> Result<()> {
                 let item_type = detail.as_ref().map(|i| i.item_type.clone()).unwrap_or_default();
                 let series_id = detail.as_ref().and_then(|i| i.series_id.clone());
                 let title     = detail.as_ref().map(|i| i.display_name()).unwrap_or_else(|| item_id.clone());
+                let video_info = detail.as_ref().and_then(|i| i.video_stream_info());
                 config.start_position_secs = detail.and_then(|i| i.resume_position_secs());
 
                 if item_type == "MusicAlbum" {
@@ -3633,7 +3639,8 @@ fn main() -> Result<()> {
 
                 let _ = slint::invoke_from_event_loop(move || {
                     start_playback(play_url, item_id, &item_type, title, config, client,
-                                   series_id, None, &video3b, &ww3, &rth3);
+                                   series_id, None, &video3b, &ww3, &rth3,
+                                   &state_play, video_info);
                 });
             });
         });
@@ -3917,6 +3924,7 @@ fn main() -> Result<()> {
 
             let video2 = Arc::clone(&video_paa);
             let ww3    = ww_paa.clone();
+            let state3 = Arc::clone(&state_paa);
 
             rt_paa.spawn(async move {
                 // Fetch tracks for every album in order; track (id, title, album_id)
@@ -3956,7 +3964,7 @@ fn main() -> Result<()> {
                     }
                     start_playback(first_url, first_id, "Audio", first_title, config, client,
                                    None, Some((artist, first_alb_id)),
-                                   &video2, &ww3, &rt3);
+                                   &video2, &ww3, &rt3, &state3, None);
                 });
             });
         });
@@ -4027,7 +4035,8 @@ fn main() -> Result<()> {
                 let t_art = if t.artist.is_empty()   { artist }   else { t.artist.to_string() };
                 let t_alb = if t.album_id.is_empty() { album_id } else { t.album_id.to_string() };
                 start_playback(url, track_id, "Audio", t.title.to_string(), config, client,
-                               None, Some((t_art, t_alb)), &video_pt, &ww, &rt_handle);
+                               None, Some((t_art, t_alb)), &video_pt, &ww, &rt_handle,
+                               &state_pt, None);
             }
         });
     }
@@ -4286,7 +4295,8 @@ fn main() -> Result<()> {
                 let audio_meta = Some((t_art, t_alb));
                 config.start_position_secs = None;
                 start_playback(url, track_id, "Audio", title, config, client,
-                               None, audio_meta, &video_pa, &ww_pa, &rt_pa);
+                               None, audio_meta, &video_pa, &ww_pa, &rt_pa,
+                               &state_pa, None);
             }
         });
     }
@@ -4315,7 +4325,8 @@ fn main() -> Result<()> {
             let play_url = client.direct_play_url(&id);
             info!("play_detail: {}", id);
             start_playback(play_url, id, &item_type, title, config, client,
-                           series_id, None, &video_pd, &ww, &rt_handle);
+                           series_id, None, &video_pd, &ww, &rt_handle,
+                           &state_pd, None);
         });
     }
     {
@@ -4342,7 +4353,8 @@ fn main() -> Result<()> {
             let play_url = client.direct_play_url(&id);
             info!("resume_detail: {} from {:?}s", id, config.start_position_secs);
             start_playback(play_url, id, &item_type, title, config, client,
-                           series_id, None, &video_rd, &ww, &rt_handle);
+                           series_id, None, &video_rd, &ww, &rt_handle,
+                           &state_rd, None);
         });
     }
     {
@@ -4463,18 +4475,23 @@ fn main() -> Result<()> {
                 video_pe.lock().unwrap().from_series = true;
             }
             let play_url  = client.direct_play_url(&id);
+            // series_episode_items comes from get_series_episodes (Fields=MediaStreams),
+            // so this is usually already known; the detail fetch below is the fallback.
+            let ep_video_info = ep_item.as_ref().and_then(|i| i.video_stream_info());
             let title     = ep_item.map(|i| i.display_name()).unwrap_or_else(|| id.clone());
             let video_pe2 = Arc::clone(&video_pe);
             let ww_pe2    = ww_pe.clone();
             let rth_pe2   = rth_pe.clone();
+            let state_pe2 = Arc::clone(&state_pe);
             info!("play_series_episode: {}", id);
             rth_pe.spawn(async move {
-                let pos = client.get_item_detail(&id).await
-                    .ok().and_then(|i| i.resume_position_secs());
-                config.start_position_secs = pos;
+                let detail     = client.get_item_detail(&id).await.ok();
+                let video_info = detail.as_ref().and_then(|i| i.video_stream_info()).or(ep_video_info);
+                config.start_position_secs = detail.and_then(|i| i.resume_position_secs());
                 let _ = slint::invoke_from_event_loop(move || {
                     start_playback(play_url, id, "Episode", title, config, client,
-                                   series_id, None, &video_pe2, &ww_pe2, &rth_pe2);
+                                   series_id, None, &video_pe2, &ww_pe2, &rth_pe2,
+                                   &state_pe2, video_info);
                 });
             });
         });
@@ -4656,11 +4673,13 @@ fn main() -> Result<()> {
             let title      = next.display_name();
             let ep_id      = next.id.clone();
             let series_id  = next.series_id.clone();
+            let video_info = next.video_stream_info();
             if let Some(w) = ww_pn.upgrade() {
                 AppState::get(&w).set_show_next_ep_banner(false);
             }
             start_playback(url, ep_id, "Episode", title, config, cli,
-                           series_id, None, &video_pn, &ww_pn, &rt_pn);
+                           series_id, None, &video_pn, &ww_pn, &rt_pn,
+                           &state_pn, video_info);
         });
     }
 
@@ -4701,7 +4720,7 @@ fn main() -> Result<()> {
                     let am  = qi.audio_meta.clone();
                     start_playback(url, qi.id.clone(), &qi.item_type, qi.title.clone(),
                                    config, client, qi.series_id.clone(), am,
-                                   &video_qp, &ww_qp, &rt_qp);
+                                   &video_qp, &ww_qp, &rt_qp, &state_qp, None);
                 }
                 None if should_seek_start => {
                     // pos >= 2s and no prev: restart current track from 0
@@ -4731,7 +4750,7 @@ fn main() -> Result<()> {
                 let am  = qi.audio_meta.clone();
                 start_playback(url, qi.id.clone(), &qi.item_type, qi.title.clone(),
                                config, client, qi.series_id.clone(), am,
-                               &video_qn, &ww_qn, &rt_qn);
+                               &video_qn, &ww_qn, &rt_qn, &state_qn, None);
             }
         });
     }
@@ -4820,7 +4839,7 @@ fn main() -> Result<()> {
             if let Some(w) = ww_qj.upgrade() { AppState::get(&w).set_show_queue_panel(false); }
             start_playback(url, item.id.clone(), &item.item_type, item.title.clone(),
                            config, client, item.series_id.clone(), am,
-                           &video_qj, &ww_qj, &rt_qj);
+                           &video_qj, &ww_qj, &rt_qj, &state_qj, None);
         });
     }
     {
