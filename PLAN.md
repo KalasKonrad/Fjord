@@ -38,7 +38,9 @@ Full curated version history: [CHANGELOG.md](CHANGELOG.md) (git tags `v0.1.0`–
 
 ## Pending
 
-(none open — everything recently shipped is fully documented in [CHANGELOG.md](CHANGELOG.md) (user-facing) and `DEVLOG.md` (full technical narrative, dated sections); anything still needing real-hardware confirmation lives in the `Live-test checklist` above, not here)
+- [ ] Before merging `display-mode-prefetch` into `main`: remove `#branch=display-mode-prefetch` from `PKGBUILD`'s `source=` (added so the HTPC can build the branch).
+
+(nothing else open — everything recently shipped is fully documented in [CHANGELOG.md](CHANGELOG.md) (user-facing) and `DEVLOG.md` (full technical narrative, dated sections); anything still needing real-hardware confirmation lives in the `Live-test checklist` above, not here)
 
 ---
 ## Issues
