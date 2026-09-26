@@ -1,6 +1,8 @@
 // ── fjord-app · playback.rs ──────────────────────────────────────────────────
 //   QueueItem               { id, item_type, series_id, title, audio_meta } — one entry in the playback queue
 //   RepeatMode              Off / All / One — queue repeat behaviour
+//   repeat_one_target       Repeat One replays now_playing (the song actually playing), with or without a
+//                           playlist — used by natural end, the gapless peek, and commit_natural_next
 //   VideoState              mpv Player + MpvRenderCtx, GL FBOs, playback metadata
 //                           playlist: Vec<QueueItem> — ordered track list for album/artist playback
 //                           playlist_index: usize — currently-playing position in playlist
@@ -1734,9 +1736,24 @@ fn natural_next_index(vs: &VideoState) -> Option<usize> {
     }
 }
 
+// Repeat One repeats whatever is actually playing. `now_playing` is the source
+// of truth, not `playlist[playlist_index]`: a song played on its own leaves the
+// playlist empty, and one played while an album playlist is loaded doesn't move
+// playlist_index (start_playback never touches it). Both cases used to fall
+// through — the lone song just stopped, the off-list song replayed the album's
+// current track instead.
+fn repeat_one_target(vs: &VideoState) -> Option<QueueItem> {
+    if vs.current_is_audio && vs.repeat_mode == RepeatMode::One {
+        vs.now_playing.clone().filter(|q| q.item_type == "Audio")
+    } else {
+        None
+    }
+}
+
 // Non-mutating preview of what natural end will play (class-gated like the
 // timer's advance). Used by the gapless preload check.
 pub(crate) fn peek_natural_next(vs: &VideoState) -> Option<QueueItem> {
+    if let Some(q) = repeat_one_target(vs) { return Some(q); }
     let ended_audio = vs.current_is_audio;
     let queue_head_matches = vs.queue.first()
         .map(|q| (q.item_type == "Audio") == ended_audio)
@@ -1752,6 +1769,8 @@ pub(crate) fn peek_natural_next(vs: &VideoState) -> Option<QueueItem> {
 
 // Advance the bookkeeping to match the entry mpv just started gaplessly.
 fn commit_natural_next(vs: &mut VideoState, qi: &QueueItem) {
+    // Repeat One replayed the same song: playlist position and queue unchanged.
+    if repeat_one_target(vs).is_some_and(|q| q.id == qi.id) { return; }
     if vs.current_is_audio && !vs.playlist.is_empty() {
         if let Some(i) = natural_next_index(vs) {
             if vs.playlist.get(i).map(|q| q.id == qi.id).unwrap_or(false) {
@@ -3711,7 +3730,12 @@ pub(crate) fn wire_mpv_timer(
                     let queue_head_matches = vs.queue.first()
                         .map(|q| (q.item_type == "Audio") == ended_audio)
                         .unwrap_or(false);
-                    if ended_audio && !vs.playlist.is_empty() {
+                    if let Some(q) = repeat_one_target(&vs) {
+                        // Repeat One: replay the song that just ended, with or
+                        // without a playlist loaded (see repeat_one_target).
+                        info!("repeat one: replaying {}", q.id);
+                        Some(q)
+                    } else if ended_audio && !vs.playlist.is_empty() {
                         // Playlist mode (album/artist): advance with repeat/shuffle logic.
                         let len      = vs.playlist.len();
                         let next_idx = match vs.repeat_mode {
@@ -3858,4 +3882,58 @@ pub(crate) fn wire_mpv_timer(
         }
     });
     timer
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn song(id: &str) -> QueueItem {
+        QueueItem { id: id.into(), item_type: "Audio".into(), series_id: None,
+                    title: id.into(), audio_meta: None }
+    }
+
+    fn playing(id: &str, repeat: RepeatMode) -> VideoState {
+        VideoState { current_is_audio: true, now_playing: Some(song(id)),
+                     repeat_mode: repeat, ..Default::default() }
+    }
+
+    #[test]
+    fn repeat_one_replays_a_song_played_without_a_playlist() {
+        let vs = playing("a", RepeatMode::One);
+        assert_eq!(peek_natural_next(&vs).map(|q| q.id), Some("a".into()));
+    }
+
+    #[test]
+    fn repeat_one_replays_off_list_song_not_the_playlist_track() {
+        let mut vs = playing("x", RepeatMode::One);
+        vs.playlist = vec![song("a"), song("b")];
+        vs.playlist_index = 0;
+        assert_eq!(peek_natural_next(&vs).map(|q| q.id), Some("x".into()));
+        commit_natural_next(&mut vs, &song("x"));
+        assert_eq!(vs.playlist_index, 0);
+    }
+
+    #[test]
+    fn repeat_one_in_playlist_keeps_position() {
+        let mut vs = playing("b", RepeatMode::One);
+        vs.playlist = vec![song("a"), song("b"), song("c")];
+        vs.playlist_index = 1;
+        assert_eq!(peek_natural_next(&vs).map(|q| q.id), Some("b".into()));
+        commit_natural_next(&mut vs, &song("b"));
+        assert_eq!(vs.playlist_index, 1);
+    }
+
+    #[test]
+    fn repeat_off_single_song_has_nothing_next() {
+        let vs = playing("a", RepeatMode::Off);
+        assert!(peek_natural_next(&vs).is_none());
+    }
+
+    #[test]
+    fn repeat_one_never_applies_to_video() {
+        let mut vs = playing("m", RepeatMode::One);
+        vs.current_is_audio = false;
+        assert!(repeat_one_target(&vs).is_none());
+    }
 }
