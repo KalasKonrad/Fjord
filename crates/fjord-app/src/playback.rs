@@ -91,6 +91,9 @@
 //                           param (from MediaStreams) skips the fallback item-detail fetch when known;
 //                           skipped when replacing a live player for the SAME item (stall reload); a stop
 //                           mid-switch reverts the display from inside the task
+//   loaded_since/loaded_ok  (wire_mpv_timer) time since mpv's first FileLoaded — decoder log, chapters,
+//                           tracks, display-sync Branch B and the skip-segment check key off it, not
+//                           play_start (before FileLoaded, time-pos reads a fake 0)
 //   prestart_still_current  that task's staleness check — generation unchanged AND vs.player still set
 //                           (Stop doesn't bump the generation)
 //   reset_video_state_for_playback  shared "fresh playback baseline" reset (screensaver inhibit,
@@ -2310,6 +2313,17 @@ pub(crate) fn wire_mpv_timer(
                 Some(p) => (Some(p.get_position()), Some(p.get_duration())),
                 None    => (None, None),
             };
+            // How long ago mpv finished opening the file (None while still
+            // opening). Before FileLoaded, time-pos reads 0 — a fake position.
+            // Checks that need real media data key off this, not play_start:
+            // a slow-opening file (library drive waking, ~13 s on the HTPC)
+            // otherwise exhausted the chapter poll before the file loaded, and
+            // the intro-skip treated the fake 0 as "inside the intro" during
+            // display_sync's pre-decode wait, failed its seek and marked the
+            // intro handled — so it then played unskipped.
+            let loaded_since: Option<Duration> = vs.player.as_ref()
+                .and_then(|p| p.file_loaded_at())
+                .map(|t| t.elapsed());
 
             // Skip-fade duration: Config.device.skip_fade_ms × the live
             // settings-animation-speed multiplier, read once per tick — not
@@ -2389,7 +2403,9 @@ pub(crate) fn wire_mpv_timer(
             }
 
             if vs.player.is_some() {
-                let elapsed_ok = vs.play_start.is_some_and(|t| t.elapsed() >= Duration::from_secs(2));
+                // 2 s after the file actually opened (see loaded_since above) —
+                // fps estimate settled, chapter/track lists populated.
+                let loaded_ok = loaded_since.is_some_and(|d| d >= Duration::from_secs(2));
 
                 // Stall auto-recovery: certain audio-device handoffs (e.g. SPDIF
                 // passthrough taking over from a device PipeWire hasn't released
@@ -2539,7 +2555,7 @@ pub(crate) fn wire_mpv_timer(
                     }
                 }
 
-                if elapsed_ok && !vs.decoder_logged {
+                if loaded_ok && !vs.decoder_logged {
                     if let Some(p) = vs.player.as_ref() {
                         p.log_decoder_info();
                         p.apply_auto_vf();
@@ -2591,7 +2607,7 @@ pub(crate) fn wire_mpv_timer(
                 // pre-display_sync shape apart from one new `!display_sync_
                 // enabled` term) and Branch B (further down). This is
                 // deliberate, not an arbitrary refactor: folding display_
-                // sync's own `elapsed_ok` timing requirement (needed because
+                // sync's own `loaded_ok` timing requirement (needed because
                 // estimated-vf-fps isn't safe to read the instant
                 // VideoReconfig fires — see query_video_dimensions' own doc
                 // comment) into a single merged condition would delay HDR's
@@ -2645,7 +2661,7 @@ pub(crate) fn wire_mpv_timer(
                 // replaced item during the settle can never have its stale
                 // metadata wrongly applied to whatever's playing by then.
                 if !vs.current_is_audio && !vs.display_sync_attempted && display_sync_enabled {
-                    let ready = elapsed_ok
+                    let ready = loaded_ok
                         && vs.player.as_ref().is_some_and(|p| p.has_seen_video_reconfig());
                     if ready {
                         let (meta, dims) = {
@@ -2704,7 +2720,7 @@ pub(crate) fn wire_mpv_timer(
                 // Retry up to 30 ticks (~480 ms) to handle containers where the
                 // chapter metadata appears slightly after the first track data.
                 // A count of 0 after 30 attempts is treated as "no chapters".
-                if elapsed_ok && !vs.chapters_loaded {
+                if loaded_ok && !vs.chapters_loaded {
                     if let Some(p) = vs.player.as_ref() {
                         let count = p.get_chapter_count();
                         if count > 0 {
@@ -2774,7 +2790,7 @@ pub(crate) fn wire_mpv_timer(
                         }
                     }
                 }
-                if elapsed_ok && !vs.tracks_loaded {
+                if loaded_ok && !vs.tracks_loaded {
                     if let (Some(p), Some(w)) = (vs.player.as_ref(), window_timer.upgrade()) {
                         let tracks = p.get_tracks();
                         // Retry next tick if mpv hasn't parsed the track list yet.
@@ -3011,7 +3027,9 @@ pub(crate) fn wire_mpv_timer(
                 //   ask         → show single "Skip →" button
                 //   ask-timed   → show two-button overlay + countdown; auto-seek on expiry
                 //   never-skip  → do nothing
-                if let Some(pos) = live_pos {
+                // Only once the file is open — before that live_pos is a fake 0
+                // (see loaded_since).
+                if let (Some(pos), Some(_)) = (live_pos, loaded_since) {
                     let seg_in = |t: &Option<Segment>| t.as_ref().is_some_and(|s| pos >= s.start && pos < s.end);
 
                     // (label, end, key) — key used to look up mode/secs from AppState
