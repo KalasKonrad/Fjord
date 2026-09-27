@@ -23,14 +23,14 @@ Full curated version history: [CHANGELOG.md](CHANGELOG.md) (git tags `v0.1.0`–
 - [ ] **display-mode-prefetch — display switches before playback starts (2026-09-26, branch `display-mode-prefetch`).** With Settings → Video → Sync display to source ON, on the HTPC:
   - ~~1080p24 movie: switch completes before the file loads~~ — **confirmed live 2026-09-26 (r1034)**: `setting display mode: 1920x1080@24` → 3 s settle → `mpv player started`.
   - ~~4K HDR title: mode + HDR/WCG before the file loads, HDR negotiates after~~ — **confirmed live 2026-09-26 (r1034)**, e.g. `3840x2160@25` → `HDR on / WCG on` → load → `negotiated HDR10`. Genuine stops revert to `1920x1080@120` within ~0.3 s.
-  - **Re-check after the r1036 fix:** play two videos in a row (the bug only hit the 2nd+ of a session) → the second one has chapter marks on the seek bar, and the log has NO `no chapters after 30 attempts` / `first frame rendered NN s` / `no VideoReconfig event NN s` lines right after `starting playback`.
+  - ~~Re-check after the r1036 fix (chapters on the 2nd+ play)~~ — **confirmed live 2026-09-27 (r1036)**: three 4K HDR episodes in a row each logged `loaded 3 chapters`, a real `active decoder: … nvdec`, and first frame 0.002–0.020 s after load; no stale warnings.
   - Press Play then Stop within ~2 s → the display must not switch afterwards (nothing left in the item's mode).
   - Press Play, then Stop *while the screen is blanking/relinking* (mid-switch) → the display returns to the default mode a few seconds later (`display_sync prestart: playback stopped during the switch — reverting` in the log).
   - Resume a Continue Watching movie, press Stop during the switch → its resume position is still there afterwards (not reset to 0).
   - Press Play on item A, then quickly Play on item B → only B's video plays; no stray load of A.
   - Queue prev/next/jump and Detail → Play (the fallback-fetch paths) still start promptly.
-  - A stall-recovery reload (pull the network briefly mid-playback) reloads immediately — no extra display-switch wait.
-  - Next episode of the same show → no second `kscreen-doctor` mode-set (cached no-op).
+  - ~~Stall-recovery reload skips the display-switch wait~~ — **confirmed live 2026-09-26 (r1034)** on a slow-opening file.
+  - ~~Next episode of the same show → no second mode-set~~ — **confirmed live 2026-09-27 (r1036)**: two Up Next auto-advances, no `display_sync: setting` lines, load within ~0.4 s.
   - Toggle OFF → playback starts exactly as before (no spinner delay, no `display_sync` lines).
   - Music tracks start immediately regardless of the toggle.
 - [ ] **Music dashboard Playlists row updates right away (2026-09-26).** Create a playlist via "Add to Playlist → + New playlist…", go to the Music dashboard → it's in the Playlists row immediately, with art. Add a track to an existing playlist → its "N tracks" count updates on the dashboard card too.
