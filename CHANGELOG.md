@@ -32,6 +32,11 @@ are bumped together as one step, not separately.
   spinner meanwhile). If that takes longer than 20 seconds, playback
   starts anyway. Music is never affected, and nothing changes while the
   feature is off.
+- **Fixed: "Skip intro" could fail to skip, and chapters could go missing,
+  when a video was slow to start** (a library drive waking up, or the
+  display switching first). Fjord now waits until the file has actually
+  opened before looking for chapters, choosing subtitle/audio tracks, or
+  skipping an intro.
 - **Fixed: a new playlist didn't show up in the Music dashboard's
   Playlists row until about 40 seconds later.** The library grid updated
   right away, but the dashboard row waited for Jellyfin's own change
