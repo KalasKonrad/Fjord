@@ -1461,8 +1461,10 @@ dependencies = [
  "fjord-seerr",
  "futures-util",
  "gl",
+ "glutin_egl_sys",
  "hkdf",
  "image",
+ "libloading",
  "reqwest",
  "serde",
  "serde_json",
@@ -1479,6 +1481,7 @@ dependencies = [
  "wayland-backend",
  "wayland-client",
  "wayland-protocols",
+ "wayland-sys",
 ]
 
 [[package]]

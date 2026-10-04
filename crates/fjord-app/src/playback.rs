@@ -109,6 +109,8 @@
 //                           everything else
 //   reset_playback_ui       clear all player UI state incl. is-audio-playing + music-bar fields + show-now-playing + buffering + skip overlays
 //   wire_rendering_notifier GL thread: FBO render + report_swap() for vsync feedback (no stats — moved to timer)
+//                           HDR Stage 5 step 1: for video players also calls video_surface::ensure_ready
+//                           (lazy backplane setup + size sync; not used for video yet)
 //   wire_mpv_timer          16 ms timer: position (also updates music-bar-pos/elapsed/total when is-audio-playing), stats,
 //                           skip segment (4 modes: always-skip/ask/ask-timed/never-skip),
 //                           Up Next banner trigger (credits mode: always-skip/ask/never-skip) + configurable countdown
@@ -1971,6 +1973,18 @@ pub(crate) fn wire_rendering_notifier(
                     }
 
                     if vs.player.is_none() { return; }
+
+                    // HDR Stage 5, step 1 (2026-10-04): set the video backplane
+                    // up on the first video start and keep its size in sync.
+                    // Not used for video yet — it only ever holds a black fill
+                    // under Slint's opaque window. Audio never needs it.
+                    if !vs.current_is_audio {
+                        let phys = win.window().size();
+                        crate::video_surface::ensure_ready(
+                            (phys.width, phys.height),
+                            win.window().scale_factor(),
+                        );
+                    }
 
                     if vs.render_ctx.is_none() {
                         let handle = vs.player.as_ref().unwrap().raw_handle_ptr();

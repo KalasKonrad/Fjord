@@ -35,7 +35,10 @@
 //                            color-management capabilities and — once real
 //                            HDR content plays, if enabled in Settings —
 //                            negotiates a real image description onto
-//                            Fjord's own surface. Pure observation either
+//                            Fjord's own surface. The same handles also go to
+//                            video_surface::set_wayland_handles (HDR Stage 5,
+//                            2026-10-04 — the video backplane subsurface).
+//                            Pure observation either
 //                            way from THIS callback's own perspective:
 //                            always returns EventResult::Propagate, Slint's
 //                            own dispatch is completely unaffected.
@@ -137,6 +140,7 @@ impl CustomApplicationHandler for FjordApplicationHandler {
                         (dh.as_raw(), wh.as_raw())
                     {
                         crate::hdr::spawn_worker(wdh.display, wwh.surface);
+                        crate::video_surface::set_wayland_handles(wdh.display, wwh.surface);
                     } else {
                         tracing::debug!(
                             "not running under Wayland — skipping HDR color-management worker"
