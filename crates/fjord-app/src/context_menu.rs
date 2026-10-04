@@ -608,7 +608,7 @@ pub(crate) fn wire_context_menu(
             let media_type = g.get_context_menu_jf_media_type().to_string();
             let adding = !g.get_context_menu_on_watchlist();
             let title = g.get_context_menu_title().to_string();
-            crate::discover::discover_toggle_watchlist(Arc::clone(&state), ww.clone(), rt.clone(), tmdb_id, media_type, title, adding);
+            crate::discover::discover_toggle_watchlist(Arc::clone(&state), ww.clone(), rt.clone(), tmdb_id, media_type, title, adding, None);
         });
     }
 

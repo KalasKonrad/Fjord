@@ -8,6 +8,8 @@
 //                        elements survive a refresh instead of re-fading, Phase 96), push_section_model
 //                        (takes HomeSection), show_toast (any-thread toast helper)
 //   trim_last_grapheme   removes exactly one Unicode grapheme cluster (not scalar value) from the
+//   grapheme_count/insert_at_grapheme/delete_before_grapheme/delete_at_grapheme/with_caret
+//                        caret editing by grapheme for the hand-drawn text fields (2026-10-04)
 //                        end of a string — extracted from the on-screen keyboard's own Backspace
 //                        handler (2026-08-23) so every plain append/remove-from-the-end search/
 //                        naming field (Browse, Discover, Library grid, PlaylistPicker naming — none
@@ -631,6 +633,58 @@ pub(crate) fn trim_last_grapheme(s: &str) -> String {
     graphemes.concat()
 }
 
+// ── Text cursor for the hand-drawn search fields (2026-10-04) ────────────────
+// Live-reported: in Discover search you couldn't move back to fix one letter,
+// only delete everything after it. `cursor` counts grapheme clusters before
+// the caret (same unit as trim_last_grapheme, so an accented letter or a flag
+// is one step); out-of-range cursors are clamped to the end.
+pub(crate) fn grapheme_count(s: &str) -> usize {
+    use unicode_segmentation::UnicodeSegmentation;
+    s.graphemes(true).count()
+}
+
+/// Inserts `text` at the caret; returns the new string and caret.
+pub(crate) fn insert_at_grapheme(s: &str, cursor: usize, text: &str) -> (String, usize) {
+    use unicode_segmentation::UnicodeSegmentation;
+    let g: Vec<&str> = s.graphemes(true).collect();
+    let c = cursor.min(g.len());
+    let out = format!("{}{}{}", g[..c].concat(), text, g[c..].concat());
+    // Count the caret in the result's own graphemes: `text` can merge with a
+    // neighbour (e.g. a combining accent) instead of adding a whole step.
+    let new_c = grapheme_count(&format!("{}{}", g[..c].concat(), text));
+    (out, new_c)
+}
+
+/// Backspace: removes the grapheme before the caret.
+pub(crate) fn delete_before_grapheme(s: &str, cursor: usize) -> (String, usize) {
+    use unicode_segmentation::UnicodeSegmentation;
+    let mut g: Vec<&str> = s.graphemes(true).collect();
+    let c = cursor.min(g.len());
+    if c == 0 {
+        return (s.to_string(), 0);
+    }
+    g.remove(c - 1);
+    (g.concat(), c - 1)
+}
+
+/// Delete: removes the grapheme after the caret.
+pub(crate) fn delete_at_grapheme(s: &str, cursor: usize) -> String {
+    use unicode_segmentation::UnicodeSegmentation;
+    let mut g: Vec<&str> = s.graphemes(true).collect();
+    if cursor < g.len() {
+        g.remove(cursor);
+    }
+    g.concat()
+}
+
+/// The text with `caret` drawn at the cursor (the fields draw "▌").
+pub(crate) fn with_caret(s: &str, cursor: usize, caret: &str) -> String {
+    use unicode_segmentation::UnicodeSegmentation;
+    let g: Vec<&str> = s.graphemes(true).collect();
+    let c = cursor.min(g.len());
+    format!("{}{}{}", g[..c].concat(), caret, g[c..].concat())
+}
+
 // Rebuild queue-items model from current VideoState. The panel shows the
 // CURRENT track and what will still play — finished/skipped playlist rows are
 // hidden (they were "cleared from the queue"). With Repeat All/One every row
@@ -1119,6 +1173,7 @@ pub(crate) fn apply_settings_to_window(w: &MainWindow, s: &FjordState) {
     g.set_settings_launch_fullscreen(c.launch_fullscreen);
     g.set_settings_log_level(ss(&c.log_level));
     g.set_settings_display_sync_enabled(c.display_sync_enabled);
+    g.set_settings_display_sync_trailers(c.display_sync_trailers);
     g.set_settings_display_sync_screen_name(ss(&c.display_sync_screen_name));
     g.set_settings_display_sync_default_resolution(ss(&c.display_sync_default_resolution));
     g.set_settings_display_sync_default_hz(ss(&c.display_sync_default_hz));
@@ -1238,6 +1293,7 @@ fn read_settings_from_window(w: &MainWindow, s: &mut FjordState) {
     c.account_launch_policy  = g.get_settings_account_launch_policy().to_string();
     c.default_account_id     = g.get_settings_default_account_id().to_string();
     c.display_sync_enabled            = g.get_settings_display_sync_enabled();
+    c.display_sync_trailers           = g.get_settings_display_sync_trailers();
     c.display_sync_screen_name        = g.get_settings_display_sync_screen_name().to_string();
     c.display_sync_default_resolution = g.get_settings_display_sync_default_resolution().to_string();
     c.display_sync_default_hz         = g.get_settings_display_sync_default_hz().to_string();
@@ -1395,7 +1451,7 @@ fn detect_yt_dlp() -> bool {
 /// `None`, yt-dlp's own default selection, no override. The height cap is
 /// yt-dlp's own documented format-selector idiom for exactly this ("cap
 /// resolution") use case.
-fn trailer_ytdl_format(quality: &str) -> Option<String> {
+pub(crate) fn trailer_ytdl_format(quality: &str) -> Option<String> {
     let height = match quality {
         "1080p" => 1080,
         "720p"  => 720,
@@ -2318,6 +2374,8 @@ pub(crate) fn reset_session_state(
     // the caches just above.
     s.pending_keybind_rebind = None;
     s.available_plugins.clear();
+    s.trailer_playable.clear();
+    s.request_detail_trailers.clear();
     // ManageProfilesScreen/ProfileEditScreen (Bonfire Phase 2, 2026-08-09) —
     // same "clear it here, don't wait to discover the gap live" precedent
     // as everything else in this function.
@@ -6141,5 +6199,36 @@ mod strip_html_tests {
     fn blank_lines_from_stripped_tags_collapse() {
         let out = strip_html_to_text("<p>First</p><p>Second</p>");
         assert_eq!(out, "First\nSecond");
+    }
+}
+
+#[cfg(test)]
+mod text_cursor_tests {
+    use super::*;
+
+    #[test]
+    fn insert_moves_the_caret() {
+        assert_eq!(insert_at_grapheme("helo", 3, "l"), ("hello".to_string(), 4));
+        assert_eq!(insert_at_grapheme("", 0, "a"), ("a".to_string(), 1));
+        assert_eq!(insert_at_grapheme("ab", 99, "c"), ("abc".to_string(), 3));
+        // A combining accent merges with the letter before it.
+        assert_eq!(insert_at_grapheme("cafe", 4, "\u{301}"), ("cafe\u{301}".to_string(), 4));
+    }
+
+    #[test]
+    fn backspace_and_delete_work_by_grapheme() {
+        assert_eq!(delete_before_grapheme("hexllo", 3), ("hello".to_string(), 2));
+        assert_eq!(delete_before_grapheme("abc", 0), ("abc".to_string(), 0));
+        assert_eq!(delete_before_grapheme("cafe\u{301}", 4), ("caf".to_string(), 3));
+        assert_eq!(delete_at_grapheme("hexllo", 2), "hello");
+        assert_eq!(delete_at_grapheme("abc", 3), "abc");
+        assert_eq!(grapheme_count("cafe\u{301}"), 4);
+    }
+
+    #[test]
+    fn caret_is_drawn_at_the_cursor() {
+        assert_eq!(with_caret("hello", 2, "▌"), "he▌llo");
+        assert_eq!(with_caret("", 0, "▌"), "▌");
+        assert_eq!(with_caret("ab", 9, "▌"), "ab▌");
     }
 }
