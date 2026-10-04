@@ -48,11 +48,18 @@
 //                          own hook (playback.rs), which is also what
 //                          sequences this to complete BEFORE HDR Stage 3's
 //                          negotiation ever runs when both are enabled (see
-//                          CLAUDE.md's dated section for the real race this
+//                          DEVLOG.md's dated section for the real race this
 //                          avoids — kscreen-doctor's own HDR toggle and
 //                          hdr.rs's Wayland surface negotiation are two
 //                          different, both-heavyweight operations that must
 //                          not fire concurrently)
+//   sync_before_load       display-mode-prefetch (2026-09-25): thin wrapper
+//                          over sync_to_source fed from Jellyfin's
+//                          MediaStreams (width/fps/HDR) instead of mpv —
+//                          called by start_playback BEFORE mpv loads the
+//                          file, so the mode switch no longer blinks
+//                          mid-playback. The post-decode trigger above still
+//                          runs afterwards and is normally a cached no-op.
 //   revert_to_default      called from the 3 genuine-stop call sites
 //                          (quit_cleanup, do_stop_playback, wire_mpv_timer's
 //                          natural-EOF branch once nothing turns out to be
@@ -608,6 +615,34 @@ pub(crate) async fn sync_to_source(
             .ok();
         state.lock().unwrap().display_sync_current_hdr = Some(want_hdr);
     }
+}
+
+/// display-mode-prefetch (2026-09-25) — the pre-decode entry point,
+/// called from `start_playback`'s own new deferred-load task before mpv has
+/// ever been told to load the file, instead of `sync_to_source`'s usual
+/// post-decode trigger in `wire_mpv_timer`. Deliberately a thin wrapper, not
+/// a second implementation: `sync_to_source` itself is untouched, since it
+/// only ever reads `dims.0`/`dims.2` (width/fps) and `meta.gamma` (checked
+/// against `"pq"`/`"hlg"` for the is-this-HDR decision) — everything else on
+/// `SourceHdrMetadata` (primaries, min/max luma, MaxCLL, MaxFALL) is real
+/// per-file SEI data mpv itself reports post-decode, which Jellyfin's own
+/// `MediaStreams` API never exposes at all (live-verified) and which this
+/// pre-decode call has no way to supply — so this only ever builds a
+/// synthetic `gamma` sentinel and leaves every other `meta` field at its
+/// `Default`. HDR Stage 3's own real negotiation (`hdr::maybe_negotiate`)
+/// still runs later, post-decode, with mpv's real precise metadata,
+/// completely unaffected by this call — see DEVLOG.md's display-mode-
+/// prefetch section for the full scope reasoning.
+pub(crate) async fn sync_before_load(
+    state: Arc<Mutex<FjordState>>,
+    video_info: fjord_api::models::VideoStreamInfo,
+    cfg: DisplaySyncSettings,
+) {
+    let meta = SourceHdrMetadata {
+        gamma: if video_info.is_hdr { "pq".into() } else { "bt.1886".into() },
+        ..Default::default()
+    };
+    sync_to_source(state, (video_info.width, 0, video_info.fps), meta, cfg).await;
 }
 
 /// Called from the 3 genuine-stop call sites (`quit_cleanup`,
