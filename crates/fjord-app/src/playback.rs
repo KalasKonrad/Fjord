@@ -6,6 +6,7 @@
 //   repeat_all_ring /       Repeat All with no album playlist: the queue is a ring (ended song → back of
 //     take_repeat_all_ring_next  the queue, head plays) — natural end, gapless peek/commit and ⏭ Next
 //   VideoState              mpv Player + MpvRenderCtx, GL FBOs, playback metadata
+//                           is_trailer/trailer_url (2026-10-04): Watch Trailer session flags
 //                           playlist: Vec<QueueItem> — ordered track list for album/artist playback
 //                           playlist_index: usize — currently-playing position in playlist
 //                           shuffle: bool, shuffle_order: Vec<usize> — shuffled play order
@@ -101,6 +102,10 @@
 //                           start_playback and play_trailer can't drift out of sync; each caller
 //                           sets its own item_id/playing_series_id/client afterward
 //   play_trailer            Watch Trailer (Discover only) — deliberately NOT start_playback with a
+//                           (2026-10-04: sets is_trailer; display sync skips trailers unless
+//                           device.display_sync_trailers; a failed open closes with "Trailer unavailable")
+//   next_stall_step/StallStep  shared reload-or-give-up step for a stall AND a failed open
+//                           (PollResult::Failed) of a library item — same budget, same logs
 //                           fake item: that function needs a real Arc<JellyfinClient> to even call
 //                           its Jellyfin reporting. Leaves vs.client/item_id/playing_series_id at
 //                           None — the same mechanism (not a special case) that already makes
@@ -565,6 +570,12 @@ pub(crate) struct VideoState {
     // True when the current item is Audio; drives the class-gated natural-end
     // advance (audio only follows audio, video only follows video).
     pub current_is_audio:      bool,
+    // A Watch Trailer session (play_trailer) — no Jellyfin item, so no
+    // stall reloads; a failed open closes the player with a toast instead,
+    // and display sync only runs for it when Settings says so (2026-10-04).
+    // `trailer_url` is the YouTube link, to mark it unplayable on failure.
+    pub is_trailer:            bool,
+    pub trailer_url:           Option<String>,
     // Snapshot of the currently-playing item, set in start_playback. Used by
     // push_queue_display to render a synthetic now-playing row when the current
     // play is not the playlist row at playlist_index (queue jump, single track).
@@ -622,7 +633,7 @@ impl Default for VideoState {
             chapter_load_attempts: 0, chapter_osd_ticks: 0, delay_osd_ticks: 0,
             playlist: Vec::new(), playlist_index: 0,
             shuffle: false, shuffle_order: Vec::new(), repeat_mode: RepeatMode::Off,
-            queue: Vec::new(), current_is_audio: false, now_playing: None,
+            queue: Vec::new(), current_is_audio: false, is_trailer: false, trailer_url: None, now_playing: None,
             music_idle_ticks: 0,
             lyrics: None, lyrics_available: false,
             preloaded_next: None,
@@ -1058,6 +1069,8 @@ fn reset_video_state_for_playback(vs: &mut VideoState, player: Player, config: &
     // HTPC: the chapter poll gave up before the file was even loaded.
     vs.play_start            = None;
     vs.first_frame_logged    = false;
+    vs.is_trailer            = false; // play_trailer sets these after this reset
+    vs.trailer_url           = None;
     vs.stall_last_progress_pos = config.start_position_secs.unwrap_or(0.0);
     vs.stall_last_progress_at  = None; // re-armed on the first tick after this player starts
     // A fresh player means the very first tick has nothing meaningful to
@@ -1659,6 +1672,8 @@ pub(crate) fn play_trailer(
                 vs.item_id           = None;
                 vs.playing_series_id = None;
                 vs.client            = None;
+                vs.is_trailer        = true;
+                vs.trailer_url       = Some(url.clone());
                 // Trailers have no video_info/Jellyfin item, so they never
                 // go through start_playback's own deferred-load path — stamp
                 // play_start immediately here, matching today's exact
@@ -2252,6 +2267,51 @@ fn apply_audio_track(
 // patience an unrelated slow resource deserves.
 const MAX_STALL_RELOAD_ATTEMPTS_HEALTHY:   u32 = 7;  // (7+1) × 5s ≈ 40s
 const MAX_STALL_RELOAD_ATTEMPTS_UNHEALTHY: u32 = 2;  // (2+1) × 5s = 15s, the original budget
+const STALL_GIVE_UP_TOAST:  &str = "Playback stopped — lost connection to server";
+const FAILED_OPEN_TOAST:    &str = "Couldn't play this — the file wouldn't open";
+const TRAILER_FAILED_TOAST: &str = "Trailer unavailable";
+
+/// One step of stall recovery for the current item, shared by the stall
+/// watchdog and a failed open (PollResult::Failed, 2026-10-04): reload while
+/// the item still has attempts left (recorded here), give up past the cap.
+/// `NotReloadable` = no Jellyfin item to reload (a trailer).
+enum StallStep {
+    Reload(QueueItem, Arc<JellyfinClient>, f64),
+    GiveUp,
+    NotReloadable,
+}
+
+fn next_stall_step(vs: &mut VideoState, connection_likely_healthy: bool, why: &str) -> StallStep {
+    let max_attempts = if connection_likely_healthy {
+        MAX_STALL_RELOAD_ATTEMPTS_HEALTHY
+    } else {
+        MAX_STALL_RELOAD_ATTEMPTS_UNHEALTHY
+    };
+    let attempts = match &vs.stall_reload_attempts_for {
+        Some((id, n)) if vs.item_id.as_deref() == Some(id.as_str()) => *n,
+        _ => 0,
+    };
+    if attempts >= max_attempts {
+        warn!("{why} — giving up after {max_attempts} reload attempt(s) (connection_likely_healthy={connection_likely_healthy})");
+        vs.stall_last_reload_at = Some(Instant::now());
+        return StallStep::GiveUp;
+    }
+    let (Some(item_id), Some(cli), Some(np)) = (vs.item_id.clone(), vs.client.clone(), vs.now_playing.clone()) else {
+        return StallStep::NotReloadable;
+    };
+    warn!(
+        "{why} — reloading stream (attempt {}/{max_attempts}, connection_likely_healthy={connection_likely_healthy})",
+        attempts + 1
+    );
+    vs.stall_reload_attempts_for = Some((item_id, attempts + 1));
+    vs.stall_last_reload_at = Some(Instant::now());
+    // pos itself can be unreliable right as a stream breaks (mpv's own
+    // position readout can reset toward 0 — the same symptom the duration
+    // guard on natural end exists to catch) — resume from the last position
+    // we know was read while things were genuinely working.
+    let resume_secs = (vs.last_known_pos_ticks as f64) / 10_000_000.0;
+    StallStep::Reload(np, cli, resume_secs)
+}
 
 pub(crate) fn wire_mpv_timer(
     window_weak:    slint::Weak<MainWindow>,
@@ -2279,7 +2339,7 @@ pub(crate) fn wire_mpv_timer(
             (s.config.device.gapless_audio, s.config.active().now_playing_auto_open, healthy)
         };
         let (finished, banner_trigger, gapless_commit, auto_open_now_playing, credits_mark_played,
-             hide_next_ep_banner, stalled_now, stall_reload, stall_give_up) = {
+             hide_next_ep_banner, stalled_now, stall_reload, stall_give_up, trailer_failed) = {
             let mut vs = video_timer.lock().unwrap();
             let mut banner_trigger: Option<(String, Option<Arc<JellyfinClient>>, u32, bool)> = None;
             // Stall auto-recovery outputs — see the doc comment on the check
@@ -2287,7 +2347,12 @@ pub(crate) fn wire_mpv_timer(
             // releases below, same deferred pattern as everything else here.
             let mut stalled_now  = false;
             let mut stall_reload: Option<(QueueItem, Arc<JellyfinClient>, f64)> = None;
-            let mut stall_give_up = false;
+            // Some(toast) = stop and say why (stall budget used up, or a
+            // file that kept failing to open).
+            let mut stall_give_up: Option<&'static str> = None;
+            // Some(url) = a trailer failed to open — close with a toast and
+            // mark that link unplayable (2026-10-04).
+            let mut trailer_failed: Option<String> = None;
             // Set true by the rewind-past-credits revert below when it cancels an
             // in-flight Up Next countdown; acted on after the lock releases, same
             // deferred pattern as everything else in this tuple.
@@ -2530,41 +2595,11 @@ pub(crate) fn wire_mpv_timer(
                     }
 
                     if is_stalled {
-                        let max_attempts = if connection_likely_healthy {
-                            MAX_STALL_RELOAD_ATTEMPTS_HEALTHY
-                        } else {
-                            MAX_STALL_RELOAD_ATTEMPTS_UNHEALTHY
-                        };
-                        let attempts = match &vs.stall_reload_attempts_for {
-                            Some((id, n)) if vs.item_id.as_deref() == Some(id.as_str()) => *n,
-                            _ => 0,
-                        };
-                        if attempts < max_attempts {
-                            if let (Some(item_id), Some(cli), Some(np)) =
-                                (vs.item_id.clone(), vs.client.clone(), vs.now_playing.clone())
-                            {
-                                warn!(
-                                    "playback stalled: {:.1}s with no progress at {:.2}s — reloading stream (attempt {}/{}, connection_likely_healthy={connection_likely_healthy})",
-                                    stalled_for, pos, attempts + 1, max_attempts
-                                );
-                                vs.stall_reload_attempts_for = Some((item_id, attempts + 1));
-                                vs.stall_last_reload_at = Some(Instant::now());
-                                // pos itself can be unreliable right as a stream
-                                // breaks (mpv's own position readout can reset
-                                // toward 0 — the same symptom the duration guard
-                                // on natural end exists to catch) — resume from
-                                // the last position we know was read while things
-                                // were genuinely working.
-                                let resume_secs = (vs.last_known_pos_ticks as f64) / 10_000_000.0;
-                                stall_reload = Some((np, cli, resume_secs));
-                            }
-                        } else {
-                            warn!(
-                                "playback stalled: {:.1}s with no progress at {:.2}s — giving up after {} reload attempt(s) (connection_likely_healthy={connection_likely_healthy})",
-                                stalled_for, pos, max_attempts
-                            );
-                            vs.stall_last_reload_at = Some(Instant::now());
-                            stall_give_up = true;
+                        let why = format!("playback stalled: {stalled_for:.1}s with no progress at {pos:.2}s");
+                        match next_stall_step(&mut vs, connection_likely_healthy, &why) {
+                            StallStep::Reload(np, cli, resume_secs) => stall_reload = Some((np, cli, resume_secs)),
+                            StallStep::GiveUp => stall_give_up = Some(STALL_GIVE_UP_TOAST),
+                            StallStep::NotReloadable => {}
                         }
                     }
                 }
@@ -2590,16 +2625,20 @@ pub(crate) fn wire_mpv_timer(
                 // stall-recovery threshold above), only for genuine video
                 // items (current_is_audio would legitimately never fire
                 // VideoReconfig). See CLAUDE.md's Known platform issues.
+                // Timed from FileLoaded, not from Play (2026-10-04): a file
+                // that's still opening (slow server, stall reloads) has no
+                // video yet by definition, and the old Play-based timer fired
+                // this warning on every slow open in the HTPC logs.
                 if !vs.current_is_audio
                     && !vs.video_init_checked
-                    && vs.play_start.is_some_and(|t| t.elapsed() >= Duration::from_secs(5))
+                    && loaded_since.is_some_and(|d| d >= Duration::from_secs(5))
                 {
                     if let Some(p) = vs.player.as_ref() {
                         if !p.has_seen_video_reconfig() {
                             warn!(
-                                "no VideoReconfig event {:.1}s after playback start on a video item — \
+                                "no VideoReconfig event {:.1}s after the file loaded on a video item — \
                                  video may be stuck audio-only (see CLAUDE.md known issue, 2026-07-29)",
-                                vs.play_start.unwrap().elapsed().as_secs_f64()
+                                loaded_since.unwrap_or_default().as_secs_f64()
                             );
                         }
                     }
@@ -2633,7 +2672,13 @@ pub(crate) fn wire_mpv_timer(
                 // identical to before this feature existed.
                 let (display_sync_enabled, hdr_toggle_enabled) = {
                     let s = state_timer.lock().unwrap();
-                    (s.config.device.display_sync_enabled, s.config.device.target_colorspace_hint)
+                    // Trailers switch the display only when Settings → Video
+                    // → Sync display for trailers is on (default off,
+                    // 2026-10-04) — otherwise they take Branch A like any
+                    // video with display sync off.
+                    let sync = s.config.device.display_sync_enabled
+                        && (!vs.is_trailer || s.config.device.display_sync_trailers);
+                    (sync, s.config.device.target_colorspace_hint)
                 };
 
                 if !vs.current_is_audio && !vs.hdr_negotiation_attempted && !display_sync_enabled {
@@ -3431,6 +3476,27 @@ pub(crate) fn wire_mpv_timer(
             };
             let finished = matches!(poll, PollResult::Finished);
 
+            // A file that failed to open/play (2026-10-04 — used to be
+            // ignored, leaving a black player until Stop). Library items go
+            // through the same reload budget as a stall (a server hiccup
+            // often clears on a fresh request — see the stall-reload
+            // successes in the HTPC logs); trailers close at once, since a
+            // blocked/removed YouTube video won't come back.
+            // (Skipped if the stall watchdog already acted this tick, so
+            // one failure never uses up two reload attempts.)
+            if let (PollResult::Failed(code), None, None) = (&poll, &stall_reload, stall_give_up) {
+                let code = *code;
+                if vs.is_trailer {
+                    trailer_failed = Some(vs.trailer_url.clone().unwrap_or_default());
+                } else {
+                    let why = format!("file failed to open/play (mpv error {code})");
+                    match next_stall_step(&mut vs, connection_likely_healthy, &why) {
+                        StallStep::Reload(np, cli, resume_secs) => stall_reload = Some((np, cli, resume_secs)),
+                        StallStep::GiveUp | StallStep::NotReloadable => stall_give_up = Some(FAILED_OPEN_TOAST),
+                    }
+                }
+            }
+
             // Gapless transition: mpv already plays the preloaded entry — commit
             // the bookkeeping and hand the UI/report work to the code below.
             let mut gapless_commit: Option<(QueueItem, u64, Option<String>, i64)> = None;
@@ -3452,7 +3518,7 @@ pub(crate) fn wire_mpv_timer(
             }
 
             (finished, banner_trigger, gapless_commit, auto_open_now_playing, credits_mark_played,
-             hide_next_ep_banner, stalled_now, stall_reload, stall_give_up)
+             hide_next_ep_banner, stalled_now, stall_reload, stall_give_up, trailer_failed)
         };
 
         if hide_next_ep_banner {
@@ -3490,9 +3556,14 @@ pub(crate) fn wire_mpv_timer(
         // correct resume position (last_known_pos_ticks, preserved even
         // though the live position may itself be reading 0 by this point)
         // and never advances to anything else.
-        if stall_give_up {
+        if let Some(msg) = stall_give_up {
             do_stop_playback(&video_timer, &window_timer, &rt_handle, &state_timer);
-            crate::show_toast(window_timer.clone(), "Playback stopped — lost connection to server".to_string());
+            crate::show_toast(window_timer.clone(), msg.to_string());
+        }
+        if let Some(url) = trailer_failed {
+            do_stop_playback(&video_timer, &window_timer, &rt_handle, &state_timer);
+            crate::show_toast(window_timer.clone(), TRAILER_FAILED_TOAST.to_string());
+            crate::discover::mark_trailer_unplayable(&state_timer, &window_timer, &rt_handle, url);
         }
 
         // Auto-open Now Playing: fires here, after `vs` is released, so its
