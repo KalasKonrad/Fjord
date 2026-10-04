@@ -47,11 +47,13 @@
 //                   has_seen_video_reconfig: true once VideoReconfig has fired for this instance —
 //                     diagnostic for the same audio-only-forever bug load() now fixes at the root;
 //                     kept as a belt-and-suspenders warning in wire_mpv_timer regardless
+//                   file_loaded_at: when the first FileLoaded fired (None while still opening) —
+//                     position/duration/chapters/tracks are only real after this
 //                   query_source_hdr_metadata: one-shot gamma/primaries/min-max-luma/CLL/FALL
 //                     read for hdr.rs's Wayland color-management negotiation worker (hdr branch,
 //                     Stage 3) — call once, after has_seen_video_reconfig() first goes true
 //                   query_video_dimensions: (width, height, fps) for display_sync — call only
-//                     after wire_mpv_timer's own ~2s elapsed_ok gate (fps needs to settle first)
+//                     after wire_mpv_timer's own ~2s loaded_ok gate (fps needs to settle first)
 //                   get_chapter_count: chapter-list/count (cheap — used for polling)
 //                   get_chapters: Vec<(start_secs, title)> for all chapters
 //                   chapter_step: add chapter ±1 (next/prev chapter navigation)
@@ -313,6 +315,11 @@ pub struct Player {
     // signal has_seen_video_reconfig() exposes to wire_mpv_timer's own
     // (separate, still-present) 5s no-VideoReconfig warning.
     saw_video_reconfig: bool,
+    // When this instance's mpv core fired its first FileLoaded — i.e. the file
+    // is actually open and time-pos/duration/chapters/tracks are real. Before
+    // that, time-pos reads 0 (get_position's fallback), which the app must not
+    // treat as a real position.
+    file_loaded_at: Option<std::time::Instant>,
     // Pre-formatted "[hwdec=..., vf=..., ...]" summary + resume position,
     // captured once at construction time so `load()` can still log the
     // exact same "mpv player started: ..." line it always has, without
@@ -489,6 +496,7 @@ impl Player {
             mpv,
             vf_auto: config.vf == "auto",
             saw_video_reconfig: false,
+            file_loaded_at: None,
             startup_log_suffix,
             resume_secs: config.start_position_secs,
         })
@@ -602,6 +610,10 @@ impl Player {
                     return PollResult::Finished;
                 }
                 Some(Ok(Event::VideoReconfig))   => { self.saw_video_reconfig = true; debug!("mpv event: VideoReconfig"); }
+                Some(Ok(Event::FileLoaded))      => {
+                    if self.file_loaded_at.is_none() { self.file_loaded_at = Some(std::time::Instant::now()); }
+                    debug!("mpv event: FileLoaded");
+                }
                 // mpv's own internal log (requested at "warn" in Player::new,
                 // so only fatal/error/warn ever reach here) — e.g. hwdec init
                 // failures, vo errors: the "why" this project's own event log
@@ -610,6 +622,10 @@ impl Player {
                     let msg = format!("mpv[{}] {}: {}", prefix, level, text.trim_end());
                     match level {
                         "fatal" | "error" => error!("{}", msg),
+                        // ffmpeg repeats this for every frame of some Dolby Vision
+                        // files (836 lines in one HTPC session) — harmless, and it
+                        // buried every other warning in fjord.log.
+                        _ if text.contains("Multiple Dolby Vision RPUs") => debug!("{}", msg),
                         _                 => warn!("{}", msg),
                     }
                 }
@@ -688,6 +704,13 @@ impl Player {
     /// never actually initializes (see `saw_video_reconfig`'s doc comment).
     pub fn has_seen_video_reconfig(&self) -> bool {
         self.saw_video_reconfig
+    }
+
+    /// When mpv finished opening the first file for this instance (its first
+    /// FileLoaded event), or `None` while it's still opening. Position,
+    /// duration, chapters and tracks are only meaningful after this.
+    pub fn file_loaded_at(&self) -> Option<std::time::Instant> {
+        self.file_loaded_at
     }
 
     /// hdr branch, Stage 3 — the real, per-file source colorspace/HDR10

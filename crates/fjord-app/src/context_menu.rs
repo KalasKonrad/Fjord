@@ -66,7 +66,9 @@
 //                                   playlist-picker-create (POST /Playlists);
 //                                   resolve_music_ids expands MusicAlbum → track ids (empty result toasts, CR11-14);
 //                                   refresh_playlists updates state/cache/models after change, and reopens the
-//                                   playlist detail screen if it's showing the just-mutated playlist (CR11-7)
+//                                   playlist detail screen if it's showing the just-mutated playlist (CR11-7);
+//                                   also refreshes the Music dashboard Playlists row (music-playlists) with
+//                                   posters, instead of waiting ~30 s for Jellyfin's LibraryChanged (2026-09-26)
 //   handle_key                      keyboard dispatch for the context-menu overlay
 //                                   (row 7 = Add to Playlist, music items only); branches
 //                                   entirely to handle_key_discover_menu when
@@ -751,6 +753,7 @@ pub(crate) fn wire_context_menu(
                 let video2 = Arc::clone(&video);
                 let ww2    = ww.clone();
                 let rt2    = rt.clone();
+                let state2 = Arc::clone(&state);
                 rt.spawn(async move {
                     let tracks = match music_container_tracks(&client, &id, &ctype).await {
                         Ok(v) if !v.is_empty() => v,
@@ -777,7 +780,7 @@ pub(crate) fn wire_context_menu(
                         }
                         start_playback(url, first.id.clone(), "Audio", first.title.clone(),
                                        config, client, None, first.audio_meta.clone(),
-                                       &video2, &ww2, &rt2);
+                                       &video2, &ww2, &rt2, &state2, None);
                     });
                 });
                 return;
@@ -805,9 +808,11 @@ pub(crate) fn wire_context_menu(
                         let url       = cli2.direct_play_url(&next.id);
                         let title     = next.display_name();
                         let ep_id     = next.id.clone();
+                        let video_info = next.video_stream_info();
                         let _ = slint::invoke_from_event_loop(move || {
                             start_playback(url, ep_id, "Episode", title, config, cli2,
-                                           Some(id), None, &video2, &ww2, &rt2);
+                                           Some(id), None, &video2, &ww2, &rt2,
+                                           &state2, video_info);
                         });
                     } else {
                         let _ = slint::invoke_from_event_loop(move || {
@@ -825,6 +830,7 @@ pub(crate) fn wire_context_menu(
             let video2   = Arc::clone(&video);
             let ww2      = ww.clone();
             let rt2      = rt.clone();
+            let state2   = Arc::clone(&state);
             rt.spawn(async move {
                 let detail    = client.get_item_detail(&id).await
                     .inspect_err(|e| warn!("play-from-start: get_item_detail({id}) failed: {e:#}"))
@@ -834,10 +840,12 @@ pub(crate) fn wire_context_menu(
                 if item_type == "Episode" && series_id.is_none() {
                     warn!("play-from-start: episode {} has no SeriesId — Up Next will be disabled for this session", id);
                 }
+                let video_info = detail.as_ref().and_then(|i| i.video_stream_info());
                 let title     = detail.map(|i| i.display_name()).unwrap_or_else(|| id.clone());
                 let _ = slint::invoke_from_event_loop(move || {
                     start_playback(play_url, id, &item_type, title, config, client,
-                                   series_id, None, &video2, &ww2, &rt2);
+                                   series_id, None, &video2, &ww2, &rt2,
+                                   &state2, video_info);
                 });
             });
         });
@@ -1385,6 +1393,10 @@ fn refresh_playlists(
                     s.playlists_fetched = true;
                 }
                 crate::home::save_playlists_cache(&user_id, &playlists);
+                // Posters for the Music dashboard's Playlists row, so a just-
+                // created playlist shows up there with its art right away
+                // (disk-cache hits for the ones already shown).
+                let posters = crate::poster::fetch_posters_for_delta(&client, &playlists).await;
                 let state2 = Arc::clone(&state);
                 let ww2    = ww.clone();
                 let rt2    = rt_task.clone();
@@ -1392,6 +1404,21 @@ fn refresh_playlists(
                     let Some(w) = ww.upgrade() else { return };
                     let g = AppState::get(&w);
                     g.set_all_playlists(crate::items_to_model(&playlists, &std::collections::HashSet::new()));
+                    // Music dashboard "Playlists" row (HomeData.playlists — the same
+                    // get_all_playlists list). Without this it only caught up via
+                    // the WS LibraryChanged → delta refresh, which Jellyfin sends
+                    // ~30 s after a playlist is created (seen live on the HTPC).
+                    let row = crate::home::refresh_row_preserving_posters(&g.get_music_playlists(), &playlists);
+                    for i in 0..row.row_count() {
+                        let Some(mut card) = row.row_data(i) else { continue };
+                        if card.has_poster { continue; }
+                        if let Some(buf) = posters.get(card.id.as_str()) {
+                            card.poster     = slint::Image::from_rgba8(buf.clone());
+                            card.has_poster = true;
+                            row.set_row_data(i, card);
+                        }
+                    }
+                    g.set_music_playlists(row);
                     if g.get_show_playlist_picker() {
                         g.set_playlist_picker_items(playlist_items_model(&playlists));
                     }
