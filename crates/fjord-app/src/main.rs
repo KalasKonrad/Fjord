@@ -220,6 +220,7 @@ mod prewarm;
 mod secrets;
 mod seerr_auth;
 mod stats;
+mod video_surface;
 mod ws;
 
 use std::collections::HashMap;
