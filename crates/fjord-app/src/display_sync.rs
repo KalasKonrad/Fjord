@@ -64,6 +64,8 @@
 //                          (quit_cleanup, do_stop_playback, wire_mpv_timer's
 //                          natural-EOF branch once nothing turns out to be
 //                          next) — never from a replace-in-place teardown
+//   needs_revert           pure: revert only if Fjord changed the display this
+//                          session and it isn't back at default (unit-tested)
 // ─────────────────────────────────────────────────────────────────────────────
 
 use std::collections::HashSet;
@@ -645,6 +647,22 @@ pub(crate) async fn sync_before_load(
     sync_to_source(state, (video_info.width, 0, video_info.fps), meta, cfg).await;
 }
 
+/// Whether a genuine stop must put the display back to its default mode:
+/// only when Fjord itself applied something this session that differs from
+/// it. Nothing applied yet (both `None`, e.g. the session reset when picking
+/// a profile at startup) → no revert — 2026-10-04, seen on both machines:
+/// the 2026-09-24 version compared `current_mode != Some(default)`, which is
+/// also true for `None`, so every stop with nothing played re-applied the
+/// default mode and HDR off. Already at default (after one revert) → no
+/// revert either, which was the point of the 2026-09-24 fix.
+fn needs_revert(
+    current_mode: Option<&(String, String)>,
+    current_hdr:  Option<bool>,
+    default:      &(String, String),
+) -> bool {
+    current_mode.is_some_and(|m| m != default) || current_hdr == Some(true)
+}
+
 /// Called from the 3 genuine-stop call sites (`quit_cleanup`,
 /// `do_stop_playback`, `wire_mpv_timer`'s natural-EOF branch once its own
 /// deferred check confirms nothing started next) — never from a
@@ -660,19 +678,11 @@ pub(crate) async fn revert_to_default(state: Arc<Mutex<FjordState>>) {
         }
         let default_res = s.config.device.display_sync_default_resolution.clone();
         let default_hz = s.config.device.display_sync_default_hz.clone();
-        // Compare against the real default target, not just "was anything
-        // ever applied" — `display_sync_current_mode` is set to
-        // Some((default_res, default_hz)) by this very function once it has
-        // already reverted once, and a bare `.is_some()` check stayed true
-        // forever after that first revert, making every later stop in the
-        // session re-run the kscreen-doctor calls below even though the
-        // display was provably already sitting at default (confirmed live,
-        // 2026-09-24: two genuine-stop reverts 9s apart both fired the real
-        // mode/HDR-off apply calls, though the display never moved between
-        // them).
-        let needs_revert = s.display_sync_current_mode.as_ref()
-            != Some(&(default_res.clone(), default_hz.clone()))
-            || s.display_sync_current_hdr != Some(false);
+        let needs_revert = needs_revert(
+            s.display_sync_current_mode.as_ref(),
+            s.display_sync_current_hdr,
+            &(default_res.clone(), default_hz.clone()),
+        );
         (
             s.config.device.display_sync_screen_name.clone(),
             default_res,
@@ -711,6 +721,23 @@ pub(crate) async fn revert_to_default(state: Arc<Mutex<FjordState>>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn revert_only_after_fjord_changed_the_display() {
+        let def = ("1920x1080".to_string(), "120".to_string());
+        let uhd = ("3840x2160".to_string(), "24".to_string());
+        // Nothing applied this session (startup profile pick, plain stop).
+        assert!(!needs_revert(None, None, &def));
+        // Already back at default after an earlier revert.
+        assert!(!needs_revert(Some(&def), Some(false), &def));
+        // Fjord switched mode and/or HDR for a video.
+        assert!(needs_revert(Some(&uhd), Some(true), &def));
+        assert!(needs_revert(Some(&uhd), Some(false), &def));
+        assert!(needs_revert(Some(&def), Some(true), &def));
+        assert!(needs_revert(Some(&uhd), None, &def));
+        assert!(needs_revert(None, Some(true), &def));
+    }
+
 
     // Real 128-byte EDID base blocks, captured directly from
     // /sys/class/drm/*/edid on the dev machine that verified this whole

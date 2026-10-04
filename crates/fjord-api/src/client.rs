@@ -29,6 +29,7 @@
 //                     backfills a blank ProfileSettings.display_name on the auto-login path,
 //                     which unlike a fresh password login never sees the login response's name)
 //     server        get_system_info (name + version via /System/Info/Public), get_plugins
+//                   (get_plugins: a 403 — non-admin profile — logs at debug, not warn)
 //                   (best-effort — empty Vec on any failure, never propagates an error)
 //     websocket     ws_url() → ws[s]://host/socket?api_key=…&deviceId=…
 //   MediaStreams  added to Fields of get_item_detail, get_items_by_ids_detailed (kept in sync),
@@ -518,7 +519,14 @@ impl JellyfinClient {
         let url = self.api_url("/Plugins")?;
         let resp = self.http.get(url).header("Authorization", self.auth_header()).send().await?;
         if !resp.status().is_success() {
-            warn!("get_plugins HTTP {}", resp.status());
+            // /Plugins is admin-only: every non-admin profile (Bonfire
+            // sub-profiles included) gets a 403 on each login — expected,
+            // not worth a warning (2026-10-04).
+            if resp.status() == reqwest::StatusCode::FORBIDDEN {
+                debug!("get_plugins: 403 — /Plugins needs an admin account");
+            } else {
+                warn!("get_plugins HTTP {}", resp.status());
+            }
             return Ok(Vec::new());
         }
         Ok(resp.json::<Vec<PluginInfo>>().await.unwrap_or_default())

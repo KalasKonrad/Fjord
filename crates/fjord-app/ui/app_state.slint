@@ -116,6 +116,9 @@
 //                         seerr-is-admin (MANAGE_REQUESTS bit, set alongside seerr-connected — gates
 //                         Approve/Decline in the Discover context menu, 2026-07-18);
 //                         request-detail-trailer-url/-btn-focused, play-trailer (Watch Trailer button
+//                         request-detail-trailer-state (""/checking/ok/none, 2026-10-04); discover-query-cursor/
+//                         -shown + discover-search-delete (search-field caret, 2026-10-04);
+//                         settings-display-sync-trailers (2026-10-04)
 //                         on RequestDetailScreen — Discover only, see CLAUDE.md);
 //                         ConnectSeerrScreen: show-connect-seerr, connect-seerr-zone (D-pad, 2026-08-23),
 //                         connect-seerr-method (0-3), connect-seerr-error/busy, connect-seerr-qc-code/-secret/-polling
@@ -1211,6 +1214,11 @@ export global AppState {
     // directly, same pattern as the Home/Movies/TV dashboards, not a
     // separate boolean overlay flag.
     in-out property <string>     discover-query:          "";
+    // Caret in the search field (2026-10-04): grapheme index, and the query
+    // with "▌" drawn there — both kept in step by discover.rs's
+    // set_discover_query_and_cursor, the only writer of discover-query.
+    in-out property <int>        discover-query-cursor:   0;
+    in-out property <string>     discover-query-shown:    "▌";
     in-out property <bool>       discover-searching:       false;
     in-out property <[CardItem]> discover-results:         [];
     in-out property <int>        discover-focused:         0;
@@ -1218,6 +1226,7 @@ export global AppState {
     in-out property <bool>       discover-header-focused:  false;  // search field focused, mirrors browse-header-focused
     callback discover-search-append(string);
     callback discover-search-backspace();
+    callback discover-search-delete();   // Delete key: letter after the caret (2026-10-04)
     callback discover-search-clear();
     // Fired when keyboard Down reaches the last row of discover-results —
     // fetches the next search-results page and appends it, if one exists.
@@ -1453,6 +1462,10 @@ export global AppState {
     // available item, so it's its own sibling in the button row, not nested
     // inside either the Request-button or status-pill branch.
     in-out property <string>        request-detail-trailer-url:   "";
+    // Trailer button state (2026-10-04, discover::start_trailer_check):
+    // "" = not loaded yet (hidden) | "checking" (greyed "Checking…") |
+    // "ok" (trailer-url set, pressable) | "none" (greyed "No trailer").
+    in-out property <string>        request-detail-trailer-state: "";
     // Button row focus — a "gaps are fine" slot index (same idiom as
     // context_menu.rs's Discover row set), not a fixed 0/1 binary: 0=Request
     // (only when at least one tier is still requestable), 1=Trailer (only
@@ -1682,6 +1695,7 @@ export global AppState {
     // query results, not the fixed 3-resolution/7-Hz compile-time lists
     // this originally shipped with.
     in-out property <bool>   settings-display-sync-enabled:            false;
+    in-out property <bool>   settings-display-sync-trailers:           false; // Watch Trailer also switches the display (2026-10-04)
     in-out property <string> settings-display-sync-screen-name:        "";
     in-out property <string> settings-display-sync-screen-desc:        "";
     in-out property <[string]> settings-display-sync-screen-options:   [];

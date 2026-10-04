@@ -24,6 +24,7 @@
 //                    video-sync == display-resample); display_sync_enabled (2026-09-18 —
 //                    native resolution/refresh-rate/HDR/WCG matching to source via
 //                    kscreen-doctor, see display_sync.rs) + 10 virtual sub-rows shown only
+//                    (+ "Sync display for trailers", 2026-10-04, default off)
 //                    while it's on: screen (dynamic dropdown), sync_resolution/
 //                    sync_refresh_rate (toggles), default_resolution/default_hz (both
 //                    dynamic dropdowns too as of the same day — real per-output modes via
@@ -866,6 +867,10 @@ export component SettingsScreen inherits Rectangle {
                             current-value: AppState.settings-display-sync-wcg-mode == "yes" ? "Always" : AppState.settings-display-sync-wcg-mode == "no" ? "Never" : "Follow HDR";
                             selected(v) => { AppState.settings-display-sync-wcg-mode = v == "Always" ? "yes" : v == "Never" ? "no" : "auto"; AppState.settings-changed(); AppState.refocus(); }
                         }
+                    }
+
+                    if AppState.settings-display-sync-enabled: SettingsRow { key: "video.display_sync_trailers"; title: "Sync display for trailers"; subtitle: "Off = Watch Trailer plays in whatever mode the display is already in, no resolution/refresh-rate switch"; indent: true;
+                        ToggleSwitch { checked <=> AppState.settings-display-sync-trailers; toggled => { AppState.settings-changed(); AppState.refocus(); } }
                     }
                 }
 
