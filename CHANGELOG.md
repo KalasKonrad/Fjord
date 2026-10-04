@@ -23,6 +23,29 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Fixed: a video or trailer that couldn't be opened left a black screen**
+  until you pressed Stop. Library items now retry like a stalled stream and,
+  if they still won't open, stop with "Couldn't play this — the file
+  wouldn't open". Trailers close right away with "Trailer unavailable".
+- **Improved: the Discover Trailer button checks the trailer first.** It
+  shows a greyed-out "Checking…" for a moment, then either "▶ Trailer" or a
+  greyed-out "No trailer". If the first trailer is blocked or removed on
+  YouTube, Fjord tries the title's other trailers and teasers. A trailer that
+  still fails when played is greyed out for the rest of the session. Needs
+  yt-dlp, as before.
+- **New: Settings → Video → Display sync → "Sync display for trailers"**,
+  off by default — trailers now play without switching resolution or
+  refresh rate unless you turn it on.
+- **Fixed: Discover search can now be edited in the middle** with a
+  keyboard: Left/Right/Home/End move the cursor and Delete removes the
+  letter after it, instead of only adding or deleting at the end.
+- **Fixed: with Display sync on, picking a profile at startup re-applied the
+  default display mode and HDR off** even though nothing had played.
+- **Fixed: settings could occasionally fail to save** when two saves
+  happened at the same moment (seen at startup).
+- **Changed: requesting a title shows one toast, "Requested — added to
+  Watchlist"**, instead of two back to back.
+
 - **Improved: "Sync display to source" now switches the display *before*
   the video starts, instead of a couple of seconds into playback.** The
   resolution/refresh-rate/HDR change used to make the screen blank and

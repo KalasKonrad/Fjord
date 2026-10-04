@@ -42,7 +42,8 @@ Needs `mpv`/libmpv (`pacman -S mpv`). Optional at runtime: `yt-dlp` (trailers), 
 - `main.rs` — entry point, module wiring, most `AppState` callbacks. Shared helpers: `show_toast`,
   `session_current`/`seerr_session_current`, `reset_session_state`, `close_login_screen`,
   `apply_cards_preserving_identity`, `item_to_card_item`/`items_to_model`, `strip_html_to_text`,
-  `trim_last_grapheme`, `is_unauthorized`/`is_rate_limited`, `should_revalidate`, `timed`.
+  `trim_last_grapheme` + caret helpers (`insert_at_grapheme`, `delete_before_grapheme`, `with_caret`…),
+  `is_unauthorized`/`is_rate_limited`, `should_revalidate`, `timed`.
 - `config.rs` — `Config { device: DeviceConfig, profiles: Vec<ProfileSettings>, active_profile_id }`,
   `FjordState` (runtime state), `BoundedCache`, load/save + migrations, per-profile cache paths.
 - `keys.rs` — `Action`, `Keybindings`, `AppMode`, `active_mode()`, `handle_key()` dispatcher.
@@ -71,6 +72,8 @@ Needs `mpv`/libmpv (`pacman -S mpv`). Optional at runtime: `yt-dlp` (trailers), 
   mode has been switched (pre-decode task, 20 s cap). Stamp `play_start` only when decode is actually
   requested — every stall/diagnostic watchdog is gated on it.
 - All teardown goes through `tear_down_player`; all fresh-playback resets through `reset_video_state_for_playback`.
+- libmpv2 reports a file that fails to open as `Err(Raw(code))`, not `EndFile`: `Player::poll` maps mpv's END_FILE
+  codes (-13…-20) to `PollResult::Failed` — never treat those as transient (a black player screen forever).
 
 ### Threads and shared state
 - Tokio for async, Slint event loop on the main thread. Return to the UI with `slint::invoke_from_event_loop`
