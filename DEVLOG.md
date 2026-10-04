@@ -2522,6 +2522,8 @@ Fixed at the source: `send_command` now special-cases `Unset` to synchronously s
 
 **Dev machine result (AMD RX 7900 GRE, Mesa 26.2.3, KDE Wayland, r1043):** Slint renders with OpenGL ES (asked for 2.0, got ES 3.2), window alpha 8 bits; backplane ready with config R10G10B10A0 and its own ES 3.2 context; resized correctly 1920×1080 → 1920×1012 → 900×600 → 1920×1012 while playing; first frames 0.010–0.056 s after player start, no new warnings. The NVIDIA HTPC is the real test (egl-wayland, legacy driver) — see the Live-test checklist.
 
+**HTPC result (GTX 1050 Ti, NVIDIA 580.178.04, KDE Wayland, r1044, 2026-10-04):** works. Slint got OpenGL ES 3.2 (EGL client version 3), window alpha 8 bits; backplane ready with its own ES 3.2 context. It followed display sync's mode switch 1920×1080 → 3840×2160 and, a frame later, the desktop scale change (1920×1080 logical), with no errors. First frames 0.006 s / 0.036 s after start; dropped frames (1 on a 1080p H.264 play, 9 on a 4K HDR HEVC play) are in the range earlier builds without the backplane showed (8 in a 5 s 4K play on r1036, 10–16 in longer ones). HDR10 negotiation unchanged. **But NVIDIA offered no usable 10-bit window config — the backplane is R8G8B8A0.** Not a regression: Slint's own window (where Stage 4's PQ output ends up today) is 8-bit too. Worth a closer look in step 3 (log every config EGL offers before deciding), since 8-bit PQ can band.
+
 ### Native display-mode-sync (display_sync): resolution/refresh-rate/HDR/WCG matched to source (2026-09-18)
 
 **Context.** The user runs a mature, working external Python script
