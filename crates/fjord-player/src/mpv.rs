@@ -73,6 +73,7 @@
 //                     conditional-apply rules as PlayerConfig's construction-time fields
 //                   append_gapless/cancel_pending: queue/drop a gapless-appended playlist entry
 //                   poll: EndFile only reports TrackChanged when reason is Eof — an abnormal end
+//                     (a failed open/play — END_FILE with an mpv error code — returns Failed(code), 2026-10-04)
 //                     (error/stop/quit) with a pending append discards it instead of claiming a
 //                     transition that may never have started (CR11-11); cancel_pending checks
 //                     playlist-pos first so it doesn't remove an entry mpv already made active (CR11-13);
@@ -179,6 +180,11 @@ pub enum PollResult {
     /// The current file ended but a gapless-appended entry took over —
     /// playback continues in the SAME mpv instance (no teardown).
     TrackChanged,
+    /// The file failed to open or play (mpv's END_FILE with an error code,
+    /// e.g. -17 unknown format, -16 nothing to play, -13 loading failed).
+    /// Unlike `Finished` it never counts as a natural end — the caller
+    /// retries or closes the player with a message.
+    Failed(i32),
 }
 
 /// Replace the `api_key=` query value with `REDACTED` so stream URLs can be
@@ -630,6 +636,23 @@ impl Player {
                     }
                 }
                 Some(Ok(ev))                     => { debug!("mpv event: {:?}", ev); }
+                // A file that fails to open/play ends with an END_FILE that
+                // carries an mpv error code; libmpv2 turns that into
+                // Err(Raw(code)) instead of Ok(EndFile) (libmpv2 events.rs).
+                // Ignoring it left the player on a black screen forever —
+                // seen live 2026-10-04 with unavailable/403 YouTube trailers.
+                // Only mpv's END_FILE codes (-13 LOADING_FAILED … -20 GENERIC)
+                // count; anything else stays a transient, ignored error.
+                Some(Err(libmpv2::Error::Raw(code))) if (-20..=-13).contains(&code) => {
+                    if self.pending_appends > 0 {
+                        // Same as an abnormal EndFile above (CR11-11): don't
+                        // let a queued gapless entry surface as a phantom track.
+                        self.pending_appends -= 1;
+                        let _ = self.mpv.command("playlist-remove", &["1"]);
+                    }
+                    warn!("mpv: file failed to open/play (mpv error {code})");
+                    return PollResult::Failed(code);
+                }
                 // Transient error events (e.g. property errors) must not tear down
                 // playback — only Shutdown/EndFile end it (CR10-15).
                 Some(Err(e))                     => { warn!("mpv error event (ignored): {:?}", e); }

@@ -528,7 +528,7 @@ fn maybe_spawn_delta_refresh(
         for (tmdb_id, media_type) in series_to_remove {
             info!("ws: watched, watchlisted series tmdb={tmdb_id} is no longer Continuing — removing from watchlist");
             crate::discover::discover_toggle_watchlist(
-                Arc::clone(&state2), ww2.clone(), rt2.clone(), tmdb_id, media_type, String::new(), false,
+                Arc::clone(&state2), ww2.clone(), rt2.clone(), tmdb_id, media_type, String::new(), false, None,
             );
         }
         if !playlists.is_empty()   { save_playlists_cache(&user_id, &pl); }
@@ -804,7 +804,7 @@ async fn run_session(
                 for (tmdb_id, media_type) in newly_watched_on_watchlist {
                     info!("ws: watched item tmdb={tmdb_id} media_type={media_type} was on the watchlist — removing");
                     crate::discover::discover_toggle_watchlist(
-                        Arc::clone(state), ww.clone(), rt.clone(), tmdb_id, media_type, String::new(), false,
+                        Arc::clone(state), ww.clone(), rt.clone(), tmdb_id, media_type, String::new(), false, None,
                     );
                 }
                 let ww2 = ww.clone();

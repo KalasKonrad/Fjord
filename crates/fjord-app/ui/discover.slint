@@ -35,6 +35,7 @@
 //                   AppShell content slot at active-nav == 6, same tier as
 //                   Home/Movies/TV dashboards — no Back button (it IS the
 //                   base screen for that tab, not an overlay). Search field
+//                   (2026-10-04: the drawn caret sits at discover-query-cursor — discover-query-shown)
 //                   mirrors LibraryGrid's (hand-drawn cursor,
 //                   discover-header-focused state); grid reuses the same
 //                   Flickable+kb-y scroll idiom and MediaCard component — and is now
@@ -283,7 +284,7 @@ export component DiscoverScreen inherits Rectangle {
                     }
                     Text {
                         text: AppState.discover-header-focused
-                            ? (AppState.discover-query != "" ? AppState.discover-query + "▌" : "▌")
+                            ? AppState.discover-query-shown
                             : AppState.discover-query != "" ? AppState.discover-query
                             : "Search for movies and TV shows not in your library…";
                         color: AppState.discover-query != "" ? Theme.text
