@@ -43,7 +43,7 @@ Full curated version history: [CHANGELOG.md](CHANGELOG.md) (git tags `v0.1.0`–
 
 ## Pending
 
-- [ ] When HTPC testing of `display-mode-prefetch` is done (or it's merged): remove `#branch=display-mode-prefetch` from `PKGBUILD`'s `source=` **on main** — it's there so the HTPC's `makepkg -si` builds the branch.
+- [ ] When HTPC testing of `hdr-subsurface` is done (or it's merged): remove `#branch=hdr-subsurface` from `PKGBUILD`'s `source=` **on main** — it's there so the HTPC's `makepkg -si` builds the branch.
 - [ ] **HDR Stage 5 — video on its own Wayland subsurface (planned 2026-10-04, branch `hdr-subsurface`).** Fixes the HDR UI-chrome limitation: a full-window child `wl_subsurface` (sync mode, placed below Slint's surface, own EGL context) carries the video, only that surface gets the PQ/BT.2020 tag, Slint's window goes transparent while it's active. Decisions: used for every video on Wayland (not only with HDR on); the mini-player thumbnail stays live video; new Settings → Video → HDR toggle "Separate video surface" (device-level, default on, hidden off Wayland) switches back to today's in-window path for platforms where the new one performs worse (menus/OSD then show wrong colours with HDR on); no env-var kill switch. Steps: 1 backplane + logging only → 2 video through the backplane + Slint changes + toggle → 3 HDR tags the child, PQ-encoded background fill → 4 docs. Needs a toggle-on vs toggle-off smoothness A/B on the HTPC.
 
 (nothing else open — everything recently shipped is fully documented in [CHANGELOG.md](CHANGELOG.md) (user-facing) and `DEVLOG.md` (full technical narrative, dated sections); anything still needing real-hardware confirmation lives in the `Live-test checklist` above, not here)

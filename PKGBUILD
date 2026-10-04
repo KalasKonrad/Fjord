@@ -18,9 +18,9 @@ provides=('fjord')
 conflicts=('fjord')
 install=fjord.install
 options=('!debug')
-# TEMPORARY: builds the display-mode-prefetch branch for HTPC testing.
+# TEMPORARY: builds the hdr-subsurface branch (HDR Stage 5) for HTPC testing.
 # Remove the #branch= fragment (on main) once testing is done or the branch is merged.
-source=("fjord::git+https://github.com/KalasKonrad/Fjord.git#branch=display-mode-prefetch")
+source=("fjord::git+https://github.com/KalasKonrad/Fjord.git#branch=hdr-subsurface")
 sha256sums=('SKIP')
 
 pkgver() {
