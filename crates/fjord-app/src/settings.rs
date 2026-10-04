@@ -178,6 +178,7 @@ const VID_DISPLAY_SYNC_SCALE_1080P:       &str = "video.display_sync_scale_1080p
 const VID_DISPLAY_SYNC_4K_ODD_FPS_MODE:   &str = "video.display_sync_4k_odd_fps_mode";
 const VID_DISPLAY_SYNC_HDR_MODE:          &str = "video.display_sync_hdr_mode";
 const VID_DISPLAY_SYNC_WCG_MODE:          &str = "video.display_sync_wcg_mode";
+const VID_DISPLAY_SYNC_TRAILERS:          &str = "video.display_sync_trailers";
 
 // ── Audio section rows ────────────────────────────────────────────────────────
 const AUD_AUDIO_DEVICE:  &str = "audio.device";
@@ -316,6 +317,7 @@ fn section_row_keys(section: &str, g: &crate::AppState<'_>) -> Vec<&'static str>
                 }
                 rows.push(VID_DISPLAY_SYNC_HDR_MODE);
                 rows.push(VID_DISPLAY_SYNC_WCG_MODE);
+                rows.push(VID_DISPLAY_SYNC_TRAILERS);
             }
             rows
         }
@@ -1177,6 +1179,10 @@ fn settings_row_action(key: &str, g: &crate::AppState<'_>) {
         }
         VID_DISPLAY_SYNC_SYNC_RESOLUTION => {
             g.set_settings_display_sync_sync_resolution(!g.get_settings_display_sync_sync_resolution());
+            g.invoke_settings_changed();
+        }
+        VID_DISPLAY_SYNC_TRAILERS => {
+            g.set_settings_display_sync_trailers(!g.get_settings_display_sync_trailers());
             g.invoke_settings_changed();
         }
         VID_DISPLAY_SYNC_SYNC_REFRESH_RATE => {

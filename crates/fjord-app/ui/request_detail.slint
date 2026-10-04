@@ -10,6 +10,8 @@
 //                          On — purely display, no keyboard zone, reached by
 //                          scrolling like MetaLine's genre text), tier-aware
 //                          Request/pill/Trailer/⋮-More button row (2026-07-18
+//                          Trailer button: greyed "Checking…"/"No trailer" until request-detail-
+//                          trailer-state == "ok" (2026-10-04)
 //                          — see below), poster request-status badge
 //                          (PosterBlock, same day — see its own comment in
 //                          widgets.slint). Free-floating overlay
@@ -365,15 +367,24 @@ export component RequestDetailScreen inherits Rectangle {
                             // trailer was found AND yt-dlp is actually
                             // installed (proactive detection, not just a
                             // reactive failure toast — see main.rs::detect_yt_dlp).
-                            if AppState.request-detail-trailer-url != "" && AppState.yt-dlp-available: FjordButton {
+                            // 2026-10-04: always shown once the title has
+                            // loaded (yt-dlp installed), greyed out while the
+                            // background check runs ("Checking…") or when no
+                            // listed trailer plays ("No trailer") — see
+                            // discover::start_trailer_check. Only "ok" is
+                            // pressable and a D-pad stop.
+                            if AppState.request-detail-trailer-state != "" && AppState.yt-dlp-available: FjordButton {
                                 // icon-left/text as separate properties, not one
                                 // combined string — Noto Sans Symbols2 (every
                                 // icon glyph's pinned font) has zero Latin-
                                 // alphabet coverage, so "▶ Trailer" in one
                                 // `text` would leave the word falling through
                                 // to an uncontrolled system font.
-                                icon-left:   "▶";
-                                text:        "Trailer";
+                                enabled:     AppState.request-detail-trailer-state == "ok";
+                                icon-left:   AppState.request-detail-trailer-state == "ok" ? "▶" : "";
+                                text:        AppState.request-detail-trailer-state == "ok" ? "Trailer"
+                                           : AppState.request-detail-trailer-state == "checking" ? "Checking…"
+                                           : "No trailer";
                                 width:       130px;
                                 kbd-focused: !AppState.request-detail-back-focused && AppState.request-detail-zone == 0 && AppState.request-detail-btn-focused == 1;
                                 clicked => {

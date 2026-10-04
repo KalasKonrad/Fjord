@@ -137,7 +137,10 @@
 //                              4K/tags/seasons inline (see below); Trailer button fires
 //                              play-trailer() (Watch Trailer — Discover only, see CLAUDE.md's
 //                              Seerr integration section).
-//   find_trailer_url            MovieDetails/TvDetails.relatedVideos -> best trailer URL
+//   trailer_candidates          MovieDetails/TvDetails.relatedVideos -> trailer URLs, best first
+//   start_trailer_check         background yt-dlp check of those candidates → request-detail-
+//                               trailer-state "checking"/"ok"/"none" + -trailer-url (2026-10-04)
+//   mark_trailer_unplayable     a trailer that failed to play → remembered, re-check the rest
 //                              (prefers Trailer, falls back to Teaser, else None)
 //   existing_option_zones/handle_key_request_options  Request Options modal: Quality (2K/4K)
 //                              row -> profile row (radio-select) -> tags row -> seasons row ->
@@ -482,7 +485,7 @@ use std::time::{Duration, Instant};
 use fjord_seerr::{MediaStatus, MovieDetails, SearchResult, SeasonsSelector, TvDetails};
 use slint::{ComponentHandle, Global, Model, ModelRc, VecModel, Weak};
 
-use tracing::{debug, warn};
+use tracing::{debug, info, warn};
 
 use crate::config::{discover_poster_cache_path, save_config, ProfileSettings, RequestPreference, FjordState};
 use crate::keys::Action;
@@ -3927,18 +3930,182 @@ fn format_countries(countries: &[fjord_seerr::ProductionCountry]) -> String {
     countries.iter().map(|c| format!("{} {}", country_flag_emoji(&c.iso_3166_1), c.name)).collect::<Vec<_>>().join("\n")
 }
 
-/// Picks the one video to offer as "Watch Trailer" — prefers a real
-/// `Trailer`, falls back to a `Teaser` (a shorter preview, still trailer-
-/// like) when no trailer exists, otherwise `None` (a `Clip`/`Featurette`/
-/// etc. isn't what "Watch Trailer" implies). `url` is already a fully-
-/// formed YouTube watch-page link — see `Video`'s own doc comment in
-/// fjord-seerr for why only `kind`/`url` are modeled at all.
-fn find_trailer_url(videos: &[fjord_seerr::Video]) -> Option<String> {
-    videos
-        .iter()
-        .find(|v| v.kind == "Trailer")
-        .or_else(|| videos.iter().find(|v| v.kind == "Teaser"))
-        .map(|v| v.url.clone())
+/// The videos to offer as "Watch Trailer", best first: every `Trailer`, then
+/// every `Teaser` (a shorter preview, still trailer-like); a `Clip`/
+/// `Featurette`/etc. isn't what "Watch Trailer" implies. Several, not one
+/// (2026-10-04): TMDB keeps listing videos YouTube has since blocked or
+/// removed, so start_trailer_check walks this list until one actually plays.
+/// Capped at 4 to bound the check. `url` is already a fully-formed YouTube
+/// watch-page link — see `Video`'s own doc comment in fjord-seerr for why
+/// only `kind`/`url` are modeled at all.
+fn trailer_candidates(videos: &[fjord_seerr::Video]) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for kind in ["Trailer", "Teaser"] {
+        for v in videos.iter().filter(|v| v.kind == kind) {
+            if !out.contains(&v.url) {
+                out.push(v.url.clone());
+            }
+        }
+    }
+    out.truncate(4);
+    out
+}
+
+/// The one place the Discover search text changes (2026-10-04): keeps
+/// discover-query, the caret position and the drawn text ("▌" at the caret,
+/// shown while the field has focus) in step.
+fn set_discover_query_and_cursor(g: &AppState, q: &str, cursor: usize) {
+    let cursor = cursor.min(crate::grapheme_count(q));
+    g.set_discover_query(q.into());
+    g.set_discover_query_cursor(cursor as i32);
+    g.set_discover_query_shown(crate::with_caret(q, cursor, "▌").as_str().into());
+}
+
+/// Left/Right/Home/End in the search field: moves the caret only.
+pub(crate) fn move_discover_cursor(g: &AppState, cursor: usize) {
+    let q = g.get_discover_query().to_string();
+    set_discover_query_and_cursor(g, &q, cursor);
+}
+
+/// Decides what the RequestDetail Trailer button shows (2026-10-04, live-
+/// reported: a trailer that won't play shouldn't look playable). TMDB lists
+/// trailers YouTube has since blocked for this region or removed, and only
+/// yt-dlp can tell — YouTube's public oEmbed answers 200 for the very video
+/// yt-dlp reports "Video unavailable" (checked live). So: answer from the
+/// session cache when possible, otherwise show greyed "Checking…" and run
+/// `yt-dlp --simulate` (no download) per candidate, best first, until one
+/// resolves. Sets request-detail-trailer-state "ok" (+ -trailer-url) or
+/// "none". UI thread only. `gen` = request-detail-open-gen of the screen
+/// this is for; a later open of another title discards the result.
+pub(crate) fn start_trailer_check(
+    state: &Arc<Mutex<FjordState>>,
+    ww: &Weak<MainWindow>,
+    rt: &tokio::runtime::Handle,
+    gen: i32,
+    candidates: Vec<String>,
+) {
+    let Some(w) = ww.upgrade() else { return };
+    let g = AppState::get(&w);
+    let (known_ok, all_known_bad, ytdl_format) = {
+        let mut s = state.lock().unwrap();
+        s.request_detail_trailers = candidates.clone();
+        let known_ok = candidates.iter().find(|c| s.trailer_playable.get(*c) == Some(&true)).cloned();
+        let all_known_bad = candidates.iter().all(|c| s.trailer_playable.get(c) == Some(&false));
+        (known_ok, all_known_bad, crate::trailer_ytdl_format(&s.config.active().trailer_quality))
+    };
+    if let Some(url) = known_ok {
+        debug!("trailer check: cached playable {url}");
+        g.set_request_detail_trailer_url(url.as_str().into());
+        g.set_request_detail_trailer_state("ok".into());
+        return;
+    }
+    if all_known_bad || !g.get_yt_dlp_available() {
+        debug!("trailer check: {} candidate(s), none playable (yt-dlp available={})", candidates.len(), g.get_yt_dlp_available());
+        g.set_request_detail_trailer_url("".into());
+        g.set_request_detail_trailer_state("none".into());
+        fix_detail_btn_focus(&g);
+        return;
+    }
+    g.set_request_detail_trailer_url("".into());
+    g.set_request_detail_trailer_state("checking".into());
+    fix_detail_btn_focus(&g);
+    let state = Arc::clone(state);
+    let ww = ww.clone();
+    rt.spawn(async move {
+        let mut found: Option<String> = None;
+        for url in &candidates {
+            match state.lock().unwrap().trailer_playable.get(url) {
+                Some(true) => { found = Some(url.clone()); break; }
+                Some(false) => continue,
+                None => {}
+            }
+            let ok = trailer_plays(url, ytdl_format.as_deref()).await;
+            state.lock().unwrap().trailer_playable.insert(url.clone(), ok);
+            if ok { found = Some(url.clone()); break; }
+        }
+        let _ = slint::invoke_from_event_loop(move || {
+            let Some(w) = ww.upgrade() else { return };
+            let g = AppState::get(&w);
+            if g.get_request_detail_open_gen() != gen || !g.get_show_request_detail() {
+                return; // another title (or none) is showing by now
+            }
+            match found {
+                Some(url) => {
+                    g.set_request_detail_trailer_url(url.as_str().into());
+                    g.set_request_detail_trailer_state("ok".into());
+                }
+                None => {
+                    g.set_request_detail_trailer_url("".into());
+                    g.set_request_detail_trailer_state("none".into());
+                    fix_detail_btn_focus(&g);
+                }
+            }
+        });
+    });
+}
+
+/// `yt-dlp --simulate`: resolves the video and the exact format mpv would
+/// ask for, without downloading. 20 s cap; the process is killed on timeout.
+/// It can't catch a 403 that only happens once the download starts — those
+/// land in mark_trailer_unplayable after a failed play.
+async fn trailer_plays(url: &str, ytdl_format: Option<&str>) -> bool {
+    let mut cmd = tokio::process::Command::new("yt-dlp");
+    cmd.args(["--simulate", "--quiet", "--no-warnings", "--no-playlist"]);
+    if let Some(f) = ytdl_format {
+        cmd.args(["-f", f]);
+    }
+    cmd.arg(url).kill_on_drop(true)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped());
+    let started = std::time::Instant::now();
+    match tokio::time::timeout(std::time::Duration::from_secs(20), cmd.output()).await {
+        Ok(Ok(out)) if out.status.success() => {
+            debug!("trailer check: {url} plays ({:.1}s)", started.elapsed().as_secs_f64());
+            true
+        }
+        Ok(Ok(out)) => {
+            let err = String::from_utf8_lossy(&out.stderr);
+            info!("trailer check: {url} won't play: {}", err.trim().lines().last().unwrap_or(""));
+            false
+        }
+        Ok(Err(e)) => { warn!("trailer check: couldn't run yt-dlp: {e}"); false }
+        Err(_) => { info!("trailer check: {url} timed out after 20s"); false }
+    }
+}
+
+/// A trailer failed to play even though the check passed (e.g. YouTube
+/// answered 403 once the download started — HTPC log, 2026-10-04). Remember
+/// it for the session and, if its detail screen is still open, re-check the
+/// remaining candidates (greyed "Checking…", then the next playable one or
+/// "No trailer"). UI thread only.
+pub(crate) fn mark_trailer_unplayable(
+    state: &Arc<Mutex<FjordState>>,
+    ww: &Weak<MainWindow>,
+    rt: &tokio::runtime::Handle,
+    url: String,
+) {
+    let candidates = {
+        let mut s = state.lock().unwrap();
+        s.trailer_playable.insert(url.clone(), false);
+        s.request_detail_trailers.clone()
+    };
+    info!("trailer {url} failed to play — marked unplayable for this session");
+    let Some(w) = ww.upgrade() else { return };
+    let g = AppState::get(&w);
+    if g.get_show_request_detail() && candidates.contains(&url) {
+        start_trailer_check(state, ww, rt, g.get_request_detail_open_gen(), candidates);
+    }
+}
+
+/// Keeps the button cursor on a real stop when the Trailer slot disappears
+/// from existing_detail_btn_slots (check pending/failed).
+fn fix_detail_btn_focus(g: &AppState) {
+    let slots = existing_detail_btn_slots(g);
+    if !slots.contains(&g.get_request_detail_btn_focused()) {
+        if let Some(&first) = slots.first() {
+            g.set_request_detail_btn_focused(first);
+        }
+    }
 }
 
 struct DetailFields {
@@ -3973,7 +4140,7 @@ struct DetailFields {
     production_countries: String,
     network: String,
     providers: Vec<ProviderRow>,
-    trailer_url: Option<String>,
+    trailer_candidates: Vec<String>,
     // Watchlist + Release Calendar (2026-07-18) — MovieDetails/TvDetails.
     // onUserWatchlist verbatim.
     on_watchlist: bool,
@@ -4109,7 +4276,7 @@ fn movie_fields(d: MovieDetails, region: &str, my_user_id: Option<i64>) -> Detai
     let genres = d.genres.iter().map(|g| g.name.clone()).collect::<Vec<_>>().join(", ");
     let cast = build_cast_list(&d.credits);
     let providers = resolve_providers(&d.watch_providers, region);
-    let trailer_url = find_trailer_url(&d.related_videos);
+    let trailer_candidates = trailer_candidates(&d.related_videos);
     let req_2k = tier_request(d.media_info.as_ref(), false);
     let req_4k = tier_request(d.media_info.as_ref(), true);
     let status_label = tier_status_label(d.media_info.as_ref().and_then(|mi| mi.status()), req_2k);
@@ -4139,7 +4306,7 @@ fn movie_fields(d: MovieDetails, region: &str, my_user_id: Option<i64>) -> Detai
         production_countries: format_countries(&d.production_countries),
         network: String::new(),
         providers,
-        trailer_url,
+        trailer_candidates,
         on_watchlist: d.on_user_watchlist,
         availability,
     }
@@ -4166,7 +4333,7 @@ fn tv_fields(d: TvDetails, region: &str, my_user_id: Option<i64>) -> DetailField
     let network = d.networks.iter().map(|n| n.name.clone()).collect::<Vec<_>>().join(", ");
     let next_air_date =
         d.next_episode_to_air.as_ref().and_then(|e| e.air_date.as_deref()).map(format_date_pretty).unwrap_or_default();
-    let trailer_url = find_trailer_url(&d.related_videos);
+    let trailer_candidates = trailer_candidates(&d.related_videos);
     let req_2k = tier_request(d.media_info.as_ref(), false);
     let req_4k = tier_request(d.media_info.as_ref(), true);
     let status_label = tier_status_label(d.media_info.as_ref().and_then(|mi| mi.status()), req_2k);
@@ -4196,7 +4363,7 @@ fn tv_fields(d: TvDetails, region: &str, my_user_id: Option<i64>) -> DetailField
         production_countries: format_countries(&d.production_countries),
         network,
         providers,
-        trailer_url,
+        trailer_candidates,
         on_watchlist: d.on_user_watchlist,
         availability,
     }
@@ -4391,6 +4558,7 @@ fn open_discover_item_ex(
         g.set_request_detail_network("".into());
         g.set_request_detail_providers(ModelRc::new(VecModel::from(Vec::<StreamingProvider>::new())));
         g.set_request_detail_trailer_url("".into());
+        g.set_request_detail_trailer_state("".into()); // set again once the fetch lands
         g.set_request_detail_btn_focused(0);
         g.set_show_request_options(false); // defensive — shouldn't still be open across items
         g.set_request_options_editing(false);
@@ -4425,6 +4593,7 @@ fn open_discover_item_ex(
     }
 
     let media_type2 = media_type.clone();
+    let rt_trailer = rt.clone();
     rt.spawn(async move {
         // Cached after the first item opened this connection (see
         // resolve_streaming_region's own doc comment) — cheap enough not to
@@ -4685,7 +4854,7 @@ fn open_discover_item_ex(
                 })
                 .collect();
             g.set_request_detail_providers(ModelRc::new(VecModel::from(providers)));
-            g.set_request_detail_trailer_url(fields.trailer_url.unwrap_or_default().as_str().into());
+            start_trailer_check(&state, &ww, &rt_trailer, gen, fields.trailer_candidates);
             if let Some(buf) = poster_buf {
                 g.set_request_detail_poster(slint::Image::from_rgba8(buf));
                 g.set_request_detail_has_poster(true);
@@ -5014,6 +5183,10 @@ pub(crate) fn discover_toggle_blocklist(
 /// patches every visible card + updates the id cache + rebuilds the
 /// calendar (a watchlist change is one of the two things that can change
 /// what's on it). Watchlist + Release Calendar, 2026-07-18.
+/// `success_toast` replaces the usual "Added to/Removed from Watchlist"
+/// toast — used by a successful request, which auto-adds to the watchlist
+/// and shows one combined toast instead of two back to back (2026-10-04).
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn discover_toggle_watchlist(
     state: Arc<Mutex<FjordState>>,
     ww: Weak<MainWindow>,
@@ -5022,6 +5195,7 @@ pub(crate) fn discover_toggle_watchlist(
     media_type: String,
     title: String,
     adding: bool,
+    success_toast: Option<&'static str>,
 ) {
     debug!("seerr: discover_toggle_watchlist tmdb={tmdb_id} media_type={media_type} adding={adding}");
     let Some(client) = state.lock().unwrap().seerr_client.clone() else {
@@ -5130,11 +5304,11 @@ pub(crate) fn discover_toggle_watchlist(
                 });
                 show_toast(
                     ww.clone(),
-                    if adding {
+                    success_toast.unwrap_or(if adding {
                         if reset_played { "Added to Watchlist — marked unwatched" } else { "Added to Watchlist" }
                     } else {
                         "Removed from Watchlist"
-                    }.into(),
+                    }).into(),
                 );
                 refresh_watchlist(Arc::clone(&state), ww, rt2);
             }
@@ -5300,11 +5474,15 @@ pub(crate) fn submit_request(state: Arc<Mutex<FjordState>>, ww: Weak<MainWindow>
                         patch_discover_card_request_state(&g, &mt, tmdb_id, &request_id, pending, true);
                     }
                 });
-                show_toast(ww.clone(), "Requested".into());
-                if !already_on_watchlist {
+                if already_on_watchlist {
+                    show_toast(ww.clone(), "Requested".into());
+                } else {
+                    // One toast once the auto-add lands; a failed add shows
+                    // its own "Couldn't update watchlist" instead.
                     discover_toggle_watchlist(
                         Arc::clone(&state), ww.clone(), rt2.clone(),
                         tmdb_id, media_type.clone(), title_snapshot, true,
+                        Some("Requested — added to Watchlist"),
                     );
                 }
                 // The freshly-created request has never been in
@@ -5872,10 +6050,11 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
         move |ch| {
             let Some(w) = ww.upgrade() else { return };
             let g = AppState::get(&w);
-            let mut q = g.get_discover_query().to_string();
-            let was_landing = q.is_empty();
-            q.push_str(ch.as_str());
-            g.set_discover_query(q.as_str().into());
+            let was_landing = g.get_discover_query().is_empty();
+            let (q, cursor) = crate::insert_at_grapheme(
+                &g.get_discover_query(), g.get_discover_query_cursor().max(0) as usize, ch.as_str(),
+            );
+            set_discover_query_and_cursor(&g, &q, cursor);
             if was_landing {
                 // First character typed: the view switches from the 5
                 // landing SectionRows to the flat results grid, which only
@@ -5900,9 +6079,30 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
         move || {
             let Some(w) = ww.upgrade() else { return };
             let g = AppState::get(&w);
-            let q = crate::trim_last_grapheme(&g.get_discover_query());
-            g.set_discover_query(q.as_str().into());
-            spawn_discover_search(ww.clone(), Arc::clone(&state), q, Arc::clone(&gen), &rt);
+            let old = g.get_discover_query().to_string();
+            let (q, cursor) = crate::delete_before_grapheme(&old, g.get_discover_query_cursor().max(0) as usize);
+            set_discover_query_and_cursor(&g, &q, cursor);
+            if q != old {
+                spawn_discover_search(ww.clone(), Arc::clone(&state), q, Arc::clone(&gen), &rt);
+            }
+        }
+    });
+    // Delete key: removes the letter after the caret (2026-10-04).
+    g.on_discover_search_delete({
+        let state = Arc::clone(&state);
+        let ww = window.as_weak();
+        let gen = Arc::clone(&discover_gen);
+        let rt = rt.clone();
+        move || {
+            let Some(w) = ww.upgrade() else { return };
+            let g = AppState::get(&w);
+            let old = g.get_discover_query().to_string();
+            let cursor = g.get_discover_query_cursor().max(0) as usize;
+            let q = crate::delete_at_grapheme(&old, cursor);
+            set_discover_query_and_cursor(&g, &q, cursor);
+            if q != old {
+                spawn_discover_search(ww.clone(), Arc::clone(&state), q, Arc::clone(&gen), &rt);
+            }
         }
     });
     g.on_discover_search_clear({
@@ -5913,7 +6113,7 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
         move || {
             let Some(w) = ww.upgrade() else { return };
             let g = AppState::get(&w);
-            g.set_discover_query("".into());
+            set_discover_query_and_cursor(&g, "", 0);
             g.set_discover_focused(0);
             g.set_discover_focused_row(0);
             spawn_discover_search(ww.clone(), Arc::clone(&state), String::new(), Arc::clone(&gen), &rt);
@@ -6230,7 +6430,7 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
             let adding = !g.get_context_menu_on_watchlist();
             let title = g.get_context_menu_title().to_string();
             g.set_show_context_menu(false);
-            discover_toggle_watchlist(Arc::clone(&state), ww.clone(), rt.clone(), tmdb_id, media_type.into(), title, adding);
+            discover_toggle_watchlist(Arc::clone(&state), ww.clone(), rt.clone(), tmdb_id, media_type.into(), title, adding, None);
         }
     });
 
@@ -6247,7 +6447,7 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
             let tmdb_id = g.get_request_detail_tmdb_id() as i64;
             let adding = !g.get_request_detail_on_watchlist();
             let title = g.get_request_detail_title().to_string();
-            discover_toggle_watchlist(Arc::clone(&state), ww.clone(), rt.clone(), tmdb_id, media_type, title, adding);
+            discover_toggle_watchlist(Arc::clone(&state), ww.clone(), rt.clone(), tmdb_id, media_type, title, adding, None);
         }
     });
 
@@ -6850,7 +7050,9 @@ fn existing_detail_btn_slots(g: &AppState) -> Vec<i32> {
     if g.get_request_detail_status().as_str() == "" || g.get_request_detail_status_4k().as_str() == "" {
         slots.push(0);
     }
-    if !g.get_request_detail_trailer_url().as_str().is_empty() && g.get_yt_dlp_available() {
+    // Only once a trailer is known to play — while checking (or with none
+    // playable) the button is shown greyed out and isn't a D-pad stop.
+    if g.get_request_detail_trailer_state().as_str() == "ok" && g.get_yt_dlp_available() {
         slots.push(1);
     }
     if !g.get_request_detail_request_id().as_str().is_empty() {

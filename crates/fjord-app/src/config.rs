@@ -26,6 +26,7 @@
 //                   whole Bonfire household) to resolve silently at startup, before ever touching
 //                   which profile within it. display_sync_* (2026-09-18) — native resolution/
 //                   refresh-rate/HDR/WCG matching to source via kscreen-doctor (see display_sync.rs),
+//                   display_sync_trailers (2026-10-04, default off) — Watch Trailer switches the display too
 //                   opt-in/off by default; enabled/screen_name/default_resolution/default_hz/
 //                   scale_4k/scale_1080p/sync_resolution/sync_refresh_rate/4k_odd_fps_mode/
 //                   hdr_mode/wcg_mode.
@@ -66,6 +67,7 @@
 //                   Jellyfin auth fields; token/seerr_api_key/seerr_session_cookie are encrypted
 //                   at rest — see load_config/save_config and secrets.rs (looped over
 //                   cfg.profiles now, not three flat fields — secrets.rs itself is unchanged).
+//                   save_config serialises concurrent saves (one shared .tmp path) — 2026-10-04.
 //                   discover_filter_type/_genre_names/_sort/_min_rating/_min_year/_provider_ids
 //                   (2026-07-18) — Discover screen's persisted filter selections; profile-scoped
 //                   as of the Phase 1 split (a deliberate reversal of the old "not tied to Seerr
@@ -97,6 +99,8 @@
 //                     while media plays.
 //                   ws_connected/ws_last_keepalive_at (2026-08-28): live connection-health signal
 //                     updated from ws.rs, consulted by wire_mpv_timer's stall-recovery to pick a
+//                     trailer_playable/request_detail_trailers (2026-10-04): session cache of which
+//                     YouTube trailer URLs play, for discover::start_trailer_check
 //                     long vs. short retry budget (see the field's own doc comment)
 //                   item_detail_cache/similar_items_cache/boxset_items_cache/artist_albums_cache/
 //                     person_filmography_cache/container_tracks_cache: BoundedCache<...> — screen-open
@@ -473,6 +477,10 @@ pub(crate) struct DeviceConfig {
     // "auto" (follows HDR state, matching the proven script's own default) |
     // "yes" | "no".
     #[serde(default = "default_display_sync_wcg_mode")] pub display_sync_wcg_mode: String,
+    // Whether Watch Trailer also switches the display (2026-10-04, user
+    // request: off by default — a YouTube trailer isn't worth a mode switch
+    // and a TV resync, and it often comes in an odd 4K/24p format).
+    #[serde(default)] pub display_sync_trailers: bool,
 }
 
 impl Default for DeviceConfig {
@@ -512,6 +520,7 @@ impl Default for DeviceConfig {
             display_sync_4k_odd_fps_mode: default_4k_odd_fps_mode(),
             display_sync_hdr_mode: default_display_sync_hdr_mode(),
             display_sync_wcg_mode: default_display_sync_wcg_mode(),
+            display_sync_trailers: false,
         }
     }
 }
@@ -1013,6 +1022,7 @@ fn migrate_legacy_config(l: LegacyConfig) -> Config {
         display_sync_4k_odd_fps_mode: default_4k_odd_fps_mode(),
         display_sync_hdr_mode: default_display_sync_hdr_mode(),
         display_sync_wcg_mode: default_display_sync_wcg_mode(),
+        display_sync_trailers: false,
     };
     let profile = ProfileSettings {
         user_id: l.user_id, server_url: l.server_url, token: l.token,
@@ -1332,6 +1342,14 @@ pub(crate) fn load_config() -> Option<Config> {
 }
 
 pub(crate) fn save_config(cfg: &Config) {
+    // One save at a time (2026-10-04): saves run from the UI thread and from
+    // background tasks, and all of them write the same `config.json.tmp`.
+    // Two overlapping saves → the second rename found the temp file already
+    // moved ("rename … failed: No such file or directory — settings NOT
+    // saved", seen at startup on both the dev machine and the HTPC). This
+    // lock is never held while taking any other lock, so it can't deadlock.
+    static SAVE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _save_guard = SAVE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let path = config_path();
     if let Some(parent) = path.parent() { let _ = std::fs::create_dir_all(parent); }
     // Encrypt a copy for the on-disk form — `cfg` itself (and every other
@@ -2063,6 +2081,13 @@ pub(crate) struct FjordState {
     // local-machine fact, not tied to Seerr connection state, not reset on
     // sign-out/disconnect.
     pub yt_dlp_available: bool,
+    // Trailer check (2026-10-04, discover::start_trailer_check): YouTube URL
+    // → plays (yt-dlp resolved it / it played) or not. Session-only; cleared
+    // in reset_session_state like every other cache. request_detail_trailers
+    // = the candidates of the RequestDetail screen currently showing, so a
+    // failed play can re-check the rest.
+    pub trailer_playable: std::collections::HashMap<String, bool>,
+    pub request_detail_trailers: Vec<String>,
     // display_sync (2026-09-18) — "what's currently applied to the physical
     // output," so a same-mode item (e.g. back-to-back episodes of one show)
     // never redundantly re-switches and re-pays the 3s settle. `None` means
@@ -2155,6 +2180,8 @@ impl FjordState {
             blocklist_loading_more: false,
             seerr_admin_last_refresh: None,
             yt_dlp_available: false,
+            trailer_playable: std::collections::HashMap::new(),
+            request_detail_trailers: Vec::new(),
             display_sync_current_mode: None,
             display_sync_current_hdr: None,
         }

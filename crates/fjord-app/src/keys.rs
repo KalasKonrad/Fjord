@@ -67,6 +67,7 @@
 //     detail::handle_key, browse::handle_key,
 //     discover::handle_key (Discover grid), discover::handle_key_request_detail (Seerr detail/Request)
 //   handle_discover_search  raw-key pre-dispatch for Discover's search field (typing/backspace/
+//                           2026-10-04: Left/Right/Home/End move the caret, Delete deletes after it
 //                      escape), mirrors handle_browse_search — bypasses the Action/KeyMap lookup;
 //                      Up and Down both unconditionally enter the filter bar (Down fixed
 //                      2026-07-18 — previously skipped straight into content, asymmetric
@@ -115,6 +116,10 @@ pub mod key {
     pub const DOWN:       &str = "\u{F701}";
     pub const LEFT:       &str = "\u{F702}";
     pub const RIGHT:      &str = "\u{F703}";
+    // Slint key codes (i-slint-common key_codes.rs) — text-field caret keys.
+    pub const DELETE:     &str = "\u{007f}";
+    pub const HOME:       &str = "\u{F729}";
+    pub const END:        &str = "\u{F72B}";
     pub const F11:        &str = "\u{F70E}";
 }
 
@@ -3320,6 +3325,23 @@ fn handle_discover_search(key: &str, ctrl: bool, window: &crate::MainWindow) -> 
             g.set_focused_section(-1);
             true
         }
+        // Caret keys with text in the field (2026-10-04, live-reported:
+        // fixing one letter meant deleting everything after it). Left at the
+        // very start stays put — leaving the field mid-edit would be easy to
+        // hit by accident; Escape/Up/Down still leave it.
+        k if k == key::LEFT => {
+            let c = g.get_discover_query_cursor().max(0) as usize;
+            crate::discover::move_discover_cursor(&g, c.saturating_sub(1));
+            true
+        }
+        k if k == key::RIGHT => {
+            let c = g.get_discover_query_cursor().max(0) as usize;
+            crate::discover::move_discover_cursor(&g, c + 1);
+            true
+        }
+        k if k == key::HOME => { crate::discover::move_discover_cursor(&g, 0); true }
+        k if k == key::END => { crate::discover::move_discover_cursor(&g, usize::MAX); true }
+        k if k == key::DELETE => { g.invoke_discover_search_delete(); true }
         k if is_navigation_key(k) => true,
         k if is_printable(k) => { g.invoke_discover_search_append(k.into()); true }
         _ => true
