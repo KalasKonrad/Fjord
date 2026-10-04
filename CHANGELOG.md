@@ -23,6 +23,40 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Improved: "Sync display to source" now switches the display *before*
+  the video starts, instead of a couple of seconds into playback.** The
+  resolution/refresh-rate/HDR change used to make the screen blank and
+  relink while the movie was already playing. Fjord now reads the video's
+  resolution, frame rate and HDR type from Jellyfin first, sets the
+  display, and only then starts the video (showing the usual "Loading…"
+  spinner meanwhile). If that takes longer than 20 seconds, playback
+  starts anyway. Music is never affected, and nothing changes while the
+  feature is off.
+- **Fixed: "Skip intro" could fail to skip, and chapters could go missing,
+  when a video was slow to start** (a library drive waking up, or the
+  display switching first). Fjord now waits until the file has actually
+  opened before looking for chapters, choosing subtitle/audio tracks, or
+  skipping an intro.
+- **Fixed: a new playlist didn't show up in the Music dashboard's
+  Playlists row until about 40 seconds later.** The library grid updated
+  right away, but the dashboard row waited for Jellyfin's own change
+  notification. It now updates immediately, including the playlist's
+  artwork and track counts after adding or removing tracks.
+- **Fixed: Repeat One did nothing for a song played on its own.** The
+  song just stopped at the end. And if an album was still loaded in the
+  queue, Repeat One replayed that album's track instead of the song you
+  had just played. It now always repeats the song that's playing.
+- **Improved: Repeat All now keeps going when you're not playing an album.**
+  A single song loops, and songs added with "Add to Queue" play round in
+  order instead of stopping after the last one. Skipping with ⏭ keeps the
+  skipped song in the loop. Albums and playlists wrap around as before.
+- **Fixed: pressing Stop right after Play (before the video had actually
+  started) could reset a movie's or episode's resume position to the
+  beginning.** It now keeps the position you started from.
+- **Docs:** `CLAUDE.md` is now a short rules-and-pointers file; the full
+  design and bug-investigation history moved to `DEVLOG.md`, and the Slint
+  gotcha write-ups moved to `SLINT.md`.
+
 - **Fixed: the new "Sync display to source" feature's "Default
   resolution"/"Default refresh rate" rows only offered a small, fixed
   list of common values — some of which your actual screen might not

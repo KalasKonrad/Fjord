@@ -1,6 +1,10 @@
 // ── fjord-app · playback.rs ──────────────────────────────────────────────────
 //   QueueItem               { id, item_type, series_id, title, audio_meta } — one entry in the playback queue
 //   RepeatMode              Off / All / One — queue repeat behaviour
+//   repeat_one_target       Repeat One replays now_playing (the song actually playing), with or without a
+//                           playlist — used by natural end, the gapless peek, and commit_natural_next
+//   repeat_all_ring /       Repeat All with no album playlist: the queue is a ring (ended song → back of
+//     take_repeat_all_ring_next  the queue, head plays) — natural end, gapless peek/commit and ⏭ Next
 //   VideoState              mpv Player + MpvRenderCtx, GL FBOs, playback metadata
 //                           playlist: Vec<QueueItem> — ordered track list for album/artist playback
 //                           playlist_index: usize — currently-playing position in playlist
@@ -80,7 +84,18 @@
 //   quit_cleanup            synchronous stop report + screensaver release called after window.run() exits
 //   start_playback          stop-report previous item first (CR-3), then open URL in mpv; audio_meta: Option<(artist, album_art_id)> drives music bar;
 //                           item_type=="Audio" → is-audio-playing=true (music bar, no fullscreen player); generation guards stale writes; show_toast on failure;
-//                           playlist+queue always survive (Phase 56) — playing music = insert at top of queue
+//                           playlist+queue always survive (Phase 56) — playing music = insert at top of queue;
+//                           display-mode-prefetch (2026-09-25): with display sync on (non-Audio), holds back
+//                           pending_load_url/play_start and spawns a task that switches the display first
+//                           (display_sync::sync_before_load, 20 s cap), then releases the load; video_info
+//                           param (from MediaStreams) skips the fallback item-detail fetch when known;
+//                           skipped when replacing a live player for the SAME item (stall reload); a stop
+//                           mid-switch reverts the display from inside the task
+//   loaded_since/loaded_ok  (wire_mpv_timer) time since mpv's first FileLoaded — decoder log, chapters,
+//                           tracks, display-sync Branch B and the skip-segment check key off it, not
+//                           play_start (before FileLoaded, time-pos reads a fake 0)
+//   prestart_still_current  that task's staleness check — generation unchanged AND vs.player still set
+//                           (Stop doesn't bump the generation)
 //   reset_video_state_for_playback  shared "fresh playback baseline" reset (screensaver inhibit,
 //                           chapters, stall-recovery, skip/OSD countdowns) — extracted so
 //                           start_playback and play_trailer can't drift out of sync; each caller
@@ -425,6 +440,15 @@ pub(crate) struct VideoState {
     // been bitten by once for a very similar reason, see hdr_output_applied's
     // own doc comment above).
     pub display_sync_attempted: bool,
+    // display-mode-prefetch (2026-09-25) — true from the moment start_playback
+    // defers pending_load_url/play_start to wait on display_sync's own
+    // pre-decode mode-switch, until that wait resolves (success, no-video-
+    // info-found, or timeout) and pending_load_url is finally set. Purely a
+    // "should the buffering spinner stay visible" signal (see wire_mpv_timer's
+    // buf_active condition) — play_start staying None for the same span is
+    // what actually keeps every play_start-gated watchdog/diagnostic quiet
+    // during the wait; this flag has no gating role of its own.
+    pub display_sync_prestart_active: bool,
     pub tracks_loaded:      bool,
     pub pos_tick:           u32,
     pub controls_idle_ticks:  u32,
@@ -574,6 +598,7 @@ impl Default for VideoState {
             wide_color_fbo: false,
             hdr_output_applied: false,
             display_sync_attempted: false,
+            display_sync_prestart_active: false,
             tracks_loaded: false, pos_tick: 0,
             controls_idle_ticks: 0,
             seek_pending_secs: 0.0, seek_pending_ticks: 0,
@@ -780,6 +805,10 @@ pub(crate) fn tear_down_player(vs: &mut VideoState)
     vs.render_ctx      = None;
     vs.player          = None;
     vs.pending_load_url = None;
+    // display-mode-prefetch: a stop during the pre-decode wait must also
+    // drop the "Loading…" spinner signal — the deferred task bails without
+    // clearing it once it sees vs.player is gone (see start_playback).
+    vs.display_sync_prestart_active = false;
     // hdr branch, Stage 3 — unconditional on every teardown path (stop/
     // replaced/natural-end/quit all funnel through this one function), not
     // just the ones that actually had an HDR image description active: the
@@ -1013,7 +1042,19 @@ fn reset_video_state_for_playback(vs: &mut VideoState, player: Player, config: &
     // own doc comment and CLAUDE.md's Known platform issues for the real
     // HTPC bug (audio-only-forever, black screen) this fixes at the root.
     vs.pending_load_url      = Some(url.to_string());
-    vs.play_start            = Some(Instant::now());
+    // play_start is deliberately NOT stamped here anymore (display-mode-
+    // prefetch, 2026-09-25) — every caller now stamps it itself, at the
+    // moment decode is actually about to be requested: immediately, for the
+    // non-deferred path, or once display_sync's own pre-decode mode-switch
+    // has resolved, for the deferred path. Every play_start-gated consumer
+    // in this file already treats None as "not started yet" — see
+    // start_playback's own eligible/non-eligible branches and play_trailer.
+    // It MUST be cleared here, though: left alone it kept the PREVIOUS item's
+    // timestamp, so during the display-sync wait every play_start-gated check
+    // (chapter poll, decoder log, no-VideoReconfig warning, stall watchdog,
+    // first-frame log) ran against the old item's clock — seen live on the
+    // HTPC: the chapter poll gave up before the file was even loaded.
+    vs.play_start            = None;
     vs.first_frame_logged    = false;
     vs.stall_last_progress_pos = config.start_position_secs.unwrap_or(0.0);
     vs.stall_last_progress_at  = None; // re-armed on the first tick after this player starts
@@ -1034,10 +1075,16 @@ fn reset_video_state_for_playback(vs: &mut VideoState, player: Player, config: &
     vs.wide_color_fbo        = config.target_colorspace_hint;
     vs.hdr_output_applied    = false;
     vs.display_sync_attempted = false;
+    vs.display_sync_prestart_active = false;
     vs.tracks_loaded         = false;
     vs.pos_tick              = 0;
     vs.controls_idle_ticks   = 0;
-    vs.last_known_pos_ticks  = 0;
+    // Seeded with the start position, not 0: a stop (or stall reload) before
+    // mpv ever reports a position — e.g. during display_sync's pre-decode
+    // wait — would otherwise report 0 to Jellyfin and wipe the resume point.
+    vs.last_known_pos_ticks  = config.start_position_secs
+        .map(|s| (s * 10_000_000.0) as i64)
+        .unwrap_or(0);
     // For Episodes: intro_timestamps/intro_skip_shown/credits_start were reset
     // before the fetch tasks were spawned — don't clear them here or a fast
     // response would be silently wiped. For everything else (movies, trailers):
@@ -1079,6 +1126,15 @@ fn reset_video_state_for_playback(vs: &mut VideoState, player: Player, config: &
     vs.preloaded_next        = None; // fresh player — no pending entry
 }
 
+/// display-mode-prefetch: is the deferred pre-decode task spawned by
+/// `start_playback` (generation `my_gen`) still the live playback? False once
+/// a newer item started (generation bumped) or playback was stopped
+/// (`vs.player` gone — Stop does not bump the generation).
+fn prestart_still_current(video: &Arc<Mutex<VideoState>>, my_gen: u64) -> bool {
+    let vs = video.lock().unwrap();
+    vs.playback_generation == my_gen && vs.player.is_some()
+}
+
 // ── start_playback ────────────────────────────────────────────────────────────
 // Called from ~30 sites across the app (dashboards, library grids, detail/series/
 // season/album/artist/collection screens, context menu, queue/playlist advance,
@@ -1098,6 +1154,19 @@ pub(crate) fn start_playback(
     video:       &Arc<Mutex<VideoState>>,
     window_weak: &slint::Weak<MainWindow>,
     rt_handle:   &tokio::runtime::Handle,
+    // display-mode-prefetch (2026-09-25) — needed to read
+    // Config.device.display_sync_enabled and to call sync_before_load's own
+    // FjordState-backed cache. Already in scope at every real call site
+    // (every one of them already locks state to build `config` via
+    // s.player_config() right before calling this function).
+    state:       &Arc<Mutex<FjordState>>,
+    // Already-known width/fps/is_hdr for THIS item, when the caller happens
+    // to have a MediaItem with Fields=MediaStreams on hand (avoids a
+    // redundant fetch); None falls back to an internal item_detail_cache
+    // lookup / fresh fetch inside the deferred-load task below. Either way,
+    // has no effect at all unless display_sync is enabled and item_type
+    // isn't Audio.
+    video_info:  Option<fjord_api::models::VideoStreamInfo>,
 ) {
     info!("starting playback: {} — {}", item_id, fjord_player::redact_api_key(&url));
 
@@ -1228,6 +1297,16 @@ pub(crate) fn start_playback(
         });
     }
 
+    // display-mode-prefetch: replacing a LIVE player for this same item (the
+    // stall-recovery reload, or re-picking what's already playing) — the
+    // display is already in this item's mode, so skip the pre-decode wait.
+    // Without this, a stall reload during a network outage would first wait
+    // on an item-detail fetch that is likely to hang (up to the 20 s cap).
+    let same_item_live = {
+        let vs = video.lock().unwrap();
+        vs.player.is_some() && vs.item_id.as_deref() == Some(item_id.as_str())
+    };
+
     let (dropped, dec_dropped) = video.lock().unwrap().player.as_ref()
         .map(|p| p.get_drop_counts()).unwrap_or((0, 0));
     info!("playback replaced: frame-drops={} decoder-drops={}", dropped, dec_dropped);
@@ -1257,15 +1336,139 @@ pub(crate) fn start_playback(
     let client_art = Arc::clone(&client);
     let item_id_art = item_id.clone();
     let is_audio    = item_type == "Audio";
+    // display-mode-prefetch: cloned here, BEFORE the scoped block below moves
+    // the originals into vs.client/vs.item_id — mirrors client_art/item_id_art
+    // immediately above for the identical reason.
+    let client_ds  = Arc::clone(&client);
+    let item_id_ds = item_id.clone();
+    let url_ds     = url.clone();
 
     match Player::new(&config) {
         Ok(player) => {
-            {
+            let eligible = {
                 let mut vs = video.lock().unwrap();
                 reset_video_state_for_playback(&mut vs, player, &config, item_type == "Episode", &url);
                 vs.item_id           = Some(item_id);
                 vs.playing_series_id = series_id;
                 vs.client            = Some(client);
+
+                // display-mode-prefetch (2026-09-25) — Audio never
+                // participates (no display-mode concept for music). When
+                // eligible, defer pending_load_url/play_start until the
+                // spawned task below has settled the display's mode/HDR/WCG
+                // ahead of decode; otherwise behave exactly as before this
+                // feature existed (immediate load, play_start stamped now).
+                let eligible = !is_audio && !same_item_live && {
+                    let s = state.lock().unwrap();
+                    s.config.device.display_sync_enabled
+                };
+                if eligible {
+                    vs.pending_load_url = None;
+                    vs.display_sync_prestart_active = true;
+                } else {
+                    vs.pending_load_url = Some(url.clone());
+                    vs.play_start = Some(Instant::now());
+                }
+                eligible
+            };
+            if eligible {
+                let state_ds = Arc::clone(state);
+                let video_ds = Arc::clone(video);
+                rt_handle.spawn(async move {
+                    // Caught on plan re-check — wrapping only sync_before_load
+                    // in a timeout would leave the fallback item-detail fetch
+                    // (the None branch below) unprotected on its own; combined
+                    // with get_item_detail's own 30s reqwest timeout, a
+                    // pathological case could stack toward ~45s before ever
+                    // giving up. Wrapping the WHOLE body (fetch AND switch) in
+                    // one outer timeout gives a single, honest cap instead —
+                    // a fetch still in flight when it fires is fine to
+                    // abandon, the item just starts playing without the
+                    // pre-decode switch, falling back to Branch B's existing
+                    // post-decode behavior exactly as it already does today
+                    // for every one of the bare-id call sites.
+                    let prestart = async {
+                        let resolved = match video_info {
+                            Some(vi) => Some(vi),
+                            None => {
+                                // A cache hit only counts if it actually carries
+                                // stream info — entries written by older builds
+                                // (screen_caches.json) have no MediaStreams.
+                                let cached = state_ds.lock().unwrap().item_detail_cache
+                                    .get(&item_id_ds)
+                                    .and_then(|i| i.video_stream_info());
+                                match cached {
+                                    Some(vi) => Some(vi),
+                                    None => client_ds.get_item_detail(&item_id_ds).await.ok()
+                                        .and_then(|i| i.video_stream_info()),
+                                }
+                            }
+                        };
+                        let Some(vi) = resolved else { return };
+                        // Cheap, early staleness check — shrinks (does not
+                        // eliminate) the window where a rapid second
+                        // start_playback call for a DIFFERENT item could spawn
+                        // a second, concurrent prestart task while this one is
+                        // still resolving video_info. See DEVLOG.md's
+                        // display-mode-prefetch section for the residual race
+                        // this doesn't fully close (accepted, self-healing).
+                        // Also bail if playback was stopped (not replaced)
+                        // meanwhile: Stop doesn't bump playback_generation, so
+                        // vs.player being gone is the only signal — without
+                        // it, a Play-then-quick-Stop would still switch the
+                        // display after the stop's own revert already ran.
+                        if !prestart_still_current(&video_ds, my_gen) { return; }
+                        let cfg = crate::display_sync::DisplaySyncSettings::from_device_config(
+                            &state_ds.lock().unwrap().config.device,
+                        );
+                        crate::display_sync::sync_before_load(Arc::clone(&state_ds), vi, cfg).await;
+                    };
+                    // Hang-guard, not an expected-case budget — Branch B
+                    // today runs sync_to_source with NO timeout at all, so
+                    // even a generous value here is strictly safer than the
+                    // status quo. 20s covers a legitimately-slow-but-real
+                    // fetch plus sync_to_source's own real settle path
+                    // (get_supported_modes + mode-set + a genuine 3s sleep +
+                    // optional color-apply, realistically ~3.5-4.5s) with
+                    // real margin — deliberately NOT tight, since a timeout
+                    // firing WHILE inside that 3s sleep drops the future
+                    // after the real kscreen-doctor mode-set already ran but
+                    // before FjordState.display_sync_current_mode gets
+                    // cached, which would make Branch B (post-decode,
+                    // unconditionally still running) see mode_changed==true
+                    // and re-issue a second real mode-set AFTER video has
+                    // already started rendering — reintroducing the exact
+                    // blink this feature exists to remove, just moved later.
+                    if tokio::time::timeout(Duration::from_secs(20), prestart).await.is_err() {
+                        warn!("display_sync prestart timed out — starting playback at whatever mode is current");
+                    }
+                    // Stopped (same generation, player gone) while the switch
+                    // was in flight: sync_to_source only records the new mode
+                    // after its 3 s settle, so the stop's own revert_to_default
+                    // saw the old mode and did nothing. Revert here instead —
+                    // a cheap no-op if nothing was actually switched.
+                    let stopped = {
+                        let vs = video_ds.lock().unwrap();
+                        vs.playback_generation == my_gen && vs.player.is_none()
+                    };
+                    if stopped {
+                        info!("display_sync prestart: playback stopped during the switch — reverting");
+                        crate::display_sync::revert_to_default(Arc::clone(&state_ds)).await;
+                        return;
+                    }
+                    if !prestart_still_current(&video_ds, my_gen) { return; }
+                    let _ = slint::invoke_from_event_loop(move || {
+                        let mut vs = video_ds.lock().unwrap();
+                        // Re-check on the UI thread: a new Play (or a Stop)
+                        // can be processed between the check above and this
+                        // closure running — applying then would load THIS
+                        // item's URL into the next item's session.
+                        if vs.playback_generation != my_gen || vs.player.is_none() { return; }
+                        vs.pending_load_url = Some(url_ds);
+                        vs.play_start = Some(Instant::now());
+                        vs.display_sync_prestart_active = false;
+                    });
+                });
             }
             if let Some(w) = window_weak.upgrade() {
                 let g = AppState::get(&w);
@@ -1454,6 +1657,13 @@ pub(crate) fn play_trailer(
                 vs.item_id           = None;
                 vs.playing_series_id = None;
                 vs.client            = None;
+                // Trailers have no video_info/Jellyfin item, so they never
+                // go through start_playback's own deferred-load path — stamp
+                // play_start immediately here, matching today's exact
+                // pre-display-mode-prefetch timing (see
+                // reset_video_state_for_playback's own doc comment for why
+                // this is no longer done for every caller automatically).
+                vs.play_start = Some(Instant::now());
             }
             if let Some(w) = window_weak.upgrade() {
                 let g = AppState::get(&w);
@@ -1537,9 +1747,49 @@ fn natural_next_index(vs: &VideoState) -> Option<usize> {
     }
 }
 
+// Repeat One repeats whatever is actually playing. `now_playing` is the source
+// of truth, not `playlist[playlist_index]`: a song played on its own leaves the
+// playlist empty, and one played while an album playlist is loaded doesn't move
+// playlist_index (start_playback never touches it). Both cases used to fall
+// through — the lone song just stopped, the off-list song replayed the album's
+// current track instead.
+fn repeat_one_target(vs: &VideoState) -> Option<QueueItem> {
+    if vs.current_is_audio && vs.repeat_mode == RepeatMode::One {
+        vs.now_playing.clone().filter(|q| q.item_type == "Audio")
+    } else {
+        None
+    }
+}
+
+// Repeat All with no album playlist: the queue is a ring. The song that just
+// ended goes to the back of the queue before the head plays, so a set of
+// queued songs keeps going round and a lone song loops. (Queue items are
+// removed as they play, so without this Repeat All had nothing to repeat and
+// just stopped.) Not applied when the queue head is a video — class-gated
+// like every other advance.
+fn repeat_all_ring(vs: &VideoState) -> bool {
+    vs.current_is_audio
+        && vs.repeat_mode == RepeatMode::All
+        && vs.playlist.is_empty()
+        && vs.queue.first().is_none_or(|q| q.item_type == "Audio")
+}
+
+// One step of the Repeat All ring: re-queue the song that just ended, play the head.
+fn take_repeat_all_ring_next(vs: &mut VideoState) -> Option<QueueItem> {
+    if let Some(np) = vs.now_playing.clone().filter(|q| q.item_type == "Audio") {
+        vs.queue.push(np);
+    }
+    if vs.queue.is_empty() { None } else { Some(vs.queue.remove(0)) }
+}
+
 // Non-mutating preview of what natural end will play (class-gated like the
 // timer's advance). Used by the gapless preload check.
 pub(crate) fn peek_natural_next(vs: &VideoState) -> Option<QueueItem> {
+    if let Some(q) = repeat_one_target(vs) { return Some(q); }
+    if repeat_all_ring(vs) {
+        return vs.queue.first().cloned()
+            .or_else(|| vs.now_playing.clone().filter(|q| q.item_type == "Audio"));
+    }
     let ended_audio = vs.current_is_audio;
     let queue_head_matches = vs.queue.first()
         .map(|q| (q.item_type == "Audio") == ended_audio)
@@ -1555,6 +1805,15 @@ pub(crate) fn peek_natural_next(vs: &VideoState) -> Option<QueueItem> {
 
 // Advance the bookkeeping to match the entry mpv just started gaplessly.
 fn commit_natural_next(vs: &mut VideoState, qi: &QueueItem) {
+    // Repeat One replayed the same song: playlist position and queue unchanged.
+    if repeat_one_target(vs).is_some_and(|q| q.id == qi.id) { return; }
+    if repeat_all_ring(vs) {
+        let next = take_repeat_all_ring_next(vs);
+        if next.as_ref().map(|q| q.id.as_str()) != Some(qi.id.as_str()) {
+            warn!("gapless: repeat-all ring head {:?} != preloaded {}", next.map(|q| q.id), qi.id);
+        }
+        return;
+    }
     if vs.current_is_audio && !vs.playlist.is_empty() {
         if let Some(i) = natural_next_index(vs) {
             if vs.playlist.get(i).map(|q| q.id == qi.id).unwrap_or(false) {
@@ -1603,6 +1862,8 @@ pub(crate) fn playlist_next(vs: &mut VideoState) -> Option<QueueItem> {
         // Before this fix the queue only played when the playlist was EMPTY,
         // so queued items never played after an album finished.
     }
+    // ⏭ under Repeat All with no album playlist: keep the skipped song in the loop.
+    if repeat_all_ring(vs) { return take_repeat_all_ring_next(vs); }
     if vs.queue.is_empty() { None } else { Some(vs.queue.remove(0)) }
 }
 
@@ -1726,22 +1987,34 @@ pub(crate) fn wire_rendering_notifier(
                                 });
                                 vs.render_ctx = Some(ctx);
                                 info!("mpv render context created");
-                                // Fire the deferred loadfile now, same GL
-                                // thread, immediately after the render
-                                // context this player needs actually exists
-                                // — see VideoState.pending_load_url's own
-                                // doc comment and Player::load()'s for the
-                                // real HTPC race (audio-only-forever, black
-                                // screen) this ordering fixes at the root.
-                                if let Some(url) = vs.pending_load_url.take() {
-                                    if let Some(p) = vs.player.as_ref() {
-                                        if let Err(e) = p.load(&url) {
-                                            error!("Player::load: {:#}", e);
-                                        }
-                                    }
-                                }
                             }
                             Err(e) => { error!("MpvRenderCtx::new: {:#}", e); return; }
+                        }
+                    }
+
+                    // Fire the deferred loadfile the moment a URL is actually
+                    // pending, same GL thread as render_ctx creation itself.
+                    // Deliberately NOT nested inside the render_ctx-creation
+                    // arm above anymore (display-mode-prefetch, 2026-09-25):
+                    // that used to be a one-shot check that only ever ran on
+                    // the very first tick after Player::new(), so a
+                    // pending_load_url set LATER by an async task (display_
+                    // sync's own pre-decode mode-switch wait) would never be
+                    // consumed at all — Player::load() silently skipped
+                    // forever, not just delayed. Checking on every tick once
+                    // render_ctx already exists preserves the original
+                    // VO-init-race-fix invariant (render_ctx must exist
+                    // before load() is called) just as well, since render_ctx
+                    // is never torn down once created — by the time any
+                    // later tick finds pending_load_url == Some, render_ctx
+                    // is already guaranteed to exist.
+                    if vs.render_ctx.is_some() {
+                        if let Some(url) = vs.pending_load_url.take() {
+                            if let Some(p) = vs.player.as_ref() {
+                                if let Err(e) = p.load(&url) {
+                                    error!("Player::load: {:#}", e);
+                                }
+                            }
                         }
                     }
 
@@ -1780,9 +2053,20 @@ pub(crate) fn wire_rendering_notifier(
                             warn!("mpv render: {:#}", e);
                         } else {
                             vs.did_render = true;
-                            if !vs.first_frame_logged {
+                            // display-mode-prefetch (2026-09-25): ctx.render()
+                            // runs every tick regardless of whether a file has
+                            // actually been loaded — mpv renders idle/blank
+                            // frames the whole time a deferred pending_load_url
+                            // wait is in flight. Without the play_start guard,
+                            // this one-shot log (and flag) would fire on that
+                            // first idle tick instead of the real first frame,
+                            // permanently losing the log line this feature
+                            // most wants intact to verify — play_start stays
+                            // None throughout the deferred wait (see its own
+                            // relocated-stamp doc comment above).
+                            if !vs.first_frame_logged && vs.play_start.is_some() {
                                 vs.first_frame_logged = true;
-                                let elapsed = vs.play_start.map(|t| t.elapsed().as_secs_f64()).unwrap_or(-1.0);
+                                let elapsed = vs.play_start.unwrap().elapsed().as_secs_f64();
                                 info!("first frame rendered {:.3}s after player start", elapsed);
                             }
                         }
@@ -2029,6 +2313,17 @@ pub(crate) fn wire_mpv_timer(
                 Some(p) => (Some(p.get_position()), Some(p.get_duration())),
                 None    => (None, None),
             };
+            // How long ago mpv finished opening the file (None while still
+            // opening). Before FileLoaded, time-pos reads 0 — a fake position.
+            // Checks that need real media data key off this, not play_start:
+            // a slow-opening file (library drive waking, ~13 s on the HTPC)
+            // otherwise exhausted the chapter poll before the file loaded, and
+            // the intro-skip treated the fake 0 as "inside the intro" during
+            // display_sync's pre-decode wait, failed its seek and marked the
+            // intro handled — so it then played unskipped.
+            let loaded_since: Option<Duration> = vs.player.as_ref()
+                .and_then(|p| p.file_loaded_at())
+                .map(|t| t.elapsed());
 
             // Skip-fade duration: Config.device.skip_fade_ms × the live
             // settings-animation-speed multiplier, read once per tick — not
@@ -2108,7 +2403,9 @@ pub(crate) fn wire_mpv_timer(
             }
 
             if vs.player.is_some() {
-                let elapsed_ok = vs.play_start.is_some_and(|t| t.elapsed() >= Duration::from_secs(2));
+                // 2 s after the file actually opened (see loaded_since above) —
+                // fps estimate settled, chapter/track lists populated.
+                let loaded_ok = loaded_since.is_some_and(|d| d >= Duration::from_secs(2));
 
                 // Stall auto-recovery: certain audio-device handoffs (e.g. SPDIF
                 // passthrough taking over from a device PipeWire hasn't released
@@ -2258,7 +2555,7 @@ pub(crate) fn wire_mpv_timer(
                     }
                 }
 
-                if elapsed_ok && !vs.decoder_logged {
+                if loaded_ok && !vs.decoder_logged {
                     if let Some(p) = vs.player.as_ref() {
                         p.log_decoder_info();
                         p.apply_auto_vf();
@@ -2310,7 +2607,7 @@ pub(crate) fn wire_mpv_timer(
                 // pre-display_sync shape apart from one new `!display_sync_
                 // enabled` term) and Branch B (further down). This is
                 // deliberate, not an arbitrary refactor: folding display_
-                // sync's own `elapsed_ok` timing requirement (needed because
+                // sync's own `loaded_ok` timing requirement (needed because
                 // estimated-vf-fps isn't safe to read the instant
                 // VideoReconfig fires — see query_video_dimensions' own doc
                 // comment) into a single merged condition would delay HDR's
@@ -2364,7 +2661,7 @@ pub(crate) fn wire_mpv_timer(
                 // replaced item during the settle can never have its stale
                 // metadata wrongly applied to whatever's playing by then.
                 if !vs.current_is_audio && !vs.display_sync_attempted && display_sync_enabled {
-                    let ready = elapsed_ok
+                    let ready = loaded_ok
                         && vs.player.as_ref().is_some_and(|p| p.has_seen_video_reconfig());
                     if ready {
                         let (meta, dims) = {
@@ -2423,7 +2720,7 @@ pub(crate) fn wire_mpv_timer(
                 // Retry up to 30 ticks (~480 ms) to handle containers where the
                 // chapter metadata appears slightly after the first track data.
                 // A count of 0 after 30 attempts is treated as "no chapters".
-                if elapsed_ok && !vs.chapters_loaded {
+                if loaded_ok && !vs.chapters_loaded {
                     if let Some(p) = vs.player.as_ref() {
                         let count = p.get_chapter_count();
                         if count > 0 {
@@ -2493,7 +2790,7 @@ pub(crate) fn wire_mpv_timer(
                         }
                     }
                 }
-                if elapsed_ok && !vs.tracks_loaded {
+                if loaded_ok && !vs.tracks_loaded {
                     if let (Some(p), Some(w)) = (vs.player.as_ref(), window_timer.upgrade()) {
                         let tracks = p.get_tracks();
                         // Retry next tick if mpv hasn't parsed the track list yet.
@@ -2620,7 +2917,12 @@ pub(crate) fn wire_mpv_timer(
                         let initial_stall = vs.play_start
                             .is_some_and(|t| t.elapsed() >= Duration::from_millis(500))
                             && dur == 0.0;
-                        let buf_active = buf_active || initial_stall;
+                        // display-mode-prefetch (2026-09-25): play_start stays
+                        // None for the whole deferred pre-decode wait, so
+                        // initial_stall alone never fires during it — reuse
+                        // this same "Loading…" spinner for that wait too
+                        // rather than leaving a silent black screen.
+                        let buf_active = buf_active || initial_stall || vs.display_sync_prestart_active;
                         if pos > 0.0 { vs.last_known_pos_ticks = (pos * 10_000_000.0) as i64; }
                         let g = AppState::get(&w);
                         // Suppress position updates while a committed seek is settling.
@@ -2725,7 +3027,9 @@ pub(crate) fn wire_mpv_timer(
                 //   ask         → show single "Skip →" button
                 //   ask-timed   → show two-button overlay + countdown; auto-seek on expiry
                 //   never-skip  → do nothing
-                if let Some(pos) = live_pos {
+                // Only once the file is open — before that live_pos is a fake 0
+                // (see loaded_since).
+                if let (Some(pos), Some(_)) = (live_pos, loaded_since) {
                     let seg_in = |t: &Option<Segment>| t.as_ref().is_some_and(|s| pos >= s.start && pos < s.end);
 
                     // (label, end, key) — key used to look up mode/secs from AppState
@@ -3162,7 +3466,8 @@ pub(crate) fn wire_mpv_timer(
             config.start_position_secs = if resume_secs > 0.0 { Some(resume_secs) } else { None };
             let url = cli.direct_play_url(&np.id);
             start_playback(url, np.id, &np.item_type, np.title, config, cli,
-                           np.series_id, np.audio_meta, &video_timer, &window_timer, &rt_handle);
+                           np.series_id, np.audio_meta, &video_timer, &window_timer, &rt_handle,
+                           &state_timer, None);
         }
 
         // Stall recovery gave up (the applicable MAX_STALL_RELOAD_ATTEMPTS_* budget exhausted, still
@@ -3362,13 +3667,15 @@ pub(crate) fn wire_mpv_timer(
                 let title      = next.display_name();
                 let ep_id      = next.id.clone();
                 let series_id2 = next.series_id.clone();
+                let video_info = next.video_stream_info();
                 info!("up-next countdown expired, starting {}", ep_id);
 
                 let _ = slint::invoke_from_event_loop(move || {
                     if let Some(w) = ww2.upgrade() {
                         AppState::get(&w).set_show_next_ep_banner(false);
                         start_playback(url, ep_id, "Episode", title, config, cli2,
-                                       series_id2, None, &video2, &ww2, &rt2);
+                                       series_id2, None, &video2, &ww2, &rt2,
+                                       &state2, video_info);
                     }
                 });
             });
@@ -3483,7 +3790,19 @@ pub(crate) fn wire_mpv_timer(
                     let queue_head_matches = vs.queue.first()
                         .map(|q| (q.item_type == "Audio") == ended_audio)
                         .unwrap_or(false);
-                    if ended_audio && !vs.playlist.is_empty() {
+                    if let Some(q) = repeat_one_target(&vs) {
+                        // Repeat One: replay the song that just ended, with or
+                        // without a playlist loaded (see repeat_one_target).
+                        info!("repeat one: replaying {}", q.id);
+                        Some(q)
+                    } else if repeat_all_ring(&vs) {
+                        // Repeat All, no album playlist: rotate the queue ring.
+                        let next = take_repeat_all_ring_next(&mut vs);
+                        if let Some(q) = &next {
+                            info!("repeat all: next {} ({} song(s) in the loop)", q.id, vs.queue.len() + 1);
+                        }
+                        next
+                    } else if ended_audio && !vs.playlist.is_empty() {
                         // Playlist mode (album/artist): advance with repeat/shuffle logic.
                         let len      = vs.playlist.len();
                         let next_idx = match vs.repeat_mode {
@@ -3541,6 +3860,7 @@ pub(crate) fn wire_mpv_timer(
                         let cli2 = Arc::clone(&cli);
                         let ww_q2 = ww_q.clone();
                         let rt_q2 = rt_q.clone();
+                        let state_q = Arc::clone(&state_timer);
                         let _ = slint::invoke_from_event_loop(move || {
                             if let Some(w) = ww_q.upgrade() {
                                 let g = AppState::get(&w);
@@ -3552,7 +3872,8 @@ pub(crate) fn wire_mpv_timer(
                                 // push_queue_display's own poster-id preservation.
                                 crate::spawn_queue_poster_loading(cli2, ww_q2, rt_q2);
                                 start_playback(url, q.id, &q.item_type, q.title, config, cli,
-                                               q.series_id, audio_m, &vid_q, &ww_q, &rt_q);
+                                               q.series_id, audio_m, &vid_q, &ww_q, &rt_q,
+                                               &state_q, None);
                             }
                         });
                     }
@@ -3569,12 +3890,14 @@ pub(crate) fn wire_mpv_timer(
                         let title      = next.display_name();
                         let ep_id      = next.id.clone();
                         let series_id  = next.series_id.clone();
+                        let video_info = next.video_stream_info();
                         info!("natural end with pending next-ep, starting {}", ep_id);
                         if let Some(w) = window_timer.upgrade() {
                             AppState::get(&w).set_show_next_ep_banner(false);
                         }
                         start_playback(url, ep_id, "Episode", title, config, cli,
-                                       series_id, None, &video_timer, &window_timer, &rt_handle);
+                                       series_id, None, &video_timer, &window_timer, &rt_handle,
+                                       &state_timer, video_info);
                     }
                 } else if let (Some(sid), Some(current_id)) = (advance_series_id, finished_item_id) {
                     // EOF arrived before the background next-up fetch completed.
@@ -3610,11 +3933,13 @@ pub(crate) fn wire_mpv_timer(
                             let title = next.display_name();
                             let ep_id = next.id.clone();
                             let sid2  = next.series_id.clone();
+                            let video_info = next.video_stream_info();
                             info!("natural-end fallback advance: starting {}", ep_id);
                             let _ = slint::invoke_from_event_loop(move || {
                                 if ww2.upgrade().is_some() {
                                     start_playback(url, ep_id, "Episode", title, config, cli2,
-                                                   sid2, None, &video2, &ww2, &rt2);
+                                                   sid2, None, &video2, &ww2, &rt2,
+                                                   &state2, video_info);
                                 }
                             });
                         });
@@ -3624,4 +3949,115 @@ pub(crate) fn wire_mpv_timer(
         }
     });
     timer
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn song(id: &str) -> QueueItem {
+        QueueItem { id: id.into(), item_type: "Audio".into(), series_id: None,
+                    title: id.into(), audio_meta: None }
+    }
+
+    fn playing(id: &str, repeat: RepeatMode) -> VideoState {
+        VideoState { current_is_audio: true, now_playing: Some(song(id)),
+                     repeat_mode: repeat, ..Default::default() }
+    }
+
+    #[test]
+    fn repeat_one_replays_a_song_played_without_a_playlist() {
+        let vs = playing("a", RepeatMode::One);
+        assert_eq!(peek_natural_next(&vs).map(|q| q.id), Some("a".into()));
+    }
+
+    #[test]
+    fn repeat_one_replays_off_list_song_not_the_playlist_track() {
+        let mut vs = playing("x", RepeatMode::One);
+        vs.playlist = vec![song("a"), song("b")];
+        vs.playlist_index = 0;
+        assert_eq!(peek_natural_next(&vs).map(|q| q.id), Some("x".into()));
+        commit_natural_next(&mut vs, &song("x"));
+        assert_eq!(vs.playlist_index, 0);
+    }
+
+    #[test]
+    fn repeat_one_in_playlist_keeps_position() {
+        let mut vs = playing("b", RepeatMode::One);
+        vs.playlist = vec![song("a"), song("b"), song("c")];
+        vs.playlist_index = 1;
+        assert_eq!(peek_natural_next(&vs).map(|q| q.id), Some("b".into()));
+        commit_natural_next(&mut vs, &song("b"));
+        assert_eq!(vs.playlist_index, 1);
+    }
+
+    #[test]
+    fn repeat_off_single_song_has_nothing_next() {
+        let vs = playing("a", RepeatMode::Off);
+        assert!(peek_natural_next(&vs).is_none());
+    }
+
+    #[test]
+    fn repeat_one_never_applies_to_video() {
+        let mut vs = playing("m", RepeatMode::One);
+        vs.current_is_audio = false;
+        assert!(repeat_one_target(&vs).is_none());
+    }
+
+    #[test]
+    fn repeat_all_loops_a_lone_song() {
+        let vs = playing("a", RepeatMode::All);
+        assert_eq!(peek_natural_next(&vs).map(|q| q.id), Some("a".into()));
+    }
+
+    #[test]
+    fn repeat_all_plays_queued_audio_before_looping() {
+        let mut vs = playing("a", RepeatMode::All);
+        vs.queue = vec![song("q")];
+        assert_eq!(peek_natural_next(&vs).map(|q| q.id), Some("q".into()));
+    }
+
+    #[test]
+    fn repeat_all_ring_loops_the_whole_queued_set() {
+        let mut vs = playing("a", RepeatMode::All);
+        vs.queue = vec![song("b"), song("c")];
+        let order: Vec<String> = (0..6).map(|_| {
+            let q = take_repeat_all_ring_next(&mut vs).unwrap();
+            vs.now_playing = Some(q.clone());
+            q.id
+        }).collect();
+        assert_eq!(order, ["b", "c", "a", "b", "c", "a"]);
+    }
+
+    #[test]
+    fn repeat_all_gapless_commit_rotates_the_ring() {
+        let mut vs = playing("a", RepeatMode::All);
+        vs.queue = vec![song("b")];
+        commit_natural_next(&mut vs, &song("b"));
+        assert_eq!(vs.queue.iter().map(|q| q.id.as_str()).collect::<Vec<_>>(), ["a"]);
+    }
+
+    #[test]
+    fn repeat_all_next_button_keeps_skipped_song_in_the_loop() {
+        let mut vs = playing("a", RepeatMode::All);
+        vs.queue = vec![song("b")];
+        assert_eq!(playlist_next(&mut vs).map(|q| q.id), Some("b".into()));
+        assert_eq!(vs.queue.iter().map(|q| q.id.as_str()).collect::<Vec<_>>(), ["a"]);
+    }
+
+    #[test]
+    fn repeat_all_ring_stops_at_a_queued_video() {
+        let mut vs = playing("a", RepeatMode::All);
+        vs.queue = vec![QueueItem { item_type: "Movie".into(), ..song("m") }];
+        assert!(!repeat_all_ring(&vs));
+        assert!(peek_natural_next(&vs).is_none());
+    }
+
+    #[test]
+    fn repeat_all_with_playlist_wraps_the_playlist() {
+        let mut vs = playing("b", RepeatMode::All);
+        vs.playlist = vec![song("a"), song("b")];
+        vs.playlist_index = 1;
+        assert_eq!(peek_natural_next(&vs).map(|q| q.id), Some("a".into()));
+    }
 }
