@@ -7,6 +7,7 @@
 //                            #[track_caller] too (Phase 99 diagnostic)
 //   populate_browse_async    filter all_movies + all_series off the UI thread
 //   wire_browse              register AppState browse + library-search + sort + jump callbacks
+//                            (append/backspace/delete edit at the caret via text_field.rs, 2026-10-05)
 //   clear_browse_results     called from discover::wire_discover's on_nav_selected (the one
 //                            registration of that Slint callback that actually survives —
 //                            see its own doc comment)
@@ -232,9 +233,7 @@ pub(crate) fn wire_browse(
         AppState::get(window).on_browse_search_append(move |ch| {
             let Some(w) = ww.upgrade() else { return };
             let g = AppState::get(&w);
-            let mut q = g.get_browse_query().to_string();
-            q.push_str(ch.as_str());
-            g.set_browse_query(q.as_str().into());
+            let q = crate::text_field::BROWSE_SEARCH.insert(&g, ch.as_str());
             g.invoke_filter_changed(q.as_str().into());
         });
     }
@@ -243,9 +242,20 @@ pub(crate) fn wire_browse(
         AppState::get(window).on_browse_search_backspace(move || {
             let Some(w) = ww.upgrade() else { return };
             let g = AppState::get(&w);
-            let q = crate::trim_last_grapheme(&g.get_browse_query());
-            g.set_browse_query(q.as_str().into());
-            g.invoke_filter_changed(q.as_str().into());
+            if let Some(q) = crate::text_field::BROWSE_SEARCH.backspace(&g) {
+                g.invoke_filter_changed(q.as_str().into());
+            }
+        });
+    }
+    // Delete key (2026-10-05): the letter after the caret.
+    {
+        let ww = window.as_weak();
+        AppState::get(window).on_browse_search_delete(move || {
+            let Some(w) = ww.upgrade() else { return };
+            let g = AppState::get(&w);
+            if let Some(q) = crate::text_field::BROWSE_SEARCH.delete(&g) {
+                g.invoke_filter_changed(q.as_str().into());
+            }
         });
     }
     {
@@ -304,8 +314,7 @@ pub(crate) fn wire_browse(
         let ww = window.as_weak();
         AppState::get(window).on_library_search_append(move |ch| {
             let Some(w) = ww.upgrade() else { return };
-            let mut q = AppState::get(&w).get_library_query().to_string();
-            q.push_str(ch.as_str());
+            let q = crate::text_field::LIBRARY_SEARCH.insert(&AppState::get(&w), ch.as_str());
             update_library_filter(&w, &q);
         });
     }
@@ -313,8 +322,19 @@ pub(crate) fn wire_browse(
         let ww = window.as_weak();
         AppState::get(window).on_library_search_backspace(move || {
             let Some(w) = ww.upgrade() else { return };
-            let q = crate::trim_last_grapheme(&AppState::get(&w).get_library_query());
-            update_library_filter(&w, &q);
+            if let Some(q) = crate::text_field::LIBRARY_SEARCH.backspace(&AppState::get(&w)) {
+                update_library_filter(&w, &q);
+            }
+        });
+    }
+    // Delete key (2026-10-05): the letter after the caret.
+    {
+        let ww = window.as_weak();
+        AppState::get(window).on_library_search_delete(move || {
+            let Some(w) = ww.upgrade() else { return };
+            if let Some(q) = crate::text_field::LIBRARY_SEARCH.delete(&AppState::get(&w)) {
+                update_library_filter(&w, &q);
+            }
         });
     }
     {

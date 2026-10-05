@@ -36,9 +36,15 @@ are bumped together as one step, not separately.
 - **New: Settings → Video → Display sync → "Sync display for trailers"**,
   off by default — trailers now play without switching resolution or
   refresh rate unless you turn it on.
-- **Fixed: Discover search can now be edited in the middle** with a
-  keyboard: Left/Right/Home/End move the cursor and Delete removes the
-  letter after it, instead of only adding or deleting at the end.
+- **Fixed: text can now be edited in the middle.** In Discover, Browse and
+  library search, the new-playlist name and the Bonfire join code,
+  Left/Right/Home/End move the cursor and Delete removes the letter after it
+  (before, you could only add or delete at the end). In the new-playlist
+  name, Right still creates the playlist when the cursor is at the end.
+- **New: ◀ ▶ keys on the on-screen keyboard** move the cursor, so one letter
+  can be fixed with the remote too — in every field the keyboard types into
+  (search fields, login, Connect Seerr, profile editing, playlist name, join
+  code).
 - **Fixed: with Display sync on, picking a profile at startup re-applied the
   default display mode and HDR off** even though nothing had played.
 - **Fixed: settings could occasionally fail to save** when two saves

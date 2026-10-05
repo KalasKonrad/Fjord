@@ -36,6 +36,7 @@
 //                       toggle zone-base formula this screen's own matching
 //                       host-count/join-base/toggle-base properties mirror).
 //                       Join-code entry is a hand-drawn field + the shared
+//                       (caret drawn while focused, bonfire-group-join-code-cursor — text_field.rs, 2026-10-05)
 //                       on-screen QwertyKeyboard (Bonfire codes are
 //                       alphanumeric — the numeric VirtualKeyboard doesn't
 //                       apply), same shape as Discover/Browse search (see
@@ -297,7 +298,9 @@ export component BonfireGroupScreen inherits Rectangle {
                                 border-width: AppState.bonfire-group-zone == join-base ? 2px : 0px;
                                 border-color: Theme.focus-border;
                                 Text {
-                                    text: AppState.bonfire-group-join-code == "" ? "Enter join code…" : AppState.bonfire-group-join-code;
+                                    text: AppState.bonfire-group-join-code == "" ? "Enter join code…"
+                                        : AppState.bonfire-group-zone == join-base ? AppState.caret-text(AppState.bonfire-group-join-code, AppState.bonfire-group-join-code-cursor, "▌")
+                                        : AppState.bonfire-group-join-code;
                                     color: AppState.bonfire-group-join-code == "" ? Theme.text-subtle : Theme.text;
                                     font-size: 15px;
                                     horizontal-alignment: center;
@@ -420,6 +423,7 @@ export component BonfireGroupScreen inherits Rectangle {
         key-pressed(k) => {
             if k == "done" { AppState.show-onscreen-keyboard = false; }
             else if k == "backspace" { AppState.bonfire-group-join-code-backspace(); }
+            else if k == "left" || k == "right" { AppState.text-field-caret("bonfire-group-join-code", k == "left" ? -1 : 1); }
             else { AppState.bonfire-group-join-code-append(k); }
         }
     }
