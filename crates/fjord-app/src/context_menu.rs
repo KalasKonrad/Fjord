@@ -1479,19 +1479,14 @@ pub(crate) fn wire_playlist_picker(
         let ww = window.as_weak();
         AppState::get(window).on_playlist_picker_name_append(move |c| {
             let Some(w) = ww.upgrade() else { return };
-            let g = AppState::get(&w);
-            let mut name = g.get_playlist_picker_name().to_string();
-            name.push_str(&c);
-            g.set_playlist_picker_name(name.into());
+            crate::text_field::PLAYLIST_NAME.insert(&AppState::get(&w), &c);
         });
     }
     {
         let ww = window.as_weak();
         AppState::get(window).on_playlist_picker_name_backspace(move || {
             let Some(w) = ww.upgrade() else { return };
-            let g = AppState::get(&w);
-            let name = crate::trim_last_grapheme(&g.get_playlist_picker_name());
-            g.set_playlist_picker_name(name.into());
+            crate::text_field::PLAYLIST_NAME.backspace(&AppState::get(&w));
         });
     }
 

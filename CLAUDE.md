@@ -44,6 +44,7 @@ Needs `mpv`/libmpv (`pacman -S mpv`). Optional at runtime: `yt-dlp` (trailers), 
   `apply_cards_preserving_identity`, `item_to_card_item`/`items_to_model`, `strip_html_to_text`,
   `trim_last_grapheme` + caret helpers (`insert_at_grapheme`, `delete_before_grapheme`, `with_caret`…),
   `is_unauthorized`/`is_rate_limited`, `should_revalidate`, `timed`.
+- `text_field.rs` — caret editing for the hand-drawn text fields (`DrawnField`) + on-screen-keyboard ◀ ▶.
 - `config.rs` — `Config { device: DeviceConfig, profiles: Vec<ProfileSettings>, active_profile_id }`,
   `FjordState` (runtime state), `BoundedCache`, load/save + migrations, per-profile cache paths.
 - `keys.rs` — `Action`, `Keybindings`, `AppMode`, `active_mode()`, `handle_key()` dispatcher.
@@ -126,6 +127,9 @@ Needs `mpv`/libmpv (`pacman -S mpv`). Optional at runtime: `yt-dlp` (trailers), 
 - New overlay checklist: add it to `active_mode()`, to the ResumePlayer / music-bar / mini-player-bar
   exclusion lists in `keys.rs`, to the `sidebar-kb-active` exclusions, and give its `FadeGate` a
   `!AppState.is-playing` guard.
+- Hand-drawn text fields (Discover/Browse/Library search, playlist name, join code) keep a `<field>-cursor` caret:
+  edit them only through `text_field::DrawnField` (insert/backspace/delete/move) and draw them with
+  `AppState.caret-text`. On-screen-keyboard edits of LineEdits go through `onscreen-keyboard-edit`.
 - The on-screen-keyboard gate in `keys.rs` swallows everything but Ctrl+Q while open: every close path must
   clear `show-onscreen-keyboard` (use choke points like `close_login_screen`).
 - Clickable elements get the `PressPulse` border flash (`kb-activate-pulse`); focus rings use `Theme.focus-border`.

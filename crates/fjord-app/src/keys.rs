@@ -28,11 +28,14 @@
 //   action_key_labels  all KeyCombos for an Action joined into a display string
 //   push_keybinding_rows  build + push keybinding model to AppState
 //   onscreen_keyboard_move_row  proportional column mapping across QwertyKeyboard's irregular
-//                      [10,9,9,3] row widths for Up/Down (Bonfire Phase 3, on-screen alphanumeric
+//                      [10,9,9,5] row widths for Up/Down (Bonfire Phase 3, on-screen alphanumeric
 //                      keyboard, 2026-08-22, rolled out to every text-entry surface as of
 //                      2026-08-23 — see app_state.slint's own show-onscreen-keyboard doc
 //                      comment for the full design)
 //   handle_key         router: show-onscreen-keyboard gate (Bonfire Phase 3 — checked before
+//   caret_key          Left/Right/Home/End → text_field caret for the drawn fields (Discover/Browse/
+//                      Library search, new-playlist name — Right still creates when the caret is
+//                      at the end — and the Bonfire join code), 2026-10-05; Delete per field
 //                        EVERYTHING else, including show-login, since the keyboard can be open
 //                        on any wired-up screen; Left/Right/Up/Down move the flat cursor via
 //                        onscreen_keyboard_move_row, Enter bumps kb-activate-pulse, Ctrl+Q quits)
@@ -1947,6 +1950,12 @@ pub(crate) fn handle_key(
             k if is_printable(k) && !is_member && zone == join_base => {
                 g.invoke_bonfire_group_join_code_append(k.into());
             }
+            // Caret keys in the join-code field (2026-10-05) — this screen
+            // only moves between zones with Up/Down, so Left/Right are free.
+            k if !is_member && zone == join_base && caret_key(&crate::text_field::JOIN_CODE, k, &g) => {}
+            k if !is_member && zone == join_base && k == key::DELETE => {
+                crate::text_field::JOIN_CODE.delete(&g);
+            }
             _ => {}
         }
         return true;
@@ -3206,6 +3215,9 @@ fn handle_library_search(key: &str, ctrl: bool, window: &crate::MainWindow) -> b
             g.set_library_sort_cursor(sort_bar_init_cursor(&g));
             true
         }
+        // Caret keys (2026-10-05) — Left/Right were swallowed before.
+        k if caret_key(&crate::text_field::LIBRARY_SEARCH, k, &g) => true,
+        k if k == key::DELETE => { g.invoke_library_search_delete(); true }
         k if is_navigation_key(k) => true,
         k if is_printable(k) => { g.invoke_library_search_append(k.into()); true }
         _ => true
@@ -3243,6 +3255,9 @@ fn handle_browse_search(key: &str, ctrl: bool, window: &crate::MainWindow) -> bo
             if !g.get_browse_query().is_empty() { g.invoke_browse_search_backspace(); }
             true
         }
+        // Caret keys (2026-10-05) — Left/Right were swallowed before.
+        k if caret_key(&crate::text_field::BROWSE_SEARCH, k, &g) => true,
+        k if k == key::DELETE => { g.invoke_browse_search_delete(); true }
         k if is_navigation_key(k) => true,
         k if is_printable(k) => { g.invoke_browse_search_append(k.into()); true }
         _ => true
@@ -3329,18 +3344,7 @@ fn handle_discover_search(key: &str, ctrl: bool, window: &crate::MainWindow) -> 
         // fixing one letter meant deleting everything after it). Left at the
         // very start stays put — leaving the field mid-edit would be easy to
         // hit by accident; Escape/Up/Down still leave it.
-        k if k == key::LEFT => {
-            let c = g.get_discover_query_cursor().max(0) as usize;
-            crate::discover::move_discover_cursor(&g, c.saturating_sub(1));
-            true
-        }
-        k if k == key::RIGHT => {
-            let c = g.get_discover_query_cursor().max(0) as usize;
-            crate::discover::move_discover_cursor(&g, c + 1);
-            true
-        }
-        k if k == key::HOME => { crate::discover::move_discover_cursor(&g, 0); true }
-        k if k == key::END => { crate::discover::move_discover_cursor(&g, usize::MAX); true }
+        k if caret_key(&crate::text_field::DISCOVER_SEARCH, k, &g) => true,
         k if k == key::DELETE => { g.invoke_discover_search_delete(); true }
         k if is_navigation_key(k) => true,
         k if is_printable(k) => { g.invoke_discover_search_append(k.into()); true }
@@ -3370,7 +3374,15 @@ fn handle_playlist_picker(key: &str, ctrl: bool, window: &crate::MainWindow) -> 
                 g.set_show_onscreen_keyboard(true);
                 true
             }
-            k if k == key::RIGHT => { g.invoke_playlist_picker_create(); true }
+            // Right still means "create" — but only with the caret at the
+            // end of the name (where typing leaves it); earlier in the name
+            // it moves the caret (2026-10-05).
+            k if k == key::RIGHT && crate::text_field::PLAYLIST_NAME.caret_at_end(&g) => {
+                g.invoke_playlist_picker_create();
+                true
+            }
+            k if caret_key(&crate::text_field::PLAYLIST_NAME, k, &g) => true,
+            k if k == key::DELETE => { crate::text_field::PLAYLIST_NAME.delete(&g); true }
             // Routed through the new playlist-picker-name-append/-backspace
             // callbacks (grapheme-cluster-correct) instead of a direct
             // property mutation, unifying this with the on-screen
@@ -3769,4 +3781,17 @@ fn is_printable(key: &str) -> bool {
     let Some(ch) = key.chars().next() else { return false; };
     if key.chars().count() != 1 { return false; }
     (ch as u32) < 0xE000 && !ch.is_control()
+}
+
+/// Left/Right/Home/End in a drawn text field move its caret (2026-10-05,
+/// see text_field.rs). True if `key` was one of them.
+fn caret_key(field: &crate::text_field::DrawnField, key: &str, g: &crate::AppState) -> bool {
+    match key {
+        k if k == key::LEFT  => field.move_by(g, -1),
+        k if k == key::RIGHT => field.move_by(g, 1),
+        k if k == key::HOME  => field.home(g),
+        k if k == key::END   => field.end(g),
+        _ => return false,
+    }
+    true
 }
