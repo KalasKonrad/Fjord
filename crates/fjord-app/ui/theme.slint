@@ -1,5 +1,6 @@
 // ── fjord-app · theme.slint ──────────────────────────────────────────────────
 //   Theme           global design tokens: colors, spacing, radius, font sizes
+//   OskEdit         text/caret/byte result of one on-screen-keyboard key (2026-10-05)
 //   TrackEntry      audio / video / subtitle track row for track-panel lists
 //   TrackItem       one row in an album/playlist tracklist (id, title, artist, duration, track-number,
 //                   played, is-favorite, entry-id (playlist entry, for removal), album-id (music-bar art),
@@ -94,6 +95,15 @@ export global Theme {
 }
 
 // A single entry in a track-selection list (audio / subtitle / video).
+// One on-screen-keyboard key applied at a caret (text_field::osk_edit,
+// 2026-10-05): new text, caret (grapheme index), caret as a UTF-8 byte offset
+// for LineEdit.set-selection-offsets.
+export struct OskEdit {
+    text:  string,
+    caret: int,
+    byte:  int,
+}
+
 export struct TrackEntry {
     id:    int,
     label: string,

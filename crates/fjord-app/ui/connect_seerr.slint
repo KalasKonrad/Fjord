@@ -13,6 +13,7 @@
 //                       on-screen (mirrors LoginScreen), not a toast.
 //
 //   Full D-pad keyboard navigation + on-screen alphanumeric keyboard,
+//                       (2026-10-05: on-screen keys edit at the keyboard's caret — onscreen-keyboard-edit)
 //   2026-08-23 — this screen had ZERO keyboard nav before (pure mouse +
 //   native Tab order); see app_state.slint's connect-seerr-zone doc comment
 //   for the full zone design (mirrors login-zone's shape — dispatch lives
@@ -264,11 +265,11 @@ export component ConnectSeerrScreen inherits Rectangle {
         if k == "done" {
             AppState.show-onscreen-keyboard = false;
         } else if AppState.onscreen-keyboard-target == "connect-seerr-url" {
-            url-input.text = k == "backspace"
-                ? AppState.onscreen-keyboard-trim-last(url-input.text)
-                : url-input.text + k;
-            let len = AppState.onscreen-keyboard-byte-len(url-input.text);
-            url-input.set-selection-offsets(len, len);
+            // At the keyboard's own caret (◀ ▶ move it, 2026-10-05).
+            let r = AppState.onscreen-keyboard-edit(url-input.text, AppState.onscreen-keyboard-caret, k);
+            url-input.text = r.text;
+            AppState.onscreen-keyboard-caret = r.caret;
+            url-input.set-selection-offsets(r.byte, r.byte);
         } else {
             root._relay-key = k;
             root._relay-key-seq += 1;
@@ -481,11 +482,11 @@ export component ConnectSeerrScreen inherits Rectangle {
                 property <int> _relay-mirror: root._relay-key-seq;
                 changed _relay-mirror => {
                     if AppState.onscreen-keyboard-target == "connect-seerr-key" {
-                        key-input.text = root._relay-key == "backspace"
-                            ? AppState.onscreen-keyboard-trim-last(key-input.text)
-                            : key-input.text + root._relay-key;
-                        let len = AppState.onscreen-keyboard-byte-len(key-input.text);
-                        key-input.set-selection-offsets(len, len);
+                        // At the keyboard's own caret (◀ ▶ move it, 2026-10-05).
+                        let r = AppState.onscreen-keyboard-edit(key-input.text, AppState.onscreen-keyboard-caret, root._relay-key);
+                        key-input.text = r.text;
+                        AppState.onscreen-keyboard-caret = r.caret;
+                        key-input.set-selection-offsets(r.byte, r.byte);
                     }
                 }
                 property <bool> _kb-close-local-mirror: AppState.show-onscreen-keyboard;
@@ -618,17 +619,17 @@ export component ConnectSeerrScreen inherits Rectangle {
                 property <int> _relay-mirror: root._relay-key-seq;
                 changed _relay-mirror => {
                     if AppState.onscreen-keyboard-target == "connect-seerr-jf-user" {
-                        jf-user.text = root._relay-key == "backspace"
-                            ? AppState.onscreen-keyboard-trim-last(jf-user.text)
-                            : jf-user.text + root._relay-key;
-                        let len = AppState.onscreen-keyboard-byte-len(jf-user.text);
-                        jf-user.set-selection-offsets(len, len);
+                        // At the keyboard's own caret (◀ ▶ move it, 2026-10-05).
+                        let r = AppState.onscreen-keyboard-edit(jf-user.text, AppState.onscreen-keyboard-caret, root._relay-key);
+                        jf-user.text = r.text;
+                        AppState.onscreen-keyboard-caret = r.caret;
+                        jf-user.set-selection-offsets(r.byte, r.byte);
                     } else if AppState.onscreen-keyboard-target == "connect-seerr-jf-pass" {
-                        jf-pass.text = root._relay-key == "backspace"
-                            ? AppState.onscreen-keyboard-trim-last(jf-pass.text)
-                            : jf-pass.text + root._relay-key;
-                        let len = AppState.onscreen-keyboard-byte-len(jf-pass.text);
-                        jf-pass.set-selection-offsets(len, len);
+                        // At the keyboard's own caret (◀ ▶ move it, 2026-10-05).
+                        let r = AppState.onscreen-keyboard-edit(jf-pass.text, AppState.onscreen-keyboard-caret, root._relay-key);
+                        jf-pass.text = r.text;
+                        AppState.onscreen-keyboard-caret = r.caret;
+                        jf-pass.set-selection-offsets(r.byte, r.byte);
                     }
                 }
                 property <bool> _kb-close-local-mirror: AppState.show-onscreen-keyboard;
@@ -811,17 +812,17 @@ export component ConnectSeerrScreen inherits Rectangle {
                 property <int> _relay-mirror: root._relay-key-seq;
                 changed _relay-mirror => {
                     if AppState.onscreen-keyboard-target == "connect-seerr-local-email" {
-                        local-email.text = root._relay-key == "backspace"
-                            ? AppState.onscreen-keyboard-trim-last(local-email.text)
-                            : local-email.text + root._relay-key;
-                        let len = AppState.onscreen-keyboard-byte-len(local-email.text);
-                        local-email.set-selection-offsets(len, len);
+                        // At the keyboard's own caret (◀ ▶ move it, 2026-10-05).
+                        let r = AppState.onscreen-keyboard-edit(local-email.text, AppState.onscreen-keyboard-caret, root._relay-key);
+                        local-email.text = r.text;
+                        AppState.onscreen-keyboard-caret = r.caret;
+                        local-email.set-selection-offsets(r.byte, r.byte);
                     } else if AppState.onscreen-keyboard-target == "connect-seerr-local-pass" {
-                        local-pass.text = root._relay-key == "backspace"
-                            ? AppState.onscreen-keyboard-trim-last(local-pass.text)
-                            : local-pass.text + root._relay-key;
-                        let len = AppState.onscreen-keyboard-byte-len(local-pass.text);
-                        local-pass.set-selection-offsets(len, len);
+                        // At the keyboard's own caret (◀ ▶ move it, 2026-10-05).
+                        let r = AppState.onscreen-keyboard-edit(local-pass.text, AppState.onscreen-keyboard-caret, root._relay-key);
+                        local-pass.text = r.text;
+                        AppState.onscreen-keyboard-caret = r.caret;
+                        local-pass.set-selection-offsets(r.byte, r.byte);
                     }
                 }
                 property <bool> _kb-close-local-mirror: AppState.show-onscreen-keyboard;
