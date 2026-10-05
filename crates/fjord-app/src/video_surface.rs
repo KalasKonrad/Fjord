@@ -594,6 +594,7 @@ fn create_egl(
     phys: (u32, u32),
 ) -> Result<(EGLContext, EGLSurface, *mut wl_egl_window, [EGLint; 4])> {
     let renderable = if api == egl::OPENGL_ES_API { egl::OPENGL_ES3_BIT } else { egl::OPENGL_BIT };
+    log_window_configs(egl, dpy, renderable);
     let attribs = [
         egl::SURFACE_TYPE as EGLint, egl::WINDOW_BIT as EGLint,
         egl::RENDERABLE_TYPE as EGLint, renderable as EGLint,
@@ -657,6 +658,37 @@ fn create_egl(
 }
 
 // ── EGL helpers ───────────────────────────────────────────────────────────
+/// One debug line listing every distinct colour format the driver offers for
+/// a window with our client API — including float ones, which eglChooseConfig
+/// hides by default — so a log answers "could this be 10-bit?" (the NVIDIA
+/// HTPC only got R8G8B8A0, 2026-10-04).
+fn log_window_configs(egl: &egl::Egl, dpy: EGLDisplay, renderable: EGLenum) {
+    let mut n: EGLint = 0;
+    // Safety: count query, then a buffer of exactly that size.
+    if unsafe { egl.GetConfigs(dpy, std::ptr::null_mut(), 0, &mut n) } != egl::TRUE || n <= 0 {
+        return;
+    }
+    let mut all: Vec<EGLConfig> = vec![std::ptr::null(); n as usize];
+    if unsafe { egl.GetConfigs(dpy, all.as_mut_ptr(), n, &mut n) } != egl::TRUE {
+        return;
+    }
+    all.truncate(n.max(0) as usize);
+    let mut formats: Vec<String> = Vec::new();
+    for cfg in all {
+        let attr = |a: EGLenum| config_attr(egl, dpy, cfg, a).unwrap_or(0);
+        if attr(egl::SURFACE_TYPE) & egl::WINDOW_BIT as EGLint == 0 { continue; }
+        if attr(egl::RENDERABLE_TYPE) & renderable as EGLint == 0 { continue; }
+        let float = attr(egl::COLOR_COMPONENT_TYPE_EXT) == egl::COLOR_COMPONENT_TYPE_FLOAT_EXT as EGLint;
+        let f = format!(
+            "R{}G{}B{}A{}{}",
+            attr(egl::RED_SIZE), attr(egl::GREEN_SIZE), attr(egl::BLUE_SIZE), attr(egl::ALPHA_SIZE),
+            if float { " float" } else { "" },
+        );
+        if !formats.contains(&f) { formats.push(f); }
+    }
+    debug!("video backplane: window colour formats offered: {}", formats.join(", "));
+}
+
 struct SavedCurrent {
     dpy:  EGLDisplay,
     draw: EGLSurface,
