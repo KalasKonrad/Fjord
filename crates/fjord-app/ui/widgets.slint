@@ -82,6 +82,9 @@
 //                      additive callback (2026-07-18, keyboard-nav fix — RequestDetailScreen
 //                      syncs its own zone/focus state to it, other callers leave unconnected)
 //   MiniPlayerBar      full-width bottom bar; 108px in mode 3 (!video-behind-ui): live video + title + buttons;
+//                      (with video-surface-active its colour skips the thumbnail, which becomes a
+//                      VideoSpot — HDR Stage 5)
+//   VideoSpot          reports its absolute position/size into AppState.video-rect-* (HDR Stage 5)
 //                      56px compact bar in mode 2 (video-behind-ui): NOW PLAYING + title + buttons (no thumbnail);
 //                      float-card-focused (-1=none, 0=Resume, 1=Stop)
 //   MusicPlayerBar     full-width bottom bar 72px; shown when is-audio-playing; three zones:
@@ -1702,9 +1705,43 @@ export component StatRow inherits Rectangle {
 // Mode 3 (!video-behind-ui): 108px — live video (192×108, 16:9) + title + Resume/Stop.
 // Mode 2 (video-behind-ui):   56px — compact bar (no thumbnail; video fills window) + title + Resume/Stop.
 // float-card-focused: -1=not focused, 0=Resume, 1=Stop. Up from sidebar nav=0 to focus.
+// ── VideoSpot (HDR Stage 5, 2026-10-05) ──────────────────────────────────────
+// Marks where the video belongs while it's drawn on the subsurface below the
+// window (video_surface.rs): reports this element's absolute position and
+// size into AppState.video-rect-<which>. Draws nothing, takes no input.
+// Mirrors into local properties so `changed` can watch them (Slint only
+// watches the current component's own properties), using root.* geometry.
+export component VideoSpot {
+    in property <int> which; // 0 = PlayerScreen, 1 = video-behind-menus layer, 2 = mini-player thumbnail
+    property <length> ax: root.absolute-position.x;
+    property <length> ay: root.absolute-position.y;
+    property <length> aw: root.width;
+    property <length> ah: root.height;
+    function report() {
+        if root.which == 0 {
+            AppState.video-rect-player = { x: root.ax, y: root.ay, w: root.aw, h: root.ah };
+        } else if root.which == 1 {
+            AppState.video-rect-bg = { x: root.ax, y: root.ay, w: root.aw, h: root.ah };
+        } else {
+            AppState.video-rect-thumb = { x: root.ax, y: root.ay, w: root.aw, h: root.ah };
+        }
+    }
+    init => { root.report(); }
+    changed ax => { root.report(); }
+    changed ay => { root.report(); }
+    changed aw => { root.report(); }
+    changed ah => { root.report(); }
+}
+
 export component MiniPlayerBar inherits Rectangle {
     height:     AppState.video-behind-ui ? 56px : 108px;
-    background: Theme.surface-raised;
+    // HDR Stage 5: with the video on the subsurface, the bar must not paint
+    // under the thumbnail — its colour goes behind the info part only.
+    background: AppState.video-surface-active && !AppState.video-behind-ui ? transparent : Theme.surface-raised;
+    if AppState.video-surface-active && !AppState.video-behind-ui: Rectangle {
+        x: 192px; y: 0; width: root.width - 192px; height: root.height;
+        background: Theme.surface-raised;
+    }
 
     // Focus ring
     if AppState.float-card-focused >= 0: Rectangle {
@@ -1719,14 +1756,16 @@ export component MiniPlayerBar inherits Rectangle {
     if !AppState.video-behind-ui: HorizontalLayout {
         Rectangle {
             width:      192px;
-            background: #000000;
+            background: AppState.video-surface-active ? transparent : #000000;
             clip:       true;
             Image {
                 source:    AppState.video-frame;
                 width:     parent.width;
                 height:    parent.height;
                 image-fit: contain;
+                visible:   !AppState.video-surface-active;
             }
+            VideoSpot { which: 2; x: 0; y: 0; width: parent.width; height: parent.height; }
         }
         VerticalLayout {
             padding:   12px;

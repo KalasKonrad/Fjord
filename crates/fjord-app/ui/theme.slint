@@ -1,5 +1,6 @@
 // ── fjord-app · theme.slint ──────────────────────────────────────────────────
 //   Theme           global design tokens: colors, spacing, radius, font sizes
+//   VideoRect       a video spot's logical position/size (HDR Stage 5, 2026-10-05)
 //   OskEdit         text/caret/byte result of one on-screen-keyboard key (2026-10-05)
 //   TrackEntry      audio / video / subtitle track row for track-panel lists
 //   TrackItem       one row in an album/playlist tracklist (id, title, artist, duration, track-number,
@@ -95,6 +96,16 @@ export global Theme {
 }
 
 // A single entry in a track-selection list (audio / subtitle / video).
+// Where a video spot is on screen (HDR Stage 5, 2026-10-05): Slint's
+// absolute position + size in logical px, reported by widgets.slint's
+// VideoSpot for video_surface.rs to draw the video there.
+export struct VideoRect {
+    x: length,
+    y: length,
+    w: length,
+    h: length,
+}
+
 // One on-screen-keyboard key applied at a caret (text_field::osk_edit,
 // 2026-10-05): new text, caret (grapheme index), caret as a UTF-8 byte offset
 // for LineEdit.set-selection-offsets.

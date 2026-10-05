@@ -6,30 +6,45 @@
 //   colour-tagged — independently of Slint's sRGB UI surface. Main/GL thread
 //   only: lives in a thread_local and is driven from playback.rs's
 //   BeforeRendering, where Slint's own EGL context is current.
-//   Step 1 (this commit): created lazily on the first video start, sized to
-//   the window, filled black — always under Slint's opaque window, so never
-//   visible. Not used for video yet.
+//   Created lazily when the first video starts with Settings → "Separate video
+//   surface" on (step 1); step 2: video players render through it — mpv's
+//   render context lives on OUR context, each frame fills the window with the
+//   window background and draws the video into the spot Slint reports
+//   (fullscreen player / video-behind-menus layer / mini-player thumbnail),
+//   while Slint's window goes transparent on top (AppState.video-surface-active).
 //
 //   set_wayland_handles  activity.rs hands over the real wl_display/wl_surface
 //                        (same capture that starts hdr.rs's worker)
-//   ensure_ready         lazy one-time setup + per-frame size sync; false =
-//                        unavailable this session (not Wayland / setup failed)
+//   is_wayland           true once those handles are known (Settings row gate)
+//   ensure_ready         lazy one-time setup + size sync; false = unavailable
+//                        this session (not Wayland / setup failed / broken)
+//   create_render_ctx    mpv render context for a player, on our context
+//   render_frame         one frame: fill + video in the spot, then commit
+//   free_render_ctx      frees a player's render context with our context
+//                        current (mpv requires it), then drops a broken plane
+//   mark_broken          stop using it after an error mid-item (kept alive
+//                        until its render context is freed)
+//   idle_fill            repaint the plain background once after a stop
 //   Backplane            child surface + EGL objects. create() logs every
-//                        setup step; sync_size() follows window size/scale;
-//                        with_current() runs GL on our context and always
-//                        restores Slint's; destroy() on failure
+//                        setup step; resize()/sync_size() follow window size/
+//                        scale; with_current() runs GL on our context and
+//                        always restores Slint's; destroy() on failure
 //   SavedCurrent         Slint's current EGL display/surfaces/context
 //   load_egl             libEGL.so.1 via libloading, the way glutin loads it
 //   rank_config          pure: preference order of EGL configs (unit-tested)
 //   logical_size         pure: physical → logical size like winit (unit-tested)
+//   Spot / pick_spot     pure: which video spot is showing (unit-tested)
+//   to_gl_rect           pure: logical spot → physical GL rect (unit-tested)
 // ───────────────────────────────────────────────────────────────────────────
 
 use std::cell::RefCell;
 use std::ffi::{c_char, c_void, CStr, CString};
 use std::ptr::NonNull;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::OnceLock;
 
 use anyhow::{anyhow, bail, Context as _, Result};
+use fjord_player::{MpvRenderCtx, Player};
 use glutin_egl_sys::egl;
 use glutin_egl_sys::egl::types::{EGLConfig, EGLContext, EGLDisplay, EGLSurface, EGLenum, EGLint};
 use tracing::{debug, error, info, warn};
@@ -51,6 +66,19 @@ use wayland_sys::egl::{wayland_egl_option, wl_egl_window, WaylandEgl};
 /// valid for the life of the process (the window never closes before it).
 static HANDLES: OnceLock<(usize, usize)> = OnceLock::new();
 
+/// The video subsurface's wl_surface address once it exists, for hdr.rs's
+/// worker to tag (0 = none). Never cleared: the surface is never destroyed
+/// once published (Backplane::destroy only unmaps it), so the worker's proxy
+/// of it can't dangle.
+static CHILD_ADDR: AtomicUsize = AtomicUsize::new(0);
+
+pub(crate) fn child_surface_addr() -> Option<usize> {
+    match CHILD_ADDR.load(Ordering::Relaxed) {
+        0 => None,
+        a => Some(a),
+    }
+}
+
 pub(crate) fn set_wayland_handles(display: NonNull<c_void>, surface: NonNull<c_void>) {
     let _ = HANDLES.set((display.as_ptr() as usize, surface.as_ptr() as usize));
     debug!("video backplane: Wayland handles captured");
@@ -59,7 +87,14 @@ pub(crate) fn set_wayland_handles(display: NonNull<c_void>, surface: NonNull<c_v
 enum Slot {
     Untried,
     Ready(Box<Backplane>),
+    /// Failed mid-item: no longer drawn to, but alive until the player's
+    /// render context (created on our context) has been freed.
+    Broken(Box<Backplane>),
     Failed,
+}
+
+pub(crate) fn is_wayland() -> bool {
+    HANDLES.get().is_some()
 }
 
 thread_local! {
@@ -98,6 +133,111 @@ pub(crate) fn ensure_ready(phys: (u32, u32), scale: f32) -> bool {
     })
 }
 
+/// mpv's render context for `player`, created on OUR context (mpv resolves
+/// its GL functions with eglGetProcAddress). It must also be freed on it —
+/// free_render_ctx.
+pub(crate) fn create_render_ctx(player: &Player) -> Result<MpvRenderCtx> {
+    BACKPLANE.with(|slot| {
+        let mut slot = slot.borrow_mut();
+        let Slot::Ready(bp) = &mut *slot else { bail!("video backplane isn't ready") };
+        let egl = bp.egl;
+        let handle = player.raw_handle_ptr();
+        bp.stats = FrameStats::default();
+        let get_proc = |name: &CStr| -> *const c_void {
+            // Safety: plain symbol lookup.
+            unsafe { egl.GetProcAddress(name.as_ptr()) as *const c_void }
+        };
+        // Safety: our context is current inside with_current; `handle` is the
+        // live player's, and the caller keeps the player alive longer.
+        bp.with_current(|| unsafe { MpvRenderCtx::new(handle, &get_proc) })?
+    })
+}
+
+/// One video frame: resize to the window if needed, then — on our context —
+/// let mpv render straight into the window buffer when `rect` covers it, or
+/// into an offscreen buffer that's blitted into `rect` over a `fill`-coloured
+/// background; then commit (eglSwapBuffers; in sync mode it lands with
+/// Slint's next commit). `render(fbo, w, h, internal_format)` is mpv's render
+/// call. `rect` = [x, y, w, h] in physical px, GL coordinates (bottom-left).
+/// Ok(false) when the plane isn't usable (never set up, broken) — nothing
+/// drawn, no error to report again.
+pub(crate) fn render_frame(
+    phys: (u32, u32),
+    scale: f32,
+    rect: [i32; 4],
+    fill: [f32; 3],
+    render: impl FnOnce(i32, i32, i32, i32) -> bool,
+) -> Result<bool> {
+    BACKPLANE.with(|slot| {
+        let mut slot = slot.borrow_mut();
+        let Slot::Ready(bp) = &mut *slot else { return Ok(false) };
+        bp.render(phys, scale, rect, fill, render)
+    })
+}
+
+/// Frees a render context made by create_render_ctx, with our context
+/// current (mpv requires its own GL context for that). If that context can't
+/// be made current, it's freed with NO context current instead — mpv's GL
+/// calls then do nothing (leaking a few GPU objects) rather than deleting
+/// objects in Slint's context. A broken plane is destroyed afterwards.
+pub(crate) fn free_render_ctx(ctx: MpvRenderCtx) {
+    BACKPLANE.with(|slot| {
+        let mut slot = slot.borrow_mut();
+        match &*slot {
+            Slot::Ready(bp) | Slot::Broken(bp) => {
+                let mut ctx = Some(ctx);
+                if let Err(e) = bp.with_current(|| drop(ctx.take())) {
+                    warn!("video backplane: freeing mpv's render context without its GL context: {e:#}");
+                    bp.with_no_context(|| drop(ctx.take()));
+                }
+                let st = bp.stats;
+                info!(
+                    "video backplane: this player drew {} frame(s); our overhead over 4 ms on {} (slowest {:.1} ms), \
+                     slowest mpv render call {:.1} ms; render context freed",
+                    st.frames, st.slow_overhead, st.max_overhead_ms, st.max_mpv_ms,
+                );
+            }
+            _ => {
+                error!("video backplane: render context outlived its backplane — freeing without a GL context");
+                drop(ctx);
+            }
+        }
+        if matches!(*slot, Slot::Broken(_)) {
+            if let Slot::Broken(bp) = std::mem::replace(&mut *slot, Slot::Failed) {
+                bp.destroy();
+            }
+        }
+    })
+}
+
+/// Stop drawing to the plane after an error mid-item; the in-window path is
+/// used from the next player on. Logged once.
+pub(crate) fn mark_broken(why: &str) {
+    BACKPLANE.with(|slot| {
+        let mut slot = slot.borrow_mut();
+        if let Slot::Ready(_) = &*slot {
+            warn!("video backplane failed mid-item — in-window video path from the next video on: {why}");
+            if let Slot::Ready(bp) = std::mem::replace(&mut *slot, Slot::Failed) {
+                *slot = Slot::Broken(bp);
+            }
+        }
+    })
+}
+
+/// After a stop: repaint the plain background once, so the next video can
+/// never briefly show the previous one's last frame.
+pub(crate) fn idle_fill(fill: [f32; 3]) {
+    BACKPLANE.with(|slot| {
+        let mut slot = slot.borrow_mut();
+        let Slot::Ready(bp) = &mut *slot else { return };
+        if !bp.dirty { return; }
+        bp.dirty = false;
+        if let Err(e) = bp.fill_frame(fill) {
+            debug!("video backplane: idle fill failed: {e:#}");
+        }
+    })
+}
+
 // ── Backplane ─────────────────────────────────────────────────────────────
 struct Backplane {
     egl:        &'static egl::Egl,
@@ -109,10 +249,24 @@ struct Backplane {
     conn:       Connection,
     queue:      EventQueue<BpState>,
     child:      WlSurface,
-    subsurface: WlSubsurface,
+    /// Kept for the process lifetime, never destroyed (see destroy()).
+    _subsurface: WlSubsurface,
     viewport:   WpViewport,
     phys:       (u32, u32),
     logical:    (i32, i32),
+    /// The window buffer is 10-bit (tells mpv, so it dithers to 10 bits).
+    ten_bit:    bool,
+    /// Offscreen target for a video spot smaller than the window:
+    /// (fbo, texture, w, h), RGB10_A2, on our context.
+    rect_fbo:   Option<(u32, u32, i32, i32)>,
+    /// Holds a video frame (set by render, cleared by idle_fill).
+    dirty:      bool,
+    /// Per-player frame timing, logged when the player's render context is
+    /// freed: frames, and for OUR overhead (context switches + blit + swap,
+    /// i.e. everything but mpv's own render call — which by default blocks
+    /// until the frame's display time, as on the in-window path) the number
+    /// over 4 ms and the slowest; plus mpv's slowest render call.
+    stats:      FrameStats,
 }
 
 /// The backplane's event-queue state. None of its objects send events Fjord
@@ -220,7 +374,8 @@ impl Backplane {
         }
 
         let bp = Backplane {
-            egl, wl_egl, dpy, ctx, surf, egl_window, conn, queue, child, subsurface, viewport, phys, logical,
+            egl, wl_egl, dpy, ctx, surf, egl_window, conn, queue, child, _subsurface: subsurface, viewport, phys, logical,
+            ten_bit: bits[0] == 10, rect_fbo: None, dirty: false, stats: FrameStats::default(),
         };
         // Our context's first use: no vsync wait in our swap (Slint's own swap
         // paces frames, and in sync mode our commit waits for its commit),
@@ -235,6 +390,7 @@ impl Backplane {
         });
         match first {
             Ok(our_version) => {
+                CHILD_ADDR.store(bp.child.id().as_ptr() as usize, Ordering::Relaxed);
                 info!(
                     "video backplane ready: {}x{} px ({}x{} logical), config R{}G{}B{}A{}, our GL_VERSION \"{our_version}\"",
                     phys.0, phys.1, logical.0, logical.1, bits[0], bits[1], bits[2], bits[3],
@@ -251,24 +407,107 @@ impl Backplane {
     /// Follows the window's physical size and scale; redraws the (black)
     /// fill whenever it changes so the child's buffer always matches.
     fn sync_size(&mut self, phys: (u32, u32), scale: f32) -> Result<()> {
+        if self.resize(phys, scale)? {
+            self.fill_frame([0.0, 0.0, 0.0])?;
+        }
+        Ok(())
+    }
+
+    /// Follows the window's physical size and scale (takes effect with the
+    /// next swap). True if it changed.
+    fn resize(&mut self, phys: (u32, u32), scale: f32) -> Result<bool> {
         if let Err(e) = self.queue.dispatch_pending(&mut BpState) {
             bail!("Wayland dispatch failed: {e}");
         }
         let logical = logical_size(phys, scale);
         if phys == self.phys && logical == self.logical {
-            return Ok(());
+            return Ok(false);
         }
         // Safety: egl_window is live until destroy().
         unsafe { (self.wl_egl.wl_egl_window_resize)(self.egl_window, phys.0 as i32, phys.1 as i32, 0, 0) };
         self.viewport.set_destination(logical.0, logical.1);
         self.phys = phys;
         self.logical = logical;
-        self.fill_frame([0.0, 0.0, 0.0])?;
         debug!(
             "video backplane: resized to {}x{} px ({}x{} logical)",
             phys.0, phys.1, logical.0, logical.1
         );
-        Ok(())
+        Ok(true)
+    }
+
+    fn render(
+        &mut self,
+        phys: (u32, u32),
+        scale: f32,
+        rect: [i32; 4],
+        fill: [f32; 3],
+        render: impl FnOnce(i32, i32, i32, i32) -> bool,
+    ) -> Result<bool> {
+        self.resize(phys, scale)?;
+        let (w, h) = (self.phys.0 as i32, self.phys.1 as i32);
+        let window_format = if self.ten_bit { gl::RGB10_A2 as i32 } else { 0 };
+        let mut rect_fbo = self.rect_fbo;
+        let [rx, ry, rw, rh] = rect;
+        let full = rect == [0, 0, w, h];
+        let started = std::time::Instant::now();
+        let mut mpv_ms = 0.0;
+        let render = |fbo: i32, rw: i32, rh: i32, fmt: i32| {
+            let t = std::time::Instant::now();
+            let ok = render(fbo, rw, rh, fmt);
+            mpv_ms = t.elapsed().as_secs_f64() * 1000.0;
+            ok
+        };
+        let out = self.with_current(|| {
+            // Safety: our context is current; every GL object used here was
+            // created on it.
+            unsafe {
+                let swap = || -> Result<()> {
+                    if self.egl.SwapBuffers(self.dpy, self.surf) == egl::TRUE {
+                        Ok(())
+                    } else {
+                        Err(anyhow!("eglSwapBuffers(backplane) failed: 0x{:x}", self.egl.GetError()))
+                    }
+                };
+                if full {
+                    gl::BindFramebuffer(gl::FRAMEBUFFER, 0);
+                    let ok = render(0, w, h, window_format);
+                    swap()?;
+                    return Ok(ok);
+                }
+                if rect_fbo.map(|f| (f.2, f.3)) != Some((rw, rh)) {
+                    if let Some((fbo, tex, _, _)) = rect_fbo.take() {
+                        crate::playback::delete_fbo(fbo, tex);
+                    }
+                    rect_fbo = crate::playback::create_fbo(rw.max(1) as u32, rh.max(1) as u32, true)
+                        .map(|(fbo, tex)| (fbo, tex, rw, rh));
+                }
+                let Some((fbo, _, _, _)) = rect_fbo else {
+                    bail!("couldn't create a {rw}x{rh} video buffer");
+                };
+                let ok = render(fbo as i32, rw, rh, gl::RGB10_A2 as i32);
+                gl::BindFramebuffer(gl::FRAMEBUFFER, 0);
+                gl::Disable(gl::SCISSOR_TEST);
+                gl::Viewport(0, 0, w, h);
+                gl::ClearColor(fill[0], fill[1], fill[2], 1.0);
+                gl::Clear(gl::COLOR_BUFFER_BIT);
+                gl::BindFramebuffer(gl::READ_FRAMEBUFFER, fbo);
+                gl::BlitFramebuffer(0, 0, rw, rh, rx, ry, rx + rw, ry + rh, gl::COLOR_BUFFER_BIT, gl::NEAREST);
+                gl::BindFramebuffer(gl::FRAMEBUFFER, 0);
+                swap()?;
+                Ok(ok)
+            }
+        });
+        self.rect_fbo = rect_fbo;
+        let rendered = out??;
+        let _ = self.conn.flush();
+        self.dirty = true;
+        let overhead = started.elapsed().as_secs_f64() * 1000.0 - mpv_ms;
+        let st = &mut self.stats;
+        st.frames += 1;
+        if overhead > 4.0 { st.slow_overhead += 1; }
+        st.max_overhead_ms = st.max_overhead_ms.max(overhead);
+        st.max_mpv_ms = st.max_mpv_ms.max(mpv_ms);
+        Ok(rendered)
     }
 
     /// Clears the whole backplane to `rgb` and commits it (eglSwapBuffers).
@@ -300,7 +539,7 @@ impl Backplane {
                 bail!("eglMakeCurrent(backplane) failed: 0x{:x}", self.egl.GetError());
             }
             let out = f();
-            if !saved.restore(self.egl) {
+            if !saved.restore(self.egl, self.dpy) {
                 error!(
                     "video backplane: couldn't make Slint's EGL context current again: 0x{:x}",
                     self.egl.GetError()
@@ -308,6 +547,19 @@ impl Backplane {
                 bail!("couldn't restore Slint's EGL context");
             }
             Ok(out)
+        }
+    }
+
+    /// Runs `f` with NO context current, then makes Slint's current again.
+    fn with_no_context(&self, f: impl FnOnce()) {
+        // Safety: plain EGL calls on the main/GL thread.
+        unsafe {
+            let saved = SavedCurrent::capture(self.egl);
+            self.egl.MakeCurrent(self.dpy, egl::NO_SURFACE, egl::NO_SURFACE, egl::NO_CONTEXT);
+            f();
+            if !saved.restore(self.egl, self.dpy) {
+                error!("video backplane: couldn't make Slint's EGL context current again: 0x{:x}", self.egl.GetError());
+            }
         }
     }
 
@@ -320,11 +572,13 @@ impl Backplane {
             self.egl.DestroyContext(self.dpy, self.ctx);
             (self.wl_egl.wl_egl_window_destroy)(self.egl_window);
         }
-        self.viewport.destroy();
-        self.subsurface.destroy();
-        self.child.destroy();
+        // Unmapped, not destroyed: hdr.rs's worker may hold a proxy of the
+        // child surface (CHILD_ADDR), and using a destroyed object would be a
+        // protocol error on the display winit shares. No buffer = invisible.
+        self.child.attach(None, 0, 0);
+        self.child.commit();
         let _ = self.conn.flush();
-        debug!("video backplane: destroyed");
+        debug!("video backplane: destroyed (subsurface unmapped)");
     }
 }
 
@@ -420,7 +674,12 @@ impl SavedCurrent {
         }
     }
 
-    unsafe fn restore(&self, egl: &egl::Egl) -> bool {
+    /// Makes the saved context current again — or, when nothing was current
+    /// (e.g. at quit, after Slint's context is gone), releases ours on `dpy`.
+    unsafe fn restore(&self, egl: &egl::Egl, dpy: EGLDisplay) -> bool {
+        if self.ctx == egl::NO_CONTEXT {
+            return egl.MakeCurrent(dpy, egl::NO_SURFACE, egl::NO_SURFACE, egl::NO_CONTEXT) == egl::TRUE;
+        }
         egl.MakeCurrent(self.dpy, self.draw, self.read, self.ctx) == egl::TRUE
     }
 }
@@ -510,6 +769,76 @@ fn logical_size(phys: (u32, u32), scale: f32) -> (i32, i32) {
     (l(phys.0), l(phys.1))
 }
 
+#[derive(Debug, Clone, Copy, Default)]
+struct FrameStats {
+    frames:          u64,
+    slow_overhead:   u64,
+    max_overhead_ms: f64,
+    max_mpv_ms:      f64,
+}
+
+/// The window background as the subsurface must fill it while it's tagged
+/// PQ/BT.2020 (HDR active): sRGB → linear → BT.2020 primaries → nits with
+/// SDR white at 203 (ITU-R BT.2408's reference white) → PQ. KWin maps SDR
+/// windows to its own SDR brightness, so the match is close, not exact —
+/// fine for Fjord's near-black background.
+pub(crate) fn pq_fill_from_srgb(rgb: [f32; 3]) -> [f32; 3] {
+    let lin = rgb.map(|c| if c <= 0.04045 { c / 12.92 } else { ((c + 0.055) / 1.055).powf(2.4) });
+    const M: [[f32; 3]; 3] = [
+        [0.6274, 0.3293, 0.0433],
+        [0.0691, 0.9195, 0.0114],
+        [0.0164, 0.0880, 0.8956],
+    ];
+    let to2020 = |row: [f32; 3]| row[0] * lin[0] + row[1] * lin[1] + row[2] * lin[2];
+    let pq = |y: f32| {
+        let (m1, m2) = (0.159_301_76, 78.843_75);
+        let (c1, c2, c3) = (0.835_937_5, 18.851_563, 18.687_5);
+        let ym = (y.max(0.0) * 203.0 / 10_000.0).powf(m1);
+        ((c1 + c2 * ym) / (1.0 + c3 * ym)).powf(m2)
+    };
+    [pq(to2020(M[0])), pq(to2020(M[1])), pq(to2020(M[2]))]
+}
+
+/// Which of Slint's video spots is showing, from the same flags main.slint
+/// uses to mount them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Spot {
+    /// Fullscreen PlayerScreen.
+    Player,
+    /// "Video behind menus" layer (content area above the bars).
+    Background,
+    /// The mini-player bar's 192×108 thumbnail.
+    Thumb,
+}
+
+pub(crate) fn pick_spot(is_playing: bool, video_behind_ui: bool, has_background_player: bool) -> Option<Spot> {
+    if is_playing {
+        Some(Spot::Player)
+    } else if has_background_player && video_behind_ui {
+        Some(Spot::Background)
+    } else if has_background_player {
+        Some(Spot::Thumb)
+    } else {
+        None
+    }
+}
+
+/// A spot's logical rect (x, y, w, h — Slint's absolute position, top-left
+/// origin) → physical px in GL coordinates (bottom-left origin), clipped to
+/// the window. None when nothing of it is on screen.
+pub(crate) fn to_gl_rect(logical: (f32, f32, f32, f32), scale: f32, win: (i32, i32)) -> Option<[i32; 4]> {
+    let s = if scale.is_finite() && scale > 0.0 { scale } else { 1.0 };
+    let (x, y, w, h) = logical;
+    let x0 = ((x * s).round() as i32).clamp(0, win.0);
+    let y0 = ((y * s).round() as i32).clamp(0, win.1);
+    let x1 = (((x + w) * s).round() as i32).clamp(0, win.0);
+    let y1 = (((y + h) * s).round() as i32).clamp(0, win.1);
+    if x1 <= x0 || y1 <= y0 {
+        return None;
+    }
+    Some([x0, win.1 - y1, x1 - x0, y1 - y0])
+}
+
 // ── Dispatch ──────────────────────────────────────────────────────────────
 impl Dispatch<wl_registry::WlRegistry, GlobalListContents> for BpState {
     fn event(
@@ -543,6 +872,39 @@ mod tests {
         assert_eq!(rank_config([8, 8, 8, 8]), Some(3));
         assert_eq!(rank_config([5, 6, 5, 0]), None);
         assert_eq!(rank_config([16, 16, 16, 16]), None);
+    }
+
+    #[test]
+    fn pq_fill_matches_reference_values() {
+        // SDR white (203 nits) is PQ ≈ 0.5807 (BT.2408); black is ~0.
+        let w = pq_fill_from_srgb([1.0, 1.0, 1.0]);
+        for c in w { assert!((c - 0.5807).abs() < 0.002, "{c}"); }
+        let b = pq_fill_from_srgb([0.0, 0.0, 0.0]);
+        for c in b { assert!(c < 0.001, "{c}"); }
+        // Fjord's #0d0d0d background stays dark grey, not black or bright.
+        let bg = pq_fill_from_srgb([13.0 / 255.0; 3]);
+        assert!(bg[0] > 0.05 && bg[0] < 0.2, "{}", bg[0]);
+    }
+
+    #[test]
+    fn spot_follows_the_mount_flags() {
+        assert_eq!(pick_spot(true, true, true), Some(Spot::Player));
+        assert_eq!(pick_spot(false, true, true), Some(Spot::Background));
+        assert_eq!(pick_spot(false, false, true), Some(Spot::Thumb));
+        assert_eq!(pick_spot(false, false, false), None);
+    }
+
+    #[test]
+    fn gl_rect_flips_y_and_scales() {
+        // Fullscreen at scale 2.
+        assert_eq!(to_gl_rect((0.0, 0.0, 1920.0, 1080.0), 2.0, (3840, 2160)), Some([0, 0, 3840, 2160]));
+        // Mini-player thumbnail at the bottom-left of a 1920x1012 window.
+        assert_eq!(to_gl_rect((0.0, 904.0, 192.0, 108.0), 1.0, (1920, 1012)), Some([0, 0, 192, 108]));
+        // Content area above a 108px bar: GL y starts above the bar.
+        assert_eq!(to_gl_rect((0.0, 0.0, 1920.0, 904.0), 1.0, (1920, 1012)), Some([0, 108, 1920, 904]));
+        // Fractional scale rounds; off-screen is None.
+        assert_eq!(to_gl_rect((10.0, 10.0, 100.0, 50.0), 1.25, (1600, 900)), Some([13, 825, 125, 62]));
+        assert_eq!(to_gl_rect((0.0, 2000.0, 10.0, 10.0), 1.0, (100, 100)), None);
     }
 
     #[test]

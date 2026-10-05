@@ -25,7 +25,10 @@
 //                     entirely — this thread must be structurally incapable
 //                     of destabilizing the app regardless of what it
 //                     discovers about the compositor.
-//   HdrCommand        SetHdr(HdrParams) | Unset — sent via send_command()
+//   HdrCommand        SetHdr(HdrParams, target) | Unset — sent via send_command(); target =
+//                     the video subsurface's wl_surface (HDR Stage 5, 2026-10-05) or None for
+//                     the window; the worker keeps one Target (surface + colour-management
+//                     object) per surface and unsets whichever was last tagged
 //   HdrParams         optional real per-file mastering-luminance/CLL/FALL
 //                     metadata for an eligible (PQ + BT.2020) video; TF/
 //                     primaries are hardcoded for v1, not fields (see
@@ -162,7 +165,9 @@ pub(crate) enum HdrCommand {
     /// before any new item's own playback ever starts, so by the time this
     /// arrives nothing should still be active, but the worker doesn't
     /// depend on that ordering for correctness.
-    SetHdr(HdrParams),
+    /// The second field picks the surface (see maybe_negotiate); a
+    /// description active on the other surface is unset first.
+    SetHdr(HdrParams, Option<usize>),
     /// Clear whatever's currently applied (if anything) and reset the
     /// on-screen status to `Idle`. Sent unconditionally from
     /// `tear_down_player` on every playback teardown — cheap when nothing
@@ -214,11 +219,15 @@ pub(crate) fn send_command(cmd: HdrCommand) {
 /// just-reconfigured player's real source metadata — only when the "HDR
 /// passthrough" Settings toggle is on (see `set_status_disabled` for the
 /// off case, which never reaches here at all).
-pub(crate) fn maybe_negotiate(meta: fjord_player::SourceHdrMetadata) {
+/// `subsurface` = the video subsurface's wl_surface address (HDR Stage 5,
+/// video_surface::child_surface_addr) when the current player renders there
+/// — only that surface is tagged then, so Slint's UI surface stays sRGB.
+/// None = tag Fjord's own window surface, as before Stage 5.
+pub(crate) fn maybe_negotiate(meta: fjord_player::SourceHdrMetadata, subsurface: Option<usize>) {
     match build_hdr_params(&meta) {
         Some(params) => {
             set_status(HdrStatus::Negotiating);
-            send_command(HdrCommand::SetHdr(params));
+            send_command(HdrCommand::SetHdr(params, subsurface));
         }
         None => set_status(HdrStatus::NotApplicable),
     }
@@ -404,28 +413,59 @@ unsafe fn run_worker(display_ptr: *mut c_void, surface_ptr: *mut c_void) {
     };
 
     // Persistent negotiation state, for the life of this thread.
-    let mut cms: Option<WpColorManagementSurfaceV1> = None; // lazily get_surface()'d, at most once ever
-    let mut has_active = false;
+    // One target per surface — Fjord's window and (HDR Stage 5) the video
+    // subsurface — each with its own wp_color_management_surface_v1, lazily
+    // get_surface()'d at most once ever (the protocol allows one per
+    // wl_surface). `active` = which one currently has a description:
+    // Some(None) = the window, Some(Some(addr)) = the subsurface.
+    let mut main_target = Target { surface: wrapped_surface, cms: None };
+    let mut child_target: Option<(usize, Target)> = None;
+    let mut active: Option<Option<usize>> = None;
 
     for cmd in rx {
         match cmd {
-            HdrCommand::SetHdr(params) => {
+            HdrCommand::SetHdr(params, subsurface) => {
+                // A description left on the other surface goes first.
+                if let Some(prev) = active {
+                    if prev != subsurface {
+                        let t = if prev.is_none() { Some(&main_target) } else { child_target.as_ref().map(|(_, t)| t) };
+                        if let Some(t) = t { t.unset(); }
+                        active = None;
+                    }
+                }
+                let target = match subsurface {
+                    None => &mut main_target,
+                    Some(addr) => {
+                        if child_target.as_ref().map(|(a, _)| *a) != Some(addr) {
+                            match wrap_surface(&connection, addr) {
+                                Some(surface) => {
+                                    tracing::info!("hdr worker: tagging the video subsurface ({:?}), not the window", surface.id());
+                                    child_target = Some((addr, Target { surface, cms: None }));
+                                }
+                                None => {
+                                    set_status(HdrStatus::Failed);
+                                    continue;
+                                }
+                            }
+                        }
+                        &mut child_target.as_mut().unwrap().1
+                    }
+                };
+                let mut has_active = active.is_some();
                 if let Err(fatal) = handle_set_hdr(
                     &manager, &qh, &mut event_queue, &mut state,
-                    &wrapped_surface, &mut cms, &mut has_active, params,
+                    &target.surface, &mut target.cms, &mut has_active, params,
                 ) {
                     tracing::warn!("hdr worker: {fatal} — connection likely dead, exiting");
                     set_status(HdrStatus::Unavailable);
                     return;
                 }
+                if has_active { active = Some(subsurface); }
             }
             HdrCommand::Unset => {
-                if has_active {
-                    if let Some(surface) = cms.as_ref() {
-                        surface.unset_image_description();
-                        wrapped_surface.commit();
-                    }
-                    has_active = false;
+                if let Some(prev) = active.take() {
+                    let t = if prev.is_none() { Some(&main_target) } else { child_target.as_ref().map(|(_, t)| t) };
+                    if let Some(t) = t { t.unset(); }
                 }
                 // Unconditional — see HDR_STATUS's own doc comment for why
                 // this must always reset to Idle, even when nothing was
@@ -433,6 +473,37 @@ unsafe fn run_worker(display_ptr: *mut c_void, surface_ptr: *mut c_void) {
                 set_status(HdrStatus::Idle);
             }
         }
+    }
+}
+
+/// One surface the worker can tag — the window, or (HDR Stage 5) the video
+/// subsurface.
+struct Target {
+    surface: WlSurface,
+    cms:     Option<WpColorManagementSurfaceV1>,
+}
+
+impl Target {
+    fn unset(&self) {
+        if let Some(cms) = self.cms.as_ref() {
+            cms.unset_image_description();
+            self.surface.commit();
+        }
+    }
+}
+
+/// Wraps the video subsurface (created on video_surface.rs's own connection
+/// to the same display) as a proxy on this one, like the window surface
+/// above. `from_ptr` checks the real interface first.
+fn wrap_surface(connection: &Connection, addr: usize) -> Option<WlSurface> {
+    // Safety: `addr` is a live wl_surface owned by video_surface.rs, which
+    // never destroys it for the rest of the process (see Backplane::destroy).
+    match unsafe { ObjectId::from_ptr(WlSurface::interface(), addr as *mut _) } {
+        Ok(id) => match Proxy::from_id(connection, id) {
+            Ok(surface) => Some(surface),
+            Err(e) => { tracing::warn!("hdr worker: Proxy::from_id for the video subsurface failed: {e}"); None }
+        },
+        Err(e) => { tracing::warn!("hdr worker: ObjectId::from_ptr for the video subsurface failed: {e}"); None }
     }
 }
 
