@@ -284,7 +284,7 @@ export component DiscoverScreen inherits Rectangle {
                     }
                     Text {
                         text: AppState.discover-header-focused
-                            ? AppState.discover-query-shown
+                            ? AppState.caret-text(AppState.discover-query, AppState.discover-query-cursor, "▌")
                             : AppState.discover-query != "" ? AppState.discover-query
                             : "Search for movies and TV shows not in your library…";
                         color: AppState.discover-query != "" ? Theme.text
@@ -837,6 +837,7 @@ export component DiscoverScreen inherits Rectangle {
         key-pressed(k) => {
             if k == "done" { AppState.show-onscreen-keyboard = false; }
             else if k == "backspace" { AppState.discover-search-backspace(); }
+            else if k == "left" || k == "right" { AppState.text-field-caret("discover-search", k == "left" ? -1 : 1); }
             else { AppState.discover-search-append(k); }
         }
     }

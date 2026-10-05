@@ -202,7 +202,7 @@
 //   Callbacks — misc      show-controls, cancel-auto-advance, play-next-ep, close-detail/series, close-album, close-artist, refocus
 //   Callbacks — keys      handle-key (main dispatch), keybinding-reset-defaults
 // ─────────────────────────────────────────────────────────────────────────────
-import { Theme, TrackEntry, TrackItem, CastMember, SeasonEntry, CardItem, KeyBindingEntry, QueueEntry, LyricEntry, SeasonItem, TagItem, ProfileItem, StreamingProvider, GenreItem, ProviderItem, BlocklistRow, ProfileTile, ProfileSection, AccountTile, ToggleListItem, BonfireGroupMemberTile, BonfireAdminRow, BonfireAuditRow } from "theme.slint";
+import { Theme, TrackEntry, TrackItem, CastMember, SeasonEntry, CardItem, KeyBindingEntry, QueueEntry, LyricEntry, SeasonItem, TagItem, ProfileItem, StreamingProvider, GenreItem, ProviderItem, BlocklistRow, ProfileTile, ProfileSection, AccountTile, ToggleListItem, BonfireGroupMemberTile, BonfireAdminRow, BonfireAuditRow, OskEdit } from "theme.slint";
 import { StandardListView } from "std-widgets.slint";
 
 export global AppState {
@@ -725,7 +725,8 @@ export global AppState {
     // hand in three separate places (keys.rs, profile_edit.rs, widgets.slint)
     // — a stale row-length here can only mis-land a cursor by one cell, it
     // can never silently invoke the wrong action the way a wrong VALUE could.
-    out property <[int]> onscreen-keyboard-row-lens: [10, 9, 9, 3];
+    // Last row: 123 · ◀ · space · ▶ · Done (◀ ▶ added 2026-10-05).
+    out property <[int]> onscreen-keyboard-row-lens: [10, 9, 9, 5];
     // Flat row-major index of the "Done" key — the LAST cell (row 3, col 2)
     // on both pages, per QwertyKeyboard's own doc comment ("both pages
     // deliberately share the identical [10,9,9,3] row-length shape"). Every
@@ -736,10 +737,10 @@ export global AppState {
     // escape; landing on Done means a stray Enter that opened it can be
     // dismissed by the exact same key. A plain literal, not derived from
     // onscreen-keyboard-row-lens above — has to be kept in sync with it by
-    // hand (currently 10+9+9+3-1=30), the same "kept in lockstep by hand,
+    // hand (currently 10+9+9+5-1=32), the same "kept in lockstep by hand,
     // no shared source of truth" caveat that array's own doc comment
     // already carries for a different reason.
-    out property <int> onscreen-keyboard-done-cursor: 30;
+    out property <int> onscreen-keyboard-done-cursor: 32;
     // Physical-keyboard passthrough while the on-screen keyboard is open
     // (2026-08-23, live feedback: "i want it to still work to type on the
     // keybord even if its open") — keys.rs forwards any ordinary printable
@@ -773,6 +774,18 @@ export global AppState {
     // by every future screen this keyboard gets wired into.
     pure callback onscreen-keyboard-trim-last(string) -> string;
     pure callback onscreen-keyboard-byte-len(string) -> int;
+    // Caret editing (2026-10-05, text_field.rs). caret-text(text, caret,
+    // glyph): the text with `glyph` drawn at the caret (grapheme index,
+    // -1/past the end = end) — the drawn fields' display. onscreen-keyboard-
+    // edit(text, caret, key): one on-screen key applied at the caret, for the
+    // LineEdit targets (LineEdit has no cursor getter, so the keyboard keeps
+    // its own caret in onscreen-keyboard-caret, reset to the end each time
+    // the keyboard opens — main.slint). text-field-caret(target, delta): ◀ ▶
+    // on a drawn target.
+    pure callback caret-text(string, int, string) -> string;
+    pure callback onscreen-keyboard-edit(string, int, string) -> OskEdit;
+    in-out property <int> onscreen-keyboard-caret: -1;
+    callback text-field-caret(string, int);
 
     // ── Navigation state ──────────────────────────────────────────────────────
     in-out property <int>    active-nav:         0;
@@ -809,6 +822,7 @@ export global AppState {
     in-out property <int>        library-focused:           0;
     in-out property <[CardItem]> library-display:           [];
     in-out property <string>     library-query:             "";
+    in-out property <int>        library-query-cursor:      -1; // caret, see text_field.rs (-1 = end)
     in-out property <int>        library-cols:              6;   // written by MainWindow on resize
     // sort: 0=Name A–Z  1=Name Z–A  2=Year ↓  3=Year ↑  4=Random
     in-out property <int>        library-sort:              0;
@@ -834,6 +848,7 @@ export global AppState {
     in     property <[StandardListViewItem]> media-items:   [];
     in-out property <int>                    current-item:  -1;
     in-out property <string>                 browse-query:  ""; // tracks keyboard search text
+    in-out property <int>                    browse-query-cursor: -1; // caret, see text_field.rs (-1 = end)
     in-out property <bool>                   browse-header-focused: false;
 
     // ── Home / dashboard data rows ────────────────────────────────────────────
@@ -1214,11 +1229,9 @@ export global AppState {
     // directly, same pattern as the Home/Movies/TV dashboards, not a
     // separate boolean overlay flag.
     in-out property <string>     discover-query:          "";
-    // Caret in the search field (2026-10-04): grapheme index, and the query
-    // with "▌" drawn there — both kept in step by discover.rs's
-    // set_discover_query_and_cursor, the only writer of discover-query.
-    in-out property <int>        discover-query-cursor:   0;
-    in-out property <string>     discover-query-shown:    "▌";
+    // Caret in the search field (2026-10-04): grapheme index, drawn via
+    // caret-text — see text_field.rs.
+    in-out property <int>        discover-query-cursor:   -1; // -1 = end
     in-out property <bool>       discover-searching:       false;
     in-out property <[CardItem]> discover-results:         [];
     in-out property <int>        discover-focused:         0;
@@ -1610,6 +1623,7 @@ export global AppState {
     in-out property <int>        playlist-picker-cursor: 0;    // 0 = "+ New playlist…", 1..N = items[cursor-1]
     in-out property <bool>       playlist-picker-naming: false; // typing a new playlist name
     in-out property <string>     playlist-picker-name:   "";
+    in-out property <int>        playlist-picker-name-cursor: -1; // caret, see text_field.rs (-1 = end)
     // On-screen keyboard rollout (2026-08-23) — real callbacks, mirroring
     // discover-search-append/-backspace's shape, rather than the on-screen
     // keyboard mutating playlist-picker-name directly from Slint. Also
@@ -2214,9 +2228,11 @@ export global AppState {
     callback browse-search-append(string);
     callback browse-search-backspace();
     callback browse-search-clear();
+    callback browse-search-delete();   // Delete key: letter after the caret (2026-10-05)
     callback library-search-append(string);
     callback library-search-backspace();
     callback library-search-clear();
+    callback library-search-delete();  // Delete key: letter after the caret (2026-10-05)
     callback open-library(int);
     callback library-sort-apply(int, bool, bool);  // sort-idx, filter-unwatched, filter-favorites
     callback library-jump-to-letter(int);          // 0=A..25=Z, 26=#
@@ -2504,6 +2520,7 @@ export global AppState {
     // LineEdit — Bonfire codes are alphanumeric, entered via the shared
     // QwertyKeyboard, not the numeric VirtualKeyboard).
     in-out property <string> bonfire-group-join-code: "";
+    in-out property <int>    bonfire-group-join-code-cursor: -1; // caret, see text_field.rs (-1 = end)
     callback bonfire-group-join-code-append(string);
     callback bonfire-group-join-code-backspace();
     callback bonfire-group-join-code-submit();

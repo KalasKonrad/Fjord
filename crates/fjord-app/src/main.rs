@@ -222,6 +222,7 @@ mod prewarm;
 mod secrets;
 mod seerr_auth;
 mod stats;
+mod text_field;
 mod ws;
 
 use std::collections::HashMap;
@@ -3412,10 +3413,7 @@ fn main() -> Result<()> {
             // physical-keyboard passthrough, or neither).
             debug!("bonfire_group: join-code append {ch:?}");
             if let Some(w) = window_weak.upgrade() {
-                let g = AppState::get(&w);
-                let mut code = g.get_bonfire_group_join_code().to_string();
-                code.push_str(ch.as_str());
-                g.set_bonfire_group_join_code(code.as_str().into());
+                text_field::JOIN_CODE.insert(&AppState::get(&w), ch.as_str());
             }
         });
     }
@@ -3424,9 +3422,7 @@ fn main() -> Result<()> {
         AppState::get(&window).on_bonfire_group_join_code_backspace(move || {
             debug!("bonfire_group: join-code backspace");
             if let Some(w) = window_weak.upgrade() {
-                let g = AppState::get(&w);
-                let code = crate::trim_last_grapheme(&g.get_bonfire_group_join_code());
-                g.set_bonfire_group_join_code(code.as_str().into());
+                text_field::JOIN_CODE.backspace(&AppState::get(&w));
             }
         });
     }
@@ -6155,6 +6151,9 @@ fn main() -> Result<()> {
         // be wrong for any non-ASCII text.
         s.len() as i32
     });
+    // Caret editing for the drawn text fields + on-screen-keyboard ◀ ▶
+    // (2026-10-05) — see text_field.rs.
+    text_field::wire(&window);
 
     window.invoke_grab_keyboard_focus();
     window.run()?;

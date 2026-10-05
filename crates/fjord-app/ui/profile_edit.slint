@@ -20,6 +20,7 @@
 //                      kb-activate-pulse, since Rust can't read live
 //                      LineEdit.text to build the Save call itself).
 //                      On-screen alphanumeric keyboard (2026-08-23, full
+//                      (2026-10-05: on-screen keys edit at the keyboard's caret — onscreen-keyboard-edit)
 //                      rollout beyond Login) — Name/Blocked tags/Allowed
 //                      tags (zones 0/5/6). ONE Enter opens the keyboard
 //                      directly (2026-08-25, collapsed from two separate
@@ -843,23 +844,23 @@ export component ProfileEditScreen inherits Rectangle {
         if k == "done" {
             AppState.show-onscreen-keyboard = false;
         } else if AppState.onscreen-keyboard-target == "profile-edit-name" {
-            name-field.text = k == "backspace"
-                ? AppState.onscreen-keyboard-trim-last(name-field.text)
-                : name-field.text + k;
-            let len = AppState.onscreen-keyboard-byte-len(name-field.text);
-            name-field.set-selection-offsets(len, len);
+            // At the keyboard's own caret (◀ ▶ move it, 2026-10-05).
+            let r = AppState.onscreen-keyboard-edit(name-field.text, AppState.onscreen-keyboard-caret, k);
+            name-field.text = r.text;
+            AppState.onscreen-keyboard-caret = r.caret;
+            name-field.set-selection-offsets(r.byte, r.byte);
         } else if AppState.onscreen-keyboard-target == "profile-edit-blocked-tags" {
-            blocked-tags-field.text = k == "backspace"
-                ? AppState.onscreen-keyboard-trim-last(blocked-tags-field.text)
-                : blocked-tags-field.text + k;
-            let len = AppState.onscreen-keyboard-byte-len(blocked-tags-field.text);
-            blocked-tags-field.set-selection-offsets(len, len);
+            // At the keyboard's own caret (◀ ▶ move it, 2026-10-05).
+            let r = AppState.onscreen-keyboard-edit(blocked-tags-field.text, AppState.onscreen-keyboard-caret, k);
+            blocked-tags-field.text = r.text;
+            AppState.onscreen-keyboard-caret = r.caret;
+            blocked-tags-field.set-selection-offsets(r.byte, r.byte);
         } else if AppState.onscreen-keyboard-target == "profile-edit-allowed-tags" {
-            allowed-tags-field.text = k == "backspace"
-                ? AppState.onscreen-keyboard-trim-last(allowed-tags-field.text)
-                : allowed-tags-field.text + k;
-            let len = AppState.onscreen-keyboard-byte-len(allowed-tags-field.text);
-            allowed-tags-field.set-selection-offsets(len, len);
+            // At the keyboard's own caret (◀ ▶ move it, 2026-10-05).
+            let r = AppState.onscreen-keyboard-edit(allowed-tags-field.text, AppState.onscreen-keyboard-caret, k);
+            allowed-tags-field.text = r.text;
+            AppState.onscreen-keyboard-caret = r.caret;
+            allowed-tags-field.set-selection-offsets(r.byte, r.byte);
         }
     }
 
