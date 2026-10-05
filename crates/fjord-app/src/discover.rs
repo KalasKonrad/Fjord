@@ -3951,22 +3951,6 @@ fn trailer_candidates(videos: &[fjord_seerr::Video]) -> Vec<String> {
     out
 }
 
-/// The one place the Discover search text changes (2026-10-04): keeps
-/// discover-query, the caret position and the drawn text ("▌" at the caret,
-/// shown while the field has focus) in step.
-fn set_discover_query_and_cursor(g: &AppState, q: &str, cursor: usize) {
-    let cursor = cursor.min(crate::grapheme_count(q));
-    g.set_discover_query(q.into());
-    g.set_discover_query_cursor(cursor as i32);
-    g.set_discover_query_shown(crate::with_caret(q, cursor, "▌").as_str().into());
-}
-
-/// Left/Right/Home/End in the search field: moves the caret only.
-pub(crate) fn move_discover_cursor(g: &AppState, cursor: usize) {
-    let q = g.get_discover_query().to_string();
-    set_discover_query_and_cursor(g, &q, cursor);
-}
-
 /// Decides what the RequestDetail Trailer button shows (2026-10-04, live-
 /// reported: a trailer that won't play shouldn't look playable). TMDB lists
 /// trailers YouTube has since blocked for this region or removed, and only
@@ -6051,10 +6035,7 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
             let Some(w) = ww.upgrade() else { return };
             let g = AppState::get(&w);
             let was_landing = g.get_discover_query().is_empty();
-            let (q, cursor) = crate::insert_at_grapheme(
-                &g.get_discover_query(), g.get_discover_query_cursor().max(0) as usize, ch.as_str(),
-            );
-            set_discover_query_and_cursor(&g, &q, cursor);
+            let q = crate::text_field::DISCOVER_SEARCH.insert(&g, ch.as_str());
             if was_landing {
                 // First character typed: the view switches from the 5
                 // landing SectionRows to the flat results grid, which only
@@ -6079,10 +6060,7 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
         move || {
             let Some(w) = ww.upgrade() else { return };
             let g = AppState::get(&w);
-            let old = g.get_discover_query().to_string();
-            let (q, cursor) = crate::delete_before_grapheme(&old, g.get_discover_query_cursor().max(0) as usize);
-            set_discover_query_and_cursor(&g, &q, cursor);
-            if q != old {
+            if let Some(q) = crate::text_field::DISCOVER_SEARCH.backspace(&g) {
                 spawn_discover_search(ww.clone(), Arc::clone(&state), q, Arc::clone(&gen), &rt);
             }
         }
@@ -6096,11 +6074,7 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
         move || {
             let Some(w) = ww.upgrade() else { return };
             let g = AppState::get(&w);
-            let old = g.get_discover_query().to_string();
-            let cursor = g.get_discover_query_cursor().max(0) as usize;
-            let q = crate::delete_at_grapheme(&old, cursor);
-            set_discover_query_and_cursor(&g, &q, cursor);
-            if q != old {
+            if let Some(q) = crate::text_field::DISCOVER_SEARCH.delete(&g) {
                 spawn_discover_search(ww.clone(), Arc::clone(&state), q, Arc::clone(&gen), &rt);
             }
         }
@@ -6113,7 +6087,7 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
         move || {
             let Some(w) = ww.upgrade() else { return };
             let g = AppState::get(&w);
-            set_discover_query_and_cursor(&g, "", 0);
+            g.set_discover_query("".into()); // caret: past the end = end, nothing to reset
             g.set_discover_focused(0);
             g.set_discover_focused_row(0);
             spawn_discover_search(ww.clone(), Arc::clone(&state), String::new(), Arc::clone(&gen), &rt);

@@ -41,6 +41,8 @@
 //                      (in property <int> cursor), key-pressed(string) callback for both mouse
 //                      and the caller's own Enter-dispatch; VirtualKeyboardKey is its file-local cell
 //   QwertyKeyboard     on-screen alphanumeric keyboard (Bonfire Phase 3, 2026-08-22; rolled out
+//                      (last row 123 · ◀ · space · ▶ · Done since 2026-10-05: "left"/"right" move
+//                      the caret — text-field-caret for drawn targets, onscreen-keyboard-edit for LineEdits)
 //                      to every text-entry surface in the app as of 2026-08-23) — irregular
 //                      10/9/9/3-key QWERTY grid, letters/symbols pages + sticky Shift toggle
 //                      (visually indicated via VirtualKeyboardKey's new `active` prop), reuses
@@ -254,7 +256,8 @@ export component VirtualKeyboard {
 // Shift is a toggle (not per-keystroke, matching real console/TV on-screen
 // keyboard convention) and Letters/Symbols is a second toggle — both pure
 // internal state; key-pressed(string) only ever fires with a literal
-// character, " ", "backspace", or "done", never "shift"/"page-toggle".
+// character, " ", "backspace", "done", or "left"/"right" (◀ ▶ caret keys,
+// 2026-10-05), never "shift"/"page-toggle".
 // Both pages deliberately share the identical [10,9,9,3] row-length shape
 // so toggling pages never needs the cursor re-clamped. Verified directly
 // against the real Slint 1.16.1 runtime (a throwaway standalone file run
@@ -295,13 +298,13 @@ export component QwertyKeyboard inherits Rectangle {
         ["q","w","e","r","t","y","u","i","o","p"],
         ["a","s","d","f","g","h","j","k","l"],
         ["shift","z","x","c","v","b","n","m","backspace"],
-        ["page-toggle"," ","done"]
+        ["page-toggle","left"," ","right","done"]
     ];
     property <[[string]]> symbols-vals: [
         ["1","2","3","4","5","6","7","8","9","0"],
         ["-","_","@",".",":","/","+","#","*"],
         ["(",")","[","]","{","}","!","?","backspace"],
-        ["page-toggle"," ","done"]
+        ["page-toggle","left"," ","right","done"]
     ];
     property <[[string]]> vals: page == 0 ? letters-vals : symbols-vals;
 
@@ -320,6 +323,8 @@ export component QwertyKeyboard inherits Rectangle {
         if v == "page-toggle" { return page == 0 ? "123" : "ABC"; }
         if v == " " { return "Space"; }
         if v == "done" { return "Done"; }
+        if v == "left" { return "◀"; }   // caret keys, 2026-10-05
+        if v == "right" { return "▶"; }
         return resolved-char(row, col);
     }
     // Uniform funnel for mouse (VirtualKeyboardKey.activated) AND physical
@@ -335,7 +340,7 @@ export component QwertyKeyboard inherits Rectangle {
         let v = vals[row][col];
         if v == "shift" { shift-active = !shift-active; }
         else if v == "page-toggle" { page = page == 0 ? 1 : 0; }
-        else if v == "backspace" || v == " " || v == "done" { key-pressed(v); }
+        else if v == "backspace" || v == " " || v == "done" || v == "left" || v == "right" { key-pressed(v); }
         else { key-pressed(resolved-char(row, col)); }
     }
 
@@ -376,7 +381,7 @@ export component QwertyKeyboard inherits Rectangle {
         spacing: 10px;
         for row in AppState.onscreen-keyboard-row-lens.length: HorizontalLayout {
             spacing:   10px;
-            alignment: center; // shorter rows (9/9/3 keys) center under the widest (10-key) row
+            alignment: center; // shorter rows (9/9/5 keys) center under the widest (10-key) row
             for col in AppState.onscreen-keyboard-row-lens[row]: VirtualKeyboardKey {
                 property <int> flat-idx: (row == 0 ? 0 : row == 1 ? row1-start : row == 2 ? row2-start : row3-start) + col;
                 label:      root.display-label(row, col);

@@ -32,6 +32,8 @@
 //                 Browse/LibraryGrid pass (smaller item counts in practice), converted when asked
 //                 directly whether the deferral still stood — see CLAUDE.md
 //   overlay z-order (bottom→top)  SeriesScreen, SeasonScreen, ArtistScreen, CollectionScreen, AlbumScreen,
+//   _osk-open           resets AppState.onscreen-keyboard-caret to the end whenever the on-screen
+//                       keyboard opens (2026-10-05)
 //                                  DetailPage, RequestDetailScreen (Seerr), RequestOptionsOverlay (Seerr,
 //                                  4K/tags/seasons modal opened from RequestDetailScreen's Request button),
 //                                  CalendarScreen (Seerr, 2026-07-18, opened from Discover's "Coming Up"
@@ -294,6 +296,13 @@ export component MainWindow inherits Window {
     // dependent local state in DiscoverScreen before relying on that (its
     // internal kb-y/kb-x/content-h properties are all either AppState-driven
     // or safely read root's own size, unaffected by hosting context).
+    // The on-screen keyboard's own caret for LineEdit targets starts at the
+    // end of the field every time the keyboard opens (2026-10-05, ◀ ▶ keys —
+    // see AppState.onscreen-keyboard-edit). One tracker here instead of a
+    // reset at each of the ~20 places that open the keyboard.
+    property <bool> _osk-open: AppState.show-onscreen-keyboard;
+    changed _osk-open => { if _osk-open { AppState.onscreen-keyboard-caret = -1; } }
+
     property <bool> _discover-vis: !AppState.show-browse && AppState.active-nav == 6;
     property <bool> discover-ever-shown: false;
     changed _discover-vis => { if _discover-vis { discover-ever-shown = true; } }
