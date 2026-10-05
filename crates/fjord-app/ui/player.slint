@@ -1,7 +1,8 @@
 // ── fjord-app · player.slint ─────────────────────────────────────────────────
 //   TrackPanel            reusable panel for Sub/Audio/Video/Chapter track selection; kb-y/changed scroll,
 //                         optional "Off" row (has-off-row), hover rows, mouse-wheel via Flickable
-//   video frame           mpv render output (AppState.video-frame Image)
+//   video frame           mpv render output (AppState.video-frame Image) — hidden, root transparent
+//                         and a VideoSpot reports the area while video-surface-active (HDR Stage 5)
 //   mouse-activity         the idle-lock timer's mouse coverage now comes from a true global
 //                         winit-level hook (activity.rs, event-loop branch 2026-09-08), not from
 //                         these TouchAreas — both still do their own real jobs (show-controls,
@@ -37,7 +38,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme, TrackEntry } from "theme.slint";
 import { AppState } from "app_state.slint";
-import { FjordButton, StatRow, LoadingSpinner, FadeInTrigger, PressPulse } from "widgets.slint";
+import { FjordButton, StatRow, LoadingSpinner, FadeInTrigger, PressPulse, VideoSpot } from "widgets.slint";
 
 // ── Reusable track-selection panel (Sub / Audio / Video) ─────────────────────
 // Positioned above the controls bar; keyboard scroll via kb-y/changed pattern;
@@ -150,7 +151,9 @@ component TrackPanel inherits Rectangle {
 }
 
 export component PlayerScreen inherits Rectangle {
-    background: #000000;
+    // Transparent while the video is drawn on the subsurface below the
+    // window (HDR Stage 5, AppState.video-surface-active).
+    background: AppState.video-surface-active ? transparent : #000000;
 
     // ── pause/play flash state ────────────────────────────────────────────────
     property <float>  flash-opacity: 0.0;
@@ -182,7 +185,9 @@ export component PlayerScreen inherits Rectangle {
         width:     parent.width;
         height:    parent.height;
         image-fit: contain;
+        visible:   !AppState.video-surface-active;
     }
+    VideoSpot { which: 0; x: 0; y: 0; width: parent.width; height: parent.height; }
 
     // ── skip-segment fade-to-black ────────────────────────────────────────────
     // 2026-08-11, direct request ("make intro skip etc more gradual, it

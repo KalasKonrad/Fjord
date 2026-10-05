@@ -23,6 +23,16 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Fixed: with HDR passthrough on, menus, controls and the OSD no longer show
+  wrong colours.** On Wayland the video is now drawn on its own surface
+  underneath Fjord's window, and only that surface is marked as HDR — the
+  interface stays normal. Works for fullscreen video, the mini-player
+  thumbnail and "Video in background". New setting **Settings → Video → HDR →
+  "Separate video surface"** (on by default, only shown on Wayland): turn it
+  off if video playback stutters on your system — the old way is then used,
+  with the old wrong-colours limitation while HDR passthrough is on. Changes
+  apply from the next video.
+
 - **Fixed: a video or trailer that couldn't be opened left a black screen**
   until you pressed Stop. Library items now retry like a stalled stream and,
   if they still won't open, stop with "Couldn't play this — the file
