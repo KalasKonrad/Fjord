@@ -55,6 +55,7 @@
 //   consistent with how Escape already behaves at every other zone on this screen.
 //
 //   On-screen alphanumeric keyboard (Bonfire Phase 3, 2026-08-22) — the first
+//   (2026-10-05: keys edit at the keyboard's own caret via AppState.onscreen-keyboard-edit; ◀ ▶ move it)
 //   screen wired up to app_state.slint's generic show-onscreen-keyboard mechanism
 //   (see its own doc comment there for the full design; widgets.slint's
 //   QwertyKeyboard is the actual keyboard widget). Each field gets a focus-ring
@@ -516,28 +517,26 @@ export component LoginScreen inherits Rectangle {
         if k == "done" {
             AppState.show-onscreen-keyboard = false;
         } else if AppState.onscreen-keyboard-target == "login-server" {
-            server-input.text = k == "backspace"
-                ? AppState.onscreen-keyboard-trim-last(server-input.text)
-                : server-input.text + k;
-            // Cached once, not called twice for the same value
-            // (code-review fix, 2026-08-22).
-            let len = AppState.onscreen-keyboard-byte-len(server-input.text);
-            server-input.set-selection-offsets(len, len);
+            // At the keyboard's own caret (◀ ▶ move it, 2026-10-05).
+            let r = AppState.onscreen-keyboard-edit(server-input.text, AppState.onscreen-keyboard-caret, k);
+            server-input.text = r.text;
+            AppState.onscreen-keyboard-caret = r.caret;
+            server-input.set-selection-offsets(r.byte, r.byte);
         } else if AppState.onscreen-keyboard-target == "login-username" {
-            user-input.text = k == "backspace"
-                ? AppState.onscreen-keyboard-trim-last(user-input.text)
-                : user-input.text + k;
-            let len = AppState.onscreen-keyboard-byte-len(user-input.text);
-            user-input.set-selection-offsets(len, len);
+            // At the keyboard's own caret (◀ ▶ move it, 2026-10-05).
+            let r = AppState.onscreen-keyboard-edit(user-input.text, AppState.onscreen-keyboard-caret, k);
+            user-input.text = r.text;
+            AppState.onscreen-keyboard-caret = r.caret;
+            user-input.set-selection-offsets(r.byte, r.byte);
         } else if AppState.onscreen-keyboard-target == "login-password" {
             // Masking is automatic — a pure function of the current
             // .text value regardless of how it was set (verified
             // directly against Slint's own core TextInput source).
-            pass-input.text = k == "backspace"
-                ? AppState.onscreen-keyboard-trim-last(pass-input.text)
-                : pass-input.text + k;
-            let len = AppState.onscreen-keyboard-byte-len(pass-input.text);
-            pass-input.set-selection-offsets(len, len);
+            // At the keyboard's own caret (◀ ▶ move it, 2026-10-05).
+            let r = AppState.onscreen-keyboard-edit(pass-input.text, AppState.onscreen-keyboard-caret, k);
+            pass-input.text = r.text;
+            AppState.onscreen-keyboard-caret = r.caret;
+            pass-input.set-selection-offsets(r.byte, r.byte);
         }
     }
 

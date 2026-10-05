@@ -7,6 +7,7 @@
 //                         landing rows can sync focused-section/discover-landing-card on
 //                         a mouse click, which previously left them stale)
 //   LibraryGrid           2-D poster grid for full library browse; Back button shows kbd-focused ring when library-back-focused
+//                         search field caret at library-query-cursor (text_field.rs, 2026-10-05)
 //   HomeScreen            Home tab: 5 curated rows (continue, next-up, recent shows/movies/albums)
 //                         + an optional 6th "Watchlist" row (2026-07-20, user request —
 //                         mixed movies+series, AppState.discover-watchlist-mixed via
@@ -386,7 +387,7 @@ export component LibraryGrid inherits Rectangle {
                     }
                     Text {
                         text: AppState.library-header-focused
-                            ? (AppState.library-query != "" ? AppState.library-query + "▌" : "▌")
+                            ? AppState.caret-text(AppState.library-query, AppState.library-query-cursor, "▌")
                             : AppState.library-query != "" ? AppState.library-query
                             : "Search…";
                         color: AppState.library-query != "" ? Theme.text
@@ -555,6 +556,7 @@ export component LibraryGrid inherits Rectangle {
         key-pressed(k) => {
             if k == "done" { AppState.show-onscreen-keyboard = false; }
             else if k == "backspace" { AppState.library-search-backspace(); }
+            else if k == "left" || k == "right" { AppState.text-field-caret("library-search", k == "left" ? -1 : 1); }
             else { AppState.library-search-append(k); }
         }
     }

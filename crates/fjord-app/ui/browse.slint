@@ -1,5 +1,5 @@
 // ── fjord-app · browse.slint ─────────────────────────────────────────────────
-//   BrowseScreen  keyboard-driven search bar (browse-query) + scrollable ListView
+//   BrowseScreen  keyboard-driven search bar (browse-query, caret at browse-query-cursor) + scrollable ListView
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
@@ -75,7 +75,7 @@ export component BrowseScreen inherits Rectangle {
                         }
                         Text {
                             text: AppState.browse-header-focused
-                                ? (AppState.browse-query != "" ? AppState.browse-query + "▌" : "▌")
+                                ? AppState.caret-text(AppState.browse-query, AppState.browse-query-cursor, "▌")
                                 : AppState.browse-query != "" ? AppState.browse-query
                                 : "Search…";
                             color: AppState.browse-query != "" ? Theme.text
@@ -185,6 +185,7 @@ export component BrowseScreen inherits Rectangle {
         key-pressed(k) => {
             if k == "done" { AppState.show-onscreen-keyboard = false; }
             else if k == "backspace" { AppState.browse-search-backspace(); }
+            else if k == "left" || k == "right" { AppState.text-field-caret("browse-search", k == "left" ? -1 : 1); }
             else { AppState.browse-search-append(k); }
         }
     }
