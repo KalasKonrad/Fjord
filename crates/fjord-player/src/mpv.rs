@@ -1094,16 +1094,22 @@ impl Player {
         (0..count as usize).map(|i| {
             let g  = |k: &str| self.mpv.get_property::<String>(&format!("track-list/{}/{}", i, k)).unwrap_or_default();
             let gi = |k: &str| self.mpv.get_property::<i64>(&format!("track-list/{}/{}", i, k)).unwrap_or(0);
+            // selected/forced/hearing-impaired are mpv FLAG properties: read
+            // as i64 they failed and always came back 0 (2026-10-06 — every
+            // track-list dump said selected=false, even for the playing video
+            // and audio, and the Forced/Hearing-Impaired subtitle preference
+            // never matched anything).
+            let gb = |k: &str| self.mpv.get_property::<bool>(&format!("track-list/{}/{}", i, k)).unwrap_or(false);
             TrackInfo {
                 id:                gi("id"),
                 track_type:        g("type"),
                 title:             g("title"),
                 lang:              g("lang"),
-                selected:          gi("selected") != 0,
+                selected:          gb("selected"),
                 codec:             g("codec"),
                 external_filename: g("external-filename"),
-                forced:            gi("forced") != 0,
-                hearing_impaired:  gi("hearing-impaired") != 0,
+                forced:            gb("forced"),
+                hearing_impaired:  gb("hearing-impaired"),
             }
         }).collect()
     }
