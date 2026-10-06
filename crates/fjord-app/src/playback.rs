@@ -95,6 +95,8 @@
 //   loaded_since/loaded_ok  (wire_mpv_timer) time since mpv's first FileLoaded — decoder log, chapters,
 //                           tracks, display-sync Branch B and the skip-segment check key off it, not
 //                           (2026-10-06: when the display was switched before load — display_presynced —
+//                           Track auto-selection runs at FileLoaded itself (2026-10-06): selecting a
+//                           track mid-play made mpv drop its read-ahead and pause on 4K HDR films
 //                           HDR is negotiated at the first VideoReconfig; Branch B then only re-checks the mode)
 //                           play_start (before FileLoaded, time-pos reads a fake 0)
 //   prestart_still_current  that task's staleness check — generation unchanged AND vs.player still set
@@ -3079,7 +3081,15 @@ pub(crate) fn wire_mpv_timer(
                         }
                     }
                 }
-                if loaded_ok && !vs.tracks_loaded {
+                // Track auto-selection runs as soon as the file has loaded,
+                // not 2 s later (2026-10-06, HTPC start-up log): enabling a
+                // subtitle/audio track mid-playback made mpv drop its whole
+                // read-ahead (23 s → 0) and pause ~1.1 s to refill it — only
+                // visible on high-bitrate 4K HDR films ("picture and sound stop
+                // ~1 s in, only HDR"). At FileLoaded the picture hasn't
+                // started yet (a resume is still seeking), so the refill is
+                // part of the normal start-up instead.
+                if loaded_since.is_some() && !vs.tracks_loaded {
                     if let (Some(p), Some(w)) = (vs.player.as_ref(), window_timer.upgrade()) {
                         let tracks = p.get_tracks();
                         // Retry next tick if mpv hasn't parsed the track list yet.
