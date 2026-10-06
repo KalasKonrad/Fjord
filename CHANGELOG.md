@@ -32,6 +32,10 @@ are bumped together as one step, not separately.
   off if video playback stutters on your system — the old way is then used,
   with the old wrong-colours limitation while HDR passthrough is on. Changes
   apply from the next video.
+- **Fixed: Settings → Subtitles → type "Hearing Impaired" / "Forced" never
+  had any effect**, and Fjord couldn't see which subtitle the player had
+  already chosen: it read the player's track flags in the wrong format, so
+  every track looked like a plain, unselected one.
 - **Fixed: 4K films briefly stopped (picture and sound) about two seconds in.**
   Fjord picked your subtitle/audio language after the film had started, which
   made the player throw away what it had already buffered and stop to reload
