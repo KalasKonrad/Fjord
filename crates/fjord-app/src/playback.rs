@@ -1356,9 +1356,15 @@ pub(crate) fn start_playback(
     // display is already in this item's mode, so skip the pre-decode wait.
     // Without this, a stall reload during a network outage would first wait
     // on an item-detail fetch that is likely to hang (up to the 20 s cap).
-    let same_item_live = {
+    // keep_presync: the display is still in this item's mode after such a
+    // reload (a replace-in-place never reverts it), so HDR can still be
+    // negotiated at the first VideoReconfig — without this, a slow first open
+    // (stall reloads) brought back the late mid-playback HDR switch (HTPC,
+    // 2026-10-06: "like the video is loaded 2 times").
+    let (same_item_live, keep_presync) = {
         let vs = video.lock().unwrap();
-        vs.player.is_some() && vs.item_id.as_deref() == Some(item_id.as_str())
+        let same = vs.player.is_some() && vs.item_id.as_deref() == Some(item_id.as_str());
+        (same, same && vs.display_presynced)
     };
 
     let (dropped, dec_dropped) = video.lock().unwrap().player.as_ref()
@@ -1402,6 +1408,7 @@ pub(crate) fn start_playback(
             let eligible = {
                 let mut vs = video.lock().unwrap();
                 reset_video_state_for_playback(&mut vs, player, &config, item_type == "Episode", &url);
+                vs.display_presynced = keep_presync;
                 vs.item_id           = Some(item_id);
                 vs.playing_series_id = series_id;
                 vs.client            = Some(client);
