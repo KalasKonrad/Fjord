@@ -595,6 +595,7 @@ pub(crate) struct VideoState {
     pub video_on_subsurface:   bool,
     pub video_spot_logged:     Option<crate::video_surface::Spot>,
     pub video_spot_waits:      u8,
+    pub startup_snapshot_ticks: u32,
     // Snapshot of the currently-playing item, set in start_playback. Used by
     // push_queue_display to render a synthetic now-playing row when the current
     // play is not the playlist row at playlist_index (queue jump, single track).
@@ -653,7 +654,7 @@ impl Default for VideoState {
             chapter_load_attempts: 0, chapter_osd_ticks: 0, delay_osd_ticks: 0,
             playlist: Vec::new(), playlist_index: 0,
             shuffle: false, shuffle_order: Vec::new(), repeat_mode: RepeatMode::Off,
-            queue: Vec::new(), current_is_audio: false, is_trailer: false, trailer_url: None, video_on_subsurface: false, video_spot_logged: None, video_spot_waits: 0, now_playing: None,
+            queue: Vec::new(), current_is_audio: false, is_trailer: false, trailer_url: None, video_on_subsurface: false, video_spot_logged: None, video_spot_waits: 0, startup_snapshot_ticks: 0, now_playing: None,
             music_idle_ticks: 0,
             lyrics: None, lyrics_available: false,
             preloaded_next: None,
@@ -1107,6 +1108,7 @@ fn reset_video_state_for_playback(vs: &mut VideoState, player: Player, config: &
     // HTPC: the chapter poll gave up before the file was even loaded.
     vs.play_start            = None;
     vs.first_frame_logged    = false;
+    vs.startup_snapshot_ticks = 0;
     vs.is_trailer            = false; // play_trailer sets these after this reset
     vs.trailer_url           = None;
     vs.stall_last_progress_pos = config.start_position_secs.unwrap_or(0.0);
@@ -2786,6 +2788,17 @@ pub(crate) fn wire_mpv_timer(
                             StallStep::NotReloadable => {}
                         }
                     }
+                }
+
+                // Start-up diagnostic (2026-10-06, HTPC: "picture and sound
+                // stop ~1 s in"): mpv's state every ~250 ms for the first 8 s
+                // after the file opened — a real stall shows as pos not
+                // moving with core-idle/seeking/paused-for-cache telling why.
+                if let (Some(d), Some(p)) = (loaded_since, vs.player.as_ref()) {
+                    if d <= Duration::from_secs(8) && vs.startup_snapshot_ticks.is_multiple_of(16) {
+                        debug!("mpv start-up +{:.2}s: {}", d.as_secs_f64(), p.startup_snapshot());
+                    }
+                    vs.startup_snapshot_ticks = vs.startup_snapshot_ticks.wrapping_add(1);
                 }
 
                 if loaded_ok && !vs.decoder_logged {
