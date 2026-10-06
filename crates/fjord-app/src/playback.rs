@@ -1413,6 +1413,31 @@ pub(crate) fn start_playback(
                 let mut vs = video.lock().unwrap();
                 reset_video_state_for_playback(&mut vs, player, &config, item_type == "Episode", &url);
                 vs.display_presynced = keep_presync;
+                // Subtitle/audio language preferences go to mpv BEFORE the
+                // file loads, so it enables those tracks itself from the first
+                // byte — the auto-select at FileLoaded then only corrects a
+                // different pick (2026-10-06: switching tracks after reading
+                // started made mpv drop and re-read its buffer).
+                {
+                    let s = state.lock().unwrap();
+                    let a = s.config.active();
+                    let remembered = series_id.as_ref().and_then(|id| s.remembered_tracks.get(id));
+                    let mut slang: Vec<String> = Vec::new();
+                    if let Some(l) = remembered.and_then(|r| r.sub_lang.clone()) {
+                        slang.push(l.to_ascii_lowercase());
+                    }
+                    for name in [a.sub_lang.as_str(), a.sub_lang2.as_str()] {
+                        let code = sub_lang_code(name);
+                        if !code.is_empty() && !slang.iter().any(|c| c == code) { slang.push(code.to_string()); }
+                    }
+                    let alang: Vec<String> = match remembered.and_then(|r| r.audio_lang.clone()) {
+                        Some(l) => vec![l.to_ascii_lowercase()],
+                        None => Some(sub_lang_code(&a.audio_lang)).filter(|c| !c.is_empty()).map(|c| vec![c.to_string()]).unwrap_or_default(),
+                    };
+                    if let Some(p) = vs.player.as_ref() {
+                        p.set_track_preferences(&slang, &alang, a.sub_enabled);
+                    }
+                }
                 vs.item_id           = Some(item_id);
                 vs.playing_series_id = series_id;
                 vs.client            = Some(client);
@@ -2949,11 +2974,22 @@ pub(crate) fn wire_mpv_timer(
                 if !vs.current_is_audio && !vs.display_sync_attempted && display_sync_enabled {
                     let ready = loaded_ok
                         && vs.player.as_ref().is_some_and(|p| p.has_seen_video_reconfig());
-                    if ready {
-                        let (meta, dims) = {
-                            let p = vs.player.as_ref().unwrap();
-                            (p.query_source_hdr_metadata(), p.query_video_dimensions())
-                        };
+                    let (meta, dims) = if ready {
+                        let p = vs.player.as_ref().unwrap();
+                        (p.query_source_hdr_metadata(), p.query_video_dimensions())
+                    } else {
+                        (Default::default(), (0, 0, 0.0))
+                    };
+                    // Never pick a mode from an unknown frame rate (2026-10-06,
+                    // HTPC: fps 0 → "unusual rate" → a 4K HDR film switched to
+                    // 1080p59.94 mid-play). Wait for one; 10 s after load
+                    // without one, skip the correction and keep the mode.
+                    let fps_known = dims.2 > 0.0;
+                    let give_up = loaded_since.is_some_and(|d| d >= Duration::from_secs(10));
+                    if ready && (fps_known || give_up) {
+                        if !fps_known {
+                            warn!("display_sync: no frame rate 10 s after load — keeping the current display mode");
+                        }
                         vs.display_sync_attempted    = true;
                         // Already negotiated at VideoReconfig when presynced.
                         let negotiate_after = !vs.hdr_negotiation_attempted;
@@ -2965,7 +3001,9 @@ pub(crate) fn wire_mpv_timer(
                         let video2 = Arc::clone(&video_timer);
                         let state2 = Arc::clone(&state_timer);
                         rt_handle.spawn(async move {
-                            crate::display_sync::sync_to_source(state2, dims, meta.clone(), ds_settings).await;
+                            if fps_known {
+                                crate::display_sync::sync_to_source(state2, dims, meta.clone(), ds_settings).await;
+                            }
                             if video2.lock().unwrap().playback_generation != gen {
                                 // Stopped/replaced while the mode switch was
                                 // settling — whatever's playing now already
@@ -3103,7 +3141,7 @@ pub(crate) fn wire_mpv_timer(
                             let audio_model = build_track_model(&tracks, "audio");
                             let video_model = build_track_model(&tracks, "video");
                             let mut cur_sub = tracks.iter().find(|t| t.track_type == "sub" && t.selected).map(|t| t.id).unwrap_or(0);
-                            let cur_audio = tracks.iter().find(|t| t.track_type == "audio" && t.selected).map(|t| t.id).unwrap_or(1);
+                            let mut cur_audio = tracks.iter().find(|t| t.track_type == "audio" && t.selected).map(|t| t.id).unwrap_or(1);
                             let cur_video = tracks.iter().find(|t| t.track_type == "video" && t.selected).map(|t| t.id).unwrap_or(1);
                             debug!("active tracks: sub={} audio={} video={}", cur_sub, cur_audio, cur_video);
                             let g = AppState::get(&w);
@@ -3117,8 +3155,13 @@ pub(crate) fn wire_mpv_timer(
                                 .and_then(|sid| state_timer.lock().unwrap().remembered_tracks.get(sid).cloned());
 
                             // Subtitle auto-select: global off → force 0; else try primary then fallback.
+                            // Only switch when mpv's own pick (from the
+                            // preferences set before load) differs — every
+                            // switch makes mpv re-read its buffer (2026-10-06).
                             if !g.get_settings_sub_enabled() {
-                                if let Some(p) = vs.player.as_ref() { p.set_sub_track(0); }
+                                if cur_sub != 0 {
+                                    if let Some(p) = vs.player.as_ref() { p.set_sub_track(0); }
+                                }
                                 cur_sub = 0;
                             } else {
                                 let pref1 = g.get_settings_sub_lang().to_string();
@@ -3159,10 +3202,14 @@ pub(crate) fn wire_mpv_timer(
                                         })
                                     });
                                     if let Some(t) = found {
-                                        info!("auto-selected sub {} (lang={} forced={} hi={}) pref_lang={:?}/{:?} pref_type={:?}",
-                                            t.id, t.lang, t.forced, t.hearing_impaired, pref1, pref2, sub_type);
-                                        if let Some(p) = vs.player.as_ref() { p.set_sub_track(t.id); }
-                                        cur_sub = t.id;
+                                        if t.id == cur_sub {
+                                            debug!("sub {} (lang={}) already selected by mpv — no switch", t.id, t.lang);
+                                        } else {
+                                            info!("auto-selected sub {} (lang={} forced={} hi={}) pref_lang={:?}/{:?} pref_type={:?} (mpv had {})",
+                                                t.id, t.lang, t.forced, t.hearing_impaired, pref1, pref2, sub_type, cur_sub);
+                                            if let Some(p) = vs.player.as_ref() { p.set_sub_track(t.id); }
+                                            cur_sub = t.id;
+                                        }
                                     }
                                     // No match → leave mpv default unchanged
                                 }
@@ -3184,8 +3231,13 @@ pub(crate) fn wire_mpv_timer(
                                         t.lang.to_ascii_lowercase().starts_with(audio_code.as_str())
                                     });
                                     if let Some(t) = found {
-                                        info!("auto-selected audio {} (lang={}) pref={:?}", t.id, t.lang, audio_lang_pref);
-                                        if let Some(p) = vs.player.as_ref() { p.set_audio_track(t.id); }
+                                        if t.id == cur_audio {
+                                            debug!("audio {} (lang={}) already selected by mpv — no switch", t.id, t.lang);
+                                        } else {
+                                            info!("auto-selected audio {} (lang={}) pref={:?} (mpv had {})", t.id, t.lang, audio_lang_pref, cur_audio);
+                                            if let Some(p) = vs.player.as_ref() { p.set_audio_track(t.id); }
+                                            cur_audio = t.id;
+                                        }
                                     }
                                     // No match → leave mpv default unchanged
                                 }
