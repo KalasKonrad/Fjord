@@ -32,6 +32,10 @@ are bumped together as one step, not separately.
   off if video playback stutters on your system — the old way is then used,
   with the old wrong-colours limitation while HDR passthrough is on. Changes
   apply from the next video.
+- **Fixed: with "Sync display to source" on, HDR kicked in about two seconds
+  after the picture appeared**, so an HDR film started out looking wrong.
+  Since the display is now switched before playback starts, Fjord sets up HDR
+  as soon as the video's format is known, at the first frame.
 
 - **Fixed: a video or trailer that couldn't be opened left a black screen**
   until you pressed Stop. Library items now retry like a stalled stream and,
