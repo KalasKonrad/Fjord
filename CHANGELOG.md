@@ -32,6 +32,11 @@ are bumped together as one step, not separately.
   off if video playback stutters on your system — the old way is then used,
   with the old wrong-colours limitation while HDR passthrough is on. Changes
   apply from the next video.
+- **Fixed: an HDR film could start playing, then blank and "load again" a
+  second or so in** while the TV switched to HDR. "Sync display to source"
+  now changes resolution, refresh rate and HDR in one step, so the TV
+  re-syncs once, during the "Loading…" spinner, and the film starts with the
+  TV already in HDR.
 - **Fixed: with "Sync display to source" on, HDR kicked in about two seconds
   after the picture appeared**, so an HDR film started out looking wrong.
   Since the display is now switched before playback starts, Fjord sets up HDR
