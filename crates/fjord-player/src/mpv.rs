@@ -908,6 +908,21 @@ impl Player {
     pub fn get_duration(&self) -> f64 {
         self.mpv.get_property::<f64>("duration").unwrap_or(0.0)
     }
+    /// One-line snapshot of mpv's playback state, for diagnosing start-up
+    /// hiccups (2026-10-06: "picture and sound stop ~1 s in"): position,
+    /// core-idle (mpv not actually playing), seeking, paused-for-cache, A/V
+    /// sync, seconds of demuxed data ahead, and dropped frames so far.
+    pub fn startup_snapshot(&self) -> String {
+        let f = |p: &str| self.mpv.get_property::<f64>(p).map(|v| format!("{v:.3}")).unwrap_or_else(|_| "-".into());
+        let b = |p: &str| self.mpv.get_property::<bool>(p).map(|v| if v { "yes" } else { "no" }).unwrap_or("-");
+        let i = |p: &str| self.mpv.get_property::<i64>(p).map(|v| v.to_string()).unwrap_or_else(|_| "-".into());
+        format!(
+            "pos={} core-idle={} seeking={} paused-for-cache={} avsync={} cache-ahead={}s drops={}/{}",
+            f("time-pos"), b("core-idle"), b("seeking"), b("paused-for-cache"), f("avsync"),
+            f("demuxer-cache-duration"), i("frame-drop-count"), i("decoder-frame-drop-count"),
+        )
+    }
+
     pub fn get_buffering(&self) -> (bool, i32) {
         let stalled = self.mpv.get_property::<bool>("paused-for-cache").unwrap_or(false);
         let pct     = self.mpv.get_property::<i64>("cache-buffering-state").unwrap_or(0);
