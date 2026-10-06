@@ -94,6 +94,8 @@
 //                           mid-switch reverts the display from inside the task
 //   loaded_since/loaded_ok  (wire_mpv_timer) time since mpv's first FileLoaded — decoder log, chapters,
 //                           tracks, display-sync Branch B and the skip-segment check key off it, not
+//                           (2026-10-06: when the display was switched before load — display_presynced —
+//                           HDR is negotiated at the first VideoReconfig; Branch B then only re-checks the mode)
 //                           play_start (before FileLoaded, time-pos reads a fake 0)
 //   prestart_still_current  that task's staleness check — generation unchanged AND vs.player still set
 //                           (Stop doesn't bump the generation)
@@ -463,6 +465,10 @@ pub(crate) struct VideoState {
     // what actually keeps every play_start-gated watchdog/diagnostic quiet
     // during the wait; this flag has no gating role of its own.
     pub display_sync_prestart_active: bool,
+    // The display was switched for THIS item before load (sync_before_load
+    // completed, 2026-10-06): HDR is then negotiated at the first
+    // VideoReconfig instead of waiting for Branch B's post-decode check.
+    pub display_presynced: bool,
     pub tracks_loaded:      bool,
     pub pos_tick:           u32,
     pub controls_idle_ticks:  u32,
@@ -625,6 +631,7 @@ impl Default for VideoState {
             hdr_output_applied: false,
             display_sync_attempted: false,
             display_sync_prestart_active: false,
+            display_presynced: false,
             tracks_loaded: false, pos_tick: 0,
             controls_idle_ticks: 0,
             seek_pending_secs: 0.0, seek_pending_ticks: 0,
@@ -1122,6 +1129,7 @@ fn reset_video_state_for_playback(vs: &mut VideoState, player: Player, config: &
     vs.hdr_output_applied    = false;
     vs.display_sync_attempted = false;
     vs.display_sync_prestart_active = false;
+    vs.display_presynced = false;
     vs.tracks_loaded         = false;
     vs.pos_tick              = 0;
     vs.controls_idle_ticks   = 0;
@@ -1450,7 +1458,7 @@ pub(crate) fn start_playback(
                                 }
                             }
                         };
-                        let Some(vi) = resolved else { return };
+                        let Some(vi) = resolved else { return false };
                         // Cheap, early staleness check — shrinks (does not
                         // eliminate) the window where a rapid second
                         // start_playback call for a DIFFERENT item could spawn
@@ -1463,11 +1471,12 @@ pub(crate) fn start_playback(
                         // vs.player being gone is the only signal — without
                         // it, a Play-then-quick-Stop would still switch the
                         // display after the stop's own revert already ran.
-                        if !prestart_still_current(&video_ds, my_gen) { return; }
+                        if !prestart_still_current(&video_ds, my_gen) { return false; }
                         let cfg = crate::display_sync::DisplaySyncSettings::from_device_config(
                             &state_ds.lock().unwrap().config.device,
                         );
                         crate::display_sync::sync_before_load(Arc::clone(&state_ds), vi, cfg).await;
+                        true
                     };
                     // Hang-guard, not an expected-case budget — Branch B
                     // today runs sync_to_source with NO timeout at all, so
@@ -1485,9 +1494,13 @@ pub(crate) fn start_playback(
                     // and re-issue a second real mode-set AFTER video has
                     // already started rendering — reintroducing the exact
                     // blink this feature exists to remove, just moved later.
-                    if tokio::time::timeout(Duration::from_secs(20), prestart).await.is_err() {
-                        warn!("display_sync prestart timed out — starting playback at whatever mode is current");
-                    }
+                    let presynced = match tokio::time::timeout(Duration::from_secs(20), prestart).await {
+                        Ok(synced) => synced,
+                        Err(_) => {
+                            warn!("display_sync prestart timed out — starting playback at whatever mode is current");
+                            false
+                        }
+                    };
                     // Stopped (same generation, player gone) while the switch
                     // was in flight: sync_to_source only records the new mode
                     // after its 3 s settle, so the stop's own revert_to_default
@@ -1513,6 +1526,7 @@ pub(crate) fn start_playback(
                         vs.pending_load_url = Some(url_ds);
                         vs.play_start = Some(Instant::now());
                         vs.display_sync_prestart_active = false;
+                        vs.display_presynced = presynced;
                     });
                 });
             }
@@ -2889,6 +2903,27 @@ pub(crate) fn wire_mpv_timer(
                 // natural-EOF fallback-advance branch — so a stopped/
                 // replaced item during the settle can never have its stale
                 // metadata wrongly applied to whatever's playing by then.
+                // Display already switched for this item before load (the
+                // normal case since display-mode-prefetch): negotiate HDR the
+                // moment mpv knows the video's format, like Branch A — live-
+                // reported 2026-10-06 ("looks weird at first then it gets
+                // HDR"): waiting for Branch B's 2 s post-load check below
+                // showed ~1.6 s of SDR output on a TV already in HDR mode.
+                // Branch B still runs its correction check at that point,
+                // just without negotiating again.
+                if !vs.current_is_audio && display_sync_enabled && vs.display_presynced
+                    && !vs.hdr_negotiation_attempted
+                    && vs.player.as_ref().is_some_and(|p| p.has_seen_video_reconfig())
+                {
+                    let meta = vs.player.as_ref().unwrap().query_source_hdr_metadata();
+                    vs.hdr_negotiation_attempted = true;
+                    debug!("hdr: display was switched before load — negotiating at the first VideoReconfig");
+                    if hdr_toggle_enabled {
+                        crate::hdr::maybe_negotiate(meta, hdr_target);
+                    } else {
+                        crate::hdr::set_status_disabled();
+                    }
+                }
                 if !vs.current_is_audio && !vs.display_sync_attempted && display_sync_enabled {
                     let ready = loaded_ok
                         && vs.player.as_ref().is_some_and(|p| p.has_seen_video_reconfig());
@@ -2898,6 +2933,8 @@ pub(crate) fn wire_mpv_timer(
                             (p.query_source_hdr_metadata(), p.query_video_dimensions())
                         };
                         vs.display_sync_attempted    = true;
+                        // Already negotiated at VideoReconfig when presynced.
+                        let negotiate_after = !vs.hdr_negotiation_attempted;
                         vs.hdr_negotiation_attempted = true;
                         let gen = vs.playback_generation;
                         let ds_settings = crate::display_sync::DisplaySyncSettings::from_device_config(
@@ -2911,6 +2948,9 @@ pub(crate) fn wire_mpv_timer(
                                 // Stopped/replaced while the mode switch was
                                 // settling — whatever's playing now already
                                 // ran (or will run) its own Branch B trigger.
+                                return;
+                            }
+                            if !negotiate_after {
                                 return;
                             }
                             if hdr_toggle_enabled {
