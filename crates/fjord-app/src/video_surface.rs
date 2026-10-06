@@ -35,6 +35,8 @@
 //   logical_size         pure: physical → logical size like winit (unit-tested)
 //   Spot / pick_spot     pure: which video spot is showing (unit-tested)
 //   to_gl_rect           pure: logical spot → physical GL rect (unit-tested)
+//   probe_ten_bit        one-time diagnostic (2026-10-06): do KWin (linux-dmabuf), GBM and
+//                        EGL each support a 10-bit buffer we could render the video into?
 // ───────────────────────────────────────────────────────────────────────────
 
 use std::cell::RefCell;
@@ -49,7 +51,7 @@ use glutin_egl_sys::egl;
 use glutin_egl_sys::egl::types::{EGLConfig, EGLContext, EGLDisplay, EGLSurface, EGLenum, EGLint};
 use tracing::{debug, error, info, warn};
 use wayland_backend::client::{Backend, ObjectId};
-use wayland_client::globals::{registry_queue_init, GlobalListContents};
+use wayland_client::globals::{registry_queue_init, GlobalList, GlobalListContents};
 use wayland_client::protocol::wl_compositor::WlCompositor;
 use wayland_client::protocol::wl_region::WlRegion;
 use wayland_client::protocol::wl_registry;
@@ -57,6 +59,9 @@ use wayland_client::protocol::wl_subcompositor::WlSubcompositor;
 use wayland_client::protocol::wl_subsurface::WlSubsurface;
 use wayland_client::protocol::wl_surface::WlSurface;
 use wayland_client::{delegate_noop, Connection, Dispatch, EventQueue, Proxy, QueueHandle};
+use wayland_client::protocol::wl_buffer::WlBuffer;
+use wayland_protocols::wp::linux_dmabuf::zv1::client::zwp_linux_buffer_params_v1::{self, ZwpLinuxBufferParamsV1};
+use wayland_protocols::wp::linux_dmabuf::zv1::client::zwp_linux_dmabuf_v1::{self, ZwpLinuxDmabufV1};
 use wayland_protocols::wp::viewporter::client::wp_viewport::WpViewport;
 use wayland_protocols::wp::viewporter::client::wp_viewporter::WpViewporter;
 use wayland_sys::egl::{wayland_egl_option, wl_egl_window, WaylandEgl};
@@ -391,6 +396,7 @@ impl Backplane {
         match first {
             Ok(our_version) => {
                 CHILD_ADDR.store(bp.child.id().as_ptr() as usize, Ordering::Relaxed);
+                info!("video backplane: 10-bit probe — {}", bp.probe_ten_bit(&globals));
                 info!(
                     "video backplane ready: {}x{} px ({}x{} logical), config R{}G{}B{}A{}, our GL_VERSION \"{our_version}\"",
                     phys.0, phys.1, logical.0, logical.1, bits[0], bits[1], bits[2], bits[3],
@@ -656,6 +662,289 @@ fn create_egl(
     }
     bail!("no EGL config gave both a 3.0 context and a window surface")
 }
+
+// ── 10-bit probe (2026-10-06) ─────────────────────────────────────────────
+// NVIDIA's Wayland EGL offers only 8-bit window configs (HTPC, driver 580).
+// The way past that would be our own 10-bit buffers: allocated with GBM,
+// rendered into through an EGLImage, handed to KWin as dmabuf wl_buffers.
+// This answers, once at setup and without changing anything, whether each
+// link of that chain works on this machine. Every step is non-fatal; the
+// compositor check uses linux-dmabuf's asynchronous `create` (a failure is
+// an event), never `create_immed` (a failure would be a protocol error on
+// the display winit shares).
+
+/// DRM fourcc of the 10-bit formats worth trying, with names for the log.
+const TEN_BIT_FORMATS: [(u32, &str); 2] = [
+    (u32::from_le_bytes(*b"XR30"), "XRGB2101010"),
+    (u32::from_le_bytes(*b"XB30"), "XBGR2101010"),
+];
+const DRM_FORMAT_MOD_INVALID: u64 = 0x00ff_ffff_ffff_ffff;
+const GBM_BO_USE_RENDERING: u32 = 1 << 2;
+// EGL_EXT_image_dma_buf_import(_modifiers) / EGL_EXT_device_drm(_render_node),
+// values from Khronos eglext.h.
+const EGL_LINUX_DMA_BUF_EXT: EGLenum = 0x3270;
+const EGL_LINUX_DRM_FOURCC_EXT: EGLint = 0x3271;
+const EGL_DMA_BUF_PLANE0_FD_EXT: EGLint = 0x3272;
+const EGL_DMA_BUF_PLANE0_OFFSET_EXT: EGLint = 0x3273;
+const EGL_DMA_BUF_PLANE0_PITCH_EXT: EGLint = 0x3274;
+const EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT: EGLint = 0x3443;
+const EGL_DMA_BUF_PLANE0_MODIFIER_HI_EXT: EGLint = 0x3444;
+const EGL_DRM_RENDER_NODE_FILE_EXT: EGLint = 0x3377;
+
+#[derive(Default)]
+struct ProbeState {
+    /// (fourcc, modifier) pairs KWin advertised (linux-dmabuf v3 events).
+    formats: Vec<(u32, Option<u64>)>,
+    /// Some(true) = KWin created a wl_buffer from our dmabuf, Some(false) = refused.
+    created: Option<bool>,
+}
+
+struct Gbm {
+    _lib:           &'static libloading::Library,
+    create_device:  unsafe extern "C" fn(i32) -> *mut c_void,
+    device_destroy: unsafe extern "C" fn(*mut c_void),
+    is_supported:   unsafe extern "C" fn(*mut c_void, u32, u32) -> i32,
+    bo_create:      unsafe extern "C" fn(*mut c_void, u32, u32, u32, u32) -> *mut c_void,
+    bo_create_mods: unsafe extern "C" fn(*mut c_void, u32, u32, u32, *const u64, u32) -> *mut c_void,
+    bo_get_fd:      unsafe extern "C" fn(*mut c_void) -> i32,
+    bo_get_stride:  unsafe extern "C" fn(*mut c_void) -> u32,
+    bo_get_mod:     unsafe extern "C" fn(*mut c_void) -> u64,
+    bo_destroy:     unsafe extern "C" fn(*mut c_void),
+}
+
+fn load_gbm() -> Result<Gbm> {
+    // Safety: loading the system GBM library and looking up functions with
+    // their gbm.h signatures.
+    unsafe {
+        let lib = libloading::Library::new("libgbm.so.1").context("loading libgbm.so.1")?;
+        let lib: &'static libloading::Library = Box::leak(Box::new(lib));
+        macro_rules! sym { ($n:literal) => { *lib.get(concat!($n, "\0").as_bytes()).context($n)? } }
+        Ok(Gbm {
+            _lib: lib,
+            create_device: sym!("gbm_create_device"),
+            device_destroy: sym!("gbm_device_destroy"),
+            is_supported: sym!("gbm_device_is_format_supported"),
+            bo_create: sym!("gbm_bo_create"),
+            bo_create_mods: sym!("gbm_bo_create_with_modifiers"),
+            bo_get_fd: sym!("gbm_bo_get_fd"),
+            bo_get_stride: sym!("gbm_bo_get_stride"),
+            bo_get_mod: sym!("gbm_bo_get_modifier"),
+            bo_destroy: sym!("gbm_bo_destroy"),
+        })
+    }
+}
+
+impl Backplane {
+    /// One line: what KWin, GBM and EGL each say about 10-bit buffers.
+    fn probe_ten_bit(&self, globals: &GlobalList) -> String {
+        // 1. KWin's dmabuf formats (v3 sends format/modifier events on bind).
+        let mut q = self.conn.new_event_queue::<ProbeState>();
+        let qh = q.handle();
+        let mut st = ProbeState::default();
+        let dmabuf: Option<ZwpLinuxDmabufV1> = globals.bind(&qh, 3..=3, ()).ok();
+        if dmabuf.is_none() {
+            return "compositor has no linux-dmabuf v3".into();
+        }
+        if let Err(e) = q.roundtrip(&mut st) {
+            return format!("linux-dmabuf roundtrip failed: {e}");
+        }
+        let mut parts = Vec::new();
+        let kwin: Vec<String> = TEN_BIT_FORMATS.iter().map(|&(fourcc, name)| {
+            let mods = st.formats.iter().filter(|(f, _)| *f == fourcc).count();
+            format!("{name} {}", if mods > 0 { format!("yes ({mods} modifier(s))") } else { "no".into() })
+        }).collect();
+        parts.push(format!("KWin dmabuf: {}", kwin.join(", ")));
+
+        // 2. GBM on the GPU Slint renders with.
+        let node = self.render_node().unwrap_or_else(|| "/dev/dri/renderD128".into());
+        let gbm = match load_gbm() {
+            Ok(g) => g,
+            Err(e) => { parts.push(format!("GBM: {e:#}")); return parts.join("; "); }
+        };
+        let file = match std::fs::OpenOptions::new().read(true).write(true).open(&node) {
+            Ok(f) => f,
+            Err(e) => { parts.push(format!("GBM: can't open {node}: {e}")); return parts.join("; "); }
+        };
+        use std::os::fd::{AsFd, AsRawFd, FromRawFd, OwnedFd};
+        // Safety: a valid fd for the device's lifetime (file outlives dev).
+        let dev = unsafe { (gbm.create_device)(file.as_raw_fd()) };
+        if dev.is_null() {
+            parts.push(format!("GBM: gbm_create_device({node}) failed"));
+            return parts.join("; ");
+        }
+        for &(fourcc, name) in &TEN_BIT_FORMATS {
+            // Safety: dev is live until gbm_device_destroy below.
+            let supported = unsafe { (gbm.is_supported)(dev, fourcc, GBM_BO_USE_RENDERING) } != 0;
+            let mods: Vec<u64> = st.formats.iter()
+                .filter(|(f, m)| *f == fourcc && m.is_some_and(|m| m != DRM_FORMAT_MOD_INVALID))
+                .filter_map(|(_, m)| *m).collect();
+            // Safety: as above; 64x64 is plenty to test allocation.
+            let bo = unsafe {
+                if mods.is_empty() {
+                    (gbm.bo_create)(dev, 64, 64, fourcc, GBM_BO_USE_RENDERING)
+                } else {
+                    (gbm.bo_create_mods)(dev, 64, 64, fourcc, mods.as_ptr(), mods.len() as u32)
+                }
+            };
+            if bo.is_null() {
+                parts.push(format!("GBM {name} ({node}): supported={supported}, allocation failed"));
+                continue;
+            }
+            // Safety: bo is live until bo_destroy below; get_fd returns a new fd we own.
+            let (fd, stride, modifier) = unsafe {
+                ((gbm.bo_get_fd)(bo), (gbm.bo_get_stride)(bo), (gbm.bo_get_mod)(bo))
+            };
+            let mut line = format!("GBM {name} ({node}): supported={supported}, allocated (modifier 0x{modifier:x})");
+            if fd >= 0 {
+                // Safety: fd is ours (from gbm_bo_get_fd).
+                let fd = unsafe { OwnedFd::from_raw_fd(fd) };
+                // 3. EGL can import it and render into it.
+                line.push_str(&format!(", EGL render target: {}", self.egl_can_render(fd.as_raw_fd(), fourcc, stride, modifier)));
+                // 4. KWin accepts it as a wl_buffer (asynchronous create).
+                // Only for a format/modifier pair KWin itself advertised: the
+                // protocol allows a "bad format" to be a FATAL error, which
+                // would take down the connection winit's window uses.
+                let advertised = st.formats.iter()
+                    .any(|(f, m)| *f == fourcc && m.is_none_or(|m| m == modifier));
+                if !advertised {
+                    line.push_str(", KWin wl_buffer: not tried (this format/modifier isn't advertised)");
+                } else if let Some(dm) = dmabuf.as_ref() {
+                    let params = dm.create_params(&qh, ());
+                    params.add(fd.as_fd(), 0, 0, stride, (modifier >> 32) as u32, modifier as u32);
+                    st.created = None;
+                    params.create(64, 64, fourcc, zwp_linux_buffer_params_v1::Flags::empty());
+                    for _ in 0..5 {
+                        if st.created.is_some() { break; }
+                        if q.roundtrip(&mut st).is_err() { break; }
+                    }
+                    params.destroy();
+                    line.push_str(&format!(", KWin wl_buffer: {}", match st.created {
+                        Some(true) => "accepted", Some(false) => "refused", None => "no answer",
+                    }));
+                }
+            }
+            // Safety: allocated above.
+            unsafe { (gbm.bo_destroy)(bo) };
+            parts.push(line);
+        }
+        // Safety: created above, all its bos destroyed.
+        unsafe { (gbm.device_destroy)(dev) };
+        if let Some(dm) = dmabuf { dm.destroy(); }
+        let _ = self.conn.flush();
+        parts.join("; ")
+    }
+
+    /// The DRM render node of the GPU behind Slint's EGL display.
+    fn render_node(&self) -> Option<String> {
+        if !self.egl.QueryDisplayAttribEXT.is_loaded() || !self.egl.QueryDeviceStringEXT.is_loaded() {
+            return None;
+        }
+        let mut dev: egl::types::EGLAttrib = 0;
+        // Safety: EGL_EXT_device_query calls on a live display.
+        unsafe {
+            if self.egl.QueryDisplayAttribEXT(self.dpy, egl::DEVICE_EXT as EGLint, &mut dev) != egl::TRUE {
+                return None;
+            }
+            for name in [EGL_DRM_RENDER_NODE_FILE_EXT, egl::DRM_DEVICE_FILE_EXT as EGLint] {
+                let p = self.egl.QueryDeviceStringEXT(dev as egl::types::EGLDeviceEXT, name);
+                if !p.is_null() {
+                    return Some(CStr::from_ptr(p).to_string_lossy().into_owned());
+                }
+            }
+        }
+        None
+    }
+
+    /// Imports a dmabuf as an EGLImage and checks it can back a complete
+    /// framebuffer on our context — i.e. mpv could render into it.
+    fn egl_can_render(&self, fd: i32, fourcc: u32, stride: u32, modifier: u64) -> String {
+        if !self.egl.CreateImageKHR.is_loaded() || !self.egl.DestroyImageKHR.is_loaded() {
+            return "no EGL_KHR_image_base".into();
+        }
+        let mut attribs = vec![
+            egl::WIDTH as EGLint, 64, egl::HEIGHT as EGLint, 64,
+            EGL_LINUX_DRM_FOURCC_EXT, fourcc as EGLint,
+            EGL_DMA_BUF_PLANE0_FD_EXT, fd,
+            EGL_DMA_BUF_PLANE0_OFFSET_EXT, 0,
+            EGL_DMA_BUF_PLANE0_PITCH_EXT, stride as EGLint,
+        ];
+        if modifier != DRM_FORMAT_MOD_INVALID {
+            attribs.extend([
+                EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT, (modifier & 0xffff_ffff) as u32 as EGLint,
+                EGL_DMA_BUF_PLANE0_MODIFIER_HI_EXT, (modifier >> 32) as u32 as EGLint,
+            ]);
+        }
+        attribs.push(egl::NONE as EGLint);
+        // Safety: EGL_EXT_image_dma_buf_import on a live display; the fd stays open.
+        let image = unsafe {
+            self.egl.CreateImageKHR(self.dpy, egl::NO_CONTEXT, EGL_LINUX_DMA_BUF_EXT, std::ptr::null(), attribs.as_ptr())
+        };
+        if image == egl::NO_IMAGE_KHR {
+            return format!("import failed (0x{:x})", unsafe { self.egl.GetError() });
+        }
+        type TargetRbStorage = unsafe extern "system" fn(u32, *const c_void);
+        // Safety: symbol lookup.
+        let f = unsafe { self.egl.GetProcAddress(c"glEGLImageTargetRenderbufferStorageOES".as_ptr()) };
+        let result = if f.is_null() {
+            "imported, but no glEGLImageTargetRenderbufferStorageOES".to_string()
+        } else {
+            // Safety: the function has this signature (GL_OES_EGL_image).
+            let target_rb: TargetRbStorage = unsafe { std::mem::transmute(f) };
+            self.with_current(|| unsafe {
+                let (mut rb, mut fbo) = (0u32, 0u32);
+                gl::GenRenderbuffers(1, &mut rb);
+                gl::BindRenderbuffer(gl::RENDERBUFFER, rb);
+                target_rb(gl::RENDERBUFFER, image);
+                gl::GenFramebuffers(1, &mut fbo);
+                gl::BindFramebuffer(gl::FRAMEBUFFER, fbo);
+                gl::FramebufferRenderbuffer(gl::FRAMEBUFFER, gl::COLOR_ATTACHMENT0, gl::RENDERBUFFER, rb);
+                let status = gl::CheckFramebufferStatus(gl::FRAMEBUFFER);
+                gl::BindFramebuffer(gl::FRAMEBUFFER, 0);
+                gl::DeleteFramebuffers(1, &fbo);
+                gl::DeleteRenderbuffers(1, &rb);
+                if status == gl::FRAMEBUFFER_COMPLETE { "ok".to_string() } else { format!("framebuffer incomplete (0x{status:x})") }
+            }).unwrap_or_else(|e| format!("couldn't test: {e:#}"))
+        };
+        // Safety: created above.
+        unsafe { self.egl.DestroyImageKHR(self.dpy, image) };
+        result
+    }
+}
+
+impl Dispatch<ZwpLinuxDmabufV1, ()> for ProbeState {
+    fn event(state: &mut Self, _: &ZwpLinuxDmabufV1, event: zwp_linux_dmabuf_v1::Event, _: &(), _: &Connection, _: &QueueHandle<Self>) {
+        match event {
+            zwp_linux_dmabuf_v1::Event::Format { format } => state.formats.push((format, None)),
+            zwp_linux_dmabuf_v1::Event::Modifier { format, modifier_hi, modifier_lo } => {
+                state.formats.push((format, Some(((modifier_hi as u64) << 32) | modifier_lo as u64)));
+            }
+            _ => {}
+        }
+    }
+}
+
+impl Dispatch<ZwpLinuxBufferParamsV1, ()> for ProbeState {
+    fn event(state: &mut Self, _: &ZwpLinuxBufferParamsV1, event: zwp_linux_buffer_params_v1::Event, _: &(), _: &Connection, _: &QueueHandle<Self>) {
+        match event {
+            zwp_linux_buffer_params_v1::Event::Created { buffer } => {
+                state.created = Some(true);
+                buffer.destroy();
+            }
+            zwp_linux_buffer_params_v1::Event::Failed => state.created = Some(false),
+            _ => {}
+        }
+    }
+
+    wayland_client::event_created_child!(ProbeState, ZwpLinuxBufferParamsV1, [
+        zwp_linux_buffer_params_v1::EVT_CREATED_OPCODE => (WlBuffer, ()),
+    ]);
+}
+
+impl Dispatch<wl_registry::WlRegistry, GlobalListContents> for ProbeState {
+    fn event(_: &mut Self, _: &wl_registry::WlRegistry, _: wl_registry::Event, _: &GlobalListContents, _: &Connection, _: &QueueHandle<Self>) {}
+}
+
+delegate_noop!(ProbeState: ignore WlBuffer);
 
 // ── EGL helpers ───────────────────────────────────────────────────────────
 /// One debug line listing every distinct colour format the driver offers for
