@@ -772,11 +772,35 @@ impl Player {
     /// `video-params/gamma`/`primaries`, is not reliable at the exact
     /// instant `VideoReconfig` fires (the same reason `log_decoder_info`
     /// itself is gated behind `wire_mpv_timer`'s own ~2s `elapsed_ok` check).
+    /// Width, height and frame rate. The rate is mpv's estimate once frames
+    /// flow, else the container's declared rate; 0.0 = not known yet (callers
+    /// must not act on that — 2026-10-06: display sync treated it as an
+    /// "unusual" rate and switched a 4K film to 1080p59.94).
     pub fn query_video_dimensions(&self) -> (i64, i64, f64) {
         let w   = self.mpv.get_property::<i64>("width").unwrap_or(0);
         let h   = self.mpv.get_property::<i64>("height").unwrap_or(0);
-        let fps = self.mpv.get_property::<f64>("estimated-vf-fps").unwrap_or(0.0);
+        let est = self.mpv.get_property::<f64>("estimated-vf-fps").unwrap_or(0.0);
+        let fps = if est > 0.0 { est } else { self.mpv.get_property::<f64>("container-fps").unwrap_or(0.0) };
         (w, h, fps)
+    }
+
+    /// Track preferences for the NEXT file, set before it loads (2026-10-06):
+    /// with them mpv enables the right subtitle/audio tracks itself from the
+    /// first byte. Switching a track on after reading has started makes mpv
+    /// drop and re-read its read-ahead — a ~1 s stop mid-film, or ~3 s slower
+    /// start-ups, on high-bitrate 4K. `slang`/`alang`: language codes in
+    /// priority order (2- and 3-letter codes match each other); `subs`
+    /// false = no subtitles at all.
+    pub fn set_track_preferences(&self, slang: &[String], alang: &[String], subs: bool) {
+        for (prop, value) in [("slang", slang.join(",")), ("alang", alang.join(","))] {
+            if let Err(e) = self.mpv.set_property(prop, value.as_str()) {
+                warn!("set_track_preferences: {prop}={value:?} failed: {e}");
+            }
+        }
+        if let Err(e) = self.mpv.set_property("sid", if subs { "auto" } else { "no" }) {
+            warn!("set_track_preferences: sid failed: {e}");
+        }
+        debug!("track preferences: slang={slang:?} alang={alang:?} subs={subs}");
     }
 
     pub fn log_decoder_info(&self) {

@@ -33,10 +33,11 @@ are bumped together as one step, not separately.
   with the old wrong-colours limitation while HDR passthrough is on. Changes
   apply from the next video.
 - **Fixed: 4K films briefly stopped (picture and sound) about two seconds in.**
-  Fjord picked your subtitle/audio language two seconds after the film
-  started, which made the player throw away what it had already buffered and
-  stop to reload it — only noticeable with high-bitrate 4K/HDR files. The
-  tracks are now chosen before the picture starts.
+  Fjord picked your subtitle/audio language after the film had started, which
+  made the player throw away what it had already buffered and stop to reload
+  it — only noticeable with high-bitrate 4K/HDR files. Your preferred
+  languages are now handed to the player before the film loads, so it opens
+  the right tracks straight away.
 - **Fixed: an HDR film could start playing, then blank and "load again" a
   second or so in** while the TV switched to HDR. "Sync display to source"
   now changes resolution, refresh rate and HDR in one step, so the TV
