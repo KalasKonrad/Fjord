@@ -51,6 +51,7 @@
 //                from Config.profiles itself, not a network fetch — audio
 //                device ×2, font family, Seerr streaming region/display
 //                language/discover language/discover region, and display_sync's
+//                VID_SEPARATE_VIDEO_SURFACE (HDR Stage 5) is only listed on Wayland (is-wayland)
 //                own output/default-resolution/default-hz ×3 — kscreen-doctor,
 //                re-fetched whenever the selected output changes) rather than
 //                a fixed compile-time list.
@@ -152,6 +153,7 @@ const VID_VIDEO_SYNC:          &str = "video.video_sync";
 const VID_INTERPOLATION:       &str = "video.interpolation";
 const VID_TSCALE:              &str = "video.tscale";              // virtual — only when interpolation is on
 const VID_TARGET_COLORSPACE:   &str = "video.target_colorspace";
+const VID_SEPARATE_VIDEO_SURFACE: &str = "video.separate_video_surface";
 const VID_TONE_MAPPING:        &str = "video.tone_mapping";        // always visible (2026-08-15 — was
                                                                      // virtual, hidden while HDR passthrough
                                                                      // was on; see section_row_keys's own
@@ -289,6 +291,10 @@ fn section_row_keys(section: &str, g: &crate::AppState<'_>) -> Vec<&'static str>
                 rows.push(VID_TSCALE);
             }
             rows.push(VID_TARGET_COLORSPACE);
+            // HDR Stage 5 (2026-10-05): only on Wayland, where it does anything.
+            if g.get_is_wayland() {
+                rows.push(VID_SEPARATE_VIDEO_SURFACE);
+            }
             // Always visible now (2026-08-15, live-reported: "the tonemap setting shuld
             // not be gateded byt the hdr hint setting") — was hidden whenever HDR
             // passthrough was on, on the assumption tone-mapping never runs in that
@@ -1158,6 +1164,10 @@ fn settings_row_action(key: &str, g: &crate::AppState<'_>) {
         }
         VID_TARGET_COLORSPACE => {
             g.set_settings_target_colorspace_hint(!g.get_settings_target_colorspace_hint());
+            g.invoke_settings_changed();
+        }
+        VID_SEPARATE_VIDEO_SURFACE => {
+            g.set_settings_separate_video_surface(!g.get_settings_separate_video_surface());
             g.invoke_settings_changed();
         }
         VID_OPENGL_EARLY_FLUSH => {

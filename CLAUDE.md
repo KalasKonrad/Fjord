@@ -75,6 +75,13 @@ Needs `mpv`/libmpv (`pacman -S mpv`). Optional at runtime: `yt-dlp` (trailers), 
 - All teardown goes through `tear_down_player`; all fresh-playback resets through `reset_video_state_for_playback`.
 - libmpv2 reports a file that fails to open as `Err(Raw(code))`, not `EndFile`: `Player::poll` maps mpv's END_FILE
   codes (-13…-20) to `PollResult::Failed` — never treat those as transient (a black player screen forever).
+- **Video subsurface (HDR Stage 5, `video_surface.rs`, Wayland, Settings "Separate video surface", default on):** a
+  full-window child `wl_subsurface` below Slint's surface (sync mode) with its own EGL context. Each player's path
+  is fixed when its render context is created; a subsurface player's `MpvRenderCtx` lives on OUR context and
+  must be freed on it (`video_surface::free_render_ctx` in `tear_down_player`/`RenderingTeardown`). Slint's
+  window is transparent only while `AppState.video-surface-active`; femtovg clears **before** `BeforeRendering`,
+  so turning it opaque must happen in the UI path (`reset_playback_ui`), not only in the render callback. HDR
+  tags the subsurface, never the window, for such a player. Every new place that shows video needs a `VideoSpot`.
 
 ### Threads and shared state
 - Tokio for async, Slint event loop on the main thread. Return to the UI with `slint::invoke_from_event_loop`
@@ -176,8 +183,9 @@ Needs `mpv`/libmpv (`pacman -S mpv`). Optional at runtime: `yt-dlp` (trailers), 
 
 ## Platform notes (HTPC: NVIDIA Pascal legacy driver, KDE Wayland)
 - NVDEC stride corruption → Settings → Video filter `auto: yuv420p/yuv420p10le`.
-- HDR passthrough (opt-in) tags the whole window surface as PQ/BT.2020, so UI chrome renders with wrong
-  colors while it's on. The real fix (video on its own Wayland subsurface) is deferred.
+- HDR passthrough (opt-in) on the in-window video path (Settings "Separate video surface" off, X11, or a
+  subsurface setup failure) tags the whole window as PQ/BT.2020, so UI chrome shows wrong colours while it's on.
+  With the separate video surface (default on Wayland) only the video is tagged.
 - Some tone-mapping curves fail to compile on the NVIDIA GLSL compiler and stall the GL thread; switch curve
   (e.g. `bt.2390`) if HDR→SDR playback freezes.
 - More in `DEVLOG.md` → "Known platform issues".
