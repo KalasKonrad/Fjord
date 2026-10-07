@@ -94,6 +94,10 @@
 //                           mid-switch reverts the display from inside the task
 //   loaded_since/loaded_ok  (wire_mpv_timer) time since mpv's first FileLoaded — decoder log, chapters,
 //                           tracks, display-sync Branch B and the skip-segment check key off it, not
+//                           (2026-10-06: when the display was switched before load — display_presynced —
+//                           Track auto-selection runs at FileLoaded itself (2026-10-06): selecting a
+//                           track mid-play made mpv drop its read-ahead and pause on 4K HDR films
+//                           HDR is negotiated at the first VideoReconfig; Branch B then only re-checks the mode)
 //                           play_start (before FileLoaded, time-pos reads a fake 0)
 //   prestart_still_current  that task's staleness check — generation unchanged AND vs.player still set
 //                           (Stop doesn't bump the generation)
@@ -102,6 +106,8 @@
 //                           start_playback and play_trailer can't drift out of sync; each caller
 //                           sets its own item_id/playing_series_id/client afterward
 //   play_trailer            Watch Trailer (Discover only) — deliberately NOT start_playback with a
+//   tear_down_player        frees a subsurface player's render context on the subsurface's own GL
+//                           context (video_surface::free_render_ctx) before the Player goes
 //                           (2026-10-04: sets is_trailer; display sync skips trailers unless
 //                           device.display_sync_trailers; a failed open closes with "Trailer unavailable")
 //   next_stall_step/StallStep  shared reload-or-give-up step for a stall AND a failed open
@@ -112,8 +118,15 @@
 //                           report_playback_progress and series auto-advance skip themselves for
 //                           any client-less session; reuses reset_video_state_for_playback for
 //                           everything else
+//   reset_playback_ui       (also clears video-surface-active first — window opaque before the next frame)
 //   reset_playback_ui       clear all player UI state incl. is-audio-playing + music-bar fields + show-now-playing + buffering + skip overlays
 //   wire_rendering_notifier GL thread: FBO render + report_swap() for vsync feedback (no stats — moved to timer)
+//                           HDR Stage 5 (2026-10-05): decides each player's path once, at render-ctx
+//                           creation — video on the subsurface (video_surface.rs) when Settings →
+//                           "Separate video surface" is on and it can be set up, else the FBO path;
+//                           subsurface players render via video_surface::render_frame into the spot
+//                           Slint shows (VideoSpot rects; skips a frame while a new spot is unmeasured)
+//                           and set AppState.video-surface-active; sets is-wayland once
 //   wire_mpv_timer          16 ms timer: position (also updates music-bar-pos/elapsed/total when is-audio-playing), stats,
 //                           skip segment (4 modes: always-skip/ask/ask-timed/never-skip),
 //                           Up Next banner trigger (credits mode: always-skip/ask/never-skip) + configurable countdown
@@ -454,6 +467,10 @@ pub(crate) struct VideoState {
     // what actually keeps every play_start-gated watchdog/diagnostic quiet
     // during the wait; this flag has no gating role of its own.
     pub display_sync_prestart_active: bool,
+    // The display was switched for THIS item before load (sync_before_load
+    // completed, 2026-10-06): HDR is then negotiated at the first
+    // VideoReconfig instead of waiting for Branch B's post-decode check.
+    pub display_presynced: bool,
     pub tracks_loaded:      bool,
     pub pos_tick:           u32,
     pub controls_idle_ticks:  u32,
@@ -574,6 +591,13 @@ pub(crate) struct VideoState {
     // `trailer_url` is the YouTube link, to mark it unplayable on failure.
     pub is_trailer:            bool,
     pub trailer_url:           Option<String>,
+    // HDR Stage 5 (2026-10-05): this player's render context lives on the
+    // video subsurface's GL context (decided once, at render-context
+    // creation — see wire_rendering_notifier); and the spot last logged.
+    pub video_on_subsurface:   bool,
+    pub video_spot_logged:     Option<crate::video_surface::Spot>,
+    pub video_spot_waits:      u8,
+    pub startup_snapshot_ticks: u32,
     // Snapshot of the currently-playing item, set in start_playback. Used by
     // push_queue_display to render a synthetic now-playing row when the current
     // play is not the playlist row at playlist_index (queue jump, single track).
@@ -610,6 +634,7 @@ impl Default for VideoState {
             hdr_output_applied: false,
             display_sync_attempted: false,
             display_sync_prestart_active: false,
+            display_presynced: false,
             tracks_loaded: false, pos_tick: 0,
             controls_idle_ticks: 0,
             seek_pending_secs: 0.0, seek_pending_ticks: 0,
@@ -631,7 +656,7 @@ impl Default for VideoState {
             chapter_load_attempts: 0, chapter_osd_ticks: 0, delay_osd_ticks: 0,
             playlist: Vec::new(), playlist_index: 0,
             shuffle: false, shuffle_order: Vec::new(), repeat_mode: RepeatMode::Off,
-            queue: Vec::new(), current_is_audio: false, is_trailer: false, trailer_url: None, now_playing: None,
+            queue: Vec::new(), current_is_audio: false, is_trailer: false, trailer_url: None, video_on_subsurface: false, video_spot_logged: None, video_spot_waits: 0, startup_snapshot_ticks: 0, now_playing: None,
             music_idle_ticks: 0,
             lyrics: None, lyrics_available: false,
             preloaded_next: None,
@@ -738,6 +763,11 @@ pub(crate) fn build_track_model(tracks: &[TrackInfo], kind: &str) -> ModelRc<Tra
 // GL_RGBA-ordered *format* (a different GL parameter than *internal
 // format*/storage precision) and never touches the texture's own storage —
 // zero Slint-side changes needed either way.
+/// A Slint colour as GL clear-colour floats (alpha ignored).
+fn color_rgb(c: slint::Color) -> [f32; 3] {
+    [c.red() as f32 / 255.0, c.green() as f32 / 255.0, c.blue() as f32 / 255.0]
+}
+
 pub(crate) unsafe fn create_fbo(w: u32, h: u32, wide: bool) -> Option<(u32, u32)> {
     let mut tex = 0u32;
     gl::GenTextures(1, &mut tex);
@@ -813,6 +843,16 @@ pub(crate) fn tear_down_player(vs: &mut VideoState)
     let ticks = if vs.credits_auto_marked_played { 0 } else { ticks };
     vs.credits_auto_marked_played = false;
     vs.credits_mark_threshold     = None;
+    // A render context made on the video subsurface's own GL context must be
+    // freed on it (HDR Stage 5) — mpv requires its GL context for that, and
+    // before the Player (mpv core) goes.
+    if vs.video_on_subsurface {
+        if let Some(ctx) = vs.render_ctx.take() {
+            crate::video_surface::free_render_ctx(ctx);
+        }
+        vs.video_on_subsurface = false;
+    }
+    vs.video_spot_logged = None;
     vs.render_ctx      = None;
     vs.player          = None;
     vs.pending_load_url = None;
@@ -887,6 +927,9 @@ pub(crate) fn quit_cleanup(
 // Called from do_stop_playback and the finished path in wire_mpv_timer.
 pub(crate) fn reset_playback_ui(w: &MainWindow) {
     let g = AppState::get(w);
+    // Opaque again before this frame is drawn (HDR Stage 5) — the render
+    // callback only runs after femtovg has already cleared the window.
+    g.set_video_surface_active(false);
     g.set_is_playing(false);
     g.set_is_audio_playing(false);
     g.set_music_bar_has_art(false);
@@ -1067,6 +1110,7 @@ fn reset_video_state_for_playback(vs: &mut VideoState, player: Player, config: &
     // HTPC: the chapter poll gave up before the file was even loaded.
     vs.play_start            = None;
     vs.first_frame_logged    = false;
+    vs.startup_snapshot_ticks = 0;
     vs.is_trailer            = false; // play_trailer sets these after this reset
     vs.trailer_url           = None;
     vs.stall_last_progress_pos = config.start_position_secs.unwrap_or(0.0);
@@ -1089,6 +1133,7 @@ fn reset_video_state_for_playback(vs: &mut VideoState, player: Player, config: &
     vs.hdr_output_applied    = false;
     vs.display_sync_attempted = false;
     vs.display_sync_prestart_active = false;
+    vs.display_presynced = false;
     vs.tracks_loaded         = false;
     vs.pos_tick              = 0;
     vs.controls_idle_ticks   = 0;
@@ -1315,9 +1360,15 @@ pub(crate) fn start_playback(
     // display is already in this item's mode, so skip the pre-decode wait.
     // Without this, a stall reload during a network outage would first wait
     // on an item-detail fetch that is likely to hang (up to the 20 s cap).
-    let same_item_live = {
+    // keep_presync: the display is still in this item's mode after such a
+    // reload (a replace-in-place never reverts it), so HDR can still be
+    // negotiated at the first VideoReconfig — without this, a slow first open
+    // (stall reloads) brought back the late mid-playback HDR switch (HTPC,
+    // 2026-10-06: "like the video is loaded 2 times").
+    let (same_item_live, keep_presync) = {
         let vs = video.lock().unwrap();
-        vs.player.is_some() && vs.item_id.as_deref() == Some(item_id.as_str())
+        let same = vs.player.is_some() && vs.item_id.as_deref() == Some(item_id.as_str());
+        (same, same && vs.display_presynced)
     };
 
     let (dropped, dec_dropped) = video.lock().unwrap().player.as_ref()
@@ -1361,6 +1412,32 @@ pub(crate) fn start_playback(
             let eligible = {
                 let mut vs = video.lock().unwrap();
                 reset_video_state_for_playback(&mut vs, player, &config, item_type == "Episode", &url);
+                vs.display_presynced = keep_presync;
+                // Subtitle/audio language preferences go to mpv BEFORE the
+                // file loads, so it enables those tracks itself from the first
+                // byte — the auto-select at FileLoaded then only corrects a
+                // different pick (2026-10-06: switching tracks after reading
+                // started made mpv drop and re-read its buffer).
+                {
+                    let s = state.lock().unwrap();
+                    let a = s.config.active();
+                    let remembered = series_id.as_ref().and_then(|id| s.remembered_tracks.get(id));
+                    let mut slang: Vec<String> = Vec::new();
+                    if let Some(l) = remembered.and_then(|r| r.sub_lang.clone()) {
+                        slang.push(l.to_ascii_lowercase());
+                    }
+                    for name in [a.sub_lang.as_str(), a.sub_lang2.as_str()] {
+                        let code = sub_lang_code(name);
+                        if !code.is_empty() && !slang.iter().any(|c| c == code) { slang.push(code.to_string()); }
+                    }
+                    let alang: Vec<String> = match remembered.and_then(|r| r.audio_lang.clone()) {
+                        Some(l) => vec![l.to_ascii_lowercase()],
+                        None => Some(sub_lang_code(&a.audio_lang)).filter(|c| !c.is_empty()).map(|c| vec![c.to_string()]).unwrap_or_default(),
+                    };
+                    if let Some(p) = vs.player.as_ref() {
+                        p.set_track_preferences(&slang, &alang, a.sub_enabled);
+                    }
+                }
                 vs.item_id           = Some(item_id);
                 vs.playing_series_id = series_id;
                 vs.client            = Some(client);
@@ -1417,7 +1494,7 @@ pub(crate) fn start_playback(
                                 }
                             }
                         };
-                        let Some(vi) = resolved else { return };
+                        let Some(vi) = resolved else { return false };
                         // Cheap, early staleness check — shrinks (does not
                         // eliminate) the window where a rapid second
                         // start_playback call for a DIFFERENT item could spawn
@@ -1430,11 +1507,12 @@ pub(crate) fn start_playback(
                         // vs.player being gone is the only signal — without
                         // it, a Play-then-quick-Stop would still switch the
                         // display after the stop's own revert already ran.
-                        if !prestart_still_current(&video_ds, my_gen) { return; }
+                        if !prestart_still_current(&video_ds, my_gen) { return false; }
                         let cfg = crate::display_sync::DisplaySyncSettings::from_device_config(
                             &state_ds.lock().unwrap().config.device,
                         );
                         crate::display_sync::sync_before_load(Arc::clone(&state_ds), vi, cfg).await;
+                        true
                     };
                     // Hang-guard, not an expected-case budget — Branch B
                     // today runs sync_to_source with NO timeout at all, so
@@ -1452,9 +1530,13 @@ pub(crate) fn start_playback(
                     // and re-issue a second real mode-set AFTER video has
                     // already started rendering — reintroducing the exact
                     // blink this feature exists to remove, just moved later.
-                    if tokio::time::timeout(Duration::from_secs(20), prestart).await.is_err() {
-                        warn!("display_sync prestart timed out — starting playback at whatever mode is current");
-                    }
+                    let presynced = match tokio::time::timeout(Duration::from_secs(20), prestart).await {
+                        Ok(synced) => synced,
+                        Err(_) => {
+                            warn!("display_sync prestart timed out — starting playback at whatever mode is current");
+                            false
+                        }
+                    };
                     // Stopped (same generation, player gone) while the switch
                     // was in flight: sync_to_source only records the new mode
                     // after its 3 s settle, so the stop's own revert_to_default
@@ -1480,6 +1562,7 @@ pub(crate) fn start_playback(
                         vs.pending_load_url = Some(url_ds);
                         vs.play_start = Some(Instant::now());
                         vs.display_sync_prestart_active = false;
+                        vs.display_presynced = presynced;
                     });
                 });
             }
@@ -1952,6 +2035,7 @@ pub(crate) fn wire_rendering_notifier(
 
     window.window().set_rendering_notifier({
         let mut gl_loaded = false;
+        let mut wayland_flag_set = false;
 
         move |state_rn, api| {
             match state_rn {
@@ -1974,6 +2058,26 @@ pub(crate) fn wire_rendering_notifier(
 
                     let mut vs = video_rn.lock().unwrap();
                     vs.did_render = false;
+                    let g = AppState::get(&win);
+
+                    // Settings → "Separate video surface" is only offered on
+                    // Wayland; activity.rs learns that on the first window
+                    // event, before the first frame.
+                    if !wayland_flag_set && crate::video_surface::is_wayland() {
+                        wayland_flag_set = true;
+                        g.set_is_wayland(true);
+                    }
+
+                    // HDR Stage 5: no player → the window is opaque again
+                    // (reset_playback_ui normally did that already, one frame
+                    // earlier — this is the safety net) and the subsurface
+                    // gets a plain fill once, so no stale frame can resurface.
+                    if vs.player.is_none() {
+                        if g.get_video_surface_active() {
+                            g.set_video_surface_active(false);
+                        }
+                        crate::video_surface::idle_fill(color_rgb(g.get_window_bg()));
+                    }
 
                     if vs.fbos[0] != 0 && vs.player.is_none() {
                         unsafe {
@@ -1988,8 +2092,44 @@ pub(crate) fn wire_rendering_notifier(
                     if vs.player.is_none() { return; }
 
                     if vs.render_ctx.is_none() {
-                        let handle = vs.player.as_ref().unwrap().raw_handle_ptr();
-                        match unsafe { MpvRenderCtx::new(handle, get_proc_address) } {
+                        // HDR Stage 5 (2026-10-05): the path is decided here,
+                        // once per player — mpv can't move render contexts
+                        // mid-file. Video on the subsurface when Settings →
+                        // "Separate video surface" is on and the subsurface
+                        // can be set up; otherwise (audio, toggle off, X11,
+                        // setup failure) the in-window FBO path below.
+                        let phys = win.window().size();
+                        let want_surface = !vs.current_is_audio && g.get_settings_separate_video_surface();
+                        let surface_ctx = if want_surface
+                            && crate::video_surface::ensure_ready((phys.width, phys.height), win.window().scale_factor())
+                        {
+                            match crate::video_surface::create_render_ctx(vs.player.as_ref().unwrap()) {
+                                Ok(ctx) => Some(ctx),
+                                Err(e) => {
+                                    warn!("mpv render context on the video subsurface failed — in-window path: {e:#}");
+                                    crate::video_surface::mark_broken("render context creation failed");
+                                    None
+                                }
+                            }
+                        } else {
+                            None
+                        };
+                        vs.video_on_subsurface = surface_ctx.is_some();
+                        info!(
+                            "video path for this player: {}",
+                            if vs.video_on_subsurface { "separate video surface" }
+                            else if vs.current_is_audio { "in-window (audio)" }
+                            else if !g.get_settings_separate_video_surface() { "in-window (Settings: separate video surface off)" }
+                            else { "in-window (separate video surface unavailable)" }
+                        );
+                        let created = match surface_ctx {
+                            Some(ctx) => Ok(ctx),
+                            None => {
+                                let handle = vs.player.as_ref().unwrap().raw_handle_ptr();
+                                unsafe { MpvRenderCtx::new(handle, get_proc_address) }
+                            }
+                        };
+                        match created {
                             Ok(mut ctx) => {
                                 let ww = window_rn.clone();
                                 ctx.set_update_callback(move || {
@@ -2036,6 +2176,87 @@ pub(crate) fn wire_rendering_notifier(
                     let phys = win.window().size();
                     let w = phys.width.max(1);
                     let h = phys.height.max(1);
+
+                    // HDR Stage 5: this player's video goes to the subsurface —
+                    // into whichever spot Slint is showing (fullscreen player,
+                    // video-behind-menus layer, mini-player thumbnail), or the
+                    // whole plane (window kept opaque) when none is.
+                    if vs.video_on_subsurface {
+                        let scale = win.window().scale_factor();
+                        let spot = crate::video_surface::pick_spot(
+                            g.get_is_playing(), g.get_video_behind_ui(), g.get_has_background_player(),
+                        );
+                        let rect = spot.and_then(|spot| {
+                            let r = match spot {
+                                crate::video_surface::Spot::Player     => g.get_video_rect_player(),
+                                crate::video_surface::Spot::Background => g.get_video_rect_bg(),
+                                crate::video_surface::Spot::Thumb      => g.get_video_rect_thumb(),
+                            };
+                            crate::video_surface::to_gl_rect((r.x, r.y, r.w, r.h), scale, (w as i32, h as i32))
+                        });
+                        if spot != vs.video_spot_logged {
+                            let drops = vs.player.as_ref().map(|p| p.get_drop_counts()).unwrap_or((0, 0));
+                            debug!("video subsurface: spot {:?} at {:?} (frame-drops so far {}, decoder {})", spot, rect, drops.0, drops.1);
+                            vs.video_spot_logged = spot;
+                        }
+                        // A spot that has just appeared (or a window being
+                        // resized) isn't measured for a frame: draw nothing
+                        // new and leave the window as it is, rather than
+                        // flashing it opaque (seen in the first live run).
+                        // Ten frames in a row → give up waiting below.
+                        if spot.is_some() && rect.is_none() && vs.video_spot_waits < 10 {
+                            vs.video_spot_waits += 1;
+                            return;
+                        }
+                        vs.video_spot_waits = 0;
+                        // While the subsurface is tagged PQ/BT.2020 (HDR
+                        // active), its fill has to be PQ-encoded to look the
+                        // same as the sRGB UI around it.
+                        let srgb = color_rgb(g.get_window_bg());
+                        let fill = if crate::hdr::is_active() {
+                            crate::video_surface::pq_fill_from_srgb(srgb)
+                        } else {
+                            srgb
+                        };
+                        let ctx = vs.render_ctx.as_ref().unwrap();
+                        let result = crate::video_surface::render_frame(
+                            (w, h), scale, rect.unwrap_or([0, 0, w as i32, h as i32]), fill,
+                            |fbo, rw, rh, fmt| match ctx.render(fbo, rw, rh, true, fmt) {
+                                Ok(()) => true,
+                                Err(e) => { warn!("mpv render: {:#}", e); false }
+                            },
+                        );
+                        match result {
+                            Ok(true) => {
+                                vs.did_render = true;
+                                if !vs.first_frame_logged && vs.play_start.is_some() {
+                                    vs.first_frame_logged = true;
+                                    let elapsed = vs.play_start.unwrap().elapsed().as_secs_f64();
+                                    info!("first frame rendered {:.3}s after player start (video subsurface)", elapsed);
+                                }
+                                // Transparent from the next frame on (femtovg
+                                // already cleared this one) — the subsurface
+                                // frame committed now lands with that frame.
+                                let active = rect.is_some();
+                                if g.get_video_surface_active() != active {
+                                    debug!("video subsurface: window {}", if active { "transparent over the video" } else { "opaque (no video spot showing)" });
+                                    g.set_video_surface_active(active);
+                                    if active { g.set_video_frame(slint::Image::default()); }
+                                }
+                            }
+                            Ok(false) => {
+                                if g.get_video_surface_active() { g.set_video_surface_active(false); }
+                            }
+                            Err(e) => {
+                                crate::video_surface::mark_broken(&format!("{e:#}"));
+                                g.set_video_surface_active(false);
+                            }
+                        }
+                        return;
+                    }
+                    if g.get_video_surface_active() {
+                        g.set_video_surface_active(false);
+                    }
 
                     if vs.fbos[0] == 0 || vs.fbo_w != w || vs.fbo_h != h {
                         unsafe {
@@ -2111,6 +2332,12 @@ pub(crate) fn wire_rendering_notifier(
 
                 slint::RenderingState::RenderingTeardown => {
                     let mut vs = video_rn.lock().unwrap();
+                    if vs.video_on_subsurface {
+                        if let Some(ctx) = vs.render_ctx.take() {
+                            crate::video_surface::free_render_ctx(ctx);
+                        }
+                        vs.video_on_subsurface = false;
+                    }
                     vs.render_ctx = None;
                     unsafe {
                         delete_fbo(vs.fbos[0], vs.textures[0]);
@@ -2590,6 +2817,17 @@ pub(crate) fn wire_mpv_timer(
                     }
                 }
 
+                // Start-up diagnostic (2026-10-06, HTPC: "picture and sound
+                // stop ~1 s in"): mpv's state every ~250 ms for the first 8 s
+                // after the file opened — a real stall shows as pos not
+                // moving with core-idle/seeking/paused-for-cache telling why.
+                if let (Some(d), Some(p)) = (loaded_since, vs.player.as_ref()) {
+                    if d <= Duration::from_secs(8) && vs.startup_snapshot_ticks.is_multiple_of(16) {
+                        debug!("mpv start-up +{:.2}s: {}", d.as_secs_f64(), p.startup_snapshot());
+                    }
+                    vs.startup_snapshot_ticks = vs.startup_snapshot_ticks.wrapping_add(1);
+                }
+
                 if loaded_ok && !vs.decoder_logged {
                     if let Some(p) = vs.player.as_ref() {
                         p.log_decoder_info();
@@ -2656,6 +2894,13 @@ pub(crate) fn wire_mpv_timer(
                 // overwhelmingly common case. With the toggle off, Branch A
                 // is the *only* branch that can ever run, byte-for-byte
                 // identical to before this feature existed.
+                // HDR Stage 5: tag the video subsurface (not the window) when
+                // this player renders there, so the UI stays sRGB.
+                let hdr_target = if vs.video_on_subsurface {
+                    crate::video_surface::child_surface_addr()
+                } else {
+                    None
+                };
                 let (display_sync_enabled, hdr_toggle_enabled) = {
                     let s = state_timer.lock().unwrap();
                     // Trailers switch the display only when Settings → Video
@@ -2678,7 +2923,7 @@ pub(crate) fn wire_mpv_timer(
                     if let Some(meta) = source_meta {
                         vs.hdr_negotiation_attempted = true;
                         if hdr_toggle_enabled {
-                            crate::hdr::maybe_negotiate(meta);
+                            crate::hdr::maybe_negotiate(meta, hdr_target);
                         } else {
                             crate::hdr::set_status_disabled();
                         }
@@ -2705,15 +2950,49 @@ pub(crate) fn wire_mpv_timer(
                 // natural-EOF fallback-advance branch — so a stopped/
                 // replaced item during the settle can never have its stale
                 // metadata wrongly applied to whatever's playing by then.
+                // Display already switched for this item before load (the
+                // normal case since display-mode-prefetch): negotiate HDR the
+                // moment mpv knows the video's format, like Branch A — live-
+                // reported 2026-10-06 ("looks weird at first then it gets
+                // HDR"): waiting for Branch B's 2 s post-load check below
+                // showed ~1.6 s of SDR output on a TV already in HDR mode.
+                // Branch B still runs its correction check at that point,
+                // just without negotiating again.
+                if !vs.current_is_audio && display_sync_enabled && vs.display_presynced
+                    && !vs.hdr_negotiation_attempted
+                    && vs.player.as_ref().is_some_and(|p| p.has_seen_video_reconfig())
+                {
+                    let meta = vs.player.as_ref().unwrap().query_source_hdr_metadata();
+                    vs.hdr_negotiation_attempted = true;
+                    debug!("hdr: display was switched before load — negotiating at the first VideoReconfig");
+                    if hdr_toggle_enabled {
+                        crate::hdr::maybe_negotiate(meta, hdr_target);
+                    } else {
+                        crate::hdr::set_status_disabled();
+                    }
+                }
                 if !vs.current_is_audio && !vs.display_sync_attempted && display_sync_enabled {
                     let ready = loaded_ok
                         && vs.player.as_ref().is_some_and(|p| p.has_seen_video_reconfig());
-                    if ready {
-                        let (meta, dims) = {
-                            let p = vs.player.as_ref().unwrap();
-                            (p.query_source_hdr_metadata(), p.query_video_dimensions())
-                        };
+                    let (meta, dims) = if ready {
+                        let p = vs.player.as_ref().unwrap();
+                        (p.query_source_hdr_metadata(), p.query_video_dimensions())
+                    } else {
+                        (Default::default(), (0, 0, 0.0))
+                    };
+                    // Never pick a mode from an unknown frame rate (2026-10-06,
+                    // HTPC: fps 0 → "unusual rate" → a 4K HDR film switched to
+                    // 1080p59.94 mid-play). Wait for one; 10 s after load
+                    // without one, skip the correction and keep the mode.
+                    let fps_known = dims.2 > 0.0;
+                    let give_up = loaded_since.is_some_and(|d| d >= Duration::from_secs(10));
+                    if ready && (fps_known || give_up) {
+                        if !fps_known {
+                            warn!("display_sync: no frame rate 10 s after load — keeping the current display mode");
+                        }
                         vs.display_sync_attempted    = true;
+                        // Already negotiated at VideoReconfig when presynced.
+                        let negotiate_after = !vs.hdr_negotiation_attempted;
                         vs.hdr_negotiation_attempted = true;
                         let gen = vs.playback_generation;
                         let ds_settings = crate::display_sync::DisplaySyncSettings::from_device_config(
@@ -2722,15 +3001,20 @@ pub(crate) fn wire_mpv_timer(
                         let video2 = Arc::clone(&video_timer);
                         let state2 = Arc::clone(&state_timer);
                         rt_handle.spawn(async move {
-                            crate::display_sync::sync_to_source(state2, dims, meta.clone(), ds_settings).await;
+                            if fps_known {
+                                crate::display_sync::sync_to_source(state2, dims, meta.clone(), ds_settings).await;
+                            }
                             if video2.lock().unwrap().playback_generation != gen {
                                 // Stopped/replaced while the mode switch was
                                 // settling — whatever's playing now already
                                 // ran (or will run) its own Branch B trigger.
                                 return;
                             }
+                            if !negotiate_after {
+                                return;
+                            }
                             if hdr_toggle_enabled {
-                                crate::hdr::maybe_negotiate(meta);
+                                crate::hdr::maybe_negotiate(meta, hdr_target);
                             } else {
                                 crate::hdr::set_status_disabled();
                             }
@@ -2835,7 +3119,15 @@ pub(crate) fn wire_mpv_timer(
                         }
                     }
                 }
-                if loaded_ok && !vs.tracks_loaded {
+                // Track auto-selection runs as soon as the file has loaded,
+                // not 2 s later (2026-10-06, HTPC start-up log): enabling a
+                // subtitle/audio track mid-playback made mpv drop its whole
+                // read-ahead (23 s → 0) and pause ~1.1 s to refill it — only
+                // visible on high-bitrate 4K HDR films ("picture and sound stop
+                // ~1 s in, only HDR"). At FileLoaded the picture hasn't
+                // started yet (a resume is still seeking), so the refill is
+                // part of the normal start-up instead.
+                if loaded_since.is_some() && !vs.tracks_loaded {
                     if let (Some(p), Some(w)) = (vs.player.as_ref(), window_timer.upgrade()) {
                         let tracks = p.get_tracks();
                         // Retry next tick if mpv hasn't parsed the track list yet.
@@ -2849,7 +3141,7 @@ pub(crate) fn wire_mpv_timer(
                             let audio_model = build_track_model(&tracks, "audio");
                             let video_model = build_track_model(&tracks, "video");
                             let mut cur_sub = tracks.iter().find(|t| t.track_type == "sub" && t.selected).map(|t| t.id).unwrap_or(0);
-                            let cur_audio = tracks.iter().find(|t| t.track_type == "audio" && t.selected).map(|t| t.id).unwrap_or(1);
+                            let mut cur_audio = tracks.iter().find(|t| t.track_type == "audio" && t.selected).map(|t| t.id).unwrap_or(1);
                             let cur_video = tracks.iter().find(|t| t.track_type == "video" && t.selected).map(|t| t.id).unwrap_or(1);
                             debug!("active tracks: sub={} audio={} video={}", cur_sub, cur_audio, cur_video);
                             let g = AppState::get(&w);
@@ -2863,8 +3155,13 @@ pub(crate) fn wire_mpv_timer(
                                 .and_then(|sid| state_timer.lock().unwrap().remembered_tracks.get(sid).cloned());
 
                             // Subtitle auto-select: global off → force 0; else try primary then fallback.
+                            // Only switch when mpv's own pick (from the
+                            // preferences set before load) differs — every
+                            // switch makes mpv re-read its buffer (2026-10-06).
                             if !g.get_settings_sub_enabled() {
-                                if let Some(p) = vs.player.as_ref() { p.set_sub_track(0); }
+                                if cur_sub != 0 {
+                                    if let Some(p) = vs.player.as_ref() { p.set_sub_track(0); }
+                                }
                                 cur_sub = 0;
                             } else {
                                 let pref1 = g.get_settings_sub_lang().to_string();
@@ -2905,10 +3202,14 @@ pub(crate) fn wire_mpv_timer(
                                         })
                                     });
                                     if let Some(t) = found {
-                                        info!("auto-selected sub {} (lang={} forced={} hi={}) pref_lang={:?}/{:?} pref_type={:?}",
-                                            t.id, t.lang, t.forced, t.hearing_impaired, pref1, pref2, sub_type);
-                                        if let Some(p) = vs.player.as_ref() { p.set_sub_track(t.id); }
-                                        cur_sub = t.id;
+                                        if t.id == cur_sub {
+                                            debug!("sub {} (lang={}) already selected by mpv — no switch", t.id, t.lang);
+                                        } else {
+                                            info!("auto-selected sub {} (lang={} forced={} hi={}) pref_lang={:?}/{:?} pref_type={:?} (mpv had {})",
+                                                t.id, t.lang, t.forced, t.hearing_impaired, pref1, pref2, sub_type, cur_sub);
+                                            if let Some(p) = vs.player.as_ref() { p.set_sub_track(t.id); }
+                                            cur_sub = t.id;
+                                        }
                                     }
                                     // No match → leave mpv default unchanged
                                 }
@@ -2930,8 +3231,13 @@ pub(crate) fn wire_mpv_timer(
                                         t.lang.to_ascii_lowercase().starts_with(audio_code.as_str())
                                     });
                                     if let Some(t) = found {
-                                        info!("auto-selected audio {} (lang={}) pref={:?}", t.id, t.lang, audio_lang_pref);
-                                        if let Some(p) = vs.player.as_ref() { p.set_audio_track(t.id); }
+                                        if t.id == cur_audio {
+                                            debug!("audio {} (lang={}) already selected by mpv — no switch", t.id, t.lang);
+                                        } else {
+                                            info!("auto-selected audio {} (lang={}) pref={:?} (mpv had {})", t.id, t.lang, audio_lang_pref, cur_audio);
+                                            if let Some(p) = vs.player.as_ref() { p.set_audio_track(t.id); }
+                                            cur_audio = t.id;
+                                        }
                                     }
                                     // No match → leave mpv default unchanged
                                 }

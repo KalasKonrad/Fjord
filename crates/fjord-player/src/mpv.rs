@@ -772,11 +772,35 @@ impl Player {
     /// `video-params/gamma`/`primaries`, is not reliable at the exact
     /// instant `VideoReconfig` fires (the same reason `log_decoder_info`
     /// itself is gated behind `wire_mpv_timer`'s own ~2s `elapsed_ok` check).
+    /// Width, height and frame rate. The rate is mpv's estimate once frames
+    /// flow, else the container's declared rate; 0.0 = not known yet (callers
+    /// must not act on that — 2026-10-06: display sync treated it as an
+    /// "unusual" rate and switched a 4K film to 1080p59.94).
     pub fn query_video_dimensions(&self) -> (i64, i64, f64) {
         let w   = self.mpv.get_property::<i64>("width").unwrap_or(0);
         let h   = self.mpv.get_property::<i64>("height").unwrap_or(0);
-        let fps = self.mpv.get_property::<f64>("estimated-vf-fps").unwrap_or(0.0);
+        let est = self.mpv.get_property::<f64>("estimated-vf-fps").unwrap_or(0.0);
+        let fps = if est > 0.0 { est } else { self.mpv.get_property::<f64>("container-fps").unwrap_or(0.0) };
         (w, h, fps)
+    }
+
+    /// Track preferences for the NEXT file, set before it loads (2026-10-06):
+    /// with them mpv enables the right subtitle/audio tracks itself from the
+    /// first byte. Switching a track on after reading has started makes mpv
+    /// drop and re-read its read-ahead — a ~1 s stop mid-film, or ~3 s slower
+    /// start-ups, on high-bitrate 4K. `slang`/`alang`: language codes in
+    /// priority order (2- and 3-letter codes match each other); `subs`
+    /// false = no subtitles at all.
+    pub fn set_track_preferences(&self, slang: &[String], alang: &[String], subs: bool) {
+        for (prop, value) in [("slang", slang.join(",")), ("alang", alang.join(","))] {
+            if let Err(e) = self.mpv.set_property(prop, value.as_str()) {
+                warn!("set_track_preferences: {prop}={value:?} failed: {e}");
+            }
+        }
+        if let Err(e) = self.mpv.set_property("sid", if subs { "auto" } else { "no" }) {
+            warn!("set_track_preferences: sid failed: {e}");
+        }
+        debug!("track preferences: slang={slang:?} alang={alang:?} subs={subs}");
     }
 
     pub fn log_decoder_info(&self) {
@@ -908,6 +932,21 @@ impl Player {
     pub fn get_duration(&self) -> f64 {
         self.mpv.get_property::<f64>("duration").unwrap_or(0.0)
     }
+    /// One-line snapshot of mpv's playback state, for diagnosing start-up
+    /// hiccups (2026-10-06: "picture and sound stop ~1 s in"): position,
+    /// core-idle (mpv not actually playing), seeking, paused-for-cache, A/V
+    /// sync, seconds of demuxed data ahead, and dropped frames so far.
+    pub fn startup_snapshot(&self) -> String {
+        let f = |p: &str| self.mpv.get_property::<f64>(p).map(|v| format!("{v:.3}")).unwrap_or_else(|_| "-".into());
+        let b = |p: &str| self.mpv.get_property::<bool>(p).map(|v| if v { "yes" } else { "no" }).unwrap_or("-");
+        let i = |p: &str| self.mpv.get_property::<i64>(p).map(|v| v.to_string()).unwrap_or_else(|_| "-".into());
+        format!(
+            "pos={} core-idle={} seeking={} paused-for-cache={} avsync={} cache-ahead={}s drops={}/{}",
+            f("time-pos"), b("core-idle"), b("seeking"), b("paused-for-cache"), f("avsync"),
+            f("demuxer-cache-duration"), i("frame-drop-count"), i("decoder-frame-drop-count"),
+        )
+    }
+
     pub fn get_buffering(&self) -> (bool, i32) {
         let stalled = self.mpv.get_property::<bool>("paused-for-cache").unwrap_or(false);
         let pct     = self.mpv.get_property::<i64>("cache-buffering-state").unwrap_or(0);
@@ -1055,16 +1094,22 @@ impl Player {
         (0..count as usize).map(|i| {
             let g  = |k: &str| self.mpv.get_property::<String>(&format!("track-list/{}/{}", i, k)).unwrap_or_default();
             let gi = |k: &str| self.mpv.get_property::<i64>(&format!("track-list/{}/{}", i, k)).unwrap_or(0);
+            // selected/forced/hearing-impaired are mpv FLAG properties: read
+            // as i64 they failed and always came back 0 (2026-10-06 — every
+            // track-list dump said selected=false, even for the playing video
+            // and audio, and the Forced/Hearing-Impaired subtitle preference
+            // never matched anything).
+            let gb = |k: &str| self.mpv.get_property::<bool>(&format!("track-list/{}/{}", i, k)).unwrap_or(false);
             TrackInfo {
                 id:                gi("id"),
                 track_type:        g("type"),
                 title:             g("title"),
                 lang:              g("lang"),
-                selected:          gi("selected") != 0,
+                selected:          gb("selected"),
                 codec:             g("codec"),
                 external_filename: g("external-filename"),
-                forced:            gi("forced") != 0,
-                hearing_impaired:  gi("hearing-impaired") != 0,
+                forced:            gb("forced"),
+                hearing_impaired:  gb("hearing-impaired"),
             }
         }).collect()
     }

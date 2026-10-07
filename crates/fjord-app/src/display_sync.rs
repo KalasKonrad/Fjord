@@ -38,8 +38,9 @@
 //                          "exactly one candidate" pre-fill check — never
 //                          read at runtime by this module itself, only at
 //                          startup (main.rs)
-//   apply_display_mode/    thin kscreen-doctor wrappers — best-effort logged,
-//   apply_display_color    a missing binary is a silent one-time-logged no-op
+//   apply_display_switch   mode + scale and/or HDR + WCG in ONE kscreen-doctor call
+//                          (display_switch_args, unit-tested; 2026-10-06) — best-effort
+//                          logged, a missing binary is a silent one-time-logged no-op
 //   sync_to_source         the real per-item orchestration: get supported
 //                          modes, compute target, apply mode+scale (+3s
 //                          settle) and HDR/WCG only when they actually
@@ -314,7 +315,7 @@ fn kscreen_doctor_o() -> Option<String> {
 /// the named output supports. `hz` stays in the real fractional form
 /// (`"23.98"`) matching the tool's own display — a *separate*, integer-
 /// rounded form is only ever needed for the literal `mode.<res>@<hz>`
-/// argument (`apply_display_mode`), never for matching/logging. `pub(crate)`
+/// argument (`apply_display_switch`), never for matching/logging. `pub(crate)`
 /// (not just used internally by `compute_target_mode`'s own fallback chain)
 /// since `supported_resolutions_and_hz` below is a thin derived view over
 /// this same parse, not a second one.
@@ -528,21 +529,37 @@ fn parse_edid_product_name(data: &[u8]) -> Option<String> {
     None
 }
 
-fn apply_display_mode(screen: &str, resolution: &str, hz_frac: &str, scale: &str) {
-    let hz_int = hz_frac.parse::<f64>().map(|f| f.round() as i64).unwrap_or(60);
-    tracing::info!("display_sync: setting display mode: {resolution}@{hz_int} on {screen}");
-    run_kscreen(&[format!("output.{screen}.mode.{resolution}@{hz_int}")]);
-    run_kscreen(&[format!("output.{screen}.scale.{scale}")]);
+/// kscreen-doctor arguments for one display switch: mode + scale and/or
+/// HDR + WCG, all in ONE call (2026-10-06 — see sync_to_source).
+fn display_switch_args(
+    screen: &str,
+    mode: Option<(&str, &str, &str)>, // resolution, Hz (fractional ok), scale
+    color: Option<(bool, bool)>,      // HDR, WCG
+) -> Vec<String> {
+    let on = |b: bool| if b { "enable" } else { "disable" };
+    let mut args = Vec::new();
+    if let Some((resolution, hz_frac, scale)) = mode {
+        let hz_int = hz_frac.parse::<f64>().map(|f| f.round() as i64).unwrap_or(60);
+        args.push(format!("output.{screen}.mode.{resolution}@{hz_int}"));
+        args.push(format!("output.{screen}.scale.{scale}"));
+    }
+    if let Some((hdr, wcg)) = color {
+        args.push(format!("output.{screen}.hdr.{}", on(hdr)));
+        args.push(format!("output.{screen}.wcg.{}", on(wcg)));
+    }
+    args
 }
 
-fn apply_display_color(screen: &str, hdr: bool, wcg: bool) {
+fn apply_display_switch(screen: &str, mode: Option<(&str, &str, &str)>, color: Option<(bool, bool)>) {
+    let args = display_switch_args(screen, mode, color);
+    if args.is_empty() { return; }
+    let mode_txt = mode.map(|(r, hz, sc)| format!("mode {r}@{hz} (scale {sc})"));
+    let color_txt = color.map(|(h, w)| format!("HDR {} / WCG {}", if h { "on" } else { "off" }, if w { "on" } else { "off" }));
     tracing::info!(
-        "display_sync: setting HDR {} / WCG {} on {screen}",
-        if hdr { "on" } else { "off" },
-        if wcg { "on" } else { "off" }
+        "display_sync: switching {screen} in one step: {}",
+        [mode_txt, color_txt].into_iter().flatten().collect::<Vec<_>>().join(", ")
     );
-    run_kscreen(&[format!("output.{screen}.hdr.{}", if hdr { "enable" } else { "disable" })]);
-    run_kscreen(&[format!("output.{screen}.wcg.{}", if wcg { "enable" } else { "disable" })]);
+    run_kscreen(&args);
 }
 
 // ── orchestration ────────────────────────────────────────────────────────────
@@ -594,28 +611,31 @@ pub(crate) async fn sync_to_source(
         (mode_changed, hdr_changed)
     };
 
-    if mode_changed {
+    // Mode + scale and HDR + WCG in ONE kscreen-doctor call (2026-10-06):
+    // KWin applies them as one config change, so the TV re-syncs once, and
+    // the single wait below covers it — HDR used to be switched separately,
+    // after the wait, so the film started while the TV was still changing to
+    // HDR (HTPC: "plays 1-3 s, then changes to HDR and loads again"). HDR/WCG
+    // are still only re-applied together and only when HDR's own effective
+    // value changed, as in the proven script.
+    if mode_changed || hdr_changed {
         let scale = cfg.scale_for(&target_res);
-        let (screen2, res2, hz2, scale2) = (screen.clone(), target_res.clone(), target_hz.clone(), scale);
-        tokio::task::spawn_blocking(move || apply_display_mode(&screen2, &res2, &hz2, &scale2))
-            .await
-            .ok();
-        // "Allow HDMI link to renegotiate" — the proven script's own
-        // load-bearing settle delay after every real mode-set.
+        let (screen2, res2, hz2) = (screen.clone(), target_res.clone(), target_hz.clone());
+        tokio::task::spawn_blocking(move || {
+            apply_display_switch(
+                &screen2,
+                mode_changed.then_some((res2.as_str(), hz2.as_str(), scale.as_str())),
+                hdr_changed.then_some((want_hdr, want_wcg)),
+            )
+        })
+        .await
+        .ok();
+        // "Allow HDMI link to renegotiate" — the proven script's settle delay,
+        // now after HDR changes too.
         tokio::time::sleep(Duration::from_secs(3)).await;
-        state.lock().unwrap().display_sync_current_mode = Some((target_res, target_hz));
-    }
-
-    // HDR/WCG are only ever re-applied together, only when HDR's own
-    // effective value changed — matching the proven script's own behavior
-    // exactly (it never tracks WCG independently, and never re-asserts
-    // color state on a bare mode switch that didn't also change HDR).
-    if hdr_changed {
-        let screen3 = screen.clone();
-        tokio::task::spawn_blocking(move || apply_display_color(&screen3, want_hdr, want_wcg))
-            .await
-            .ok();
-        state.lock().unwrap().display_sync_current_hdr = Some(want_hdr);
+        let mut s = state.lock().unwrap();
+        if mode_changed { s.display_sync_current_mode = Some((target_res, target_hz)); }
+        if hdr_changed { s.display_sync_current_hdr = Some(want_hdr); }
     }
 }
 
@@ -699,14 +719,12 @@ pub(crate) async fn revert_to_default(state: Arc<Mutex<FjordState>>) {
     } else {
         state.lock().unwrap().config.device.display_sync_scale_1080p.clone()
     };
-    let (screen2, res2, hz2, scale2) = (screen.clone(), default_res.clone(), default_hz.clone(), scale);
-    tokio::task::spawn_blocking(move || apply_display_mode(&screen2, &res2, &hz2, &scale2))
-        .await
-        .ok();
-    let screen3 = screen.clone();
-    tokio::task::spawn_blocking(move || apply_display_color(&screen3, false, false))
-        .await
-        .ok();
+    let (screen2, res2, hz2) = (screen.clone(), default_res.clone(), default_hz.clone());
+    tokio::task::spawn_blocking(move || {
+        apply_display_switch(&screen2, Some((res2.as_str(), hz2.as_str(), scale.as_str())), Some((false, false)))
+    })
+    .await
+    .ok();
 
     let mut s = state.lock().unwrap();
     // The display genuinely IS at the default mode/HDR-off now — recording
@@ -721,6 +739,24 @@ pub(crate) async fn revert_to_default(state: Arc<Mutex<FjordState>>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn display_switch_is_one_call() {
+        assert_eq!(
+            display_switch_args("HDMI-A-2", Some(("3840x2160", "23.976", "2")), Some((true, true))),
+            vec![
+                "output.HDMI-A-2.mode.3840x2160@24",
+                "output.HDMI-A-2.scale.2",
+                "output.HDMI-A-2.hdr.enable",
+                "output.HDMI-A-2.wcg.enable",
+            ]
+        );
+        assert_eq!(
+            display_switch_args("DP-3", None, Some((false, false))),
+            vec!["output.DP-3.hdr.disable", "output.DP-3.wcg.disable"]
+        );
+        assert!(display_switch_args("DP-3", None, None).is_empty());
+    }
 
     #[test]
     fn revert_only_after_fjord_changed_the_display() {

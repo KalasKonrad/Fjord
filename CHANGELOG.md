@@ -23,6 +23,35 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Fixed: with HDR passthrough on, menus, controls and the OSD no longer show
+  wrong colours.** On Wayland the video is now drawn on its own surface
+  underneath Fjord's window, and only that surface is marked as HDR — the
+  interface stays normal. Works for fullscreen video, the mini-player
+  thumbnail and "Video in background". New setting **Settings → Video → HDR →
+  "Separate video surface"** (on by default, only shown on Wayland): turn it
+  off if video playback stutters on your system — the old way is then used,
+  with the old wrong-colours limitation while HDR passthrough is on. Changes
+  apply from the next video.
+- **Fixed: Settings → Subtitles → type "Hearing Impaired" / "Forced" never
+  had any effect**, and Fjord couldn't see which subtitle the player had
+  already chosen: it read the player's track flags in the wrong format, so
+  every track looked like a plain, unselected one.
+- **Fixed: 4K films briefly stopped (picture and sound) about two seconds in.**
+  Fjord picked your subtitle/audio language after the film had started, which
+  made the player throw away what it had already buffered and stop to reload
+  it — only noticeable with high-bitrate 4K/HDR files. Your preferred
+  languages are now handed to the player before the film loads, so it opens
+  the right tracks straight away.
+- **Fixed: an HDR film could start playing, then blank and "load again" a
+  second or so in** while the TV switched to HDR. "Sync display to source"
+  now changes resolution, refresh rate and HDR in one step, so the TV
+  re-syncs once, during the "Loading…" spinner, and the film starts with the
+  TV already in HDR.
+- **Fixed: with "Sync display to source" on, HDR kicked in about two seconds
+  after the picture appeared**, so an HDR film started out looking wrong.
+  Since the display is now switched before playback starts, Fjord sets up HDR
+  as soon as the video's format is known, at the first frame.
+
 - **Fixed: a video or trailer that couldn't be opened left a black screen**
   until you pressed Stop. Library items now retry like a stalled stream and,
   if they still won't open, stop with "Couldn't play this — the file

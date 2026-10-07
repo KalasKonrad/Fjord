@@ -17,6 +17,7 @@
 //                    gate as manage_profiles) opens BonfireGroupScreen (bonfire_group.slint)
 //       Video        hwdec, vf, deinterlace, video-sync, interpolation, tscale (virtual —
 //                    only while interpolation is on), target-colorspace, tone-mapping
+//                    + separate-video-surface (HDR Stage 5, Wayland only — is-wayland)
 //                    (always visible as of 2026-08-15 — was virtual, hidden while HDR
 //                    passthrough was on; wrong, since it's also the fallback curve mpv
 //                    uses when target-colorspace-hint-strict rejects the passthrough hint),
@@ -734,6 +735,11 @@ export component SettingsScreen inherits Rectangle {
 
                     SettingsRow { key: "video.target_colorspace"; title: "HDR passthrough"; subtitle: "Pass HDR metadata to the compositor for native HDR output — if it isn't accepted, mpv automatically falls back to the Tone Mapping curve below";
                         ToggleSwitch { checked <=> AppState.settings-target-colorspace-hint; toggled => { AppState.settings-changed(); AppState.refocus(); } }
+                    }
+
+                    // HDR Stage 5 (2026-10-05) — Wayland only (settings::section_row_keys mirrors this).
+                    if AppState.is-wayland: SettingsRow { key: "video.separate_video_surface"; title: "Separate video surface"; subtitle: "Keeps menus and the OSD in correct colours with HDR passthrough. Turn off if video playback stutters — menus then look wrong while HDR passthrough is on. Applies from the next video";
+                        ToggleSwitch { checked <=> AppState.settings-separate-video-surface; toggled => { AppState.settings-changed(); AppState.refocus(); } }
                     }
 
                     // Per-curve descriptions (2026-08-15, live-reported: "can we also add
