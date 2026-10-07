@@ -202,7 +202,7 @@
 //   Callbacks — misc      show-controls, cancel-auto-advance, play-next-ep, close-detail/series, close-album, close-artist, refocus
 //   Callbacks — keys      handle-key (main dispatch), keybinding-reset-defaults
 // ─────────────────────────────────────────────────────────────────────────────
-import { Theme, TrackEntry, TrackItem, CastMember, SeasonEntry, CardItem, KeyBindingEntry, QueueEntry, LyricEntry, SeasonItem, TagItem, ProfileItem, StreamingProvider, GenreItem, ProviderItem, BlocklistRow, ProfileTile, ProfileSection, AccountTile, ToggleListItem, BonfireGroupMemberTile, BonfireAdminRow, BonfireAuditRow, OskEdit } from "theme.slint";
+import { Theme, TrackEntry, TrackItem, CastMember, SeasonEntry, CardItem, KeyBindingEntry, QueueEntry, LyricEntry, SeasonItem, TagItem, ProfileItem, StreamingProvider, GenreItem, ProviderItem, BlocklistRow, ProfileTile, ProfileSection, AccountTile, ToggleListItem, BonfireGroupMemberTile, BonfireAdminRow, BonfireAuditRow, OskEdit, VideoRect } from "theme.slint";
 import { StandardListView } from "std-widgets.slint";
 
 export global AppState {
@@ -909,6 +909,17 @@ export global AppState {
 
     // ── Player state ──────────────────────────────────────────────────────────
     in     property <image>  video-frame;
+    // HDR Stage 5 (2026-10-05) — video on its own Wayland subsurface below
+    // the window (video_surface.rs). video-surface-active: set by Rust once
+    // the current player's frames are drawn there (cleared on stop) — the
+    // window then goes transparent and the four video Images give way to
+    // VideoSpots. video-rect-*: where each spot is, reported by VideoSpot.
+    // window-bg: the background the subsurface fills around the video.
+    in-out property <bool>      video-surface-active: false;
+    in-out property <VideoRect> video-rect-player;
+    in-out property <VideoRect> video-rect-bg;
+    in-out property <VideoRect> video-rect-thumb;
+    out    property <color>     window-bg: Theme.bg;
     in-out property <string> playing-artist:        "";   // artist name shown in controls bar for audio tracks
 
     // ── Music player bar ──────────────────────────────────────────────────────
@@ -1679,6 +1690,11 @@ export global AppState {
     in-out property <string> settings-tscale:               "oversample";
     in-out property <string> settings-tone-mapping:         "auto";
     in-out property <bool>   settings-target-colorspace-hint: false;
+    // Settings → Video → HDR → "Separate video surface" (HDR Stage 5,
+    // 2026-10-05, default on) — row only shown on Wayland (is-wayland, set
+    // by Rust once the window's Wayland handles are known).
+    in-out property <bool>   settings-separate-video-surface: true;
+    in-out property <bool>   is-wayland: false;
     in-out property <string> settings-deinterlace:          "no";
     in-out property <int>    settings-cache-secs:           60;
     in-out property <int>    settings-cache-max-mb:         500;

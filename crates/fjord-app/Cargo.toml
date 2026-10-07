@@ -47,6 +47,13 @@ unicode-segmentation = "1"
 wayland-client = "0.31"
 wayland-backend = { version = "0.3", features = ["client_system"] }
 wayland-protocols = { version = "0.32", features = ["client", "staging"] }
+# HDR Stage 5 (2026-10-04) — the video backplane (see video_surface.rs): its own
+# EGL context/surface on a child wl_subsurface. All three are already in
+# Cargo.lock via glutin/winit at these versions, and the tree already enables
+# exactly these wayland-sys features — direct declarations, no new instances.
+wayland-sys = { version = "0.31", features = ["client", "egl", "dlopen"] }
+glutin_egl_sys = "0.7"
+libloading = "0.8"
 
 [build-dependencies]
 slint-build = "1"
