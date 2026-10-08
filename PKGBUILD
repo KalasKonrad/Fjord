@@ -31,6 +31,10 @@ pkgver() {
 build() {
     cd "$srcdir/fjord"
     export CARGO_HOME="$srcdir/cargo-home"
+    # TEMPORARY (2026-10-08): Slint then names the property in a "Recursion
+    # detected" panic — diagnosing a crash on hdr-10bit. Remove together with
+    # the #branch= fragment above.
+    export RUSTFLAGS="${RUSTFLAGS:-} --cfg slint_debug_property"
     cargo build --release --locked
 }
 

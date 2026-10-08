@@ -56,7 +56,7 @@ Full curated version history: [CHANGELOG.md](CHANGELOG.md) (git tags `v0.1.0`–
 
 ## Pending
 
-- [ ] When HTPC testing of `hdr-10bit` is done (or it's merged): remove `#branch=hdr-10bit` from `PKGBUILD`'s `source=` **on main** — it's there so the HTPC's `makepkg -si` builds the branch.
+- [ ] When HTPC testing of `hdr-10bit` is done (or it's merged): remove `#branch=hdr-10bit` from `PKGBUILD`'s `source=` **and** the `--cfg slint_debug_property` RUSTFLAGS line in `build()` **on main** — they're there so the HTPC's `makepkg -si` builds the branch with Slint's property names in panics.
 - [ ] **10-bit video plane on the HTPC — in progress on branch `hdr-10bit` (plan approved 2026-10-08).** Stage 5 itself is done and merged (2026-10-07). NVIDIA's EGL offers only 8-bit window configs, but the probe showed GBM XBGR2101010 + EGLImage render target + KWin dmabuf wl_buffer all work — would replace the EGL window surface with Fjord's own buffer swapchain. Not started; user to decide.
 
 (nothing else open — everything recently shipped is fully documented in [CHANGELOG.md](CHANGELOG.md) (user-facing) and `DEVLOG.md` (full technical narrative, dated sections); anything still needing real-hardware confirmation lives in the `Live-test checklist` above, not here)
