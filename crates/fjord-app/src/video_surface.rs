@@ -582,9 +582,10 @@ impl Backplane {
                 CHILD_ADDR.store(bp.child.id().as_ptr() as usize, Ordering::Relaxed);
                 let how = match &bp.present {
                     Present::Dmabuf(sc) => format!(
-                        "own dmabuf buffers {} (modifier {}, {} buffers{})",
+                        "own dmabuf buffers {} (modifier {}, {} plane(s), {} buffers{})",
                         sc.format_name,
                         dmabuf_plane::modifier_text(sc.modifier()),
+                        sc.planes(),
                         dmabuf_plane::BUFFER_COUNT,
                         if gl.surf == egl::NO_SURFACE { ", surfaceless context" } else { ", pbuffer context" },
                     ),
@@ -702,9 +703,11 @@ impl Backplane {
         let fourcc = sc.fourcc;
         let gl = self.gl;
         gl.with_current(|| {
-            sc.allocate(size, |fd, stride, modifier| {
+            sc.allocate(size, |planes, modifier| {
                 let params = dm.create_params(&qh, ());
-                params.add(fd, 0, 0, stride, (modifier >> 32) as u32, modifier as u32);
+                for (i, p) in planes.iter().enumerate() {
+                    params.add(p.fd, i as u32, p.offset, p.stride, (modifier >> 32) as u32, modifier as u32);
+                }
                 state.created = None;
                 // Asynchronous create: a refusal is an event, never a protocol
                 // error on the display winit shares (create_immed's would be).
