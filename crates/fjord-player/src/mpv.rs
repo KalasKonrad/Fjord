@@ -80,7 +80,8 @@
 //                     also routes Event::LogMessage (mpv's own internal log, requested at "warn" in
 //                     new() — see the audio-only-video diagnostic note above) to tracing warn/error
 //   TrackInfo       audio / video / subtitle track descriptor; external_filename for external subs
-//   MpvRenderCtx    OpenGL render context + FBO management; drop before Player
+//   MpvRenderCtx    OpenGL render context + FBO management; drop before Player.
+//                   render(…, depth) passes MPV_RENDER_PARAM_DEPTH when > 0 (2026-10-08)
 // ─────────────────────────────────────────────────────────────────────────────
 use anyhow::{ensure, Result};
 use libmpv2::{events::Event, mpv_end_file_reason, FileState, Format, Mpv};
@@ -1209,9 +1210,14 @@ impl MpvRenderCtx {
     /// 8-bit RGBA; now that callers can widen the FBO (see `create_fbo` in
     /// fjord-app), this needs to reflect the real format or mpv could be
     /// left assuming/introspecting the wrong precision.
-    pub fn render(&self, fbo: i32, w: i32, h: i32, flip: bool, internal_format: i32) -> Result<()> {
+    /// `depth`: bits per component of what the frame finally lands in
+    /// (MPV_RENDER_PARAM_DEPTH — mpv dithers to it), or 0 to leave it out,
+    /// which mpv takes as 8. 2026-10-08: never passed before, so even a
+    /// 10-bit video plane got video dithered down to 8 bits.
+    pub fn render(&self, fbo: i32, w: i32, h: i32, flip: bool, internal_format: i32, depth: i32) -> Result<()> {
         let flip_i: i32 = flip as i32;
         let mut fbo_params = sys::mpv_opengl_fbo { fbo, w, h, internal_format };
+        let end = sys::mpv_render_param { type_: 0, data: std::ptr::null_mut() };
         let mut params = [
             sys::mpv_render_param {
                 type_: sys::mpv_render_param_type_MPV_RENDER_PARAM_OPENGL_FBO,
@@ -1221,7 +1227,15 @@ impl MpvRenderCtx {
                 type_: sys::mpv_render_param_type_MPV_RENDER_PARAM_FLIP_Y,
                 data:  &flip_i as *const _ as *mut c_void,
             },
-            sys::mpv_render_param { type_: 0, data: std::ptr::null_mut() },
+            if depth > 0 {
+                sys::mpv_render_param {
+                    type_: sys::mpv_render_param_type_MPV_RENDER_PARAM_DEPTH,
+                    data:  &depth as *const _ as *mut c_void,
+                }
+            } else {
+                end
+            },
+            end,
         ];
         let rc = unsafe { sys::mpv_render_context_render(self.ctx, params.as_mut_ptr()) };
         ensure!(rc == 0, "mpv_render_context_render failed (code {})", rc);

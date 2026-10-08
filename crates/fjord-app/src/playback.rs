@@ -125,8 +125,12 @@
 //                           creation — video on the subsurface (video_surface.rs) when Settings →
 //                           "Separate video surface" is on and it can be set up, else the FBO path;
 //                           subsurface players render via video_surface::render_frame into the spot
-//                           Slint shows (VideoSpot rects; skips a frame while a new spot is unmeasured)
-//                           and set AppState.video-surface-active; sets is-wayland once
+//                           Slint shows (VideoSpot rects → to_buffer_rect; skips a frame while a new
+//                           spot is unmeasured) and set AppState.video-surface-active; sets is-wayland
+//                           once. 2026-10-08: passes Settings → "Use Fjord's own 10-bit buffers" to
+//                           ensure_ready; the path line names the plane's mode + mpv depth; mpv gets
+//                           the Target's flip/format/depth (in-window path: depth 0 = 8); a frame the
+//                           own buffers skipped (none free) requests another redraw
 //   wire_mpv_timer          16 ms timer: position (also updates music-bar-pos/elapsed/total when is-audio-playing), stats,
 //                           skip segment (4 modes: always-skip/ask/ask-timed/never-skip),
 //                           Up Next banner trigger (credits mode: always-skip/ask/never-skip) + configurable countdown
@@ -2101,7 +2105,11 @@ pub(crate) fn wire_rendering_notifier(
                         let phys = win.window().size();
                         let want_surface = !vs.current_is_audio && g.get_settings_separate_video_surface();
                         let surface_ctx = if want_surface
-                            && crate::video_surface::ensure_ready((phys.width, phys.height), win.window().scale_factor())
+                            && crate::video_surface::ensure_ready(
+                                (phys.width, phys.height),
+                                win.window().scale_factor(),
+                                g.get_settings_video_own_buffers(),
+                            )
                         {
                             match crate::video_surface::create_render_ctx(vs.player.as_ref().unwrap()) {
                                 Ok(ctx) => Some(ctx),
@@ -2117,10 +2125,12 @@ pub(crate) fn wire_rendering_notifier(
                         vs.video_on_subsurface = surface_ctx.is_some();
                         info!(
                             "video path for this player: {}",
-                            if vs.video_on_subsurface { "separate video surface" }
-                            else if vs.current_is_audio { "in-window (audio)" }
-                            else if !g.get_settings_separate_video_surface() { "in-window (Settings: separate video surface off)" }
-                            else { "in-window (separate video surface unavailable)" }
+                            if vs.video_on_subsurface {
+                                format!("separate video surface ({})", crate::video_surface::present_summary())
+                            }
+                            else if vs.current_is_audio { "in-window (audio)".into() }
+                            else if !g.get_settings_separate_video_surface() { "in-window (Settings: separate video surface off)".into() }
+                            else { "in-window (separate video surface unavailable)".into() }
                         );
                         let created = match surface_ctx {
                             Some(ctx) => Ok(ctx),
@@ -2192,7 +2202,7 @@ pub(crate) fn wire_rendering_notifier(
                                 crate::video_surface::Spot::Background => g.get_video_rect_bg(),
                                 crate::video_surface::Spot::Thumb      => g.get_video_rect_thumb(),
                             };
-                            crate::video_surface::to_gl_rect((r.x, r.y, r.w, r.h), scale, (w as i32, h as i32))
+                            crate::video_surface::to_buffer_rect((r.x, r.y, r.w, r.h), scale, (w as i32, h as i32))
                         });
                         if spot != vs.video_spot_logged {
                             let drops = vs.player.as_ref().map(|p| p.get_drop_counts()).unwrap_or((0, 0));
@@ -2221,13 +2231,14 @@ pub(crate) fn wire_rendering_notifier(
                         let ctx = vs.render_ctx.as_ref().unwrap();
                         let result = crate::video_surface::render_frame(
                             (w, h), scale, rect.unwrap_or([0, 0, w as i32, h as i32]), fill,
-                            |fbo, rw, rh, fmt| match ctx.render(fbo, rw, rh, true, fmt) {
+                            |t| match ctx.render(t.fbo, t.w, t.h, t.flip_y, t.format, t.depth) {
                                 Ok(()) => true,
                                 Err(e) => { warn!("mpv render: {:#}", e); false }
                             },
                         );
+                        use crate::video_surface::FrameOutcome;
                         match result {
-                            Ok(true) => {
+                            Ok(FrameOutcome::Drawn) => {
                                 vs.did_render = true;
                                 if !vs.first_frame_logged && vs.play_start.is_some() {
                                     vs.first_frame_logged = true;
@@ -2244,7 +2255,12 @@ pub(crate) fn wire_rendering_notifier(
                                     if active { g.set_video_frame(slint::Image::default()); }
                                 }
                             }
-                            Ok(false) => {
+                            // Own buffers all held by KWin: this frame is
+                            // skipped (mpv not called). Ask for another
+                            // redraw — mpv's update callback fired for this
+                            // frame already and won't again until it's drawn.
+                            Ok(FrameOutcome::Skipped) => win.window().request_redraw(),
+                            Ok(FrameOutcome::MpvFailed | FrameOutcome::Unusable) => {
                                 if g.get_video_surface_active() { g.set_video_surface_active(false); }
                             }
                             Err(e) => {
@@ -2285,7 +2301,9 @@ pub(crate) fn wire_rendering_notifier(
                         // this item's FBO was actually widened — see
                         // create_fbo's own doc comment.
                         let internal_format = if vs.wide_color_fbo { gl::RGB10_A2 as i32 } else { 0 };
-                        if let Err(e) = ctx.render(vs.fbos[b] as i32, w as i32, h as i32, true, internal_format) {
+                        // Depth 0 (mpv's 8): whatever the FBO, it ends up in
+                        // Slint's 8-bit window.
+                        if let Err(e) = ctx.render(vs.fbos[b] as i32, w as i32, h as i32, true, internal_format, 0) {
                             warn!("mpv render: {:#}", e);
                         } else {
                             vs.did_render = true;
