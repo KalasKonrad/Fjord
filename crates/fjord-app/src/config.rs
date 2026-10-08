@@ -29,6 +29,8 @@
 //                   display_sync_trailers (2026-10-04, default off) — Watch Trailer switches the display too
 //                   separate_video_surface (HDR Stage 5, 2026-10-05, default on) — video on its own
 //                   Wayland subsurface; off = the old in-window path
+//                   video_own_buffers (2026-10-08, default off) — force the subsurface's own
+//                   10-bit dmabuf buffers (automatic where EGL has no 10-bit window); per run
 //                   opt-in/off by default; enabled/screen_name/default_resolution/default_hz/
 //                   scale_4k/scale_1080p/sync_resolution/sync_refresh_rate/4k_odd_fps_mode/
 //                   hdr_mode/wcg_mode.
@@ -325,6 +327,11 @@ pub(crate) struct DeviceConfig {
     // menus/OSD in correct colours with HDR passthrough). Default on; off =
     // the old in-window path, for platforms where it performs better.
     #[serde(default = "default_true")]        pub separate_video_surface: bool,
+    // 10-bit video plane (2026-10-08): force Fjord's own GBM/dmabuf buffers
+    // for the subsurface even where EGL offers a 10-bit window (they're used
+    // automatically where it doesn't, e.g. NVIDIA). Testing aid; read once
+    // per run when the subsurface is set up.
+    #[serde(default)]                         pub video_own_buffers:     bool,
     #[serde(default = "default_deinterlace", deserialize_with = "deser_deinterlace")]
                                               pub deinterlace:           String,
     // ── Network cache (Settings → Player → Buffering) ───────────────────────
@@ -498,7 +505,8 @@ impl Default for DeviceConfig {
             hwdec: default_hwdec(), vf: "auto: nv12/p010".into(), video_sync: default_video_sync(),
             opengl_early_flush: false, video_latency_hacks: false,
             interpolation: false, tscale: default_tscale(), tone_mapping: default_tone_mapping(),
-            target_colorspace_hint: false, separate_video_surface: true, deinterlace: "no".into(),
+            target_colorspace_hint: false, separate_video_surface: true, video_own_buffers: false,
+            deinterlace: "no".into(),
             cache_secs: default_cache_secs(), cache_max_mb: default_cache_max_mb(),
             video_behind: false, launch_fullscreen: false,
             audio_device: String::new(), audio_device_passthrough: String::new(),
@@ -982,7 +990,8 @@ fn migrate_legacy_config(l: LegacyConfig) -> Config {
         hwdec: l.hwdec, vf: l.vf, video_sync: l.video_sync,
         opengl_early_flush: l.opengl_early_flush, video_latency_hacks: l.video_latency_hacks,
         interpolation: l.interpolation, tscale: l.tscale, tone_mapping: l.tone_mapping,
-        target_colorspace_hint: l.target_colorspace_hint, separate_video_surface: true, deinterlace: l.deinterlace,
+        target_colorspace_hint: l.target_colorspace_hint, separate_video_surface: true, video_own_buffers: false,
+        deinterlace: l.deinterlace,
         // l.cache_size_mb deliberately dropped, not migrated — it was a
         // broken setting (see the doc comment on DeviceConfig's own
         // cache_secs/cache_max_mb fields) that only ever adjusted an mpv
