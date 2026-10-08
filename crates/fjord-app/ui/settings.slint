@@ -19,6 +19,7 @@
 //                    only while interpolation is on), target-colorspace, tone-mapping
 //                    + separate-video-surface (HDR Stage 5, Wayland only — is-wayland)
 //                    + video-own-buffers (indented under it while it's on, 2026-10-08)
+//                    + video-dither-off ("Turn off dithering (test)", always, 2026-10-08)
 //                    (always visible as of 2026-08-15 — was virtual, hidden while HDR
 //                    passthrough was on; wrong, since it's also the fallback curve mpv
 //                    uses when target-colorspace-hint-strict rejects the passthrough hint),
@@ -745,6 +746,10 @@ export component SettingsScreen inherits Rectangle {
                     // 10-bit video plane (2026-10-08) — same gate in settings::section_row_keys.
                     if AppState.is-wayland && AppState.settings-separate-video-surface: SettingsRow { key: "video.video_own_buffers"; title: "Use Fjord's own 10-bit buffers"; subtitle: "Automatic on graphics drivers that can't give 10-bit otherwise (e.g. NVIDIA). Turn on to use it everywhere — for testing. Applies after restarting Fjord"; indent: true;
                         ToggleSwitch { checked <=> AppState.settings-video-own-buffers; toggled => { AppState.settings-changed(); AppState.refocus(); } }
+                    }
+                    // Test aid (2026-10-08) — always listed (settings::section_row_keys mirrors this).
+                    SettingsRow { key: "video.video_dither_off"; title: "Turn off dithering (test)"; subtitle: "For comparing 8-bit and 10-bit video: with dithering off, an 8-bit picture shows visible steps in smooth gradients. Leave this off for normal viewing. Applies from the next video";
+                        ToggleSwitch { checked <=> AppState.settings-video-dither-off; toggled => { AppState.settings-changed(); AppState.refocus(); } }
                     }
 
                     // Per-curve descriptions (2026-08-15, live-reported: "can we also add

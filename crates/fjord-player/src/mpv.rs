@@ -1,5 +1,6 @@
 // ── fjord-player · mpv.rs ────────────────────────────────────────────────────
-//   PlayerConfig    hwdec, sync, tscale, audio_device, subtitle appearance
+//   PlayerConfig    hwdec, sync, tscale, audio_device, subtitle appearance;
+//                   dither_off → dither-depth=no (test aid, 2026-10-08)
 //                   (sub_scale/sub_pos always applied; sub_respect_ass_styling/
 //                   sub_color/sub_background only applied when non-default —
 //                   see the doc comment above those fields) and all other mpv options;
@@ -99,6 +100,10 @@ pub struct PlayerConfig {
     pub video_sync:             String,
     pub opengl_early_flush:     bool,
     pub video_latency_hacks:    bool,
+    /// `dither-depth=no` (2026-10-08, a test aid): mpv's default dithering
+    /// (`auto`, "fruit") hides 8-bit steps, so 8- vs 10-bit output can only
+    /// be compared with it off.
+    pub dither_off:             bool,
     pub interpolation:          bool,
     pub tscale:                 String,
     pub tone_mapping:           String,
@@ -148,6 +153,7 @@ impl Default for PlayerConfig {
             video_sync:             "audio".into(),
             opengl_early_flush:     false,
             video_latency_hacks:    false,
+            dither_off:             false,
             interpolation:          false,
             tscale:                 "oversample".into(),
             tone_mapping:           "auto".into(),
@@ -363,6 +369,7 @@ impl Player {
             }
             if config.opengl_early_flush   { init.set_option("opengl-early-flush",   "yes")?; }
             if config.video_latency_hacks  { init.set_option("video-latency-hacks",  "yes")?; }
+            if config.dither_off           { init.set_option("dither-depth",         "no")?; }
             if config.tone_mapping != "auto" && !config.tone_mapping.is_empty() {
                 init.set_option("tone-mapping", config.tone_mapping.as_str())?;
             }
@@ -488,12 +495,13 @@ impl Player {
         // separate call the caller makes only once Fjord's own render
         // context has been created and attached to this mpv core.
         let startup_log_suffix = format!(
-            "[hwdec={}, vf={:?}, video-sync={}, opengl-early-flush={}, video-latency-hacks={}, audio-device={:?}, audio-channels={}, ytdl-format={:?}]",
+            "[hwdec={}, vf={:?}, video-sync={}, opengl-early-flush={}, video-latency-hacks={}, dither-depth={}, audio-device={:?}, audio-channels={}, ytdl-format={:?}]",
             config.hwdec,
             config.vf,
             config.video_sync,
             config.opengl_early_flush,
             config.video_latency_hacks,
+            if config.dither_off { "no" } else { "auto" },
             config.audio_device,
             config.audio_channels,
             config.ytdl_format,
