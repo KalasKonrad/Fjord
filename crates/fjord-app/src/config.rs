@@ -31,6 +31,7 @@
 //                   Wayland subsurface; off = the old in-window path
 //                   video_own_buffers (2026-10-08, default off) — force the subsurface's own
 //                   10-bit dmabuf buffers (automatic where EGL has no 10-bit window); per run
+//                   video_dither_off (2026-10-08, default off) — test aid: mpv dither-depth=no
 //                   opt-in/off by default; enabled/screen_name/default_resolution/default_hz/
 //                   scale_4k/scale_1080p/sync_resolution/sync_refresh_rate/4k_odd_fps_mode/
 //                   hdr_mode/wcg_mode.
@@ -332,6 +333,9 @@ pub(crate) struct DeviceConfig {
     // automatically where it doesn't, e.g. NVIDIA). Testing aid; read once
     // per run when the subsurface is set up.
     #[serde(default)]                         pub video_own_buffers:     bool,
+    // Test aid (2026-10-08): mpv dither-depth=no, to compare 8- vs 10-bit
+    // output on a gradient (dithering hides the difference).
+    #[serde(default)]                         pub video_dither_off:      bool,
     #[serde(default = "default_deinterlace", deserialize_with = "deser_deinterlace")]
                                               pub deinterlace:           String,
     // ── Network cache (Settings → Player → Buffering) ───────────────────────
@@ -506,7 +510,7 @@ impl Default for DeviceConfig {
             opengl_early_flush: false, video_latency_hacks: false,
             interpolation: false, tscale: default_tscale(), tone_mapping: default_tone_mapping(),
             target_colorspace_hint: false, separate_video_surface: true, video_own_buffers: false,
-            deinterlace: "no".into(),
+            video_dither_off: false, deinterlace: "no".into(),
             cache_secs: default_cache_secs(), cache_max_mb: default_cache_max_mb(),
             video_behind: false, launch_fullscreen: false,
             audio_device: String::new(), audio_device_passthrough: String::new(),
@@ -991,7 +995,7 @@ fn migrate_legacy_config(l: LegacyConfig) -> Config {
         opengl_early_flush: l.opengl_early_flush, video_latency_hacks: l.video_latency_hacks,
         interpolation: l.interpolation, tscale: l.tscale, tone_mapping: l.tone_mapping,
         target_colorspace_hint: l.target_colorspace_hint, separate_video_surface: true, video_own_buffers: false,
-        deinterlace: l.deinterlace,
+        video_dither_off: false, deinterlace: l.deinterlace,
         // l.cache_size_mb deliberately dropped, not migrated — it was a
         // broken setting (see the doc comment on DeviceConfig's own
         // cache_secs/cache_max_mb fields) that only ever adjusted an mpv
@@ -2223,6 +2227,7 @@ impl FjordState {
             video_sync:             c.video_sync.clone(),
             opengl_early_flush:     c.opengl_early_flush,
             video_latency_hacks:    c.video_latency_hacks,
+            dither_off:             c.video_dither_off,
             interpolation:          c.interpolation,
             tscale:                 c.tscale.clone(),
             tone_mapping:           c.tone_mapping.clone(),

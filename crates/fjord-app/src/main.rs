@@ -1173,6 +1173,7 @@ pub(crate) fn apply_settings_to_window(w: &MainWindow, s: &FjordState) {
     g.set_settings_target_colorspace_hint(c.target_colorspace_hint);
     g.set_settings_separate_video_surface(c.separate_video_surface);
     g.set_settings_video_own_buffers(c.video_own_buffers);
+    g.set_settings_video_dither_off(c.video_dither_off);
     g.set_settings_deinterlace(ss(&c.deinterlace));
     g.set_settings_cache_secs(c.cache_secs as i32);
     g.set_settings_cache_max_mb(c.cache_max_mb as i32);
@@ -1307,6 +1308,7 @@ fn read_settings_from_window(w: &MainWindow, s: &mut FjordState) {
     c.target_colorspace_hint = g.get_settings_target_colorspace_hint();
     c.separate_video_surface = g.get_settings_separate_video_surface();
     c.video_own_buffers = g.get_settings_video_own_buffers();
+    c.video_dither_off = g.get_settings_video_dither_off();
     c.deinterlace            = g.get_settings_deinterlace().to_string();
     c.cache_secs             = g.get_settings_cache_secs().max(0) as u32;
     c.cache_max_mb           = g.get_settings_cache_max_mb().max(0) as u32;

@@ -32,7 +32,9 @@ are bumped together as one step, not separately.
   that was already 10-bit was still reduced to 8 bits along the way — no
   longer. New test setting **Settings → Video → HDR → "Use Fjord's own 10-bit
   buffers"** (off; shown under "Separate video surface") uses the new way on
-  every system; it applies after restarting Fjord.
+  every system; it applies after restarting Fjord. A second test setting,
+  **"Turn off dithering (test)"**, makes the difference between 8-bit and
+  10-bit video visible on a gradient; leave it off for normal viewing.
 - **Fixed: with HDR passthrough on, menus, controls and the OSD no longer show
   wrong colours.** On Wayland the video is now drawn on its own surface
   underneath Fjord's window, and only that surface is marked as HDR — the

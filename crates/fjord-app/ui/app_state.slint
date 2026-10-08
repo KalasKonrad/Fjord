@@ -1697,6 +1697,9 @@ export global AppState {
     // … → "Use Fjord's own 10-bit buffers" (2026-10-08, default off): forces
     // the own-buffer path; read once per run when the subsurface is set up.
     in-out property <bool>   settings-video-own-buffers: false;
+    // … → "Turn off dithering (test)" (2026-10-08, default off): mpv
+    // dither-depth=no, for comparing 8- and 10-bit output on a gradient.
+    in-out property <bool>   settings-video-dither-off: false;
     in-out property <bool>   is-wayland: false;
     in-out property <string> settings-deinterlace:          "no";
     in-out property <int>    settings-cache-secs:           60;
