@@ -15,8 +15,14 @@
 //   Swapchain           GBM device + BUFFER_COUNT (3) buffers: allocate (old set
 //                       retired until KWin releases it; the wl_buffer comes from
 //                       the caller's callback), acquire, buffer, mark_busy,
-//                       released, purge_retired, modifier, destroy
-//   Buffer              bo + dmabuf fd + EGLImage + renderbuffer + FBO + wl_buffer
+//                       released, purge_retired, modifier, planes, destroy
+//   Buffer              bo + one dmabuf fd per plane + EGLImage + renderbuffer +
+//                       FBO + wl_buffer
+//   Plane               one memory plane of a buffer (fd, offset, stride) — a
+//                       modifier can need several (2026-10-08: AMD's compressed
+//                       (DCC) 10-bit layouts have 2; describing only plane 0
+//                       made the EGLImage import fail with EGL_BAD_MATCH)
+//   import_attribs      pure: the EGLImage attribute list for all planes (unit-tested)
 //   modifier_text       a modifier for the log ("implicit" for INVALID)
 // ───────────────────────────────────────────────────────────────────────────
 
@@ -45,11 +51,13 @@ pub(crate) const BUFFER_COUNT: usize = 3;
 // values from Khronos eglext.h.
 const EGL_LINUX_DMA_BUF_EXT: EGLenum = 0x3270;
 const EGL_LINUX_DRM_FOURCC_EXT: EGLint = 0x3271;
-const EGL_DMA_BUF_PLANE0_FD_EXT: EGLint = 0x3272;
-const EGL_DMA_BUF_PLANE0_OFFSET_EXT: EGLint = 0x3273;
-const EGL_DMA_BUF_PLANE0_PITCH_EXT: EGLint = 0x3274;
-const EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT: EGLint = 0x3443;
-const EGL_DMA_BUF_PLANE0_MODIFIER_HI_EXT: EGLint = 0x3444;
+/// Per plane 0–3: FD, OFFSET, PITCH, MODIFIER_LO, MODIFIER_HI.
+const EGL_DMA_BUF_PLANE_ATTRS: [[EGLint; 5]; 4] = [
+    [0x3272, 0x3273, 0x3274, 0x3443, 0x3444],
+    [0x3275, 0x3276, 0x3277, 0x3445, 0x3446],
+    [0x3278, 0x3279, 0x327A, 0x3447, 0x3448],
+    [0x3440, 0x3441, 0x3442, 0x3449, 0x344A],
+];
 const EGL_DRM_RENDER_NODE_FILE_EXT: EGLint = 0x3377;
 
 // ── GBM ───────────────────────────────────────────────────────────────────
@@ -60,8 +68,10 @@ pub(crate) struct Gbm {
     is_supported:   unsafe extern "C" fn(*mut c_void, u32, u32) -> i32,
     bo_create:      unsafe extern "C" fn(*mut c_void, u32, u32, u32, u32) -> *mut c_void,
     bo_create_mods: unsafe extern "C" fn(*mut c_void, u32, u32, u32, *const u64, u32) -> *mut c_void,
-    bo_get_fd:      unsafe extern "C" fn(*mut c_void) -> i32,
-    bo_get_stride:  unsafe extern "C" fn(*mut c_void) -> u32,
+    bo_plane_count: unsafe extern "C" fn(*mut c_void) -> i32,
+    bo_plane_fd:    unsafe extern "C" fn(*mut c_void, i32) -> i32,
+    bo_plane_stride: unsafe extern "C" fn(*mut c_void, i32) -> u32,
+    bo_plane_offset: unsafe extern "C" fn(*mut c_void, i32) -> u32,
     bo_get_mod:     unsafe extern "C" fn(*mut c_void) -> u64,
     bo_destroy:     unsafe extern "C" fn(*mut c_void),
 }
@@ -81,8 +91,10 @@ pub(crate) fn load_gbm() -> Result<&'static Gbm> {
             is_supported: sym!("gbm_device_is_format_supported"),
             bo_create: sym!("gbm_bo_create"),
             bo_create_mods: sym!("gbm_bo_create_with_modifiers"),
-            bo_get_fd: sym!("gbm_bo_get_fd"),
-            bo_get_stride: sym!("gbm_bo_get_stride"),
+            bo_plane_count: sym!("gbm_bo_get_plane_count"),
+            bo_plane_fd: sym!("gbm_bo_get_fd_for_plane"),
+            bo_plane_stride: sym!("gbm_bo_get_stride_for_plane"),
+            bo_plane_offset: sym!("gbm_bo_get_offset"),
             bo_get_mod: sym!("gbm_bo_get_modifier"),
             bo_destroy: sym!("gbm_bo_destroy"),
         };
@@ -133,9 +145,18 @@ pub(crate) fn choose_format(
 // ── Swapchain ─────────────────────────────────────────────────────────────
 type TargetRbStorage = unsafe extern "system" fn(u32, *const c_void);
 
+/// One memory plane of a buffer, as linux-dmabuf's `add` and EGL's import
+/// want it.
+pub(crate) struct Plane<'a> {
+    pub fd:     BorrowedFd<'a>,
+    pub offset: u32,
+    pub stride: u32,
+}
+
 pub(crate) struct Buffer {
     bo:       *mut c_void,
-    _fd:      OwnedFd,
+    /// One per plane (kept open for the buffer's life).
+    fds:      Vec<OwnedFd>,
     image:    egl::types::EGLImageKHR,
     rb:       u32,
     pub(crate) fbo: u32,
@@ -197,13 +218,13 @@ impl Swapchain {
     }
 
     /// A fresh set of buffers at `size`; the current set is retired until KWin
-    /// releases it. `make_wl(fd, stride, modifier)` creates the wl_buffer
+    /// releases it. `make_wl(planes, modifier)` creates the wl_buffer
     /// (linux-dmabuf, asynchronous create — it lives in video_surface.rs with
     /// the rest of the protocol). Our GL context must be current.
     pub(crate) fn allocate(
         &mut self,
         size: (u32, u32),
-        mut make_wl: impl FnMut(BorrowedFd<'_>, u32, u64) -> Result<WlBuffer>,
+        mut make_wl: impl FnMut(&[Plane<'_>], u64) -> Result<WlBuffer>,
     ) -> Result<()> {
         self.retired.append(&mut self.buffers);
         self.purge_retired();
@@ -218,7 +239,7 @@ impl Swapchain {
     fn new_buffer(
         &self,
         (w, h): (u32, u32),
-        make_wl: &mut impl FnMut(BorrowedFd<'_>, u32, u64) -> Result<WlBuffer>,
+        make_wl: &mut impl FnMut(&[Plane<'_>], u64) -> Result<WlBuffer>,
     ) -> Result<Buffer> {
         let (w, h) = (w.max(1), h.max(1));
         // Safety: dev is live; the modifier list outlives the call.
@@ -232,39 +253,42 @@ impl Swapchain {
         if bo.is_null() {
             bail!("GBM couldn't allocate a {w}x{h} {} buffer", self.format_name);
         }
-        // Safety: bo is live; get_fd returns a new fd that we own.
-        let (raw_fd, stride, modifier) = unsafe { ((self.gbm.bo_get_fd)(bo), (self.gbm.bo_get_stride)(bo), (self.gbm.bo_get_mod)(bo)) };
+        let cleanup_bo = |e: anyhow::Error| { unsafe { (self.gbm.bo_destroy)(bo) }; e };
+        // Safety: bo is live.
+        let (plane_count, modifier) = unsafe { ((self.gbm.bo_plane_count)(bo), (self.gbm.bo_get_mod)(bo)) };
         // KWin advertised this format only with an implicit modifier: say so
         // (whatever GBM reports) — only advertised pairs may be sent.
         let modifier = if self.modifiers.is_empty() { DRM_FORMAT_MOD_INVALID } else { modifier };
-        if raw_fd < 0 {
-            unsafe { (self.gbm.bo_destroy)(bo) };
-            bail!("gbm_bo_get_fd failed");
+        if !(1..=4).contains(&plane_count) {
+            return Err(cleanup_bo(anyhow!("GBM buffer has {plane_count} planes")));
         }
-        // Safety: ours, from gbm_bo_get_fd.
-        let fd = unsafe { OwnedFd::from_raw_fd(raw_fd) };
-        let cleanup_bo = |e: anyhow::Error| { unsafe { (self.gbm.bo_destroy)(bo) }; e };
-
-        let mut attribs = vec![
-            egl::WIDTH as EGLint, w as EGLint, egl::HEIGHT as EGLint, h as EGLint,
-            EGL_LINUX_DRM_FOURCC_EXT, self.fourcc as EGLint,
-            EGL_DMA_BUF_PLANE0_FD_EXT, fd.as_raw_fd(),
-            EGL_DMA_BUF_PLANE0_OFFSET_EXT, 0,
-            EGL_DMA_BUF_PLANE0_PITCH_EXT, stride as EGLint,
-        ];
-        if modifier != DRM_FORMAT_MOD_INVALID {
-            attribs.extend([
-                EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT, (modifier & 0xffff_ffff) as u32 as EGLint,
-                EGL_DMA_BUF_PLANE0_MODIFIER_HI_EXT, (modifier >> 32) as u32 as EGLint,
-            ]);
+        let (mut fds, mut offsets, mut strides) = (Vec::new(), Vec::new(), Vec::new());
+        for i in 0..plane_count {
+            // Safety: bo is live, i < its plane count; get_fd_for_plane
+            // returns a new fd that we own.
+            let (raw_fd, offset, stride) = unsafe {
+                ((self.gbm.bo_plane_fd)(bo, i), (self.gbm.bo_plane_offset)(bo, i), (self.gbm.bo_plane_stride)(bo, i))
+            };
+            if raw_fd < 0 {
+                return Err(cleanup_bo(anyhow!("gbm_bo_get_fd_for_plane({i}) failed")));
+            }
+            // Safety: ours, from gbm_bo_get_fd_for_plane.
+            fds.push(unsafe { OwnedFd::from_raw_fd(raw_fd) });
+            offsets.push(offset);
+            strides.push(stride);
         }
-        attribs.push(egl::NONE as EGLint);
-        // Safety: EGL_EXT_image_dma_buf_import on a live display; the fd stays open.
+        let raw: Vec<(i32, u32, u32)> =
+            (0..fds.len()).map(|i| (fds[i].as_raw_fd(), offsets[i], strides[i])).collect();
+        let attribs = import_attribs((w, h), self.fourcc, modifier, &raw);
+        // Safety: EGL_EXT_image_dma_buf_import on a live display; the fds stay open.
         let image = unsafe {
             self.egl.CreateImageKHR(self.dpy, egl::NO_CONTEXT, EGL_LINUX_DMA_BUF_EXT, std::ptr::null(), attribs.as_ptr())
         };
         if image == egl::NO_IMAGE_KHR {
-            return Err(cleanup_bo(anyhow!("EGLImage import failed (0x{:x})", unsafe { self.egl.GetError() })));
+            return Err(cleanup_bo(anyhow!(
+                "EGLImage import failed (0x{:x}; modifier {}, {} plane(s))",
+                unsafe { self.egl.GetError() }, modifier_text(modifier), fds.len(),
+            )));
         }
         // Safety: our context is current (caller); image is live.
         let (rb, fbo, status) = unsafe {
@@ -288,8 +312,13 @@ impl Swapchain {
             gl_cleanup();
             return Err(cleanup_bo(anyhow!("framebuffer on the {} buffer incomplete (0x{status:x})", self.format_name)));
         }
-        match make_wl(fd.as_fd(), stride, modifier) {
-            Ok(wl) => Ok(Buffer { bo, _fd: fd, image, rb, fbo, wl, busy: false, modifier }),
+        let planes: Vec<Plane<'_>> = (0..fds.len())
+            .map(|i| Plane { fd: fds[i].as_fd(), offset: offsets[i], stride: strides[i] })
+            .collect();
+        let made = make_wl(&planes, modifier);
+        drop(planes);
+        match made {
+            Ok(wl) => Ok(Buffer { bo, fds, image, rb, fbo, wl, busy: false, modifier }),
             Err(e) => {
                 gl_cleanup();
                 Err(cleanup_bo(e))
@@ -333,6 +362,11 @@ impl Swapchain {
         self.buffers.first().map_or(DRM_FORMAT_MOD_INVALID, |b| b.modifier)
     }
 
+    /// Memory planes per buffer (for the log).
+    pub(crate) fn planes(&self) -> usize {
+        self.buffers.first().map_or(0, |b| b.fds.len())
+    }
+
     fn free(&self, b: Buffer) {
         // Safety: created by new_buffer; GL objects on our (current) context.
         unsafe {
@@ -354,6 +388,25 @@ impl Swapchain {
         // Safety: created in new(); all its bos are destroyed.
         unsafe { (self.gbm.device_destroy)(self.dev) };
     }
+}
+
+/// The EGL_EXT_image_dma_buf_import(_modifiers) attribute list for a buffer
+/// of `size` whose `planes` are (fd, offset, stride), NONE-terminated. The
+/// modifier goes on every plane (it describes the whole layout) unless it's
+/// DRM_FORMAT_MOD_INVALID (implicit).
+pub(crate) fn import_attribs((w, h): (u32, u32), fourcc: u32, modifier: u64, planes: &[(i32, u32, u32)]) -> Vec<EGLint> {
+    let mut a = vec![
+        egl::WIDTH as EGLint, w as EGLint, egl::HEIGHT as EGLint, h as EGLint,
+        EGL_LINUX_DRM_FOURCC_EXT, fourcc as EGLint,
+    ];
+    for (&(fd, offset, stride), [k_fd, k_off, k_pitch, k_lo, k_hi]) in planes.iter().zip(EGL_DMA_BUF_PLANE_ATTRS) {
+        a.extend([k_fd, fd, k_off, offset as EGLint, k_pitch, stride as EGLint]);
+        if modifier != DRM_FORMAT_MOD_INVALID {
+            a.extend([k_lo, (modifier & 0xffff_ffff) as u32 as EGLint, k_hi, (modifier >> 32) as u32 as EGLint]);
+        }
+    }
+    a.push(egl::NONE as EGLint);
+    a
 }
 
 /// For the log: a DRM format modifier in hex.
@@ -382,6 +435,27 @@ mod tests {
         assert!(choose_format(&[(XR24, None)], |_| true).is_none());
         // Implicit-only advertisement → empty modifier list.
         assert_eq!(choose_format(&[(XB30, None)], |_| true).unwrap().2, Vec::<u64>::new());
+    }
+
+    #[test]
+    fn import_attribs_describe_every_plane() {
+        // AMD DCC case (2026-10-08): 2 planes, explicit modifier on both.
+        let m: u64 = 0x0200_0000_28a6_bf04;
+        let a = import_attribs((1920, 1200), XR30, m, &[(7, 0, 7680), (8, 9_437_184, 256)]);
+        let lo = (m & 0xffff_ffff) as u32 as EGLint;
+        let hi = (m >> 32) as u32 as EGLint;
+        assert_eq!(a, vec![
+            egl::WIDTH as EGLint, 1920, egl::HEIGHT as EGLint, 1200, 0x3271, XR30 as EGLint,
+            0x3272, 7, 0x3273, 0, 0x3274, 7680, 0x3443, lo, 0x3444, hi,
+            0x3275, 8, 0x3276, 9_437_184, 0x3277, 256, 0x3445, lo, 0x3446, hi,
+            egl::NONE as EGLint,
+        ]);
+        // Implicit modifier, one plane: no modifier attributes at all.
+        let a = import_attribs((64, 64), XB30, DRM_FORMAT_MOD_INVALID, &[(3, 0, 256)]);
+        assert_eq!(a, vec![
+            egl::WIDTH as EGLint, 64, egl::HEIGHT as EGLint, 64, 0x3271, XB30 as EGLint,
+            0x3272, 3, 0x3273, 0, 0x3274, 256, egl::NONE as EGLint,
+        ]);
     }
 
     #[test]
