@@ -18,7 +18,9 @@ provides=('fjord')
 conflicts=('fjord')
 install=fjord.install
 options=('!debug')
-source=("fjord::git+https://github.com/KalasKonrad/Fjord.git")
+# TEMPORARY: builds the hdr-10bit branch (10-bit video plane) for HTPC testing.
+# Remove the #branch= fragment (on main) once testing is done or the branch is merged.
+source=("fjord::git+https://github.com/KalasKonrad/Fjord.git#branch=hdr-10bit")
 sha256sums=('SKIP')
 
 pkgver() {
