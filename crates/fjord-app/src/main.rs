@@ -16,7 +16,10 @@
 //                        of them a real LineEdit with cursor-position risk) shares the same
 //                        emoji/accent-safe backspace on ordinary typing too, not just the on-screen
 //                        keyboard's own ⌫ key
-//   settings helpers     apply_settings_to_window ↔ read_settings_from_window
+//   settings helpers     apply_settings_to_window ↔ read_settings_from_window;
+//                        settings_snapshot/settings_diff — the settings-changed handler logs
+//                        which settings changed (debug; text values by name only)
+//   panic hook           writes "PANIC" + backtrace to fjord.log (timestamp + thread since 2026-10-08)
 //   push_cached_data     push on-disk caches (home/movies/series/collections/artists/albums/
 //                        playlists) into AppState/FjordState for instant display — only called
 //                        after spawn_auto_login's probe confirms the server is reachable; takes
@@ -1253,6 +1256,35 @@ pub(crate) fn apply_settings_to_window(w: &MainWindow, s: &FjordState) {
     g.set_settings_seerr_enabled(cp.seerr_enabled);
     g.set_settings_trailer_quality(ss(&cp.trailer_quality));
     seerr_auth::push_seerr_status(&g, cp);
+}
+
+/// The device settings and the active profile's settings as JSON objects,
+/// for settings_diff.
+fn settings_snapshot(c: &config::Config) -> [serde_json::Value; 2] {
+    [
+        serde_json::to_value(&c.device).unwrap_or_default(),
+        serde_json::to_value(c.active()).unwrap_or_default(),
+    ]
+}
+
+/// Field names that differ between two settings_snapshot()s — with old → new
+/// for switches and numbers; text fields by name only (they can hold
+/// credentials).
+fn settings_diff(before: &[serde_json::Value; 2], after: &[serde_json::Value; 2]) -> Vec<String> {
+    use serde_json::Value;
+    let mut out = Vec::new();
+    for (b, a) in before.iter().zip(after) {
+        let (Some(b), Some(a)) = (b.as_object(), a.as_object()) else { continue };
+        for (key, new) in a {
+            let old = b.get(key).unwrap_or(&Value::Null);
+            if old == new { continue; }
+            out.push(match (old, new) {
+                (Value::Bool(_) | Value::Number(_), Value::Bool(_) | Value::Number(_)) => format!("{key}: {old} → {new}"),
+                _ => format!("{key} (changed)"),
+            });
+        }
+    }
+    out
 }
 
 fn read_settings_from_window(w: &MainWindow, s: &mut FjordState) {
@@ -2861,9 +2893,14 @@ fn main() -> Result<()> {
     // panics (which would otherwise SIGABRT silently) appear in fjord.log.
     let panic_log = log_dir.join("fjord.log");
     let default_hook = std::panic::take_hook();
+    // 2026-10-08: timestamp + thread in the header, so a panic lines up with
+    // the log lines around it (two "Recursion detected" panics on the HTPC
+    // had neither).
     std::panic::set_hook(Box::new(move |info| {
         let bt  = std::backtrace::Backtrace::force_capture();
-        let msg = format!("PANIC: {info}\nBacktrace:\n{bt}\n");
+        let when = chrono::Local::now().format("%Y-%m-%dT%H:%M:%S%.6f%:z");
+        let thread = std::thread::current().name().unwrap_or("unnamed").to_string();
+        let msg = format!("{when} PANIC (thread {thread}): {info}\nBacktrace:\n{bt}\n");
         eprintln!("{msg}");
         if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&panic_log) {
             use std::io::Write;
@@ -5842,7 +5879,12 @@ fn main() -> Result<()> {
         AppState::get(&window).on_settings_changed(move || {
             let Some(w) = window_weak.upgrade() else { return; };
             let mut s = state.lock().unwrap();
+            // Diagnostics (2026-10-08, a Slint panic right after a settings
+            // change on the HTPC): which settings this change touched.
+            let before = settings_snapshot(&s.config);
             read_settings_from_window(&w, &mut s);
+            let changed = settings_diff(&before, &settings_snapshot(&s.config));
+            debug!("settings changed: {}", if changed.is_empty() { "nothing".to_string() } else { changed.join(", ") });
             // Live-reflect the seerr-enabled toggle: rebuild seerr_client
             // (build_seerr_client already returns None when seerr_enabled
             // is false, so this both tears it down on disable and rebuilds
@@ -6166,6 +6208,22 @@ fn main() -> Result<()> {
     // Send stop report and release screensaver inhibitor if a video was playing when the user quit.
     quit_cleanup(&video, &rt, &state);
     Ok(())
+}
+
+#[cfg(test)]
+mod settings_diff_tests {
+    use super::settings_diff;
+    use serde_json::json;
+
+    #[test]
+    fn names_changes_and_hides_text_values() {
+        let before = [json!({"separate_video_surface": true, "cache_secs": 60, "hwdec": "auto"}), json!({"seerr_key": "a"})];
+        let after  = [json!({"separate_video_surface": false, "cache_secs": 60, "hwdec": "nvdec"}), json!({"seerr_key": "b"})];
+        let d = settings_diff(&before, &after);
+        // serde_json orders keys alphabetically.
+        assert_eq!(d, vec!["hwdec (changed)", "separate_video_surface: true → false", "seerr_key (changed)"]);
+        assert!(settings_diff(&before, &before).is_empty());
+    }
 }
 
 #[cfg(test)]
