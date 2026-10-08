@@ -144,7 +144,9 @@
 //                           falling back to Config.sub_lang/sub_lang2/audio_lang, same matching logic either way;
 //                           video-init diagnostic (2026-07-29, video_init_checked): warns once at 5s if a
 //                           video item has no VideoReconfig yet — see Player::has_seen_video_reconfig
-//                           stall recovery (2026-08-09): rolling "no progress in 5s" check (not tied to
+//                           stall recovery (2026-08-09): rolling "no progress in STALL_SECS (5 s)" check —
+//                           FIRST_OPEN_STALL_SECS (15 s) for an item's first open before FileLoaded
+//                           (2026-10-08, server disk spin-up; logged once via stall_grace_logged) — (not tied to
 //                           the original start position — generalized from a real HTPC network-outage
 //                           log), reloads the same item fresh (new connection) at the last known-good
 //                           position, capped at MAX_STALL_RELOAD_ATTEMPTS_HEALTHY/_UNHEALTHY (2026-08-28:
@@ -571,6 +573,9 @@ pub(crate) struct VideoState {
     // after real, sustained, non-stalled progress.
     pub stall_reload_attempts_for: Option<(String, u32)>,
     pub stall_last_reload_at: Option<Instant>,
+    /// "Still opening — first-open grace" already logged for this player
+    /// (2026-10-08; see FIRST_OPEN_STALL_SECS).
+    pub stall_grace_logged: bool,
     pub screensaver_cookie:  PlaybackCookies,
     pub chapters:              Vec<(f64, String)>, // chapter list; loaded ~2 s after playback start
     pub chapters_loaded:       bool,               // true once chapter poll succeeded or timed out
@@ -654,7 +659,7 @@ impl Default for VideoState {
             from_detail: false, from_series: false, from_season: false,
             did_render: false, first_frame_logged: false,
             stall_last_progress_pos: 0.0, stall_last_progress_at: None, stall_last_tick_pos: None,
-            stall_reload_attempts_for: None, stall_last_reload_at: None,
+            stall_reload_attempts_for: None, stall_last_reload_at: None, stall_grace_logged: false,
             screensaver_cookie: PlaybackCookies::default(),
             chapters: Vec::new(), chapters_loaded: false,
             chapter_load_attempts: 0, chapter_osd_ticks: 0, delay_osd_ticks: 0,
@@ -1124,6 +1129,7 @@ fn reset_video_state_for_playback(vs: &mut VideoState, player: Player, config: &
     // start position against a completely unrelated leftover value from
     // whatever was playing (or being seeked in) right before this reset.
     vs.stall_last_tick_pos    = None;
+    vs.stall_grace_logged     = false;
     // stall_reload_attempts_for/stall_last_reload_at deliberately NOT reset
     // here — see their own doc comment on VideoState for why they must
     // survive a same-item reload.
@@ -2499,6 +2505,14 @@ fn apply_audio_track(
 const MAX_STALL_RELOAD_ATTEMPTS_HEALTHY:   u32 = 7;  // (7+1) × 5s ≈ 40s
 const MAX_STALL_RELOAD_ATTEMPTS_UNHEALTHY: u32 = 2;  // (2+1) × 5s = 15s, the original budget
 const STALL_GIVE_UP_TOAST:  &str = "Playback stopped — lost connection to server";
+/// Seconds without progress before a reload, normally.
+const STALL_SECS: f64 = 5.0;
+/// The same for an item's FIRST open while mpv hasn't reached FileLoaded yet
+/// (2026-10-08): the server's media disks spin down, and waking them makes
+/// the first open hang 5–12 s — a reload at 5 s just restarted a request
+/// that was about to succeed. Reloads after that use STALL_SECS again, so a
+/// server that's really down still gives up about as fast as before.
+const FIRST_OPEN_STALL_SECS: f64 = 15.0;
 const FAILED_OPEN_TOAST:    &str = "Couldn't play this — the file wouldn't open";
 const TRAILER_FAILED_TOAST: &str = "Trailer unavailable";
 
@@ -2801,8 +2815,20 @@ pub(crate) fn wire_mpv_timer(
                     let stalled_for = vs.stall_last_progress_at
                         .map(|t| t.elapsed().as_secs_f64())
                         .unwrap_or(0.0);
+                    let first_open = loaded_since.is_none()
+                        && !vs.stall_reload_attempts_for.as_ref().is_some_and(|(id, n)| {
+                            *n > 0 && vs.item_id.as_deref() == Some(id.as_str())
+                        });
+                    let stall_limit = if first_open { FIRST_OPEN_STALL_SECS } else { STALL_SECS };
+                    if first_open && stalled_for >= STALL_SECS && !vs.stall_grace_logged {
+                        vs.stall_grace_logged = true;
+                        debug!(
+                            "still opening after {stalled_for:.1}s (server disks waking up?) — first open of this item, \
+                             waiting up to {FIRST_OPEN_STALL_SECS:.0}s before a reload"
+                        );
+                    }
                     let is_stalled = start.elapsed() >= Duration::from_secs(5)
-                        && stalled_for >= 5.0
+                        && stalled_for >= stall_limit
                         && !is_paused
                         && !buffering;
                     stalled_now = is_stalled;

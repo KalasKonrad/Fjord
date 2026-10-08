@@ -23,6 +23,15 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Fixed: Fjord's log file contained your Jellyfin access key** (in the
+  line logged when the live-update connection starts). It's now hidden there
+  and in connection errors and player messages, like it already was for
+  video addresses.
+- **Improved: the first video after the server has been idle no longer
+  restarts while the server's disks wake up.** Fjord now gives that first
+  open up to 15 seconds before treating it as stuck (it used to retry after
+  5, which only started the slow open over). Later hiccups are still retried
+  after 5 seconds.
 - **Improved: video on a 10-bit screen is no longer reduced to 8 bits along
   the way** (with "Separate video surface" on, e.g. AMD graphics) — smoother
   gradients in dark scenes, skies and HDR.
