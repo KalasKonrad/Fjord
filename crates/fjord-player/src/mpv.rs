@@ -634,7 +634,8 @@ impl Player {
                 // failures, vo errors: the "why" this project's own event log
                 // couldn't show for the 2026-07-29 audio-only-video bug.
                 Some(Ok(Event::LogMessage { prefix, level, text, .. })) => {
-                    let msg = format!("mpv[{}] {}: {}", prefix, level, text.trim_end());
+                    // mpv can quote the stream URL (api_key=…) in its messages.
+                    let msg = redact_api_key(&format!("mpv[{}] {}: {}", prefix, level, text.trim_end()));
                     match level {
                         "fatal" | "error" => error!("{}", msg),
                         // ffmpeg repeats this for every frame of some Dolby Vision
@@ -1304,5 +1305,25 @@ impl Drop for MpvRenderCtx {
                 drop(Box::from_raw(self.cb_data));
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::redact_api_key;
+
+    #[test]
+    fn redacts_the_token_wherever_it_sits() {
+        // WebSocket URL: key in the middle, more query after it.
+        assert_eq!(
+            redact_api_key("ws://host/socket?api_key=abc123&deviceId=dev"),
+            "ws://host/socket?api_key=REDACTED&deviceId=dev"
+        );
+        // Stream URL: key at the end; an error message quoting a URL.
+        assert_eq!(
+            redact_api_key("Unable to connect to http://h/Videos/1/stream?static=true&api_key=abc123"),
+            "Unable to connect to http://h/Videos/1/stream?static=true&api_key=REDACTED"
+        );
+        assert_eq!(redact_api_key("no secrets here"), "no secrets here");
     }
 }
