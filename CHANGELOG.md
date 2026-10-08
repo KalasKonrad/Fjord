@@ -23,18 +23,17 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
-- **Improved: smoother colour gradients in video on NVIDIA graphics (Wayland).**
-  With "Separate video surface" on, video now reaches the screen with 10 bits
-  per colour even where the graphics driver only offers 8-bit windows (e.g.
-  NVIDIA): Fjord draws the video into 10-bit buffers it sets up itself. Less
-  banding in dark scenes, skies and HDR. If that isn't possible on a system,
-  Fjord falls back to the previous way on its own. Also: video on a surface
-  that was already 10-bit was still reduced to 8 bits along the way — no
-  longer. New test setting **Settings → Video → HDR → "Use Fjord's own 10-bit
-  buffers"** (off; shown under "Separate video surface") uses the new way on
-  every system; it applies after restarting Fjord. A second test setting,
-  **"Turn off dithering (test)"**, makes the difference between 8-bit and
-  10-bit video visible on a gradient; leave it off for normal viewing.
+- **Improved: video on a 10-bit screen is no longer reduced to 8 bits along
+  the way** (with "Separate video surface" on, e.g. AMD graphics) — smoother
+  gradients in dark scenes, skies and HDR.
+- **New: Settings → Video → HDR → "Use Fjord's own 10-bit buffers"** (off;
+  shown under "Separate video surface", applies after restarting Fjord). Draws
+  the video in 10-bit even where the graphics driver only offers 8-bit windows
+  (e.g. NVIDIA). It only helps if the driver then sends 10-bit to the screen —
+  on Linux, NVIDIA GTX 10-series and older can't do that over HDMI. A second
+  test setting, **"Turn off dithering (test)"**, makes the difference between
+  8-bit and 10-bit video visible on a gradient; leave it off for normal
+  viewing.
 - **Fixed: with HDR passthrough on, menus, controls and the OSD no longer show
   wrong colours.** On Wayland the video is now drawn on its own surface
   underneath Fjord's window, and only that surface is marked as HDR — the

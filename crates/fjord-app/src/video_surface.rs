@@ -14,11 +14,12 @@
 //   transparent on top (AppState.video-surface-active).
 //   Two ways of presenting (Present, chosen once at setup, 2026-10-08):
 //     EglWindow  an EGL window surface on the child; eglSwapBuffers commits.
-//                Used where EGL offers a 10-bit window config (AMD), and as
-//                the 8-bit fallback.
-//     Dmabuf     Fjord's own 10-bit buffers (dmabuf_plane::Swapchain) where
-//                EGL has no 10-bit window config (NVIDIA), or always with
-//                Settings → "Use Fjord's own 10-bit buffers". Our context is
+//                The default (10-bit where EGL offers it, e.g. AMD; else 8-bit),
+//                and the fallback.
+//     Dmabuf     Fjord's own 10-bit buffers (dmabuf_plane::Swapchain), only
+//                with Settings → "Use Fjord's own 10-bit buffers" (opt-in since
+//                2026-10-08: NVIDIA's Linux driver sends 8 bpc over HDMI on
+//                Pascal whatever the buffers hold — see DEVLOG). Our context is
 //                surfaceless (or on a 1×1 pbuffer); mpv renders with
 //                flip_y = false (a wl_buffer's row 0 is the top), spots are
 //                blitted at top-origin rects, glFinish before KWin gets the
@@ -127,10 +128,10 @@ thread_local! {
 
 /// Sets the backplane up on first call and keeps its size in step with the
 /// window. Returns false when it's unavailable for the rest of the session.
-/// `force_own_buffers` (Settings → "Use Fjord's own 10-bit buffers") only
-/// matters on the first call — the presentation mode is fixed per run.
+/// `own_buffers` (Settings → "Use Fjord's own 10-bit buffers") only matters
+/// on the first call — the presentation mode is fixed per run.
 /// Main/GL thread only, from BeforeRendering (Slint's EGL context current).
-pub(crate) fn ensure_ready(phys: (u32, u32), scale: f32, force_own_buffers: bool) -> bool {
+pub(crate) fn ensure_ready(phys: (u32, u32), scale: f32, own_buffers: bool) -> bool {
     BACKPLANE.with(|slot| {
         let mut slot = slot.borrow_mut();
         if matches!(*slot, Slot::Untried) {
@@ -138,7 +139,7 @@ pub(crate) fn ensure_ready(phys: (u32, u32), scale: f32, force_own_buffers: bool
                 debug!("video backplane: not running under Wayland — in-window video path");
                 Slot::Failed
             } else {
-                match Backplane::create(phys, scale, force_own_buffers) {
+                match Backplane::create(phys, scale, own_buffers) {
                     Ok(bp) => Slot::Ready(Box::new(bp)),
                     Err(e) => {
                         warn!("video backplane unavailable — in-window video path for this session: {e:#}");
@@ -444,7 +445,7 @@ impl OurGl {
 }
 
 impl Backplane {
-    fn create(phys: (u32, u32), scale: f32, force_own_buffers: bool) -> Result<Self> {
+    fn create(phys: (u32, u32), scale: f32, own_buffers: bool) -> Result<Self> {
         let &(display_addr, surface_addr) =
             HANDLES.get().ok_or_else(|| anyhow!("not running under Wayland"))?;
         let wl_egl = wayland_egl_option().ok_or_else(|| anyhow!("libwayland-egl.so.1 not found"))?;
@@ -535,13 +536,12 @@ impl Backplane {
             viewport, dmabuf, phys, logical, rect_fbo: None, dirty: false, stats: FrameStats::default(),
         };
 
-        // ── Presentation: own 10-bit buffers where EGL can't do 10-bit ────
+        // ── Presentation: own 10-bit buffers only when the setting is on ──
         let renderable = if api == egl::OPENGL_ES_API { egl::OPENGL_ES3_BIT } else { egl::OPENGL_BIT };
         log_window_configs(egl, dpy, renderable);
         let window_configs = ranked_window_configs(egl, dpy, renderable);
-        let ten_bit_window = window_configs.as_ref().is_ok_and(|c| c.iter().any(|(rank, ..)| *rank <= 1));
-        let own_note = if ten_bit_window && !force_own_buffers {
-            "own buffers not needed: EGL has a 10-bit window config".to_string()
+        let own_note = if !own_buffers {
+            "own 10-bit buffers off in Settings".to_string()
         } else {
             match bp.start_dmabuf(renderable) {
                 Ok(()) => String::new(),

@@ -127,8 +127,8 @@
 //                           subsurface players render via video_surface::render_frame into the spot
 //                           Slint shows (VideoSpot rects → to_buffer_rect; skips a frame while a new
 //                           spot is unmeasured) and set AppState.video-surface-active; sets is-wayland
-//                           once. 2026-10-08: passes Settings → "Use Fjord's own 10-bit buffers" to
-//                           ensure_ready; the path line names the plane's mode + mpv depth; mpv gets
+//                           once. 2026-10-08: passes Settings → "Use Fjord's own 10-bit buffers" (opt-in)
+//                           to ensure_ready; the path line names the plane's mode + mpv depth; mpv gets
 //                           the Target's flip/format/depth (in-window path: depth 0 = 8); a frame the
 //                           own buffers skipped (none free) requests another redraw
 //   wire_mpv_timer          16 ms timer: position (also updates music-bar-pos/elapsed/total when is-audio-playing), stats,
