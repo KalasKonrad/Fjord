@@ -744,7 +744,7 @@ export component SettingsScreen inherits Rectangle {
                         ToggleSwitch { checked <=> AppState.settings-separate-video-surface; toggled => { AppState.settings-changed(); AppState.refocus(); } }
                     }
                     // 10-bit video plane (2026-10-08) — same gate in settings::section_row_keys.
-                    if AppState.is-wayland && AppState.settings-separate-video-surface: SettingsRow { key: "video.video_own_buffers"; title: "Use Fjord's own 10-bit buffers"; subtitle: "Automatic on graphics drivers that can't give 10-bit otherwise (e.g. NVIDIA). Turn on to use it everywhere — for testing. Applies after restarting Fjord"; indent: true;
+                    if AppState.is-wayland && AppState.settings-separate-video-surface: SettingsRow { key: "video.video_own_buffers"; title: "Use Fjord's own 10-bit buffers"; subtitle: "Video in 10-bit even where the graphics driver only gives 8-bit windows (e.g. NVIDIA). Only helps if the driver sends 10-bit to the screen — on Linux, NVIDIA GTX 10-series and older can't over HDMI. Applies after restarting Fjord"; indent: true;
                         ToggleSwitch { checked <=> AppState.settings-video-own-buffers; toggled => { AppState.settings-changed(); AppState.refocus(); } }
                     }
                     // Test aid (2026-10-08) — always listed (settings::section_row_keys mirrors this).

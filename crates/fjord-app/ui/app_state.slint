@@ -1694,7 +1694,7 @@ export global AppState {
     // 2026-10-05, default on) — row only shown on Wayland (is-wayland, set
     // by Rust once the window's Wayland handles are known).
     in-out property <bool>   settings-separate-video-surface: true;
-    // … → "Use Fjord's own 10-bit buffers" (2026-10-08, default off): forces
+    // … → "Use Fjord's own 10-bit buffers" (2026-10-08, default off, opt-in):
     // the own-buffer path; read once per run when the subsurface is set up.
     in-out property <bool>   settings-video-own-buffers: false;
     // … → "Turn off dithering (test)" (2026-10-08, default off): mpv

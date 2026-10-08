@@ -2582,6 +2582,8 @@ Fixed at the source: `send_command` now special-cases `Unset` to synchronously s
 - `nvkms-evo.c` (dithering): with BT.2100 (HDR10) colorimetry and output bpc < 10, the display engine **dithers to 8 bpc automatically** (unless dithering is explicitly disabled). So in HDR the HTPC's chain is: own 10-bit buffers → KWin → display engine dithers to 8 → HDMI 8-bit RGB. With mpv's default dithering the old path is mpv-dithered 8-bit — two kinds of 8-bit dither, hence "no visible difference". The dithering-off test therefore can't show a 10-bit *link* on this HTPC; own buffers looking smoother there would come from the display engine's dither.
 - Windows does 10-bit on the same hardware through its own driver stack.
 
+**Decision (user, 2026-10-08): own buffers opt-in only.** On the HTPC they can't show a gain (8 bpc HDMI link, display-engine dither in HDR) and cost a 4–7 ms `glFinish` per 4K frame. `Backplane::create` now uses the EGL window unless Settings → "Use Fjord's own 10-bit buffers" is on (`ensure_ready(…, own_buffers)`; the "ready" line says `own 10-bit buffers off in Settings`). The code stays for GPUs whose driver can send 10-bit but whose EGL windows are 8-bit (e.g. NVIDIA Ampere+ over HDMI, or Pascal over DisplayPort). The `MPV_RENDER_PARAM_DEPTH` fix stays (it matters for AMD's 10-bit EGL window). The user plans a new GPU; AMD's HDMI 2.1 FRL landed in Linux 7.2 (off by default, `amdgpu.dc_feature_mask=0x400`; default-on and HDMI VRR still pending as of late August 2026) — not needed for 4K24 10-bit, which fits HDMI 2.0.
+
 ### Native display-mode-sync (display_sync): resolution/refresh-rate/HDR/WCG matched to source (2026-09-18)
 
 **Context.** The user runs a mature, working external Python script
