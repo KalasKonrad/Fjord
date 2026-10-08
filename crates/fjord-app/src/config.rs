@@ -29,8 +29,8 @@
 //                   display_sync_trailers (2026-10-04, default off) — Watch Trailer switches the display too
 //                   separate_video_surface (HDR Stage 5, 2026-10-05, default on) — video on its own
 //                   Wayland subsurface; off = the old in-window path
-//                   video_own_buffers (2026-10-08, default off) — force the subsurface's own
-//                   10-bit dmabuf buffers (automatic where EGL has no 10-bit window); per run
+//                   video_own_buffers (2026-10-08, default off) — the subsurface's own 10-bit
+//                   dmabuf buffers, opt-in; per run
 //                   video_dither_off (2026-10-08, default off) — test aid: mpv dither-depth=no
 //                   opt-in/off by default; enabled/screen_name/default_resolution/default_hz/
 //                   scale_4k/scale_1080p/sync_resolution/sync_refresh_rate/4k_odd_fps_mode/
@@ -328,9 +328,9 @@ pub(crate) struct DeviceConfig {
     // menus/OSD in correct colours with HDR passthrough). Default on; off =
     // the old in-window path, for platforms where it performs better.
     #[serde(default = "default_true")]        pub separate_video_surface: bool,
-    // 10-bit video plane (2026-10-08): force Fjord's own GBM/dmabuf buffers
-    // for the subsurface even where EGL offers a 10-bit window (they're used
-    // automatically where it doesn't, e.g. NVIDIA). Testing aid; read once
+    // 10-bit video plane (2026-10-08): Fjord's own GBM/dmabuf buffers for the
+    // subsurface. Opt-in (was automatic where EGL has no 10-bit window, until
+    // NVIDIA's source showed Pascal sends 8 bpc over HDMI anyway). Read once
     // per run when the subsurface is set up.
     #[serde(default)]                         pub video_own_buffers:     bool,
     // Test aid (2026-10-08): mpv dither-depth=no, to compare 8- vs 10-bit

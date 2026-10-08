@@ -83,8 +83,8 @@ Needs `mpv`/libmpv (`pacman -S mpv`). Optional at runtime: `yt-dlp` (trailers), 
   window is transparent only while `AppState.video-surface-active`; femtovg clears **before** `BeforeRendering`,
   so turning it opaque must happen in the UI path (`reset_playback_ui`), not only in the render callback. HDR
   tags the subsurface, never the window, for such a player. Every new place that shows video needs a `VideoSpot`.
-  It presents one of two ways, chosen once per run: an EGL window surface, or — where EGL has no 10-bit window
-  config (NVIDIA) — Fjord's own GBM/dmabuf 10-bit buffers (`dmabuf_plane.rs`). Own buffers: mpv `flip_y = false`
+  It presents one of two ways, chosen once per run: an EGL window surface (default), or — opt-in, Settings "Use
+  Fjord's own 10-bit buffers" — Fjord's own GBM/dmabuf 10-bit buffers (`dmabuf_plane.rs`). Own buffers: mpv `flip_y = false`
   (buffer row 0 is the top), spot rects top-origin, `glFinish` before attach, only format/modifier pairs KWin
   advertised, linux-dmabuf `create` (async) — never `create_immed` (a refusal is fatal on winit's display).
 - Always pass mpv the target's real depth (`MPV_RENDER_PARAM_DEPTH`, the `depth` arg of `MpvRenderCtx::render`;
