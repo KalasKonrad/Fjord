@@ -1,6 +1,7 @@
 // ── fjord-app · ws.rs ─────────────────────────────────────────────────────────
 //   start_websocket  spawn reconnect loop; returns AbortHandle for sign-out cleanup
 //   ws_loop          outer reconnect loop with exponential backoff (1 s → 60 s max);
+//                    (the URL carries api_key — logged only via redact_api_key, 2026-10-08)
 //                    owns pending_upsert_ids (LibraryChanged Added/Updated ids +
 //                    UserDataChanged favorite/resume candidates, shared accumulator)
 //   row_has_id                found-by-id check on a CardItem model (Phase 3 transition gate)

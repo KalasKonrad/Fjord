@@ -8,6 +8,7 @@
 //                   only when Some — no-op for every non-trailer call site (Watch Trailer)
 //   PollResult      Running | Finished | TrackChanged (gapless transition, same instance)
 //   redact_api_key  replace api_key= query value with REDACTED for token-safe URL logging
+//                   (also applied to every forwarded mpv log message, 2026-10-08; unit-tested)
 //   StatsData       snapshot of mpv property values for the stats overlay
 //                   includes video_sync_mode (reads "video-sync" property back from mpv);
 //                   video_out_primaries/gamma/sig_peak read video-target-params (2026-08-17
