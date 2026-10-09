@@ -1,5 +1,6 @@
 // ── fjord-player · mpv.rs ────────────────────────────────────────────────────
-//   PlayerConfig    hwdec, sync, tscale, audio_device, subtitle appearance
+//   PlayerConfig    hwdec, sync, tscale, audio_device, subtitle appearance;
+//                   dither_off → dither-depth=no (test aid, 2026-10-08)
 //                   (sub_scale/sub_pos always applied; sub_respect_ass_styling/
 //                   sub_color/sub_background only applied when non-default —
 //                   see the doc comment above those fields) and all other mpv options;
@@ -7,6 +8,7 @@
 //                   only when Some — no-op for every non-trailer call site (Watch Trailer)
 //   PollResult      Running | Finished | TrackChanged (gapless transition, same instance)
 //   redact_api_key  replace api_key= query value with REDACTED for token-safe URL logging
+//                   (also applied to every forwarded mpv log message, 2026-10-08; unit-tested)
 //   StatsData       snapshot of mpv property values for the stats overlay
 //                   includes video_sync_mode (reads "video-sync" property back from mpv);
 //                   video_out_primaries/gamma/sig_peak read video-target-params (2026-08-17
@@ -80,7 +82,8 @@
 //                     also routes Event::LogMessage (mpv's own internal log, requested at "warn" in
 //                     new() — see the audio-only-video diagnostic note above) to tracing warn/error
 //   TrackInfo       audio / video / subtitle track descriptor; external_filename for external subs
-//   MpvRenderCtx    OpenGL render context + FBO management; drop before Player
+//   MpvRenderCtx    OpenGL render context + FBO management; drop before Player.
+//                   render(…, depth) passes MPV_RENDER_PARAM_DEPTH when > 0 (2026-10-08)
 // ─────────────────────────────────────────────────────────────────────────────
 use anyhow::{ensure, Result};
 use libmpv2::{events::Event, mpv_end_file_reason, FileState, Format, Mpv};
@@ -98,6 +101,10 @@ pub struct PlayerConfig {
     pub video_sync:             String,
     pub opengl_early_flush:     bool,
     pub video_latency_hacks:    bool,
+    /// `dither-depth=no` (2026-10-08, a test aid): mpv's default dithering
+    /// (`auto`, "fruit") hides 8-bit steps, so 8- vs 10-bit output can only
+    /// be compared with it off.
+    pub dither_off:             bool,
     pub interpolation:          bool,
     pub tscale:                 String,
     pub tone_mapping:           String,
@@ -147,6 +154,7 @@ impl Default for PlayerConfig {
             video_sync:             "audio".into(),
             opengl_early_flush:     false,
             video_latency_hacks:    false,
+            dither_off:             false,
             interpolation:          false,
             tscale:                 "oversample".into(),
             tone_mapping:           "auto".into(),
@@ -362,6 +370,7 @@ impl Player {
             }
             if config.opengl_early_flush   { init.set_option("opengl-early-flush",   "yes")?; }
             if config.video_latency_hacks  { init.set_option("video-latency-hacks",  "yes")?; }
+            if config.dither_off           { init.set_option("dither-depth",         "no")?; }
             if config.tone_mapping != "auto" && !config.tone_mapping.is_empty() {
                 init.set_option("tone-mapping", config.tone_mapping.as_str())?;
             }
@@ -487,12 +496,13 @@ impl Player {
         // separate call the caller makes only once Fjord's own render
         // context has been created and attached to this mpv core.
         let startup_log_suffix = format!(
-            "[hwdec={}, vf={:?}, video-sync={}, opengl-early-flush={}, video-latency-hacks={}, audio-device={:?}, audio-channels={}, ytdl-format={:?}]",
+            "[hwdec={}, vf={:?}, video-sync={}, opengl-early-flush={}, video-latency-hacks={}, dither-depth={}, audio-device={:?}, audio-channels={}, ytdl-format={:?}]",
             config.hwdec,
             config.vf,
             config.video_sync,
             config.opengl_early_flush,
             config.video_latency_hacks,
+            if config.dither_off { "no" } else { "auto" },
             config.audio_device,
             config.audio_channels,
             config.ytdl_format,
@@ -625,7 +635,8 @@ impl Player {
                 // failures, vo errors: the "why" this project's own event log
                 // couldn't show for the 2026-07-29 audio-only-video bug.
                 Some(Ok(Event::LogMessage { prefix, level, text, .. })) => {
-                    let msg = format!("mpv[{}] {}: {}", prefix, level, text.trim_end());
+                    // mpv can quote the stream URL (api_key=…) in its messages.
+                    let msg = redact_api_key(&format!("mpv[{}] {}: {}", prefix, level, text.trim_end()));
                     match level {
                         "fatal" | "error" => error!("{}", msg),
                         // ffmpeg repeats this for every frame of some Dolby Vision
@@ -1209,9 +1220,14 @@ impl MpvRenderCtx {
     /// 8-bit RGBA; now that callers can widen the FBO (see `create_fbo` in
     /// fjord-app), this needs to reflect the real format or mpv could be
     /// left assuming/introspecting the wrong precision.
-    pub fn render(&self, fbo: i32, w: i32, h: i32, flip: bool, internal_format: i32) -> Result<()> {
+    /// `depth`: bits per component of what the frame finally lands in
+    /// (MPV_RENDER_PARAM_DEPTH — mpv dithers to it), or 0 to leave it out,
+    /// which mpv takes as 8. 2026-10-08: never passed before, so even a
+    /// 10-bit video plane got video dithered down to 8 bits.
+    pub fn render(&self, fbo: i32, w: i32, h: i32, flip: bool, internal_format: i32, depth: i32) -> Result<()> {
         let flip_i: i32 = flip as i32;
         let mut fbo_params = sys::mpv_opengl_fbo { fbo, w, h, internal_format };
+        let end = sys::mpv_render_param { type_: 0, data: std::ptr::null_mut() };
         let mut params = [
             sys::mpv_render_param {
                 type_: sys::mpv_render_param_type_MPV_RENDER_PARAM_OPENGL_FBO,
@@ -1221,7 +1237,15 @@ impl MpvRenderCtx {
                 type_: sys::mpv_render_param_type_MPV_RENDER_PARAM_FLIP_Y,
                 data:  &flip_i as *const _ as *mut c_void,
             },
-            sys::mpv_render_param { type_: 0, data: std::ptr::null_mut() },
+            if depth > 0 {
+                sys::mpv_render_param {
+                    type_: sys::mpv_render_param_type_MPV_RENDER_PARAM_DEPTH,
+                    data:  &depth as *const _ as *mut c_void,
+                }
+            } else {
+                end
+            },
+            end,
         ];
         let rc = unsafe { sys::mpv_render_context_render(self.ctx, params.as_mut_ptr()) };
         ensure!(rc == 0, "mpv_render_context_render failed (code {})", rc);
@@ -1282,5 +1306,25 @@ impl Drop for MpvRenderCtx {
                 drop(Box::from_raw(self.cb_data));
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::redact_api_key;
+
+    #[test]
+    fn redacts_the_token_wherever_it_sits() {
+        // WebSocket URL: key in the middle, more query after it.
+        assert_eq!(
+            redact_api_key("ws://host/socket?api_key=abc123&deviceId=dev"),
+            "ws://host/socket?api_key=REDACTED&deviceId=dev"
+        );
+        // Stream URL: key at the end; an error message quoting a URL.
+        assert_eq!(
+            redact_api_key("Unable to connect to http://h/Videos/1/stream?static=true&api_key=abc123"),
+            "Unable to connect to http://h/Videos/1/stream?static=true&api_key=REDACTED"
+        );
+        assert_eq!(redact_api_key("no secrets here"), "no secrets here");
     }
 }
