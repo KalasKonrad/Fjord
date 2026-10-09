@@ -248,7 +248,8 @@
 //                              (2026-07-31: rapid sidebar cycling fired this on every single
 //                              pass through nav==6, piling up concurrent GET /auth/me calls)
 //                              is now a no-op within the cooldown window
-//   on_nav_selected            (in wire_discover) also now resets discover-popup-open/
+//   on_nav_selected            (in wire_discover) logs nav-selected(n) at debug (2026-10-08);
+//                              also resets discover-popup-open/
 //                              discover-filter-bar-active when leaving Discover (real bug:
 //                              a filter popup left open silently reappeared on return) and
 //                              calls refresh_seerr_admin_status on every arrival (rate-limited,
@@ -5755,6 +5756,7 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
         let gen = Arc::clone(&discover_gen);
         let rt = rt.clone();
         move |nav| {
+            debug!("nav-selected({nav})"); // sidebar click or key (2026-10-08 diagnostics)
             if nav == 6 {
                 ensure_discover_landing(Arc::clone(&state), ww.clone(), rt.clone());
                 spawn_movies_list_fetch(Arc::clone(&state), ww.clone(), rt.clone(), false);

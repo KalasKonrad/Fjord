@@ -57,8 +57,9 @@ Needs `mpv`/libmpv (`pacman -S mpv`). Optional at runtime: `yt-dlp` (trailers), 
 - Accounts/profiles: `auth.rs` (login, `finish_session_setup`), `profile.rs` (pickers, `switch_to_profile`,
   Bonfire sync, idle lock), `profile_edit.rs`, `bonfire_admin.rs`, `secrets.rs` (secrets encrypted at rest).
 - Integrations/platform: `seerr_auth.rs`, `ws.rs` (Jellyfin WebSocket delta sync), `prewarm.rs`, `hdr.rs`
-  (Wayland color-management worker), `display_sync.rs` (kscreen-doctor mode matching), `activity.rs`
-  (winit event tap: idle detection + Wayland handles), `pipewire_fix.rs`.
+  (Wayland color-management worker), `video_surface.rs` (video subsurface) + `dmabuf_plane.rs` (its own 10-bit
+  buffers), `display_sync.rs` (kscreen-doctor mode matching), `activity.rs` (winit event tap: idle detection +
+  Wayland handles), `pipewire_fix.rs`.
 
 ## Architecture rules
 
@@ -82,6 +83,12 @@ Needs `mpv`/libmpv (`pacman -S mpv`). Optional at runtime: `yt-dlp` (trailers), 
   window is transparent only while `AppState.video-surface-active`; femtovg clears **before** `BeforeRendering`,
   so turning it opaque must happen in the UI path (`reset_playback_ui`), not only in the render callback. HDR
   tags the subsurface, never the window, for such a player. Every new place that shows video needs a `VideoSpot`.
+  It presents one of two ways, chosen once per run: an EGL window surface (default), or — opt-in, Settings "Use
+  Fjord's own 10-bit buffers" — Fjord's own GBM/dmabuf 10-bit buffers (`dmabuf_plane.rs`). Own buffers: mpv `flip_y = false`
+  (buffer row 0 is the top), spot rects top-origin, `glFinish` before attach, only format/modifier pairs KWin
+  advertised, linux-dmabuf `create` (async) — never `create_immed` (a refusal is fatal on winit's display).
+- Always pass mpv the target's real depth (`MPV_RENDER_PARAM_DEPTH`, the `depth` arg of `MpvRenderCtx::render`;
+  0 = omitted = 8) — it dithers to it.
 
 ### Threads and shared state
 - Tokio for async, Slint event loop on the main thread. Return to the UI with `slint::invoke_from_event_loop`

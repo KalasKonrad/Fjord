@@ -23,6 +23,26 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Fixed: Fjord's log file contained your Jellyfin access key** (in the
+  line logged when the live-update connection starts). It's now hidden there
+  and in connection errors and player messages, like it already was for
+  video addresses.
+- **Improved: the first video after the server has been idle no longer
+  restarts while the server's disks wake up.** Fjord now gives that first
+  open up to 15 seconds before treating it as stuck (it used to retry after
+  5, which only started the slow open over). Later hiccups are still retried
+  after 5 seconds.
+- **Improved: video on a 10-bit screen is no longer reduced to 8 bits along
+  the way** (with "Separate video surface" on, e.g. AMD graphics) — smoother
+  gradients in dark scenes, skies and HDR.
+- **New: Settings → Video → HDR → "Use Fjord's own 10-bit buffers"** (off;
+  shown under "Separate video surface", applies after restarting Fjord). Draws
+  the video in 10-bit even where the graphics driver only offers 8-bit windows
+  (e.g. NVIDIA). It only helps if the driver then sends 10-bit to the screen —
+  on Linux, NVIDIA GTX 10-series and older can't do that over HDMI. A second
+  test setting, **"Turn off dithering (test)"**, makes the difference between
+  8-bit and 10-bit video visible on a gradient; leave it off for normal
+  viewing.
 - **Fixed: with HDR passthrough on, menus, controls and the OSD no longer show
   wrong colours.** On Wayland the video is now drawn on its own surface
   underneath Fjord's window, and only that surface is marked as HDR — the

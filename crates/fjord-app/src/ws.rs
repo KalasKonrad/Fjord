@@ -2,7 +2,8 @@
 //   start_websocket  spawn reconnect loop; returns AbortHandle for sign-out cleanup
 //   ws_loop          outer reconnect loop with exponential backoff (1 s → 60 s max);
 //                    owns pending_upsert_ids (LibraryChanged Added/Updated ids +
-//                    UserDataChanged favorite/resume candidates, shared accumulator)
+//                    UserDataChanged favorite/resume candidates, shared accumulator);
+//                    the URL carries api_key — logged only via redact_api_key (2026-10-08)
 //   row_has_id                found-by-id check on a CardItem model (Phase 3 transition gate)
 //   sync_open_episodes         Phase 6: if an added/updated episode belongs to the series+season
 //                              currently on screen (series screen episode row or season detail
@@ -153,7 +154,9 @@ async fn ws_loop(
     let mut backoff = Duration::from_secs(1);
 
     loop {
-        debug!("ws: connecting to {}", url);
+        // The URL carries the Jellyfin token (api_key=…) — never log it raw
+        // (2026-10-08: it was, at every connect).
+        debug!("ws: connecting to {}", fjord_player::redact_api_key(&url));
         match connect_async(url.as_str()).await {
             Ok((ws, _)) => {
                 info!("ws: connected");
@@ -174,7 +177,9 @@ async fn ws_loop(
             }
             Err(e) => {
                 state.lock().unwrap().ws_connected = false;
-                warn!("ws: connect error: {e:#} — retrying in {:?}", backoff);
+                // tungstenite's "Unable to connect to <url>" quotes the URL.
+                let e = fjord_player::redact_api_key(&format!("{e:#}"));
+                warn!("ws: connect error: {e} — retrying in {:?}", backoff);
             }
         }
         tokio::time::sleep(backoff).await;
