@@ -18,9 +18,7 @@ provides=('fjord')
 conflicts=('fjord')
 install=fjord.install
 options=('!debug')
-# TEMPORARY: builds the hdr-10bit branch (10-bit video plane) for HTPC testing.
-# Remove the #branch= fragment (on main) once testing is done or the branch is merged.
-source=("fjord::git+https://github.com/KalasKonrad/Fjord.git#branch=hdr-10bit")
+source=("fjord::git+https://github.com/KalasKonrad/Fjord.git")
 sha256sums=('SKIP')
 
 pkgver() {
@@ -32,8 +30,8 @@ build() {
     cd "$srcdir/fjord"
     export CARGO_HOME="$srcdir/cargo-home"
     # TEMPORARY (2026-10-08): Slint then names the property in a "Recursion
-    # detected" panic — diagnosing a crash on hdr-10bit. Remove together with
-    # the #branch= fragment above.
+    # detected" panic — watching for the Settings crash (PLAN.md → Issues).
+    # Remove once it's understood or hasn't come back for a while.
     export RUSTFLAGS="${RUSTFLAGS:-} --cfg slint_debug_property"
     cargo build --release --locked
 }
