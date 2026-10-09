@@ -2586,6 +2586,8 @@ Fixed at the source: `send_command` now special-cases `Unset` to synchronously s
 
 **Decision (user, 2026-10-08): own buffers opt-in only.** On the HTPC they can't show a gain (8 bpc HDMI link, display-engine dither in HDR) and cost a 4–7 ms `glFinish` per 4K frame. `Backplane::create` now uses the EGL window unless Settings → "Use Fjord's own 10-bit buffers" is on (`ensure_ready(…, own_buffers)`; the "ready" line says `own 10-bit buffers off in Settings`). The code stays for GPUs whose driver can send 10-bit but whose EGL windows are 8-bit (e.g. NVIDIA Ampere+ over HDMI, or Pascal over DisplayPort). The `MPV_RENDER_PARAM_DEPTH` fix stays (it matters for AMD's 10-bit EGL window). The user plans a new GPU; AMD's HDMI 2.1 FRL landed in Linux 7.2 (off by default, `amdgpu.dc_feature_mask=0x400`; default-on and HDMI VRR still pending as of late August 2026) — not needed for 4K24 10-bit, which fits HDMI 2.0.
 
+**Merged into `main` (2026-10-09).** Confirmed live before the merge: HTPC (own buffers off by default → EGL window, `mpv depth 8`), AMD dev machine with own buffers on after the multi-plane fix (picture upright, colours right, mini-player thumbnail right, 4 plays without warnings or skipped frames), dithering toggle applied, token redaction and the first-open grace. The Settings "Recursion detected" crash didn't recur and stays a watch item (PLAN.md → Issues); `PKGBUILD` keeps `--cfg slint_debug_property` until then, `#branch=hdr-10bit` removed.
+
 ### Native display-mode-sync (display_sync): resolution/refresh-rate/HDR/WCG matched to source (2026-09-18)
 
 **Context.** The user runs a mature, working external Python script
