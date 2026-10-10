@@ -1,36 +1,22 @@
 // ── fjord-app · person.rs ─────────────────────────────────────────────────────
-//   open_person_screen  now takes state (not client) so it can check item_detail_cache +
-//                       person_filmography_cache (Part 2) — only sets app-content-loading=true
-//                       when either is a miss; reset AppState person props, spawn async fetch
-//                       (portrait + bio + filmography in parallel, cached ones skip their
-//                       network call), emit app-loading-progress=0.5, then show person on
-//                       completion; separately spawns spawn_other_work (independent task, doesn't
-//                       block the main page from showing — see that fn's own doc comment)
-//   resolve_person_tmdb_id  best-effort Jellyfin person -> TMDB person id (ProviderIds on the
-//                       Person item, falling back to a fuzzy Seerr name search); cached either
-//                       way (including a None miss) in person_tmdb_id_cache (2026-07-29, Deep
-//                       Seerr integration)
-//   spawn_other_work    independent task: resolves TMDB person id, fetches combined_credits,
-//                       filters to not-already-owned (resolve_and_fetch_discovery_row), commits
-//                       to person-other-work — a second, Discover-flavored SectionRow below the
-//                       local-only filmography row (2026-07-29, Deep Seerr integration)
-//   handle_key          keyboard dispatch for the person screen:
-//                       !in-film-row && !in-other-work-row: Down→filmography, or straight to
-//                       other-work when filmography is empty (2026-08-13 fix — see its own
-//                       comment), Back/Enter→close
-//                       in-film-row: Up→back, Down→other-work (if non-empty), Left/Right navigate,
-//                       Enter→open-detail, C→ctx-menu
-//                       in-other-work-row: Up→filmography, Left/Right navigate, Enter→open-
-//                       discover-item (in-library redirect handled there), C→discover ctx-menu
-//   open_person_from_discover  entry point for a Discover-context cast member (RequestDetailScreen's
-//                       CastRow, previously unclickable — "item-selected left unbound"), 2026-08-13.
-//                       Resolves a local Jellyfin Person first (resolve_local_person), opens the
-//                       real native screen above when found, else open_person_screen_tmdb (TMDB-
-//                       only bio + full filmography, no local filmography row at all)
-//   resolve_local_person  best-effort TMDB person id -> local Jellyfin Person id (name search +
-//                       ProviderIds cross-check, single-candidate fallback), cached in
-//                       local_person_by_tmdb_cache
-//   wire_person            callbacks moved from main() (0.5.0 step 3): person screen
+//   open_person_screen  reset the person props; portrait + bio + filmography in parallel (cached
+//                       parts from item_detail_cache/person_filmography_cache skip the network;
+//                       app-content-loading only on a miss), then show; spawns spawn_other_work;
+//                       a cache hit revalidates (spawn_person_revalidate). Session-guarded.
+//   resolve_person_tmdb_id  Jellyfin person → TMDB person id (ProviderIds, else a Seerr name
+//                       search); cached incl. misses in person_tmdb_id_cache
+//   spawn_other_work    TMDB combined credits minus what's in the library
+//                       (resolve_and_fetch_discovery_row) → person-other-work, the Discover-style
+//                       row under the local filmography; doesn't hold up the page
+//   open_person_from_discover  a Discover cast member: local Person match (resolve_local_person) →
+//                       the native screen, else open_person_screen_tmdb (TMDB bio + filmography,
+//                       no local row); one resolve at a time per person
+//   resolve_local_person  TMDB person id → local Person (name search + ProviderIds, or a single
+//                       unambiguous candidate); cached in local_person_by_tmdb_cache
+//   handle_key          header: Down → filmography (or Other Work when it's empty), Back/Enter
+//                       close; filmography: Up/Down, Left/Right, Enter open, C menu; Other Work:
+//                       Up, Left/Right, Enter open-discover-item, C Discover menu
+//   wire_person         callbacks moved from main() (0.5.0 step 3): person screen
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
 
@@ -150,14 +136,8 @@ pub(crate) fn open_person_screen(
         let id_guard   = id.clone();
 
         let _ = slint::invoke_from_event_loop(move || {
-            // Real gap found 2026-08-21, live-reported "the issue is still
-            // there" after the search-endpoint fix — the log showed
-            // resolve_local_person genuinely succeeding and open_person_screen
-            // being invoked, but this commit closure (the only place that
-            // actually sets show-person=true) had zero logging of its own,
-            // so there was no way to tell whether it committed or silently
-            // bailed on one of its two guards below. Logged explicitly now,
-            // on every path, so the next capture is conclusive either way.
+            // Logged on every path, including both guards below — a silent bail here once made a
+            // live bug undiagnosable.
             let Some(w) = ww.upgrade() else {
                 debug!("open_person_screen({id_guard}): commit aborted — window gone");
                 return;
@@ -167,14 +147,9 @@ pub(crate) fn open_person_screen(
                 debug!("open_person_screen({id_guard}): commit skipped — person-id changed to {current_id:?} meanwhile");
                 return;
             }
-            // Session guard (Bonfire Phase 1, step 8 audit, 2026-08-09) —
-            // the id check above now catches most of this (reset_session_state
-            // clears person-id on a switch/sign-out), but a coincidental
-            // same-id reopen under a NEW profile before this stale fetch
-            // resolves would still slip through an id check alone. Same
-            // guard class as spawn_person_revalidate's own, just also
-            // applied to the actual open-screen path, not only its
-            // background revalidate sibling.
+            // Session guard: the id check above catches most stale results (reset_session_state
+            // clears person-id), but not the same id reopened under a new profile before this fetch
+            // resolves.
             if !crate::session_current(&state, &client) {
                 debug!("open_person_screen({id_guard}): commit skipped — session changed meanwhile");
                 return;
@@ -197,13 +172,9 @@ pub(crate) fn open_person_screen(
         });
     });
 
-    // Cache-hit only: the screen above already showed instantly from cached
-    // data. Real gap, live-reported: Jellyfin's WebSocket only delivers
-    // LibraryChanged to the most-recently-connected client when multiple
-    // clients share a session (JELLYFIN.md) — this can silently starve Fjord
-    // of the event, leaving these caches stale indefinitely with no other
-    // fallback. This revalidation is what closes that gap for whatever's
-    // actually on screen right now.
+    // Cache hit: the screen already showed from cache. Revalidate what's on screen — Jellyfin
+    // only sends LibraryChanged to the most recently connected client of a shared session
+    // (JELLYFIN.md), so the caches can otherwise stay stale.
     if is_cache_hit {
         spawn_person_revalidate(
             id_revalidate,
@@ -234,10 +205,8 @@ fn spawn_person_revalidate(
         let (Ok(detail), Ok(film_items)) = (detail_res, film_res) else {
             return;
         };
-        // Sign-out (or a different account signing in on a shared HTPC)
-        // mid-fetch must not let this per-user data land in the new session's
-        // cache — same guard class as main.rs::session_current's own doc
-        // comment (CR11-2).
+        // Per-user data must not land in a new session's cache after a mid-fetch sign-out or
+        // switch.
         if !crate::session_current(&state, &client) {
             return;
         }
@@ -270,16 +239,9 @@ fn spawn_person_revalidate(
 
 // ── Other Work row (2026-07-29, Deep Seerr integration) ───────────────────────
 
-/// Best-effort Jellyfin person -> TMDB person id resolution. First tries
-/// `ProviderIds` on the Person item itself (free once `get_item_detail`'s
-/// Fields gained `ProviderIds`, 2026-07-29 — `cached_detail` is usually
-/// already in hand from the main fetch, so this is often a zero-network-call
-/// check); if absent (the common case — Jellyfin's own Person metadata is
-/// usually much thinner than movie/series metadata), falls back to a fuzzy
-/// `SeerrClient::search` by name (persons are normally filtered out of
-/// search results by callers, not the crate itself — this is the one
-/// deliberate exception). Cached either way, including a `None` miss, so a
-/// failed resolution isn't retried on every visit to the same person.
+/// Best-effort Jellyfin person → TMDB person id: ProviderIds on the Person item first (often
+/// already in `cached_detail`, no network), else a fuzzy SeerrClient::search by name (the one
+/// caller that keeps person results). Cached either way, including a None miss.
 async fn resolve_person_tmdb_id(
     client: &Arc<fjord_api::JellyfinClient>,
     seerr: &Arc<fjord_seerr::SeerrClient>,
@@ -413,20 +375,11 @@ fn spawn_other_work(
 
 // ── Person detail from a Discover-context cast member (2026-08-13) ────────────
 
-/// Entry point for opening person detail from a Discover-context cast
-/// member — `RequestDetailScreen`'s `CastRow` previously left
-/// `item-selected` deliberately unbound ("there's no TMDB-person detail
-/// screen to open"). Scoped via `AskUserQuestion`: user picked "Try local
-/// match first, TMDB fallback" over always-TMDB-only or local-only-no-
-/// fallback. Resolves a local Jellyfin `Person` match (`resolve_local_person`)
-/// and opens the real native screen (`open_person_screen`, above — real
-/// bio/filmography/watch-state) when found; falls back to
-/// `open_person_screen_tmdb` (TMDB-sourced bio + full filmography, no local
-/// filmography row) otherwise. `tmdb_id` is a plain decimal string (as
-/// carried on `CastMember.id` for a Discover-sourced cast row, itself
-/// straight from TMDB's own `Credits` response) — a parse failure means the
-/// caller passed something that isn't actually a TMDB cast row, so this
-/// silently no-ops rather than guessing.
+/// Opens person detail from a Discover cast member (RequestDetailScreen's CastRow): a local
+/// Jellyfin Person match (resolve_local_person) opens the native screen (open_person_screen —
+/// bio, filmography, watch state); otherwise the TMDB fallback (open_person_screen_tmdb — bio +
+/// full filmography, no local row). `tmdb_id` is the decimal TMDB id from CastMember.id; a
+/// parse failure is a silent no-op.
 pub(crate) fn open_person_from_discover(
     tmdb_id: String,
     name: String,
@@ -441,12 +394,8 @@ pub(crate) fn open_person_from_discover(
         warn!("open_person_from_discover: {tmdb_id:?} doesn't parse as a TMDB id");
         return;
     };
-    // Real bug, live-diagnosed 2026-08-19 (see person_discover_resolving's
-    // own doc comment in config.rs for the full story): a repeat press on
-    // the same cast member before this pipeline settles used to spawn a
-    // fully independent, fully redundant chain every time — this is the one
-    // choke point both downstream paths (real local match, TMDB fallback)
-    // share, so a single guard here covers both without touching either.
+    // One resolve per person at a time (see person_discover_resolving in config.rs): repeat
+    // presses used to start redundant chains. Both downstream paths pass through here.
     {
         let mut s = state.lock().unwrap();
         if s.person_discover_resolving == Some(tmdb_num) {
@@ -471,31 +420,10 @@ pub(crate) fn open_person_from_discover(
         // check) is microseconds, not the hundreds-of-ms cache-hit window
         // this fix actually closes.
         state2.lock().unwrap().person_discover_resolving = None;
-        // Real bug, found 2026-08-21 by reading a live log with the debug
-        // logging this section's own earlier fix added ("check latest log
-        // the issue is still there") — `commit skipped — person-id changed
-        // to "" meanwhile`, every single time, for a person whose local
-        // match resolved correctly. Root cause: this whole block runs
-        // inside `rt.spawn`, a Tokio *worker* thread — but both
-        // `open_person_screen`/`open_person_screen_tmdb` do their own
-        // synchronous `AppState::get(&w).set_person_id(...)` etc. at the
-        // very top of their own bodies, unwrapped, correct for every one of
-        // their other 6+ call sites (all triggered directly from a Slint
-        // UI-thread callback) but not for this one. `slint::Weak::upgrade()`
-        // checks the calling thread and returns `None` **silently** off the
-        // UI thread — confirmed against this exact codebase's own prior
-        // finding for the identical class of bug (`push_coming_up_row`) —
-        // so the initial `set_person_id` call was silently never happening
-        // at all; only the LATER async commit closure (which correctly
-        // wraps itself in `invoke_from_event_loop`) ever ran on the real UI
-        // thread, by which point `person-id` was still whatever it was
-        // before this click — reading back empty, indistinguishable from
-        // "changed meanwhile" even though nothing else ever touched it.
-        // Fixed by moving onto the UI thread ourselves before calling
-        // either function, so their own top-level AppState writes land
-        // correctly — their own internal `rt.spawn` calls for the actual
-        // async fetch work are unaffected, `Handle::spawn` queues onto the
-        // runtime regardless of which thread calls it.
+        // Back on the UI thread before calling either opener: they set AppState (person-id …) at
+        // the top of their bodies, and from this Tokio worker Weak::upgrade() silently returns None
+        // — so the commit later saw an empty person-id and skipped. Their own rt.spawn calls work
+        // from any thread.
         let _ = slint::invoke_from_event_loop(move || match resolved {
             Some(local_id) => open_person_screen(local_id, name, state2, ww2, rt2),
             None => open_person_screen_tmdb(tmdb_num, name, state2, ww2, rt2),
@@ -503,18 +431,11 @@ pub(crate) fn open_person_from_discover(
     });
 }
 
-/// Best-effort TMDB person id -> local Jellyfin Person id. High-confidence
-/// path: any name-search candidate whose own `ProviderIds.Tmdb` matches the
-/// known id exactly. Lower-confidence fallback, only when the search
-/// returns EXACTLY ONE candidate (name search is Jellyfin's own fuzzy
-/// match, not this function's) and none had a `ProviderIds` match either
-/// way — accepting a single unambiguous candidate mirrors this codebase's
-/// own established tolerance for `resolve_person_tmdb_id`'s identical
-/// single-candidate fallback in the opposite direction, above. Two or more
-/// same-named candidates with no `ProviderIds` to disambiguate them is
-/// deliberately treated as "no confident match," not a coin flip — the
-/// exact false-match risk flagged to the user when this design was chosen.
-/// Cached (hit or miss) in `local_person_by_tmdb_cache`.
+/// Best-effort TMDB person id → local Jellyfin Person id: a name-search candidate whose
+/// ProviderIds.Tmdb matches exactly; otherwise, only if the search returns EXACTLY ONE
+/// candidate, that one (like resolve_person_tmdb_id's single-candidate fallback). Several
+/// same-named candidates without ProviderIds = no confident match. Cached (hit or miss) in
+/// local_person_by_tmdb_cache.
 async fn resolve_local_person(
     client: &Arc<fjord_api::JellyfinClient>,
     state: &Arc<Mutex<FjordState>>,
@@ -590,19 +511,9 @@ fn open_person_screen_tmdb(
     let synthetic_id = format!("tmdb:{tmdb_id}");
     if let Some(w) = ww.upgrade() {
         let g = AppState::get(&w);
-        // Real bug, live-reported 2026-08-19 ("Dose still not work") —
-        // confirmed from the log: 6 identical fetches for the same
-        // tmdb_id fired within ~1s, no re-entrancy guard at all. Each
-        // press re-set app-content-loading=true synchronously; with
-        // several overlapping async fetches in flight, the LAST "true"
-        // write could land after an EARLIER fetch's own "false"
-        // completion (this function's own final commit closure below),
-        // leaving the loading overlay stuck covering an already-correctly-
-        // populated PersonScreen forever — indistinguishable from "nothing
-        // happens" at all. A repeat press for the exact same target while
-        // one is already resolving is now a no-op; a genuinely different
-        // target still interrupts and starts fresh, since person-id would
-        // differ.
+        // A repeat press for the same target while one is resolving is a no-op: overlapping fetches
+        // could leave app-content-loading stuck on over a finished screen. A different target still
+        // starts fresh (person-id differs).
         if g.get_person_id().as_str() == synthetic_id && g.get_app_content_loading() {
             return;
         }
@@ -666,10 +577,8 @@ fn open_person_screen_tmdb(
         );
         let _ = slint::invoke_from_event_loop(move || {
             let Some(w) = ww2.upgrade() else { return };
-            // Session guard, same class as every other Seerr-fetch commit
-            // closure in this codebase (Bonfire Phase 1 step 8 audit) — a
-            // sign-out/profile-switch/Seerr-disconnect mid-fetch must not
-            // let this land in the new session's UI.
+            // Session guard: a sign-out/profile switch/Seerr disconnect mid-fetch must not land
+            // here.
             if !crate::seerr_session_current(&state2, &seerr2) {
                 return;
             }
@@ -712,14 +621,8 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
                 if g.get_person_filmography().row_count() > 0 {
                     g.set_person_in_film_row(true);
                 } else if g.get_person_other_work().row_count() > 0 {
-                    // Real dead-end, found 2026-08-13 while adding the
-                    // TMDB-only person screen: that screen always has an
-                    // empty filmography row (no local data at all), and
-                    // this branch previously only ever transitioned
-                    // header→film-row or film-row→other-work-row — with
-                    // filmography empty, Down from the header did nothing,
-                    // making Other Work keyboard-unreachable even though
-                    // it's the only row present.
+                    // Down from the header goes to Other Work when the filmography row is empty
+                    // (always on the TMDB-only screen) — otherwise that row was unreachable.
                     g.set_person_in_other_work_row(true);
                 }
             } else if in_film && g.get_person_other_work().row_count() > 0 {

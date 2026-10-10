@@ -16934,3 +16934,534 @@ Above `let in_known_collection =`:
 //                    KeepAlive
 // ─────────────────────────────────────────────────────────────────────────────
 ```
+
+#### `crates/fjord-app/src/context_menu.rs`
+
+Above `{`:
+```
+// Season tabs are SeasonEntry, not CardItem either (2026-08-12,
+// season-tab context menu) — patch the same way, so re-opening the
+// context menu for the same season tab right after marking it
+// watched/favourited shows the real current state instead of what
+// SeasonEntry was populated with when the series screen first opened.
+```
+
+Above `pub(crate) fn patch_watchlist_on_jellyfin_models(`:
+```
+/// Patches the watchlist star (2026-07-20, user request — "if its in
+/// library it shuld also show there") onto a NATIVE Jellyfin card by
+/// Jellyfin item id match — the counterpart to `discover.rs`'s own
+/// `patch_watchlist_on_all_models`, which matches by tmdb id across
+/// Discover-sourced models instead. Mirrors this exact function's own
+/// model list (skips `album_tracks`/`TrackItem` — music has no TMDB
+/// provider-id path, so a watchlisted Movie/Series id can never legitimately
+/// match a track row anyway). Sets `on_watchlist` to the EXACT given value
+/// (not add-only) so a mid-session external removal (e.g. via Seerr's own
+/// web UI) correctly clears a stale star too — the identical bug class
+/// already found and fixed once this session for the Coming Up row's own
+/// `on_watchlist` field.
+```
+
+Above `pub(crate) fn remove_from_continue_watching(w: &MainWindow, id: &str) {`:
+```
+/// Remove an id from the four "in progress" rows (Next Up/Continue Watching) only — used
+/// when playback position resets to 0 WITHOUT the item being marked played. Deliberately
+/// distinct from remove_from_dynamic_rows: Not Watched rows have the OPPOSITE membership
+/// rule from Continue Watching (untouched = position 0, vs in-progress = position > 0), so
+/// folding a position-reset into remove_from_dynamic_rows's shared played-or-position==0
+/// condition incorrectly stripped a freshly-favorited-but-never-watched item out of Not
+/// Watched purely because its position already happens to be 0 — not because anything
+/// about its watch state actually changed (found while investigating a WS delta-sync
+/// dashboard-flash report, Phase 89 follow-up).
+```
+
+Above `pub(crate) fn upsert_cards_in_model(`:
+```
+/// Insert/replace `items` by id into a CardItem model — the WS delta-sync counterpart to
+/// remove_item_from_all_models's rebuild-filter, upserting instead of removing. `posters`
+/// supplies already-decoded art for the delta (from poster::fetch_posters_for_delta, keyed by
+/// item id); a miss falls back to whatever poster the row already had rather than flashing to
+/// no-poster (fetch_posters_for_delta re-resolves every item in the batch including unchanged
+/// ones, so a miss here should be rare — only on a fetch failure — not the common case). The
+/// actual model apply is delegated to crate::apply_cards_preserving_identity (Phase 96, shared
+/// with poster.rs/movies.rs/home.rs) so an upsert-only batch (no new rows) mutates in place.
+```
+
+Above `crate::apply_cards_preserving_identity(&model, rows)`:
+```
+// Delegate the apply to the shared primitive (Phase 96): when nothing was
+// appended, `rows` has the exact same ids in the exact same order as `model`
+// already had, so it mutates in place instead of destroying/recreating every
+// OTHER card's poster Image too — a WS delta batch usually only touches one
+// or two items in a grid of hundreds.
+```
+
+Above `pub(crate) fn resolve_tmdb_for_jellyfin_item(`:
+```
+/// Movie/Series only, matching Seerr's own Watchlist mediaType enum (movie|tv)
+/// — an Episode/BoxSet/MusicAlbum/etc has no sensible Seerr counterpart.
+/// Scans the same `all_movies`/`all_series` lists `discover.rs::find_local_item`
+/// already scans in the opposite direction (TMDB id -> local item); this is
+/// the reverse (local item -> TMDB id), via the same `provider_ids["Tmdb"]`
+/// field. Real gap, live-reported 2026-07-19 ("you cant add anyting from the
+/// library to the watchlist") — an already-in-library item redirects
+/// straight to this Jellyfin-flavored menu, which never had a Watchlist row
+/// at all; Discover's own Watchlist toggle only ever lived on the separate
+/// Discover-card menu family, unreachable once `find_local_item` redirects.
+```
+
+Above `struct OpenMenuArgs {`:
+```
+// Bundled to keep open_context_menu_state under clippy's too-many-arguments
+// threshold (8 > 7) once the state param joined the original 6 CardItem-ish
+// fields, 2026-07-19 — same "group loose scalars into one struct" fix this
+// codebase already applied to movie_details_to_meta/tv_details_to_meta
+// (discover.rs) for the identical reason.
+```
+
+Above `let rows = existing_jellyfin_menu_rows(g);`:
+```
+// Derive initial focus from the same visible-row list Up/Down/Confirm
+// already use, rather than a hardcoded 0/1 — needed since the Season
+// item type (2026-08-12) hides rows 0/1 entirely, so hardcoding "1"
+// here would land initial focus on a row that isn't even mounted.
+```
+
+Above `{`:
+```
+// ── context-jf-toggle-watchlist: Watchlist row on the JELLYFIN menu
+// family (row 8, 2026-07-19) — resolved at open time into
+// context-menu-jf-tmdb-id/-jf-media-type by open_context_menu_state
+// above; reuses discover_toggle_watchlist (discover.rs) verbatim, the
+// same function the Discover-card menu's own Watchlist row calls —
+// watchlisting is a plain TMDB-id action with no Jellyfin-vs-Discover
+// distinction once the id is known.
+```
+
+Above `if vs.shuffle && !vs.shuffle_order.is_empty() {`:
+```
+// Insert the new position right after the CURRENT item's slot in
+// shuffle_order. Slot 1 (pre-CR10-8) was only correct immediately
+// after toggling shuffle — once playback advanced to shuffle
+// position k, anything inserted at slot 1 was behind the cursor
+// and never played.
+```
+
+Above `if item_type == "MusicAlbum" || item_type == "MusicArtist" || item_type == "Playlist" {`:
+```
+// The open site always sets context-menu-title from the card/track it was
+// opened on — the state/model scans are only a fallback (album tracks and
+// dashboard albums are in neither, which used to surface the raw GUID).
+// MusicAlbum / MusicArtist: expand to their Audio tracks — a raw album or
+// artist id has no stream, so enqueueing it verbatim produced an unplayable
+// row (and its GUID as the title). Same class of bug as Series (CR10-7).
+```
+
+Above `fn existing_discover_menu_rows(g: &AppState) -> Vec<i32> {`:
+```
+/// Which row indices exist for the current Discover card's request state —
+/// fixed index scheme, same "some indices can be absent" idiom the Jellyfin
+/// menu already uses for Resume (row 0 only when resumable): 0=View
+/// Details (always), 5=View Request (requested — see below), 1=Request (not
+/// yet requested) OR Edit Request (requested, and mine or admin),
+/// 2=Cancel Request (requested, and admin or (mine and pending)),
+/// 3=Approve/4=Decline (requested and admin). Row 5 sits between 0 and 1 in
+/// the returned Vec (Up/Down visits it right after View Details) even
+/// though its numeric index is highest — index values are pure keyboard-
+/// focus identities matched against `context_menu.slint`'s own `row-index`,
+/// not a visual-order or Up/Down-order constraint, so it can be appended at
+/// the end of the enum-ish numbering (avoiding renumbering 1-4) while still
+/// being traversed second.
+///
+/// Gating was originally tied to `pending` across the board — wrong, and a
+/// real live-reported bug (2026-07-18: "I don't get the remove request on a
+/// requested item" / "on requested 4k items I only got detail"). Re-checked
+/// against Seerr's actual route source (`server/routes/request.ts`) rather
+/// than re-guessing: `PUT /request/:id` (edit) requires only ownership or
+/// `MANAGE_REQUESTS` — no status check at all; `POST /request/:id/approve|
+/// decline` requires only `MANAGE_REQUESTS` — also no status check; only
+/// `DELETE /request/:id` (cancel) actually restricts a non-admin to
+/// `status == PENDING`. Once a request auto-approves (a very common Seerr
+/// config — and evidently this user's own 4K setup), it leaves Pending
+/// within seconds, so the old blanket `pending` requirement silently hid
+/// Edit/Cancel/Approve/Decline almost immediately after every request,
+/// even for the connected account's own `MANAGE_REQUESTS` admin, who the
+/// server would have allowed to act on it regardless of status.
+///
+/// Row 5 (View Request) is a separate later fix (2026-07-18): a card can be
+/// `requested` AND also (partially) present in the local Jellyfin library
+/// (e.g. a series missing some seasons) — View Details/Request/Edit Request
+/// all redirect to the real Jellyfin item in that case (unchanged, by the
+/// user's own choice — see `open_discover_item_ex`'s doc comment), which
+/// left no way back to Seerr's own Request Detail screen. View Request is
+/// the dedicated escape hatch: shown whenever a request exists, regardless
+/// of local-library presence, and always opens the Seerr side.
+```
+
+Above `let availability = g.get_context_menu_availability();`:
+```
+// Blocklist (2026-08-06) — eligible whenever the item is untouched or
+// already blocklisted (mirrors Seerr's own real UI gate exactly: never
+// shown for Requested/Processing/Partial/Available), and only for an
+// account with MANAGE_BLOCKLIST specifically — a genuinely separate
+// permission from `admin`/MANAGE_REQUESTS above, see
+// `seerr-can-manage-blocklist`'s own doc comment.
+```
+
+Above `6 => g.invoke_context_discover_toggle_watchlist(),`:
+```
+// Real pre-existing bug, fixed 2026-08-06: this match had
+// no arm for row 6 (Watchlist) at all — keyboard Enter did
+// nothing, only mouse click worked (via context_menu.slint's
+// own `activated =>` handler). Fixed alongside adding row 7
+// so it doesn't inherit the same gap.
+```
+
+Above `fn existing_jellyfin_menu_rows(g: &AppState) -> Vec<i32> {`:
+```
+/// Fixed row indices, "gaps are fine" idiom (same shape as Discover's own
+/// `existing_discover_menu_rows`): 0=Resume(conditional on resume-pct>0 &&
+/// !played) 1=Play from Start 2=Play Next 3=Add to Queue 4=Mark Played
+/// 5=Favourite 6=View Details 7=Add to Playlist(conditional, music items
+/// only) 8=Watchlist(conditional, resolvable TMDB id + Seerr connected —
+/// 2026-07-19, real gap live-reported: an already-in-library item redirects
+/// to this Jellyfin-flavored menu, which never had a Watchlist row before).
+/// A simple min/max range (the original shape) stopped being correct once a
+/// SECOND independent optional row joined row 7 at the end — row 7 absent
+/// with row 8 present is a genuine interior gap a min/max pair can't skip.
+```
+
+Above `if item_type.as_str() == "Season" {`:
+```
+// "Season" gets a narrower menu (Mark Watched/Unwatched, Favourite, View
+// Details only) — user-approved "Full menu" scope via AskUserQuestion,
+// 2026-08-12. A season itself isn't playable (no /Videos/{id}/stream,
+// only its episodes are) and queue/playlist/watchlist concepts don't
+// apply to a season either — mirrors the matching `if` exclusions on
+// rows 1/2/3 in context_menu.slint (rows 0/7/8 already exclude a
+// Season by construction: resume-pct is always 0 for it, and
+// resolve_tmdb_for_jellyfin_item only resolves Movie/Series).
+```
+
+Above `{`:
+```
+// ── naming: append/backspace, shared by the on-screen keyboard AND ───────
+// handle_playlist_picker's own existing physical-typing branches
+// (keys.rs) — grapheme-cluster-correct backspace via trim_last_grapheme,
+// matching discover-search-append/-backspace's own shape (2026-08-23).
+```
+
+#### `crates/fjord-app/src/context_menu.rs` — file header (TOC)
+```
+// ── fjord-app · context_menu.rs ──────────────────────────────────────────────
+//   wire_context_menu   register all AppState context-menu callbacks:
+//     open-context-menu             set menu state from CardItem fields
+//     open-context-menu-browse      resolve browse index → MediaItem → set state
+//     open-context-menu-series-ep   set menu state for a series episode
+//     context-mark-played           POST/DELETE /Users/{id}/PlayedItems/{itemId};
+//                                   on success: update all models; if played→remove from dynamic rows;
+//                                   always call refresh_series_next_up (both mark-played and unplayed)
+//     context-toggle-fav            POST/DELETE /Users/{id}/FavoriteItems/{itemId}
+//     context-play-from-start       series → get_next_up_for_series (from start); movie/ep → start_position_secs = None;
+//                                   BoxSet toasts instead of playing a dead /Videos/{id}/stream URL (CR11-1)
+//     context-jf-toggle-watchlist   Watchlist row 8 on the JELLYFIN menu family (2026-07-19,
+//                                   real gap live-reported — "you cant add anyting from the
+//                                   library to the watchlist"); reuses discover_toggle_watchlist
+//                                   (discover.rs) verbatim, sourced from context-menu-jf-tmdb-id/
+//                                   -jf-media-type (resolved at open time, see below)
+//   patch_watchlist_on_jellyfin_models  in-library watchlist star (2026-07-20, user request —
+//                                   "if its in library it shuld also show there") — same 20-model
+//                                   list as update_card_in_all_models, keyed by Jellyfin id; sets
+//                                   on_watchlist to the exact given value (not add-only, so a
+//                                   mid-session external unwatchlist clears a stale star too);
+//                                   called from discover_toggle_watchlist's own success handler
+//                                   (single-item) and discover.rs::resync_jellyfin_watchlist_stars
+//                                   (bulk, after every watchlist fetch)
+//   resolve_tmdb_for_jellyfin_item  local item id + item_type (Movie/Series only) -> TMDB id +
+//                                   "movie"/"tv", via MediaItem.provider_ids["Tmdb"] — the reverse
+//                                   of discover.rs::find_local_item's own TMDB-id -> local-item lookup;
+//                                   made pub(crate) 2026-07-29 (Deep Seerr integration) — detail.rs/
+//                                   series.rs/collection.rs's new Recommended/Missing-* rows all
+//                                   reuse it directly instead of duplicating the ProviderIds scan
+//   existing_jellyfin_menu_rows      "gaps are fine" row-index list (0=Resume conditional, 1-6
+//                                   always, 7=Add to Playlist conditional, 8=Watchlist conditional) —
+//                                   replaced a plain min/max range once a SECOND independent optional
+//                                   row (8) joined row 7 at the end; a min/max pair can't skip an
+//                                   interior gap (7 absent, 8 present)
+//   open_context_menu_state         set all context-menu AppState fields incl. series-id + the
+//                                   resolved Watchlist fields above (shared by all three open handlers,
+//                                   now also takes `state: &Arc<Mutex<FjordState>>` for the TMDB lookup)
+//   update_series_unplayed_count    ±1 unplayed-count on the parent series card after mark-played (also called from main.rs)
+//   remove_item_from_all_models     rebuild-filter every CardItem model to drop a deleted id (WS ItemsRemoved,
+//                                   purge_deleted_item); also clamps library-focused/series-focused-ep/
+//                                   season-focused-ep (§0 focus safety) if the removed row was the focused one
+//   update_card_in_all_models       patch has-played / is-favorite across every model (incl. series-next-up-cards
+//                                   and the album-tracks TrackItem model — track ♥ indicator)
+//   remove_from_dynamic_rows        remove item from Next Up/Continue Watching/Not Watched rows;
+//                                   matches card.id==id (item) OR card.series_id==id (series → all its episodes);
+//                                   does NOT touch series-next-up-cards (refresh_series_next_up handles that)
+//   remove_from_favorites           remove item from the three favorite-X rows only (WS IsFavorite=false)
+//   remove_from_continue_watching   remove item from Next Up/Continue Watching only (NOT Not Watched — opposite
+//                                   membership rule); used for a position-reset-to-0 that isn't also played=true
+//   reanchor_focus                  find an item's new index by id after a model mutation, so a keyboard-focus
+//                                   index (library-focused/season-focused-ep/series-focused-ep) can follow the
+//                                   same logical item instead of pointing at whatever now sits at the old index
+//   upsert_cards_in_model           insert/replace items by id into a CardItem model (WS delta-sync merge —
+//                                   the upsert counterpart to remove_item_from_all_models); poster-preserving,
+//                                   and (2026-07-20) on_watchlist-preserving too — same real-bug-fix idiom as
+//                                   home::refresh_row_preserving_posters/movies.rs::push_library_cards
+//   find_title_in_state             scan FjordState media lists by item id → display name
+//   enqueue_item                    insert into playlist (play-next) or append to queue
+//   queue_from_context_menu         shared add/play-next body; Series resolved to next-up episode (CR10-7);
+//                                   MusicAlbum/MusicArtist expanded to their Audio tracks; BoxSet toasts;
+//                                   title from context-menu-title (set by every open site), state/model scans as fallback
+//   wire_queue_callbacks            on_queue_add_item / on_queue_play_next_item
+//   wire_playlist_picker            open-playlist-picker (populate + bg refresh) /
+//                                   playlist-picker-select (add to existing) /
+//                                   playlist-picker-create (POST /Playlists);
+//                                   resolve_music_ids expands MusicAlbum → track ids (empty result toasts, CR11-14);
+//                                   refresh_playlists updates state/cache/models after change, and reopens the
+//                                   playlist detail screen if it's showing the just-mutated playlist (CR11-7);
+//                                   also refreshes the Music dashboard Playlists row (music-playlists) with
+//                                   posters, instead of waiting ~30 s for Jellyfin's LibraryChanged (2026-09-26)
+//   handle_key                      keyboard dispatch for the context-menu overlay
+//                                   (row 7 = Add to Playlist, music items only); branches
+//                                   entirely to handle_key_discover_menu when
+//                                   context-menu-item-type is Discover* (2026-07-18) — a
+//                                   completely different row family, see context_menu.slint
+//   existing_discover_menu_rows/handle_key_discover_menu  Discover context menu's own
+//                                   Up/Down/Confirm — fixed index scheme (0=View Details,
+//                                   5=View Request [requested only — bypasses the
+//                                   find_local_item redirect, traversed 2nd despite the
+//                                   high index, see the function's own doc comment],
+//                                   1=Request/Edit Request, 2=Cancel, 3=Approve, 4=Decline),
+//                                   existing_discover_menu_rows resolves which indices exist
+//                                   for the current card's request state (same "gaps are
+//                                   fine" idiom as the Jellyfin menu's own Resume row) —
+//                                   gated against Seerr's REAL per-endpoint permission
+//                                   checks (edit/approve/decline need no pending status,
+//                                   only cancel does for non-admins; fixed 2026-07-18 after
+//                                   a blanket `pending` requirement hid every action on any
+//                                   auto-approved request); Confirm dispatches to
+//                                   discover.rs's on_context_discover_* handlers, which each
+//                                   close the menu themselves (2026-07-18); row 6 = Watchlist
+//                                   toggle (2026-07-18, Watchlist + Release Calendar) — always
+//                                   visible, unlike Request/Edit/Cancel/Approve/Decline which
+//                                   are gated on request state; row 7 = Blocklist toggle
+//                                   (2026-08-06, Seerr Blocklist support) — gated on
+//                                   seerr-can-manage-blocklist (a permission genuinely
+//                                   separate from admin/MANAGE_REQUESTS) AND the item being
+//                                   untouched or already blocklisted, mirroring Seerr's own
+//                                   real UI gate; the Confirm match ALSO gained arms for rows
+//                                   6/7 in the same pass — row 6 previously had none at all
+//                                   (a real pre-existing bug: keyboard Enter silently did
+//                                   nothing on Watchlist, only mouse click worked)
+// ─────────────────────────────────────────────────────────────────────────────
+```
+
+#### `crates/fjord-app/src/person.rs`
+
+Above `let Some(w) = ww.upgrade() else {`:
+```
+// Real gap found 2026-08-21, live-reported "the issue is still
+// there" after the search-endpoint fix — the log showed
+// resolve_local_person genuinely succeeding and open_person_screen
+// being invoked, but this commit closure (the only place that
+// actually sets show-person=true) had zero logging of its own,
+// so there was no way to tell whether it committed or silently
+// bailed on one of its two guards below. Logged explicitly now,
+// on every path, so the next capture is conclusive either way.
+```
+
+Above `if !crate::session_current(&state, &client) {`:
+```
+// Session guard (Bonfire Phase 1, step 8 audit, 2026-08-09) —
+// the id check above now catches most of this (reset_session_state
+// clears person-id on a switch/sign-out), but a coincidental
+// same-id reopen under a NEW profile before this stale fetch
+// resolves would still slip through an id check alone. Same
+// guard class as spawn_person_revalidate's own, just also
+// applied to the actual open-screen path, not only its
+// background revalidate sibling.
+```
+
+Above `if is_cache_hit {`:
+```
+// Cache-hit only: the screen above already showed instantly from cached
+// data. Real gap, live-reported: Jellyfin's WebSocket only delivers
+// LibraryChanged to the most-recently-connected client when multiple
+// clients share a session (JELLYFIN.md) — this can silently starve Fjord
+// of the event, leaving these caches stale indefinitely with no other
+// fallback. This revalidation is what closes that gap for whatever's
+// actually on screen right now.
+```
+
+Above `if !crate::session_current(&state, &client) {`:
+```
+// Sign-out (or a different account signing in on a shared HTPC)
+// mid-fetch must not let this per-user data land in the new session's
+// cache — same guard class as main.rs::session_current's own doc
+// comment (CR11-2).
+```
+
+Above `async fn resolve_person_tmdb_id(`:
+```
+/// Best-effort Jellyfin person -> TMDB person id resolution. First tries
+/// `ProviderIds` on the Person item itself (free once `get_item_detail`'s
+/// Fields gained `ProviderIds`, 2026-07-29 — `cached_detail` is usually
+/// already in hand from the main fetch, so this is often a zero-network-call
+/// check); if absent (the common case — Jellyfin's own Person metadata is
+/// usually much thinner than movie/series metadata), falls back to a fuzzy
+/// `SeerrClient::search` by name (persons are normally filtered out of
+/// search results by callers, not the crate itself — this is the one
+/// deliberate exception). Cached either way, including a `None` miss, so a
+/// failed resolution isn't retried on every visit to the same person.
+```
+
+Above `pub(crate) fn open_person_from_discover(`:
+```
+/// Entry point for opening person detail from a Discover-context cast
+/// member — `RequestDetailScreen`'s `CastRow` previously left
+/// `item-selected` deliberately unbound ("there's no TMDB-person detail
+/// screen to open"). Scoped via `AskUserQuestion`: user picked "Try local
+/// match first, TMDB fallback" over always-TMDB-only or local-only-no-
+/// fallback. Resolves a local Jellyfin `Person` match (`resolve_local_person`)
+/// and opens the real native screen (`open_person_screen`, above — real
+/// bio/filmography/watch-state) when found; falls back to
+/// `open_person_screen_tmdb` (TMDB-sourced bio + full filmography, no local
+/// filmography row) otherwise. `tmdb_id` is a plain decimal string (as
+/// carried on `CastMember.id` for a Discover-sourced cast row, itself
+/// straight from TMDB's own `Credits` response) — a parse failure means the
+/// caller passed something that isn't actually a TMDB cast row, so this
+/// silently no-ops rather than guessing.
+```
+
+Above `{`:
+```
+// Real bug, live-diagnosed 2026-08-19 (see person_discover_resolving's
+// own doc comment in config.rs for the full story): a repeat press on
+// the same cast member before this pipeline settles used to spawn a
+// fully independent, fully redundant chain every time — this is the one
+// choke point both downstream paths (real local match, TMDB fallback)
+// share, so a single guard here covers both without touching either.
+```
+
+Above `let _ = slint::invoke_from_event_loop(move || match resolved {`:
+```
+// Real bug, found 2026-08-21 by reading a live log with the debug
+// logging this section's own earlier fix added ("check latest log
+// the issue is still there") — `commit skipped — person-id changed
+// to "" meanwhile`, every single time, for a person whose local
+// match resolved correctly. Root cause: this whole block runs
+// inside `rt.spawn`, a Tokio *worker* thread — but both
+// `open_person_screen`/`open_person_screen_tmdb` do their own
+// synchronous `AppState::get(&w).set_person_id(...)` etc. at the
+// very top of their own bodies, unwrapped, correct for every one of
+// their other 6+ call sites (all triggered directly from a Slint
+// UI-thread callback) but not for this one. `slint::Weak::upgrade()`
+// checks the calling thread and returns `None` **silently** off the
+// UI thread — confirmed against this exact codebase's own prior
+// finding for the identical class of bug (`push_coming_up_row`) —
+// so the initial `set_person_id` call was silently never happening
+// at all; only the LATER async commit closure (which correctly
+// wraps itself in `invoke_from_event_loop`) ever ran on the real UI
+// thread, by which point `person-id` was still whatever it was
+// before this click — reading back empty, indistinguishable from
+// "changed meanwhile" even though nothing else ever touched it.
+// Fixed by moving onto the UI thread ourselves before calling
+// either function, so their own top-level AppState writes land
+// correctly — their own internal `rt.spawn` calls for the actual
+// async fetch work are unaffected, `Handle::spawn` queues onto the
+// runtime regardless of which thread calls it.
+```
+
+Above `async fn resolve_local_person(`:
+```
+/// Best-effort TMDB person id -> local Jellyfin Person id. High-confidence
+/// path: any name-search candidate whose own `ProviderIds.Tmdb` matches the
+/// known id exactly. Lower-confidence fallback, only when the search
+/// returns EXACTLY ONE candidate (name search is Jellyfin's own fuzzy
+/// match, not this function's) and none had a `ProviderIds` match either
+/// way — accepting a single unambiguous candidate mirrors this codebase's
+/// own established tolerance for `resolve_person_tmdb_id`'s identical
+/// single-candidate fallback in the opposite direction, above. Two or more
+/// same-named candidates with no `ProviderIds` to disambiguate them is
+/// deliberately treated as "no confident match," not a coin flip — the
+/// exact false-match risk flagged to the user when this design was chosen.
+/// Cached (hit or miss) in `local_person_by_tmdb_cache`.
+```
+
+Above `if g.get_person_id().as_str() == synthetic_id && g.get_app_content_loading() {`:
+```
+// Real bug, live-reported 2026-08-19 ("Dose still not work") —
+// confirmed from the log: 6 identical fetches for the same
+// tmdb_id fired within ~1s, no re-entrancy guard at all. Each
+// press re-set app-content-loading=true synchronously; with
+// several overlapping async fetches in flight, the LAST "true"
+// write could land after an EARLIER fetch's own "false"
+// completion (this function's own final commit closure below),
+// leaving the loading overlay stuck covering an already-correctly-
+// populated PersonScreen forever — indistinguishable from "nothing
+// happens" at all. A repeat press for the exact same target while
+// one is already resolving is now a no-op; a genuinely different
+// target still interrupts and starts fresh, since person-id would
+// differ.
+```
+
+Above `if !crate::seerr_session_current(&state2, &seerr2) {`:
+```
+// Session guard, same class as every other Seerr-fetch commit
+// closure in this codebase (Bonfire Phase 1 step 8 audit) — a
+// sign-out/profile-switch/Seerr-disconnect mid-fetch must not
+// let this land in the new session's UI.
+```
+
+Above `g.set_person_in_other_work_row(true);`:
+```
+// Real dead-end, found 2026-08-13 while adding the
+// TMDB-only person screen: that screen always has an
+// empty filmography row (no local data at all), and
+// this branch previously only ever transitioned
+// header→film-row or film-row→other-work-row — with
+// filmography empty, Down from the header did nothing,
+// making Other Work keyboard-unreachable even though
+// it's the only row present.
+```
+
+#### `crates/fjord-app/src/person.rs` — file header (TOC)
+```
+// ── fjord-app · person.rs ─────────────────────────────────────────────────────
+//   open_person_screen  now takes state (not client) so it can check item_detail_cache +
+//                       person_filmography_cache (Part 2) — only sets app-content-loading=true
+//                       when either is a miss; reset AppState person props, spawn async fetch
+//                       (portrait + bio + filmography in parallel, cached ones skip their
+//                       network call), emit app-loading-progress=0.5, then show person on
+//                       completion; separately spawns spawn_other_work (independent task, doesn't
+//                       block the main page from showing — see that fn's own doc comment)
+//   resolve_person_tmdb_id  best-effort Jellyfin person -> TMDB person id (ProviderIds on the
+//                       Person item, falling back to a fuzzy Seerr name search); cached either
+//                       way (including a None miss) in person_tmdb_id_cache (2026-07-29, Deep
+//                       Seerr integration)
+//   spawn_other_work    independent task: resolves TMDB person id, fetches combined_credits,
+//                       filters to not-already-owned (resolve_and_fetch_discovery_row), commits
+//                       to person-other-work — a second, Discover-flavored SectionRow below the
+//                       local-only filmography row (2026-07-29, Deep Seerr integration)
+//   handle_key          keyboard dispatch for the person screen:
+//                       !in-film-row && !in-other-work-row: Down→filmography, or straight to
+//                       other-work when filmography is empty (2026-08-13 fix — see its own
+//                       comment), Back/Enter→close
+//                       in-film-row: Up→back, Down→other-work (if non-empty), Left/Right navigate,
+//                       Enter→open-detail, C→ctx-menu
+//                       in-other-work-row: Up→filmography, Left/Right navigate, Enter→open-
+//                       discover-item (in-library redirect handled there), C→discover ctx-menu
+//   open_person_from_discover  entry point for a Discover-context cast member (RequestDetailScreen's
+//                       CastRow, previously unclickable — "item-selected left unbound"), 2026-08-13.
+//                       Resolves a local Jellyfin Person first (resolve_local_person), opens the
+//                       real native screen above when found, else open_person_screen_tmdb (TMDB-
+//                       only bio + full filmography, no local filmography row at all)
+//   resolve_local_person  best-effort TMDB person id -> local Jellyfin Person id (name search +
+//                       ProviderIds cross-check, single-candidate fallback), cached in
+//                       local_person_by_tmdb_cache
+//   wire_person            callbacks moved from main() (0.5.0 step 3): person screen
+// ─────────────────────────────────────────────────────────────────────────────
+```
