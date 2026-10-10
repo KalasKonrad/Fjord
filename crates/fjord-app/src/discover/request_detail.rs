@@ -1,72 +1,34 @@
 // ── fjord-app · discover/request_detail.rs ───────────────────────────────────
-//   find_local_item             matches a Seerr/TMDB result to the local library by
-//                              ProviderIds["Tmdb"] — no server-side Jellyfin lookup exists,
-//                              so this scans the already-cached all_movies/all_series;
-//                              pub(crate) as of 2026-07-20 — also reused by
-//                              resync_jellyfin_watchlist_stars/discover_toggle_watchlist's own
-//                              success handler for the in-library watchlist star (see below)
-//   open_discover_item         find_local_item hit -> detail::open_detail (the real
-//                              Jellyfin item) instead of the Seerr flow below; else
-//                              fetch movie/tv detail + poster + backdrop + available tags/
-//                              quality profiles for BOTH quality tiers (best-effort, silently
-//                              empty on failure — see available_request_options_both_tiers) in
-//                              parallel, then cast/crew portraits + season posters (TMDB,
-//                              bounded concurrency, same JoinSet+Semaphore shape as detail.rs's
-//                              Jellyfin cast fetch); generation-guarded, populates RequestDetailScreen.
-//                              Profile row 0 is always a synthetic "Default" entry (id 0)
-//                              prepended so the picker has an explicit "no explicit choice"
-//                              option, not just whatever's focused first.
-//   build_cast_list/format_rating  Seerr credits -> capped cast+crew rows (2 Director/
-//                              3 Writer/12 top-billed cast, same shape as detail.rs's
-//                              Jellyfin cast) / TMDB voteAverage -> "★ 7.9" badge text
-//   build_tag_profile_items    one quality tier's raw Seerr tags/profiles -> Slint TagItem/
-//                              ProfileItem models; shared by both tiers in open_discover_item
-//   tier_status_label            one tier's FINAL display text ("Needs Approval"/"Approved"/
-//                              "Processing"/"Partially Available"/"Available"/"Declined"/
-//                              "Failed"/"") combining MediaStatus (fulfillment) with the
-//                              request's own MediaRequestStatus (approval workflow) — real gap
-//                              fixed 2026-07-18, "it shuld reflect the status, like if its
-//                              aproved or needs aprovment etc"; feeds request-detail-status/-4k
-//                              AND (movie_fields/tv_fields) drives RequestDetailScreen's poster
-//                              badge, both tier pills, and the Request button's visibility
-//   tier_request/pick_primary_request  tier_request finds the one MediaRequest for a given is4k
-//                              tier out of MediaInfo.requests (only populated on the single-item
-//                              detail endpoints — see MediaInfo's own doc comment in fjord-seerr);
-//                              pick_primary_request resolves the (request_id, pending, mine)
-//                              triple the ⋮ More button's context menu acts on, preferring the
-//                              4K request when both tiers have one (documented tiebreak, not a
-//                              full per-tier action UI)
-//   open_discover_item_ex/PostOpenAction/open_request_options_modal  open_discover_item is now a
-//                              thin wrapper around this with PostOpenAction::None; ::OpenRequestOptions
-//                              (Discover context menu's "Request" row) opens the modal the instant the
-//                              fetch lands; ::EditRequest(id) additionally fetches GET /request/{id}
-//                              fresh (SeerrClient::get_request) and pre-selects its profile/tags/seasons,
-//                              setting request-options-editing so the modal hides Quality and Confirm
-//                              PUTs via submit_edit_request instead of POSTing via submit_request
-//                              (2026-07-18)
-//   season_request_status      per-season request-status pill for Series Missing Seasons —
-//                              deliberately restricted to MediaCard's existing pill vocabulary
-//                              ("requested"/"processing") rather than inventing new label text,
-//                              which would silently render as an empty pill (confirmed by reading
-//                              widgets.slint directly — its ternary only matches 4 literal strings,
-//                              it does NOT render arbitrary text as an earlier draft assumed)
-//   PostOpenAction::OpenRequestOptionsPreselect  new variant — opens the Request Options modal
-//                              for a genuinely new request (unlike EditRequest) but pre-checks
-//                              only the given season numbers instead of tv_fields' all-checked
-//                              default; mirrors EditRequest's own post-hoc season-override pattern
-//   open_series_request_detail  Series Missing Seasons' entry point into RequestDetailScreen —
-//                              always check_local_library:false (the series obviously exists
-//                              locally already; the normal redirect would just bounce back to the
-//                              same Detail page with no Seerr request UI at all)
+//   find_local_item            Seerr/TMDB result → local library item by ProviderIds["Tmdb"] (scans the
+//                              cached all_movies/all_series — Jellyfin has no such query); also used
+//                              for the in-library watchlist star
+//   open_discover_item / open_discover_item_ex / PostOpenAction / open_request_options_modal
+//                              a local match opens the Jellyfin item (detail::open_detail); otherwise
+//                              fetch movie/tv detail, poster, backdrop and both tiers' tags/quality
+//                              profiles (best-effort), then cast portraits + season posters (bounded
+//                              concurrency); generation-guarded. PostOpenAction: OpenRequestOptions
+//                              (open the modal when the fetch lands), EditRequest(id) (fetch the request,
+//                              pre-select its profile/tags/seasons; the modal hides Quality and PUTs),
+//                              OpenRequestOptionsPreselect(seasons) (new request, only those seasons)
+//   open_series_request_detail Series "Missing Seasons" entry (check_local_library: false)
+//   build_cast_list / format_rating  Seerr credits → capped cast + crew rows; voteAverage → "★ 7.9"
+//   format_date_pretty / language_display_name / country_flag_emoji  metadata panel formatting
+//   build_tag_profile_items    one tier's tags/profiles → TagItem/ProfileItem (row 0 = synthetic "Default")
+//   DetailFields / movie_fields / tv_fields  everything one fetch fills in, per media type
+//   tier_status_label          one tier's display status (fulfilment + approval workflow) → request-
+//                              detail-status/-4k, the poster badge, tier pills, Request button visibility
+//   tier_request / pick_primary_request  a tier's MediaRequest (MediaInfo.requests, detail endpoints
+//                              only); the one request ⋮ More acts on (4K wins a tie)
+//   season_request_status      per-season pill for Series "Missing Seasons" (MediaCard's vocabulary only)
+//   resolve_providers / format_countries  "Currently Streaming On" + production countries
+//   fix_detail_btn_focus       keeps request-detail-btn-focused on an existing button
 // ─────────────────────────────────────────────────────────────────────────────
 use super::*;
 
 // ── Request detail ──────────────────────────────────────────────────────────
 
-// pub(crate) since 2026-08-13 — person.rs's TMDB-only person screen reuses
-// this same base + cache-key format ("person-{id}") for its own portrait
-// fetch, matching (and free-riding on the disk cache of) the identical
-// fetch this file's own RequestDetailScreen CastRow portrait fetch does.
+// Also used by person.rs's TMDB-only person screen (same base + "person-{id}" cache
+// key, so it shares this CastRow portrait cache).
 pub(crate) const TMDB_PROFILE_BASE: &str = "https://image.tmdb.org/t/p/w185";
 
 /// One cast/crew row: (tmdb person id, name, role label, profile photo path).
@@ -141,12 +103,7 @@ fn format_rating(vote_average: Option<f64>) -> String {
     }
 }
 
-/// "2026-07-14" -> "July 14, 2026"; empty/unparseable input -> "". A hand-
-/// rolled month-name table would duplicate what `chrono` (already a
-/// workspace dependency, used elsewhere for wall-clock formatting) does
-/// correctly for free.
-// pub(crate) since 2026-08-06 (Seerr Blocklist support) — blocklist.rs
-// reuses it for the Manage Blocklist screen's "Blocklisted on <date>" line.
+/// Also used by blocklist.rs ("Blocklisted on <date>").
 pub(crate) fn format_date_pretty(iso: &str) -> String {
     chrono::NaiveDate::parse_from_str(iso, "%Y-%m-%d")
         .map(|d| d.format("%B %-d, %Y").to_string())
@@ -328,30 +285,18 @@ struct DetailFields {
     // Watchlist + Release Calendar (2026-07-18) — MovieDetails/TvDetails.
     // onUserWatchlist verbatim.
     on_watchlist: bool,
-    /// Same `""`/`"requested"`/`"processing"`/`"partial"`/`"available"`/
-    /// `"blocklisted"` vocabulary as `CardItem.availability` (via
-    /// `availability_tag`) — the base/2K tier's status only (see the
-    /// Blocklist eligibility design decision in CLAUDE.md for why 4K isn't
-    /// checked separately). This is the field the Blocklist button/row
-    /// actually gates on, deliberately NOT `status_label` above, which
-    /// mixes in request-workflow labels ("Needs Approval"/"Declined") that
-    /// have nothing to do with blocklist eligibility. 2026-08-06, Seerr
-    /// Blocklist support.
+    /// `CardItem.availability`'s vocabulary (""/requested/processing/partial/available/
+    /// blocklisted, via `availability_tag`) for the base/2K tier — what the Blocklist
+    /// button/row gates on (not `status_label`, which mixes in workflow labels like
+    /// "Needs Approval"/"Declined").
     availability: &'static str,
 }
 
-/// One tier's user-facing status label, combining Seerr's two independent
-/// status signals — `MediaStatus` (fulfillment: is the file available yet)
-/// and the request's own `MediaRequestStatus` (workflow: has an admin
-/// approved it yet) — into one string. `availability_tag` alone
-/// (fulfillment only) can't distinguish "needs an admin to approve it" from
-/// "approved, waiting on Radarr/Sonarr" — both read as blank/Requested
-/// without the request's own status. Real gap, live-reported 2026-07-18:
-/// "it shuld reflect the status, like if its aproved or needs aprovment
-/// etc." `request.status == 3` is `MediaRequestStatus::Declined` (see
-/// `MediaRequestStatus`'s own doc comment in fjord-seerr — no local const,
-/// matching the same raw-int style `requested_not_available` already uses
-/// for the identical check).
+/// One tier's status label, combining Seerr's two independent signals — `MediaStatus`
+/// (fulfilment: is the file there) and the request's `MediaRequestStatus` (workflow:
+/// approved yet?) — so "needs approval" and "approved, waiting on Radarr/Sonarr" read
+/// differently. `request.status == 3` is `MediaRequestStatus::Declined` (raw int, like
+/// `requested_not_available`).
 fn tier_status_label(
     status: Option<MediaStatus>,
     request: Option<&fjord_seerr::MediaRequest>,
@@ -359,14 +304,9 @@ fn tier_status_label(
     if status == Some(MediaStatus::Available) {
         return "Available".to_string();
     }
-    // Real bug fixed 2026-08-06 (Seerr Blocklist support): this function
-    // previously had no arm for Blocklisted at all, falling through to the
-    // final `_ => String::new()` — identical to a never-touched item, so
-    // RequestDetailScreen's Request button (gated on this string being
-    // empty) incorrectly still showed for a blocklisted title. Available
-    // and Blocklisted are mutually exclusive server-side, so checking this
-    // right after Available (rather than at the very end) is just for
-    // readability, not correctness.
+    // Blocklisted → its own label, so the Request button (shown only while this is "")
+    // stays hidden. Available and Blocklisted are exclusive server-side; the order here is
+    // for readability.
     if status == Some(MediaStatus::Blocklisted) {
         return "Blocklisted".to_string();
     }
@@ -402,27 +342,13 @@ fn tier_request(
     mi?.requests.iter().find(|r| r.is4k == is4k)
 }
 
-/// Per-season request status for the Series "Missing Seasons" row
-/// (2026-07-29, Deep Seerr integration) — `(availability_label, request_id,
-/// pending, mine)` for whichever active request (if any) covers this season
-/// number, regardless of tier (2K vs 4K isn't distinguished per season here
-/// — a deliberate simplification: this pill only ever needs to say "already
-/// requested/pending", not track two independent tiers per season).
-/// `availability_label` is deliberately restricted to the exact same
-/// lowercase vocabulary `MediaCard`'s pill in `widgets.slint` already
-/// recognizes ("requested"/"processing") — confirmed by reading that
-/// component directly (its pill ternary only matches 4 specific literal
-/// strings, it does NOT render arbitrary text as an earlier draft of this
-/// plan assumed) rather than inventing new label text that would silently
-/// render as an empty pill bubble. Status 3 (Declined) and 4 (Failed) are
-/// both excluded from "active" — a failed request doesn't block treating
-/// the season as available to request again, which is arguably the more
-/// useful behavior than a static "Failed" pill with no action anyway. No
-/// per-season Jellyfin-fulfillment field exists anywhere in Seerr's API
-/// (confirmed: `Media.getMedia` doesn't eager-load `seasons`) — this is
-/// request state only, which is all this row's own existence needs, since
-/// comparing local season folders against TMDB's list already establishes
-/// non-ownership independently of anything this function reports.
+/// Per-season request status for the Series "Missing Seasons" row:
+/// `(availability_label, request_id, pending, mine)` for the active request covering
+/// this season, either tier (one pill per season is enough). The label uses only
+/// MediaCard's pill vocabulary ("requested"/"processing" — widgets.slint renders just
+/// 4 literals). Declined (3) and Failed (4) don't count as active, so the season can be
+/// requested again. Seerr has no per-season fulfilment field (`Media.getMedia` doesn't
+/// load `seasons`); non-ownership comes from comparing local seasons with TMDB's list.
 pub(crate) fn season_request_status(
     requests: &[fjord_seerr::MediaRequest],
     season_number: u32,
@@ -444,13 +370,9 @@ pub(crate) fn season_request_status(
     Some((label.to_string(), r.id.to_string(), r.is_pending(), mine))
 }
 
-/// Resolves the `(request_id, pending, mine)` triple the Discover context
-/// menu's Edit/Cancel/Approve/Decline rows need, for whichever ONE request
-/// this page's ⋮ More button should act on. When both tiers have an active
-/// request (a real, if rarer, case — see the Discover grid's own "Also
-/// requested in 2K/4K" badge), prefers the 4K one — an arbitrary but
-/// documented tiebreak, not a full per-tier action UI; easy to revisit if
-/// it turns out to matter in practice.
+/// The ONE `(request_id, pending, mine)` this page's ⋮ More acts on (Edit/Cancel/
+/// Approve/Decline). With active requests on both tiers, the 4K one wins — an
+/// arbitrary, documented tiebreak rather than a per-tier action UI.
 fn pick_primary_request(
     req_2k: Option<&fjord_seerr::MediaRequest>,
     req_4k: Option<&fjord_seerr::MediaRequest>,
@@ -619,18 +541,11 @@ fn tv_fields(d: TvDetails, region: &str, my_user_id: Option<i64>) -> DetailField
     }
 }
 
-/// Matches a Seerr/TMDB search result back to the corresponding local
-/// library item by provider id, so a card that's already in the library can
-/// open the real item (playable, has watch progress/favorite state) instead
-/// of the Seerr request-detail page (which has nothing left to offer once
-/// something is already available — just a static "In Library" pill).
-/// Client-side by necessity: Jellyfin has no server-side "find item by
-/// provider id" query (confirmed — no `AnyProviderIdEquals`-style parameter
-/// exists), so this scans the already-cached `all_movies`/`all_series`
-/// (populated from disk cache on warm start, refreshed in the background —
-/// see CLAUDE.md's Disk caches section) for a `ProviderIds["Tmdb"]` match.
-/// A miss (library not yet fetched, or genuinely not in the library) just
-/// falls through to the normal Seerr detail flow.
+/// Matches a Seerr/TMDB result to the local library by provider id, so a card that's
+/// already in the library opens the real item (playable, with progress/favourite
+/// state) instead of the request page. Client-side: Jellyfin has no "find by provider
+/// id" query, so this scans the cached `all_movies`/`all_series` for a
+/// `ProviderIds["Tmdb"]` match. A miss falls through to the Seerr detail flow.
 pub(crate) fn find_local_item(
     state: &Arc<Mutex<FjordState>>,
     media_type: &str,
@@ -666,11 +581,9 @@ pub(crate) enum PostOpenAction {
     /// the modal hides Quality and Confirm calls `update_request`/PUT
     /// instead of `create_request`/POST.
     EditRequest(i64),
-    /// Series "Missing Seasons" row (2026-07-29, Deep Seerr integration) —
-    /// opens the modal for a genuinely NEW request (unlike `EditRequest`,
-    /// nothing here is being edited), but pre-selects only the given season
-    /// numbers instead of `tv_fields`' own all-checked default, so clicking
-    /// a missing season doesn't re-request seasons already owned.
+    /// Series "Missing Seasons": opens the modal for a NEW request with only these
+    /// seasons pre-selected (not `tv_fields`' all-checked default), so owned seasons
+    /// aren't requested again.
     OpenRequestOptionsPreselect(Vec<u32>),
 }
 
@@ -702,19 +615,11 @@ pub(crate) fn open_discover_item(
     );
 }
 
-/// Series "Missing Seasons" row entry point (2026-07-29, Deep Seerr
-/// integration) — always `check_local_library: false`, unlike
-/// `open_discover_item`: the series obviously already exists locally (we're
-/// viewing its own screen), so the normal in-library redirect would just
-/// bounce straight back to the same Detail page with no Seerr request UI at
-/// all, defeating the entire point of this action. `preselect_seasons`:
-/// `Some(seasons)` opens the Request Options modal pre-checked to exactly
-/// those season numbers (a season with no existing covering request);
-/// `None` just shows RequestDetailScreen normally (a season that already
-/// has one — its own ⋮ More button is the correct place to Edit/Cancel it,
-/// not a bespoke season-scoped context menu, which would need to smuggle a
-/// season number through fields shaped for a tmdb id and risks a real
-/// id-type mismatch for zero real benefit here).
+/// Series "Missing Seasons" entry point — `check_local_library: false` (the series is
+/// local, so the in-library redirect would just bounce back to its own page).
+/// `preselect_seasons`: `Some(seasons)` opens Request Options pre-checked to those
+/// seasons (no covering request yet); `None` shows RequestDetailScreen (the season
+/// has a request — its ⋮ More edits/cancels it).
 pub(crate) fn open_series_request_detail(
     tmdb_id_str: String,
     preselect_seasons: Option<Vec<u32>>,
@@ -729,18 +634,10 @@ pub(crate) fn open_series_request_detail(
     open_discover_item_ex("tv".to_string(), tmdb_id_str, state, ww, rt, action, false);
 }
 
-/// `check_local_library`: `true` for every existing call site (View
-/// Details/Request/Edit Request) — unchanged behavior. `false` only for the
-/// Discover context menu's "View Request" row (2026-07-18): a card with a
-/// known Seerr request (`context-menu-request-id != ""`) can ALSO be
-/// partially present in the local Jellyfin library (e.g. a series missing
-/// some seasons) — real bug, live-reported: "if like for a series you have
-/// partial you cant get to request detail only to the series detail even
-/// trouhu the context menu." Per the user's own suggested fix (asked, not
-/// assumed — offered "always skip the redirect" and "only when partial" as
-/// the two obvious options, and the user proposed a third: add a dedicated
-/// row instead), View Details/Request/Edit Request keep redirecting to the
-/// real Jellyfin item exactly as before; only this new row bypasses it.
+/// `check_local_library`: `true` for View Details/Request/Edit Request (redirect to
+/// the Jellyfin item when the library has it); `false` only for the context menu's
+/// "View Request" row — a requested item can also be partly in the library (a series
+/// missing seasons), and that row must reach the request page.
 pub(crate) fn open_discover_item_ex(
     media_type: String,
     tmdb_id_str: String,
@@ -769,19 +666,8 @@ pub(crate) fn open_discover_item_ex(
         let g = AppState::get(&w);
         let next = g.get_request_detail_open_gen() + 1;
         g.set_request_detail_open_gen(next);
-        // Loading overlay while the fetch is in flight — RequestDetailScreen
-        // has no local cache the way Jellyfin's item_detail_cache gives the
-        // native detail screens a fast path. Real bug, live-reported
-        // 2026-08-21 ("if you open an item and the load is quick you get a
-        // quic flash of the loding then it flash again as the item get
-        // shown... its also a bit jaring") — this used to show the overlay
-        // unconditionally, the instant this function was called; a
-        // genuinely fast fetch then replaced it with real content only a
-        // handful of frames later, reading as two visual events back to
-        // back rather than one clean transition. Deferred below instead —
-        // see the matching comment right after this block — a fetch that's
-        // still slow gets the exact same spinner it always did, just not
-        // shown until it's actually worth showing.
+        // Loading overlay while fetching (no local cache here), but deferred (see below):
+        // showing it at once made a fast fetch flash the spinner and then the content.
         g.set_app_loading_progress(0.0);
         // Reset immediately so a stale previous item's data doesn't flash
         // before the new fetch completes (same idiom as open_collection_screen).
@@ -810,10 +696,7 @@ pub(crate) fn open_discover_item_ex(
         g.set_request_detail_focused_profile(0);
         g.set_request_detail_selected_profile_id(0);
         g.set_request_detail_selected_profile_id_alt(0);
-        // Land on the button row (Request), not the Back button — real
-        // issue, live-reported 2026-07-18: opening a Discover item always
-        // required an extra Down press before Request was even reachable,
-        // unlike every other detail-style screen's own entry focus.
+        // Land on the button row (Request), not Back, like the other detail screens.
         g.set_request_detail_back_focused(false);
         g.set_request_detail_zone(0);
         g.set_request_detail_focused_season(0);
@@ -1070,13 +953,9 @@ pub(crate) fn open_discover_item_ex(
             if g.get_request_detail_open_gen() != generation {
                 return; // superseded by a rapid re-open of a different item
             }
-            // Session guard (Bonfire Phase 1, step 8 audit, 2026-08-09) —
-            // show-request-detail is set true synchronously at open time,
-            // before this fetch even starts; reset_session_state now
-            // correctly clears it back to false on a sign-out/profile
-            // switch, but without this check this closure could still
-            // silently repopulate the (now-hidden) screen's fields with
-            // the OUTGOING Seerr connection's data.
+            // show-request-detail is set at open time; reset_session_state clears it on
+            // sign-out/profile switch, and this guard keeps the fetch from refilling the hidden
+            // screen with the previous Seerr connection's data.
             if !crate::seerr_session_current(&state, &client) {
                 return;
             }
@@ -1134,12 +1013,8 @@ pub(crate) fn open_discover_item_ex(
             g.set_request_detail_profiles(ModelRc::new(VecModel::from(profiles)));
             g.set_request_detail_tags_alt(ModelRc::new(VecModel::from(tags_4k)));
             g.set_request_detail_profiles_alt(ModelRc::new(VecModel::from(profiles_4k)));
-            // Apply the remembered Quality/Profile/Tags preference
-            // (2026-08-12, "seerr always remember what you hade chosen last
-            // time so it shuld mirror it") as this item's starting point —
-            // PostOpenAction::EditRequest's own match arm below overwrites
-            // these with the real existing request's own actual values
-            // afterward, correctly taking precedence when that's the action.
+            // Start from the remembered Quality/Profile/Tags (Request Options' "remember last
+            // choice"); EditRequest's arm below overrides them with the request's real values.
             let remembered = {
                 let s = state.lock().unwrap();
                 if media_type2 == "movie" {
@@ -1209,19 +1084,9 @@ pub(crate) fn open_discover_item_ex(
                 g.set_request_detail_backdrop(slint::Image::from_rgba8(buf));
                 g.set_request_detail_has_backdrop(true);
             }
-            // Show the screen and clear the loading overlay now that the
-            // primary content above has actually landed — matches every
-            // other detail-style screen's own pattern (open_detail/spawn_main
-            // etc: app-content-loading while fetching, show_X deferred to the
-            // commit). Real bug, live-reported 2026-08-12: this used to be
-            // set unconditionally at OPEN time (before the fetch even
-            // started), with no loading overlay at all — a blank page for
-            // however long the fetch took, inconsistent with every native
-            // detail screen. Placed BEFORE the match below (not after) so a
-            // failure in one of match's own optional follow-up actions (e.g.
-            // EditRequest's own fetch) still leaves the screen showing its
-            // already-successfully-loaded primary content instead of leaving
-            // it hidden/blank on top of a real early return.
+            // Show the screen and clear the overlay now that the main content has landed (like
+            // the native detail screens). Before the match below, so a failing follow-up action
+            // (e.g. EditRequest's fetch) still leaves the loaded content visible.
             g.set_show_request_detail(true);
             g.set_app_content_loading(false);
             g.set_app_loading_progress(0.0);

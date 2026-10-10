@@ -1,82 +1,26 @@
 // ── fjord-app · discover/calendar.rs ─────────────────────────────────────────
-//   release_dates_for_region/calendar_kind_for_release_type  ReleaseDatesResult + region ->
-//                              deduped-by-type (3/4/5) (type, date) pairs, mirrors Seerr's own
-//                              frontend filter; type -> CalendarEntryKind (Theatrical/Digital/Physical)
-//   build_calendar_entries      unions discover_watchlist_ids ∪ discover_known_requests keys,
-//                              capped at 20 (mirrors fetch_requested_row's own cap), detail-
-//                              fetches (bounded Semaphore+JoinSet) each and extracts movie
-//                              release dates or TV next_episode_to_air; sorted soonest-first;
-//                              called after every watchlist/request mutation (toggle, submit,
-//                              cancel/approve/decline), not just on session fetch — ALSO now
-//                              spawned from ensure_discover_landing itself right after it
-//                              populates discover_known_requests (real bug, live-reported
-//                              2026-07-19: ensure_discover_watchlist's own post-fetch call
-//                              races ensure_discover_landing's tokio::join! and nearly always
-//                              wins — the watchlist fetch is comparatively instant, the
-//                              landing join is a real network round trip — so on a session
-//                              with zero watchlist items, candidates was empty at the ONE
-//                              call that ever ran, and nothing re-triggered it afterward; the
-//                              Coming Up row stayed sentinel-only for the whole session)
-//   push_coming_up_row          discover_calendar_entries -> discover-coming-up CardItem list
-//                              (capped PREVIEW_CAP=20) + a trailing sentinel card (id="",
-//                              title="📅", subtitle="Full Calendar") whose Enter/click opens
-//                              CalendarScreen instead of an item. Real bug, live-reported
-//                              2026-07-19 ("highlight disappears, nothing shows anywhere"):
-//                              this function's only caller (build_calendar_entries) runs on a
-//                              Tokio worker thread, never invoke_from_event_loop-wrapped, but
-//                              this function called ww.upgrade()/AppState setters directly —
-//                              slint::Weak::upgrade() silently returns None off the UI thread
-//                              (confirmed from i-slint-core's real source), so
-//                              discover-coming-up was never actually set, on any run, since
-//                              this feature shipped; build_calendar_entries's own success log
-//                              made the Rust-side computation look like it worked, masking
-//                              that the UI-side commit was silently failing every time. Fixed
-//                              to match every other UI mutation in this file: clone entries
-//                              (plain Send-safe data) before the closure, build CardItems and
-//                              call the AppState setter only inside invoke_from_event_loop.
-//                              Also splits the same (sentinel-free) card list by item_type into
-//                              discover-coming-up-mixed/-movies/-tv (2026-08-02, user request —
-//                              same 3-way split as the Watchlist dashboard rows, one row on Home
-//                              (mixed) and each of Movies/TV shows only its own type) via the
-//                              shared calendar_entry_to_card mapper; all 4 models route through
-//                              apply_cards_preserving_identity now instead of a raw ModelRc swap
-//                              (this function reruns on every watchlist/request mutation, same
-//                              "Phase 96 flash bug" reasoning as push_watchlist_rows)
-//   calendar_entry_to_card       CalendarEntry -> CardItem (id/item_type/title/date+kind
-//                              subtitle/on_watchlist), no sentinel — shared by push_coming_up_row's
-//                              4 models so the mapping logic lives in exactly one place
-//   fetch_coming_up_posters     patches posters onto the already-committed Coming Up row
-//                              (2026-07-19, user request), bounded-concurrency fetch-then-
-//                              patch-by-index, same shape as refresh_requested_row's own
-//                              poster pass; must truncate with the same COMING_UP_PREVIEW_CAP
-//                              and source order push_coming_up_row used (patches by index).
-//                              Also patches the 3 dashboard split models by id+item_type lookup
-//                              (2026-08-02) — same reason as fetch_watchlist_posters: the same
-//                              tmdb id can sit at a different row index in each of the 3 lists
-//   calendar_grid_dims/push_calendar_view/calendar_day_entries  month-grid data: leading-
-//                              blank-count + day-count for a year/month (Sunday-first);
-//                              calendar-days CardItem list (day number as title, entry count
-//                              via unplayed-count, first entry's own title via subtitle —
-//                              2026-07-19, user request, CalendarDayCell shows it instead of
-//                              just a count pill); one day's matching CalendarEntry rows -> popup CardItems
-//   handle_key_calendar/handle_key_calendar_day_popup  CalendarScreen's own AppMode dispatch —
-//                              header zone (calendar-cursor-row<0) vs. 7-col day grid; Left/Right
-//                              at the header directly invoke calendar-prev-month()/-next-month()
-//                              (2026-07-19, user request — previously just cycled a cursor among
-//                              Back/Prev/Next, needing a separate Confirm; Back is still reachable
-//                              via Escape/Backspace, the universal close-key convention, or Enter
-//                              at the initial Back-focused position); Confirm on a real day
-//                              invokes calendar-day-selected(day) (the SAME callback the mouse
-//                              path calls, so keyboard/mouse can't diverge); day popup: Up/Down
-//                              cursor, Confirm -> calendar-day-popup-entry-selected(idx), Back
-//                              closes the popup only
-//
-//   build_calendar_entries     candidate set gained a third source: ongoing (Status=="Continuing")
-//                              series already in the local library, even if never watchlisted/
-//                              requested — unioned in AFTER the existing watchlist∪requests
-//                              .take(20) slice (left unchanged) with its own separate defensive
-//                              cap, not folded into the same pre-take HashSet (would
-//                              non-deterministically starve out the other two sources)
+//   release_dates_for_region / calendar_kind_for_release_type  MovieDetails releases → deduped
+//                              (type, date) pairs for types 3/4/5 (Seerr's own frontend filter)
+//                              → CalendarEntryKind (Theatrical/Digital/Physical)
+//   build_calendar_entries     Coming Up data: watchlist ∪ known requests (take 20) + ongoing local
+//                              series (own cap), detail-fetched (bounded), future dates only, sorted
+//                              soonest-first; rerun after every watchlist/request change and right
+//                              after ensure_discover_landing fills discover_known_requests
+//   push_coming_up_row         → discover-coming-up (preview cap + a "Full Calendar" sentinel card) and
+//                              the sentinel-free -mixed/-movies/-tv dashboard models, via
+//                              apply_cards_preserving_identity; CardItems built only inside
+//                              invoke_from_event_loop (it's called from a Tokio task)
+//   calendar_entry_to_card     CalendarEntry → CardItem, shared by those 4 models
+//   fetch_coming_up_posters    patches posters into the committed row (by index, same cap/order) and
+//                              the dashboard models (by id + item_type)
+//   calendar_grid_dims / push_calendar_view / calendar_day_entries  month grid (Sunday-first):
+//                              blanks + day count; one CardItem per day (title = day, count, first
+//                              entry's title); a day's entries for the popup
+//   handle_key_calendar / open_calendar_day_popup / handle_key_calendar_day_popup  CalendarScreen keys:
+//                              header row (Back/Prev/Next, Left/Right move, Confirm activates) or the
+//                              day grid (Left/Right past Sunday/Saturday change month; Confirm →
+//                              calendar-day-selected, the same callback as the mouse); popup: Up/Down,
+//                              Confirm opens the entry, Back closes the popup
 // ─────────────────────────────────────────────────────────────────────────────
 use super::*;
 
@@ -114,35 +58,21 @@ fn calendar_kind_for_release_type(t: i32) -> CalendarEntryKind {
     }
 }
 
-/// Builds the "Coming Up" row's data — every id in `discover_watchlist_ids`
-/// union `discover_known_requests`' own keys (the latter already IS the
-/// `requested_not_available` result set, populated from that exact call by
-/// `ensure_discover_landing`/`refresh_requested_row` — reusing it here
-/// avoids a second, duplicate `GET /request` round trip), capped at 20
-/// CANDIDATES (not 20 RESULTING entries — a date isn't known until after
-/// the detail fetch below, so the cap bounds the number of detail fetches,
-/// not a pre-sorted "soonest 20"; the final list is what gets sorted by
-/// date, not the candidate selection). Same bounded-concurrency JoinSet
-/// shape as `fetch_requested_row`. Movies contribute up to 3 entries each
-/// (Theatrical/Digital/Physical, whichever have a real future date); TV
-/// contributes at most 1 (`next_episode_to_air`). Past dates are excluded —
-/// a "Coming Up" calendar has nothing to say about something already out.
-/// Watchlist + Release Calendar, 2026-07-18.
+/// The "Coming Up" row's data: every id in `discover_watchlist_ids` ∪
+/// `discover_known_requests` (already the requested-not-available set — no second
+/// `GET /request`), capped at 20 CANDIDATES (dates are only known after the detail
+/// fetch, so the cap bounds fetches; the final list is sorted by date). Bounded
+/// concurrency like `fetch_requested_row`. A movie contributes up to 3 entries
+/// (Theatrical/Digital/Physical with a future date), a series at most 1
+/// (`next_episode_to_air`). Past dates are left out.
 pub(crate) async fn build_calendar_entries(state: Arc<Mutex<FjordState>>, ww: Weak<MainWindow>) {
     let Some(client) = state.lock().unwrap().seerr_client.clone() else {
         return;
     };
-    // Real bug, live-reported 2026-07-19 ("the context menu still shows add
-    // to watchlist when its already is in the watch list"): `on_watchlist`
-    // needs to be known per-candidate here — `push_coming_up_row` builds its
-    // CardItems with `..Default::default()`, which silently means
-    // `on_watchlist: false` for every card regardless of the real state, and
-    // nothing ever re-patches it afterward since a fresh Coming Up rebuild
-    // (this exact function, e.g. via refresh_watchlist right after a toggle)
-    // replaces the whole model — the item that was JUST successfully
-    // watchlisted, now newly appearing in this row because it has an
-    // upcoming date, would flip straight back to "not on watchlist" the
-    // instant this function's own rebuild ran.
+    // `on_watchlist` per candidate: `push_coming_up_row` builds its cards with defaults,
+    // and every rebuild replaces the model — without this, an item that just got
+    // watchlisted (and appears here because of its upcoming date) would show as not on
+    // the watchlist.
     let candidates: Vec<(&'static str, String, bool)> = {
         let s = state.lock().unwrap();
         let watchlist_ids = &s.discover_watchlist_ids;
@@ -157,18 +87,10 @@ pub(crate) async fn build_calendar_entries(state: Arc<Mutex<FjordState>>, ww: We
             })
             .collect();
 
-        // Third candidate source (2026-07-29, Deep Seerr integration):
-        // ongoing series already in the local library, even if never
-        // watchlisted/requested via Seerr. Unioned in AFTER the existing
-        // watchlist∪requests .take(20) slice (left completely unchanged
-        // above) rather than folded into the same pre-take HashSet —
-        // folding it in would non-deterministically starve out watchlist/
-        // request candidates via hash-set iteration order once a library
-        // has more than a handful of ongoing shows. Its own defensive cap
-        // (a safety valve, not a precisely-chosen number) since the real
-        // fetch cost is already bounded by the Semaphore(6) below, not by
-        // candidate count — a bounded-concurrency fetch of even a few
-        // hundred shows just takes longer wall-clock time, it doesn't fail.
+        // Third candidate source: ongoing series in the local library, even without a Seerr
+        // watchlist/request. Added AFTER the watchlist ∪ requests take(20) (not folded into
+        // that set), so hash-set order can't push watchlist/request candidates out. Its cap is
+        // a safety valve; the real cost is bounded by the Semaphore(6) below.
         const ONGOING_CAP: usize = 50;
         let mut seen: std::collections::HashSet<(&'static str, String)> = candidates
             .iter()
@@ -226,11 +148,9 @@ pub(crate) async fn build_calendar_entries(state: Arc<Mutex<FjordState>>, ww: We
                         return entries;
                     }
                 };
-                // Same "don't show this in Discover" rule as
-                // search_result_to_meta/watchlist_*_to_meta (2026-08-06) —
-                // blocklisting doesn't remove the title from the watchlist
-                // or an ongoing-series scan, so without this it would keep
-                // resurfacing here on every calendar refresh.
+                // Blocklisted items stay hidden here too (like search_result_to_meta /
+                // watchlist_*_to_meta) — blocklisting doesn't remove a title from the watchlist or the
+                // ongoing-series scan.
                 if availability_tag(d.media_info.as_ref().and_then(|mi| mi.status()))
                     == "blocklisted"
                 {
@@ -316,36 +236,13 @@ pub(crate) async fn build_calendar_entries(state: Arc<Mutex<FjordState>>, ww: We
     fetch_coming_up_posters(ww, &all).await;
 }
 
-/// Pushes the "Coming Up" landing row from `entries` (soonest-first,
-/// already sorted by `build_calendar_entries`) — capped to a preview count,
-/// plus the trailing sentinel card `handle_key_landing` special-cases.
-/// Text-only commit first, same two-phase pattern as every other landing
-/// row — `fetch_coming_up_posters` (below) patches posters in afterward;
-/// `ensure_discover_landing`'s own poster pass doesn't cover this row
-/// since it's rebuilt independently on its own schedule, not as part of
-/// the 8-way landing join.
-///
-/// Real bug, live-reported 2026-07-19 ("highlight disappears, nothing
-/// shows anywhere"): this function is only ever called from
-/// `build_calendar_entries`, an `async fn` that runs entirely on a Tokio
-/// worker thread (spawned via `tokio::spawn`/`rt.spawn`, never routed
-/// through `invoke_from_event_loop`) — but it called `ww.upgrade()` and
-/// `AppState::get(&w).set_discover_coming_up(...)` directly, off the UI
-/// thread. `slint::Weak::upgrade()` silently returns `None` when called
-/// from any thread other than the one that owns the window (confirmed
-/// from `i-slint-core`'s real source, not assumed: `if
-/// std::thread::current().id() != self.thread { return None; }`, no
-/// panic) — so `discover-coming-up` was never actually set, on any run,
-/// since this feature first shipped; the `debug!("seerr: calendar -> N
-/// entries")` log line in `build_calendar_entries` (which runs BEFORE
-/// this function) made the Rust-side computation look like it succeeded,
-/// masking that the UI-side commit was silently failing every single
-/// time. Every other UI mutation in this file follows the two-phase
-/// pattern (build plain Send-safe data off-thread, construct `CardItem`
-/// only inside `invoke_from_event_loop`) for exactly this reason — this
-/// one function was written without it. Fixed by clamping/cloning
-/// `entries` (plain `Vec<CalendarEntry>`, genuinely `Send`) before the
-/// closure, and moving the `CardItem`/`AppState` mutation inside.
+/// Pushes the "Coming Up" landing row from `entries` (soonest first, sorted by
+/// `build_calendar_entries`), capped to a preview count, plus the trailing sentinel
+/// card `handle_key_landing` special-cases. Text first; `fetch_coming_up_posters`
+/// patches posters in afterward (this row is rebuilt on its own schedule, outside the
+/// landing-row join). Called from an async task on a Tokio worker: `entries` is
+/// cloned into `invoke_from_event_loop` and the `CardItem`s are built inside it —
+/// `Weak::upgrade()` returns None off the UI thread, so the row would never be set.
 fn calendar_entry_to_card(e: &CalendarEntry) -> CardItem {
     let kind_label = match e.kind {
         CalendarEntryKind::Theatrical => "In Theaters",
@@ -377,13 +274,8 @@ fn push_coming_up_row(ww: &Weak<MainWindow>, entries: &[CalendarEntry]) {
     let _ = slint::invoke_from_event_loop(move || {
         let Some(w) = ww.upgrade() else { return };
         let g = AppState::get(&w);
-        // Home/TV/Movies dashboard rows (2026-08-02, user request — "the
-        // coming up row shuld also be in home dashbord... coming up in
-        // series dashbord that is filtered for series and in movies
-        // dashbord that is filtered for movies"), same 3-way mixed/movies/tv
-        // split as the Watchlist dashboard rows, sentinel-free (a "Full
-        // Calendar" card only makes sense on the Discover screen's own
-        // landing row, which has a CalendarScreen to open).
+        // Home/TV/Movies dashboard rows: the same mixed/movies/tv split as the Watchlist
+        // rows, without the sentinel ("Full Calendar" only makes sense on Discover).
         let mixed: Vec<CardItem> = entries.iter().map(calendar_entry_to_card).collect();
         let movies: Vec<CardItem> = mixed
             .iter()
@@ -399,12 +291,8 @@ fn push_coming_up_row(ww: &Weak<MainWindow>, entries: &[CalendarEntry]) {
         cards.push(CardItem {
             id: "".into(),
             item_type: "".into(),
-            // U+1F4C5 (📅 CALENDAR) isn't in any bundled font's cmap (confirmed
-            // via fc-query, 2026-07-22, live-reported "still missing symbols on
-            // the htpc") — the card title has no font-family pin, so the global
-            // Noto fallback mechanism had nothing to fall back TO here, tofu on
-            // any system without its own emoji font. U+1F5D3 (🗓 SPIRAL CALENDAR
-            // PAD) genuinely is in Noto Sans Symbols2's cmap.
+            // U+1F5D3 (🗓) is in Noto Sans Symbols 2; U+1F4C5 (📅) is in no bundled font, and this
+            // title has no font pin, so it rendered as tofu on systems without an emoji font.
             title: "🗓".into(),
             subtitle: "Full Calendar".into(),
             ..Default::default()
@@ -435,14 +323,10 @@ fn push_coming_up_row(ww: &Weak<MainWindow>, entries: &[CalendarEntry]) {
     });
 }
 
-/// Patches posters onto the already-committed Coming Up row (2026-07-19,
-/// user request — "it hust dosent have posters"), same bounded-concurrency
-/// fetch-then-patch-by-index shape as `refresh_requested_row`'s own poster
-/// pass. Must truncate `entries` with the SAME `COMING_UP_PREVIEW_CAP` and
-/// source order `push_coming_up_row` used, since patching is by row index
-/// — the id/type check on each patch is the belt-and-braces guard against
-/// the two ever drifting out of sync (same pattern used everywhere else in
-/// this file a poster fetch patches a model by index).
+/// Patches posters onto the committed Coming Up row (bounded concurrency, like
+/// `refresh_requested_row`'s poster pass). Truncates `entries` with the SAME
+/// `COMING_UP_PREVIEW_CAP` and order as `push_coming_up_row`, since patching is by row
+/// index; the id/type check on each patch guards against the two drifting apart.
 async fn fetch_coming_up_posters(ww: Weak<MainWindow>, entries: &[CalendarEntry]) {
     let poster_jobs: Vec<(usize, String, String, String)> = entries
         .iter()
@@ -504,10 +388,8 @@ async fn fetch_coming_up_posters(ww: Weak<MainWindow>, entries: &[CalendarEntry]
                 card.has_poster = true;
                 model.set_row_data(idx, card);
             }
-            // Home/TV/Movies dashboard rows (2026-08-02): id+item_type
-            // lookup, not index — the same tmdb id can sit at a different
-            // row index in discover-coming-up-mixed vs. its own type-
-            // specific list, same reason fetch_watchlist_posters does this.
+            // Dashboard rows: look up by id + item_type, not index — the same tmdb id can sit at
+            // a different index in -mixed vs. the type-specific list (like fetch_watchlist_posters).
             for model in [
                 g.get_discover_coming_up_mixed(),
                 g.get_discover_coming_up_movies(),
@@ -551,18 +433,11 @@ fn calendar_grid_dims(year: i32, month: u32) -> (i32, i32) {
     (leading, total)
 }
 
-/// Rebuilds `calendar-days`/`calendar-leading-blanks`/`calendar-total-days`
-/// for whatever `calendar-year`/`calendar-month` currently are — called on
-/// open and after every month-nav. One `CardItem` per REAL day (no blank
-/// placeholders in the model itself, see `calendar-leading-blanks`' own doc
-/// comment): `title` is the day number, `unplayed-count` repurposed as the
-/// day's entry count, `subtitle` is the first entry's own title (2026-07-19,
-/// user request — "write you the relese in the calander instead of just a
-/// small marker": `CalendarDayCell` now shows this text directly rather
-/// than only a numeric pill; a day with 2+ entries still gets the count
-/// pill too, alongside the title, so a second/third release isn't silently
-/// dropped from the cell — the day-popup remains the place to see all of
-/// them by name), `id` is unused (day index is positional).
+/// Rebuilds `calendar-days`/`-leading-blanks`/`-total-days` for the current
+/// `calendar-year`/`-month` (on open and every month change). One `CardItem` per REAL
+/// day: `title` = day number, `unplayed-count` = the day's entry count, `subtitle` = the
+/// first entry's title (shown in the cell; 2+ entries also show the count pill — the
+/// day popup lists them all), `id` unused.
 pub(crate) fn push_calendar_view(g: &AppState, s: &FjordState) {
     use chrono::Datelike;
     let year = g.get_calendar_year();
@@ -625,38 +500,13 @@ fn calendar_day_entries(s: &FjordState, year: i32, month: u32, day: i32) -> Vec<
         .collect()
 }
 
-/// Zone -1 = header row (Back=col 0, Prev month=col 1, Next month=col 2,
-/// Left/Right cycle among these 3, Confirm activates whichever is
-/// focused); zone >= 0 = the day grid itself (7 columns,
-/// `calendar-cursor-row`/`-col` are raw grid coordinates including blank
-/// cells — landing on a blank is harmless, Enter there is just inert, same
-/// "gaps are fine" tolerance the Coming Up row's own sentinel already
-/// established, rather than clamping arrow keys around blanks). Confirm on
-/// a real day routes through the SAME `calendar-day-selected` callback the
-/// mouse path uses (`on_calendar_day_selected` in `wire_discover`) rather
-/// than calling `open_calendar_day_popup` directly — `keys.rs`'s per-mode
-/// match arms don't hold `state`/`ww`, and funneling both input paths
-/// through one callback is also what guarantees they can't diverge (the
-/// mouse/keyboard focus-desync bug class documented throughout this file).
-///
-/// Left/Right month-changing — corrected design, same day, after a live
-/// report ("the left right to change the month works when you are on the
-/// back button but not when you are on the end ow a row on the
-/// monthgrid... it shuld not change when you press left or right on the
-/// back buttun then you shuld just navigate the buttons"). The FIRST
-/// attempt made header-zone Left/Right always fire the month change
-/// immediately — wrong on two counts: it fired from the Back position too
-/// (the user explicitly didn't want that — Left/Right on Back should just
-/// navigate, not act), and it did nothing useful in the day grid at all.
-/// Reverted the header zone back to its original cursor-cycling behavior
-/// (Left/Right just move among Back/Prev/Next, Confirm activates); added
-/// the actual requested behavior to the DAY GRID instead — Left at the
-/// leftmost column (Sunday) or Right at the rightmost column (Saturday)
-/// now continues past the edge into the adjacent month, mirroring the
-/// common date-picker convention of browsing days seamlessly across a
-/// month boundary. Reuses `invoke_calendar_prev_month`/`_next_month`
-/// directly (both already reset the cursor into the new month's grid as
-/// part of changing it, so no extra cursor bookkeeping needed here either).
+/// Zone -1 = header row (Back / Prev month / Next month: Left/Right move between them,
+/// Confirm activates); zone >= 0 = the day grid (7 columns; `calendar-cursor-row`/
+/// `-col` are raw grid coordinates incl. blank cells — Enter on a blank is inert).
+/// Confirm on a day goes through the same `calendar-day-selected` callback as the
+/// mouse (`on_calendar_day_selected` in wire_discover), so both paths match. In the
+/// grid, Left on Sunday / Right on Saturday continues into the previous/next month
+/// (`invoke_calendar_prev_month`/`_next_month` reset the cursor themselves).
 pub(crate) fn handle_key_calendar(action: &Action, g: &AppState) -> bool {
     let row = g.get_calendar_cursor_row();
     let col = g.get_calendar_cursor_col();

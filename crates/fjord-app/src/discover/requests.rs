@@ -1,24 +1,21 @@
-// ── fjord-app · discover/requests.rs ─────────────────────────────────────────
-//   submit_request              POST /request (seasons + is4k + selected tag ids + selected
-//                              profileId, 0/Default omitted); on success flips ONLY the just-
-//                              requested tier's own request-detail-status/-4k (real bug fixed
-//                              2026-07-18: used to blank out BOTH tiers regardless of is_4k,
-//                              hiding the still-open other tier's own Request option entirely —
-//                              "if you reqest 4k then the requestbutton changes to requested...
-//                              so you cant also request 2k") + patches the originating Discover
-//                              card + toasts
+// ── fjord-app · discover/requests.rs ────────────────────────────────────────
+//   discover_toggle_blocklist  POST/DELETE blocklist; patches availability everywhere, removes the
+//                              card from Discover models on add
+//   read_current_request_preference / store_request_preference  Request Options' remembered choice
+//   submit_request             POST /request (seasons, is4k, tags, profileId — 0/Default omitted); on
+//                              success flips only the requested tier's status, patches the card, adds
+//                              to the Watchlist (one combined toast), refreshes the Requested row
+//   submit_edit_request        PUT the existing request (tier can't change)
+//   discover_request_action    Cancel / Approve / Decline by request id; syncs known requests, reloads
+//                              an open RequestDetailScreen for the same item
 // ─────────────────────────────────────────────────────────────────────────────
 use super::*;
 
-/// Add/remove Blocklist — wired from the Discover context menu's Blocklist
-/// row and RequestDetailScreen's Blocklist button. POST/DELETE, then patches
-/// `availability` on every visible card + RequestDetailScreen's own status
-/// fields if open for the same item. No id-set bookkeeping (unlike
-/// Watchlist) — Blocklisted rides entirely on the same `MediaStatus` data
-/// every card already carries, see `availability_tag`'s own doc comment;
-/// no jellyfin-star-equivalent either, since an in-library (Available) item
-/// is never blocklist-eligible in the first place. 2026-08-06, Seerr
-/// Blocklist support.
+/// Add/remove Blocklist (Discover context menu row, RequestDetailScreen button):
+/// POST/DELETE, then patch `availability` on every visible card and RequestDetail's
+/// status fields if it shows the same item. No id set (unlike Watchlist): Blocklisted is
+/// a `MediaStatus` value every card already carries (`availability_tag`). An available
+/// library item is never blocklist-eligible, so there's no Jellyfin-star equivalent.
 pub(crate) fn discover_toggle_blocklist(
     state: Arc<Mutex<FjordState>>,
     ww: Weak<MainWindow>,
@@ -63,30 +60,16 @@ pub(crate) fn discover_toggle_blocklist(
             Ok(()) => {
                 debug!("seerr: discover_toggle_blocklist succeeded tmdb={tmdb_id} adding={adding}");
                 let new_availability: &'static str = if adding { "blocklisted" } else { "" };
-                // remove_blocklist deletes the whole underlying Media row
-                // server-side (confirmed from Seerr's real route source —
-                // see remove_blocklist's own doc comment), so the item
-                // genuinely reverts to untouched status on removal, not
-                // just "not blocklisted" — both the pill (availability)
-                // AND the tier status labels below reset to empty, matching
-                // a never-touched item exactly.
+                // remove_blocklist deletes the whole Media row server-side (Seerr's route source), so
+                // the item reverts to untouched: availability and both tier labels reset to empty.
                 let new_status_label: &'static str = if adding { "Blocklisted" } else { "" };
                 let ww2 = ww.clone();
                 let _ = slint::invoke_from_event_loop(move || {
                     if let Some(w) = ww2.upgrade() {
                         let g = AppState::get(&w);
-                        // Blocklisting means "don't show this in Discover" —
-                        // see search_result_to_meta's own doc comment. A
-                        // fresh fetch already filters a blocklisted item out
-                        // on its own; this removes it from whatever's
-                        // ALREADY on screen right now (real bug, live-
-                        // reported: the item previously just sat there with
-                        // a "Blocklisted" pill instead of disappearing).
-                        // Un-blocklisting has nothing to remove — the item
-                        // was never re-added to any Discover model while it
-                        // stayed blocklisted, so it naturally reappears only
-                        // on the next real fetch, same as any other Seerr
-                        // state change in this app.
+                        // Blocklisted items disappear from Discover (search_result_to_meta): a fresh fetch
+                        // already drops them, this removes the card from models already on screen.
+                        // Un-blocklisting has nothing to add back — the item reappears on the next fetch.
                         if adding {
                             remove_card_from_all_models(&g, item_type, tmdb_id);
                         }
@@ -200,11 +183,8 @@ pub(crate) fn submit_request(
 ) {
     let Some(w) = ww.upgrade() else { return };
     let g = AppState::get(&w);
-    // Guard against double-submitting the SAME tier that's currently
-    // selected in the modal — not "any status exists at all." 2K and 4K are
-    // independently requestable (real bug fixed 2026-07-18: requesting 4K
-    // used to blank out the whole Request flow, hiding 2K too — see
-    // tier_status_label's own doc comment for the full story).
+    // Guard against re-submitting the SAME tier that's selected — 2K and 4K are
+    // requestable independently (see tier_status_label).
     let is_4k = g.get_request_detail_want_4k();
     let tier_already_requested = if is_4k {
         g.get_request_detail_status_4k().as_str() != ""
@@ -259,17 +239,9 @@ pub(crate) fn submit_request(
     // Snapshotted here, before g is dropped — persisted only on success,
     // below (see read_current_request_preference's own doc comment).
     let pref_snapshot = read_current_request_preference(&g);
-    // Same reasoning: requesting something is a clear declaration of
-    // interest, so a brand-new request also adds the item to the Watchlist
-    // (2026-08-12, direct question: "shuld not requested item be added to
-    // watchlist?") — guarded on not already being on it, both to avoid a
-    // redundant POST and because Seerr's own add/remove semantics for an
-    // already-watchlisted item aren't documented either way. Scoped to a
-    // genuinely NEW request only (submit_edit_request does not do this) —
-    // editing an existing request isn't a fresh declaration of interest the
-    // same way a first request is, and an already-requested item was
-    // already a watchlist candidate the first time around if this was
-    // going to add it at all.
+    // A NEW request also adds the item to the Watchlist (requesting is a clear sign of
+    // interest), unless it's already on it (avoids a redundant POST with undocumented
+    // semantics). Editing a request doesn't.
     let already_on_watchlist = g.get_request_detail_on_watchlist();
     let title_snapshot = g.get_request_detail_title().to_string();
 
@@ -317,10 +289,7 @@ pub(crate) fn submit_request(
                     if let Some(w) = ww2.upgrade() {
                         let g = AppState::get(&w);
                         g.set_request_detail_requesting(false);
-                        // Only the tier that was actually just requested —
-                        // the other tier's own status is untouched, so it
-                        // stays requestable (real bug fixed 2026-07-18: this
-                        // used to blank out BOTH tiers regardless of is_4k).
+                        // Only the tier just requested — the other tier stays requestable.
                         if is_4k {
                             g.set_request_detail_status_4k("Requested".into());
                         } else {
@@ -355,11 +324,8 @@ pub(crate) fn submit_request(
                         Some("Requested — added to Watchlist"),
                     );
                 }
-                // The freshly-created request has never been in
-                // discover-requested before now — patch_discover_card_availability
-                // above only updates a card ALREADY visible elsewhere (search
-                // grid/other landing rows), so the Requested row itself stays
-                // stale without this (real bug, live-reported 2026-07-18).
+                // A brand-new request was never in discover-requested, so
+                // patch_discover_card_availability can't update that row — re-fetch it.
                 refresh_requested_row(Arc::clone(&state), ww, rt2);
             }
             Err(e) => {
@@ -375,14 +341,10 @@ pub(crate) fn submit_request(
     });
 }
 
-/// Confirm inside the Request Options modal while `request-options-editing`
-/// is set (Discover context menu's Edit Request, 2026-07-18) — same shape
-/// as `submit_request` but PUTs the existing request instead of POSTing a
-/// new one, and deliberately does NOT read `request-detail-want-4k`: the
-/// tier can't be changed by editing (confirmed from Seerr's real route
-/// source — see `SeerrClient::update_request`'s own doc comment), so it's
-/// never sent. No `status != ""` guard, unlike `submit_request` — an
-/// existing request obviously already has one.
+/// Confirm in the Request Options modal while `request-options-editing` (Edit Request):
+/// like `submit_request` but PUTs the existing request, and never sends
+/// `request-detail-want-4k` — editing can't change the tier
+/// (`SeerrClient::update_request`). No `status != ""` guard — it obviously has one.
 pub(crate) fn submit_edit_request(
     state: Arc<Mutex<FjordState>>,
     ww: Weak<MainWindow>,
@@ -483,16 +445,11 @@ pub(crate) fn submit_edit_request(
     });
 }
 
-/// Discover context menu's Cancel/Approve/Decline (2026-07-18) — all three
-/// share this exact shape: one Seerr call by request id, then either remove
-/// the card from `discover-requested` (Cancel) or leave it in place (its
-/// status/badge will simply be stale until the next landing-row fetch —
-/// Approve/Decline don't change what's ALREADY on screen enough to be worth
-/// a full row rebuild for an infrequent admin action). Also reloads
-/// `RequestDetailScreen` (via `open_discover_item`) if it's open for the
-/// exact item this request belongs to (added when the ⋮ More button gave
-/// this page its own path to these three actions) — simpler than hand-
-/// patching request-detail-status/-4k/-request-id per tier.
+/// The Discover context menu's Cancel/Approve/Decline: one Seerr call by request id,
+/// then Cancel removes the card from `discover-requested` while Approve/Decline leave it
+/// (its badge refreshes with the next landing fetch). Reloads RequestDetailScreen (via
+/// `open_discover_item`) when it shows this request's item — simpler than patching
+/// request-detail-status/-4k/-request-id per tier.
 pub(crate) fn discover_request_action(
     state: Arc<Mutex<FjordState>>,
     ww: Weak<MainWindow>,
@@ -513,13 +470,9 @@ pub(crate) fn discover_request_action(
             "approve" => client.approve_request(request_id).await,
             _ => client.decline_request(request_id).await,
         };
-        // Real bug fixed 2026-07-18: Approve never patched request_pending
-        // anywhere, so a non-admin could still see and attempt "Cancel
-        // Request" on an already-approved request (which then fails
-        // server-side, since DELETE requires status==PENDING). Also keeps
-        // discover_known_requests in sync for both outcomes — approve
-        // updates it to pending=false, cancel/decline remove the entry
-        // entirely (the request no longer exists).
+        // Keep request state in sync: Approve sets pending=false (so Cancel — DELETE needs
+        // PENDING — isn't offered), Cancel/Decline remove the entry from
+        // discover_known_requests.
         let req_key = request_id.to_string();
         {
             let mut s = state.lock().unwrap();
@@ -587,14 +540,8 @@ pub(crate) fn discover_request_action(
                             }
                         }
                     }
-                    // If the Discover detail page is open for the exact item
-                    // this request belongs to, reload it fresh rather than
-                    // hand-patching request-detail-status/-4k/-request-id —
-                    // simpler than tracking which tier this request_id was
-                    // for, and matches refresh_requested_row's own
-                    // "just refetch" approach. Otherwise the page would keep
-                    // showing a request that no longer exists (Cancel) or a
-                    // stale Pending/"Needs Approval" label (Approve/Decline).
+                    // The open detail page shows this request's item: reload it rather than hand-patch
+                    // the per-tier fields (it would otherwise show a deleted request or a stale label).
                     if g.get_show_request_detail()
                         && g.get_request_detail_request_id().as_str() == request_id.to_string()
                     {

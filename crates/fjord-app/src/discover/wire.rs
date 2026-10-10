@@ -1,32 +1,15 @@
 // ── fjord-app · discover/wire.rs ─────────────────────────────────────────────
-//   wire_discover              registers all Discover/RequestDetail AppState callbacks
-//                              (search append/backspace/clear, load-more, open-discover-item,
-//                              request-detail-toggle-season/-tag, request-detail-request,
-//                              open-request-options, request-detail-set-quality); on first
-//                              nav arrival also proactively refreshes all_movies (metadata
-//                              only, crate::spawn_movies_list_fetch(..., with_posters=false))
-//                              so find_local_item's ProviderIds match works on the first
-//                              Discover visit, not just after the Movies grid has been
-//                              opened this session (all_series has no such gap — the
-//                              startup auto-login path already refreshes it unconditionally)
-//   on_discover_filter_changed  shared tail of every filter-pill-changed callback: saves
-//                              Config, recomputes discover-filters-active, then either
-//                              triggers spawn_discover_filtered_browse (query empty + active),
-//                              clears discover-results (query empty + inactive), or calls
-//                              apply_search_filters (query non-empty)
-//   on_nav_selected            (in wire_discover) logs nav-selected(n) at debug (2026-10-08);
-//                              also resets discover-popup-open/
-//                              discover-filter-bar-active when leaving Discover (real bug:
-//                              a filter popup left open silently reappeared on return) and
-//                              calls refresh_seerr_admin_status on every arrival (rate-limited,
-//                              see above); unconditionally closes the on-screen keyboard on
-//                              EVERY nav switch (2026-08-26, code review — the single most
-//                              severe finding: Browse/LibraryGrid/DiscoverScreen are
-//                              permanently-mounted, visible:-toggled siblings, so switching
-//                              tabs with the keyboard open on one of their search fields left
-//                              show-onscreen-keyboard stuck true and silently swallowed all
-//                              subsequent input app-wide, since that gate is checked before
-//                              every other tier in keys.rs)
+//   wire_discover              registers every Discover/RequestDetail AppState callback (search
+//                              append/backspace/clear, load-more, open-discover-item, request
+//                              detail/options, context-menu actions, filters, Missing Seasons …)
+//   on_nav_selected            (in wire_discover) the ONE nav-selected handler: logs it, calls
+//                              browse.rs's per-nav logic, closes the on-screen keyboard on every tab
+//                              switch, resets Discover's popup/filter bar and Settings' keybinding
+//                              state when leaving them; on arriving at Discover: landing rows (once),
+//                              all_movies metadata refresh (for find_local_item), refresh_seerr_admin_status
+//   on_discover_filter_changed  shared tail of every filter-pill change: save Config, recompute
+//                              discover-filters-active, then filtered browse (query empty + active),
+//                              clear discover-results (empty + inactive), or apply_search_filters
 // ─────────────────────────────────────────────────────────────────────────────
 use super::*;
 
@@ -77,22 +60,12 @@ pub(crate) fn wire_discover(
     let g = AppState::get(window);
     let discover_gen = Arc::new(AtomicU64::new(0));
 
-    // Landing rows: fetched once per session on first arrival at the
-    // Discover tab. nav-selected fires from both the sidebar's mouse click
-    // handler and browse::sidebar_nav's keyboard-cycle path, so this one
-    // registration covers both entry points — previously unused/unwired
-    // (Slint declared it, nothing listened), so this doesn't change
-    // behavior for any other nav value.
-    //
-    // Also proactively refreshes the movie list (metadata only, no poster
-    // sweep — `with_posters: false`) here: unlike `all_series`, which the
-    // startup auto-login path refreshes unconditionally on every login,
-    // `all_movies` is lazy-fetched only when the Movies library grid is
-    // opened, so on a session where the user goes straight to Discover
-    // without ever opening Movies, `all_movies` (and its `ProviderIds`,
-    // needed by `find_local_item`) can still be whatever a stale on-disk
-    // cache holds — real bug, live-reported as "in-library redirect works
-    // for TV but not movies."
+    // Discover's landing rows are fetched once per session, on first arrival.
+    // nav-selected fires from both the sidebar click and browse::sidebar_nav's keyboard
+    // cycle, so this one registration covers both. It also refreshes the movie list
+    // (metadata only, `with_posters: false`): unlike `all_series` (refreshed at every
+    // login), `all_movies` is only fetched when the Movies grid opens, and
+    // `find_local_item` needs its fresh `ProviderIds` for the in-library redirect.
     g.on_nav_selected({
         let state = Arc::clone(&state);
         let ww = window.as_weak();
@@ -112,85 +85,46 @@ pub(crate) fn wire_discover(
                 // Watchlist + Release Calendar, 2026-07-18 — same
                 // once-per-session guard shape as ensure_discover_landing.
                 ensure_discover_watchlist(Arc::clone(&state), ww.clone(), rt.clone());
-                // Real bug, 2026-07-18: seerr-is-admin was only ever fetched
-                // once per connection (spawn_seerr_settings_fetch at startup/
-                // connect) and never refreshed, so a server-side permission
-                // change mid-session never showed up in Approve/Decline
-                // visibility without a reconnect. Non-blocking — the menu
-                // still opens instantly with whatever's cached; this just
-                // makes the NEXT open correct.
+                // Non-blocking: the menu opens with the cached permission; this makes the next open
+                // reflect a server-side change (see refresh_seerr_admin_status).
                 refresh_seerr_admin_status(Arc::clone(&state), ww.clone(), rt.clone());
             }
             let Some(w) = ww.upgrade() else { return };
             let g = AppState::get(&w);
 
-            // This is the ONE `on_nav_selected` registration that actually
-            // fires — Slint callbacks are single-handler, so browse.rs's own
-            // former registration here was silently overwritten by this one
-            // (code review, 2026-08-08). Call its logic explicitly instead
-            // of leaving it dead.
+            // This is the ONE `on_nav_selected` registration (Slint callbacks are single-handler),
+            // so browse.rs's per-nav logic is called from here.
             crate::browse::clear_browse_results(&state, &g, nav);
 
-            // Real, severe bug found in code review, 2026-08-26: the
-            // on-screen keyboard was never closed on a sidebar tab switch.
-            // Browse/LibraryGrid/DiscoverScreen are all permanently-mounted,
-            // `visible:`-toggled siblings (not conditionally destroyed), so
-            // opening the on-screen keyboard from one of their search
-            // fields, then switching tabs with the mouse, leaves the
-            // keyboard widget invisible along with its parent screen while
-            // `show-onscreen-keyboard` stays stuck true. keys.rs's
-            // on-screen-keyboard gate is checked before EVERY other input
-            // tier and unconditionally consumes any key (only Ctrl+Q
-            // escapes it) — every arrow key, Backspace, and letter is
-            // silently swallowed app-wide, on whatever screen is now
-            // showing, with nothing on screen to explain why. This is the
-            // single choke point every sidebar switch (mouse NavItem.clicked
-            // AND browse::sidebar_nav's keyboard cycle) already funnels
-            // through, matching how the two blocks below already reset
-            // other classes of stale transient state on the same signal.
+            // Close the on-screen keyboard on every tab switch: Browse/LibraryGrid/Discover stay
+            // mounted (only `visible:` toggles), so a keyboard opened from one of their search
+            // fields would vanish with the screen while `show-onscreen-keyboard` stayed true —
+            // and keys.rs's keyboard gate would then swallow every key app-wide. Every sidebar
+            // switch (mouse and keyboard) comes through here.
             g.set_show_onscreen_keyboard(false);
             g.set_onscreen_keyboard_target("".into());
             g.set_onscreen_keyboard_cursor(0);
 
             if nav != 6 {
-                // Leaving Discover: a filter popup left open, or the filter
-                // bar left active, otherwise silently reappears (backdrop
-                // and all) the next time the user returns — real bug,
-                // 2026-07-18. This is the single hook every sidebar tab
-                // switch already funnels through (mouse NavItem.clicked AND
-                // browse::sidebar_nav's keyboard cycle both call
-                // nav-selected), so it's a more robust reset point than
-                // touching every NavItem handler in layout.slint by hand.
+                // Leaving Discover: close an open filter popup and deactivate the filter bar, or
+                // they reappear on return. Every tab switch passes this hook, so it's a better reset
+                // point than each NavItem handler.
                 g.set_discover_popup_open("".into());
                 g.set_discover_filter_bar_active(false);
             }
 
             if nav != 10 {
-                // Leaving Settings (code review, 2026-08-08) — a keybinding
-                // row focused via keyboard/mouse into Key Bindings, then a
-                // MOUSE click on a different sidebar entry, left
-                // `keybinding-focused` stale. keys.rs's AppMode::Settings
-                // routing checks `keybinding-focused >= 0` before ever
-                // looking at settings-section, so every keypress anywhere —
-                // regardless of which screen is now showing — kept being
-                // hijacked by the (invisible) keybinding dispatcher: Enter
-                // could silently arm rebind-capture, and the very next
-                // keypress would rebind+persist an arbitrary action with no
-                // visible feedback. Also clears the two ConfirmDialog flags
-                // and the pending rebind they can leave stranded, matching
-                // how sign-out already resets this class of transient
-                // Settings UI-flow state (see main.rs's sign-out handler).
+                // Leaving Settings: clear a focused keybinding row — keys.rs's Settings routing
+                // checks `keybinding-focused >= 0` first, so a stale value would hijack keys on any
+                // screen (Enter could arm a rebind and the next key rebind an action unseen). Also
+                // clears the two ConfirmDialog flags and the pending rebind, as sign-out does.
                 g.set_keybinding_focused(-1);
                 g.set_keybinding_rebinding(false);
                 g.set_show_keybinding_reset_confirm(false);
                 g.set_show_keybinding_collision_confirm(false);
                 state.lock().unwrap().pending_keybind_rebind = None;
-                // Disconnect Seerr confirm dialog (2026-08-22) — same class
-                // of leak: a stranded true here would silently reopen the
-                // dialog over whatever section is showing the next time
-                // this user returns to Settings, since it's rendered
-                // unconditionally on that flag with no regard for which
-                // row/section is currently focused.
+                // Disconnect-Seerr confirm: a stale true would reopen the dialog the next time
+                // Settings shows (it renders on the flag alone).
                 g.set_show_seerr_disconnect_confirm(false);
             }
         }
@@ -405,14 +339,9 @@ pub(crate) fn wire_discover(
             let was_landing = g.get_discover_query().is_empty();
             let q = crate::text_field::DISCOVER_SEARCH.insert(&g, ch.as_str());
             if was_landing {
-                // First character typed: the view switches from the 5
-                // landing SectionRows to the flat results grid, which only
-                // ever means "grid has focus" at focused-section == 0 —
-                // reset it so a query typed while parked on a non-zero
-                // landing row (reachable by clicking the search field
-                // directly, bypassing the keyboard path that always funnels
-                // through row 0 first) doesn't leave focused-section stuck
-                // on a row index the grid view doesn't understand.
+                // First character typed: the landing rows give way to the flat results grid, where
+                // only focused-section 0 means "grid" — reset it in case the search field was clicked
+                // while parked on another landing row.
                 g.set_focused_section(0);
                 g.set_discover_focused(0);
                 g.set_discover_focused_row(0);
@@ -531,11 +460,8 @@ pub(crate) fn wire_discover(
         }
     });
 
-    // Series "Missing Seasons" row (2026-07-29, Deep Seerr integration) —
-    // wired here (not keys.rs) since keys.rs::handle_key has no state/rt to
-    // make the async TMDB-resolution + request-detail-open call itself,
-    // same reason on_open_discover_item above is wired here rather than
-    // handled inline.
+    // Wired here, not in keys.rs: handle_key has no state/rt for the async TMDB
+    // resolution + request-detail open (same as on_open_discover_item).
     g.on_series_missing_season_activate({
         let state = Arc::clone(&state);
         let ww = window.as_weak();
@@ -632,11 +558,9 @@ pub(crate) fn wire_discover(
         }
     });
 
-    // RequestDetailScreen's own ⋮ More button (2026-07-18) — same
-    // context-menu-* population as on_open_context_menu_discover above, but
-    // sourced from request-detail-* state (no CardItem exists for this
-    // page). request-detail-request-id/-pending/-mine are resolved by
-    // discover.rs::pick_primary_request when the item's own detail loads.
+    // RequestDetailScreen's ⋮ More: the same context-menu-* population as
+    // on_open_context_menu_discover, sourced from request-detail-* (no CardItem here);
+    // the request id/pending/mine come from discover::pick_primary_request.
     g.on_open_discover_menu_from_detail({
         let ww = window.as_weak();
         move || {
@@ -650,10 +574,7 @@ pub(crate) fn wire_discover(
             g.set_context_menu_request_pending(g.get_request_detail_request_pending());
             g.set_context_menu_request_mine(g.get_request_detail_request_mine());
             g.set_context_menu_on_watchlist(g.get_request_detail_on_watchlist());
-            // Real gap, never mattered until the Blocklist row needed it
-            // (2026-08-06): this site populates request-id/pending/mine/
-            // watchlist for the context menu but had never forwarded
-            // availability, since no existing row consumed it.
+            // Forward availability too — the Blocklist row reads it.
             g.set_context_menu_availability(g.get_request_detail_availability());
             debug!(
                 "seerr: discover menu opened from detail page for {} ({}) request_id={:?} pending={} mine={}",
@@ -689,11 +610,9 @@ pub(crate) fn wire_discover(
         }
     });
 
-    // "View Request" (2026-07-18) — only shown when context-menu-request-id
-    // is non-empty (context_menu.slint); unlike View Details, deliberately
-    // skips the find_local_item redirect so a partially-available item's
-    // Seerr request stays reachable even though it's also (partly) in the
-    // Jellyfin library. See open_discover_item_ex's own doc comment.
+    // "View Request" (shown when context-menu-request-id is set) skips the
+    // find_local_item redirect, so a partly-owned item's request stays reachable — see
+    // open_discover_item_ex.
     g.on_context_discover_view_request({
         let state = Arc::clone(&state);
         let ww = window.as_weak();
@@ -784,13 +703,8 @@ pub(crate) fn wire_discover(
                 return;
             };
             g.set_show_context_menu(false);
-            // Confirmation dialog, 2026-08-22 — see show-cancel-request-
-            // confirm's own doc comment in app_state.slint. Cancel Request
-            // permanently deletes the underlying MediaRequest (DELETE
-            // /request), no undo — re-requesting starts fully over. The
-            // actual delete now happens in on_cancel_request_confirmed
-            // below, only once the (global, main.slint-level) dialog is
-            // confirmed.
+            // Opens the global cancel-request confirmation (app_state.slint): DELETE /request
+            // has no undo. The delete runs in on_cancel_request_confirmed.
             g.set_cancel_request_confirm_id(request_id.to_string().into());
             g.set_cancel_request_confirm_focused(0);
             g.set_show_cancel_request_confirm(true);
@@ -910,11 +824,8 @@ pub(crate) fn wire_discover(
         }
     });
 
-    // Discover context menu's Blocklist row (2026-08-06, Seerr Blocklist
-    // support) — same shape as its Watchlist sibling above, but "adding"
-    // means "not currently blocklisted" rather than a separate bool, since
-    // Blocklisted rides on the same availability field every other pill
-    // already uses (see availability_tag's own doc comment).
+    // Discover context menu's Blocklist row: like Watchlist, but "adding" = not
+    // currently blocklisted (blocklisted is an availability value — see availability_tag).
     g.on_context_discover_toggle_blocklist({
         let state = Arc::clone(&state);
         let ww = window.as_weak();

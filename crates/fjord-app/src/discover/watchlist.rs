@@ -1,118 +1,31 @@
 // ── fjord-app · discover/watchlist.rs ────────────────────────────────────────
-//   discover_toggle_watchlist   POST/DELETE /watchlist, updates discover_watchlist_ids,
-//                              patches every model the card might be visible in
-//                              (patch_watchlist_on_all_models) + request-detail-on-watchlist
-//                              if that item's detail page is open, toasts, calls refresh_watchlist
-//                              (which rebuilds the calendar too); debug!-logged at entry/success
-//                              (2026-07-19, live report of "no confirmation" with no evidence in
-//                              the log of the call ever happening — added to get direct proof of
-//                              where it breaks on the next attempt instead of guessing again);
-//                              the context-menu callsite also warn!s if context-menu-item-id
-//                              fails to parse as a tmdb id (its one silent-early-return path);
-//                              its success handler also resolves this one tmdb_id -> Jellyfin id
-//                              via find_local_item and patches the in-library star in place
-//                              (context_menu::patch_watchlist_on_jellyfin_models, 2026-07-20)
-//   ensure_discover_watchlist/refresh_watchlist/fetch_and_store_watchlist  fetch-once-per-
-//                              session (paginated, 200-item safety cap) + refresh-after-toggle
-//                              pair mirroring ensure_discover_landing/refresh_requested_row;
-//                              both funnel through the shared fetch_and_store_watchlist, which
-//                              also triggers build_calendar_entries on every fetch, and — since
-//                              2026-07-20 — independently spawns populate_watchlist_rows (Discover/
-//                              dashboard Watchlist rows) and resync_jellyfin_watchlist_stars
-//                              (in-library star bulk resync) on every fetch too, so all four
-//                              consumers share the one already-fetched discover_watchlist_ids set
-//   ── Watchlist row (2026-07-20, user request — "add a row for the watchlist as in
-//      seerr... culd also add it to the home dashbord, and movies dashbord... and
-//      series dashbord... status indicator to the posters like we do for everything
-//      else") — a genuine "everything on the watchlist" row, distinct from Coming
-//      Up's date-filtered subset; not deduped against Coming Up or any other row ──
-//   watchlist_movie_to_meta/watchlist_tv_to_meta  DiscoverCardMeta builders for a plain
-//                              watchlist item — movie_details_to_meta/tv_details_to_meta
-//                              are NOT reusable (require a real &RequestEntry); availability
-//                              comes straight from d.media_info (search_result_to_meta's own
-//                              single-tier approach), on_watchlist: true set directly; callers
-//                              call patch_known_request_state afterward for Edit/Cancel rows
-//   WATCHLIST_ROW_CAP            20, matching fetch_requested_row's/build_calendar_entries's
-//                              own cap — not a fresh judgment call, reusing the number this
-//                              exact cost tradeoff was already reasoned about for
-//   populate_watchlist_rows/push_watchlist_rows/fetch_watchlist_posters  detail-fetch (bounded
-//                              Semaphore+JoinSet) up to WATCHLIST_ROW_CAP watchlist items, split
-//                              client-side by item_type into mixed/movies/tv (mirrors home.rs's
-//                              own Continue-Watching cw_movies/cw_tv split) feeding BOTH the
-//                              Discover Watchlist row and the Home/Movies/TV dashboard rows —
-//                              one fetch, four consumers. Two-phase threading (build
-//                              DiscoverCardMeta off-thread, touch AppState/CardItem only inside
-//                              invoke_from_event_loop) is mandatory here — see push_coming_up_row's
-//                              own doc comment for the real bug this discipline exists to prevent.
-//                              Posters patched afterward by id+item_type match across all 3
-//                              models (not by index — the same tmdb id sits at a different row
-//                              index in the mixed list vs. its own type-specific list).
-//                              push_watchlist_rows routes all 3 models through
-//                              apply_cards_preserving_identity (2026-07-22, code review finding)
-//                              rather than a bare ModelRc::new swap — this function runs on every
-//                              watchlist refresh, i.e. after every single toggle anywhere in the
-//                              app, and a bare swap would re-fade every OTHER already-visible card
-//                              (Phase 96's documented class of bug) just because one item changed
-//   resync_jellyfin_watchlist_stars  in-library watchlist star (2026-07-20, user request — "if
-//                              its in library it shuld also show there") — resolves each
-//                              currently-watchlisted tmdb id (state.discover_watchlist_ids, read
-//                              fresh here — no Seerr fetch, pure local re-check) to a local
-//                              Jellyfin item via find_local_item; writes the resolved set into
-//                              FjordState.jellyfin_watchlist_ids (the persistent source of truth
-//                              item_to_card_item/items_to_model consult — real bug fix, a live
-//                              model patch alone gets silently wiped by the next screen rebuild,
-//                              see that field's own doc comment) AND patches
-//                              context_menu.rs::patch_watchlist_on_jellyfin_models for each
-//                              match (immediate feedback on whatever's on screen right now);
-//                              genuinely not add-only — ids present in the old set but missing
-//                              from the fresh one are explicitly patched back to false too.
-//                              pub(crate), takes no ids param (reads state itself) so it can be
-//                              called from anywhere as a cheap local re-check, not just after a
-//                              fresh Seerr fetch — real gap found by LIVE-TESTING this exact fix:
-//                              the resync triggered by fetch_and_store_watchlist's own trigger
-//                              points (session start + every toggle refresh) reliably races
-//                              AHEAD of all_movies/all_series being populated and finds 0 local
-//                              matches on that first pass (confirmed via cargo run — "watchlist
-//                              -> 5 id(s)" then "resync_jellyfin_watchlist_stars -> 0 local
-//                              match(es)"); also re-triggered from main.rs's push_cached_data
-//                              (once cache-loaded movies/series land), the auto-login fresh-
-//                              series landing point, and spawn_movies_list_fetch's own
-//                              completion — confirmed via a second cargo run that one of these
-//                              later triggers finds the real matches ("-> 4 local match(es)").
-//                              Generation-guarded (2026-07-22, code review finding: with 4
-//                              independent trigger points and no ordering between them, an older
-//                              call finishing AFTER a newer one had already written a more-
-//                              complete result could silently clobber it, un-starring genuinely-
-//                              still-watchlisted cards via its own stale diff) — see
-//                              FjordState.jellyfin_watchlist_resync_seq's own doc comment
+//   ensure_discover_watchlist / refresh_watchlist / fetch_and_store_watchlist  the Seerr watchlist
+//                              as an (item_type, tmdb_id) set (once per session; refreshed after every
+//                              toggle), then the calendar rebuild and the watchlist rows
+//   watchlist_movie_to_meta / watchlist_tv_to_meta  meta for a watchlist item (no request needed;
+//                              None for blocklisted items)
+//   WATCHLIST_ROW_CAP          20 detail-fetched items for the rows
+//   populate_watchlist_rows / push_watchlist_rows / fetch_watchlist_posters  detail-fetch (bounded),
+//                              split mixed/movies/tv for the Discover row and the Home/Movies/TV rows
+//                              (apply_cards_preserving_identity), posters patched by id + item_type
+//   resync_jellyfin_watchlist_stars  watchlisted tmdb ids → local Jellyfin ids
+//                              (FjordState.jellyfin_watchlist_ids, read at card construction) + live
+//                              star patch on rendered Jellyfin cards; generation-guarded; rerun after
+//                              the library lists load
+//   discover_toggle_watchlist  POST/DELETE /watchlist, patch every card model (Discover + Jellyfin),
+//                              update the id sets, rebuild the calendar; re-adding a watched library
+//                              item marks it unplayed
 // ─────────────────────────────────────────────────────────────────────────────
 use super::*;
 
-/// Watchlist row's own meta builders (2026-07-20) — `movie_details_to_meta`/
-/// `tv_details_to_meta` above are NOT reusable here: both require a
-/// `&RequestEntry` built from a real `MediaRequest`, which a plain
-/// watchlist item may not have at all. `availability` is instead derived
-/// straight from `d.media_info`, the SAME single-tier approach
-/// `search_result_to_meta` already uses for Trending/Popular/Upcoming/New
-/// in Theaters (not the Requested row's own dual-tier logic — a watchlist
-/// item's primary concern is list membership, not request-tier status).
-/// `on_watchlist: true` is set directly rather than read from
-/// `d.on_user_watchlist` since membership is true by definition for every
-/// candidate this function is ever called on. Callers are expected to call
-/// `patch_known_request_state` afterward so an item that's ALSO requested
-/// still gets its Edit/Cancel context-menu rows (not the visual pill,
-/// which already comes from `media_info` above — `KnownRequest` doesn't
-/// carry availability/is4k, only request_id/pending/mine).
-///
-/// Both return `None` for a Blocklisted item (2026-08-06, same "don't show
-/// this in Discover" rule `search_result_to_meta` filters by — see its own
-/// doc comment): blocklisting never removes the title from the actual Seerr
-/// Watchlist (the two are independent Seerr entities, confirmed from
-/// `Blocklist.addToBlocklist`'s own source, which only ever touches
-/// `Media.status`/`status4k`), so without this filter a blocklisted-but-
-/// still-watchlisted item would keep resurfacing here on every watchlist
-/// refresh regardless of `remove_card_from_all_models` having pulled it off
-/// screen a moment earlier.
+/// Watchlist row meta builders. `movie_details_to_meta`/`tv_details_to_meta` need a
+/// `&RequestEntry` (a real request), which a watchlist item may not have, so
+/// `availability` comes straight from `d.media_info` (single tier, like
+/// `search_result_to_meta`); `on_watchlist` is true by definition. Callers run
+/// `patch_known_request_state` afterward so an item that's also requested gets its
+/// Edit/Cancel rows. Both return `None` for a Blocklisted item: blocklisting doesn't
+/// remove a title from the Seerr watchlist (independent entities), so it would keep
+/// resurfacing here.
 fn watchlist_movie_to_meta(
     tmdb_id: i64,
     d: &MovieDetails,
@@ -180,17 +93,10 @@ fn watchlist_tv_to_meta(tmdb_id: i64, d: &TvDetails) -> Option<(DiscoverCardMeta
     Some((meta, d.poster_path.clone()))
 }
 
-/// Fetches every page of the connected user's Watchlist (`GET
-/// /discover/watchlist`) into a plain `(item_type, tmdb_id)` id set — once
-/// per session, guarded by `FjordState.discover_watchlist_fetched`, same
-/// shape as `discover_landing_fetched`. Deliberately fetches ALL pages, not
-/// just a capped prefix like `fetch_requested_row`'s 20-item cap: unlike
-/// that cap (which bounds a much more expensive per-item DETAIL fetch),
-/// this is plain id/title rows with no per-item network call, so even a
-/// few hundred watchlist entries is a handful of cheap list fetches — safety-
-/// capped at 10 pages (200 items) so a pathological watchlist can't loop
-/// forever. Best-effort: a failed page just stops pagination early rather
-/// than erroring the whole fetch. Watchlist + Release Calendar, 2026-07-18.
+/// Fetches every page of the user's Watchlist (`GET /discover/watchlist`) into an
+/// `(item_type, tmdb_id)` set — once per session (`FjordState.discover_watchlist_fetched`).
+/// All pages, not a capped prefix: these are cheap list rows with no per-item call;
+/// safety cap 10 pages (200 items). Best-effort: a failed page just ends pagination.
 pub(crate) fn ensure_discover_watchlist(
     state: Arc<Mutex<FjordState>>,
     ww: Weak<MainWindow>,
@@ -248,13 +154,9 @@ async fn fetch_and_store_watchlist(
     state.lock().unwrap().discover_watchlist_ids = ids.clone();
     build_calendar_entries(Arc::clone(state), ww.clone()).await;
 
-    // Detail-fetch a preview of the watchlist (title+poster, unlike the
-    // plain id set above) for the Discover Watchlist row + the Home/Movies/TV
-    // dashboard rows — all 4 consumers share this ONE fetch (2026-07-20).
-    // Spawned independently (tokio::spawn, not awaited inline) so these ~20
-    // extra per-item detail fetches don't delay build_calendar_entries's own
-    // commit above, mirroring how that function is itself spawned
-    // independently from ensure_discover_landing for the identical reason.
+    // Detail-fetch a preview (title + poster) for the Discover Watchlist row and the
+    // Home/Movies/TV rows — one fetch for all 4 consumers, spawned so its ~20 detail
+    // fetches don't delay build_calendar_entries's commit above.
     let client2 = client.clone();
     let state2 = Arc::clone(state);
     let ww2 = ww.clone();
@@ -273,51 +175,23 @@ async fn fetch_and_store_watchlist(
     });
 }
 
-/// Re-resolves EVERY currently-known-watchlisted tmdb id
-/// (`FjordState.discover_watchlist_ids`, read fresh here — no Seerr network
-/// call, this is a pure local re-check) to a local Jellyfin item (if owned)
-/// via `find_local_item`, then (1) writes the resolved id set into
-/// `FjordState.jellyfin_watchlist_ids` — the persistent source of truth
-/// `item_to_card_item`/`items_to_model`/the various carry-forward merges
-/// consult at CardItem-construction time (real bug fixed 2026-07-20: a
-/// live-model patch alone, step 2 below, gets silently wiped by the next
-/// screen rebuild — see `FjordState.jellyfin_watchlist_ids`'s own doc
-/// comment) — and (2) patches the watchlist star onto every already-
-/// rendered native Jellyfin `CardItem` model that item might be visible in
-/// (`context_menu.rs::patch_watchlist_on_jellyfin_models`) for IMMEDIATE
-/// feedback on whatever's on screen right now, without waiting for a
-/// rebuild. This is the reactive, "patch on watchlist/request changes
-/// only" population strategy (user's explicit choice over an eager
-/// full-library scan on login): bounded by watchlist size in the LOOKUP
-/// direction, not library size in the SCAN direction. `find_local_item`
-/// itself does the actual `all_movies`/`all_series` scan, so this is a
-/// genuine lookup per candidate, not a scan over the whole library.
-/// Genuinely not add-only: ids present in the OLD set but missing from the
-/// freshly-resolved one (removed from the watchlist, or no longer locally
-/// owned) are explicitly patched back to `false` too, so a star can't get
-/// stuck on stale. Two-phase pattern: `find_local_item` only reads
-/// `FjordState` (safe from any thread — plain mutex lock, no Slint touch);
-/// the resolved ids (plain Send-safe data) are collected first, then moved
-/// into ONE `invoke_from_event_loop` closure to do the actual `CardItem`
-/// patching — the same discipline `push_coming_up_row`'s real bug
-/// (found+fixed earlier this session) established as mandatory.
-///
-/// `pub(crate)` and callable with no fresh Seerr fetch (unlike
-/// `ensure_discover_watchlist`/`fetch_and_store_watchlist`) specifically so
-/// it can ALSO be re-run from `main.rs` right after `all_movies`/`all_series`
-/// get freshly populated (cache load, post-login fetch) — real gap found by
-/// live-testing THIS exact fix: the very first resync (triggered by the
-/// watchlist fetch itself, early in startup) reliably runs BEFORE the
-/// library lists are populated, so `find_local_item` finds 0 matches on
-/// that pass and the star never appears without a second, later resolve.
+/// Re-resolves every watchlisted tmdb id (`FjordState.discover_watchlist_ids`, local —
+/// no Seerr call) to a local Jellyfin item via `find_local_item`, then (1) writes the
+/// result to `FjordState.jellyfin_watchlist_ids` — what `item_to_card_item`/
+/// `items_to_model` read when building cards — and (2) patches the star onto every
+/// rendered Jellyfin `CardItem` model (`context_menu::patch_watchlist_on_jellyfin_models`)
+/// for immediate feedback. Ids that dropped out are patched back to false, so a star
+/// can't stick. Lookup per watchlisted id, not a library scan. Resolve off-thread, then
+/// one `invoke_from_event_loop` for the Slint patching.
+/// Also re-run (no Seerr fetch) right after `all_movies`/`all_series` are populated:
+/// the first resync, triggered by the watchlist fetch early at startup, usually runs
+/// before the library lists exist and finds nothing.
 pub(crate) async fn resync_jellyfin_watchlist_stars(
     state: Arc<Mutex<FjordState>>,
     ww: Weak<MainWindow>,
 ) {
-    // Generation guard (2026-07-22, code review finding) — see
-    // FjordState.jellyfin_watchlist_resync_seq's own doc comment for the
-    // race this prevents. Captured BEFORE the scan so any call that starts
-    // after us is guaranteed a higher number.
+    // Generation guard — see FjordState.jellyfin_watchlist_resync_seq; taken before
+    // the scan, so any later call gets a higher number.
     let my_seq = {
         let mut s = state.lock().unwrap();
         s.jellyfin_watchlist_resync_seq += 1;
@@ -371,11 +245,8 @@ pub(crate) async fn resync_jellyfin_watchlist_stars(
     });
 }
 
-/// Capped at 20, matching `fetch_requested_row`'s own `.truncate(20)` and
-/// `build_calendar_entries`'s own candidate cap — this exact "a real
-/// watchlist can be large, per-item detail fetches are the expensive part"
-/// tradeoff was already reasoned about once for this feature and settled
-/// on 20; reusing that number rather than picking a fresh one.
+/// 20, the same cap as `fetch_requested_row` and `build_calendar_entries`' candidates
+/// (per-item detail fetches are the expensive part).
 const WATCHLIST_ROW_CAP: usize = 20;
 
 async fn populate_watchlist_rows(
@@ -436,51 +307,22 @@ async fn populate_watchlist_rows(
     fetch_watchlist_posters(ww, &items).await;
 }
 
-/// Splits by item_type into mixed/movies/tv (mirrors home.rs's own
-/// Continue-Watching cw_movies/cw_tv 3-way split — one source, filtered
-/// client-side, no extra network calls) and commits all 3 AppState models
-/// inside ONE `invoke_from_event_loop` closure. Mandatory two-phase
-/// pattern: `items` is plain Send-safe `DiscoverCardMeta` data built
-/// off-thread; `CardItem` (always `!Send` — carries a `slint::Image` field
-/// regardless of whether it's populated) is only ever constructed here,
-/// and every `AppState` touch happens inside this one closure — the exact
-/// discipline `push_coming_up_row`'s own real bug (found+fixed earlier this
-/// session: called directly from a Tokio-thread `async fn`, silently never
-/// set anything because `slint::Weak::upgrade()` returns `None` off the UI
-/// thread, no panic, no error) established as mandatory for this file.
-///
-/// Routes all 3 models through `apply_cards_preserving_identity` (2026-07-22,
-/// code review finding) instead of unconditionally building a fresh
-/// `ModelRc` — this function runs on EVERY watchlist refresh, which per
-/// `refresh_watchlist`'s own doc comment fires after every single Add/Remove
-/// Watchlist toggle anywhere in the app. A bare `ModelRc::new(...)` swap, per
-/// CLAUDE.md's own documented Phase 96 finding, makes Slint destroy and
-/// recreate every delegate element even when nothing in the row actually
-/// changed — re-fading every OTHER already-visible card's poster and
-/// discarding its already-decoded `Image` handle just because one unrelated
-/// item was toggled.
+/// Splits by item_type into mixed/movies/tv (like home.rs's Continue Watching split,
+/// client-side) and commits all 3 models in ONE `invoke_from_event_loop`: `items` is
+/// Send-safe meta data, and `CardItem` (`!Send` — it holds a `slint::Image`) is only
+/// built in here. All 3 go through `apply_cards_preserving_identity`: this runs after
+/// every watchlist toggle, and a fresh `ModelRc` would re-create every delegate (all
+/// posters re-fade).
 fn push_watchlist_rows(
     ww: &Weak<MainWindow>,
     state: &Arc<Mutex<FjordState>>,
     items: Vec<RequestedRowItem>,
 ) {
     let ww = ww.clone();
-    // Session guard (Bonfire Phase 1, step 8 audit, 2026-08-09) — this
-    // function had no staleness guard at all. Not the same Arc::ptr_eq
-    // shape as seerr_session_current: `client` arrives here as an owned,
-    // value-cloned `SeerrClient` (Clone-by-value, see fjord-seerr's own
-    // impl) rather than a threaded-through `Arc<SeerrClient>` — its
-    // original Arc identity was already lost several calls up this chain
-    // (fetch_and_store_watchlist takes `&SeerrClient`, deref-coerced from
-    // the Arc it started as), so a true identity check would mean
-    // re-plumbing that whole chain's client type. A coarser but still
-    // real check instead: if Seerr has been disconnected entirely (the
-    // common case for both sign-out and a profile switch to an account
-    // with no Seerr connection configured — Bonfire sub-profiles very
-    // plausibly don't each have their own), bail rather than commit stale
-    // rows. Does not catch switching to a DIFFERENT account that also has
-    // Seerr connected — a narrower residual gap, left open rather than
-    // risking a deeper refactor of an otherwise-working fetch chain.
+    // Session guard: `client` arrives as a value-cloned `SeerrClient`, so there's no Arc
+    // identity to compare (seerr_session_current). Coarser check: if Seerr is no longer
+    // connected at all (sign-out, or a switch to a profile without Seerr), drop the
+    // result. A switch to another account that also has Seerr isn't caught — a known gap.
     let state = Arc::clone(state);
     let _ = slint::invoke_from_event_loop(move || {
         let Some(w) = ww.upgrade() else { return };
@@ -610,14 +452,10 @@ pub(crate) fn refresh_watchlist(
     });
 }
 
-/// Add/remove Watchlist — wired from the Discover context menu's Watchlist
-/// row and RequestDetailScreen's Watchlist button. POST/DELETE, then
-/// patches every visible card + updates the id cache + rebuilds the
-/// calendar (a watchlist change is one of the two things that can change
-/// what's on it). Watchlist + Release Calendar, 2026-07-18.
-/// `success_toast` replaces the usual "Added to/Removed from Watchlist"
-/// toast — used by a successful request, which auto-adds to the watchlist
-/// and shows one combined toast instead of two back to back (2026-10-04).
+/// Add/remove Watchlist (Discover context menu row, RequestDetailScreen button):
+/// POST/DELETE, then patch every visible card, update the id cache and rebuild the
+/// calendar. `success_toast` replaces the usual toast — a successful request auto-adds
+/// to the watchlist and shows one combined toast.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn discover_toggle_watchlist(
     state: Arc<Mutex<FjordState>>,
@@ -668,19 +506,10 @@ pub(crate) fn discover_toggle_watchlist(
                 // no network call.
                 let local_item = crate::discover::find_local_item(&state, &media_type, &tmdb_id.to_string());
 
-                // Adding an already-watched item back to the watchlist reads
-                // as "I want to watch this again," not left watched
-                // (2026-08-02, user request, asked directly rather than
-                // guessed — the alternative was blocking the add outright).
-                // Only applies to items already in the local Jellyfin
-                // library; a Discover-only item has no played state to
-                // reset. Real Jellyfin API call (mark_unplayed), not just a
-                // local flag flip — Jellyfin echoes it back through
-                // UserDataChanged the same way every other played-state
-                // change in this app does, so every other visible model
-                // (Not Watched rows, etc.) still converges via the existing
-                // WS path; the two writes below are only for INSTANT
-                // feedback on whatever's already on screen right now.
+                // Re-adding an already watched library item to the watchlist means "watch it again":
+                // mark it unplayed in Jellyfin (mark_unplayed — echoed via UserDataChanged, so every
+                // model converges through ws.rs); the two writes below are only instant feedback.
+                // Discover-only items have no played state.
                 let mut reset_played = false;
                 if adding && let Some((jellyfin_id, _)) = &local_item {
                     let was_played = {
@@ -716,16 +545,9 @@ pub(crate) fn discover_toggle_watchlist(
                         {
                             g.set_request_detail_on_watchlist(adding);
                         }
-                        // In-library star (2026-07-20) — the toggled item
-                        // might ALSO be a native Jellyfin card somewhere
-                        // (Continue Watching, the library grid, etc); patch
-                        // that too, same shape as patch_watchlist_on_all_models
-                        // above but by Jellyfin id instead of tmdb id. Also
-                        // keep the persisted jellyfin_watchlist_ids set in
-                        // sync incrementally (not just resync's own wholesale
-                        // replace) so a screen rebuilt between now and the
-                        // next resync still gets the right value at
-                        // construction time, not just this live patch.
+                        // The item may also be a native Jellyfin card (Continue Watching, library grid):
+                        // patch it by Jellyfin id, and update jellyfin_watchlist_ids right away so a screen
+                        // rebuilt before the next resync gets the right value.
                         if let Some((jellyfin_id, _)) = &local_item2 {
                             crate::context_menu::patch_watchlist_on_jellyfin_models(&g, jellyfin_id, adding);
                             let mut s = state3.lock().unwrap();
