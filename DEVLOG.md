@@ -18823,3 +18823,350 @@ Above `if coming-up.length > 0: SectionRow {`:
 //   MusicDashboard        Music tab: Recently Added Albums + Recently Played + Favorites + Playlists rows
 // ─────────────────────────────────────────────────────────────────────────────
 ```
+
+#### `crates/fjord-app/src/series.rs`
+
+Above `if let Ok(d) = &detail_res {`:
+```
+// Sign-out (or a different account signing in on a shared HTPC)
+// mid-fetch must not let this per-user data land in the new
+// session's cache — same guard class as main.rs::session_current's
+// own doc comment (CR11-2). Applies to both the original open and
+// a background revalidate call alike.
+```
+
+Above `let season_ids: Vec<String> = seasons.iter().map(|s| s.id.clone()).collect();`:
+```
+// Season list + season-0 episodes: skipped on revalidate for the
+// same reason the later set_series_episode_cards write already
+// skips itself (real bug, caught in review before shipping — the
+// only pre-existing guard here, series_open_id (CR10-20), catches
+// switching to a *different series* or closing the screen, but
+// says nothing about switching *seasons* within the same series.
+// Before revalidate existed this was safe by construction — the
+// screen wasn't interactive until this one call finished, so
+// there was no window for the user to tab to a different season
+// mid-fetch. Revalidate changes that: the cache-hit path shows
+// the screen instantly while this background call is still
+// running, so a season switch during that window would get
+// silently clobbered back to season 0 the moment this call
+// finishes, with playback still starting fine but the episode
+// title falling back to the raw id (series_episode_items lookup
+// miss). The purpose-built guard for this exact race,
+// series_season_generation, exists for on_series_select_season —
+// simplest correct fix is just not touching this state at all
+// during a revalidate pass, matching the UI-side precedent.
+```
+
+Above `if !crate::session_current(&state, &client_guard) {`:
+```
+// Session guard (Bonfire Phase 1, step 8 audit, 2026-08-09):
+// the id check above now catches most of this
+// (reset_session_state clears series-id on a switch/sign-
+// out), but the early session_current check further up
+// this fn only runs on the Ok(detail) branch — an Err path,
+// or a coincidental same-id reopen under a NEW profile
+// before this stale fetch resolves, would still slip
+// through an id check alone.
+```
+
+Above `let cached_detail = s.item_detail_cache.get(&id);`:
+```
+// Screen-open cache (Part 2): only the get_item_detail fetch is cached here —
+// seasons/first-season-episodes are always refetched fresh, since they
+// interact with the CR10-20 stale-fetch guards (series_open_id/
+// series_episode_cache, cleared below on every open) and caching them too
+// would risk reintroducing exactly the kind of subtle bug those guards exist
+// to prevent. Detail alone still skips the slowest single call (full
+// metadata + cast list) in spawn_main's join.
+```
+
+Above `s.series_open_id = id.clone();`:
+```
+// Claim the canonical series slot synchronously (CR10-20). spawn_main's
+// async writes are guarded by series_open_id == id, so a slow task for a
+// previously opened series can no longer overwrite the state of the one
+// now on screen after rapid A -> B navigation.
+```
+
+Above `fn spawn_recommended(`:
+```
+/// "Recommended" row (2026-07-29, Deep Seerr integration) — see
+/// `detail.rs::DetailCtx::spawn_recommended`'s own doc comment for the full
+/// shape this mirrors (TMDB recommendations via Seerr, filtered to titles
+/// not already in the local library, shown below the existing local-only
+/// "More Like This" row). A standalone fn rather than a `SeriesCtx` method
+/// since it doesn't need the Jellyfin client, only Seerr + state.
+```
+
+Above `fn spawn_missing_seasons(`:
+```
+/// "Missing Seasons" row (2026-07-29, Deep Seerr integration) — for a
+/// partially-owned series (any season number TMDB knows about but that
+/// isn't a local Jellyfin season, excluding season 0/"Specials" — confirmed
+/// decision, most libraries deliberately don't own specials, and counting
+/// it would flag nearly every partial show as "missing" something nobody
+/// wants), shows a card per missing season with a request-status pill
+/// (`season_request_status`, discover.rs) so an already-in-flight season
+/// isn't re-requested. Scope: any partially-owned series regardless of
+/// `Status` — confirmed via `AskUserQuestion`, not restricted to `Continuing`
+/// shows the way the Coming Up calendar's own new candidate source is.
+/// A standalone fn (not a `SeriesCtx` method) since it needs both the
+/// Jellyfin client (for the local season list) and Seerr.
+```
+
+Above `let today = chrono::Local::now().date_naive();`:
+```
+// Real bug/UX gap, live-reported 2026-08-12: "in some ongoing series
+// the upcomming season is stated as missing and 0 episodes it shuld
+// state upcomming and the date." A season TMDB already knows the
+// number/name of but hasn't aired yet (no local episodes AND either
+// no air_date at all or one still in the future) isn't "missing" in
+// the same sense as a genuinely already-released, unowned season —
+// "0 episodes" read as broken/empty rather than "not out yet."
+// Confirmed via the real fjord_seerr::Season struct that `air_date`
+// is already fetched, just never used for this row before now.
+```
+
+Above `let is_upcoming = match air_date_known {`:
+```
+// Real bug, live-reported 2026-08-17 ("no this is not
+// working"): the original condition required
+// episode_count==0 as a hard gate before ever looking at
+// air_date — but TMDB can (and does) populate a real,
+// nonzero episode_count for an announced-but-unaired
+// season well ahead of its air date (a real press-release-
+// sourced count, not "the season has actually released N
+// episodes"). A season with episode_count=8 and an air_date
+// 3 months in the future fell straight through to the "N
+// episodes" branch, exactly what this feature was built to
+// avoid. Fixed by treating a real, known air_date as the
+// authoritative signal on its own — only fall back to the
+// episode_count==0 heuristic when there's no air_date at
+// all to check.
+```
+
+Above `pub(crate) fn activate_missing_season(`:
+```
+/// Confirm on a focused "Missing Seasons" card — a season with no covering
+/// request opens the Request Options modal pre-checked to every currently-
+/// missing-and-unrequested season (not just the one activated), so several
+/// can be requested in one submission; a season that already has one opens
+/// RequestDetailScreen normally instead (its own ⋮ More button is the
+/// correct place to Edit/Cancel it — see `discover::open_series_request_detail`'s
+/// own doc comment for why this doesn't try to build a season-scoped
+/// context menu). Routed through an AppState callback (wired in main.rs,
+/// where `state`/`rt` are available) rather than handled inline in
+/// `handle_key`, matching this codebase's established pattern for any
+/// keyboard-triggered action that needs an async network call.
+```
+
+Above `Action::OpenContextMenu => {`:
+```
+// C key on a season tab → context menu (Mark Watched/Unwatched,
+// Favourite, View Details) — live-reported 2026-08-12, user
+// approved "Full menu" via AskUserQuestion. Reuses the fully
+// generic open-context-menu callback (item-type "Season") rather
+// than a bespoke season-specific menu — Mark Played/Favourite
+// already work for any Jellyfin item id, and View Details is
+// wired below (on_open_detail's "Season" arm) to open the same
+// season detail screen Confirm/I already open.
+```
+
+#### `crates/fjord-app/src/series.rs` — file header (TOC)
+```
+// ── fjord-app · series.rs ────────────────────────────────────────────────────
+//   ep_to_card              MediaItem (Episode) → CardItem (title "S01E02 · Title")
+//   spawn_episode_thumb_loading  parallel episode thumbnail fetch → series-episode-cards
+//   SeriesCtx               shared context for background fetch tasks;
+//                           cached_detail: Option<MediaItem> — Part 2 screen-open cache hit, if any
+//                           (only spawn_main uses it; spawn_next_up/spawn_similar always get None)
+//     spawn_main    detail(skips network on cache hit)+poster+seasons in parallel — seasons/
+//                   first-season-episodes are deliberately NOT cached, to avoid interacting with
+//                   the CR10-20 stale-fetch guards; caches the fetched/reused detail; backdrop;
+//                   first eps; all cast portraits (fetched before show); emits
+//                   app-loading-progress=0.5 at midpoint; single invoke shows page with all data +
+//                   portraits ready; sets app-content-loading=false + show-series=true; spawns
+//                   episode thumb loading after
+//     spawn_next_up fetch next unwatched episode for this series (always fresh — inherently
+//                   dynamic); set series-has-next-up + thumb
+//     spawn_similar fetch similar series (FjordState.similar_items_cache, keyed by this series'
+//                   id); push series-similar SectionRow via apply_cards_preserving_identity
+//   spawn_recommended       "Recommended" row (2026-07-29, Deep Seerr integration) — standalone fn,
+//                           not a SeriesCtx method (needs only Seerr + state, not the Jellyfin
+//                           client); TMDB recommendations via Seerr filtered to not-already-owned
+//                           titles, shown below More Like This
+//   spawn_missing_seasons   "Missing Seasons" row (2026-07-29, Deep Seerr integration) — any TMDB
+//                           season number (excluding 0/Specials) not present locally, any status
+//                           regardless of Continuing/Ended; per-season request-status pill via
+//                           discover::season_request_status; placed between Episodes and Cast
+//   activate_missing_season Confirm/click on a missing-season card — no covering request opens
+//                           Request Options preselected to all still-unrequested missing seasons;
+//                           an already-covered one opens RequestDetailScreen normally instead
+//                           (its own ⋮ More button handles Edit/Cancel); called from main.rs's
+//                           on_series_missing_season_activate wiring (needs state/rt)
+//   refresh_series_next_up  re-fetch Next Up after an episode is marked played; no focus-stealing
+//   open_series_screen      reset AppState; checks item_detail_cache (Part 2) — only sets
+//                           app-content-loading=true on a cache miss; (show-series deferred until
+//                           spawn_main completes), build SeriesCtx, spawn tasks (incl. Recommended +
+//                           Missing Seasons, 2026-07-29)
+//   handle_key              keyboard dispatch for the series screen; row order top-to-bottom:
+//                           episodes → missing-seasons → cast → similar → recommended (2026-07-29)
+//   wire_series            callbacks moved from main() (0.5.0 step 3): series drill-down
+//   wire_series_toggles    callbacks moved from main() (0.5.0 step 3): series favourite / played
+// ─────────────────────────────────────────────────────────────────────────────
+```
+
+#### `crates/fjord-app/src/browse.rs`
+
+Above `#[track_caller]`:
+```
+/// Rebuild library-display from current sort/filter/query and update alpha offsets.
+/// Must be called on the UI thread.
+/// `#[track_caller]`: the diagnostic log below needs to know which of the ~15 call
+/// sites triggered a given refresh, to trace an intermittent post-open flash that
+/// isn't explained by any single obviously-guilty caller (investigation ongoing).
+```
+
+Above `let caller = std::panic::Location::caller();`:
+```
+// Apply preserving identity (Phase 97): this function runs unconditionally on
+// every grid-open, every network-fetch-landing, and every poster-decode
+// completion — a plain rebuild here would flash every card even after
+// apply_cards_preserving_identity already correctly preserved all_movies/etc
+// underneath, since library-display (not all_movies) is what the grid actually
+// renders. Only genuinely different content/order (e.g. sort==4's Shuffle,
+// where a fresh random order is the point) falls back to a real rebuild.
+```
+
+Above `if is_full_list { s.browse_populated = true; }`:
+```
+// Only the unfiltered (query="") build represents "Browse All
+// is fully populated for this session" — a search-filtered
+// result is a narrower, transient view, not the cached
+// baseline sidebar-arrival reuses.
+```
+
+Above `if state.lock().unwrap().browse_populated {`:
+```
+// Already built this session (and nothing has invalidated it via
+// WS LibraryChanged since — see ws.rs) — media_items already
+// holds the correct list from the last time this ran, nothing
+// to rebuild. Matches discover_landing_fetched's own "fetch
+// once per session, not on every arrival" shape; Browse All
+// never had this guard before, so every single sidebar arrival
+// unconditionally rebuilt the ~800-item Slint list model.
+```
+
+Above `let ww2 = ww.clone();`:
+```
+// Debounced, not immediate: this fires every time the sidebar
+// cursor lands on Browse All (nav=5), including when the user is
+// just passing through it on the way to another tab. Real,
+// live-reported hitch: rebuilding the ~800-item Slint list model
+// (StandardListViewItem × all_movies+all_series) is cheap on its
+// own but lands on the UI thread via invoke_from_event_loop —
+// if the next keypress arrives while that's still in flight, the
+// two pieces of UI-thread work collide and the transition
+// visibly stutters. Waiting a short moment for the cursor to
+// actually settle means a quick pass-through never starts the
+// rebuild at all, so there's nothing to collide with. Only
+// matters for the first arrival each session now that the cache
+// check above handles every arrival after that.
+```
+
+Above `pub(crate) fn clear_browse_results(state: &Arc<Mutex<FjordState>>, g: &AppState, nav: i32) {`:
+```
+// Clear browse results on nav change (skip when nav=5 — browse is opening).
+// Called from discover.rs's on_nav_selected registration, the surviving one
+// of two registrations against the same Slint callback — Slint callbacks are
+// single-handler, so a second `.on_nav_selected(...)` call silently replaces
+// the first rather than adding a listener; this used to be its own dead
+// registration here (code review, 2026-08-08) that never actually ran once
+// discover::wire_discover registered its own handler later in main.rs.
+```
+
+Above `if !g.get_browse_query().is_empty() {`:
+```
+// Real bug, live-reported 2026-08-14 (dev-machine log confirmed a fresh
+// build): "the browse all bug is still present." Traced via
+// `browse::handle_key`'s own `media_items_len` debug line — the FIRST
+// visit each session showed 796 items; every visit after that showed 0,
+// permanently, for the rest of the session. Root cause: this function
+// unconditionally wiped `media-items` to an EMPTY model on every
+// sidebar switch away from Browse All — but `on_browse_search_clear`'s
+// `browse_populated` guard (see its own doc comment, a deliberate
+// Phase ~131 performance fix) means the full ~800-item list is only
+// ever (re)built ONCE per session; every arrival after the first is
+// meant to just show/reuse what's already there. Wiping it here left
+// nothing for that guard to reuse — the list stayed empty forever after
+// the first departure, which is a strictly worse bug than the
+// `browse-header-focused` one fixed below on 2026-08-12 (that one only
+// broke keyboard dispatch; this one broke the actual content).
+//
+// Fix: don't touch `media-items`/`filtered_items` at all in the common
+// case (no search was active) — they already hold the correct,
+// still-valid full list, matching `browse_populated`'s own "built once,
+// persists" contract. Only rebuild when the user left mid-search (the
+// grid would otherwise keep showing a stale filtered subset once the
+// query below resets to "") — done synchronously here (cheap, no need
+// for the async `populate_browse_async` pipeline) by mirroring its own
+// `is_full_list` branch directly against `all_movies`/`all_series`.
+```
+
+Above `g.set_browse_header_focused(false);`:
+```
+// Real bug, live-reported 2026-08-12: "the browse all breacks haver you
+// passt it once, it works first time you land on it then it is broken
+// after that." Root cause: browse-header-focused (search-field-focused
+// state) was only ever reset by explicit in-screen exit paths — the
+// Back key (browse::handle_key's own Action::Back arm) or Escape/Down/
+// Enter from inside the search field itself (handle_browse_search, in
+// keys.rs) — never by leaving Browse All any OTHER way (a mouse click
+// on a different sidebar tab, or arrowing away mid-search-focus without
+// pressing one of those specific keys first). A stale `true` left over
+// from a previous visit meant keys.rs's own raw-key pre-dispatch
+// (`show-browse && browse-header-focused`) would immediately swallow
+// arrow-key navigation into `handle_browse_search` on the VERY NEXT
+// visit, before browse::handle_key's own list/sidebar navigation ever
+// got a chance to run — Up/Left/Right silently did nothing (only Down/
+// Enter happened to self-heal it, by design of that same handler),
+// which is exactly what reads as "broken" for a D-pad-first app. Same
+// class of gap this project already found and fixed once for Settings
+// (`keybinding-focused` never cleared on a mouse-driven section
+// switch) — fixed here the same way, at the one hook every sidebar
+// switch already funnels through regardless of input method. (Both
+// bugs happened to share the same "works first time, broken after
+// that" symptom description from the user — genuinely two separate
+// causes, fixed two days apart.)
+```
+
+Above `let seerr_on = g.get_settings_seerr_enabled();`:
+```
+// Discover (nav=6) only participates in the cycle when Seerr is enabled —
+// otherwise the sidebar has no way to land the cursor on a hidden tab.
+// Profile (nav=7, 2026-08-14) always participates, sitting right before
+// Settings regardless of whether Discover is shown.
+```
+
+#### `crates/fjord-app/src/browse.rs` — file header (TOC)
+```
+// ── fjord-app · browse.rs ────────────────────────────────────────────────────
+//   refresh_library_display  apply current sort + filter + query → library-display + alpha-offsets;
+//                            #[track_caller] logs caller file:line (Phase 99 diagnostic)
+//   build_alpha_offsets      [i32; 27] first flat-index for A-Z+# in the display model
+//   pseudo_shuffle           deterministic Fisher-Yates using LCG seed
+//   update_library_filter    update library-query then call refresh_library_display;
+//                            #[track_caller] too (Phase 99 diagnostic)
+//   populate_browse_async    filter all_movies + all_series off the UI thread
+//   wire_browse              register AppState browse + library-search + sort + jump callbacks
+//                            (append/backspace/delete edit at the caret via text_field.rs, 2026-10-05)
+//   clear_browse_results     called from discover::wire_discover's on_nav_selected (the one
+//                            registration of that Slint callback that actually survives —
+//                            see its own doc comment)
+//   handle_key               keyboard dispatch for the browse list / sidebar
+//   sidebar_nav              sidebar Up/Down cycle; nav=6 (Discover) only participates when
+//                            settings-seerr-enabled, otherwise 5 <-> 10 skip it entirely
+//   wire_play_item         callbacks moved from main() (0.5.0 step 3): play from the Browse list
+// ─────────────────────────────────────────────────────────────────────────────
+```
