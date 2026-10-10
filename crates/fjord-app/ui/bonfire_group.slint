@@ -146,8 +146,8 @@ export component BonfireGroupScreen inherits Rectangle {
         Flickable {
             x: 0; y: 0;
             width: parent.width; height: parent.height;
-            viewport-width: self.width;
-            viewport-height: inner.preferred-height;
+            content-width: self.width;
+            content-height: inner.preferred-height;
 
             inner := VerticalLayout {
                 width: 460px;

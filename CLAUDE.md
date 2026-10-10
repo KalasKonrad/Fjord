@@ -164,8 +164,10 @@ Needs `mpv`/libmpv (`pacman -S mpv`). Optional at runtime: `yt-dlp` (trailers), 
   No U+FE0E variation selectors, no color emoji.
 
 ## Slint gotchas (full write-ups in SLINT.md)
-- Keyboard-scrollable lists: `Flickable` only. Don't bind `viewport-y` (kills mouse wheel) — compute `kb-y`
-  and assign it in `changed kb-y => { fl.viewport-y = kb-y; }`.
+- Keyboard-scrollable lists: `Flickable` only. Don't bind `content-y` (kills mouse wheel) — compute `kb-y`
+  and assign it in `changed kb-y => { fl.content-y = kb-y; }` (Slint 1.18 renamed `viewport-*` → `content-*`).
+- Since Slint 1.18 focus is dropped when the focused item isn't visible (checked per key/mouse event); `fs`
+  stays visible, a focused `LineEdit` that scrolls away or closes loses focus — refocus as below.
 - In an `if`-mounted layout child, don't read `self.width/height` in a `changed` tracker — use `root.*`.
   A child must never size itself from its parent **Layout's** width (binding loop) — use `root.width`.
 - No explicit x/y/width/height derived from `root` on a layout element inside a reusable component — use `padding`.
@@ -174,7 +176,7 @@ Needs `mpv`/libmpv (`pacman -S mpv`). Optional at runtime: `yt-dlp` (trailers), 
 - `opacity: 0` is still hit-testable (use `visible: false`). Plain `Rectangle` children are centered (set `x: 0`).
 - Ternaries only track the evaluated branch — read reactive values into a `let` first.
 - `changed` only watches properties on the current component — mirror `AppState` values into a local property.
-- `TouchArea.moved` fires only while dragging (use `changed mouse-x/mouse-y`). `KeyEvent.repeat` is unreliable.
+- `TouchArea.moved` fires only while dragging (use `changed mouse-x/mouse-y`). `KeyEvent.repeat` is set for held keys since Slint 1.18, but never use it alone to guard a state change.
 - `Timer.running = true` doesn't restart a running timer (set `false` then `true`).
 - `parent` in a reusable component is its immediate parent — expose an `out property` instead.
 - Element ids must be unique across the whole component, even in different `if` blocks.

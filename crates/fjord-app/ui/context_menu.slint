@@ -612,12 +612,12 @@ export component PlaylistPicker inherits Rectangle {
         property <length> new-h:  44px;
         property <length> row-h:  48px;
         property <length> list-h: min(5 * row-h, AppState.playlist-picker-items.length * row-h);
-        // Keep the cursor row visible (kb-y pattern — no viewport-y binding).
+        // Keep the cursor row visible (kb-y pattern — no content-y binding).
         property <length> kb-y: clamp(
             -(AppState.playlist-picker-cursor - 1) * row-h + list-h / 2 - row-h / 2,
             min(0px, list-h - AppState.playlist-picker-items.length * row-h),
             0px);
-        changed kb-y => { fl.viewport-y = self.kb-y; }
+        changed kb-y => { fl.content-y = self.kb-y; }
 
         // Stop backdrop click from propagating through the box
         TouchArea { width: parent.width; height: parent.height; }
@@ -690,7 +690,7 @@ export component PlaylistPicker inherits Rectangle {
 
             fl := Flickable {
                 height:          list-h;
-                viewport-height: AppState.playlist-picker-items.length * row-h;
+                content-height: AppState.playlist-picker-items.length * row-h;
                 VerticalLayout {
                     alignment: start;
                     for p[i] in AppState.playlist-picker-items: Rectangle {

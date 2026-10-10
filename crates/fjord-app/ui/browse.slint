@@ -106,12 +106,12 @@ export component BrowseScreen inherits Rectangle {
                       min(0px, self.height - AppState.media-items.length * 42px),
                       0px
                   );
-            changed kb-y => { list-flick.viewport-y = kb-y; }
+            changed kb-y => { list-flick.content-y = kb-y; }
 
             list-flick := Flickable {
                 interactive:     true;
-                viewport-height: AppState.media-items.length * 42px;
-                animate viewport-y { duration: 150ms * AppState.settings-scroll-speed; easing: ease-out-expo; }
+                content-height: AppState.media-items.length * 42px;
+                animate content-y { duration: 150ms * AppState.settings-scroll-speed; easing: ease-out-expo; }
 
                 VerticalLayout {
                     for item[i] in AppState.media-items: BrowseItem {

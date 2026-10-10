@@ -19,9 +19,9 @@ export component PersonScreen inherits Rectangle {
     fl := Flickable {
         width:           parent.width;
         height:          parent.height;
-        viewport-height: content.preferred-height;
-        viewport-width:  self.width;
-        animate viewport-y { duration: 200ms * AppState.settings-scroll-speed; easing: ease-in-out; }
+        content-height: content.preferred-height;
+        content-width:  self.width;
+        animate content-y { duration: 200ms * AppState.settings-scroll-speed; easing: ease-in-out; }
 
         property <length> kb-y:
             AppState.person-in-other-work-row ?
@@ -31,7 +31,7 @@ export component PersonScreen inherits Rectangle {
                 clamp(root.height * 0.35 - film-anchor.y,
                       min(0px, root.height - content.preferred-height), 0px) :
                 0px;
-        changed kb-y => { self.viewport-y = kb-y; }
+        changed kb-y => { self.content-y = kb-y; }
 
         content := VerticalLayout {
             padding-left:   48px;

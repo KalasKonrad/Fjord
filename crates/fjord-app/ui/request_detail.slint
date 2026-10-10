@@ -161,9 +161,9 @@ export component RequestDetailScreen inherits Rectangle {
     fl := Flickable {
         width:           parent.width;
         height:          parent.height;
-        viewport-height: content.preferred-height;
-        viewport-width:  self.width;
-        animate viewport-y { duration: 200ms * AppState.settings-scroll-speed; easing: ease-in-out; }
+        content-height: content.preferred-height;
+        content-width:  self.width;
+        animate content-y { duration: 200ms * AppState.settings-scroll-speed; easing: ease-in-out; }
 
         content := VerticalLayout {
 
@@ -300,8 +300,8 @@ export component RequestDetailScreen inherits Rectangle {
                             y: parent.height - 38px;
                             width: parent.width;
                             height: 38px;
-                            viewport-width: req-hbox.preferred-width;
-                            animate viewport-x { duration: 150ms * AppState.settings-scroll-speed; easing: ease-out-expo; }
+                            content-width: req-hbox.preferred-width;
+                            animate content-x { duration: 150ms * AppState.settings-scroll-speed; easing: ease-out-expo; }
 
                             req-hbox := HorizontalLayout {
                             alignment: start;
@@ -506,7 +506,7 @@ export component RequestDetailScreen inherits Rectangle {
 
                             Text { text: "Currently Streaming On"; color: Theme.text-muted; font-size: 14px; font-weight: 600; }
 
-                            // Plain Flickable, viewport-x left unbound so
+                            // Plain Flickable, content-x left unbound so
                             // native mouse-wheel/touch scroll works (Slint
                             // gotcha in CLAUDE.md). width: parent.width here
                             // is safe specifically because its ancestor
@@ -517,7 +517,7 @@ export component RequestDetailScreen inherits Rectangle {
                             Flickable {
                                 width:          parent.width;
                                 height:         56px;
-                                viewport-width: providers-hbox.preferred-width;
+                                content-width: providers-hbox.preferred-width;
 
                                 providers-hbox := HorizontalLayout {
                                     spacing:   12px;
@@ -622,7 +622,7 @@ export component RequestDetailScreen inherits Rectangle {
 // width, `*-hbox.preferred-width` is deterministic and doesn't depend back
 // on the Flickable's own size, so this isn't the self.width-in-conditional
 // "Recursion detected" trap (see CLAUDE.md's Slint gotchas) — same reasoning
-// already relied on by the pre-existing `viewport-width: *-hbox.preferred-
+// already relied on by the pre-existing `content-width: *-hbox.preferred-
 // width` binding on each of these Flickables.
 export component RequestOptionsOverlay inherits Rectangle {
     background: #00000088;
@@ -777,13 +777,13 @@ export component RequestOptionsOverlay inherits Rectangle {
                 property <length> kb-profile-x: AppState.request-detail-focused-profile <= 0 ? 0px
                     : clamp(-(AppState.request-detail-focused-profile * 146px + 65px - profile-fl.width / 2),
                             min(0px, profile-fl.width - profile-hbox.preferred-width), 0px);
-                changed kb-profile-x => { profile-fl.viewport-x = kb-profile-x; }
+                changed kb-profile-x => { profile-fl.content-x = kb-profile-x; }
 
                 profile-fl := Flickable {
                     width:          min(root.dialog-w - 64px, profile-hbox.preferred-width);
                     height:         44px;
-                    viewport-width: profile-hbox.preferred-width;
-                    animate viewport-x { duration: 150ms * AppState.settings-scroll-speed; easing: ease-out-expo; }
+                    content-width: profile-hbox.preferred-width;
+                    animate content-x { duration: 150ms * AppState.settings-scroll-speed; easing: ease-out-expo; }
 
                     profile-hbox := HorizontalLayout {
                         spacing:   16px;
@@ -854,13 +854,13 @@ export component RequestOptionsOverlay inherits Rectangle {
                 property <length> kb-tag-x: AppState.request-detail-focused-tag <= 0 ? 0px
                     : clamp(-(AppState.request-detail-focused-tag * 126px + 55px - tag-fl.width / 2),
                             min(0px, tag-fl.width - tag-hbox.preferred-width), 0px);
-                changed kb-tag-x => { tag-fl.viewport-x = kb-tag-x; }
+                changed kb-tag-x => { tag-fl.content-x = kb-tag-x; }
 
                 tag-fl := Flickable {
                     width:          min(root.dialog-w - 64px, tag-hbox.preferred-width);
                     height:         44px;
-                    viewport-width: tag-hbox.preferred-width;
-                    animate viewport-x { duration: 150ms * AppState.settings-scroll-speed; easing: ease-out-expo; }
+                    content-width: tag-hbox.preferred-width;
+                    animate content-x { duration: 150ms * AppState.settings-scroll-speed; easing: ease-out-expo; }
 
                     tag-hbox := HorizontalLayout {
                         spacing:   16px;
@@ -927,13 +927,13 @@ export component RequestOptionsOverlay inherits Rectangle {
                 property <length> kb-season-x: AppState.request-detail-focused-season <= 0 ? 0px
                     : clamp(-(AppState.request-detail-focused-season * 158px + 55px - season-fl.width / 2),
                             min(0px, season-fl.width - season-hbox.preferred-width), 0px);
-                changed kb-season-x => { season-fl.viewport-x = kb-season-x; }
+                changed kb-season-x => { season-fl.content-x = kb-season-x; }
 
                 season-fl := Flickable {
                     width:          min(root.dialog-w - 64px, season-hbox.preferred-width);
                     height:         210px;
-                    viewport-width: season-hbox.preferred-width;
-                    animate viewport-x { duration: 150ms * AppState.settings-scroll-speed; easing: ease-out-expo; }
+                    content-width: season-hbox.preferred-width;
+                    animate content-x { duration: 150ms * AppState.settings-scroll-speed; easing: ease-out-expo; }
 
                     season-hbox := HorizontalLayout {
                         spacing:   16px;
