@@ -1,139 +1,30 @@
 // ── fjord-app · connect_seerr.slint ──────────────────────────────────────────
-//   ConnectSeerrScreen  free-floating overlay, mounted + fade-gated by
-//                       main.slint (gate30 := FadeGate { show: AppState.show-
-//                       connect-seerr; }, opacity passed in from there — same
-//                       pattern as PlaylistPicker/ContextMenu; the FadeGate
-//                       instance must live at the mount site, not inside this
-//                       component, or delayed-unmount never gets a chance to
-//                       run before the whole component is destroyed). Server
-//                       URL LineEdit shared across all 4 methods; a 4-tab
-//                       method selector switches which fields show below it.
-//                       All 4 methods converge on AppState's on-success path
-//                       (seerr_auth.rs) which closes this screen. Errors stay
-//                       on-screen (mirrors LoginScreen), not a toast.
-//
-//   On-screen keyboard turned off in Settings (2026-10-10): Enter in the URL field
-//   moves to the sign-in method's first field (zone 2), user/email → password
-//   (zone 3), and the last field presses that method's Save / Sign In.
-//
-//   Full D-pad keyboard navigation + on-screen alphanumeric keyboard,
-//                       (2026-10-05: on-screen keys edit at the keyboard's caret — onscreen-keyboard-edit)
-//   2026-08-23 — this screen had ZERO keyboard nav before (pure mouse +
-//   native Tab order); see app_state.slint's connect-seerr-zone doc comment
-//   for the full zone design (mirrors login-zone's shape — dispatch lives
-//   inline in keys.rs's show_connect_seerr tier, not a delegate function the
-//   way ProfileEditScreen's larger zone system does). MethodTab gets a real
-//   kbd-focused prop (bound to connect-seerr-zone == 1 on all 4 instances —
-//   the D-pad cursor for the tab row and the currently-selected tab ARE the
-//   same value, connect-seerr-method, so there's no separate per-tab cursor
-//   concept) plus the same border-ring + PressPulse treatment every other
-//   keyboard-navigable element in this app already has, mirroring NavItem's
-//   own shape (active && kbd-focused gates the flash). Every submit/"Get
-//   Code" button gets kbd-focused too, bound to whichever zone value
-//   resolves to "the last zone in the list" for its own tab (2 for Quick
-//   Connect, 3 for API key, 4 for Jellyfin/Local) — see
-//   seerr_auth::existing_connect_seerr_zones' own doc comment for why that's
-//   always the button, never a text field, regardless of tab.
-//
-//   Zone 0/1 numbering fixed 2026-08-26 — real, live-reported bug ("the
-//   keybord nav on seerr connect seams off it do not go where you are
-//   expekting"): zone 0 was originally the tab row and zone 1 was
-//   url-input, the REVERSE of this screen's own visual layout (url-
-//   field-wrap is declared, and renders, ABOVE the tab row's
-//   HorizontalLayout below). keys.rs's next_zone/prev_zone walk the zone
-//   LIST purely by position, with no idea which physical element a given
-//   number represents — so Down from the tab row (the next zone in the
-//   list) visually moved UP the screen to url-input, and url-input's own
-//   Down handler jumped straight past the tab row to zone 2, never
-//   reaching it on the way back down at all. Renumbered so 0 = url-input
-//   (the topmost navigable field, directly below Close) and 1 = the tab
-//   row, matching true top-to-bottom visual order — url-input now also
-//   gets a root-level `init =>` focus grab (mirroring login.slint's own
-//   precedent, minus its Timer workaround, which exists solely for
-//   LoginScreen's own cold-start-before-window.run() race that can't
-//   happen here — ConnectSeerrScreen is only ever opened by a live,
-//   already-running user action).
-//
-//   Real scoping constraint found while building this, not anticipated by
-//   the plan: the 5 method-specific fields (key-input/jf-user/jf-pass/
-//   local-email/local-pass) each sit inside their own `if connect-seerr-
-//   method == N:` conditional — Slint's hard rule that "an element declared
-//   inside an if block is not a valid identifier outside it" (confirmed at
-//   COMPILE TIME while writing this, not a style choice) means none of them
-//   can be referenced from a shared, root-level function/tracker the way
-//   login.slint's 3 always-mounted fields can. Fixed with a relay: root-
-//   level dispatch-onscreen-key handles "done" and the always-mounted
-//   url-input directly, but relays anything else (one of the 5 method-
-//   specific targets) through a payload+counter pair (_relay-key/-seq, same
-//   shape as onscreen-keyboard-physical-key/-seq — needed so `changed`
-//   fires even on a repeated identical key) that each text-field-bearing
-//   conditional block picks up with its OWN local mirror tracker, scoped
-//   to see only its own field(s). The same split applies to focus-restore-
-//   on-close and zone→focus hand-off (each conditional block gets its own
-//   small local trackers for these too) and to Enter-driven submit (each
-//   text-field tab's own local _pulse-mirror-equivalent calls its own
-//   connect-seerr-* callback; Quick Connect's Get Code needs no such local
-//   copy since it only ever references the always-mounted url-input, so it
-//   stays at root scope). Referencing an UNCONDITIONALLY-mounted sibling
-//   (url-input) FROM INSIDE a conditional block is fine — confirmed by the
-//   compiler accepting it in every one of the 3 text-field tabs' own submit
-//   buttons — it's only the reverse direction (conditional → outside) that's
-//   the hard rule.
-//
-//   root.close-screen() is the one choke point every close path (backdrop
-//   click, the ✕ button, and every field's own Escape branch) routes
-//   through — unconditionally clears the on-screen keyboard's 3 properties
-//   alongside show-connect-seerr, mirroring close_login_screen/
-//   close_profile_edit_screen's established precedent (Bonfire Phase 3's
-//   original code review, Finding 1): without this, closing the screen
-//   while the on-screen keyboard is open would leave AppState.show-
-//   onscreen-keyboard stuck true — that gate runs before EVERY other
-//   screen's own tier in keys.rs, so a stuck keyboard permanently swallows
-//   all subsequent input app-wide, not just on this screen. keys.rs's own
-//   Rust-side close sites (Escape at zone -1/0, zone -1's own Enter) do the
-//   Rust-side equivalent directly (this Slint function can't be called from
-//   Rust) — kept in sync by hand, same as every other Rust/Slint dual-side
-//   mechanism in this app.
-//
-//   The 3 `accepted =>` handlers key-input/jf-pass/local-pass used to have
-//   are gone (2026-08-23) — physical Enter now opens the on-screen keyboard
-//   on every field, matching Login's own identical removal and the same
-//   reasoning ("if they press enter on a textfield they want to enter it to
-//   type"); submitting moves entirely to each tab's own button, reachable
-//   via Down from the last field once the keyboard is closed.
-//
-//   Coexistence guard (is-my-onscreen-target()) — this screen isn't
-//   permanently mounted the way Browse/Discover are, but it IS a
-//   free-floating overlay reachable independent of whatever's underneath,
-//   so its QwertyKeyboard mount condition and _physical-key-mirror both
-//   check the target explicitly rather than bare show-onscreen-keyboard
-//   alone, same discipline established for ProfileEditScreen/Discover/
-//   Browse/PlaylistPicker (see CLAUDE.md's own "coexistence guard" write-up
-//   for the full reasoning — without it, two screens' keyboard interactions
-//   could cross-fire on each other's keystrokes).
-//
-//   Code review, 2026-08-26 — 5 real bugs found and fixed: (1) MethodTab had
-//   no persistent kbd-focused border, only a transient press flash, despite
-//   this header's own claim otherwise — fixed to match VirtualKeyboardKey's
-//   established pressed/focused/idle 3-state border-width convention.
-//   (2) Clicking a different MethodTab via mouse while the on-screen
-//   keyboard was open and targeting the OLD tab's own method-specific field
-//   unmounted that field's conditional block — including the ONLY listener
-//   for further keystrokes — leaving the keyboard visibly open but
-//   completely inert; fixed via close-keyboard-if-orphaned(), called from
-//   all 4 tab clicks (never needed on the keyboard-driven path, since every
-//   route back to zone 0 passes through the always-mounted url-input
-//   first). (3) The 6 changed has-focus handlers that retarget the keyboard
-//   when a DIFFERENT field is clicked mid-typing all reset the cursor to 0
-//   (a letter key) instead of onscreen-keyboard-done-cursor, unlike every
-//   genuine open site — fixed to match. (4) The keyboard's own y: position
-//   had no bottom clamp, unlike PlaylistPicker's identical "dock below a
-//   centered card" shape — could render its own Done key off-screen on a
-//   short/HTPC-resolution window. (5) The 3 text-field tabs' own
-//   _pulse-local-mirror trackers (and the root one for Quick Connect) had
-//   no !connect-seerr-busy guard, unlike the mouse Save/Sign-In buttons'
-//   own `enabled:` binding — a rapid double-Enter could fire two concurrent
-//   auth attempts.
+//   MethodTab           one sign-in method tab (ring + press pulse only on the active tab)
+//   ConnectSeerrScreen  free-floating overlay, mounted by main.slint's gate30 FadeGate (the gate
+//                       must live at the mount site). A server URL LineEdit shared by the 4 methods
+//                       (API key, Jellyfin, Quick Connect, local account), a tab row picks which
+//                       fields show below. Success (seerr_auth.rs) closes the screen; errors stay
+//                       on-screen, not a toast. root.close-screen() is the one close path (backdrop,
+//                       ✕, Escape) and also closes the on-screen keyboard; keys.rs's own close
+//                       sites do the same in Rust (keep in sync).
+//   D-pad zones         connect-seerr-zone (see app_state.slint): -1 ✕, 0 url-input, 1 tab row
+//                       (Left/Right switch the method), 2+ the method's fields, the last zone is
+//                       always its submit/"Get Code" button (seerr_auth::existing_connect_seerr_zones);
+//                       dispatched inline in keys.rs's show_connect_seerr tier. init focuses url-input.
+//   Text entry          Enter in a field opens the on-screen keyboard (QwertyKeyboard, clamped to the
+//                       window bottom); keys edit at its caret (onscreen-keyboard-edit). With the
+//                       keyboard off: Enter in the URL → the method's first field, user/email →
+//                       password, the last field presses Save / Sign In. Submitting is otherwise the
+//                       button (no `accepted =>` handlers). Double Enters are blocked by
+//                       !connect-seerr-busy.
+//   Relay               the 5 method-specific fields sit in `if connect-seerr-method == N:` blocks
+//                       and can't be referenced from root: dispatch-onscreen-key handles "done" and
+//                       url-input itself and relays the rest through _relay-key/-seq, picked up by a
+//                       local tracker in each block (same for focus restore, zone→focus and the
+//                       Enter-driven submit). A mouse tab switch while the keyboard targets an old
+//                       tab's field closes it (close-keyboard-if-orphaned).
+//   Coexistence guard   is-my-onscreen-target(): the keyboard mount and _physical-key-mirror check
+//                       the target, so two screens' keyboards never cross-fire.
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
@@ -154,27 +45,9 @@ component MethodTab inherits Rectangle {
     height: 34px;
     border-radius: Theme.radius;
     background: active ? Theme.accent : (ta.has-hover ? Theme.surface : transparent);
-    // Real bug, code review 2026-08-26: this only ever lit up on a
-    // transient press flash — there was no persistent ring for plain
-    // `kbd-focused` at all, despite this file's own header doc comment
-    // claiming "the same border-ring + PressPulse treatment every other
-    // keyboard-navigable element already has." Matches
-    // VirtualKeyboardKey's own established `pressed ? 3px : (focused ?
-    // 2px : 0px)` convention now.
-    //
-    // Second real bug, live-reported the next day (screenshot: every one
-    // of the 4 tabs showed a ring at once): `kbd-focused` is bound
-    // IDENTICALLY on all 4 MethodTab instances to `connect-seerr-zone ==
-    // 1` — there's only one shared zone for the whole tab row (Left/Right
-    // switches the active tab directly rather than moving a separate
-    // cursor within it), so every instance reported "focused"
-    // simultaneously the moment the D-pad reached the row. `pulse.pulsing`
-    // never showed this bug since its own `active:` binding (below)
-    // already ANDs in `root.active` — the persistent-ring branch was the
-    // one place that check was missing. Fixed to match: the ring, like
-    // the press-pulse, only ever means anything on the currently-selected
-    // tab, which is the closest thing this row has to a real cursor
-    // position.
+    // Persistent 2px ring + 3px press flash (VirtualKeyboardKey's convention) — only on the
+    // ACTIVE tab: all four tabs share one zone (1) and Left/Right switch the active tab, so
+    // kbd-focused alone would ring every tab at once.
     border-width: (ta.pressed || pulse.pulsing) ? 3px : (kbd-focused && active ? 2px : 0px);
     border-color: Theme.focus-border;
     animate border-width, background {
@@ -192,13 +65,7 @@ component MethodTab inherits Rectangle {
 
     Text {
         text: label;
-        // Was Theme.bg (#0d0d0d, near-black) — live-reported the same day:
-        // "why is the text black? its not black on any other blue button
-        // i the whole program?" Confirmed against theme.slint and every
-        // other accent-filled control in the app (FjordButton,
-        // VirtualKeyboardKey) — all of them use plain white on an
-        // accent-filled background, never Theme.bg. This was the one
-        // outlier, not a deliberate choice.
+        // White on the accent fill, like every other accent-filled control.
         color: active ? #ffffff : Theme.text;
         font-size: 12px;
         font-weight: 600;
@@ -217,25 +84,10 @@ export component ConnectSeerrScreen inherits Rectangle {
         AppState.onscreen-keyboard-cursor = 0;
     }
 
-    // Grabs real native focus into url-input the instant this screen
-    // mounts (2026-08-26, part of the zone 0/1 renumbering fix) — mirrors
-    // login.slint's own `init => { server-input.focus(); }` precedent,
-    // minus its Timer-deferred workaround: that exists solely for
-    // LoginScreen's own cold-start race (show-login can default true
-    // before window.run() ever starts pumping events), which structurally
-    // can't happen here — show-connect-seerr defaults false and this
-    // screen is only ever opened by a live, already-running user action
-    // well after the event loop is up, so a direct call is safe. Setting
-    // connect-seerr-zone explicitly (rather than relying solely on the
-    // has-focus handler's own side effect) matches login-zone's own
-    // "set the zone AND grab focus together" convention. Without this,
-    // on_open_connect_seerr's own `g.set_connect_seerr_zone(0)` (seerr_
-    // auth.rs) would be a silent no-op whenever the zone was ALREADY 0
-    // from a previous open — Slint's `changed` only fires on a genuine
-    // value transition — leaving zone 0 (now url-input, a real LineEdit)
-    // with no native focus and no way for keys.rs's dispatch tier to
-    // reach it either, the exact "stranded zone" bug class this same
-    // review already fixed once for Quick Connect.
+    // Real native focus into url-input on mount, and zone 0 set with it (like login-zone). A
+    // direct call is safe here (the screen only opens from a running UI; LoginScreen needs a
+    // Timer for its cold start). Without it, a reopen with the zone already 0 never fires the
+    // zone→focus tracker (`changed` needs a real transition), leaving url-input unfocused.
     init => {
         AppState.connect-seerr-zone = 0;
         url-input.focus();
@@ -256,21 +108,9 @@ export component ConnectSeerrScreen inherits Rectangle {
             || AppState.onscreen-keyboard-target == "connect-seerr-local-pass"
     }
 
-    // Code review, 2026-08-26 — a real bug found live: MethodTab's own
-    // `clicked` handler is reachable by mouse regardless of the on-screen
-    // keyboard's current state (unlike a keyboard-driven method switch,
-    // which can only ever leave zone 0 with the keyboard closed or
-    // targeting the always-mounted url-input, since every path back to
-    // zone 0 passes through it first). Clicking a DIFFERENT tab while the
-    // keyboard is open and targeting one of the OLD tab's own
-    // conditionally-mounted fields (e.g. "connect-seerr-key" on the API
-    // key tab) unmounts that field's whole conditional block — including
-    // the local `_relay-mirror` tracker that's the only thing listening
-    // for further keystrokes — so the keyboard stays visibly open but
-    // silently stops accepting any input. "connect-seerr-url" is the one
-    // target that's always safe across every tab (unconditionally
-    // mounted), so this only needs to close the keyboard when the target
-    // is a real method-specific field, not the shared URL one.
+    // A mouse click on another tab while the keyboard targets a field of the OLD tab unmounts
+    // that field and its `_relay-mirror`, so the open keyboard would silently stop typing.
+    // Close it then; "connect-seerr-url" is mounted on every tab and stays.
     function close-keyboard-if-orphaned() {
         if AppState.show-onscreen-keyboard && AppState.onscreen-keyboard-target != "connect-seerr-url" {
             AppState.show-onscreen-keyboard = false;
@@ -351,15 +191,7 @@ export component ConnectSeerrScreen inherits Rectangle {
                             AppState.connect-seerr-zone = 0;
                             if AppState.show-onscreen-keyboard {
                                 AppState.onscreen-keyboard-target = "connect-seerr-url";
-                                // Default to Done, not the top-left "q" key
-                                // (code review, 2026-08-26) — retargeting
-                                // the keyboard to a different field via a
-                                // mouse click mid-typing left it landed on
-                                // a letter key instead of the "dismiss with
-                                // one more Enter" default every genuine
-                                // OPEN site already uses, an inconsistency
-                                // this project's own precedent (the Login
-                                // rollout) explicitly designed against.
+                                // Retargeting by mouse lands on Done, like every open site.
                                 AppState.onscreen-keyboard-cursor = AppState.onscreen-keyboard-done-cursor;
                             }
                         }
@@ -371,11 +203,7 @@ export component ConnectSeerrScreen inherits Rectangle {
                             return accept;
                         }
                         if event.text == "\u{F700}" {
-                            // Up from url-input (now the topmost navigable
-                            // zone, per the 2026-08-26 renumbering) goes to
-                            // Close, not the tab row — url-input sits
-                            // directly below the header, with nothing else
-                            // visually between them.
+                            // Up from url-input (the top zone) goes to Close — nothing sits between them.
                             AppState.connect-seerr-zone = -1;
                             AppState.refocus();
                             return accept;
@@ -536,14 +364,8 @@ export component ConnectSeerrScreen inherits Rectangle {
                 }
                 property <int> _pulse-local-mirror: AppState.kb-activate-pulse;
                 changed _pulse-local-mirror => {
-                    // !connect-seerr-busy guard added, code review 2026-08-26:
-                    // the mouse Save button already has this via `enabled:`
-                    // (line above), but this Enter-driven path had no
-                    // equivalent — a rapid double-Enter (real on a D-pad/
-                    // remote, where button bounce is common) bumped
-                    // kb-activate-pulse twice before the first request
-                    // resolved, firing two concurrent verify-key attempts
-                    // racing to call commit_connection.
+                    // !connect-seerr-busy, as the mouse button has via `enabled:` — a bouncing double Enter on a
+                    // remote fired two concurrent verify-key attempts.
                     if AppState.show-connect-seerr && AppState.connect-seerr-zone == 3 && !AppState.connect-seerr-busy {
                         AppState.connect-seerr-api-key(url-input.text, key-input.text);
                     }
@@ -904,19 +726,12 @@ export component ConnectSeerrScreen inherits Rectangle {
         }
     }
 
-    // On-screen alphanumeric keyboard (2026-08-23, full rollout beyond
-    // Login) — positioned below the card, mirroring login.slint's own
-    // placement/shape exactly, including the coexistence guard (see this
-    // file's own header doc comment).
+    // On-screen alphanumeric keyboard, below the card like login.slint's (incl. the coexistence
+    // guard, see the header).
     if AppState.show-onscreen-keyboard && AppState.settings-onscreen-keyboard-enabled && root.is-my-onscreen-target(): QwertyKeyboard {
         x: (parent.width - self.width) / 2;
-        // Clamped to the window bottom (code review, 2026-08-26) — matching
-        // PlaylistPicker's own identical clamp on the same "dock below a
-        // roughly-centered card" shape. Unclamped, a real short/HTPC-
-        // resolution window (this card's own vertical center can sit well
-        // past the halfway point once the taller Jellyfin/Local tabs are
-        // active) renders the keyboard's own bottom rows — including Done,
-        // the one key that can always close it — partly or fully off-screen.
+        // Clamped to the window bottom (like PlaylistPicker): on a short window the taller tabs
+        // pushed the keyboard's bottom rows, incl. Done, off-screen.
         y: min(card.y + card.height + 16px, parent.height - self.height - 16px);
         cursor: AppState.onscreen-keyboard-cursor;
         active: AppState.show-onscreen-keyboard;
@@ -958,26 +773,15 @@ export component ConnectSeerrScreen inherits Rectangle {
         if _zone-mirror == 0 { url-input.focus(); }
     }
 
-    // Zone-2's own D-pad Enter on Quick Connect's "Get Code" button has no
-    // Rust-side arm — the actual quickconnect-start call needs a live
-    // url-input.text value Rust can't read, same "Rust can only bump
-    // kb-activate-pulse, a Slint-side changed tracker does the real work"
-    // pattern login-zone's own zone 4 (Connect) already uses. The other 3
-    // tabs' own submit buttons have their own LOCAL copy of this same
-    // tracker (see this file's header doc comment) since their own
-    // zone/method combination can't be checked from root scope without
-    // also needing to reference their conditionally-mounted fields. Zone -1
-    // (close) is handled directly in keys.rs instead — closing needs no
-    // live text at all, so there's no reason to route it through this
-    // indirection.
+    // Zone 2's D-pad Enter on Quick Connect's "Get Code": Rust can only bump kb-activate-pulse
+    // (quickconnect-start needs the live url-input.text), this tracker does the call — like
+    // login's zone 4. The other tabs' submit buttons have their own local copy (their
+    // conditionally-mounted fields aren't reachable from here). Zone -1 (close) is handled in
+    // keys.rs.
     property <int> _pulse-mirror: AppState.kb-activate-pulse;
     changed _pulse-mirror => {
-        // !connect-seerr-busy added, code review 2026-08-26 — !qc-polling
-        // alone left a real, narrow race: busy is set synchronously the
-        // instant this fires, but qc-polling only becomes true later, once
-        // quickconnect-start's own async task actually succeeds. A second
-        // rapid Enter landing in that gap re-read !qc-polling as still
-        // false and fired a second concurrent quickconnect-start.
+        // !connect-seerr-busy too: busy is set at once, qc-polling only after quickconnect-start
+        // succeeds — a second Enter in between started a second request.
         if AppState.show-connect-seerr && AppState.connect-seerr-method == 2
             && AppState.connect-seerr-zone == 2 && !AppState.connect-seerr-qc-polling
             && !AppState.connect-seerr-busy {
