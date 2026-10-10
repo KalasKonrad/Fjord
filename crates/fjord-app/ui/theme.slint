@@ -1,36 +1,28 @@
 // ── fjord-app · theme.slint ──────────────────────────────────────────────────
-//   Theme           global design tokens: colors, spacing, radius, font sizes
-//   VideoRect       a video spot's logical position/size (HDR Stage 5, 2026-10-05)
-//   OskEdit         text/caret/byte result of one on-screen-keyboard key (2026-10-05)
-//   TrackEntry      audio / video / subtitle track row for track-panel lists
-//   TrackItem       one row in an album/playlist tracklist (id, title, artist, duration, track-number,
-//                   played, is-favorite, entry-id (playlist entry, for removal), album-id (music-bar art),
-//                   disc-header/row-y-px (2026-08-17, multi-disc separators — see this struct's own
-//                   doc comment below))
-//   CastMember      name + role + id + portrait photo for the detail-page cast row
-//   SeasonEntry     season id + display name + played/is-favorite for series season tabs
-//                   (context menu, 2026-08-12)
-//   CardItem        universal poster card data (id, series-id, item-type, title, subtitle, year, played, resume,
-//                   is-favorite, unplayed-count, availability — Discover/Seerr cards only, "" elsewhere;
-//                   requested-4k/other-tier-available — Discover "Requested" row only, false elsewhere,
-//                   2026-07-18, drives MediaCard's tier-prefixed availability pill + cross-tier badge;
-//                   on-watchlist — Discover cards only, false elsewhere, 2026-07-18 Watchlist +
-//                   Release Calendar, drives the context-menu Watchlist row label + RequestDetailScreen button)
-//   SeasonItem      one TV season card for the Discover request-detail season strip (number, name, episode-count, selected, poster, has-poster)
-//   TagItem         one Radarr/Sonarr tag row for the Discover request-detail tag picker (id, label, selected)
-//   ProfileItem     one Radarr/Sonarr quality profile row for the Discover request-detail profile
-//                   picker (id, name) — radio-select via request-detail-selected-profile-id, not
-//                   a per-row bool; row 0 is a synthetic "Default" entry prepended in Rust
-//   GenreItem       one TMDB genre row for the Discover screen's Genre filter chip picker
-//                   (movie-id, tv-id, name, selected) — 2026-07-18; dual ids since movie/TV
-//                   genre id spaces don't fully overlap even for same-named genres
-//   ProviderItem    one streaming-provider row for the Discover screen's Provider filter
-//                   chip picker (id, name, selected) — 2026-07-18
-//   KeyBindingEntry one row in the key-binding editor (action label + current key string)
-//   QueueEntry      one row in the queue panel (id, index, title, artist, is-current, is-queued, poster-id, has-poster, poster)
-//   LyricEntry      one lyric line (text, start-ms); start-ms=0 means no timestamps
-//   BlocklistRow    one row in the Manage Blocklist screen (2026-08-06) — tmdb-id, media-type,
-//                   title, blocklisted-by, blocklisted-at; no poster, GET /blocklist carries none
+//   Theme           global design tokens: colors (incl. focus-border, master-ring), spacing,
+//                   radius, font sizes
+//   Structs shared between Rust and Slint (one line each; details on the struct):
+//   VideoRect       a video spot's logical position/size (HDR Stage 5)
+//   OskEdit         text/caret/byte result of one on-screen-keyboard key
+//   TrackEntry      audio / video / subtitle track row for the track panels
+//   TrackItem       album/playlist track row (incl. disc-header/row-y-px for multi-disc albums)
+//   CastMember      cast row entry (name, role, id, photo)
+//   SeasonEntry     series season tab (id, name, played, is-favorite)
+//   KeyBindingEntry key-binding editor row
+//   CardItem        universal poster card (Jellyfin + Discover: availability, tier badges,
+//                   request-id, on-watchlist)
+//   SeasonItem / TagItem / ProfileItem  Discover request options: season card, Radarr/Sonarr
+//                   tag, quality profile (row 0 = synthetic "Default")
+//   GenreItem / ProviderItem  Discover filter chips (genre: movie + TV id)
+//   StreamingProvider  request detail's "Currently Streaming On" entry
+//   QueueEntry      queue panel row
+//   LyricEntry      lyric line (start-ms 0 = no timestamps)
+//   BlocklistRow    Manage Blocklist row (no poster)
+//   ProfileTile / ProfileSection  profile picker tile and household row
+//   AccountTile     account picker tile
+//   BonfireGroupMemberTile  Bonfire Group screen member
+//   ToggleListItem  ProfileEditScreen checklist row (libraries, devices)
+//   BonfireAdminRow / BonfireAuditRow  Bonfire Admin mappings / audit-log rows
 // ─────────────────────────────────────────────────────────────────────────────
 // Fjord default theme — Jellyfin-inspired dark palette.
 // Swap this file (or override properties at runtime) to change the whole UI.
@@ -47,29 +39,13 @@ export global Theme {
     out property <color> accent-hover:    #0090c4;
     out property <color> accent-muted:    #00a4dc40;  // ~25 % alpha
 
-    // Universal keyboard-focus/press border color (2026-08-13, live-reported
-    // inconsistency: "the hilight for blue buttons... is a bitt so suttle and
-    // it seams to be different colors on different buttuns object"). FjordButton
-    // and IconCircleButton already used this exact white, semi-transparent
-    // value for their own focus/press ring — high contrast against their
-    // always-solid-accent-filled background — but ~43 other press/pulse sites
-    // across the app used `Theme.accent` (solid blue) instead, which visibly
-    // blends into an already-accent-tinted background (a focused SettingsRow,
-    // an active NavItem, a checked ToggleSwitch). Centralized here so every
-    // site references ONE color instead of each repeating (or, worse,
-    // diverging from) the same literal by hand — user picked "white border
-    // everywhere" over a narrower blue-on-blue-only fix via AskUserQuestion.
+    // The one keyboard-focus/press border colour, everywhere (solid accent blended into
+    // accent-tinted backgrounds like a focused SettingsRow or a checked ToggleSwitch).
     out property <color> focus-border:    #ffffff99;
 
-    // Persistent status ring for "this is the household's own master/root
-    // profile" on ProfilePickerScreen's own tiles (2026-08-29, picker
-    // visual parity with Bonfire's own official UI — see that screen's own
-    // doc comment). Deliberately a different color from focus-border: this
-    // ring is a permanent identity marker, not a transient keyboard-focus
-    // indicator, and the two need to stay visually distinguishable when a
-    // keyboard user tabs onto the master's own tile (both rings show at
-    // once). A warm gold reads as "special/host" without colliding with
-    // any existing semantic color in this palette (accent=blue, error=red).
+    // Permanent ring on the household's master tile (ProfilePickerScreen). A different colour
+    // from focus-border — both can show at once; gold collides with no other meaning
+    // (accent = blue, error = red).
     out property <color> master-ring:     #f0b429;
 
     // ── Text ─────────────────────────────────────────────────────────────────
@@ -95,10 +71,8 @@ export global Theme {
     out property <length> sp-xl:          32px;
 }
 
-// A single entry in a track-selection list (audio / subtitle / video).
-// Where a video spot is on screen (HDR Stage 5, 2026-10-05): Slint's
-// absolute position + size in logical px, reported by widgets.slint's
-// VideoSpot for video_surface.rs to draw the video there.
+// Where a video spot is on screen (HDR Stage 5): absolute position + size in logical px,
+// reported by widgets.slint's VideoSpot for video_surface.rs to draw the video there.
 export struct VideoRect {
     x: length,
     y: length,
@@ -115,6 +89,7 @@ export struct OskEdit {
     byte: int,
 }
 
+// A single entry in a track-selection list (audio / subtitle / video).
 export struct TrackEntry {
     id: int,
     label: string,
@@ -132,14 +107,9 @@ export struct TrackItem {
     resume-pct: float,
     entry-id: string,   // PlaylistItemId — set for playlist rows, "" for album rows
     album-id: string,   // owning album id — music-bar art for playlist rows
-    // Multi-disc album support (2026-08-17, live-reported follow-up to the
-    // track-order fix: "add a Disc seperator... now it just hop fron the
-    // last track to firs with no explenation"). Both computed once in Rust
-    // (album.rs::media_items_to_tracks) rather than in Slint, so the
-    // keyboard scroll-to-view math (album.slint's kb-track-y) can do a
-    // single O(1) indexed read instead of iterating the model to sum up
-    // however many separators precede the focused row — always "" / the
-    // plain i*track-h stride for playlists, which have no disc concept.
+    // Multi-disc albums: computed in Rust (album.rs::media_items_to_tracks) so album.slint's
+    // kb-track-y can read one index instead of counting the separators above a row. Always ""
+    // / the plain i*track-h stride for playlists.
     disc-header: string,   // "" = no separator above this row; else "Disc N" to show
     row-y-px: float,    // precomputed absolute Y (px) for this row, already
                             // accounting for every disc-header's own extra height
@@ -154,13 +124,8 @@ export struct CastMember {
     has-photo: bool,
 }
 
-// A season entry in the series drill-down. `played`/`is-favorite` added
-// 2026-08-12 (season-tab context menu, live-reported: "right clicking the
-// season tab shuld it not have a contect menu?") — the underlying
-// get_seasons() fetch already requests UserData, this just threads it
-// through to the tab so C-key/right-click can open the generic context
-// menu (Mark Watched/Unwatched, Favourite, View Details) pre-populated
-// with the season's real current state.
+// A season entry in the series drill-down. played/is-favorite feed the season tab's context
+// menu (Mark Watched/Unwatched, Favourite, View Details).
 export struct SeasonEntry {
     id: string,
     name: string,
@@ -188,45 +153,19 @@ export struct CardItem {
     has-poster: bool,
     poster: image,
     unplayed-count: int,
-    // Discover (Seerr) results only — "" on every Jellyfin-sourced card
-    // (every existing construction site leaves this at its Default::default()
-    // "", zero risk to the other ~25 CardItem models). One more badge pill in
-    // MediaCard, same additive/conditional shape as the four above:
-    // "requested" | "processing" | "partial" | "available" | "blocklisted" |
-    // "" (none — requestable, no badge). "blocklisted" added 2026-08-06
-    // (Seerr Blocklist support) — the ONLY per-card signal that feature
-    // needed, since Blocklisted is just another value of this same
-    // mutually-exclusive status field (unlike on-watchlist below, a
-    // genuinely independent boolean axis).
+    // Discover (Seerr) cards only, "" elsewhere: "requested" | "processing" | "partial" |
+    // "available" | "blocklisted" | "" (requestable, no badge) — one more MediaCard badge pill.
     availability: string,
-    // Discover "Requested" row only (2026-07-18) — false/false on every
-    // other card by construction, same zero-risk-elsewhere reasoning as
-    // `availability` above. `requested-4k` tags the main availability pill
-    // with the requested tier ("4K Requested" vs plain "Requested") since
-    // Seerr tracks 2K/4K fulfillment as two genuinely independent statuses
-    // (see fjord_seerr::MediaInfo's own doc comment) — a request can be
-    // fully served in one tier while still pending in the other.
-    // `other-tier-available` drives a second small badge ("Available in
-    // 2K"/"Available in 4K") when the OTHER (non-requested) tier is
-    // already available, so the user isn't left thinking nothing is
-    // watchable yet. `other-tier-requested` drives the same badge slot
-    // with "Also requested in 2K"/"Also requested in 4K" instead, for the
-    // rarer case where BOTH tiers were requested and neither is available
-    // yet — a genuinely different situation from "available" that used to
-    // be silently indistinguishable from "not requested at all" (real
-    // report, 2026-07-18: user read "Also in 2K" and assumed it meant
-    // "also requested", which it never did — this field is what makes
-    // that actual state exist). `other-tier-available` wins when both
-    // would apply (better news); `other-tier-requested` only applies once
-    // its own tier's request is still active and unfulfilled.
+    // Discover "Requested" row only. Seerr tracks 2K and 4K independently
+    // (fjord_seerr::MediaInfo): `requested-4k` labels the pill ("4K Requested");
+    // `other-tier-available` adds "Available in 2K/4K" when the other tier is available;
+    // `other-tier-requested` adds "Also requested in 2K/4K" when both are requested and neither
+    // is available. Available wins when both apply.
     requested-4k: bool,
     other-tier-available: bool,
     other-tier-requested: bool,
-    // Discover "Requested" row only (2026-07-18) — the underlying Seerr
-    // MediaRequest's own id (NOT the tmdb id, which stays in `id` above and
-    // is load-bearing for open-discover-item). "" on every other card,
-    // including every non-Requested-row Discover card. Drives the Discover
-    // context menu's Edit/Cancel/Approve/Decline actions.
+    // Discover "Requested" row only: the Seerr MediaRequest id (the tmdb id stays in `id`, which
+    // open-discover-item needs). Drives the context menu's Edit/Cancel/Approve/Decline.
     request-id: string,
     // request-pending: MediaRequest.status == Pending (the request's own
     // approval-workflow state — a DIFFERENT thing from `availability`
@@ -241,11 +180,8 @@ export struct CardItem {
     // comment for the exact matrix.
     request-pending: bool,
     request-mine: bool,
-    // Discover (Seerr) cards only (2026-07-18, Watchlist + Release
-    // Calendar) — false on every Jellyfin-sourced card, same zero-risk-
-    // elsewhere pattern as availability/request-* above. Drives the
-    // Discover context menu's Add/Remove Watchlist row label and
-    // RequestDetailScreen's Watchlist button state.
+    // Discover cards only: the context menu's Add/Remove Watchlist label and
+    // RequestDetailScreen's Watchlist button.
     on-watchlist: bool,
 }
 
@@ -276,14 +212,9 @@ export struct ProfileItem {
     name: string,
 }
 
-// Discover screen's Genre filter chip picker (2026-07-18). Movie and TV
-// genre id spaces don't fully overlap even for same-named genres (e.g. TV's
-// "Action & Adventure" is a different id than movie's separate "Action"/
-// "Adventure") — each deduped-by-name chip remembers both ids so the
-// correct one can be sent to whichever endpoint (discover_movies_filtered/
-// discover_tv_filtered) is actually being queried. 0 = absent for that
-// type (genuine TMDB genre ids are always >0), same "0 is a safe absent
-// sentinel" convention ProfileItem's own id:0 "Default" row already uses.
+// Discover Genre filter chip. Movie and TV genre ids differ even for same-named genres, so a
+// chip (deduped by name) keeps both ids for discover_movies_filtered/discover_tv_filtered.
+// 0 = none for that type (TMDB ids are > 0).
 export struct GenreItem {
     movie-id: int,
     tv-id: int,
@@ -291,20 +222,16 @@ export struct GenreItem {
     selected: bool,
 }
 
-// Discover screen's Provider filter chip picker (2026-07-18) — same
-// multi-select shape as GenreItem/TagItem, but provider ids are per-region
-// (from get_movie_watch_providers/get_tv_watch_providers), not
-// per-media-type, so there's only one id to track, not two.
+// Discover Provider filter chip — like GenreItem/TagItem, but provider ids are per region,
+// not per media type, so one id.
 export struct ProviderItem {
     id: int,
     name: string,
     selected: bool,
 }
 
-// Discover request-detail screen's "Currently Streaming On" row — one entry
-// per flatrate (subscription) provider for the resolved streaming region
-// (Seerr's own streamingRegion setting, see discover.rs's
-// resolve_streaming_region). TMDB logo, small icon-sized fetch.
+// Request detail's "Currently Streaming On": one flatrate provider for the resolved
+// streaming region (resolve_streaming_region), with its TMDB logo.
 export struct StreamingProvider {
     id: int,
     name: string,
@@ -330,15 +257,9 @@ export struct LyricEntry {
     start-ms: int,   // milliseconds from track start; 0 means no timestamp info
 }
 
-// One row in the Manage Blocklist screen (2026-08-06, Seerr Blocklist
-// support) — plain text row, no poster: GET /blocklist's own BlocklistItem
-// carries no image path at all (confirmed from Seerr's real
-// blocklistInterfaces.ts), unlike every other card-shaped model in this
-// app. blocklisted-by/blocklisted-at are pre-formatted display strings
-// (Rust's own job, mirroring how every other display-ready string in this
-// app is formatted before crossing into Slint) — blank when the source
-// data itself is blank (a blocklisted-by-tag entry, no user; or a legacy
-// row with no createdAt).
+// One row of Manage Blocklist — text only (Seerr's BlocklistItem has no image).
+// blocklisted-by/-at are formatted in Rust; blank when the source is (a tag-blocklisted
+// entry, a legacy row without createdAt).
 export struct BlocklistRow {
     tmdb-id: int,
     media-type: string,   // "movie" | "tv"
@@ -375,27 +296,18 @@ export struct ProfileTile {
                              // also true); this is profile.rs::is_true_master(p) instead.
 }
 
-// Bonfire Phase 5 follow-up (2026-08-31) — ProfilePickerScreen's own row of
-// tiles, sectioned by household: section 0 is always the requested
-// account's own group (root tile included); any further sections are
-// OTHER households linked via a Bonfire group (profile.rs::linked_account_
-// roots), each also showing that household's own full member list, root
-// tile included — a linked household's own master is just as directly
-// clickable as its sub-profiles, matching Bonfire's own reference "Who's
-// Watching?" screen. `header` is "" for the sole section when there's only
-// one (preserves the original unlabeled look), else "Your Bonfire" / "{name}'s
-// Bonfire".
+// One household row on ProfilePickerScreen: section 0 is the requested account's own group,
+// further sections other households linked via a Bonfire group
+// (profile.rs::linked_account_roots) — each with its full member list, master included.
+// `header`: "" for a sole section, else "Your Bonfire" / "{name}'s Bonfire".
 export struct ProfileSection {
     header: string,
     tiles: [ProfileTile],
 }
 
-// AccountPickerScreen's own tile (2026-08-14, the account-tier picker —
-// see profile.rs's AccountGroup/build_account_tile). One tile per distinct
-// account (a plain login, or a Bonfire household represented by its
-// master) — NOT one per Config.profiles entry; a Bonfire household with 4
-// sub-profiles is still exactly one account tile here, sized-in by
-// profile-count for the "N profiles" subtitle.
+// AccountPickerScreen tile (profile.rs's AccountGroup/build_account_tile): one per account
+// (a plain login, or a Bonfire household via its master), not per profile —
+// profile-count gives the "N profiles" subtitle.
 export struct AccountTile {
     root-id: string,
     display-name: string,
@@ -403,21 +315,11 @@ export struct AccountTile {
     avatar-initial: string,
     server-url: string,
     profile-count: int,     // 1 = a standalone account, no profile tier to descend into;
-                             // 2+ = picking this tile opens the profile-tier picker instead
-    // Bonfire Phase 5 (cross-household groups, 2026-08-29) — true when this
-    // "account" is actually another master's own real account, reached via
-    // a Bonfire group, not one of the user's own saved accounts. Without
-    // this, such a tile was visually indistinguishable from any of the
-    // user's own accounts in the picker — a real UX gap found while
-    // designing this feature, not just the underlying correctness bug.
+                             // Another master's account reached through a Bonfire group, not one of the user's own
+                             // saved accounts — marked so the two are distinguishable.
     is-group-account: bool,
-    // Picker visual parity (2026-08-29) — the root profile's own has-pin,
-    // populated ONLY when profile-count == 1 (see build_account_tile's own
-    // doc comment for why): a single-profile account's tile is what
-    // DIRECTLY triggers the PIN prompt on click, so this is the one case
-    // where warning about it on the account tile itself is unambiguous —
-    // a multi-profile account always opens ProfilePickerScreen instead,
-    // which already shows its own per-tile lock badges.
+    // The root profile's has-pin, set only when profile-count == 1: only then does clicking
+    // the tile prompt for the PIN directly (see build_account_tile).
     has-pin: bool,
 }
 
@@ -428,12 +330,9 @@ export struct BonfireGroupMemberTile {
     username: string,
 }
 
-// ProfileEditScreen's two checklists (Bonfire Phase 2, 2026-08-09) — enabled
-// libraries (from bonfire_list_libraries) and the device whitelist (from
-// bonfire_list_devices). One generic shape for both rather than two nearly-
-// identical structs: `subtitle` is the library's collection-type or the
-// device's "client · last seen" line, empty string when there's nothing to
-// show (matches TagItem's own multi-select-via-per-row-bool convention).
+// ProfileEditScreen's two checklists — enabled libraries (bonfire_list_libraries) and the
+// device whitelist (bonfire_list_devices). `subtitle`: the collection type or "client ·
+// last seen", "" when there's nothing.
 export struct ToggleListItem {
     id: string,
     name: string,
@@ -441,15 +340,9 @@ export struct ToggleListItem {
     selected: bool,
 }
 
-// Bonfire Phase 6 (admin actions, 2026-09-04) — one row in the "Bonfire
-// Admin" screen's Mappings tab. A deliberately FLAT list, not a nested/
-// expandable tree — see bonfire_admin.rs's own doc comment for why:
-// the whole mappings response comes back in one shot with a fixed, small
-// real-world size, so there's no lazy-expand state to track and no
-// dynamically-changing row count to get D-pad zone math wrong against.
-// Sub-profile rows render indented under their own master, grouped by
-// master-user-id at construction time (the wire response returns two
-// separate lists, not pre-interleaved).
+// One row of the Bonfire Admin screen's Mappings tab: a flat list (small, fetched in one
+// response — see bonfire_admin.rs), sub-profiles indented under their master, grouped by
+// master-user-id when built.
 export struct BonfireAdminRow {
     is-master: bool,   // false = a sub-profile, indented under its own master
     profile-user-id: string,

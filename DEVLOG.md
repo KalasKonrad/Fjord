@@ -15822,3 +15822,563 @@ Above `property <int> _pulse-mirror: AppState.kb-activate-pulse;`:
 //   physical keyboard user had never opened the overlay at all.
 // ─────────────────────────────────────────────────────────────────────────────
 ```
+
+#### `crates/fjord-app/ui/profile_picker.slint`
+
+Above `if !root.is-add-tile && root.tile.is-root: Rectangle {`:
+```
+// Master/root ring — picker visual parity (2026-08-29) with
+// Bonfire's own official "Who's Watching?" UI (a real screenshot
+// showed a crown badge on the household's own master tile). The
+// crown glyph itself (U+1F451) isn't covered by any bundled font
+// (confirmed via the established fc-query cmap check) — using it
+// would fall through to an uncontrolled system fallback, the exact
+// tofu/color-emoji risk this app's "Bundled symbol fonts" section
+// documents eliminating elsewhere. A star glyph IS covered, but
+// already means "Watchlist" in this app — reusing it here would be
+// genuinely ambiguous, not just imperfect. This ring is glyph-free
+// instead: `tile.is-root` is exactly "this is the household's own
+// master/root profile" (profile.rs::is_true_master — deliberately
+// NOT `!tile.is-bonfire`, which is wrong for a "pure" Bonfire group
+// account that was never independently logged into, since its own
+// is-bonfire is ALSO true; see build_tile's own doc comment).
+// Declared INSIDE the avatar Rectangle (not as a sibling in the
+// enclosing VerticalLayout, which would insert it as its own
+// stacked row instead of overlaying the avatar) and inset a few
+// px from the outer edge so it reads as a concentric second ring
+// rather than colliding with the keyboard-focus border drawn on
+// the parent itself — the two are deliberately different colors
+// and can both show at once when a keyboard user tabs onto the
+// master's own tile.
+```
+
+Above `if !root.is-add-tile && root.tile.has-pin: Rectangle {`:
+```
+// Lock badge — bottom-right, only for a real profile (never the Add
+// tile) whose has-pin is true; mirrors requires-pin only insofar as
+// display goes — this badge means "a PIN is set", not "will prompt
+// right now" (bypassPinOnLocalNetwork can make those differ).
+```
+
+Above `component ProfileSectionRow inherits VerticalLayout {`:
+```
+// One household's own row — an optional "{name}'s Bonfire" header (blank
+// for the primary section when it's the only one, matching the original
+// unlabeled look; "Your Bonfire" once a second section exists) followed by
+// that household's own tile row, root/master tile included. `section-index`
+// is the outer loop's own index, threaded through so kbd-focused/activated
+// can compare against `AppState.profile-picker-section` — this component
+// exists specifically so `main-block` below can hold a genuine `for
+// section[s] in AppState.profile-picker-sections:` over a variable number
+// of households (1 today, 2+ once Bonfire-linked), the shape Discover's own
+// landing-row keyboard math already assumes but never previously needed in
+// Slint template form anywhere in this codebase.
+```
+
+Above `kbd-focused: AppState.profile-picker-section == root.section-index`:
+```
+// !back-focused/!quit-focused exclude the tile ring while a
+// different zone holds focus instead — same "exclude other
+// on-screen zones from the card's own focus ring" convention
+// established for LibraryGrid/BrowseItem (CLAUDE.md).
+```
+
+Above `logo-img := Image {`:
+```
+// Standalone logo, deliberately NOT part of main-block below — live-
+// reported 2026-08-14, 4th report on this screen's layout, this time
+// with an attached screenshot marking the whole empty region above
+// "Who's watching?" and asking for the icon to sit centered within
+// IT, not just tucked directly above the text ("the fjord loggo culd
+// move to the center of the upper part"). Also dropped the "FJORD"
+// wordmark entirely per direct request ("we dont need to write
+// fjord") — icon only now. `main-block.y` (a plain sibling read, the
+// same safe pattern this file already established for `tile-row`'s
+// own centering) is where "Who's watching?" begins, so `[0,
+// main-block.y]` is exactly the empty region the screenshot marked;
+// centering within it needs no coordination with main-block's own
+// internal layout at all. Still the same `AppState.app-logo-idx`
+// ternary the sidebar uses, so both places always show the SAME
+// randomly-chosen-at-startup icon for the whole session — confirmed
+// already correct by construction, not a bug, just restated as a
+// requirement in the same report.
+```
+
+Above `width: 180px;`:
+```
+// Grown again 120px -> 180px (2026-08-15, live-reported: "make the
+// icon/logo even bigger") — still centered independently in
+// [0, main-block.y] below, which doesn't depend on this size at all,
+// so growing it just uses more of that already-empty region.
+```
+
+Above `height: self.preferred-height;`:
+```
+// Live-reported 2026-08-14, three times in a row before this:
+// first "why are the profiles o low" (fixed by anchoring the
+// WHOLE block at 35% of leftover space — still left a large gap
+// above the tiles), then "move the profise to the middel of the
+// screen ... who's watching just above them and then the fjord
+// loggo/icon abow" (fixed by re-deriving y off tile-row's own
+// midpoint instead of the block's top — algebraically correct,
+// but the real bug turned out to be one level deeper, see below),
+// then a THIRD report with an attached screenshot proving it was
+// still wrong.
+//
+// Root cause, finally: this VerticalLayout is a Layout element
+// placed directly inside a plain Rectangle (ProfilePickerScreen)
+// with no explicit `height:` — the exact same shape CLAUDE.md
+// already documents once for ConfirmDialog/RequestOptionsOverlay's
+// own once-broken button row ("a Layout element placed directly in
+// a plain Rectangle with no explicit height doesn't reliably
+// default to its own natural content height"). The y: formula
+// below was never wrong on its own terms — it's the layout's OWN
+// rendered height silently disagreeing with watching-text/tile-row's
+// combined preferred-height that threw the actual on-screen
+// position off, the identical mechanism, just one screen over.
+// Fixed the same way that bug was: force this layout's height to
+// equal its own preferred-height explicitly, so there's no
+// daylight between what the y: math assumes and what actually
+// renders.
+//
+// 2026-08-31, Bonfire Phase 5 follow-up — re-derived for a
+// variable number of household sections rather than the original
+// single tile-row. An independent review pass worked through the
+// algebra on a naive `parent.height/2 - self.height/2` (centering
+// the whole block) and found it computes a position roughly
+// `(watching-text.preferred-height + Theme.sp-xl) / 2` (~20-25px)
+// LOWER than the original formula — a real, measurable regression,
+// since the original deliberately centers the TILE ROW's own
+// midpoint, not the whole block, arrived at only after three live
+// reports. Keeping the exact same formula SHAPE, substituting
+// `sections-column`'s own preferred-height for `tile-row`'s,
+// preserves that intent exactly: with exactly one section this is
+// bit-for-bit identical to the original position
+// (sections-column.preferred-height == tile-row.preferred-height
+// in that case); with 2+ sections it generalizes the same "center
+// on the tiles' own midpoint, title hangs above" intent instead of
+// introducing a different one.
+```
+
+Above `sections-column := VerticalLayout {`:
+```
+// One row per household — a genuine `for` over a variable-length
+// list (1 section today, 2+ once Bonfire-linked), each rendered by
+// ProfileSectionRow above. Plain VerticalLayout, no Flickable/
+// scroll — household/profile counts are realistically small
+// (Bonfire itself caps at 5 sub-profiles per master, and a group
+// is capped too), so keyboard Left/Right/Up/Down just move a
+// cursor; nothing to scroll into view.
+// No "+ Add Account" tile anywhere in here (2026-08-14, the 2-tier
+// redesign) — this screen is always scoped to one already-known
+// account's own profiles (plus any Bonfire-linked ones) now;
+// adding a brand-new, unrelated account lives on the account-tier
+// picker (or Settings → Profiles) instead.
+```
+
+Above `kbd-focused: AppState.profile-picker-quit-focused;`:
+```
+// 2026-08-16, same keyboard-reachability fix as "← Back to
+// Accounts" above, prompted directly ("quit it not also reacheble
+// by keybord navigation") — Down from the tile row focuses it, Up
+// returns, Enter activates.
+```
+
+Above `if AppState.profile-picker-back-mode == "accounts": FjordButton {`:
+```
+// 2026-08-14, the 2-tier redesign, refined 2026-08-19 (live-reported:
+// "if you was in fjord and pressed switch profile you shuld go back to
+// fjord as the same profile you was") — profile-picker-back-mode
+// ("accounts" | "cancel", set in profile::open_profile_picker) picks
+// exactly one of these two mutually-exclusive buttons; see that
+// property's own doc comment in app_state.slint for the full bug.
+// Both share profile-picker-back-focused for keyboard reachability —
+// 2026-08-16, real bug: this button was mouse-only — visible and
+// clickable but with no keyboard CURSOR path onto it at all (only the
+// Escape/Backspace shortcut reached the same action). kbd-focused
+// drives FjordButton's own focus-ring + press-pulse automatically;
+// keys.rs's raw-key dispatch sets profile-picker-back-focused on Up
+// from the tile row and clears it on Down, matching every other "Back
+// button" convention in this app (Detail/Season/Collection/Album/
+// Artist).
+```
+
+Above `text: "← Back";`:
+```
+// No destination named — this always just closes the picker and
+// keeps whatever profile/session was already active, so there's
+// nothing destination-specific to state (same reasoning as
+// login.slint's own "← Back" button, live-reported the same day).
+```
+
+Above `cursor: AppState.profile-pin-cancel-focused ? -1 : AppState.profile-pin-cursor;`:
+```
+// Real bug, live-reported 2026-08-18 ("the hilight
+// is on in two places when on the cancel button") —
+// this stayed bound to profile-pin-cursor
+// unconditionally, so the grid kept showing its own
+// last-focused key highlighted at the same time as
+// the new Cancel button's own ring. Mirrors
+// ProfileEditScreen's own PIN pads exactly (`zone
+// == 2 ? cursor : -1`) — clear to -1 (no cell
+// highlighted) whenever focus has moved to Cancel.
+```
+
+Above `cancel-btn := FjordButton {`:
+```
+// Real bug, live-reported 2026-08-17: "there is no
+// backbutton or so so nothing dpad navigatible or mouse
+// svigatible to get back... cant close the pin screen
+// without escape ether" — this was plain hint text with no
+// actual control behind it. A real FjordButton, D-pad
+// reachable via Down past the keypad's bottom row (keys.rs)
+// and mouse-clickable directly.
+```
+
+Above `if AppState.profile-picker-loading: Rectangle {`:
+```
+// ── Loading overlay — a switch is in flight (network round trip to
+// Bonfire's /switch or a plain-account revalidation, then the new
+// session's own home/series/system-info fetches). Declared last so it
+// draws on top of both the tile grid AND the PIN modal above — a
+// PIN-confirmed switch leaves that modal technically still "open"
+// underneath for the whole duration otherwise. Live-reported
+// 2026-08-14: "you press enter and nothing happens for a really long
+// time then you get in to fjord, no feedback whats going on."
+```
+
+#### `crates/fjord-app/ui/profile_picker.slint` — file header (TOC)
+```
+// ── fjord-app · profile_picker.slint ─────────────────────────────────────────
+//   ProfilePickerScreen  Bonfire Phase 1 (2026-08-09) — shown instead of LoginScreen when
+//                        the resolved ACCOUNT (2026-08-14, 2-tier redesign — see
+//                        account_picker.slint's own header and profile.rs's StartupGate) has
+//                        2+ profiles. Always account-scoped now: tiles come from just that one
+//                        account's own Config.profiles, never the flat list. A single
+//                        centered row of avatar tiles (Netflix-style; plain HorizontalLayout,
+//                        no Flickable/scroll — profile counts are realistically small,
+//                        Bonfire itself caps at 5 sub-profiles per master). No trailing
+//                        "+ Add Account" tile anymore (2026-08-14 — that moved up to the
+//                        account tier, since adding an account is an account-tier action, not
+//                        a profile-tier one) — a Back button shows instead, one of two mutually
+//                        exclusive variants per `profile-picker-back-mode` (2026-08-19, real bug
+//                        fix — see app_state.slint's own doc comment): "← Back to Accounts"
+//                        (genuinely came from the account tier) or plain "← Back" (opened
+//                        directly from a live session via the sidebar's "Switch Profile" —
+//                        closes back to it, same profile, without ever touching the account
+//                        tier); keyboard-focusable (2026-08-16 fix — profile-picker-back-focused,
+//                        Up from the tile row to reach it, Down back to the tiles,
+//                        Enter/Escape/Backspace activate it — was mouse-only before). The Quit
+//                        button (bottom-right) got the identical fix the same day
+//                        (profile-picker-quit-focused, Down from the tile row, Up back).
+//                        PIN entry is a layered sub-state (show-profile-pin-entry), not a
+//                        separate screen — same dim-backdrop-plus-centered-box shape as
+//                        RequestOptionsOverlay/PlaylistPicker — embedding VirtualKeyboard
+//                        (widgets.slint) for numeric-only D-pad-friendly entry. Loading
+//                        overlay (2026-08-14, profile-picker-loading) declared last so it
+//                        covers both the tile grid and the PIN modal while a switch is
+//                        in flight — see that property's own doc comment in app_state.slint.
+//                        `main-block`'s (the "Who's watching?"/tile-row block) outer
+//                        VerticalLayout carries an explicit `height: self.preferred-height;`
+//                        (2026-08-14, 3rd live report on the centering — see that binding's own
+//                        doc comment for the root cause: a Layout element directly inside a
+//                        plain Rectangle with no explicit height, the same shape
+//                        ConfirmDialog/RequestOptionsOverlay already documented once).
+//                        `logo-img` (2026-08-14, 4th report, this time with a screenshot) is a
+//                        standalone sibling, not part of main-block — centered independently in
+//                        the empty region above it ([0, main-block.y]), no "FJORD" wordmark
+//                        anymore (icon only, per direct request).
+//                        ProfileTileCard (2026-08-29, picker visual parity with Bonfire's own
+//                        official UI) — a permanent gold ring (Theme.master-ring, a child of the
+//                        avatar Rectangle, inset a few px so it reads as a second concentric ring
+//                        rather than colliding with the keyboard-focus border) when tile.is-root,
+//                        marking the household's own master/root profile — glyph-free by design
+//                        (the screenshot's own crown glyph isn't covered by any bundled font, and
+//                        this app's own star glyphs already mean "Watchlist"). The existing lock
+//                        badge (has-pin) is unchanged.
+//                        Sectioned (2026-08-31, Bonfire Phase 5 follow-up, live-reported "but what
+//                        i shuld still be able to switch to a bonfire master profile with out
+//                        needing to switch 'accaunt'...") — ProfileSectionRow renders ONE
+//                        household's own row of tiles (an optional "{name}'s Bonfire" header +
+//                        its tile row); main-block now holds a genuine `for section[s] in
+//                        AppState.profile-picker-sections:` over these, section 0 always the
+//                        requested account's own group, any further sections OTHER households
+//                        linked via a Bonfire group — reachable directly, no "Switch Account" step.
+//                        2D keyboard nav modeled on Discover's own landing-row pattern
+//                        (profile-picker-section = row, profile-picker-cursor = column within it,
+//                        see keys.rs's show_profile_picker tier) — Left/Right stay clamped within a
+//                        row (no escape, unlike Discover's own sidebar-adjacent Left-at-column-0
+//                        escape: there's no analogous "thing to the left" here), Up/Down move
+//                        between sections and re-clamp the column, preserving it rather than
+//                        jumping to either end. The centering formula below was re-derived to
+//                        route through a `sections-column` wrapper's own preferred-height instead
+//                        of naively centering the whole block — see that binding's own doc comment
+//                        for why the naive version would have been a real ~20-25px regression.
+// ─────────────────────────────────────────────────────────────────────────────
+```
+
+#### `crates/fjord-app/ui/theme.slint`
+
+Above `out property <color> focus-border:    #ffffff99;`:
+```
+// Universal keyboard-focus/press border color (2026-08-13, live-reported
+// inconsistency: "the hilight for blue buttons... is a bitt so suttle and
+// it seams to be different colors on different buttuns object"). FjordButton
+// and IconCircleButton already used this exact white, semi-transparent
+// value for their own focus/press ring — high contrast against their
+// always-solid-accent-filled background — but ~43 other press/pulse sites
+// across the app used `Theme.accent` (solid blue) instead, which visibly
+// blends into an already-accent-tinted background (a focused SettingsRow,
+// an active NavItem, a checked ToggleSwitch). Centralized here so every
+// site references ONE color instead of each repeating (or, worse,
+// diverging from) the same literal by hand — user picked "white border
+// everywhere" over a narrower blue-on-blue-only fix via AskUserQuestion.
+```
+
+Above `out property <color> master-ring:     #f0b429;`:
+```
+// Persistent status ring for "this is the household's own master/root
+// profile" on ProfilePickerScreen's own tiles (2026-08-29, picker
+// visual parity with Bonfire's own official UI — see that screen's own
+// doc comment). Deliberately a different color from focus-border: this
+// ring is a permanent identity marker, not a transient keyboard-focus
+// indicator, and the two need to stay visually distinguishable when a
+// keyboard user tabs onto the master's own tile (both rings show at
+// once). A warm gold reads as "special/host" without colliding with
+// any existing semantic color in this palette (accent=blue, error=red).
+```
+
+Above `export struct VideoRect {`:
+```
+// A single entry in a track-selection list (audio / subtitle / video).
+// Where a video spot is on screen (HDR Stage 5, 2026-10-05): Slint's
+// absolute position + size in logical px, reported by widgets.slint's
+// VideoSpot for video_surface.rs to draw the video there.
+```
+
+Above `disc-header: string,   // "" = no separator above this row; else "Disc N" to show`:
+```
+// Multi-disc album support (2026-08-17, live-reported follow-up to the
+// track-order fix: "add a Disc seperator... now it just hop fron the
+// last track to firs with no explenation"). Both computed once in Rust
+// (album.rs::media_items_to_tracks) rather than in Slint, so the
+// keyboard scroll-to-view math (album.slint's kb-track-y) can do a
+// single O(1) indexed read instead of iterating the model to sum up
+// however many separators precede the focused row — always "" / the
+// plain i*track-h stride for playlists, which have no disc concept.
+```
+
+Above `export struct SeasonEntry {`:
+```
+// A season entry in the series drill-down. `played`/`is-favorite` added
+// 2026-08-12 (season-tab context menu, live-reported: "right clicking the
+// season tab shuld it not have a contect menu?") — the underlying
+// get_seasons() fetch already requests UserData, this just threads it
+// through to the tab so C-key/right-click can open the generic context
+// menu (Mark Watched/Unwatched, Favourite, View Details) pre-populated
+// with the season's real current state.
+```
+
+Above `availability: string,`:
+```
+// Discover (Seerr) results only — "" on every Jellyfin-sourced card
+// (every existing construction site leaves this at its Default::default()
+// "", zero risk to the other ~25 CardItem models). One more badge pill in
+// MediaCard, same additive/conditional shape as the four above:
+// "requested" | "processing" | "partial" | "available" | "blocklisted" |
+// "" (none — requestable, no badge). "blocklisted" added 2026-08-06
+// (Seerr Blocklist support) — the ONLY per-card signal that feature
+// needed, since Blocklisted is just another value of this same
+// mutually-exclusive status field (unlike on-watchlist below, a
+// genuinely independent boolean axis).
+```
+
+Above `requested-4k: bool,`:
+```
+// Discover "Requested" row only (2026-07-18) — false/false on every
+// other card by construction, same zero-risk-elsewhere reasoning as
+// `availability` above. `requested-4k` tags the main availability pill
+// with the requested tier ("4K Requested" vs plain "Requested") since
+// Seerr tracks 2K/4K fulfillment as two genuinely independent statuses
+// (see fjord_seerr::MediaInfo's own doc comment) — a request can be
+// fully served in one tier while still pending in the other.
+// `other-tier-available` drives a second small badge ("Available in
+// 2K"/"Available in 4K") when the OTHER (non-requested) tier is
+// already available, so the user isn't left thinking nothing is
+// watchable yet. `other-tier-requested` drives the same badge slot
+// with "Also requested in 2K"/"Also requested in 4K" instead, for the
+// rarer case where BOTH tiers were requested and neither is available
+// yet — a genuinely different situation from "available" that used to
+// be silently indistinguishable from "not requested at all" (real
+// report, 2026-07-18: user read "Also in 2K" and assumed it meant
+// "also requested", which it never did — this field is what makes
+// that actual state exist). `other-tier-available` wins when both
+// would apply (better news); `other-tier-requested` only applies once
+// its own tier's request is still active and unfulfilled.
+```
+
+Above `request-id: string,`:
+```
+// Discover "Requested" row only (2026-07-18) — the underlying Seerr
+// MediaRequest's own id (NOT the tmdb id, which stays in `id` above and
+// is load-bearing for open-discover-item). "" on every other card,
+// including every non-Requested-row Discover card. Drives the Discover
+// context menu's Edit/Cancel/Approve/Decline actions.
+```
+
+Above `on-watchlist: bool,`:
+```
+// Discover (Seerr) cards only (2026-07-18, Watchlist + Release
+// Calendar) — false on every Jellyfin-sourced card, same zero-risk-
+// elsewhere pattern as availability/request-* above. Drives the
+// Discover context menu's Add/Remove Watchlist row label and
+// RequestDetailScreen's Watchlist button state.
+```
+
+Above `export struct GenreItem {`:
+```
+// Discover screen's Genre filter chip picker (2026-07-18). Movie and TV
+// genre id spaces don't fully overlap even for same-named genres (e.g. TV's
+// "Action & Adventure" is a different id than movie's separate "Action"/
+// "Adventure") — each deduped-by-name chip remembers both ids so the
+// correct one can be sent to whichever endpoint (discover_movies_filtered/
+// discover_tv_filtered) is actually being queried. 0 = absent for that
+// type (genuine TMDB genre ids are always >0), same "0 is a safe absent
+// sentinel" convention ProfileItem's own id:0 "Default" row already uses.
+```
+
+Above `export struct ProviderItem {`:
+```
+// Discover screen's Provider filter chip picker (2026-07-18) — same
+// multi-select shape as GenreItem/TagItem, but provider ids are per-region
+// (from get_movie_watch_providers/get_tv_watch_providers), not
+// per-media-type, so there's only one id to track, not two.
+```
+
+Above `export struct StreamingProvider {`:
+```
+// Discover request-detail screen's "Currently Streaming On" row — one entry
+// per flatrate (subscription) provider for the resolved streaming region
+// (Seerr's own streamingRegion setting, see discover.rs's
+// resolve_streaming_region). TMDB logo, small icon-sized fetch.
+```
+
+Above `export struct BlocklistRow {`:
+```
+// One row in the Manage Blocklist screen (2026-08-06, Seerr Blocklist
+// support) — plain text row, no poster: GET /blocklist's own BlocklistItem
+// carries no image path at all (confirmed from Seerr's real
+// blocklistInterfaces.ts), unlike every other card-shaped model in this
+// app. blocklisted-by/blocklisted-at are pre-formatted display strings
+// (Rust's own job, mirroring how every other display-ready string in this
+// app is formatted before crossing into Slint) — blank when the source
+// data itself is blank (a blocklisted-by-tag entry, no user; or a legacy
+// row with no createdAt).
+```
+
+Above `export struct ProfileSection {`:
+```
+// Bonfire Phase 5 follow-up (2026-08-31) — ProfilePickerScreen's own row of
+// tiles, sectioned by household: section 0 is always the requested
+// account's own group (root tile included); any further sections are
+// OTHER households linked via a Bonfire group (profile.rs::linked_account_
+// roots), each also showing that household's own full member list, root
+// tile included — a linked household's own master is just as directly
+// clickable as its sub-profiles, matching Bonfire's own reference "Who's
+// Watching?" screen. `header` is "" for the sole section when there's only
+// one (preserves the original unlabeled look), else "Your Bonfire" / "{name}'s
+// Bonfire".
+```
+
+Above `export struct AccountTile {`:
+```
+// AccountPickerScreen's own tile (2026-08-14, the account-tier picker —
+// see profile.rs's AccountGroup/build_account_tile). One tile per distinct
+// account (a plain login, or a Bonfire household represented by its
+// master) — NOT one per Config.profiles entry; a Bonfire household with 4
+// sub-profiles is still exactly one account tile here, sized-in by
+// profile-count for the "N profiles" subtitle.
+```
+
+Above `is-group-account: bool,`:
+```
+// 2+ = picking this tile opens the profile-tier picker instead
+// Bonfire Phase 5 (cross-household groups, 2026-08-29) — true when this
+// "account" is actually another master's own real account, reached via
+// a Bonfire group, not one of the user's own saved accounts. Without
+// this, such a tile was visually indistinguishable from any of the
+// user's own accounts in the picker — a real UX gap found while
+// designing this feature, not just the underlying correctness bug.
+```
+
+Above `has-pin: bool,`:
+```
+// Picker visual parity (2026-08-29) — the root profile's own has-pin,
+// populated ONLY when profile-count == 1 (see build_account_tile's own
+// doc comment for why): a single-profile account's tile is what
+// DIRECTLY triggers the PIN prompt on click, so this is the one case
+// where warning about it on the account tile itself is unambiguous —
+// a multi-profile account always opens ProfilePickerScreen instead,
+// which already shows its own per-tile lock badges.
+```
+
+Above `export struct ToggleListItem {`:
+```
+// ProfileEditScreen's two checklists (Bonfire Phase 2, 2026-08-09) — enabled
+// libraries (from bonfire_list_libraries) and the device whitelist (from
+// bonfire_list_devices). One generic shape for both rather than two nearly-
+// identical structs: `subtitle` is the library's collection-type or the
+// device's "client · last seen" line, empty string when there's nothing to
+// show (matches TagItem's own multi-select-via-per-row-bool convention).
+```
+
+Above `export struct BonfireAdminRow {`:
+```
+// Bonfire Phase 6 (admin actions, 2026-09-04) — one row in the "Bonfire
+// Admin" screen's Mappings tab. A deliberately FLAT list, not a nested/
+// expandable tree — see bonfire_admin.rs's own doc comment for why:
+// the whole mappings response comes back in one shot with a fixed, small
+// real-world size, so there's no lazy-expand state to track and no
+// dynamically-changing row count to get D-pad zone math wrong against.
+// Sub-profile rows render indented under their own master, grouped by
+// master-user-id at construction time (the wire response returns two
+// separate lists, not pre-interleaved).
+```
+
+#### `crates/fjord-app/ui/theme.slint` — file header (TOC)
+```
+// ── fjord-app · theme.slint ──────────────────────────────────────────────────
+//   Theme           global design tokens: colors, spacing, radius, font sizes
+//   VideoRect       a video spot's logical position/size (HDR Stage 5, 2026-10-05)
+//   OskEdit         text/caret/byte result of one on-screen-keyboard key (2026-10-05)
+//   TrackEntry      audio / video / subtitle track row for track-panel lists
+//   TrackItem       one row in an album/playlist tracklist (id, title, artist, duration, track-number,
+//                   played, is-favorite, entry-id (playlist entry, for removal), album-id (music-bar art),
+//                   disc-header/row-y-px (2026-08-17, multi-disc separators — see this struct's own
+//                   doc comment below))
+//   CastMember      name + role + id + portrait photo for the detail-page cast row
+//   SeasonEntry     season id + display name + played/is-favorite for series season tabs
+//                   (context menu, 2026-08-12)
+//   CardItem        universal poster card data (id, series-id, item-type, title, subtitle, year, played, resume,
+//                   is-favorite, unplayed-count, availability — Discover/Seerr cards only, "" elsewhere;
+//                   requested-4k/other-tier-available — Discover "Requested" row only, false elsewhere,
+//                   2026-07-18, drives MediaCard's tier-prefixed availability pill + cross-tier badge;
+//                   on-watchlist — Discover cards only, false elsewhere, 2026-07-18 Watchlist +
+//                   Release Calendar, drives the context-menu Watchlist row label + RequestDetailScreen button)
+//   SeasonItem      one TV season card for the Discover request-detail season strip (number, name, episode-count, selected, poster, has-poster)
+//   TagItem         one Radarr/Sonarr tag row for the Discover request-detail tag picker (id, label, selected)
+//   ProfileItem     one Radarr/Sonarr quality profile row for the Discover request-detail profile
+//                   picker (id, name) — radio-select via request-detail-selected-profile-id, not
+//                   a per-row bool; row 0 is a synthetic "Default" entry prepended in Rust
+//   GenreItem       one TMDB genre row for the Discover screen's Genre filter chip picker
+//                   (movie-id, tv-id, name, selected) — 2026-07-18; dual ids since movie/TV
+//                   genre id spaces don't fully overlap even for same-named genres
+//   ProviderItem    one streaming-provider row for the Discover screen's Provider filter
+//                   chip picker (id, name, selected) — 2026-07-18
+//   KeyBindingEntry one row in the key-binding editor (action label + current key string)
+//   QueueEntry      one row in the queue panel (id, index, title, artist, is-current, is-queued, poster-id, has-poster, poster)
+//   LyricEntry      one lyric line (text, start-ms); start-ms=0 means no timestamps
+//   BlocklistRow    one row in the Manage Blocklist screen (2026-08-06) — tmdb-id, media-type,
+//                   title, blocklisted-by, blocklisted-at; no poster, GET /blocklist carries none
+// ─────────────────────────────────────────────────────────────────────────────
+```
