@@ -14,19 +14,6 @@
 // ─────────────────────────────────────────────────────────────────────────────
 use super::*;
 
-// hdr branch, Stage 4 (2026-09-16): `wide` selects GL_RGB10_A2 (10-bit per
-// channel, packed into the same 32 bits/pixel as today's plain 8-bit RGBA —
-// genuinely zero GPU-memory cost, and exactly matches HDR10's own native
-// mastering precision) instead of today's GL_RGBA/GL_UNSIGNED_BYTE. Decided
-// once per item by the caller from VideoState.wide_color_fbo (itself set
-// from the "HDR passthrough" Settings toggle alone, not per-item source
-// eligibility — see that field's own doc comment for why: this function
-// runs before mpv has decoded anything, well before source eligibility
-// could possibly be known). Confirmed both formats are fully compatible
-// with Slint's BorrowedOpenGLTextureBuilder, which only requires a 4-channel
-// GL_RGBA-ordered *format* (a different GL parameter than *internal
-// format*/storage precision) and never touches the texture's own storage —
-// zero Slint-side changes needed either way.
 /// A Slint colour as GL clear-colour floats (alpha ignored).
 fn color_rgb(c: slint::Color) -> [f32; 3] {
     [
@@ -36,6 +23,11 @@ fn color_rgb(c: slint::Color) -> [f32; 3] {
     ]
 }
 
+/// One video FBO (with its texture). `wide` = GL_RGB10_A2 (10 bits per channel in
+/// the same 32 bits per pixel as RGBA8, HDR10's precision) — decided per item from
+/// VideoState.wide_color_fbo (the HDR passthrough setting; the source isn't known yet).
+/// Slint's BorrowedOpenGLTexture works with either: it needs an RGBA *format*, not a
+/// particular internal format. The caller's GL context must be current.
 pub(crate) unsafe fn create_fbo(w: u32, h: u32, wide: bool) -> Option<(u32, u32)> {
     // SAFETY: the caller's GL context is current (this fn's contract).
     unsafe {
@@ -229,22 +221,10 @@ pub(crate) fn wire_rendering_notifier(window: &MainWindow, video: Arc<Mutex<Vide
                         }
                     }
 
-                    // Fire the deferred loadfile the moment a URL is actually
-                    // pending, same GL thread as render_ctx creation itself.
-                    // Deliberately NOT nested inside the render_ctx-creation
-                    // arm above anymore (display-mode-prefetch, 2026-09-25):
-                    // that used to be a one-shot check that only ever ran on
-                    // the very first tick after Player::new(), so a
-                    // pending_load_url set LATER by an async task (display_
-                    // sync's own pre-decode mode-switch wait) would never be
-                    // consumed at all — Player::load() silently skipped
-                    // forever, not just delayed. Checking on every tick once
-                    // render_ctx already exists preserves the original
-                    // VO-init-race-fix invariant (render_ctx must exist
-                    // before load() is called) just as well, since render_ctx
-                    // is never torn down once created — by the time any
-                    // later tick finds pending_load_url == Some, render_ctx
-                    // is already guaranteed to exist.
+                    // Fire the deferred loadfile on any tick where a URL is pending and the render
+                    // context exists (same GL thread) — not only right after the context is created:
+                    // display sync's pre-decode wait sets pending_load_url later. render_ctx always exists
+                    // first (never torn down once created), which is the VO-init race rule.
                     if vs.render_ctx.is_some()
                         && let Some(url) = vs.pending_load_url.take()
                         && let Some(p) = vs.player.as_ref()
@@ -376,17 +356,8 @@ pub(crate) fn wire_rendering_notifier(window: &MainWindow, video: Arc<Mutex<Vide
                             warn!("mpv render: {:#}", e);
                         } else {
                             vs.did_render = true;
-                            // display-mode-prefetch (2026-09-25): ctx.render()
-                            // runs every tick regardless of whether a file has
-                            // actually been loaded — mpv renders idle/blank
-                            // frames the whole time a deferred pending_load_url
-                            // wait is in flight. Without the play_start guard,
-                            // this one-shot log (and flag) would fire on that
-                            // first idle tick instead of the real first frame,
-                            // permanently losing the log line this feature
-                            // most wants intact to verify — play_start stays
-                            // None throughout the deferred wait (see its own
-                            // relocated-stamp doc comment above).
+                            // Only once play_start is set: mpv renders idle frames during the display-sync
+                            // wait, which mustn't count as the first frame.
                             if !vs.first_frame_logged && vs.play_start.is_some() {
                                 vs.first_frame_logged = true;
                                 let elapsed = vs.play_start.unwrap().elapsed().as_secs_f64();
