@@ -6,7 +6,8 @@
 //                        comment in config.rs); apply_cards_preserving_identity (mutate an
 //                        existing model in place when ids/order match, so unrelated cards' poster Image
 //                        elements survive a refresh instead of re-fading, Phase 96), push_section_model
-//                        (takes HomeSection), show_toast (any-thread toast helper)
+//                        (takes HomeSection), show_toast (any-thread toast helper),
+//                        set_server_url_ui (server-url + server-unencrypted together)
 //   trim_last_grapheme   removes exactly one Unicode grapheme cluster (not scalar value) from the
 //   grapheme_count/insert_at_grapheme/delete_before_grapheme/delete_at_grapheme/with_caret
 //                        caret editing by grapheme for the hand-drawn text fields (2026-10-04)
@@ -636,6 +637,13 @@ pub(crate) fn trim_last_grapheme(s: &str) -> String {
     let mut graphemes: Vec<&str> = s.graphemes(true).collect();
     graphemes.pop();
     graphemes.concat()
+}
+
+/// AppState.server-url together with its server-unencrypted flag (Settings
+/// shows "not encrypted" for an http:// server — 2026-10-09 security review).
+pub(crate) fn set_server_url_ui(g: &AppState, url: &str) {
+    g.set_server_url(ss(url));
+    g.set_server_unencrypted(url.trim().to_ascii_lowercase().starts_with("http://"));
 }
 
 // ── Text cursor for the hand-drawn search fields (2026-10-04) ────────────────
@@ -3154,7 +3162,7 @@ fn main() -> Result<()> {
                     else { tracing::error!("failed to build HTTP client — skipping auto-login"); return Ok(()) };
                 let client = Arc::new(raw_client);
                 state.lock().unwrap().client = Some(Arc::clone(&client));
-                AppState::get(&window).set_server_url(ss(&server_url_str));
+                set_server_url_ui(&AppState::get(&window), &server_url_str);
 
                 // Startup connectivity gate: show a plain connecting state instead
                 // of pushing cached content until the saved session is confirmed
@@ -6092,7 +6100,7 @@ fn main() -> Result<()> {
                 g.set_show_connecting(false);
                 g.set_show_offline(false);
                 g.set_active_nav(0);
-                g.set_server_url(ss(""));
+                set_server_url_ui(&g, "");
                 g.set_server_name(ss(""));
                 g.set_server_version(ss(""));
                 g.set_settings_section(ss(""));

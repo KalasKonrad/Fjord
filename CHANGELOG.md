@@ -38,6 +38,10 @@ are bumped together as one step, not separately.
 - **Fixed: live updates didn't work with an https:// Jellyfin server.** The
   connection Fjord uses to hear about library changes and watch-state
   updates couldn't be encrypted, so with HTTPS it never connected.
+- **Security: Fjord now tells you when a connection isn't encrypted.** If you
+  type a server address without `https://` and the server only answers over
+  plain `http://`, Fjord says so once after signing in (Jellyfin and Seerr),
+  and Settings shows "Not encrypted (http://)" under the server.
 - **Fixed: Fjord's log file contained your Jellyfin access key** (in the
   line logged when the live-update connection starts). It's now hidden there
   and in connection errors and player messages, like it already was for

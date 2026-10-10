@@ -793,6 +793,11 @@ export global AppState {
     in-out property <int>    focused-card:       0;
     in-out property <int>    float-card-focused: -1;  // -1=not focused, 0=Resume, 1=Stop; floating mini-player
     in     property <string> server-url:       "";
+    // True for an http:// server (set by crate::set_server_url_ui) — Settings
+    // shows "not encrypted" under SERVER (2026-10-09 security review).
+    in     property <bool>   server-unencrypted: false;
+    // Same for the Seerr connection (seerr_auth::push_seerr_status).
+    in     property <bool>   seerr-unencrypted:  false;
     in     property <string> server-name:      "";
     in     property <string> server-version:   "";
     in     property <string> client-version:   "";  // "<semver> (<git build-id>)", set once at startup

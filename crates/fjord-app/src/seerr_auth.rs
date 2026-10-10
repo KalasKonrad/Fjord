@@ -4,8 +4,9 @@
 //                        every successful ConnectSeerrScreen flow)
 //   connected_label      Config.seerr_auth_method -> human-readable "Connected
 //                        via X" string for the Settings → Integrations row
-//   push_seerr_status    pushes seerr-connected / seerr-connected-label to
-//                        AppState from a Config snapshot
+//   push_seerr_status    pushes seerr-connected / seerr-connected-label / seerr-unencrypted
+//                        to AppState from a Config snapshot; every successful connect calls
+//                        auth::note_if_http_fallback first
 //   spawn_refresh_seerr_version  GET /status (unauthenticated) -> AppState.seerr-version;
 //                        called after every successful connect and once at startup
 //   resolve_seerr_url    HTTPS-then-HTTP scheme-fallback for a raw, possibly-schemeless
@@ -187,6 +188,7 @@ pub(crate) fn push_seerr_status(g: &AppState<'_>, c: &crate::config::ProfileSett
         && !c.seerr_url.is_empty()
         && (!c.seerr_api_key.is_empty() || !c.seerr_session_cookie.is_empty());
     g.set_seerr_connected(connected);
+    g.set_seerr_unencrypted(connected && c.seerr_url.trim().to_ascii_lowercase().starts_with("http://"));
     g.set_seerr_connected_label(
         if connected { connected_label(&c.seerr_auth_method) } else { "Not connected" }.into(),
     );
@@ -453,7 +455,10 @@ pub(crate) fn wire_connect_seerr(
                 let _ = slint::invoke_from_event_loop(move || {
                     set_busy(&ww2, false);
                     match result {
-                        Ok(()) => commit_connection(&state, &ww2, &base_url, "apikey", SeerrAuth::ApiKey(key), version, &rt_inner),
+                        Ok(()) => {
+                            crate::auth::note_if_http_fallback(&ww2, "Seerr", &url, &base_url);
+                            commit_connection(&state, &ww2, &base_url, "apikey", SeerrAuth::ApiKey(key), version, &rt_inner)
+                        }
                         Err(e) => set_error(&ww2, &format!("Couldn't verify that key: {e}")),
                     }
                 });
@@ -486,7 +491,10 @@ pub(crate) fn wire_connect_seerr(
                 let _ = slint::invoke_from_event_loop(move || {
                     set_busy(&ww2, false);
                     match result {
-                        Ok((auth, _user)) => commit_connection(&state, &ww2, &base_url, "jellyfin", auth, version, &rt_inner),
+                        Ok((auth, _user)) => {
+                            crate::auth::note_if_http_fallback(&ww2, "Seerr", &url, &base_url);
+                            commit_connection(&state, &ww2, &base_url, "jellyfin", auth, version, &rt_inner)
+                        }
                         Err(e) => set_error(&ww2, &format!("Sign-in failed: {e}")),
                     }
                 });
@@ -519,7 +527,10 @@ pub(crate) fn wire_connect_seerr(
                 let _ = slint::invoke_from_event_loop(move || {
                     set_busy(&ww2, false);
                     match result {
-                        Ok((auth, _user)) => commit_connection(&state, &ww2, &base_url, "local", auth, version, &rt_inner),
+                        Ok((auth, _user)) => {
+                            crate::auth::note_if_http_fallback(&ww2, "Seerr", &url, &base_url);
+                            commit_connection(&state, &ww2, &base_url, "local", auth, version, &rt_inner)
+                        }
                         Err(e) => set_error(&ww2, &format!("Sign-in failed: {e}")),
                     }
                 });
@@ -638,6 +649,7 @@ pub(crate) fn wire_connect_seerr(
                             }
                             match auth_result {
                                 Ok((auth, _user)) => {
+                                    crate::auth::note_if_http_fallback(&ww2, "Seerr", &url, &base_url);
                                     commit_connection(&state, &ww2, &base_url, "quickconnect", auth, version, &rt_inner)
                                 }
                                 Err(e) => set_error(&ww2, &format!("Quick Connect failed: {e}")),
