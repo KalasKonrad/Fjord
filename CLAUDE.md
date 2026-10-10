@@ -54,8 +54,10 @@ Needs `mpv`/libmpv (`pacman -S mpv`). Optional at runtime: `yt-dlp` (trailers), 
 - `config.rs` — `Config { device: DeviceConfig, profiles: Vec<ProfileSettings>, active_profile_id }`,
   `FjordState` (runtime state), `BoundedCache`, load/save + migrations, per-profile cache paths.
 - `keys.rs` — `Action`, `Keybindings`, `AppMode`, `active_mode()`, `handle_key()` dispatcher.
-- `playback.rs` — `VideoState`, `start_playback`, `tear_down_player`, `wire_rendering_notifier` (GL/FBO),
-  `wire_mpv_timer` (16 ms tick: position, skip segments, Up Next, stall recovery, gapless, HDR/display-sync).
+- `playback/` — `mod.rs`: `VideoState`, `start_playback`, `tear_down_player`, `play_trailer`; `render.rs`:
+  `wire_rendering_notifier` (GL/FBO); `timer.rs`: `wire_mpv_timer` (16 ms tick: position, skip segments, Up Next,
+  stall recovery, gapless, HDR/display-sync); `stall.rs`, `queue.rs` (playlist/queue/repeat), `tracks.rs`,
+  `inhibit.rs`. Submodules are re-exported, so callers use `crate::playback::*`.
 - `controls.rs` (player callbacks), `stats.rs` (stats overlay).
 - Screens: `detail`, `series`, `season`, `collection`, `album` (albums + playlists), `artist`, `person`,
   `browse`, `home`/`movies`/`poster` (dashboards, library grid, poster loading), `discover` (Discover,
