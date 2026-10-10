@@ -345,10 +345,11 @@ export component BonfireGroupScreen inherits Rectangle {
                                 TouchArea {
                                     clicked => {
                                         AppState.bonfire-group-zone = join-base;
-                                        AppState.onscreen-keyboard-target = "bonfire-group-join-code";
-                                        AppState.onscreen-keyboard-cursor = AppState.onscreen-keyboard-done-cursor;
-                                        AppState.show-onscreen-keyboard = true;
-                                        AppState.refocus();
+                                        // Keyboard off in Settings: typing goes straight
+                                        // into the field via keys.rs (needs fs focus).
+                                        if !AppState.open-onscreen-keyboard("bonfire-group-join-code") {
+                                            AppState.refocus();
+                                        }
                                     }
                                 }
                             }

@@ -29,7 +29,9 @@
 //                         onscreen-keyboard-trim-last/-byte-len callbacks — checked before every
 //                         other input tier in keys.rs::handle_key, since the keyboard can be open
 //                         on any screen that's wired up to it; see the property block's own doc
-//                         comment below for the generic open/dispatch contract a future screen follows
+//                         comment below for the generic open/dispatch contract a future screen follows;
+//                         open-onscreen-keyboard(target) is the one Slint way to open it (false, nothing
+//                         changed, when Settings → UI has it off — 2026-10-10)
 //   Bonfire Group          (Phase 5, cross-household groups, 2026-08-29) show-bonfire-group +
 //                         status fields (bonfire-group-is-owner/-is-member/-owned-code/
 //                         -owned-members ([BonfireGroupMemberTile])/-joined-owner-name/-has-pin/
@@ -767,6 +769,21 @@ export global AppState {
     // no shared source of truth" caveat that array's own doc comment
     // already carries for a different reason.
     out property <int> onscreen-keyboard-done-cursor: 32;
+    // The one way Slint opens the on-screen keyboard. With it turned off in
+    // Settings → UI nothing changes and false comes back, so the caller keeps
+    // its field's focus and does its own Enter action instead (opening it anyway
+    // left an undrawn keyboard holding focus — no key did anything, 2026-10-10).
+    // Rust's twin: keys::open_onscreen_keyboard.
+    public function open-onscreen-keyboard(target: string) -> bool {
+        if !settings-onscreen-keyboard-enabled {
+            return false;
+        }
+        onscreen-keyboard-target = target;
+        onscreen-keyboard-cursor = onscreen-keyboard-done-cursor;
+        show-onscreen-keyboard = true;
+        refocus();
+        return true;
+    }
     // Physical-keyboard passthrough while the on-screen keyboard is open
     // (2026-08-23, live feedback: "i want it to still work to type on the
     // keybord even if its open") — keys.rs forwards any ordinary printable
