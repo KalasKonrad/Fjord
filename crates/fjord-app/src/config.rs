@@ -152,6 +152,8 @@
 //                   discover_poster_cache_dir/path (Seerr/TMDB posters — separate dir, no Jellyfin tag-revalidation concept), keybindings_path
 //   safe_cache_name server-provided id → cache file/folder name only if it's 32 hex (2026-10-09 security
 //                   review); the cache path helpers return None otherwise (unit-tested)
+//   write_private   owner-only (0600) file write from the first byte — config.json's temp file
+//                   (2026-10-09 security review; unit-tested)
 //   config I/O      load_config, save_config, ensure_device_id — save_config/save_screen_caches
 //                   both log a real tracing::error! on every failure point (serialize/write/rename),
 //                   2026-08-28 logging audit; load_config's own "corrupted file" fallthrough
@@ -1412,7 +1414,7 @@ pub(crate) fn save_config(cfg: &Config) {
     match serde_json::to_string_pretty(&on_disk) {
         Ok(json) => {
             let tmp = path.with_extension("json.tmp");
-            match std::fs::write(&tmp, &json) {
+            match write_private(&tmp, json.as_bytes()) {
                 Ok(()) => {
                     if let Err(e) = std::fs::rename(&tmp, &path) {
                         tracing::error!("save_config: rename {tmp:?} -> {path:?} failed: {e:#} — settings NOT saved");
@@ -1424,6 +1426,29 @@ pub(crate) fn save_config(cfg: &Config) {
         Err(e) => tracing::error!("save_config: serialization failed: {e:#} — settings NOT saved"),
     }
     set_owner_only_permissions(&path);
+}
+
+/// Writes `data` to `path`, readable by the owner only from the first byte
+/// on (2026-10-09 security review: writing with the default umask and
+/// chmod-ing after the rename left config.json — which holds the tokens —
+/// world-readable for a moment). Re-tightens an existing file too: a temp
+/// file left by a crash keeps its old mode when reopened.
+pub(crate) fn write_private(path: &std::path::Path, data: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+    let mut opts = std::fs::OpenOptions::new();
+    opts.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.mode(0o600);
+    }
+    let mut f = opts.open(path)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        f.set_permissions(std::fs::Permissions::from_mode(0o600))?;
+    }
+    f.write_all(data)
 }
 
 // Defense in depth alongside encryption: config.json otherwise inherits the
@@ -2302,6 +2327,25 @@ pub(crate) fn upsert_media_item(list: &mut Vec<MediaItem>, item: MediaItem) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn private_files_are_owner_only() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join(format!("fjord-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join("secret.json");
+        // A leftover file with the default mode gets tightened too.
+        std::fs::write(&p, b"old").unwrap();
+        std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o644)).unwrap();
+        write_private(&p, b"new").unwrap();
+        assert_eq!(std::fs::metadata(&p).unwrap().permissions().mode() & 0o777, 0o600);
+        assert_eq!(std::fs::read(&p).unwrap(), b"new");
+        let fresh = dir.join("fresh.json");
+        write_private(&fresh, b"x").unwrap();
+        assert_eq!(std::fs::metadata(&fresh).unwrap().permissions().mode() & 0o777, 0o600);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn cache_names_must_be_jellyfin_ids() {
