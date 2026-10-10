@@ -385,6 +385,7 @@ pub(crate) fn purge_deleted_item(
         }
         // Whatever list this ghost came from is stale — refresh on next grid open.
         s.movies_fetched = false;
+        s.movie_posters_loaded = false;
         s.collections_fetched = false;
         s.artists_fetched = false;
         s.albums_fetched = false;
@@ -1155,7 +1156,8 @@ pub(crate) fn spawn_library_fetch(
 /// Metadata-only movie-list fetch/cache/state update (guarded by the same
 /// `movies_fetched` per-session flag `spawn_library_fetch`'s nav==2 branch
 /// uses, so whichever caller runs first "wins" and the other becomes a
-/// no-op). Poster loading is a separate, optional step (`with_posters`):
+/// no-op — except that a later `with_posters` call still loads the posters once,
+/// `movie_posters_loaded`). Poster loading is a separate, optional step (`with_posters`):
 /// `spawn_library_fetch` always wants it, since the grid is genuinely about
 /// to render; `discover.rs` doesn't — it only needs fresh `ProviderIds` for
 /// `find_local_item`'s "already in my library" match (previously, `all_movies`
@@ -1172,11 +1174,24 @@ pub(crate) fn spawn_movies_list_fetch(
     rt: tokio::runtime::Handle,
     with_posters: bool,
 ) {
-    let s = state.lock().unwrap();
+    let mut s = state.lock().unwrap();
     let Some(client) = s.client.as_ref().map(Arc::clone) else {
         return;
     };
     if s.movies_fetched {
+        // Fetched already — but maybe only by Discover, which skips posters: the
+        // grid still needs them, once (2026-10-10: after visiting Discover first,
+        // the Movies grid never got posters for the rest of the session).
+        if with_posters && !s.movie_posters_loaded {
+            s.movie_posters_loaded = true;
+            let movies = s.all_movies.clone();
+            drop(s);
+            debug!(
+                "spawn_movies_list_fetch: list already fetched without posters, loading {} poster(s)",
+                movies.len()
+            );
+            spawn_movies_poster_loading(client, movies, ww, rt);
+        }
         return;
     }
     let user_id = client.user_id.clone();
@@ -1205,6 +1220,9 @@ pub(crate) fn spawn_movies_list_fetch(
                     let mut s = state2.lock().unwrap();
                     s.all_movies = movies.clone();
                     s.movies_fetched = true;
+                    if with_posters {
+                        s.movie_posters_loaded = true;
+                    }
                 }
                 save_movies_cache(&user_id, &movies);
                 let movies2 = movies.clone();
@@ -2756,6 +2774,7 @@ pub(crate) fn reset_session_state(
     s.movie_collections.clear();
     s.remembered_tracks.clear();
     s.movies_fetched = false;
+    s.movie_posters_loaded = false;
     s.collections_fetched = false;
     s.artists_fetched = false;
     s.albums_fetched = false;

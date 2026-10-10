@@ -2878,6 +2878,14 @@ Decided with the user so outside contributors can send pull requests without ref
 - Not done yet: a CI check on pull requests (`cargo fmt --check`, clippy, tests) — only once outside PRs actually arrive, and on GitHub-hosted runners: the self-hosted runner must never run code from pull requests (PLAN.md → Deferred).
 
 
+### Movies grid without posters after Discover (2026-10-10, branch `release-0.5`)
+
+User report from the dev smoke test: "movie posters took some time to show in the library". The log showed it wasn't slowness: in the session that opened Discover first (nav-selected(6) 13:52:14), no `push_library_cards[Movie]` ever happened — the grid opened at 13:58:22 with 617 poster-less cards, and posters only arrived at 14:00:41, after a profile switch. Whenever the grid was opened before Discover, its posters landed ~0.4 s after the list (617 cached posters fetched 8 at a time + decoded).
+
+Cause: Discover calls `spawn_movies_list_fetch(…, with_posters = false)` (it only needs ProviderIds for the in-library match) and that sets the per-session `movies_fetched`; the grid's own `spawn_library_fetch(2)` → `spawn_movies_list_fetch(…, true)` then returned at the `movies_fetched` guard before the poster step. Fix: `FjordState.movie_posters_loaded` (posters loaded for the current list; reset wherever `movies_fetched` is — `reset_session_state`, `purge_deleted_item`, the ws library-change invalidation); a `with_posters` call that finds the list already fetched but posters not loaded runs `spawn_movies_poster_loading` over `all_movies` once. Not set by the cold-start cache path (`push_cached_data` doesn't set `movies_fetched` either), so the first grid open after a fresh list re-runs the poster pass — cheap, `push_library_cards` keeps every existing poster.
+
+Seen while reading it: the library poster pass is all-or-nothing (`spawn_library_poster_loading` waits for every fetch, then decodes all items on one task before one push) — fine from the disk cache (~0.4 s on the dev machine), but a cold cache (first run) shows no poster until all 617 are downloaded. Not changed.
+
 ### On-screen keyboard off: Enter locked the text fields (2026-10-10, branch `release-0.5`)
 
 Found in the dev smoke test of 0.5.0 steps 1–2 (user report: "if i pressed enter when logging in to both jellyfin and seerr on the password row i could not keyboard navigate or reselect the box"). Not caused by Slint 1.18 or the edition — the bug dates from 2026-08-27, when Settings → UI got the on-screen keyboard off switch.

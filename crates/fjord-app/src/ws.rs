@@ -701,6 +701,7 @@ async fn run_session(
                 {
                     let mut s = state.lock().unwrap();
                     s.movies_fetched = false;
+                    s.movie_posters_loaded = false;
                     s.collections_fetched = false;
                     s.artists_fetched = false;
                     s.albums_fetched = false;
