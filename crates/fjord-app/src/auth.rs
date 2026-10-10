@@ -1,38 +1,21 @@
 // ── fjord-app · auth.rs ──────────────────────────────────────────────────────
-//   LoginOptions  { append, remember } — grouped to keep do_login's own arg count under
-//             clippy's too_many_arguments threshold (2026-08-14); `remember` is written into
-//             the just-authenticated ProfileSettings.remember_login in all 3 branches below
-//   fell_back_to_http / note_if_http_fallback  a schemeless address that only answered over
-//             http:// → one log line + toast (Jellyfin login, Seerr connects; 2026-10-09
-//             security review — no silent plain HTTP; unit-tested)
-//   do_login  authenticate, persist config, then finish_session_setup; the authenticate()
-//             HTTP client carries an explicit 30s timeout (previously a bare
-//             reqwest::Client::new() with no timeout — the one call in the app that could
-//             hang indefinitely against an unreachable server); backfills a blank
-//             ProfileSettings.display_name from the login response's own auth.user.name
-//             (2026-08-14 — the append-new/append-existing/normal branches all had this gap;
-//             spawn_auto_login gets the equivalent backfill via a real GET /Users/{id} call,
-//             since the token-resume path never sees a login response at all)
-//   finish_session_setup  shared tail of every "we have a valid client, now make it the
-//             active session" flow (Bonfire Phase 1, step 6, 2026-08-09) — fetch home
-//             data/series/system info/plugins, persist cfg, update FjordState/AppState,
-//             start WebSocket, spawn poster loading + movie-collections fetch, refresh
-//             Settings → Profiles → Default Profile AND Default Account's dropdowns (step 7 +
-//             2026-08-14). Both commit closures also close show-account-picker now (2026-08-14
-//             fix — a switch initiated directly from the account tier, a single-profile
-//             account's own tile, left it visibly stuck open otherwise). Reused verbatim
-//             by profile.rs's switch_to_profile so the two flows can't drift. Warm-starts
-//             from this user_id's own on-disk home/series cache (2026-08-14, "still takes
-//             some time to login") before the blocking network join even starts, mirroring
-//             spawn_auto_login's own push_cached_data — a repeat switch/login for a
-//             previously-used profile can show real content almost immediately instead of
-//             waiting the ~2.5s a real log showed get_all_series/next_up costing. Also now
-//             warm-starts screen_caches.json the same way (2026-08-16, code review — this
-//             file was previously never reloaded on a switch at all, only on plain
-//             auto-login, so the periodic save timer could silently overwrite a real
-//             persisted file with the empty set reset_session_state had just cleared).
+//   candidate_server_urls / authenticate_with_fallback / is_connectivity_failure  a typed address
+//             without a scheme tries https, then http (only on a real connectivity failure)
+//   fell_back_to_http / note_if_http_fallback  a schemeless address that only answered over http →
+//             one log line + toast (Jellyfin login, Seerr connects; unit-tested)
+//   LoginOptions  { append, remember }
+//   do_login  authenticate (30 s timeout), update or add the profile (append = Add Account; a direct
+//             login resets Bonfire-discovery fields; display_name backfilled), persist, then
+//             finish_session_setup
+//   finish_session_setup  shared tail of login and profile switch: profile settings + Seerr client for
+//             the new profile, sidebar tile, warm start from this user's cached home/series/screen
+//             caches, then home data/series/system info/plugins in parallel; persists caches, starts
+//             the WebSocket, posters, movie collections, Bonfire sync; closes the pickers
+//   spawn_not_watched_rows  the slow "Not watched" rows, off the login path (session-guarded)
 //   wire_login             callbacks moved from main() (0.5.0 step 3): the login screen
-//   wire_sign_out          callbacks moved from main() (0.5.0 step 3): Sign Out
+//   wire_sign_out          callbacks moved from main() (0.5.0 step 3): Sign Out — removes the account and
+//             its Bonfire sub-profiles/group accounts, logs their server sessions out, keeps
+//             device_id and settings, then the account picker (if any account is left) or Login
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
 
@@ -59,23 +42,6 @@ fn ss(s: &str) -> SharedString {
     SharedString::from(s)
 }
 
-/// Candidate server URLs to try, in order, from raw user-typed input.
-/// Live-reported 2026-08-14: the LoginScreen's address field required an
-/// explicit `http://`/`https://` prefix or authentication failed outright
-/// with a raw URL-parse error — user asked for "jellyfin.example.com" to
-/// just work, an explicit scheme (any case — "HTTPS://" included) to still
-/// be respected as-is, and HTTPS to be preferred, falling back to HTTP.
-/// If the trimmed input already starts with a scheme (checked
-/// case-insensitively), that's the ONLY candidate — an explicit scheme is
-/// never second-guessed or retried under a different one. Otherwise HTTPS
-/// is tried first (matching how browsers and every other Jellyfin client
-/// default an ambiguous address today), with a plain HTTP candidate as the
-/// fallback right behind it.
-///
-/// `pub(crate)` since 2026-08-23 — `seerr_auth.rs::resolve_seerr_url` reuses
-/// this verbatim (it has zero Jellyfin-specific typing) rather than
-/// duplicating the same candidate-ordering logic for Seerr's own
-/// server-URL field, which had the identical bare-host-fails-outright gap.
 /// True when `typed` had no scheme and the address that answered is plain
 /// `http://` — https didn't answer and Fjord fell back (the only way a
 /// schemeless address ends up on http, see candidate_server_urls).
@@ -104,6 +70,10 @@ pub(crate) fn note_if_http_fallback(
     }
 }
 
+/// Candidate server URLs to try, in order, from user-typed input: an explicit scheme
+/// (any case) is the ONLY candidate — never retried under another; otherwise https
+/// first, then plain http (like browsers and other Jellyfin clients). Also used by
+/// seerr_auth::resolve_seerr_url.
 pub(crate) fn candidate_server_urls(input: &str) -> Vec<String> {
     let trimmed = input.trim();
     let lower = trimmed.to_ascii_lowercase();
@@ -114,24 +84,12 @@ pub(crate) fn candidate_server_urls(input: &str) -> Vec<String> {
     }
 }
 
-/// Whether `e` represents a genuine connectivity failure (DNS, refused
-/// connection, TLS handshake failure, timeout) rather than a real HTTP
-/// response that merely failed to parse or returned an error status.
-/// `pub(crate)` since 2026-08-26 — `seerr_auth.rs::resolve_seerr_url` shares
-/// this classifier for the identical HTTPS-then-HTTP fallback shape.
-///
-/// Code review, 2026-08-26: the original classifier here and in
-/// `resolve_seerr_url` (`reqwest::Error::status().is_none()`) was too broad
-/// — a 2xx response with a non-JSON body (a captive portal, an unrelated
-/// service sharing the port, an SSO redirect page) fails inside `.json()`,
-/// and that decode error ALSO has `status() == None` (only
-/// `Error::new(Kind::Status(status), ..)`, from `.error_for_status()`,
-/// carries one) — so a real, reachable-over-HTTPS server whose response
-/// merely didn't parse was silently treated as "unreachable, fall back to
-/// plaintext HTTP," downgrading the connection (and, for the Jellyfin
-/// login path, the plaintext password with it) instead of surfacing the
-/// real, already-reached error. `is_connect()`/`is_timeout()` only return
-/// true for failures that never got a response back at all.
+/// Whether `e` is a real connectivity failure (DNS, refused, TLS handshake, timeout)
+/// — no response at all — rather than a response that failed to parse or had an error
+/// status. Only `is_connect()`/`is_timeout()`: a 2xx with a non-JSON body (captive
+/// portal, another service on the port, an SSO page) also has `status() == None`, and
+/// treating it as "unreachable" would fall back to plaintext HTTP — password included —
+/// instead of showing the real error. Shared with seerr_auth::resolve_seerr_url.
 pub(crate) fn is_connectivity_failure(e: &anyhow::Error) -> bool {
     e.downcast_ref::<reqwest::Error>()
         .is_some_and(|re| re.is_connect() || re.is_timeout())
@@ -172,16 +130,11 @@ pub(crate) async fn authenticate_with_fallback(
     Err(last_err.unwrap_or_else(|| anyhow::anyhow!("no server address given")))
 }
 
-/// The two "how to handle this login" flags, grouped (clippy's
-/// too-many-arguments threshold, 2026-08-14 — `remember` was the 8th
-/// parameter added to `do_login`) rather than left as loose scalars, same
-/// "group loose scalars into a struct" precedent this codebase already
-/// established for `context_menu.rs::OpenMenuArgs`.
+/// The two "how to handle this login" flags, grouped instead of more loose parameters
+/// (clippy's too-many-arguments; like context_menu::OpenMenuArgs).
 pub(crate) struct LoginOptions {
-    /// Bonfire Phase 1, step 6 (2026-08-09 — the picker's own "+ Add
-    /// Account" tile) — keep every existing profile intact and add this
-    /// one alongside them, rather than overwriting whichever profile is
-    /// currently active.
+    /// "+ Add Account": keep every existing profile and add this one, instead of
+    /// replacing the active profile.
     pub append: bool,
     /// 2026-08-14, the account/profile redesign — persisted onto the
     /// resulting `ProfileSettings.remember_login`.
@@ -216,11 +169,7 @@ pub(crate) fn do_login(
             let login_http = reqwest::Client::builder()
                 .timeout(std::time::Duration::from_secs(30))
                 .build()?;
-            // Live-reported 2026-08-14: typing a bare host ("jellyfin.example.com",
-            // no scheme) failed outright with a raw URL-parse error — every other
-            // Jellyfin client and every browser treats a schemeless address as
-            // "try to figure it out," not "reject it." See
-            // authenticate_with_fallback's own doc comment for the exact rule.
+            // A bare host (no scheme) works: https first, then http (authenticate_with_fallback).
             let (server_url, auth) = authenticate_with_fallback(
                 &login_http,
                 &server,
@@ -231,68 +180,32 @@ pub(crate) fn do_login(
             .await?;
             info!("authenticated as {}", auth.user.name);
             note_if_http_fallback(&window_weak, "Jellyfin", &server, &server_url);
-            // `append` (Bonfire Phase 1, step 6, 2026-08-09 — the picker's own
-            // "+ Add Account" tile) means "keep every existing profile intact,
-            // add this one alongside them" rather than the normal sign-in
-            // behavior of overwriting whichever profile is currently active
-            // (correct for "sign back into the same slot after sign-out", wrong
-            // for genuinely adding a second account). If this exact user_id is
-            // already known locally (re-authenticating a profile whose stored
-            // token had gone stale), update that entry in place instead of
-            // creating a duplicate.
+            // `append`: keep every profile and add this one alongside (a normal sign-in replaces
+            // the active slot — right after a sign-out, wrong for adding a second account). An
+            // already-known user_id (re-authenticating a stale token) is updated in place, not
+            // duplicated.
             if append {
                 if let Some(p) = cfg.profiles.iter_mut().find(|p| p.user_id == auth.user.id) {
                     p.server_url = server_url.to_string();
                     p.token = auth.access_token.clone();
-                    // Real bug fix, 2026-08-14, live-reported ("on an old login
-                    // the profilename is just random letters and numbers instead
-                    // of the profile name"): a blank display_name (every
-                    // pre-Bonfire migrated profile, and any profile that's only
-                    // ever gone through auto-login) fell back to the raw
-                    // user_id GUID in build_tile — backfill it here from the
-                    // real Jellyfin username while we have it, same as the
-                    // brand-new-entry branch below already does via
-                    // ..Default::default() + this explicit set.
+                    // Backfill an empty display_name from the real Jellyfin username (old migrated
+                    // profiles had none, and the tile then showed the raw user_id).
                     if p.display_name.is_empty() {
                         p.display_name = auth.user.name.clone();
                     }
-                    // 2026-08-14, the account/profile redesign — "remember
-                    // this login" is a per-attempt choice, so a re-login
-                    // (this branch: the profile was already known, e.g. its
-                    // token had gone stale) always takes whatever the
-                    // checkbox says on THIS attempt, not whatever it was
-                    // set to originally.
+                    // "Remember this login" is a per-attempt choice: a re-login takes the checkbox as it
+                    // is now.
                     p.remember_login = remember;
-                    // Real bug, live-reported 2026-08-29 ("still the same
-                    // problem"): a genuine, successful username/password
-                    // authentication against THIS account's own server is
-                    // direct proof of independent access to it — but this
-                    // branch, before this fix, never reset any of the
-                    // Bonfire-discovery fields (is_bonfire/is_group_account/
-                    // master_user_id) on an already-known entry, only
-                    // server_url/token/display_name/remember_login. So
-                    // re-adding an account via "+ Add Account" specifically
-                    // to recover from the sync_bonfire_subprofiles downgrade
-                    // bug just above (it left is_bonfire=true, master_user_id
-                    // pointing at whoever's sync last saw it) silently kept
-                    // routing every subsequent switch through the Bonfire/PIN
-                    // path — the very "restore direct access" recovery this
-                    // codebase already recommends for that bug never actually
-                    // worked. Fixed generally: any successful direct login
-                    // onto an already-known entry unconditionally restores it
-                    // to a plain independent account, regardless of whatever
-                    // Bonfire-discovery state it previously carried.
+                    // A successful direct username/password login proves independent access: reset the
+                    // Bonfire-discovery fields (is_bonfire/is_group_account/master_user_id) so this account
+                    // switches directly again — re-adding an account is the recovery for a Bonfire
+                    // misclassification and must actually restore direct access.
                     p.is_bonfire = false;
                     p.is_group_account = false;
                     p.master_user_id.clear();
                     p.synced_via.clear();
-                    // `has_pin` is a value cached FROM Bonfire's own /list
-                    // response (config.rs's own doc comment: "a plain
-                    // (non-Bonfire) account has no PIN concept at all") — a
-                    // genuine independent login proves exactly that, so any
-                    // stale true left over from a prior Bonfire-discovery
-                    // state must not keep demanding a PIN this account no
-                    // longer has one for.
+                    // `has_pin` is cached from Bonfire's /list; a plain independent account has no PIN, so
+                    // a stale true must not keep demanding one.
                     p.has_pin = false;
                 } else {
                     cfg.profiles.push(crate::config::ProfileSettings {
@@ -367,21 +280,12 @@ pub(crate) fn do_login(
 }
 
 // ── finish_session_setup ─────────────────────────────────────────────────────
-// Shared tail of every "we already have a valid client for this profile, now
-// make it the active session and show its content" flow — extracted from
-// do_login (Bonfire Phase 1, step 6, 2026-08-09) so profile.rs's own
-// switch_to_profile can reuse it verbatim instead of re-deriving the same
-// ~10-field setup and risking drift, the same reasoning reset_session_state
-// was extracted for. Fetches home data/series/system info/plugins in
-// parallel, persists cfg (already fully mutated by the caller — this fn
-// only reads it), updates FjordState + AppState, starts the WebSocket,
-// spawns poster loading + the movie-collections fetch.
-//
-// Callers differ only in how `client` was obtained (a fresh password
-// sign-in here; a Bonfire-minted or already-stored token in profile.rs) and
-// in what `cfg` looks like going in (do_login mutates cfg.active_mut()
-// in place; a profile switch finds-or-creates a different profiles[] entry
-// instead) — everything from here on is identical either way.
+// Shared tail of every "we have a valid client for this profile — make it the active
+// session and show it" flow: do_login and profile::switch_to_profile (the latter with
+// a Bonfire-minted or stored token). Fetches home data/series/system info/plugins in
+// parallel, persists `cfg` (already mutated by the caller — only read here), updates
+// FjordState + AppState, starts the WebSocket, spawns poster loading and the
+// movie-collections fetch.
 pub(crate) async fn finish_session_setup(
     client: Arc<JellyfinClient>,
     cfg: crate::config::Config,
@@ -391,44 +295,14 @@ pub(crate) async fn finish_session_setup(
     window_weak: slint::Weak<MainWindow>,
     rt_handle: tokio::runtime::Handle,
 ) {
-    // Real bug, live-reported 2026-08-14 with a screenshot ("the settings
-    // etc do not seams to be diffferent for different profiles" — Seerr
-    // connection/Streaming Region/Discover Region all showing the SAME
-    // values after switching to a different profile): `apply_settings_to_
-    // window` — the ONLY function that pushes any profile-scoped setting
-    // (subtitle/audio language, skip modes, Seerr enabled/connection status/
-    // trailer quality, library sort, ...) into AppState at all — was called
-    // exactly once in the whole app, at startup, using whichever profile
-    // happened to be active on disk at that moment. Neither this function
-    // nor switch_to_profile ever called it again, so every one of those
-    // settings silently kept reflecting the ORIGINAL profile for the rest
-    // of the running session after ANY switch (picker or sidebar) — not
-    // just a Settings-screen display bug: subtitle language, skip-mode
-    // behavior, and which Seerr account's credentials get used for Discover
-    // API calls were all genuinely wrong post-switch, not just displayed
-    // wrong. `s.config`/`s.client` are hoisted up here (both already fully
-    // known — `cfg`/`client` are plain parameters, not something the join
-    // below produces) specifically so BOTH commit closures below (the warm-
-    // start one and the post-join one) can call apply_settings_to_window
-    // and have it read the correct, already-current profile immediately —
-    // the original code only wrote these AFTER the network join completed.
-    //
-    // `s.seerr_client` had the IDENTICAL gap, one level more severe: it was
-    // ONLY ever built once, at app startup (main.rs's own config-load
-    // block) — do_login/finish_session_setup/switch_to_profile never
-    // rebuilt it at all. push_seerr_status's "connected" check is purely
-    // Config-flag-derived (never checks seerr_client itself), so the
-    // Settings screen could show a fully plausible "Connected" state for
-    // the NEW profile while every actual Discover/Watchlist/etc. API call
-    // kept silently using the OLD profile's live Seerr session underneath
-    // — a real cross-profile data-isolation gap, not just a display one.
-    // Rebuilt the same way startup does (seerr_auth::build_seerr_client),
-    // plus the region/language dropdown lists + admin-permission flags
-    // (spawn_seerr_settings_fetch) and the version string
-    // (spawn_refresh_seerr_version) — both of those were ALSO startup-only
-    // before this, mirroring main.rs's own config-load block exactly so
-    // there's one canonical "bring Seerr up for whichever profile is now
-    // active" sequence instead of two independently-drifting copies of it.
+    // Set `s.config`/`s.client` before the network join so both commit closures below
+    // can call apply_settings_to_window for the NEW profile — it's the only function that
+    // pushes profile-scoped settings (languages, skip modes, Seerr, library sort…) into
+    // AppState, and a switch must not keep the previous profile's.
+    // Rebuild the Seerr client too (seerr_auth::build_seerr_client), with the region/
+    // language lists + permissions (spawn_seerr_settings_fetch) and the version — the same
+    // sequence as startup — or Discover calls would keep using the previous profile's
+    // Seerr session while Settings showed the new one as connected.
     let (seerr_client, seerr_url, cfg_early) = {
         let mut s = state.lock().unwrap();
         s.config = cfg;
@@ -440,22 +314,9 @@ pub(crate) async fn finish_session_setup(
             s.config.clone(),
         )
     };
-    // Real gap, live-reported with a video (2026-08-21) — "the profile that
-    // is highlighted is blank for several seconds after you have switched
-    // profile." The sidebar's own Profile row (avatar/name) is driven by
-    // push_current_profile_tile, but it was only ever called from this
-    // function's FINAL commit closure, after the whole outer tokio::join!
-    // (fetch_home_data/get_all_series/get_system_info/get_plugins, ~2.4s+
-    // in a real log) completes. reset_session_state (run just before this
-    // function, tearing down the OUTGOING session) already resets
-    // current-profile-tile back to a blank Default — so the sidebar showed
-    // nothing for the entire fetch window, even though everything this
-    // needs (avatar color/initial, display name) comes straight from the
-    // Config just set two lines above and needs no network round trip at
-    // all. Pushed here instead, immediately — mirroring the same "hoist
-    // early so the very first paint already has it" reasoning this
-    // function's own doc comment already gives for s.config/s.client
-    // themselves.
+    // Push the sidebar's profile tile now — everything it needs comes from the Config
+    // set above; waiting for the join (~2.4 s) left the row blank after a switch
+    // (reset_session_state had already cleared it).
     {
         let ww_early = window_weak.clone();
         let _ = slint::invoke_from_event_loop(move || {
@@ -484,41 +345,14 @@ pub(crate) async fn finish_session_setup(
         rt_handle.clone(),
     );
 
-    // Warm start (2026-08-14, direct follow-up during a live HTPC test:
-    // "still takes some time to 'login'" — from a real Bonfire switch, not
-    // the general auto-login case the earlier "Login speed" fix already
-    // covered). A real log showed the timing instrumentation's own numbers:
-    // finish_session_setup's ~2.5s total was almost entirely get_all_series
-    // (2.3s) and fetch_home_data's next_up branch (2.0s) — both genuinely
-    // needed for a correct refresh, but a profile switch (or a repeat
-    // Add-Account login) very plausibly already has its own on-disk home/
-    // series cache from a prior session under this exact user_id
-    // (namespaced per-profile since Phase 1 step 2) — this function simply
-    // never checked. spawn_auto_login already warm-starts from exactly this
-    // cache (push_cached_data) before its own background network refresh;
-    // mirrored here for the two fields actually on THIS function's blocking
-    // path (Movies/Collections/Artists/Albums/Playlists aren't, so they
-    // aren't warm-started here either). `warm_started` gates the final
-    // commit closure below between a plain first-time build (no earlier
-    // paint to preserve, and — critically — items_to_model's own correct
-    // watchlist-star lookup, which the "preserving" variant deliberately
-    // skips in favor of carrying an OLD row's value forward) and the
-    // preserving-posters variant once there IS an earlier paint worth not
-    // flashing over.
-    // Real bug, code-review 2026-08-16 ("60s cache-save timer overwrites
-    // the wrong profile's cache"): a switch/re-login into a profile that's
-    // been used on this device before previously never reloaded ITS OWN
-    // screen_caches.json at all — only spawn_auto_login did, for the
-    // ordinary "resume the same session" path. reset_session_state (run
-    // just before this function, as part of tearing down the OUTGOING
-    // session) had already cleared all six in-memory caches to empty, so
-    // the very next tick of the periodic 60s save timer silently
-    // overwrote this profile's real, possibly prewarm-sized persisted
-    // file with an almost-empty one. Mirrors spawn_auto_login's own warm-
-    // start of this exact file — spawn_blocking, since it can reach
-    // ~1.3MB after a library prewarm and a plain synchronous read here
-    // would block whatever thread is running this async fn for however
-    // long that takes.
+    // Warm start: a profile used before on this device has its own home/series cache
+    // (per user_id) — paint from it now, like spawn_auto_login's push_cached_data, while
+    // the network refresh runs (home and series are what blocks this function).
+    // `warm_started` picks the final commit: a plain first-time build (with the correct
+    // watchlist-star lookup) or the poster-preserving update over the earlier paint.
+    // Also reload this profile's screen_caches.json (spawn_blocking — it can be ~1.3 MB
+    // after a prewarm): reset_session_state just emptied the in-memory caches, and the
+    // 60 s save timer would otherwise overwrite the file with almost nothing.
     let user_id_sc = user_id.clone();
     if let Some(file) = tokio::task::spawn_blocking(move || load_screen_caches(&user_id_sc))
         .await
@@ -587,18 +421,9 @@ pub(crate) async fn finish_session_setup(
         });
     }
 
-    // Timed (2026-08-14, "what makes login slow") — fetch_home_data is
-    // itself a join, timed the same way internally; this outer join is the
-    // true top-level breakdown of finish_session_setup's own cost. That
-    // instrumentation found a real, fixable cost: a real login logged
-    // `not_watched_tv took 4.103s` against every other branch finishing in
-    // 1-2.7s (see fetch_home_data's own doc comment for why — Jellyfin's
-    // own SortBy=Random + recursive per-episode unplayed check, not a
-    // client bug). include_not_watched=false here — those two rows aren't
-    // even shown on the Home dashboard this screen is about to display, so
-    // there's no reason login should wait on them; spawn_not_watched_rows
-    // below fetches and patches them in separately, without blocking this
-    // join at all.
+    // Timed (the `timing:` lines). include_not_watched=false: the "Not watched" rows are
+    // slow (Jellyfin's SortBy=Random + recursive unplayed check, seconds) and not shown on
+    // Home, so login doesn't wait for them — spawn_not_watched_rows patches them in later.
     let (home_data, series_res, sysinfo_res, plugins_res) = tokio::join!(
         crate::timed(
             "fetch_home_data (all rows)",
@@ -637,10 +462,8 @@ pub(crate) async fn finish_session_setup(
         s.all_series = series.clone();
     }
 
-    // Bonfire Phase 1, step 6 (2026-08-09): best-effort, always attempted —
-    // get_plugins()/bonfire_list_profiles() both already degrade gracefully
-    // when the plugin isn't installed, so this costs nothing extra for the
-    // overwhelming majority of servers that don't have it.
+    // Bonfire sync: always attempted; get_plugins()/bonfire_list_profiles() degrade
+    // gracefully without the plugin.
     crate::profile::sync_bonfire_subprofiles(
         Arc::clone(&client),
         Arc::clone(&state),
@@ -648,20 +471,8 @@ pub(crate) async fn finish_session_setup(
         window_weak.clone(),
     );
 
-    // Real bug, live-reported 2026-08-21 ("if i close fjord it still shows
-    // the old cache before it reloads from the server") — this function
-    // saved the fresh series list right below but never the fresh HOME
-    // data (Continue Watching/Next Up/Recently Added/Favorites — the bulk
-    // of what a session actually shows) at all; save_home_cache wasn't
-    // even in this file's own imports. Only spawn_auto_login's own tail
-    // (main.rs) ever wrote home.json — the ordinary cold "resume an
-    // already-saved session" path. Every session that goes through THIS
-    // function instead — a fresh login, an Add-Account login, or (per the
-    // live-reported HTPC log that surfaced this) any Bonfire profile
-    // switch — fetched and displayed fresh home data correctly for the
-    // live session, then silently never wrote it back to disk, so the
-    // NEXT launch's warm-start kept reading whatever home.json last held
-    // from a genuine cold auto-login, however old that was.
+    // Save the fresh home data too (save_home_cache), or the next launch's warm start would
+    // show whatever home.json the last cold auto-login wrote.
     save_home_cache(&user_id, &home_data);
     save_series_cache(&user_id, &series);
     let sections = home_data_sections(&home_data);
@@ -671,14 +482,8 @@ pub(crate) async fn finish_session_setup(
     let ww_poster = window_weak.clone();
     let ww_series = window_weak.clone();
     let rt_handle_inner = rt_handle.clone();
-    // Fresh session — no prior CardItem rows for these to carry an existing
-    // on_watchlist forward from, so the persisted set has to be read
-    // explicitly here (2026-07-20, see FjordState.jellyfin_watchlist_ids'
-    // own doc comment). cfg_snapshot is read in the same lock, purely for
-    // push_current_profile_tile below (apply_settings_to_window, called a
-    // few lines down, reads straight from `state_late` instead and no
-    // longer needs a snapshot passed in — see this function's own top-of-
-    // body comment for why it's called from here at all now).
+    // Fresh session: no earlier rows to carry on_watchlist from, so read the persisted set
+    // (FjordState.jellyfin_watchlist_ids). cfg_snapshot is for push_current_profile_tile.
     let (watchlist, cfg_snapshot) = {
         let s = state.lock().unwrap();
         (s.jellyfin_watchlist_ids.clone(), s.config.clone())
@@ -712,13 +517,8 @@ pub(crate) async fn finish_session_setup(
             g.set_show_profile_picker(false);
             g.set_show_account_picker(false);
             g.set_status(ss(""));
-            // Real bug fix, 2026-08-14 — see this function's own top-of-body
-            // comment. apply_settings_to_window already calls
-            // refresh_profile_settings_dropdown + sets settings-is-master-
-            // profile internally, so those two former standalone calls are
-            // folded into it rather than left as duplicate logic; it needs
-            // the live FjordState (not just the Config snapshot) for
-            // audio_devices/system_fonts display-string lookups.
+            // Also refreshes the default-profile dropdown and settings-is-master-profile; it reads
+            // the live FjordState for the audio-device/font display strings.
             apply_settings_to_window(&w, &state_late.lock().unwrap());
             // Sidebar profile row (2026-08-14) — same trigger point: every
             // session start or switch needs this repushed, not just the
@@ -761,18 +561,9 @@ pub(crate) async fn finish_session_setup(
     spawn_not_watched_rows(client5, Arc::clone(&state), window_weak, &rt_handle_inner);
 }
 
-/// The two rows `fetch_home_data(..., include_not_watched: false)` skipped
-/// above (2026-08-14, "what makes login slow" — see that call site's own
-/// doc comment for the real timing evidence). Fetched here instead, fully
-/// independent of the login-blocking join, and patched in whenever they're
-/// ready — same "fire in the background, patch in later" shape as
-/// `spawn_poster_loading`/`spawn_series_poster_loading`/the
-/// movie-collections fetch right above. A session-guard on the resolved
-/// `AppState.person-id`-style pattern isn't needed here (this isn't a
-/// per-screen open), but the same class of risk — a stale result landing
-/// after a sign-out/switch — is still real, so `crate::session_current` is
-/// checked before writing anything, matching every other background patch
-/// in this codebase.
+/// The two rows `fetch_home_data(…, include_not_watched: false)` skipped above, fetched
+/// off the login path and patched in when ready (like the poster loaders). Checks
+/// `crate::session_current` first — a result must not land after a sign-out/switch.
 fn spawn_not_watched_rows(
     client: Arc<JellyfinClient>,
     state: Arc<Mutex<FjordState>>,
@@ -866,44 +657,17 @@ pub(crate) fn wire_sign_out(
             reset_session_state(&video_so, &window_weak, &rth_so, &state);
 
             let mut s = state.lock().unwrap();
-            // Clear only the session — deleting config.json wholesale (pre-CR10-12)
-            // also wiped device_id, so the next login generated a fresh DeviceId and
-            // Jellyfin invalidated the other machine's token (the exact scenario the
-            // per-install DeviceId exists to prevent). Settings survive sign-out too.
-            //
-            // Removes the signed-out profile's own Config.profiles entry ENTIRELY,
-            // along with every Bonfire sub-profile it owns (2026-08-15, real bug
-            // live-reported two ways that turned out to share one root cause —
-            // see CLAUDE.md's "Sign-out left orphaned Bonfire sub-profiles" section):
-            // the old code blanked user_id/token/etc. IN PLACE, leaving the entry
-            // itself present with an empty user_id — group_into_accounts filters
-            // any entry with an empty user_id out of grouping entirely (correctly,
-            // on its own terms), which silently dropped the real "root" member from
-            // that account's group while every sub-profile stayed grouped under the
-            // now-orphaned master_user_id key; build_account_tile then fell back to
-            // group.profiles.first() for the account's own display identity, which
-            // was now just whichever sub-profile sorted first — reading as "a
-            // profile moved to become the account." Separately, switch_to_profile's
-            // own master lookup (`profiles.iter().find(|p| p.user_id ==
-            // target.master_user_id)`) could no longer find anything at all once
-            // the master's user_id was blanked, failing every sub-profile switch
-            // with "the master account for this profile isn't signed in on this
-            // device" — visible directly in a live fjord.log. Resolved via
-            // AskUserQuestion (remove entirely vs. keep-but-locked); user picked
-            // remove — sync_bonfire_subprofiles re-adds them automatically on the
-            // next login as this same master, so nothing is lost long-term.
+            // Clear only the session — not config.json: deleting it also wiped device_id, so the
+            // next login got a new DeviceId and Jellyfin invalidated the other machine's token.
+            // Settings survive sign-out.
+            // The signed-out account's Config.profiles entry is REMOVED, with every Bonfire
+            // sub-profile it owns (blanking it in place broke grouping and every sub-profile
+            // switch); sync_bonfire_subprofiles re-adds them on the next login as this master.
             let signed_out_user_id = s.config.active().user_id.clone();
             let forgotten = |p: &crate::config::ProfileSettings| {
-                // Bonfire Phase 5: `synced_via` also has to be checked, not
-                // just `master_user_id` — a group account (a foreign
-                // master's own account, discovered via the signed-out
-                // account's OWN group membership) has an intentionally
-                // EMPTY `master_user_id` (see that field's own doc comment),
-                // so the original `master_user_id` check alone would leave
-                // it orphaned in `Config.profiles` forever after sign-out,
-                // with no local account left that could ever re-authenticate
-                // a switch into it (switch_to_profile resolves via
-                // `synced_via`, which would now point at nothing).
+                // Also match `synced_via`: a group account (discovered through this account's group)
+                // has an empty `master_user_id` and would otherwise stay orphaned, with no local
+                // account left to authenticate a switch into it.
                 p.user_id == signed_out_user_id
                     || p.master_user_id == signed_out_user_id
                     || p.synced_via == signed_out_user_id
@@ -936,32 +700,11 @@ pub(crate) fn wire_sign_out(
             }
             s.config.active_profile_id.clear();
             let cfg_to_save = s.config.clone();
-            // Real UX gap, code-review 2026-08-16 ("Sign Out always shows a
-            // blank Login screen even when another account with a valid
-            // stored token is still known") — resolved via AskUserQuestion:
-            // land on the account picker instead of plain Login whenever
-            // ANY account remains after removing the signed-out one (and
-            // its Bonfire sub-profiles) — pick the remaining one directly
-            // (no password needed if its token's still valid), or use its
-            // own "+ Add Account" tile — rather than stranding the user on
-            // Login with no way back to it short of a restart. Computed
-            // from cfg_to_save (post-retain, post-default-push), so the
-            // just-pushed blank entry (the "signed out of the only known
-            // account" case) correctly counts as zero real accounts and
-            // falls through to plain Login below.
-            //
-            // Threshold loosened from "2+ remain" to "1+ remain," 2026-08-17
-            // — live-questioned directly ("i had 2 accaunts but shuld ju
-            // not just get to the acaunt picker then so you can chose the
-            // remaining accaunt or add a new?"). The remaining account here
-            // is a DIFFERENT one from whichever was just signed out of, so
-            // showing it (plus Add Account) is strictly more useful than a
-            // bare Login form even when only one is left — unlike the
-            // ordinary cold-start gate (should_show_picker_at_startup),
-            // which deliberately still skips straight through for the
-            // single-account steady-state case (that one's "1 account" is
-            // the SAME account every normal launch, not a leftover from
-            // just having removed a different one).
+            // With at least one account left, land on the account picker (pick it — no password
+            // if its token is valid — or "+ Add Account"), not a bare Login. Counted after removing
+            // the signed-out account, so signing out of the only one falls through to Login.
+            // Unlike the cold-start gate, one remaining account is enough: it's a DIFFERENT
+            // account from the one just removed.
             let any_accounts_remain =
                 !profile::group_into_accounts(&cfg_to_save.profiles).is_empty();
             drop(s);
