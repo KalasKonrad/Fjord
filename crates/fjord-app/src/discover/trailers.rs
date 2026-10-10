@@ -7,6 +7,7 @@
 //   mark_trailer_unplayable     a trailer that failed to play → remembered, re-check the rest
 //                              (prefers Trailer, falls back to Teaser, else None)
 //   wire_trailers          callbacks moved from main() (0.5.0 step 3): yt-dlp detection (once) + Watch Trailer
+//   detect_yt_dlp / trailer_ytdl_format  is yt-dlp installed; the format string trailers use
 // ─────────────────────────────────────────────────────────────────────────────
 use super::*;
 
@@ -290,6 +291,40 @@ pub(crate) fn wire_trailers(
             playback::play_trailer(url, title, config, &video_pt, &ww_pt, &rt_pt);
         });
     }
+}
+
+// ── yt-dlp detection (Watch Trailer) ──────────────────────────────────────────
+// Same shape as fetch_audio_devices/fetch_system_fonts above — shells out
+// once at startup to check for a local tool. mpv's bundled ytdl_hook can
+// resolve a YouTube watch-page URL into a playable stream, but only when
+// yt-dlp (or youtube-dl) is actually installed; this proactively gates the
+// Watch Trailer button's visibility so a click never guarantees failure —
+// see CLAUDE.md's Seerr integration section for the full reasoning.
+pub(crate) fn detect_yt_dlp() -> bool {
+    std::process::Command::new("yt-dlp")
+        .arg("--version")
+        .output()
+        .map(|out| out.status.success())
+        .unwrap_or(false)
+}
+
+/// Settings → Integrations → Trailer Quality -> mpv `ytdl-format` string.
+/// `quality` is the display-ready value stored directly in
+/// `Config.trailer_quality` (same idiom as `Config.sub_color`/
+/// `SUB_COLOR_MODEL`) — "Best" (and anything unrecognized) leaves it
+/// `None`, yt-dlp's own default selection, no override. The height cap is
+/// yt-dlp's own documented format-selector idiom for exactly this ("cap
+/// resolution") use case.
+pub(crate) fn trailer_ytdl_format(quality: &str) -> Option<String> {
+    let height = match quality {
+        "1080p" => 1080,
+        "720p" => 720,
+        "480p" => 480,
+        _ => return None,
+    };
+    Some(format!(
+        "bestvideo[height<={height}]+bestaudio/best[height<={height}]"
+    ))
 }
 
 #[cfg(test)]

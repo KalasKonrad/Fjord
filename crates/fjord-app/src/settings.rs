@@ -74,8 +74,14 @@
 //   wire_profile_defaults  callbacks moved from main() (0.5.0 step 3): default profile / account dropdowns
 //   wire_regions           callbacks moved from main() (0.5.0 step 3): streaming/discover region + display/discover language dropdowns
 //   wire_settings_changed  callbacks moved from main() (0.5.0 step 3): settings-changed, dropdown mouse pick, settings row focus
+//   settings helpers     apply_settings_to_window ↔ read_settings_from_window;
+//                        settings_snapshot/settings_diff — the settings-changed handler logs
+//                        which settings changed (debug; text values by name only)
+//   fetch_audio_devices / fetch_system_fonts  startup fetches for the audio-device and font dropdowns
 // ─────────────────────────────────────────────────────────────────────────────
 
+use crate::MainWindow;
+use crate::config::{self, FjordState};
 use crate::keys::Action;
 use slint::{Model, ModelRc, SharedString, VecModel};
 use tracing::debug;
@@ -2455,4 +2461,398 @@ pub(crate) fn wire_settings_changed(
             crate::settings::row_focused(&g, key.as_str());
         });
     }
+}
+
+pub(crate) fn apply_settings_to_window(w: &MainWindow, s: &FjordState) {
+    // Moved from main.rs: names resolve as they did there.
+    use crate::*;
+    let g = AppState::get(w);
+    let c = &s.config.device;
+    let cp = s.config.active();
+    g.set_settings_audio_device(ss(&c.audio_device));
+    let dev_desc = s
+        .audio_devices
+        .iter()
+        .find(|(n, _)| n == &c.audio_device)
+        .map(|(_, d)| d.as_str())
+        .unwrap_or(if c.audio_device.is_empty() {
+            ""
+        } else {
+            c.audio_device.as_str()
+        })
+        .to_string();
+    g.set_settings_audio_device_desc(ss(&dev_desc));
+    g.set_settings_passthrough_device(ss(&c.audio_device_passthrough));
+    let pt_desc = s
+        .audio_devices
+        .iter()
+        .find(|(n, _)| n == &c.audio_device_passthrough)
+        .map(|(_, d)| d.as_str())
+        .unwrap_or(if c.audio_device_passthrough.is_empty() {
+            ""
+        } else {
+            c.audio_device_passthrough.as_str()
+        })
+        .to_string();
+    g.set_settings_passthrough_device_desc(ss(&pt_desc));
+    // The IRQ fix targets the device passthrough actually plays on.
+    let effective = if c.audio_device_passthrough.is_empty() {
+        &c.audio_device
+    } else {
+        &c.audio_device_passthrough
+    };
+    g.set_settings_device_is_pipewire(pipewire_fix::is_pipewire_device(effective));
+    g.set_settings_audio_channels(ss(if c.audio_channels.is_empty() {
+        "auto-safe"
+    } else {
+        &c.audio_channels
+    }));
+    g.set_settings_gapless_audio(c.gapless_audio);
+    g.set_settings_now_playing_auto_open(cp.now_playing_auto_open);
+    g.set_settings_audio_spdif(c.audio_spdif);
+    g.set_settings_spdif_ac3(c.spdif_ac3);
+    g.set_settings_spdif_eac3(c.spdif_eac3);
+    g.set_settings_spdif_dts(c.spdif_dts);
+    g.set_settings_spdif_dts_hd(c.spdif_dts_hd);
+    g.set_settings_spdif_truehd(c.spdif_truehd);
+    g.set_settings_hwdec(ss(&c.hwdec));
+    g.set_settings_vf(ss(&c.vf));
+    g.set_settings_video_sync(ss(&c.video_sync));
+    g.set_settings_opengl_early_flush(c.opengl_early_flush);
+    g.set_settings_video_latency_hacks(c.video_latency_hacks);
+    g.set_settings_interpolation(c.interpolation);
+    g.set_settings_tscale(ss(&c.tscale));
+    g.set_settings_tone_mapping(ss(&c.tone_mapping));
+    g.set_settings_target_colorspace_hint(c.target_colorspace_hint);
+    g.set_settings_separate_video_surface(c.separate_video_surface);
+    g.set_settings_video_own_buffers(c.video_own_buffers);
+    g.set_settings_video_dither_off(c.video_dither_off);
+    g.set_settings_deinterlace(ss(&c.deinterlace));
+    g.set_settings_cache_secs(c.cache_secs as i32);
+    g.set_settings_cache_max_mb(c.cache_max_mb as i32);
+    g.set_settings_video_behind(c.video_behind);
+    g.set_settings_launch_fullscreen(c.launch_fullscreen);
+    g.set_settings_log_level(ss(&c.log_level));
+    g.set_settings_display_sync_enabled(c.display_sync_enabled);
+    g.set_settings_display_sync_trailers(c.display_sync_trailers);
+    g.set_settings_display_sync_screen_name(ss(&c.display_sync_screen_name));
+    g.set_settings_display_sync_default_resolution(ss(&c.display_sync_default_resolution));
+    g.set_settings_display_sync_default_hz(ss(&c.display_sync_default_hz));
+    g.set_settings_display_sync_scale_4k(ss(&c.display_sync_scale_4k));
+    g.set_settings_display_sync_scale_1080p(ss(&c.display_sync_scale_1080p));
+    g.set_settings_display_sync_sync_resolution(c.display_sync_sync_resolution);
+    g.set_settings_display_sync_sync_refresh_rate(c.display_sync_sync_refresh_rate);
+    g.set_settings_display_sync_4k_odd_fps_mode(ss(&c.display_sync_4k_odd_fps_mode));
+    g.set_settings_display_sync_hdr_mode(ss(&c.display_sync_hdr_mode));
+    g.set_settings_display_sync_wcg_mode(ss(&c.display_sync_wcg_mode));
+    g.set_settings_sub_enabled(cp.sub_enabled);
+    g.set_settings_sub_lang(ss(&cp.sub_lang));
+    g.set_settings_sub_lang2(ss(&cp.sub_lang2));
+    g.set_settings_sub_type(ss(&cp.sub_type));
+    g.set_settings_sub_scale_pct(cp.sub_scale_pct as i32);
+    g.set_settings_sub_pos_pct(cp.sub_pos_pct as i32);
+    g.set_settings_sub_respect_ass_styling(cp.sub_respect_ass_styling);
+    g.set_settings_sub_color(ss(&cp.sub_color));
+    g.set_settings_sub_background(cp.sub_background);
+    g.set_settings_audio_lang(ss(&cp.audio_lang));
+    g.set_settings_alsa_irq_scheduling(c.alsa_irq_scheduling);
+    g.set_settings_skip_fade_mute_passthrough(c.skip_fade_mute_passthrough);
+    g.set_settings_skip_intro_mode(ss(&cp.skip_intro_mode));
+    g.set_settings_skip_intro_secs(cp.skip_intro_secs as i32);
+    g.set_settings_skip_recap_mode(ss(&cp.skip_recap_mode));
+    g.set_settings_skip_recap_secs(cp.skip_recap_secs as i32);
+    g.set_settings_skip_preview_mode(ss(&cp.skip_preview_mode));
+    g.set_settings_skip_preview_secs(cp.skip_preview_secs as i32);
+    g.set_settings_skip_commercial_mode(ss(&cp.skip_commercial_mode));
+    g.set_settings_skip_commercial_secs(cp.skip_commercial_secs as i32);
+    g.set_settings_skip_credits_mode(ss(&cp.skip_credits_mode));
+    g.set_settings_skip_credits_secs(cp.skip_credits_secs as i32);
+    g.set_settings_seek_step_secs(c.seek_step_secs as i32);
+    g.set_settings_seek_step_long_secs(c.seek_step_long_secs as i32);
+    g.set_settings_skip_fade_ms(c.skip_fade_ms as i32);
+    g.set_settings_scroll_speed_pct(c.scroll_speed_pct as i32);
+    g.set_settings_scroll_speed(c.scroll_speed_pct as f32 / 100.0);
+    g.set_settings_animation_speed_pct(c.animation_speed_pct as i32);
+    g.set_settings_animation_speed(c.animation_speed_pct as f32 / 100.0);
+    // Set synchronously from Config so MainWindow.font-family (bound to this)
+    // renders correctly from the very first frame — system_fonts (used only
+    // for the human-readable desc) is fetched asynchronously and may still be
+    // empty here; fall back to a sensible label rather than waiting on it.
+    g.set_settings_font_family(ss(&c.ui_font_family));
+    let font_desc = s
+        .system_fonts
+        .iter()
+        .find(|(v, _)| v == &c.ui_font_family)
+        .map(|(_, d)| d.as_str())
+        .unwrap_or(if c.ui_font_family == "Inter" {
+            "Inter (Fjord default)"
+        } else if c.ui_font_family.is_empty() {
+            "System default"
+        } else {
+            c.ui_font_family.as_str()
+        })
+        .to_string();
+    g.set_settings_font_family_desc(ss(&font_desc));
+    g.set_settings_onscreen_keyboard_enabled(c.onscreen_keyboard_enabled);
+    g.set_settings_launch_policy(ss(&c.launch_policy));
+    g.set_settings_default_profile_id(ss(&c.default_profile_id));
+    g.set_settings_account_launch_policy(ss(&c.account_launch_policy));
+    g.set_settings_default_account_id(ss(&c.default_account_id));
+    profile::refresh_profile_settings_dropdown(&g, &s.config);
+    profile::refresh_account_settings_dropdown(&g, &s.config);
+    // Bonfire Phase 5: `is_true_master`, not bare `!is_bonfire` — a session
+    // actively impersonating a foreign group account (`is_group_account`)
+    // also has `is_bonfire == true` on its own local entry, but it's "a
+    // fully privileged session for that account" per Bonfire's own docs,
+    // and should still see Manage Profiles / Bonfire Group in Settings.
+    g.set_settings_is_master_profile(profile::is_true_master(s.config.active()));
+    {
+        let root_id = profile::account_root_id(s.config.active()).to_string();
+        let remember = s
+            .config
+            .profiles
+            .iter()
+            .find(|p| p.user_id == root_id)
+            .is_none_or(|p| p.remember_login); // no matching entry shouldn't happen; default to the field's own true
+        g.set_settings_remember_login(remember);
+    }
+    g.set_settings_seerr_enabled(cp.seerr_enabled);
+    g.set_settings_trailer_quality(ss(&cp.trailer_quality));
+    seerr_auth::push_seerr_status(&g, cp);
+}
+
+/// The device settings and the active profile's settings as JSON objects,
+/// for settings_diff.
+pub(crate) fn settings_snapshot(c: &config::Config) -> [serde_json::Value; 2] {
+    [
+        serde_json::to_value(&c.device).unwrap_or_default(),
+        serde_json::to_value(c.active()).unwrap_or_default(),
+    ]
+}
+
+/// Field names that differ between two settings_snapshot()s — with old → new
+/// for switches and numbers; text fields by name only (they can hold
+/// credentials).
+pub(crate) fn settings_diff(
+    before: &[serde_json::Value; 2],
+    after: &[serde_json::Value; 2],
+) -> Vec<String> {
+    use serde_json::Value;
+    let mut out = Vec::new();
+    for (b, a) in before.iter().zip(after) {
+        let (Some(b), Some(a)) = (b.as_object(), a.as_object()) else {
+            continue;
+        };
+        for (key, new) in a {
+            let old = b.get(key).unwrap_or(&Value::Null);
+            if old == new {
+                continue;
+            }
+            out.push(match (old, new) {
+                (Value::Bool(_) | Value::Number(_), Value::Bool(_) | Value::Number(_)) => {
+                    format!("{key}: {old} → {new}")
+                }
+                _ => format!("{key} (changed)"),
+            });
+        }
+    }
+    out
+}
+
+pub(crate) fn read_settings_from_window(w: &MainWindow, s: &mut FjordState) {
+    // Moved from main.rs: names resolve as they did there.
+    use crate::*;
+    let g = AppState::get(w);
+    let c = &mut s.config.device;
+    c.audio_spdif = g.get_settings_audio_spdif();
+    c.spdif_ac3 = g.get_settings_spdif_ac3();
+    c.spdif_eac3 = g.get_settings_spdif_eac3();
+    c.spdif_dts = g.get_settings_spdif_dts();
+    c.spdif_dts_hd = g.get_settings_spdif_dts_hd();
+    c.spdif_truehd = g.get_settings_spdif_truehd();
+    c.hwdec = g.get_settings_hwdec().to_string();
+    c.vf = g.get_settings_vf().to_string();
+    c.video_sync = g.get_settings_video_sync().to_string();
+    c.opengl_early_flush = g.get_settings_opengl_early_flush();
+    c.video_latency_hacks = g.get_settings_video_latency_hacks();
+    c.interpolation = g.get_settings_interpolation();
+    c.tscale = g.get_settings_tscale().to_string();
+    c.tone_mapping = g.get_settings_tone_mapping().to_string();
+    c.target_colorspace_hint = g.get_settings_target_colorspace_hint();
+    c.separate_video_surface = g.get_settings_separate_video_surface();
+    c.video_own_buffers = g.get_settings_video_own_buffers();
+    c.video_dither_off = g.get_settings_video_dither_off();
+    c.deinterlace = g.get_settings_deinterlace().to_string();
+    c.cache_secs = g.get_settings_cache_secs().max(0) as u32;
+    c.cache_max_mb = g.get_settings_cache_max_mb().max(0) as u32;
+    c.video_behind = g.get_settings_video_behind();
+    c.launch_fullscreen = g.get_settings_launch_fullscreen();
+    c.log_level = g.get_settings_log_level().to_string();
+    c.audio_device = g.get_settings_audio_device().to_string();
+    c.audio_device_passthrough = g.get_settings_passthrough_device().to_string();
+    c.audio_channels = g.get_settings_audio_channels().to_string();
+    c.gapless_audio = g.get_settings_gapless_audio();
+    c.alsa_irq_scheduling = g.get_settings_alsa_irq_scheduling();
+    c.skip_fade_mute_passthrough = g.get_settings_skip_fade_mute_passthrough();
+    c.seek_step_secs = g.get_settings_seek_step_secs().max(0) as u32;
+    c.seek_step_long_secs = g.get_settings_seek_step_long_secs().max(0) as u32;
+    c.skip_fade_ms = g.get_settings_skip_fade_ms().max(0) as u32;
+    c.scroll_speed_pct = g.get_settings_scroll_speed_pct().max(0) as u32;
+    c.animation_speed_pct = g.get_settings_animation_speed_pct().max(0) as u32;
+    c.ui_font_family = g.get_settings_font_family().to_string();
+    c.onscreen_keyboard_enabled = g.get_settings_onscreen_keyboard_enabled();
+    c.launch_policy = g.get_settings_launch_policy().to_string();
+    c.default_profile_id = g.get_settings_default_profile_id().to_string();
+    c.account_launch_policy = g.get_settings_account_launch_policy().to_string();
+    c.default_account_id = g.get_settings_default_account_id().to_string();
+    c.display_sync_enabled = g.get_settings_display_sync_enabled();
+    c.display_sync_trailers = g.get_settings_display_sync_trailers();
+    c.display_sync_screen_name = g.get_settings_display_sync_screen_name().to_string();
+    c.display_sync_default_resolution =
+        g.get_settings_display_sync_default_resolution().to_string();
+    c.display_sync_default_hz = g.get_settings_display_sync_default_hz().to_string();
+    c.display_sync_scale_4k = g.get_settings_display_sync_scale_4k().to_string();
+    c.display_sync_scale_1080p = g.get_settings_display_sync_scale_1080p().to_string();
+    c.display_sync_sync_resolution = g.get_settings_display_sync_sync_resolution();
+    c.display_sync_sync_refresh_rate = g.get_settings_display_sync_sync_refresh_rate();
+    c.display_sync_4k_odd_fps_mode = g.get_settings_display_sync_4k_odd_fps_mode().to_string();
+    c.display_sync_hdr_mode = g.get_settings_display_sync_hdr_mode().to_string();
+    c.display_sync_wcg_mode = g.get_settings_display_sync_wcg_mode().to_string();
+
+    let cp = s.config.active_mut();
+    cp.sub_enabled = g.get_settings_sub_enabled();
+    cp.sub_lang = g.get_settings_sub_lang().to_string();
+    cp.sub_lang2 = g.get_settings_sub_lang2().to_string();
+    cp.sub_type = g.get_settings_sub_type().to_string();
+    cp.sub_scale_pct = g.get_settings_sub_scale_pct().max(0) as u32;
+    cp.sub_pos_pct = g.get_settings_sub_pos_pct().max(0) as u32;
+    cp.sub_respect_ass_styling = g.get_settings_sub_respect_ass_styling();
+    cp.sub_color = g.get_settings_sub_color().to_string();
+    cp.sub_background = g.get_settings_sub_background();
+    cp.audio_lang = g.get_settings_audio_lang().to_string();
+    cp.now_playing_auto_open = g.get_settings_now_playing_auto_open();
+    cp.skip_intro_mode = g.get_settings_skip_intro_mode().to_string();
+    cp.skip_intro_secs = g.get_settings_skip_intro_secs().max(0) as u32;
+    cp.skip_recap_mode = g.get_settings_skip_recap_mode().to_string();
+    cp.skip_recap_secs = g.get_settings_skip_recap_secs().max(0) as u32;
+    cp.skip_preview_mode = g.get_settings_skip_preview_mode().to_string();
+    cp.skip_preview_secs = g.get_settings_skip_preview_secs().max(0) as u32;
+    cp.skip_commercial_mode = g.get_settings_skip_commercial_mode().to_string();
+    cp.skip_commercial_secs = g.get_settings_skip_commercial_secs().max(0) as u32;
+    cp.skip_credits_mode = g.get_settings_skip_credits_mode().to_string();
+    cp.skip_credits_secs = g.get_settings_skip_credits_secs().max(0) as u32;
+    cp.seerr_enabled = g.get_settings_seerr_enabled();
+    cp.trailer_quality = g.get_settings_trailer_quality().to_string();
+}
+
+// ── audio device discovery ────────────────────────────────────────────────────
+
+pub(crate) fn fetch_audio_devices() -> Vec<(String, String)> {
+    // Moved from main.rs: names resolve as they did there.
+    use crate::*;
+    let out = std::process::Command::new("mpv")
+        .args(["--no-config", "--audio-device=help"])
+        .output();
+    let Ok(out) = out else {
+        return vec![("auto".into(), "Autoselect device".into())];
+    };
+    let raw = String::from_utf8_lossy(&out.stdout);
+    let text = if raw.trim().is_empty() {
+        String::from_utf8_lossy(&out.stderr).into_owned()
+    } else {
+        raw.into_owned()
+    };
+    let mut devices = vec![("auto".into(), "Autoselect device".into())];
+    for line in text.lines() {
+        let line = line.trim();
+        if !line.starts_with('\'') {
+            continue;
+        }
+        let Some(end_q) = line[1..].find('\'') else {
+            continue;
+        };
+        let name = line[1..end_q + 1].to_string();
+        if name == "auto" {
+            continue;
+        }
+        let rest = line[end_q + 2..].trim();
+        let desc = if rest.starts_with('(') && rest.ends_with(')') {
+            rest[1..rest.len() - 1].to_string()
+        } else {
+            name.clone()
+        };
+        devices.push((name, desc));
+    }
+    // Real devices can be exposed under more than one backend with an
+    // identical parenthetical description — confirmed live 2026-08-07: a USB
+    // interface listed once as `pipewire/alsa_output...` and once as
+    // `pulse/alsa_output...`, both described "UAC-2 Digital Stereo (IEC958)".
+    // Selection in Settings round-trips purely through this description
+    // string (the dropdown widget only knows strings, not indices), so two
+    // entries sharing one desc made the second unselectable — picking it
+    // always resolved back to the first matching desc instead. Suffix every
+    // duplicate with its backend (the part of `name` before the first '/')
+    // so every entry's desc is unique; `Config.audio_device`/
+    // `audio_device_passthrough` store the device NAME, not desc, so this is
+    // purely a display-string fix with nothing to migrate on disk.
+    let mut counts: HashMap<String, usize> = HashMap::new();
+    for (_, desc) in &devices {
+        *counts.entry(desc.clone()).or_insert(0) += 1;
+    }
+    for (name, desc) in devices.iter_mut() {
+        if counts.get(desc.as_str()).copied().unwrap_or(0) > 1 {
+            let backend = name.split('/').next().unwrap_or(name.as_str());
+            *desc = format!("{desc} [{backend}]");
+        }
+    }
+    // Code review, 2026-08-08: the backend suffix above only disambiguates
+    // ACROSS backends — two devices under the SAME backend with the same
+    // description (a real, confirmed case: two USB devices both enumerating
+    // as "HD-Audio Generic/USB Stream Output" under `alsa`) still collide
+    // after suffixing, reproducing the exact unselectable-second-entry bug
+    // this whole fix was for, just narrower. Re-check after the backend
+    // suffix and fall back to the raw device name (mpv's own identifier,
+    // guaranteed unique) for anything still colliding.
+    let mut counts2: HashMap<String, usize> = HashMap::new();
+    for (_, desc) in &devices {
+        *counts2.entry(desc.clone()).or_insert(0) += 1;
+    }
+    for (name, desc) in devices.iter_mut() {
+        if counts2.get(desc.as_str()).copied().unwrap_or(0) > 1 {
+            *desc = format!("{desc} ({name})");
+        }
+    }
+    devices
+}
+
+// ── system font discovery ─────────────────────────────────────────────────────
+// Same pattern as fetch_audio_devices above, but via fc-list instead of mpv.
+// Returns (value, display) pairs: "Inter" (Fjord's bundled default) and ""
+// (system default, no font-family override) are pinned first, followed by
+// every distinct font family installed on the host, alphabetically. A family
+// with multiple locale/weight aliases on one fc-list line ("Noto Sans
+// Malayalam,Noto Sans Malayalam Light") only keeps the first — the rest are
+// just alternate names for the same family, not separate fonts.
+pub(crate) fn fetch_system_fonts() -> Vec<(String, String)> {
+    let out = std::process::Command::new("fc-list")
+        .args([":", "family"])
+        .output();
+    let mut names: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    if let Ok(out) = out {
+        let text = String::from_utf8_lossy(&out.stdout);
+        for line in text.lines() {
+            if let Some(name) = line.split(',').next() {
+                let name = name.trim();
+                if !name.is_empty() {
+                    names.insert(name.to_string());
+                }
+            }
+        }
+    }
+    let mut fonts = vec![
+        ("Inter".to_string(), "Inter (Fjord default)".to_string()),
+        (String::new(), "System default".to_string()),
+    ];
+    fonts.extend(names.into_iter().map(|n| (n.clone(), n)));
+    fonts
 }

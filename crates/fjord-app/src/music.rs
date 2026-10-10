@@ -2,7 +2,10 @@
 //   Music bar, Now Playing, queue controls/panel and lyrics callbacks (moved from main(), 0.5.0 step 3)
 //   wire_music_bar         music bar, Now Playing, queue panel open
 //   wire_queue             queue prev/next/shuffle/repeat, queue panel, lyrics
+//   push_queue_display / spawn_queue_poster_loading  queue panel model + its posters
 // ─────────────────────────────────────────────────────────────────────────────
+
+use crate::{AppState, MainWindow};
 
 // ── wire_music_bar (moved from main(), 0.5.0 step 3) ─────────────────────
 /// Wires music bar, Now Playing, queue panel open: music_bar_play_pause, music_bar_stop, music_bar_seek, music_bar_seek_rel, music_bar_open_album, open_now_playing, open_queue_panel.
@@ -419,6 +422,191 @@ pub(crate) fn wire_queue(
             let g = AppState::get(&w);
             if g.get_lyrics_available() {
                 g.set_show_lyrics(!g.get_show_lyrics());
+            }
+        });
+    }
+}
+
+// Rebuild queue-items model from current VideoState. The panel shows the
+// CURRENT track and what will still play — finished/skipped playlist rows are
+// hidden (they were "cleared from the queue"). With Repeat All/One every row
+// plays again, so the full playlist stays visible. Playlist rows come first
+// (shuffle-aware play order), then context-menu queue rows (is_queued=true).
+// QueueEntry.index carries the UNDERLYING index (playlist idx, or
+// playlist.len()+queue idx; -1 = synthetic now-playing row) — queue-jump and
+// queue-remove consume it directly; the visible number is the display row.
+// Also owns queue-count (upcoming playlist tracks + queued items) so callers
+// can't drift on its meaning. poster-id is set so spawn_queue_poster_loading
+// can fetch art; has_poster/poster are left false/default until the background
+// task fills them via set_row_data.
+// Must be called on the Slint UI thread (holds &AppState, not Weak).
+pub(crate) fn push_queue_display(vs: &crate::playback::VideoState, g: &AppState) {
+    // Moved from main.rs: names resolve as they did there.
+    use crate::*;
+    use slint::{ModelRc, VecModel};
+    // This function always rebuilds queue-items from scratch (called from ~13
+    // sites — most queue/playlist mutations, plus every natural track advance),
+    // but only ONE call site (on_refresh_queue_display) pairs with
+    // spawn_queue_poster_loading to actually fetch art. Without carrying
+    // forward already-decoded posters here, every other mutation — including
+    // the natural advance to track 2 — wiped the Up Next strip back to blank
+    // placeholders, even though every track on the same album shares the same
+    // poster_id (album_art_id) and its art was already sitting in the old
+    // model. Snapshot the current model's known art by poster_id first so a
+    // repeated poster_id is applied immediately with no network round trip;
+    // a genuinely new poster_id still waits on spawn_queue_poster_loading.
+    let known_art: HashMap<String, slint::Image> = {
+        let old = g.get_queue_items();
+        (0..old.row_count())
+            .filter_map(|i| old.row_data(i))
+            .filter(|e| e.has_poster)
+            .map(|e| (e.poster_id.to_string(), e.poster.clone()))
+            .collect()
+    };
+    let to_entry = |i: i32, qi: &crate::playback::QueueItem, is_current: bool, is_queued: bool| {
+        let artist = qi
+            .audio_meta
+            .as_ref()
+            .map(|(a, _)| a.as_str())
+            .unwrap_or("")
+            .to_string();
+        // Audio items: poster-id = album_art_id; video items: poster-id = item id.
+        let poster_id = qi
+            .audio_meta
+            .as_ref()
+            .map(|(_, art)| art.as_str())
+            .unwrap_or(qi.id.as_str())
+            .to_string();
+        let cached = known_art.get(&poster_id).cloned();
+        crate::QueueEntry {
+            id: qi.id.as_str().into(),
+            index: i,
+            title: qi.title.as_str().into(),
+            artist: artist.as_str().into(),
+            is_current,
+            is_queued,
+            poster_id: poster_id.as_str().into(),
+            has_poster: cached.is_some(),
+            poster: cached.unwrap_or_default(),
+        }
+    };
+
+    let cur_id = vs.item_id.as_deref();
+    // Current play IS the playlist row at playlist_index (normal album playback)?
+    let cur_is_listed = cur_id.is_some()
+        && vs
+            .playlist
+            .get(vs.playlist_index)
+            .map(|q| Some(q.id.as_str()) == cur_id)
+            .unwrap_or(false);
+
+    let mut items: Vec<crate::QueueEntry> = Vec::new();
+
+    // Off-list play (queue jump / single track): synthetic now-playing row on top.
+    if let (Some(id), Some(np)) = (cur_id, vs.now_playing.as_ref())
+        && !cur_is_listed
+        && np.id == id
+    {
+        items.push(to_entry(-1, np, true, false));
+    }
+
+    if vs.repeat_mode != crate::playback::RepeatMode::Off {
+        // Repeat: everything plays again — show the whole playlist.
+        items.extend(
+            vs.playlist.iter().enumerate().map(|(i, qi)| {
+                to_entry(i as i32, qi, cur_is_listed && i == vs.playlist_index, false)
+            }),
+        );
+    } else {
+        // Play order from the current position (shuffle-aware); rows already
+        // played are gone. When the current play is off-list, the slot at
+        // playlist_index will not play (advance goes to the next one) — skip it.
+        let order: Vec<usize> = if vs.shuffle && !vs.shuffle_order.is_empty() {
+            let pos = vs
+                .shuffle_order
+                .iter()
+                .position(|&i| i == vs.playlist_index)
+                .unwrap_or(0);
+            vs.shuffle_order[pos..].to_vec()
+        } else {
+            (vs.playlist_index..vs.playlist.len()).collect()
+        };
+        for (k, &i) in order.iter().enumerate() {
+            if k == 0 && !cur_is_listed && cur_id.is_some() {
+                continue;
+            }
+            if let Some(qi) = vs.playlist.get(i) {
+                items.push(to_entry(
+                    i as i32,
+                    qi,
+                    cur_is_listed && i == vs.playlist_index,
+                    false,
+                ));
+            }
+        }
+    }
+
+    let base = vs.playlist.len() as i32;
+    items.extend(
+        vs.queue
+            .iter()
+            .enumerate()
+            .map(|(i, qi)| to_entry(base + i as i32, qi, false, true)),
+    );
+    g.set_queue_items(ModelRc::new(VecModel::from(items)));
+    g.set_queue_count(crate::playback::upcoming_count(vs));
+}
+
+// Fetch album art for each QueueEntry and fill in poster/has_poster via set_row_data.
+// Reads poster-ids from the current queue-items model snapshot.
+pub(crate) fn spawn_queue_poster_loading(
+    client: std::sync::Arc<fjord_api::JellyfinClient>,
+    ww: slint::Weak<MainWindow>,
+    rt: tokio::runtime::Handle,
+) {
+    // Moved from main.rs: names resolve as they did there.
+    use crate::*;
+    use slint::Model;
+    // Snapshot poster_ids from the model (must be on UI thread; caller ensures this).
+    let Some(w) = ww.upgrade() else { return };
+    let model = AppState::get(&w).get_queue_items();
+    let entries: Vec<(usize, String)> = (0..model.row_count())
+        .filter_map(|i| {
+            model.row_data(i).and_then(|e| {
+                let pid = e.poster_id.to_string();
+                if pid.is_empty() { None } else { Some((i, pid)) }
+            })
+        })
+        .collect();
+    drop(w);
+    if entries.is_empty() {
+        return;
+    }
+
+    let sem = std::sync::Arc::new(tokio::sync::Semaphore::new(8));
+    for (row_idx, poster_id) in entries {
+        let client2 = std::sync::Arc::clone(&client);
+        let ww2 = ww.clone();
+        let sem2 = std::sync::Arc::clone(&sem);
+        rt.spawn(async move {
+            let _permit = sem2.acquire().await;
+            if let Some(bytes) = poster::fetch_poster_cached(&client2, &poster_id).await
+                && let Some(spb) = poster::decode_poster_buffer(&bytes)
+            {
+                let _ = slint::invoke_from_event_loop(move || {
+                    use slint::Model;
+                    if let Some(w) = ww2.upgrade() {
+                        let model = AppState::get(&w).get_queue_items();
+                        if let Some(mut row) = model.row_data(row_idx) {
+                            // Guard: poster-id must still match (playlist may have changed)
+                            if row.poster_id.as_str() == poster_id.as_str() {
+                                row.has_poster = true;
+                                row.poster = slint::Image::from_rgba8(spb);
+                                model.set_row_data(row_idx, row);
+                            }
+                        }
+                    }
+                });
             }
         });
     }

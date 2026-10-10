@@ -14,6 +14,7 @@
 //                           item_detail_cache — independent of whether metadata prewarm
 //                           has run; same progress/cost-logging pattern
 //   wire_prewarm           callbacks moved from main() (0.5.0 step 3): library prewarm
+//   wire_prewarm_progress_timer  Settings → prewarm progress refresh
 // ─────────────────────────────────────────────────────────────────────────────
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
@@ -22,6 +23,7 @@ use std::time::Instant;
 use fjord_api::JellyfinClient;
 use tracing::{info, warn};
 
+use crate::MainWindow;
 use crate::config::FjordState;
 use crate::poster::{fetch_backdrop_cached_tagged, fetch_poster_cached};
 
@@ -488,4 +490,41 @@ pub(crate) fn wire_prewarm(
             prewarm::spawn_image_prewarm(client, Arc::clone(&state), rt_handle.clone());
         });
     }
+}
+
+/// Reads the library-prewarm progress fields (Phase 104) every second and
+/// pushes them to AppState — decouples the UI update rate from the actual
+/// fetch rate inside prewarm.rs's two spawn_*_prewarm functions, which would
+/// otherwise need an invoke_from_event_loop call per item processed.
+pub(crate) fn wire_prewarm_progress_timer(
+    window_weak: slint::Weak<MainWindow>,
+    state: Arc<Mutex<FjordState>>,
+) -> slint::Timer {
+    // Moved from main.rs: names resolve as they did there.
+    use crate::*;
+    let timer = slint::Timer::default();
+    timer.start(
+        slint::TimerMode::Repeated,
+        std::time::Duration::from_secs(1),
+        move || {
+            let Some(w) = window_weak.upgrade() else {
+                return;
+            };
+            let s = state.lock().unwrap();
+            let g = AppState::get(&w);
+            g.set_prewarm_metadata_running(s.prewarm_metadata_running);
+            g.set_prewarm_metadata_total(s.prewarm_metadata_total as i32);
+            g.set_prewarm_metadata_done(s.prewarm_metadata_done as i32);
+            if !s.prewarm_metadata_summary.is_empty() {
+                g.set_prewarm_metadata_summary(ss(&s.prewarm_metadata_summary));
+            }
+            g.set_prewarm_image_running(s.prewarm_image_running);
+            g.set_prewarm_image_total(s.prewarm_image_total as i32);
+            g.set_prewarm_image_done(s.prewarm_image_done as i32);
+            if !s.prewarm_image_summary.is_empty() {
+                g.set_prewarm_image_summary(ss(&s.prewarm_image_summary));
+            }
+        },
+    );
+    timer
 }
