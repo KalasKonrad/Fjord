@@ -1,111 +1,29 @@
 // ── fjord-app · request_detail.slint ─────────────────────────────────────────
-//   MetaRow                 File-local label/value line for the Details panel
-//                          below (not widgets.slint's StatRow — that's sized
-//                          for the small dark stats overlay, a poor fit here).
-//   RequestDetailScreen    Seerr movie/TV detail: rating badge, collapsible
-//                          StorylineSection overview, Cast & Crew row (CastRow,
-//                          TMDB photos), Details panel (Status/Release-or-
-//                          First-Air-Date/Next Air Date/Original Language/
-//                          Production Countries/Network/Currently Streaming
-//                          On — purely display, no keyboard zone, reached by
-//                          scrolling like MetaLine's genre text), tier-aware
-//                          Request/pill/Trailer/⋮-More button row (2026-07-18
-//                          Trailer button: greyed "Checking…"/"No trailer" until request-detail-
-//                          trailer-state == "ok" (2026-10-04)
-//                          — see below), poster request-status badge
-//                          (PosterBlock, same day — see its own comment in
-//                          widgets.slint). Free-floating overlay
-//                          (FadeGate at the main.slint mount site, not owned
-//                          here — see connect_seerr.slint's header comment for
-//                          why). Header matches the universal detail-screen
-//                          pattern used by DetailPage/SeasonScreen/
-//                          CollectionScreen: full-bleed backdrop Image + dark
-//                          gradient overlay behind the poster+title content,
-//                          plus a floating "← Back" FjordButton overlaid
-//                          top-left — not a copy of DetailPage (different data
-//                          source and action set: Request, not Play; no
-//                          Jellyfin item id; no resume/watched state).
-//                          Keyboard-nav fix (2026-07-18): the StorylineSection header's
-//                          clicked-header() and the Request/Trailer/⋮-More buttons' own
-//                          clicked handlers now also sync request-detail-zone/-back-focused,
-//                          which they previously left stale on a mouse click — a following
-//                          Enter could activate the wrong element (real bug).
-//                          Title column: plain Rectangle fixed at height:240px matching
-//                          PosterBlock, width: root.width - 288px - (has-details ? 452px : 0px)
-//                          (NOT parent.width — compile-time binding loop, see the Slint
-//                          gotchas section), with two independently-positioned children —
-//                          title/meta at its top, req-row pinned via explicit
-//                          y: parent.height - 38px (2026-07-18, user request; three-attempt
-//                          fix — vertical-stretch:1 spacer, then horizontal-stretch:1, both
-//                          confirmed live not to work, before landing on root.width
-//                          arithmetic — see CLAUDE.md's Seerr integration section for the
-//                          full story, confirmed live-working on detail.slint's identical
-//                          structure). Same fix now applied to Detail/Season/Collection/
-//                          Artist too, so this no longer diverges from them — all five
-//                          detail-style screens pin their button row to a fixed Y matching
-//                          whatever art size is on screen. The Details
-//                          panel (Status/dates/language/countries/network/
-//                          Currently Streaming On) moved from below Cast & Crew
-//                          into this same header row too (2026-07-18, user
-//                          request) — a third HorizontalLayout sibling next to
-//                          PosterBlock and the title column, fixed 420px width
-//                          (not horizontal-stretch — see has-details's own doc
-//                          comment for why a stretch-derived width isn't safe
-//                          here, given the nested Flickable two levels down).
-//                          Keyboard flow: opens with focus on the button row
-//                          (request-detail-back-focused=false, zone=0,
-//                          btn-focused=0/Request — 2026-07-18, real bug:
-//                          used to default to the Back button, requiring an
-//                          extra Down before Request was even reachable,
-//                          unlike every other detail-style screen's own
-//                          entry focus), Up from there reaches Back ->
-//                          request-detail-zone (0=button row, 1=storyline,
-//                          2=cast row — see existing_zones()/
-//                          handle_key_request_detail in discover.rs).
-//                          Button row (2026-07-18, real bugs fixed — see
-//                          CLAUDE.md's Seerr integration section for the
-//                          full "aproved or needs aprovment" writeup): 2K
-//                          and 4K are tracked completely independently, so
-//                          Request stays visible whenever EITHER
-//                          request-detail-status/-status-4k is still "" (its
-//                          Quality toggle picks which tier you're actually
-//                          submitting); each tier that already has a status
-//                          gets its own small pill (both can show at once);
-//                          ⋮ More (icon-left:"☰", confirmed Symbols2-covered
-//                          via fc-query) opens the same Discover context
-//                          menu the grid's right-click uses, only shown once
-//                          request-detail-request-id is non-empty. Watchlist
-//                          (2026-07-18, Watchlist + Release Calendar) is a
-//                          4th, icon-only 44px ★/☆ toggle button, always
-//                          visible regardless of request state — clicked
-//                          resets zone/back-focused (same fix as the other
-//                          3 buttons above) then calls
-//                          AppState.request-detail-toggle-watchlist().
-//                          request-detail-btn-focused is a "gaps are fine"
-//                          slot index now (0=Request/1=Trailer/2=⋮ More/
-//                          3=Watchlist, see discover.rs::existing_detail_btn_slots),
-//                          not a fixed 0/1 binary.
-//   RequestOptionsOverlay  Modal opened by the Request button (or the
-//                          Discover context menu's Request/Edit Request
-//                          rows, 2026-07-18): Quality (2K/4K pair, HIDDEN
-//                          while request-options-editing — Seerr's PUT
-//                          /request/{id} can't change the tier, see this
-//                          section's own comment), quality profile
-//                          (radio-select chip strip, if any configured —
-//                          Radarr/Sonarr's own named profiles, e.g.
-//                          "WEB-1080p"/"Remux-2160p"), tag chips, season
-//                          cards, Cancel/Request confirm row — the actual
-//                          request settings, kept off the main page and out
-//                          of the way until the user decides to request.
-//                          Same dim-backdrop-plus-centered-box shape as
-//                          PlaylistPicker (context_menu.slint); tag chip /
-//                          season card / profile chip Flickable strips are
-//                          the same horizontal kb-x idiom as CastRow.
-//                          Keyboard flow: request-options-zone (0=Quality
-//                          row, absent while editing, 1=profile row,
-//                          2=tags row, 3=seasons row, 4=confirm row — see
-//                          existing_option_zones()/handle_key_request_options
-//                          in discover.rs).
+//   MetaRow                file-local label/value line for the Details panel (StatRow is sized
+//                          for the stats overlay)
+//   RequestDetailScreen    Seerr movie/TV detail, the shared detail-screen shape: full-bleed
+//                          backdrop + gradient, floating "← Back", PosterBlock (with request-
+//                          status badge), title column, Details panel (status/dates/language/
+//                          countries/network/streaming — display only, no keyboard zone),
+//                          StorylineSection, Cast & Crew (CastRow, TMDB photos). Mounted by a
+//                          FadeGate in main.slint. Title column: a plain Rectangle fixed at
+//                          PosterBlock's 240px, width from root.width (not parent.width — binding
+//                          loop), button row pinned at a fixed y.
+//                          Button row slots (request-detail-btn-focused, gaps allowed —
+//                          discover/keys.rs existing_detail_btn_slots): 0 Request (a tier still
+//                          requestable; 2K and 4K tracked independently, one pill per requested
+//                          tier), 1 Trailer (greyed "Checking…"/"No trailer" until
+//                          request-detail-trailer-state == "ok"), 2 ⋮ More (a request exists),
+//                          3 Watchlist ★/☆ (always), 4 Blocklist.
+//                          Keyboard: opens on the button row; Up reaches Back; request-detail-
+//                          zone 0 = buttons, 1 = storyline, 2 = cast (existing_zones/
+//                          handle_key_request_detail). Mouse clicks sync zone/back-focused.
+//   RequestOptionsOverlay  modal from the Request button or the Discover context menu's
+//                          Request/Edit Request: Quality 2K/4K pair (hidden while editing —
+//                          Seerr can't change the tier), quality profile (radio chips, "Default"
+//                          first), tag chips, season cards, Cancel/Request. Keyboard:
+//                          request-options-zone 0 quality, 1 profile, 2 tags, 3 seasons,
+//                          4 confirm (existing_option_zones/handle_key_request_options).
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
@@ -223,35 +141,14 @@ export component RequestDetailScreen inherits Rectangle {
                                 : AppState.request-detail-status;
                         }
 
-                        // Deterministic fixed-position fix (2026-07-18, replaces
-                    // an earlier height:240px + vertical-stretch:1-spacer
-                    // version that looked right on paper but didn't
-                    // reliably hold up live — see detail.slint's identical
-                    // fix for the full "why" writeup). A plain Rectangle,
-                    // not a Layout, fixed at 240px matching PosterBlock;
-                    // title/meta sit at its top (independent VerticalLayout,
-                    // sized to its own content), req-row is pinned via an
-                    // explicit `y: parent.height - 38px` (both FjordButton
-                    // and the status pill's Rectangle top out at 38px in
-                    // this row — FjordButton itself is a hard-coded 38px
-                    // in widgets.slint) — neither child's position depends
-                    // on the other's size, which is what actually
-                    // guarantees the fixed Y this time.
+                        // A plain Rectangle fixed at 240px (PosterBlock's height): title/meta at the top, req-row
+                        // pinned at `parent.height - 38px` (FjordButton is 38px) — neither depends on the other's
+                        // size, so the buttons sit at a fixed y (same fix as detail.slint).
                     Rectangle {
                             height: 240px;
-                        // Explicit computed width off root.width — see
-                        // detail.slint's identical fix for the full three-
-                        // attempt "why" (horizontal-stretch:1 confirmed live
-                        // not to work on a plain Rectangle; parent.width
-                        // caused a genuine compile-time binding loop, since
-                        // a HorizontalLayout's own width can't depend on a
-                        // child reading it back). root.width minus the
-                        // HorizontalLayout's own padding-left/padding-right
-                        // (48+48), PosterBlock's fixed 160px, and the 32px
-                        // spacing before it — plus, ONLY when has-details,
-                        // the extra 32px spacing + 420px fixed width the
-                        // Details column (a third sibling in this same row)
-                        // also claims.
+                        // Width computed from root.width (horizontal-stretch doesn't work on a plain Rectangle;
+                        // parent.width is a binding loop): minus the layout's padding (48+48), PosterBlock (160) and
+                        // spacing (32), and with has-details also the Details column (32 + 420).
                         width: root.width - 48px - 48px - 160px - 32px - (has-details ? 452px : 0px);
 
                             VerticalLayout {
@@ -276,43 +173,13 @@ export component RequestDetailScreen inherits Rectangle {
                             }
 
                             // ── Status / Request / Trailer / More buttons ─────────
-                        // Request opens the Request Options modal (4K/tags/
-                        // seasons configured there — see RequestOptionsOverlay
-                        // below) rather than submitting directly or exposing
-                        // every picker inline on this page. Trailer is
-                        // independent of request status — watching a trailer
-                        // makes sense even for an already-requested/available
-                        // item — so it's its own sibling here, not nested
-                        // inside either the Request-button or status-pill
-                        // branch (see request-detail-trailer-url's own doc
-                        // comment in app_state.slint).
-                        //
-                        // 2K and 4K are tracked completely independently
-                        // (real bug fixed 2026-07-18 — see submit_request's
-                        // own doc comment): Request stays visible/clickable
-                        // as long as EITHER tier is still "" (its Quality
-                        // toggle in the modal picks which one you're actually
-                        // submitting), and each tier that already has a
-                        // status gets its own small pill — both can show at
-                        // once (e.g. "4K Requested" pill next to a still-live
-                        // Request button for 2K).
-                        // Flickable, not a bare HorizontalLayout — real overflow
-                        // risk found in code review, 2026-07-31: with up to 5
-                        // elements (Request/status pill + Trailer + More +
-                        // Watchlist), combined width can reach ~500-520px,
-                        // which exceeds the available width on any realistic
-                        // sub-~1350px window (a non-maximized window or a
-                        // 720p HTPC, not an extreme edge case) — nothing
-                        // clipped or scrolled the overflow before this, so it
-                        // would spill past the row into/past the Details
-                        // column. Flickable is this codebase's own established
-                        // fix for "a row of things that might not all fit"
-                        // (CastRow, RequestOptionsOverlay's tag/season strips)
-                        // — mouse-wheel scroll reaches an overflowing button;
-                        // no keyboard-driven auto-scroll-into-view added here
-                        // (unlike those two, which track a fixed per-item
-                        // stride) since these buttons have variable widths,
-                        // out of scope for this pass.
+                            // Request opens the Request Options modal (quality/tags/seasons, see RequestOptionsOverlay)
+                            // rather than submitting directly. Trailer is independent of request status.
+                            //
+                            // 2K and 4K are tracked independently (see submit_request): Request stays while EITHER tier
+                            // is still unrequested, and each requested tier gets its own pill — both can show at once.
+                            // A Flickable, not a bare HorizontalLayout: up to 5 elements (~500 px) overflow a narrow
+                            // window; mouse-wheel scroll reaches them (no keyboard auto-scroll — variable widths).
                         req-row := Flickable {
                                 x: 0;
                                 y: parent.height - 38px;
@@ -339,11 +206,8 @@ export component RequestDetailScreen inherits Rectangle {
                                         enabled: !AppState.request-detail-requesting;
                                         width: 130px;
                                         kbd-focused: !AppState.request-detail-back-focused && AppState.request-detail-zone == 0 && AppState.request-detail-btn-focused == 0;
-                                // Mouse clicks must sync the keyboard focus
-                                // state too, or a later Left/Right/Enter press
-                                // acts on stale focus — the exact bug class
-                                // documented in CLAUDE.md's Seerr integration
-                                // section (Phase 142's zone-numbering fix).
+                                // Mouse clicks sync the keyboard focus state too (else Left/Right/Enter act on stale
+                                // focus).
                                 clicked => {
                                             AppState.request-detail-zone = 0;
                                             AppState.request-detail-back-focused = false;
@@ -383,17 +247,9 @@ export component RequestDetailScreen inherits Rectangle {
                                             vertical-alignment: center;
                                         }
                                     }
-                            // Watch Trailer — Discover only (see CLAUDE.md's
-                            // Seerr integration section). Hidden unless both a
-                            // trailer was found AND yt-dlp is actually
-                            // installed (proactive detection, not just a
-                            // reactive failure toast — see main.rs::detect_yt_dlp).
-                            // 2026-10-04: always shown once the title has
-                            // loaded (yt-dlp installed), greyed out while the
-                            // background check runs ("Checking…") or when no
-                            // listed trailer plays ("No trailer") — see
-                            // discover::start_trailer_check. Only "ok" is
-                            // pressable and a D-pad stop.
+                            // Watch Trailer: shown once the title has loaded if yt-dlp is installed; greyed while the
+                            // background check runs ("Checking…") or when no listed trailer plays ("No trailer") — see
+                            // discover::start_trailer_check. Only "ok" is pressable and a D-pad stop.
                             if AppState.request-detail-trailer-state != "" && AppState.yt-dlp-available: FjordButton {
                                 // icon-left/text as separate properties, not one
                                 // combined string — Noto Sans Symbols2 (every
@@ -415,19 +271,9 @@ export component RequestDetailScreen inherits Rectangle {
                                             AppState.play-trailer();
                                         }
                                     }
-                            // ⋮ More (2026-07-18) — opens the same Discover
-                            // context menu the grid's right-click uses
-                            // (View Request/Edit/Cancel/Approve/Decline,
-                            // correctly gated by mine/admin/pending), sourced
-                            // from request-detail-request-id/-pending/-mine
-                            // instead of a CardItem. Only shown once a
-                            // request actually exists — with none, every one
-                            // of that menu's rows either doesn't apply or
-                            // duplicates the Request button already here.
-                            // "☰" (Symbols2-covered, confirmed via fc-query,
-                            // unlike "⋮" which is only in the Math fallback)
-                            // reuses FjordButton's own icon-left mechanism
-                            // rather than a hand-rolled button.
+                            // ⋮ More: the Discover context menu (View Request/Edit/Cancel/Approve/Decline, gated by
+                            // mine/admin/pending) sourced from request-detail-request-id/-pending/-mine. Only once a
+                            // request exists. "☰" because ⋮ is only in the Math fallback font.
                             if AppState.request-detail-request-id != "": FjordButton {
                                         icon-left: "☰";
                                         text: "";
@@ -440,15 +286,8 @@ export component RequestDetailScreen inherits Rectangle {
                                             AppState.open-discover-menu-from-detail();
                                         }
                                     }
-                            // Watchlist (2026-07-18, slot 3) — always
-                            // visible, unlike Request. Deliberately icon-
-                            // only (44px, same width as ⋮ More) rather than
-                            // a labelled button, to minimize how much this
-                            // adds to a row that's already needed 3 separate
-                            // layout-fix rounds this session — the narrowest
-                            // possible 4th element. "☆"/"★" (confirmed
-                            // covered by Noto Sans Symbols2 via fc-query,
-                            // same as ⋮ More's own "☰") toggle with state.
+                            // Watchlist (slot 3): always visible, icon-only 44px like ⋮ More to keep the row narrow;
+                            // "☆"/"★" (Noto Sans Symbols2).
                             FjordButton {
                                         icon-left: AppState.request-detail-on-watchlist ? "★" : "☆";
                                         text: "";
@@ -461,13 +300,9 @@ export component RequestDetailScreen inherits Rectangle {
                                             AppState.request-detail-toggle-watchlist();
                                         }
                                     }
-                            // Blocklist (2026-08-06, slot 4) — same icon-only
-                            // 44px shape as ⋮ More/Watchlist above. Gated on
-                            // seerr-can-manage-blocklist AND the item being
-                            // untouched or already blocklisted (mirrors the
-                            // Discover context menu's row 7 eligibility
-                            // exactly). "⛔"/"✕" (both confirmed covered by
-                            // Noto Sans Symbols2 via fc-query).
+                            // Blocklist (slot 4): icon-only 44px; seerr-can-manage-blocklist and the item untouched or
+                            // already blocklisted (same rule as the Discover context menu's row 7). "⛔"/"✕" (Noto
+                            // Sans Symbols2).
                             if AppState.seerr-can-manage-blocklist
                                         && (AppState.request-detail-availability == "" || AppState.request-detail-availability == "blocklisted"):
                                 FjordButton {
@@ -486,22 +321,9 @@ export component RequestDetailScreen inherits Rectangle {
                             }
                         }
 
-                        // ── Details (Status/dates/language/countries/network/
-                    // streaming) — moved into the backdrop's empty
-                    // right-side space, per user request 2026-07-18 ("move
-                    // the metadata and currently streaming on to the
-                    // backdrop area... to the right"). Fixed 420px width,
-                    // not horizontal-stretch: this column contains a
-                    // Flickable (the streaming-provider strip) nested two
-                    // levels down, and per the Slint gotcha in CLAUDE.md a
-                    // width ultimately derived from HorizontalLayout stretch
-                    // distribution (a layout-cache value, re-evaluated
-                    // during the very hit-test/layout pass that's already
-                    // in progress) is the same class of risk as the
-                    // documented self.width-in-conditional "Recursion
-                    // detected" crash — a plain fixed literal is the safe,
-                    // established alternative (matches PosterBlock's own
-                    // fixed 160px width), not a corner cut for convenience.
+                        // ── Details (status/dates/language/countries/network/streaming), in the backdrop's empty
+                        // right side. A fixed 420px width, not horizontal-stretch: it contains a nested Flickable,
+                        // and a stretch-derived width risks the "Recursion detected" crash (SLINT.md).
                     if has-details: VerticalLayout {
                             width: 420px;
                             spacing: 0px;
@@ -626,17 +448,9 @@ export component RequestDetailScreen inherits Rectangle {
                 CastRow {
                     cast: AppState.request-detail-cast;
                     focused-idx: AppState.request-detail-zone == 2 ? AppState.request-detail-focused-cast : -1;
-                    // Wired 2026-08-13 — was deliberately left unbound
-                    // ("there's no TMDB-person detail screen to open"),
-                    // live-reported ("in the descover detail you cant
-                    // enter person detail"). request-detail-cast[idx].id is
-                    // a TMDB person id (straight from TMDB's own Credits
-                    // response), not a Jellyfin one — open-discover-person
-                    // resolves a local Jellyfin Person match first, falling
-                    // back to a TMDB-only screen. Same mouse/keyboard
-                    // convergence discipline as every other zone on this
-                    // screen: Enter (handle_key_request_detail's own zone-2
-                    // Confirm arm) calls the identical callback.
+                    // request-detail-cast[idx].id is a TMDB person id: open-discover-person resolves a local
+                    // Jellyfin person first, else opens a TMDB-only screen. Enter (handle_key_request_detail,
+                    // zone 2) calls the same callback.
                     item-selected(idx) => {
                         AppState.open-discover-person(AppState.request-detail-cast[idx].id, AppState.request-detail-cast[idx].name);
                     }
@@ -660,33 +474,20 @@ export component RequestDetailScreen inherits Rectangle {
 }
 
 // ── Request Options modal ─────────────────────────────────────────────────────
-// 4K toggle + tag chips + season cards + Cancel/Request confirm row — the
-// actual request settings, opened from RequestDetailScreen's Request button
-// instead of sitting inline on the page. Same dim-backdrop-plus-centered-box
-// shape as PlaylistPicker (context_menu.slint); tag chip / season card
-// Flickable strips are the tag/season strips that used to live on the page
-// itself, unchanged apart from the fixed dialog-w width (see dialog-w below).
-// Profile/tag/season Flickable widths are `min(dialog-w - 64px, *-hbox.
-// preferred-width)`, not a bare fixed width — a server with only 1-3 chips
-// configured (verified live: this user's 4K Radarr has exactly one quality
-// profile) previously still got the full-width strip, showing a wide box of
-// mostly empty space. Since every chip/card in these rows has a fixed pixel
-// width, `*-hbox.preferred-width` is deterministic and doesn't depend back
-// on the Flickable's own size, so this isn't the self.width-in-conditional
-// "Recursion detected" trap (see CLAUDE.md's Slint gotchas) — same reasoning
-// already relied on by the pre-existing `content-width: *-hbox.preferred-
-// width` binding on each of these Flickables.
+// Quality toggle + profile/tag chips + season cards + Cancel/Request, opened from
+// RequestDetailScreen's Request button. Dim backdrop + centered box like PlaylistPicker
+// (context_menu.slint). The chip/card strips are `min(dialog-w - 64px,
+// *-hbox.preferred-width)` wide so a server with 1–3 chips doesn't get a wide empty box;
+// every chip has a fixed width, so preferred-width doesn't depend on the Flickable (no
+// binding loop).
 export component RequestOptionsOverlay inherits Rectangle {
     background: #00000088;
 
     property <bool> has-profiles: AppState.request-detail-profiles.length > 0;
     property <bool> has-tags:     AppState.request-detail-tags.length > 0;
     property <bool> has-seasons:  AppState.request-detail-media-type == "tv" && AppState.request-detail-seasons.length > 0;
-    // Fixed, non-conditional width for the dialog's content — read by the
-    // tag/season Flickables below instead of an unset/layout-derived width,
-    // same "Recursion detected" avoidance as the page's own root.width
-    // remedy (see CLAUDE.md) — root here is this component's own top-level
-    // Rectangle (the full-screen backdrop), never itself conditional.
+    // Fixed width for the dialog content, read by the Flickables below instead of a
+    // layout-derived width ("Recursion detected" avoidance, see SLINT.md).
     property <length> dialog-w: 480px;
 
     // Close on backdrop click (Cancel, same as Escape/Back)
@@ -719,25 +520,10 @@ export component RequestOptionsOverlay inherits Rectangle {
             x: 20px;
             y: 20px;
             width: parent.width - 40px;
-            // Real bug, live-reported 2026-08-12: "det cancel and request
-            // button is outside tha popaut window" — the exact same shape as
-            // ConfirmDialog's own once-shipped bug (widgets.slint): a Layout
-            // element placed directly in a plain Rectangle, with explicit
-            // x/y/width but no explicit height, doesn't reliably default to
-            // its own natural content height — so this VerticalLayout's real
-            // `.height` and the OUTER box's separately-computed
-            // `dialog-content.preferred-height + 32px` could disagree,
-            // leaving the confirm row past the box's real bottom edge once
-            // enough conditional rows (Quality/Profile/Tags/Seasons) were
-            // mounted at once. Same proven fix as ConfirmDialog: bind height
-            // to this element's own preferred-height so the two numbers are
-            // guaranteed to agree — not an attempt to read a specific
-            // child's geometry (tried first; that approach hit a genuine
-            // Slint binding loop instead, confirm-row.y depending on this
-            // VerticalLayout's own layout-cache, which itself depends on
-            // this element's height — exactly the class of "a Layout
-            // child's own height implicitly ties back to its parent's" trap
-            // CLAUDE.md's Slint gotchas section already warns about).
+            // A Layout directly in a plain Rectangle needs an explicit height: without it, this
+            // layout's height and the outer box's `preferred-height + 32px` disagreed and the confirm
+            // row fell outside the box with many rows mounted (same fix as ConfirmDialog). Reading a
+            // child's geometry instead was a binding loop.
             height: self.preferred-height;
             spacing: 20px;
 
@@ -750,17 +536,10 @@ export component RequestOptionsOverlay inherits Rectangle {
             }
 
             // ── Quality (2K / 4K) ─────────────────────────────────────────────
-            // A pair, not a single on/off toggle — "off" reading ambiguously
-            // as "no quality chosen" was the original design's weak point;
-            // exactly one of the two is always the visibly selected one.
-            // Left/Right directly set the value (no separate cursor state to
-            // track — the selected button already IS the keyboard position).
-            // Hidden entirely while editing an existing request
-            // (request-options-editing, Discover context menu, 2026-07-18)
-            // — confirmed from Seerr's real PUT /request/{id} route source
-            // that the tier can't be changed by editing at all, so showing
-            // a picker here would imply a capability that doesn't exist;
-            // see SeerrClient::update_request's own doc comment.
+            // A pair, exactly one selected (an on/off toggle read as "no quality"). Left/Right set it
+            // directly — the selected button is the keyboard position. Hidden while editing an existing
+            // request: Seerr's PUT /request/{id} can't change the tier (see
+            // SeerrClient::update_request).
             if !AppState.request-options-editing: VerticalLayout {
                 spacing: 8px;
                 Text {
@@ -845,11 +624,8 @@ export component RequestOptionsOverlay inherits Rectangle {
             }
 
             // ── Quality profile (Radarr/Sonarr, radio-select) ────────────────
-            // Same horizontal Flickable/kb-x shape as Tags below, but exactly
-            // one chip is ever selected (clicking one replaces the previous
-            // choice, rather than toggling independently) — row 0 is always
-            // the synthetic "Default" entry Rust prepends, so there's always
-            // an explicit way back to "no override" without a separate button.
+            // Same Flickable/kb-x shape as Tags below, but exactly one chip is selected; row 0 is the
+            // synthetic "Default" that Rust prepends (the way back to no override).
             if has-profiles: VerticalLayout {
                 spacing: 8px;
 
@@ -885,20 +661,8 @@ export component RequestOptionsOverlay inherits Rectangle {
                             background: p.id == AppState.request-detail-selected-profile-id ? Theme.accent : Theme.surface-overlay;
                             border-width: (profile-ta.pressed || profile-pulse.pulsing) ? 4px
                                 : (AppState.request-options-zone == 1 && AppState.request-detail-focused-profile == i ? 2px : 1px);
-                            // Real bug, live-reported 2026-08-12: "hard so
-                            // see the hilgited item... not consistent with
-                            // the rest of the app" — the focused-but-not-
-                            // selected case only ever bumped border-width
-                            // 1px→2px on the SAME Theme.border-strong gray,
-                            // no color change at all. Originally fixed to
-                            // Theme.accent on focus, matching CastRow/season
-                            // cards at the time — then unified to
-                            // Theme.focus-border (white) same day, once the
-                            // broader app-wide blue-vs-white inconsistency
-                            // this exact report was part of got its own fix
-                            // (see CLAUDE.md's Context menu section). Selected
-                            // and focused-but-unselected now share one color,
-                            // hence the single non-ternary condition below.
+                            // Focused or selected → Theme.focus-border (the app-wide focus colour); the focused state
+                            // used to only thicken the gray border, too hard to see.
                             border-color: (p.id == AppState.request-detail-selected-profile-id
                                 || (AppState.request-options-zone == 1 && AppState.request-detail-focused-profile == i))
                                 ? Theme.focus-border : Theme.border-strong;
@@ -969,13 +733,8 @@ export component RequestOptionsOverlay inherits Rectangle {
                         spacing: 16px;
                         alignment: start;
 
-                        // Pill shape (border-radius = height/2, not Theme.radius)
-                        // and an always-visible border (subtle when unselected,
-                        // white when focused or selected — unified onto one
-                        // color 2026-08-13, see the app-wide focus-border
-                        // consistency fix in CLAUDE.md's Context menu section)
-                        // — the original flat rectangles with no border when
-                        // idle read as plain gray blobs rather than chips.
+                        // Pill chips with an always-visible border (subtle idle, focus-border when focused or
+                        // selected) — borderless chips read as gray blobs.
                         for t[i] in AppState.request-detail-tags: Rectangle {
                             width: 110px;
                             height: 36px;
@@ -1154,12 +913,8 @@ export component RequestOptionsOverlay inherits Rectangle {
             }
 
             // ── Confirm row ───────────────────────────────────────────────────
-            // Cancel is deliberately NOT a FjordButton — that widget always
-            // renders filled accent blue, which made Cancel look just as
-            // "primary" as Request with no visual hint of which one is the
-            // safe/reversible action. A plain outlined ("ghost") button reads
-            // as secondary next to Request's solid fill, the standard
-            // primary/secondary confirm-dialog convention.
+            // Cancel is an outlined (ghost) button, not a FjordButton (always filled accent): it reads
+            // as the secondary, safe action next to Request.
             confirm-row := HorizontalLayout {
                 spacing: 12px;
                 alignment: center;
