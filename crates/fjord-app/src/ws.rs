@@ -1,62 +1,29 @@
 // ── fjord-app · ws.rs ─────────────────────────────────────────────────────────
-//   start_websocket  spawn reconnect loop; returns AbortHandle for sign-out cleanup
-//   ws_loop          outer reconnect loop with exponential backoff (1 s → 60 s max);
-//                    owns pending_upsert_ids (LibraryChanged Added/Updated ids +
-//                    UserDataChanged favorite/resume candidates, shared accumulator);
-//                    the URL carries api_key — logged only via redact_api_key (2026-10-08)
-//   row_has_id                found-by-id check on a CardItem model (Phase 3 transition gate)
-//   sync_open_episodes         Phase 6: if an added/updated episode belongs to the series+season
-//                              currently on screen (series screen episode row or season detail
-//                              overlay — both read series-episode-cards), upsert + re-sort
-//                              FjordState.series_episode_items, rebuild the model, and re-anchor
-//                              season-focused-ep/series-focused-ep (§0) by id
-//   upsert_library_bucket      upsert a delta batch into one all_X model + library-display
-//                              in place (with focus re-anchoring) if that grid+view is open
-//   maybe_spawn_delta_refresh  debounced (5 s) shared refresh task, callable from both event
-//                              types: fetch_home_data (ranked rows — Continue Watching/Next Up/
-//                              Recently Added/Not Watched/Favorites/Recently Played Albums —
-//                              already covers Phase 2/3's row content, no bespoke upsert needed)
-//                              + get_items_by_ids(pending_upsert_ids) bucketed by type into the
-//                              six flat library lists (Phase 1) + Episode (Phase 4: fetches any
-//                              missing parent series explicitly so the unplayed-count badge
-//                              doesn't depend on Jellyfin reporting the series itself; also feeds
-//                              sync_open_episodes and series_episode_cache, Phase 6) +
-//                              movie_collections reconciliation for any BoxSet in the batch
-//                              (Phase 5); session-guarded (bails if the client that queued it is
-//                              no longer FjordState's active one, CR11-2); also (Phase 103)
-//                              get_items_by_ids_detailed(upsert_ids) refreshes item_detail_cache
-//                              in place (genuine delta, piggybacked on the same batch), and
-//                              invalidates any of the 5 relationship caches keyed by an upsert id;
-//                              also (2026-08-02) removes a watched, watchlisted series from the
-//                              Seerr watchlist once its own Status stops being "Continuing" —
-//                              the deferred half of run_session's own watchlist-removal hook below,
-//                              for a series that was deliberately left on the watchlist while still
-//                              airing (see that hook's own doc comment for the full reasoning)
-//   run_session      process messages until the connection drops; periodic client KeepAlive
-//                    every 30 s (server acks ignored — replying looped at wire speed, Phase 62);
-//                    LibraryChanged: parse ItemsAdded/Updated/Removed — clear *_fetched flags,
-//                    purge removed ids from state/models/poster cache immediately (also, Phase
-//                    103, from all 6 screen-open caches), queue added/updated ids +
-//                    maybe_spawn_delta_refresh (no more immediate full re-fetch of an open grid);
-//                    UserDataChanged: patch has-played/is-favorite in place (unchanged), then
-//                    immediate removal — played=true drops from every dynamic row, a bare
-//                    position reset to 0 only drops from Continue Watching (NOT Not Watched,
-//                    which has the opposite membership rule — see remove_from_continue_watching)
-//                    — and favorites (unfavorited) — cheap, no fetch; also (Phase 103) removes
-//                    the changed id from item_detail_cache (cheap invalidate, self-heals on next
-//                    open — this event never affects list membership so the 5 relationship
-//                    caches are untouched); a genuine favorite/resume transition (not already
-//                    present in the row) triggers maybe_spawn_delta_refresh so other-client
-//                    changes reach Favorites/Continue Watching within ~5 s; a played=true
-//                    transition on an item that's on the Seerr watchlist also removes it from
-//                    the watchlist (2026-08-02, user request — one hook covers Fjord's own
-//                    context-menu Mark Played, the credits auto-mark, and any other client,
-//                    since Jellyfin echoes all of them back through this same event) — EXCEPT a
-//                    series whose Status is still "Continuing", which deliberately stays on the
-//                    watchlist while fully caught up (2026-08-02, user request — you don't know
-//                    if another season is coming) until maybe_spawn_delta_refresh's own check
-//                    above removes it once the series genuinely stops Continuing;
-//                    KeepAlive
+//   start_websocket  spawn the reconnect loop; returns the AbortHandle for sign-out cleanup
+//   ws_loop          reconnect loop with exponential backoff (1 s → 60 s); owns pending_upsert_ids
+//                    (LibraryChanged added/updated ids + UserDataChanged favorite/resume
+//                    candidates); the URL carries api_key — logged only via redact_api_key
+//   row_has_id       found-by-id check on a CardItem model (transition gate)
+//   sync_open_episodes  an added/updated episode of the series+season on screen: upsert + re-sort
+//                    series_episode_items, rebuild series-episode-cards, re-anchor focus by id
+//   upsert_library_bucket  upsert a delta batch into one all_X list + library-display in place
+//                    (focus re-anchored) when that grid is open
+//   maybe_spawn_delta_refresh  debounced (5 s), one at a time, session-guarded: fetch_home_data
+//                    (every ranked home row) + get_items_by_ids(pending_upsert_ids) bucketed into
+//                    the six flat library lists and Episode (missing parent series fetched for
+//                    their unplayed counts; feeds sync_open_episodes + series_episode_cache);
+//                    BoxSets reconcile movie_collections; a detailed batch refreshes
+//                    item_detail_cache and invalidates relationship-cache keys; removes watched,
+//                    watchlisted series from the Seerr watchlist once they stop Continuing
+//   run_session      messages until the connection drops; client KeepAlive every 30 s (server
+//                    acks ignored). LibraryChanged: clear *_fetched flags, purge removed ids from
+//                    state/models/poster cache/screen caches, queue added/updated ids → delta
+//                    refresh. UserDataChanged: patch played/favorite in place; immediate removal
+//                    (played → every dynamic row; position reset → Continue Watching only;
+//                    unfavorited → Favorites); invalidate item_detail_cache; a new
+//                    favorite/resume, or a watched movie (collections), wakes the delta refresh;
+//                    a watched watchlisted item leaves the Seerr watchlist — except a Continuing
+//                    series (see maybe_spawn_delta_refresh). KeepAlive.
 // ─────────────────────────────────────────────────────────────────────────────
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -165,15 +132,9 @@ async fn ws_loop(
         match connect_async(url.as_str()).await {
             Ok((ws, _)) => {
                 info!("ws: connected");
-                // Live connection-health signal (2026-08-28) — see its own
-                // doc comment on FjordState for why: the WS's own
-                // connected-ness is the cheapest available proxy for "is
-                // the Jellyfin server actually reachable," consulted by
-                // wire_mpv_timer's stall-recovery to distinguish a
-                // genuinely broken connection from a stalled stream on an
-                // otherwise-healthy one (e.g. a slow-to-wake library
-                // drive, which blocks server-side disk I/O, not this
-                // socket).
+                // Connection-health signal (see FjordState.ws_connected): stall recovery in
+                // wire_mpv_timer uses it to tell a broken connection from a stalled stream on a
+                // healthy one (e.g. a spinning-up server disk).
                 state.lock().unwrap().ws_connected = true;
                 backoff = Duration::from_secs(1);
                 run_session(
@@ -201,15 +162,11 @@ async fn ws_loop(
     }
 }
 
-// Phase 6: if any of `episodes` belongs to the series+season currently on
-// screen (series screen's episode row, or the season detail overlay — both
-// read the same series-episode-cards model), rebuild that model from the
-// updated, re-sorted FjordState.series_episode_items and re-anchor keyboard
-// focus (§0) onto whatever episode was focused before, by id. Only ever
-// inserts/updates — removed episodes are handled separately by
-// remove_item_from_all_models, so a focused episode can't have vanished out
-// from under this function; the None branch below is defensive, matching the
-// same clamp behavior used for the library grid. Must run on the UI thread.
+// If any of `episodes` belongs to the series+season on screen (series episode row or season
+// overlay — both read series-episode-cards), rebuild that model from the re-sorted
+// FjordState.series_episode_items and re-anchor keyboard focus on the same episode by id.
+// Only inserts/updates (removals go through remove_item_from_all_models); the None branch
+// is defensive. UI thread only.
 fn sync_open_episodes(
     w: &MainWindow,
     state: &Arc<Mutex<FjordState>>,
@@ -282,10 +239,8 @@ fn sync_open_episodes(
             c
         })
         .collect();
-    // apply_cards_preserving_identity (Phase 96): mutates in place when the season's
-    // episode ids/order are unchanged, so unrelated episode cards' poster Images
-    // don't get destroyed/recreated (re-triggering FadeInTrigger) just because one
-    // episode in the season changed.
+    // In place when the season's ids/order are unchanged, so other episode cards keep their
+    // poster Images (no re-fade).
     let model = crate::apply_cards_preserving_identity(&g.get_series_episode_cards(), cards);
     g.set_series_episode_cards(model.clone());
 
@@ -356,13 +311,10 @@ fn row_has_id(model: &ModelRc<CardItem>, id: &str) -> bool {
     (0..model.row_count()).any(|i| model.row_data(i).is_some_and(|c| c.id.as_str() == id))
 }
 
-// Debounce (5 s) + spawn the shared delta-refresh task: ranked home rows (Continue
-// Watching/Next Up/Recently Added/Favorites/Recently Played — Phase 2/3, already
-// fully covered by the unconditional fetch_home_data call below, no bespoke upsert
-// needed) plus a get_items_by_ids batch for whatever's queued in pending_upsert_ids
-// (Phase 1's six flat library lists + Phase 5's movie_collections + Phase 4's
-// targeted series unplayed-count refresh). Only one instance runs at a time
-// (refresh_pending gate); callers just merge ids first and call this.
+// Debounce (5 s) + spawn the shared delta refresh: fetch_home_data for the ranked home rows,
+// plus one get_items_by_ids batch for pending_upsert_ids (the flat library lists,
+// movie_collections, series unplayed counts). One at a time (refresh_pending gate); callers
+// merge ids first and call this.
 fn maybe_spawn_delta_refresh(
     refresh_pending: &Arc<AtomicBool>,
     pending_upsert_ids: &Arc<Mutex<HashSet<String>>>,
@@ -387,11 +339,9 @@ fn maybe_spawn_delta_refresh(
     let pending_upsert2 = Arc::clone(pending_upsert_ids);
     rt.spawn(async move {
         tokio::time::sleep(Duration::from_secs(5)).await;
-        // NOTE (diagnostic, 2026-07-09): this reset happens before fetch_home_data
-        // below actually completes, so a second delta refresh CAN be scheduled and
-        // start overlapping with this one still in flight — suspected contributor
-        // to the reported "favorite flashes twice, briefly shows unfavorited" bug.
-        // Logged explicitly until confirmed/fixed.
+        // NOTE: the flag is reset before fetch_home_data completes, so a second refresh can start
+        // while this one runs — a suspected cause of a favorite briefly flashing unfavorited.
+        // Logged until confirmed.
         pending.store(false, Ordering::SeqCst);
         info!("ws: delta refresh task woke, starting fetch_home_data + get_items_by_ids");
 
@@ -408,20 +358,11 @@ fn maybe_spawn_delta_refresh(
 
         let upsert_ids: Vec<String> = std::mem::take(&mut *pending_upsert2.lock().unwrap()).into_iter().collect();
 
-        // Ranked home rows (Continue Watching/Next Up/Recently Added/Not
-        // Watched/Favorites/Recently Played Albums/Playlists) always get a
-        // real re-fetch here — Phase 2/3's row content is entirely covered
-        // by this one call, so LibraryChanged and UserDataChanged both just
-        // need to reach this task; no separate insert-by-date/insert-by-
-        // favorite path is needed on top of it.
-        // Screen-open caches (Phase 103): piggyback a richer-fields batch fetch
-        // onto the same upsert_ids batch already being fetched below for the
-        // flat-list purpose, so item_detail_cache reflects a genuine delta
-        // (only ids that actually changed) rather than going stale until the
-        // affected screen happens to be reopened. Any id present as a *key* in
-        // one of the 5 relationship caches is invalidated (not re-fetched —
-        // no batch endpoint for those) since the event doesn't distinguish
-        // "metadata changed" from "membership changed" for a boxset/artist/etc.
+        // The ranked home rows always get a real re-fetch here (covers LibraryChanged and
+        // UserDataChanged; no separate insert path needed). Screen-open caches: a detailed batch of
+        // the same ids refreshes item_detail_cache; any id that is a key in one of the 5
+        // relationship caches is invalidated (no batch endpoint, and the event doesn't say whether
+        // metadata or membership changed).
         let (home_data, items_res, detailed_res) = tokio::join!(
             fetch_home_data(&client2, true),
             client2.get_items_by_ids(&upsert_ids),
@@ -466,10 +407,8 @@ fn maybe_spawn_delta_refresh(
             Vec::new()
         });
 
-        // Bucket by type — six flat library lists this phase covers, plus
-        // Episode for Phase 4's targeted series refresh below. Audio isn't
-        // bucketed: Phase 3's Recently Played Albums row is covered by
-        // fetch_home_data above, nothing else currently needs raw Audio items.
+        // Bucket by type: the six flat library lists, plus Episode for the series refresh below.
+        // Audio isn't needed (fetch_home_data covers Recently Played Albums).
         let mut movies      = Vec::new();
         let mut series       = Vec::new();
         let mut collections = Vec::new();
@@ -490,10 +429,8 @@ fn maybe_spawn_delta_refresh(
             }
         }
 
-        // Phase 4: an added/updated episode's parent series doesn't necessarily
-        // appear in the same LibraryChanged/UserDataChanged report, so its
-        // unplayed-count badge (all_series / library grid) would otherwise go
-        // stale. Fetch any such series explicitly rather than waiting to be told.
+        // An updated episode's series isn't necessarily in the same event, so fetch it explicitly —
+        // otherwise its unplayed-count badge goes stale.
         let missing_series: Vec<String> = episodes.iter()
             .filter_map(|e| e.series_id.clone())
             .filter(|sid| !series.iter().any(|s| &s.id == sid))
@@ -543,22 +480,11 @@ fn maybe_spawn_delta_refresh(
         if !collections.is_empty() { save_collections_cache(&user_id, &co); }
         if !artists.is_empty()     { save_artists_cache(&user_id, &ar); }
         if !albums.is_empty()      { save_albums_cache(&user_id, &al); }
-        // Watchlisted-but-Continuing series that just stopped Continuing
-        // (2026-08-02, user request — see run_session's UserDataChanged
-        // handling for the fuller reasoning: a still-airing series is
-        // deliberately NOT removed from the watchlist just for being fully
-        // caught up, since there's no way to know if another season is
-        // coming; this is where the deferred removal actually happens,
-        // once Jellyfin's own metadata refresh reports the series as no
-        // longer Continuing). That surfaces here — a LibraryChanged
-        // ItemsUpdated feeding this same delta refresh's series upsert
-        // above — rather than as a UserDataChanged event, since nothing
-        // about the series' own played state changed, only its Status
-        // field did. Re-checks the full played+watchlist+status condition
-        // unconditionally rather than diffing old vs. new status — simpler,
-        // and self-guarding: once actually removed, jellyfin_watchlist_ids
-        // no longer contains it, so re-running this on a later refresh of
-        // the same (already-removed) series is just a no-op.
+        // Watchlisted series that stopped Continuing: the deferred half of run_session's
+        // watch-removal (a fully watched series stays on the watchlist while still airing). Shows
+        // up here via LibraryChanged when Jellyfin's metadata refresh changes Status. Re-checks the
+        // whole played+watchlist+status condition each time — once removed, the series is no longer
+        // in jellyfin_watchlist_ids, so re-running is a no-op.
         let series_to_remove: Vec<(i64, String)> = {
             let s = state2.lock().unwrap();
             series.iter()
@@ -576,11 +502,9 @@ fn maybe_spawn_delta_refresh(
         }
         if !playlists.is_empty()   { save_playlists_cache(&user_id, &pl); }
 
-        // Phase 6: upsert into any season whose episode list is already cached
-        // (series_episode_cache — populated on season-tab switch, see main.rs
-        // on_series_select_season). Only touches seasons already known; never
-        // speculatively creates a new cache entry. Sorted by episode number so
-        // a brand-new episode lands in the right slot, not appended at the end.
+        // Upsert into any season already in series_episode_cache (filled on season-tab switch,
+        // series.rs's on_series_select_season); never creates entries. Sorted by episode number so
+        // a new episode lands in place.
         {
             let mut s = state2.lock().unwrap();
             for ep in &episodes {
@@ -638,10 +562,9 @@ async fn run_session(
 ) {
     let (mut write, mut read) = ws.split();
 
-    // Client-driven keep-alive. Jellyfin expects a KeepAlive message at least
-    // every timeout/2 (default timeout 60 s) and ACKS each one with another
-    // KeepAlive. Replying to those acks (pre-Phase 62) created a wire-speed
-    // feedback loop — ~9k messages/s and a 6.4 GB debug log.
+    // Client-driven keep-alive: Jellyfin expects a KeepAlive at least every timeout/2 (default
+    // 60 s) and acks each with another KeepAlive — never reply to those (that looped at wire
+    // speed).
     let mut keepalive = tokio::time::interval(Duration::from_secs(30));
     keepalive.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
@@ -804,30 +727,19 @@ async fn run_session(
                         "ws: UserDataChanged item id={id} played={played} favorite={fav} position_ticks={pos_ticks}"
                     );
                 }
-                // Watchlisted item marked watched -> remove it from the Seerr
-                // watchlist (2026-08-02, user request — "if something is
-                // watched that are in the watchlist it shuld be removed from
-                // the watchlist"). Resolved here, inside the same lock scope
-                // update_item_user_state already uses (cheap, no network —
-                // just a local id lookup + discover_watchlist_ids membership
-                // check), but the actual removal (discover::
-                // discover_toggle_watchlist) is dispatched AFTER the lock is
-                // dropped below: it takes its own state.lock() internally, and
-                // calling it from inside an already-held lock on the same
-                // Mutex would self-deadlock (the exact class of bug this
-                // project already hit once for ensure_discover_watchlist
-                // called from inside a locked block at startup).
+                // A watchlisted item marked watched leaves the Seerr watchlist (one hook covers
+                // Fjord's own Mark Played, the credits auto-mark and other clients — Jellyfin
+                // echoes all of them here). Resolved under this lock (local lookups only); the
+                // removal (discover_toggle_watchlist) runs after the lock is dropped — it locks
+                // `state` itself.
                 let mut newly_watched_on_watchlist: Vec<(i64, String)> = Vec::new();
                 {
                     let mut s = state.lock().unwrap();
                     for (id, played, fav, _) in &items {
                         s.update_item_user_state(id, Some(*played), Some(*fav));
-                        // Screen-open cache (Phase 103): played/favorite state
-                        // lives inside the cached MediaItem too — invalidate
-                        // rather than re-fetch (cheap, no extra network call);
-                        // self-heals via a normal fetch next time this item's
-                        // screen is opened. UserDataChanged never affects list
-                        // membership, so the 5 relationship caches are untouched.
+                        // Played/favorite state also lives in the cached MediaItem: invalidate (the
+                        // next open fetches). UserDataChanged never changes list membership, so the
+                        // relationship caches stay.
                         s.item_detail_cache.remove(id);
                         if *played {
                             // jellyfin_watchlist_ids only ever holds Movie/Series
@@ -848,22 +760,10 @@ async fn run_session(
                                         )
                                     })
                             {
-                                // A still-airing series stays on the
-                                // watchlist even once fully caught up
-                                // (2026-08-02, user request — "keep it
-                                // but if it get canceld later and
-                                // everything is watched it shuld get
-                                // removed... you dont konw if there
-                                // will be another season"): only movies
-                                // and non-Continuing (Ended/unknown-
-                                // status) series are eligible for
-                                // removal here. A Continuing series is
-                                // instead caught later, once Jellyfin
-                                // itself reports it as no longer
-                                // Continuing — see
-                                // maybe_spawn_delta_refresh's own
-                                // series-status check, above in this
-                                // file.
+                                // A still-airing (Continuing) series stays on the watchlist even
+                                // when fully watched — another season may come;
+                                // maybe_spawn_delta_refresh removes it once it stops Continuing.
+                                // Movies and Ended/unknown series are removed here.
                                 let still_continuing = media_type == "tv"
                                     && s.all_series
                                         .iter()
@@ -903,14 +803,10 @@ async fn run_session(
                 let _ = slint::invoke_from_event_loop(move || {
                     let Some(w) = ww2.upgrade() else { return };
                     let g = crate::AppState::get(&w);
-                    // Phase 3: removal is immediate and cheap (no fetch needed — the card's
-                    // already in a visible model or it isn't). Insertion of a *new* favorite/
-                    // resumable item instead waits for the shared debounced refresh below,
-                    // whose unconditional fetch_home_data call already re-fetches every home
-                    // row (Favorites/Continue Watching/Recently Played) from the server —
-                    // a bespoke client-side insert-by-id path would just be immediately
-                    // overwritten by that fetch, so there's nothing to build here beyond
-                    // deciding *whether* a transition happened worth waking that task for.
+                    // Removal is immediate (no fetch). A NEW favorite/resumable item instead waits
+                    // for the debounced refresh, whose fetch_home_data re-fetches every home row
+                    // anyway — so this only decides whether a transition happened that's worth
+                    // waking it.
                     let mut needs_refresh = false;
                     for (id, played, fav, pos_ticks) in &items {
                         update_card_in_all_models(&w, id, Some(*played), Some(*fav));
@@ -937,29 +833,11 @@ async fn run_session(
                         let new_resumable = *pos_ticks > 0
                             && !*played
                             && !row_has_id(&g.get_continue_watching(), id);
-                        // Real bug, live-reported 2026-08-03 ("in the
-                        // unwatched collection row shows collections that
-                        // is watched"): remove_from_dynamic_rows' own
-                        // unwatched-collections filter checks the just-
-                        // watched MOVIE's id against each BOXSET card's
-                        // own id — which can never match, a BoxSet's id is
-                        // never one of its member movies' ids — so a
-                        // collection whose last unwatched movie was just
-                        // marked played never actually got removed from
-                        // this row locally; it only ever self-healed
-                        // whenever something ELSE happened to trigger a
-                        // fresh fetch_home_data. Rather than replicate
-                        // Jellyfin's own "is every member of this BoxSet
-                        // played" computation client-side against
-                        // potentially-stale cached membership, just wake
-                        // the same debounced refresh the favorite/
-                        // resumable-transition path already uses below —
-                        // fetch_home_data re-derives unwatched_collections
-                        // from the server's own IsUnplayed filter
-                        // regardless of whether THIS specific collection is
-                        // now fully watched, so it's correct (and harmless
-                        // to over-trigger) even when the movie wasn't the
-                        // collection's last unwatched one.
+                        // A watched movie may complete a collection, but a BoxSet's id never
+                        // matches a member's, so remove_from_dynamic_rows can't drop it locally.
+                        // Wake the debounced refresh instead: fetch_home_data re-derives unwatched
+                        // collections from the server (harmless when the collection isn't complete
+                        // yet).
                         let in_known_collection =
                             *played && state2.lock().unwrap().movie_collections.contains_key(id);
                         info!(
