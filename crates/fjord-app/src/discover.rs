@@ -919,10 +919,8 @@ pub(crate) fn handle_seerr_error(
 pub(crate) async fn fetch_tmdb_image(http: &reqwest::Client, base: &str, path: &str, cache_key: &str) -> Option<Vec<u8>> {
     // None for a key that isn't a safe file name: fetched, not cached.
     let cache_path = discover_poster_cache_path(cache_key);
-    if let Some(p) = &cache_path {
-        if let Ok(bytes) = tokio::fs::read(p).await {
-            return Some(bytes);
-        }
+    if let Some(p) = &cache_path && let Ok(bytes) = tokio::fs::read(p).await {
+        return Some(bytes);
     }
     let url = format!("{base}{path}");
     let bytes = http.get(&url).send().await.ok()?.error_for_status().ok()?.bytes().await.ok()?.to_vec();
@@ -2584,12 +2582,11 @@ async fn fetch_coming_up_posters(ww: Weak<MainWindow>, entries: &[CalendarEntry]
             // sentinel card sits past every real entry's index, so this
             // never touches it).
             let model = g.get_discover_coming_up();
-            if let Some(mut card) = model.row_data(idx) {
-                if card.id.as_str() == tmdb_id && card.item_type.as_str() == item_type {
-                    card.poster = slint::Image::from_rgba8(buf.clone());
-                    card.has_poster = true;
-                    model.set_row_data(idx, card);
-                }
+            if let Some(mut card) = model.row_data(idx)
+                && card.id.as_str() == tmdb_id && card.item_type.as_str() == item_type {
+                card.poster = slint::Image::from_rgba8(buf.clone());
+                card.has_poster = true;
+                model.set_row_data(idx, card);
             }
             // Home/TV/Movies dashboard rows (2026-08-02): id+item_type
             // lookup, not index — the same tmdb id can sit at a different
@@ -2597,12 +2594,11 @@ async fn fetch_coming_up_posters(ww: Weak<MainWindow>, entries: &[CalendarEntry]
             // specific list, same reason fetch_watchlist_posters does this.
             for model in [g.get_discover_coming_up_mixed(), g.get_discover_coming_up_movies(), g.get_discover_coming_up_tv()] {
                 for i in 0..model.row_count() {
-                    if let Some(mut card) = model.row_data(i) {
-                        if card.id.as_str() == tmdb_id && card.item_type.as_str() == item_type {
-                            card.poster = slint::Image::from_rgba8(buf.clone());
-                            card.has_poster = true;
-                            model.set_row_data(i, card);
-                        }
+                    if let Some(mut card) = model.row_data(i)
+                        && card.id.as_str() == tmdb_id && card.item_type.as_str() == item_type {
+                        card.poster = slint::Image::from_rgba8(buf.clone());
+                        card.has_poster = true;
+                        model.set_row_data(i, card);
                     }
                 }
             }
@@ -3431,12 +3427,11 @@ async fn fetch_watchlist_posters(ww: Weak<MainWindow>, items: &[RequestedRowItem
             let g = AppState::get(&w);
             for model in [g.get_discover_watchlist_mixed(), g.get_discover_watchlist_movies(), g.get_discover_watchlist_tv()] {
                 for i in 0..model.row_count() {
-                    if let Some(mut card) = model.row_data(i) {
-                        if card.id.as_str() == tmdb_id && card.item_type.as_str() == item_type {
-                            card.poster = slint::Image::from_rgba8(buf.clone());
-                            card.has_poster = true;
-                            model.set_row_data(i, card);
-                        }
+                    if let Some(mut card) = model.row_data(i)
+                        && card.id.as_str() == tmdb_id && card.item_type.as_str() == item_type {
+                        card.poster = slint::Image::from_rgba8(buf.clone());
+                        card.has_poster = true;
+                        model.set_row_data(i, card);
                     }
                 }
             }
@@ -3906,11 +3901,9 @@ pub(crate) fn spawn_discover_filtered_browse_more(
                     .collect();
                 let all: Vec<CardItem> = all_metas.into_iter().map(|(m, _)| {
                     let mut card = m.into_card_item();
-                    if let Some(old) = old_by_id.get(card.id.as_str()) {
-                        if old.has_poster {
-                            card.poster = old.poster.clone();
-                            card.has_poster = true;
-                        }
+                    if let Some(old) = old_by_id.get(card.id.as_str()) && old.has_poster {
+                        card.poster = old.poster.clone();
+                        card.has_poster = true;
                     }
                     card
                 }).collect();
@@ -4118,10 +4111,8 @@ pub(crate) fn mark_trailer_unplayable(
 /// from existing_detail_btn_slots (check pending/failed).
 fn fix_detail_btn_focus(g: &AppState) {
     let slots = existing_detail_btn_slots(g);
-    if !slots.contains(&g.get_request_detail_btn_focused()) {
-        if let Some(&first) = slots.first() {
-            g.set_request_detail_btn_focused(first);
-        }
+    if !slots.contains(&g.get_request_detail_btn_focused()) && let Some(&first) = slots.first() {
+        g.set_request_detail_btn_focused(first);
     }
 }
 
@@ -4501,11 +4492,9 @@ fn open_discover_item_ex(
     post_action: PostOpenAction,
     check_local_library: bool,
 ) {
-    if check_local_library {
-        if let Some((id, item_type)) = find_local_item(&state, &media_type, &tmdb_id_str) {
-            crate::detail::open_detail(id, item_type, state, ww, rt);
-            return;
-        }
+    if check_local_library && let Some((id, item_type)) = find_local_item(&state, &media_type, &tmdb_id_str) {
+        crate::detail::open_detail(id, item_type, state, ww, rt);
+        return;
     }
     let Ok(tmdb_id) = tmdb_id_str.parse::<i64>() else { return };
     let Some(client) = state.lock().unwrap().seerr_client.clone() else { return };
@@ -4960,12 +4949,11 @@ fn patch_discover_card_availability(g: &AppState, media_type: &str, tmdb_id: i64
     let id_str = tmdb_id.to_string();
     let model = g.get_discover_results();
     for i in 0..model.row_count() {
-        if let Some(mut card) = model.row_data(i) {
-            if card.id.as_str() == id_str && card.item_type.as_str() == item_type {
-                card.availability = availability.into();
-                model.set_row_data(i, card);
-                break;
-            }
+        if let Some(mut card) = model.row_data(i)
+            && card.id.as_str() == id_str && card.item_type.as_str() == item_type {
+            card.availability = availability.into();
+            model.set_row_data(i, card);
+            break;
         }
     }
 }
@@ -4982,14 +4970,13 @@ fn patch_discover_card_request_state(g: &AppState, media_type: &str, tmdb_id: i6
     let id_str = tmdb_id.to_string();
     let model = g.get_discover_results();
     for i in 0..model.row_count() {
-        if let Some(mut card) = model.row_data(i) {
-            if card.id.as_str() == id_str && card.item_type.as_str() == item_type {
-                card.request_id = request_id.into();
-                card.request_pending = pending;
-                card.request_mine = mine;
-                model.set_row_data(i, card);
-                break;
-            }
+        if let Some(mut card) = model.row_data(i)
+            && card.id.as_str() == id_str && card.item_type.as_str() == item_type {
+            card.request_id = request_id.into();
+            card.request_pending = pending;
+            card.request_mine = mine;
+            model.set_row_data(i, card);
+            break;
         }
     }
 }
@@ -5040,12 +5027,11 @@ fn patch_watchlist_on_all_models(g: &AppState, item_type: &str, tmdb_id: i64, on
     let mut patched = 0;
     for (model, _) in all_card_model_slots(g) {
         for i in 0..model.row_count() {
-            if let Some(mut card) = model.row_data(i) {
-                if card.id.as_str() == id_str && card.item_type.as_str() == item_type {
-                    card.on_watchlist = on_watchlist;
-                    model.set_row_data(i, card);
-                    patched += 1;
-                }
+            if let Some(mut card) = model.row_data(i)
+                && card.id.as_str() == id_str && card.item_type.as_str() == item_type {
+                card.on_watchlist = on_watchlist;
+                model.set_row_data(i, card);
+                patched += 1;
             }
         }
     }
@@ -5261,24 +5247,22 @@ pub(crate) fn discover_toggle_watchlist(
                 // WS path; the two writes below are only for INSTANT
                 // feedback on whatever's already on screen right now.
                 let mut reset_played = false;
-                if adding {
-                    if let Some((jellyfin_id, _)) = &local_item {
-                        let was_played = {
-                            let s = state.lock().unwrap();
-                            let list: &[fjord_api::models::MediaItem] =
-                                if media_type == "movie" { &s.all_movies } else { &s.all_series };
-                            list.iter().find(|m| &m.id == jellyfin_id).is_some_and(|m| m.user_data.played)
-                        };
-                        if was_played {
-                            let jf_client = state.lock().unwrap().client.as_ref().map(Arc::clone);
-                            if let Some(jf_client) = jf_client {
-                                match jf_client.mark_unplayed(jellyfin_id).await {
-                                    Ok(()) => {
-                                        state.lock().unwrap().update_item_user_state(jellyfin_id, Some(false), None);
-                                        reset_played = true;
-                                    }
-                                    Err(e) => warn!("discover_toggle_watchlist: mark_unplayed({jellyfin_id}) failed: {e:#}"),
+                if adding && let Some((jellyfin_id, _)) = &local_item {
+                    let was_played = {
+                        let s = state.lock().unwrap();
+                        let list: &[fjord_api::models::MediaItem] =
+                            if media_type == "movie" { &s.all_movies } else { &s.all_series };
+                        list.iter().find(|m| &m.id == jellyfin_id).is_some_and(|m| m.user_data.played)
+                    };
+                    if was_played {
+                        let jf_client = state.lock().unwrap().client.as_ref().map(Arc::clone);
+                        if let Some(jf_client) = jf_client {
+                            match jf_client.mark_unplayed(jellyfin_id).await {
+                                Ok(()) => {
+                                    state.lock().unwrap().update_item_user_state(jellyfin_id, Some(false), None);
+                                    reset_played = true;
                                 }
+                                Err(e) => warn!("discover_toggle_watchlist: mark_unplayed({jellyfin_id}) failed: {e:#}"),
                             }
                         }
                     }
@@ -5680,14 +5664,13 @@ fn discover_request_action(
                         // cancelled/declined request id.
                         let results = g.get_discover_results();
                         for i in 0..results.row_count() {
-                            if let Some(mut card) = results.row_data(i) {
-                                if card.request_id.as_str() == request_id.to_string() {
-                                    card.request_id = "".into();
-                                    card.request_pending = false;
-                                    card.request_mine = false;
-                                    results.set_row_data(i, card);
-                                    break;
-                                }
+                            if let Some(mut card) = results.row_data(i)
+                                && card.request_id.as_str() == request_id.to_string() {
+                                card.request_id = "".into();
+                                card.request_pending = false;
+                                card.request_mine = false;
+                                results.set_row_data(i, card);
+                                break;
                             }
                         }
                     } else {
@@ -5697,12 +5680,11 @@ fn discover_request_action(
                         // stays in "Requested" until it's actually fulfilled.
                         for model in [g.get_discover_requested(), g.get_discover_results()] {
                             for i in 0..model.row_count() {
-                                if let Some(mut card) = model.row_data(i) {
-                                    if card.request_id.as_str() == request_id.to_string() {
-                                        card.request_pending = false;
-                                        model.set_row_data(i, card);
-                                        break;
-                                    }
+                                if let Some(mut card) = model.row_data(i)
+                                    && card.request_id.as_str() == request_id.to_string() {
+                                    card.request_pending = false;
+                                    model.set_row_data(i, card);
+                                    break;
                                 }
                             }
                         }
@@ -6911,20 +6893,16 @@ pub(crate) fn handle_key(action: &Action, g: &AppState) -> bool {
         }
         Action::Confirm => {
             let f = g.get_discover_focused();
-            if f < count {
-                if let Some(card) = g.get_discover_results().row_data(f as usize) {
-                    let media_type = if card.item_type.as_str() == "DiscoverMovie" { "movie" } else { "tv" };
-                    g.invoke_open_discover_item(media_type.into(), card.id);
-                }
+            if f < count && let Some(card) = g.get_discover_results().row_data(f as usize) {
+                let media_type = if card.item_type.as_str() == "DiscoverMovie" { "movie" } else { "tv" };
+                g.invoke_open_discover_item(media_type.into(), card.id);
             }
             true
         }
         Action::OpenContextMenu => {
             let f = g.get_discover_focused();
-            if f < count {
-                if let Some(card) = g.get_discover_results().row_data(f as usize) {
-                    g.invoke_open_context_menu_discover(card);
-                }
+            if f < count && let Some(card) = g.get_discover_results().row_data(f as usize) {
+                g.invoke_open_context_menu_discover(card);
             }
             true
         }
@@ -6993,11 +6971,9 @@ fn handle_key_landing(action: &Action, g: &AppState, fs: i32) -> bool {
             // (Watchlist + Release Calendar, 2026-07-18).
             if fs as usize == LANDING_ROW_COMING_UP && c == count - 1 && count > 0 {
                 g.invoke_open_calendar();
-            } else if c < count {
-                if let Some(card) = landing_row_get(g, fs as usize).row_data(c as usize) {
-                    let media_type = if card.item_type.as_str() == "DiscoverMovie" { "movie" } else { "tv" };
-                    g.invoke_open_discover_item(media_type.into(), card.id);
-                }
+            } else if c < count && let Some(card) = landing_row_get(g, fs as usize).row_data(c as usize) {
+                let media_type = if card.item_type.as_str() == "DiscoverMovie" { "movie" } else { "tv" };
+                g.invoke_open_discover_item(media_type.into(), card.id);
             }
             true
         }
@@ -7009,10 +6985,8 @@ fn handle_key_landing(action: &Action, g: &AppState, fs: i32) -> bool {
             if fs as usize == LANDING_ROW_COMING_UP && c == count - 1 && count > 0 {
                 return true;
             }
-            if c < count {
-                if let Some(card) = landing_row_get(g, fs as usize).row_data(c as usize) {
-                    g.invoke_open_context_menu_discover(card);
-                }
+            if c < count && let Some(card) = landing_row_get(g, fs as usize).row_data(c as usize) {
+                g.invoke_open_context_menu_discover(card);
             }
             true
         }

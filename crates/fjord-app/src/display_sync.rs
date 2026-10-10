@@ -329,17 +329,15 @@ pub(crate) fn get_supported_modes(screen: &str) -> HashSet<(String, String)> {
         let trimmed = line.trim();
         if let Some(rest) = trimmed.strip_prefix("Output:") {
             in_section = rest.split_whitespace().any(|w| w == screen);
-        } else if in_section {
-            if let Some(rest) = trimmed.strip_prefix("Modes:") {
-                for tok in rest.split_whitespace() {
-                    // token shape: "N:WxH@HZ[*][!]"
-                    let Some((_, after_colon)) = tok.split_once(':') else { continue };
-                    let Some((res, hz_raw)) = after_colon.split_once('@') else { continue };
-                    let hz: String =
-                        hz_raw.chars().filter(|c| c.is_ascii_digit() || *c == '.').collect();
-                    if !res.is_empty() && !hz.is_empty() {
-                        modes.insert((res.to_string(), hz));
-                    }
+        } else if in_section && let Some(rest) = trimmed.strip_prefix("Modes:") {
+            for tok in rest.split_whitespace() {
+                // token shape: "N:WxH@HZ[*][!]"
+                let Some((_, after_colon)) = tok.split_once(':') else { continue };
+                let Some((res, hz_raw)) = after_colon.split_once('@') else { continue };
+                let hz: String =
+                    hz_raw.chars().filter(|c| c.is_ascii_digit() || *c == '.').collect();
+                if !res.is_empty() && !hz.is_empty() {
+                    modes.insert((res.to_string(), hz));
                 }
             }
         }

@@ -779,45 +779,51 @@ fn color_rgb(c: slint::Color) -> [f32; 3] {
 }
 
 pub(crate) unsafe fn create_fbo(w: u32, h: u32, wide: bool) -> Option<(u32, u32)> {
-    let mut tex = 0u32;
-    gl::GenTextures(1, &mut tex);
-    gl::BindTexture(gl::TEXTURE_2D, tex);
-    if wide {
-        gl::TexImage2D(
-            gl::TEXTURE_2D, 0, gl::RGB10_A2 as i32,
-            w as i32, h as i32, 0,
-            gl::RGBA, gl::UNSIGNED_INT_2_10_10_10_REV, std::ptr::null(),
-        );
-    } else {
-        gl::TexImage2D(
-            gl::TEXTURE_2D, 0, gl::RGBA as i32,
-            w as i32, h as i32, 0,
-            gl::RGBA, gl::UNSIGNED_BYTE, std::ptr::null(),
-        );
-    }
-    gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::LINEAR as i32);
-    gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::LINEAR as i32);
-    gl::BindTexture(gl::TEXTURE_2D, 0);
+    // SAFETY: the caller's GL context is current (this fn's contract).
+    unsafe {
+        let mut tex = 0u32;
+        gl::GenTextures(1, &mut tex);
+        gl::BindTexture(gl::TEXTURE_2D, tex);
+        if wide {
+            gl::TexImage2D(
+                gl::TEXTURE_2D, 0, gl::RGB10_A2 as i32,
+                w as i32, h as i32, 0,
+                gl::RGBA, gl::UNSIGNED_INT_2_10_10_10_REV, std::ptr::null(),
+            );
+        } else {
+            gl::TexImage2D(
+                gl::TEXTURE_2D, 0, gl::RGBA as i32,
+                w as i32, h as i32, 0,
+                gl::RGBA, gl::UNSIGNED_BYTE, std::ptr::null(),
+            );
+        }
+        gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::LINEAR as i32);
+        gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::LINEAR as i32);
+        gl::BindTexture(gl::TEXTURE_2D, 0);
 
-    let mut fbo = 0u32;
-    gl::GenFramebuffers(1, &mut fbo);
-    gl::BindFramebuffer(gl::FRAMEBUFFER, fbo);
-    gl::FramebufferTexture2D(gl::FRAMEBUFFER, gl::COLOR_ATTACHMENT0, gl::TEXTURE_2D, tex, 0);
-    let status = gl::CheckFramebufferStatus(gl::FRAMEBUFFER);
-    gl::BindFramebuffer(gl::FRAMEBUFFER, 0);
+        let mut fbo = 0u32;
+        gl::GenFramebuffers(1, &mut fbo);
+        gl::BindFramebuffer(gl::FRAMEBUFFER, fbo);
+        gl::FramebufferTexture2D(gl::FRAMEBUFFER, gl::COLOR_ATTACHMENT0, gl::TEXTURE_2D, tex, 0);
+        let status = gl::CheckFramebufferStatus(gl::FRAMEBUFFER);
+        gl::BindFramebuffer(gl::FRAMEBUFFER, 0);
 
-    if status != gl::FRAMEBUFFER_COMPLETE {
-        tracing::error!("FBO not complete: {:#x}", status);
-        gl::DeleteFramebuffers(1, &fbo);
-        gl::DeleteTextures(1, &tex);
-        return None;
+        if status != gl::FRAMEBUFFER_COMPLETE {
+            tracing::error!("FBO not complete: {:#x}", status);
+            gl::DeleteFramebuffers(1, &fbo);
+            gl::DeleteTextures(1, &tex);
+            return None;
+        }
+        Some((fbo, tex))
     }
-    Some((fbo, tex))
 }
 
 pub(crate) unsafe fn delete_fbo(fbo: u32, tex: u32) {
-    if fbo != 0 { gl::DeleteFramebuffers(1, &fbo); }
-    if tex != 0 { gl::DeleteTextures(1, &tex); }
+    // SAFETY: the caller's GL context is current (this fn's contract).
+    unsafe {
+        if fbo != 0 { gl::DeleteFramebuffers(1, &fbo); }
+        if tex != 0 { gl::DeleteTextures(1, &tex); }
+    }
 }
 
 // ── tear_down_player ──────────────────────────────────────────────────────────
@@ -1622,21 +1628,20 @@ pub(crate) fn start_playback(
                 let vid_art = Arc::clone(video);
                 let art_id  = audio_meta.as_ref().map(|(_, i)| i.clone()).unwrap_or_else(|| item_id_art.clone());
                 rt_handle.spawn(async move {
-                    if let Some(bytes) = crate::poster::fetch_poster_cached(&client_art, &art_id).await {
-                        if let Some(spb) = crate::poster::decode_poster_buffer(&bytes) {
-                            let _ = slint::invoke_from_event_loop(move || {
-                                // Generation guard: on fast track skips the previous
-                                // track's cover could land on the new track's bar.
-                                if vid_art.lock().unwrap().playback_generation != my_gen { return; }
-                                if let Some(w) = ww_art.upgrade() {
-                                    let g = AppState::get(&w);
-                                    if g.get_is_audio_playing() {
-                                        g.set_music_bar_art(slint::Image::from_rgba8(spb));
-                                        g.set_music_bar_has_art(true);
-                                    }
+                    if let Some(bytes) = crate::poster::fetch_poster_cached(&client_art, &art_id).await
+                        && let Some(spb) = crate::poster::decode_poster_buffer(&bytes) {
+                        let _ = slint::invoke_from_event_loop(move || {
+                            // Generation guard: on fast track skips the previous
+                            // track's cover could land on the new track's bar.
+                            if vid_art.lock().unwrap().playback_generation != my_gen { return; }
+                            if let Some(w) = ww_art.upgrade() {
+                                let g = AppState::get(&w);
+                                if g.get_is_audio_playing() {
+                                    g.set_music_bar_art(slint::Image::from_rgba8(spb));
+                                    g.set_music_bar_has_art(true);
                                 }
-                            });
-                        }
+                            }
+                        });
                     }
                 });
 
@@ -1930,13 +1935,11 @@ fn commit_natural_next(vs: &mut VideoState, qi: &QueueItem) {
         }
         return;
     }
-    if vs.current_is_audio && !vs.playlist.is_empty() {
-        if let Some(i) = natural_next_index(vs) {
-            if vs.playlist.get(i).map(|q| q.id == qi.id).unwrap_or(false) {
-                vs.playlist_index = i;
-                return;
-            }
-        }
+    if vs.current_is_audio && !vs.playlist.is_empty()
+        && let Some(i) = natural_next_index(vs)
+        && vs.playlist.get(i).map(|q| q.id == qi.id).unwrap_or(false) {
+        vs.playlist_index = i;
+        return;
     }
     if vs.queue.first().map(|q| q.id == qi.id).unwrap_or(false) {
         vs.queue.remove(0);
@@ -1946,9 +1949,7 @@ fn commit_natural_next(vs: &mut VideoState, qi: &QueueItem) {
 // Drop the gapless-preloaded entry — call whenever the upcoming order changes
 // (shuffle/repeat toggles, queue edits). The next preload check re-peeks.
 pub(crate) fn invalidate_preload(vs: &mut VideoState) {
-    if vs.preloaded_next.take().is_some() {
-        if let Some(p) = vs.player.as_mut() { p.cancel_pending(); }
-    }
+    if vs.preloaded_next.take().is_some() && let Some(p) = vs.player.as_mut() { p.cancel_pending(); }
 }
 
 pub(crate) fn playlist_next(vs: &mut VideoState) -> Option<QueueItem> {
@@ -2013,10 +2014,9 @@ async fn resolve_true_next_episode(
     let eps = cli.get_series_episodes(series_id).await.ok()?;
     let cur_pos = eps.iter().position(|e| e.id == current_id)?;
 
-    if let Ok(Some(next)) = cli.get_next_up_for_series(series_id).await {
-        if eps.iter().position(|e| e.id == next.id).is_some_and(|p| p > cur_pos) {
-            return Some(next);
-        }
+    if let Ok(Some(next)) = cli.get_next_up_for_series(series_id).await
+        && eps.iter().position(|e| e.id == next.id).is_some_and(|p| p > cur_pos) {
+        return Some(next);
     }
     eps.into_iter().nth(cur_pos + 1)
 }
@@ -2058,15 +2058,13 @@ pub(crate) fn wire_rendering_notifier(
         move |state_rn, api| {
             match state_rn {
                 slint::RenderingState::RenderingSetup => {
-                    if let slint::GraphicsAPI::NativeOpenGL { get_proc_address } = api {
-                        if !gl_loaded {
-                            gl::load_with(|name| {
-                                let cname = std::ffi::CString::new(name).unwrap();
-                                get_proc_address(cname.as_c_str())
-                            });
-                            gl_loaded = true;
-                            info!("OpenGL loaded");
-                        }
+                    if let slint::GraphicsAPI::NativeOpenGL { get_proc_address } = api && !gl_loaded {
+                        gl::load_with(|name| {
+                            let cname = std::ffi::CString::new(name).unwrap();
+                            get_proc_address(cname.as_c_str())
+                        });
+                        gl_loaded = true;
+                        info!("OpenGL loaded");
                     }
                 }
 
@@ -2187,14 +2185,11 @@ pub(crate) fn wire_rendering_notifier(
                     // is never torn down once created — by the time any
                     // later tick finds pending_load_url == Some, render_ctx
                     // is already guaranteed to exist.
-                    if vs.render_ctx.is_some() {
-                        if let Some(url) = vs.pending_load_url.take() {
-                            if let Some(p) = vs.player.as_ref() {
-                                if let Err(e) = p.load(&url) {
-                                    error!("Player::load: {:#}", e);
-                                }
-                            }
-                        }
+                    if vs.render_ctx.is_some()
+                        && let Some(url) = vs.pending_load_url.take()
+                        && let Some(p) = vs.player.as_ref()
+                        && let Err(e) = p.load(&url) {
+                        error!("Player::load: {:#}", e);
                     }
 
                     let phys = win.window().size();
@@ -2355,10 +2350,8 @@ pub(crate) fn wire_rendering_notifier(
 
                 slint::RenderingState::AfterRendering => {
                     let vs = video_rn.lock().unwrap();
-                    if vs.did_render {
-                        if let Some(ctx) = vs.render_ctx.as_ref() {
-                            ctx.report_swap();
-                        }
+                    if vs.did_render && let Some(ctx) = vs.render_ctx.as_ref() {
+                        ctx.report_swap();
                     }
                 }
 
@@ -2422,19 +2415,18 @@ fn apply_audio_track(
         let art_fetch = if art_id.is_empty() { qi.id.clone() } else { art_id };
         let cli_art  = Arc::clone(&client);
         rt.spawn(async move {
-            if let Some(bytes) = crate::poster::fetch_poster_cached(&cli_art, &art_fetch).await {
-                if let Some(spb) = crate::poster::decode_poster_buffer(&bytes) {
-                    let _ = slint::invoke_from_event_loop(move || {
-                        if vid_art.lock().unwrap().playback_generation != my_gen { return; }
-                        if let Some(w) = ww_art.upgrade() {
-                            let g = AppState::get(&w);
-                            if g.get_is_audio_playing() {
-                                g.set_music_bar_art(slint::Image::from_rgba8(spb));
-                                g.set_music_bar_has_art(true);
-                            }
+            if let Some(bytes) = crate::poster::fetch_poster_cached(&cli_art, &art_fetch).await
+                && let Some(spb) = crate::poster::decode_poster_buffer(&bytes) {
+                let _ = slint::invoke_from_event_loop(move || {
+                    if vid_art.lock().unwrap().playback_generation != my_gen { return; }
+                    if let Some(w) = ww_art.upgrade() {
+                        let g = AppState::get(&w);
+                        if g.get_is_audio_playing() {
+                            g.set_music_bar_art(slint::Image::from_rgba8(spb));
+                            g.set_music_bar_has_art(true);
                         }
-                    });
-                }
+                    }
+                });
             }
         });
     }
@@ -2683,16 +2675,15 @@ pub(crate) fn wire_mpv_timer(
             // doc comment). Checked unconditionally, every tick, ahead of
             // everything else below — independent of the stall/skip-segment
             // detection logic further down, which only ever ARMS this.
-            if let (Some((seg_end, armed_at)), Some(wait)) = (vs.pending_skip_seek, skip_fade_wait) {
-                if armed_at.elapsed() >= wait {
-                    if let Some(p) = vs.player.as_ref() {
-                        p.seek_to(seg_end);
-                        info!("skip segment: faded seek to {:.1}s", seg_end);
-                    }
-                    vs.pending_skip_seek = None;
-                    if let Some(w) = window_timer.upgrade() {
-                        AppState::get(&w).set_skip_fade_active(false);
-                    }
+            if let (Some((seg_end, armed_at)), Some(wait)) = (vs.pending_skip_seek, skip_fade_wait)
+                && armed_at.elapsed() >= wait {
+                if let Some(p) = vs.player.as_ref() {
+                    p.seek_to(seg_end);
+                    info!("skip segment: faded seek to {:.1}s", seg_end);
+                }
+                vs.pending_skip_seek = None;
+                if let Some(w) = window_timer.upgrade() {
+                    AppState::get(&w).set_skip_fade_active(false);
                 }
             }
 
@@ -2849,14 +2840,12 @@ pub(crate) fn wire_mpv_timer(
                     // down never earns this: playback re-stalls almost
                     // immediately after every reload, so is_stalled never
                     // stays false long enough for the cooldown to complete.
-                    if !is_stalled {
-                        if let Some((id, _)) = &vs.stall_reload_attempts_for {
-                            if vs.item_id.as_deref() == Some(id.as_str())
-                                && vs.stall_last_reload_at.is_some_and(|t| t.elapsed() >= Duration::from_secs(120))
-                            {
-                                vs.stall_reload_attempts_for = None;
-                            }
-                        }
+                    if !is_stalled
+                        && let Some((id, _)) = &vs.stall_reload_attempts_for
+                        && vs.item_id.as_deref() == Some(id.as_str())
+                        && vs.stall_last_reload_at.is_some_and(|t| t.elapsed() >= Duration::from_secs(120))
+                    {
+                        vs.stall_reload_attempts_for = None;
                     }
 
                     if is_stalled {
@@ -2909,14 +2898,12 @@ pub(crate) fn wire_mpv_timer(
                     && !vs.video_init_checked
                     && loaded_since.is_some_and(|d| d >= Duration::from_secs(5))
                 {
-                    if let Some(p) = vs.player.as_ref() {
-                        if !p.has_seen_video_reconfig() {
-                            warn!(
-                                "no VideoReconfig event {:.1}s after the file loaded on a video item — \
-                                 video may be stuck audio-only (see CLAUDE.md known issue, 2026-07-29)",
-                                loaded_since.unwrap_or_default().as_secs_f64()
-                            );
-                        }
+                    if let Some(p) = vs.player.as_ref() && !p.has_seen_video_reconfig() {
+                        warn!(
+                            "no VideoReconfig event {:.1}s after the file loaded on a video item — \
+                             video may be stuck audio-only (see CLAUDE.md known issue, 2026-07-29)",
+                            loaded_since.unwrap_or_default().as_secs_f64()
+                        );
                     }
                     vs.video_init_checked = true;
                 }
@@ -3101,74 +3088,67 @@ pub(crate) fn wire_mpv_timer(
                 // Retry up to 30 ticks (~480 ms) to handle containers where the
                 // chapter metadata appears slightly after the first track data.
                 // A count of 0 after 30 attempts is treated as "no chapters".
-                if loaded_ok && !vs.chapters_loaded {
-                    if let Some(p) = vs.player.as_ref() {
-                        let count = p.get_chapter_count();
-                        if count > 0 {
-                            let dur      = p.get_duration();
-                            let chapters = p.get_chapters();
-                            info!("loaded {} chapters", chapters.len());
-                            let marks: Vec<f32> = if dur > 0.0 {
-                                chapters.iter().map(|(t, _)| (t / dur) as f32).collect()
-                            } else {
-                                vec![]
-                            };
-                            if let Some(w) = window_timer.upgrade() {
-                                let g = AppState::get(&w);
-                                g.set_chapter_marks(
-                                    ModelRc::new(VecModel::from(marks)),
-                                );
-                                let entries: Vec<TrackEntry> = chapters.iter().enumerate().map(|(i, (t, title))| {
-                                    let ts = fmt_secs(*t).to_string();
-                                    let label = if title.is_empty() {
-                                        ts
-                                    } else {
-                                        format!("{ts}  {title}")
-                                    };
-                                    TrackEntry { id: i as i32, label: label.into() }
-                                }).collect();
-                                g.set_chapter_entries(ModelRc::new(VecModel::from(entries)));
-                            }
-                            vs.chapters = chapters;
-                            vs.chapters_loaded = true;
-                        } else if vs.chapter_load_attempts >= 30 {
-                            debug!("no chapters after 30 attempts");
-                            vs.chapters_loaded = true;
+                if loaded_ok && !vs.chapters_loaded && let Some(p) = vs.player.as_ref() {
+                    let count = p.get_chapter_count();
+                    if count > 0 {
+                        let dur      = p.get_duration();
+                        let chapters = p.get_chapters();
+                        info!("loaded {} chapters", chapters.len());
+                        let marks: Vec<f32> = if dur > 0.0 {
+                            chapters.iter().map(|(t, _)| (t / dur) as f32).collect()
                         } else {
-                            vs.chapter_load_attempts += 1;
+                            vec![]
+                        };
+                        if let Some(w) = window_timer.upgrade() {
+                            let g = AppState::get(&w);
+                            g.set_chapter_marks(
+                                ModelRc::new(VecModel::from(marks)),
+                            );
+                            let entries: Vec<TrackEntry> = chapters.iter().enumerate().map(|(i, (t, title))| {
+                                let ts = fmt_secs(*t).to_string();
+                                let label = if title.is_empty() {
+                                    ts
+                                } else {
+                                    format!("{ts}  {title}")
+                                };
+                                TrackEntry { id: i as i32, label: label.into() }
+                            }).collect();
+                            g.set_chapter_entries(ModelRc::new(VecModel::from(entries)));
                         }
+                        vs.chapters = chapters;
+                        vs.chapters_loaded = true;
+                    } else if vs.chapter_load_attempts >= 30 {
+                        debug!("no chapters after 30 attempts");
+                        vs.chapters_loaded = true;
+                    } else {
+                        vs.chapter_load_attempts += 1;
                     }
                 }
 
                 // ── Chapter OSD countdown ─────────────────────────────────────
                 if vs.chapter_osd_ticks > 0 {
                     vs.chapter_osd_ticks -= 1;
-                    if vs.chapter_osd_ticks == 0 {
-                        if let Some(w) = window_timer.upgrade() {
-                            AppState::get(&w).set_chapter_osd_visible(false);
-                        }
+                    if vs.chapter_osd_ticks == 0 && let Some(w) = window_timer.upgrade() {
+                        AppState::get(&w).set_chapter_osd_visible(false);
                     }
                 }
 
                 // ── Current chapter tracking ─────────────────────────────────
-                if vs.chapters_loaded && !vs.chapters.is_empty() {
-                    if let (Some(pos), Some(w)) = (live_pos, window_timer.upgrade()) {
-                        let new_ch = vs.chapters.iter().rposition(|(t, _)| pos >= *t)
-                            .map(|i| i as i32).unwrap_or(-1);
-                        let g = AppState::get(&w);
-                        if g.get_current_chapter() != new_ch {
-                            g.set_current_chapter(new_ch);
-                        }
+                if vs.chapters_loaded && !vs.chapters.is_empty()
+                    && let (Some(pos), Some(w)) = (live_pos, window_timer.upgrade()) {
+                    let new_ch = vs.chapters.iter().rposition(|(t, _)| pos >= *t)
+                        .map(|i| i as i32).unwrap_or(-1);
+                    let g = AppState::get(&w);
+                    if g.get_current_chapter() != new_ch {
+                        g.set_current_chapter(new_ch);
                     }
                 }
 
                 // ── Sub / audio delay OSD countdown ───────────────────────────
                 if vs.delay_osd_ticks > 0 {
                     vs.delay_osd_ticks -= 1;
-                    if vs.delay_osd_ticks == 0 {
-                        if let Some(w) = window_timer.upgrade() {
-                            AppState::get(&w).set_delay_osd_visible(false);
-                        }
+                    if vs.delay_osd_ticks == 0 && let Some(w) = window_timer.upgrade() {
+                        AppState::get(&w).set_delay_osd_visible(false);
                     }
                 }
                 // Track auto-selection runs as soon as the file has loaded,
@@ -3179,249 +3159,240 @@ pub(crate) fn wire_mpv_timer(
                 // ~1 s in, only HDR"). At FileLoaded the picture hasn't
                 // started yet (a resume is still seeking), so the refill is
                 // part of the normal start-up instead.
-                if loaded_since.is_some() && !vs.tracks_loaded {
-                    if let (Some(p), Some(w)) = (vs.player.as_ref(), window_timer.upgrade()) {
-                        let tracks = p.get_tracks();
-                        // Retry next tick if mpv hasn't parsed the track list yet.
-                        if !tracks.is_empty() {
-                            debug!("track-list ({} entries):", tracks.len());
-                            for t in &tracks {
-                                debug!("  [{:>2}] {:5}  selected={}  lang={:5}  title={:?}  codec={}",
-                                    t.id, t.track_type, t.selected, t.lang, t.title, t.codec);
-                            }
-                            let sub_model   = build_track_model(&tracks, "sub");
-                            let audio_model = build_track_model(&tracks, "audio");
-                            let video_model = build_track_model(&tracks, "video");
-                            let mut cur_sub = tracks.iter().find(|t| t.track_type == "sub" && t.selected).map(|t| t.id).unwrap_or(0);
-                            let mut cur_audio = tracks.iter().find(|t| t.track_type == "audio" && t.selected).map(|t| t.id).unwrap_or(1);
-                            let cur_video = tracks.iter().find(|t| t.track_type == "video" && t.selected).map(|t| t.id).unwrap_or(1);
-                            debug!("active tracks: sub={} audio={} video={}", cur_sub, cur_audio, cur_video);
-                            let g = AppState::get(&w);
-
-                            // Per-series remembered track languages (Phase: remember
-                            // last manually-picked track) — checked before falling
-                            // back to the global Config.sub_lang/audio_lang below.
-                            // Session-only lookup, brief nested lock (no I/O), same
-                            // pattern as this file's other state_timer reads.
-                            let remembered = vs.playing_series_id.as_ref()
-                                .and_then(|sid| state_timer.lock().unwrap().remembered_tracks.get(sid).cloned());
-
-                            // Subtitle auto-select: global off → force 0; else try primary then fallback.
-                            // Only switch when mpv's own pick (from the
-                            // preferences set before load) differs — every
-                            // switch makes mpv re-read its buffer (2026-10-06).
-                            if !g.get_settings_sub_enabled() {
-                                if cur_sub != 0 {
-                                    if let Some(p) = vs.player.as_ref() { p.set_sub_track(0); }
-                                }
-                                cur_sub = 0;
-                            } else {
-                                let pref1 = g.get_settings_sub_lang().to_string();
-                                let pref2 = g.get_settings_sub_lang2().to_string();
-                                let sub_type = g.get_settings_sub_type().to_string();
-                                // Remembered pick is already a raw mpv lang code (copied
-                                // from a real TrackInfo.lang, not a display name), so it
-                                // goes in ahead of sub_lang_code()'s translated codes —
-                                // takes priority, but a language with no matching track
-                                // in THIS episode still falls through to pref1/pref2
-                                // rather than leaving mpv's default unchanged.
-                                let mut codes: Vec<String> = Vec::new();
-                                if let Some(rl) = remembered.as_ref().and_then(|r| r.sub_lang.clone()) {
-                                    codes.push(rl.to_ascii_lowercase());
-                                }
-                                codes.extend([pref1.as_str(), pref2.as_str()].iter()
-                                    .map(|n| sub_lang_code(n)).filter(|c| !c.is_empty()).map(String::from));
-                                if !codes.is_empty() {
-                                    // 0=Normal, 1=SDH, 2=Forced — type priority per preference.
-                                    let kind_of = |t: &TrackInfo| -> u8 {
-                                        if t.hearing_impaired { 1 } else if t.forced { 2 } else { 0 }
-                                    };
-                                    let priority: &[u8] = match sub_type.as_str() {
-                                        "Forced"           => &[2, 0, 1],
-                                        "Hearing Impaired" => &[1, 0, 2],
-                                        _                  => &[0, 1, 2], // Normal / Any / empty
-                                    };
-                                    // Outer loop: type priority; inner loop: language codes.
-                                    // A preferred-type match in pref1_lang beats a fallback-type
-                                    // match in either language.
-                                    let found = priority.iter().find_map(|&want_kind| {
-                                        codes.iter().find_map(|code| {
-                                            tracks.iter().find(|t| {
-                                                t.track_type == "sub"
-                                                && t.lang.to_ascii_lowercase().starts_with(code.as_str())
-                                                && kind_of(t) == want_kind
-                                            })
-                                        })
-                                    });
-                                    if let Some(t) = found {
-                                        if t.id == cur_sub {
-                                            debug!("sub {} (lang={}) already selected by mpv — no switch", t.id, t.lang);
-                                        } else {
-                                            info!("auto-selected sub {} (lang={} forced={} hi={}) pref_lang={:?}/{:?} pref_type={:?} (mpv had {})",
-                                                t.id, t.lang, t.forced, t.hearing_impaired, pref1, pref2, sub_type, cur_sub);
-                                            if let Some(p) = vs.player.as_ref() { p.set_sub_track(t.id); }
-                                            cur_sub = t.id;
-                                        }
-                                    }
-                                    // No match → leave mpv default unchanged
-                                }
-                            }
-
-                            // Audio language auto-select: if preference set, pick first matching track.
-                            // Remembered per-series pick (already a raw mpv lang code)
-                            // takes priority over the global Config.audio_lang, same
-                            // reasoning as the subtitle block above.
-                            let audio_lang_pref = g.get_settings_audio_lang().to_string();
-                            let audio_code: String = remembered.as_ref().and_then(|r| r.audio_lang.clone())
-                                .map(|l| l.to_ascii_lowercase())
-                                .unwrap_or_else(|| sub_lang_code(&audio_lang_pref).to_string());
-                            if !audio_code.is_empty() {
-                                let audio_tracks: Vec<_> = tracks.iter()
-                                    .filter(|t| t.track_type == "audio").collect();
-                                if audio_tracks.len() > 1 {
-                                    let found = audio_tracks.iter().find(|t| {
-                                        t.lang.to_ascii_lowercase().starts_with(audio_code.as_str())
-                                    });
-                                    if let Some(t) = found {
-                                        if t.id == cur_audio {
-                                            debug!("audio {} (lang={}) already selected by mpv — no switch", t.id, t.lang);
-                                        } else {
-                                            info!("auto-selected audio {} (lang={}) pref={:?} (mpv had {})", t.id, t.lang, audio_lang_pref, cur_audio);
-                                            if let Some(p) = vs.player.as_ref() { p.set_audio_track(t.id); }
-                                            cur_audio = t.id;
-                                        }
-                                    }
-                                    // No match → leave mpv default unchanged
-                                }
-                            }
-                            g.set_sub_tracks(sub_model);
-                            g.set_audio_tracks(audio_model);
-                            g.set_video_tracks(video_model);
-                            g.set_current_sub_id(cur_sub as i32);
-                            g.set_current_audio_id(cur_audio as i32);
-                            g.set_current_video_id(cur_video as i32);
-                            vs.tracks_loaded = true;
+                if loaded_since.is_some() && !vs.tracks_loaded
+                    && let (Some(p), Some(w)) = (vs.player.as_ref(), window_timer.upgrade()) {
+                    let tracks = p.get_tracks();
+                    // Retry next tick if mpv hasn't parsed the track list yet.
+                    if !tracks.is_empty() {
+                        debug!("track-list ({} entries):", tracks.len());
+                        for t in &tracks {
+                            debug!("  [{:>2}] {:5}  selected={}  lang={:5}  title={:?}  codec={}",
+                                t.id, t.track_type, t.selected, t.lang, t.title, t.codec);
                         }
+                        let sub_model   = build_track_model(&tracks, "sub");
+                        let audio_model = build_track_model(&tracks, "audio");
+                        let video_model = build_track_model(&tracks, "video");
+                        let mut cur_sub = tracks.iter().find(|t| t.track_type == "sub" && t.selected).map(|t| t.id).unwrap_or(0);
+                        let mut cur_audio = tracks.iter().find(|t| t.track_type == "audio" && t.selected).map(|t| t.id).unwrap_or(1);
+                        let cur_video = tracks.iter().find(|t| t.track_type == "video" && t.selected).map(|t| t.id).unwrap_or(1);
+                        debug!("active tracks: sub={} audio={} video={}", cur_sub, cur_audio, cur_video);
+                        let g = AppState::get(&w);
+
+                        // Per-series remembered track languages (Phase: remember
+                        // last manually-picked track) — checked before falling
+                        // back to the global Config.sub_lang/audio_lang below.
+                        // Session-only lookup, brief nested lock (no I/O), same
+                        // pattern as this file's other state_timer reads.
+                        let remembered = vs.playing_series_id.as_ref()
+                            .and_then(|sid| state_timer.lock().unwrap().remembered_tracks.get(sid).cloned());
+
+                        // Subtitle auto-select: global off → force 0; else try primary then fallback.
+                        // Only switch when mpv's own pick (from the
+                        // preferences set before load) differs — every
+                        // switch makes mpv re-read its buffer (2026-10-06).
+                        if !g.get_settings_sub_enabled() {
+                            if cur_sub != 0 && let Some(p) = vs.player.as_ref() { p.set_sub_track(0); }
+                            cur_sub = 0;
+                        } else {
+                            let pref1 = g.get_settings_sub_lang().to_string();
+                            let pref2 = g.get_settings_sub_lang2().to_string();
+                            let sub_type = g.get_settings_sub_type().to_string();
+                            // Remembered pick is already a raw mpv lang code (copied
+                            // from a real TrackInfo.lang, not a display name), so it
+                            // goes in ahead of sub_lang_code()'s translated codes —
+                            // takes priority, but a language with no matching track
+                            // in THIS episode still falls through to pref1/pref2
+                            // rather than leaving mpv's default unchanged.
+                            let mut codes: Vec<String> = Vec::new();
+                            if let Some(rl) = remembered.as_ref().and_then(|r| r.sub_lang.clone()) {
+                                codes.push(rl.to_ascii_lowercase());
+                            }
+                            codes.extend([pref1.as_str(), pref2.as_str()].iter()
+                                .map(|n| sub_lang_code(n)).filter(|c| !c.is_empty()).map(String::from));
+                            if !codes.is_empty() {
+                                // 0=Normal, 1=SDH, 2=Forced — type priority per preference.
+                                let kind_of = |t: &TrackInfo| -> u8 {
+                                    if t.hearing_impaired { 1 } else if t.forced { 2 } else { 0 }
+                                };
+                                let priority: &[u8] = match sub_type.as_str() {
+                                    "Forced"           => &[2, 0, 1],
+                                    "Hearing Impaired" => &[1, 0, 2],
+                                    _                  => &[0, 1, 2], // Normal / Any / empty
+                                };
+                                // Outer loop: type priority; inner loop: language codes.
+                                // A preferred-type match in pref1_lang beats a fallback-type
+                                // match in either language.
+                                let found = priority.iter().find_map(|&want_kind| {
+                                    codes.iter().find_map(|code| {
+                                        tracks.iter().find(|t| {
+                                            t.track_type == "sub"
+                                            && t.lang.to_ascii_lowercase().starts_with(code.as_str())
+                                            && kind_of(t) == want_kind
+                                        })
+                                    })
+                                });
+                                if let Some(t) = found {
+                                    if t.id == cur_sub {
+                                        debug!("sub {} (lang={}) already selected by mpv — no switch", t.id, t.lang);
+                                    } else {
+                                        info!("auto-selected sub {} (lang={} forced={} hi={}) pref_lang={:?}/{:?} pref_type={:?} (mpv had {})",
+                                            t.id, t.lang, t.forced, t.hearing_impaired, pref1, pref2, sub_type, cur_sub);
+                                        if let Some(p) = vs.player.as_ref() { p.set_sub_track(t.id); }
+                                        cur_sub = t.id;
+                                    }
+                                }
+                                // No match → leave mpv default unchanged
+                            }
+                        }
+
+                        // Audio language auto-select: if preference set, pick first matching track.
+                        // Remembered per-series pick (already a raw mpv lang code)
+                        // takes priority over the global Config.audio_lang, same
+                        // reasoning as the subtitle block above.
+                        let audio_lang_pref = g.get_settings_audio_lang().to_string();
+                        let audio_code: String = remembered.as_ref().and_then(|r| r.audio_lang.clone())
+                            .map(|l| l.to_ascii_lowercase())
+                            .unwrap_or_else(|| sub_lang_code(&audio_lang_pref).to_string());
+                        if !audio_code.is_empty() {
+                            let audio_tracks: Vec<_> = tracks.iter()
+                                .filter(|t| t.track_type == "audio").collect();
+                            if audio_tracks.len() > 1 {
+                                let found = audio_tracks.iter().find(|t| {
+                                    t.lang.to_ascii_lowercase().starts_with(audio_code.as_str())
+                                });
+                                if let Some(t) = found {
+                                    if t.id == cur_audio {
+                                        debug!("audio {} (lang={}) already selected by mpv — no switch", t.id, t.lang);
+                                    } else {
+                                        info!("auto-selected audio {} (lang={}) pref={:?} (mpv had {})", t.id, t.lang, audio_lang_pref, cur_audio);
+                                        if let Some(p) = vs.player.as_ref() { p.set_audio_track(t.id); }
+                                        cur_audio = t.id;
+                                    }
+                                }
+                                // No match → leave mpv default unchanged
+                            }
+                        }
+                        g.set_sub_tracks(sub_model);
+                        g.set_audio_tracks(audio_model);
+                        g.set_video_tracks(video_model);
+                        g.set_current_sub_id(cur_sub as i32);
+                        g.set_current_audio_id(cur_audio as i32);
+                        g.set_current_video_id(cur_video as i32);
+                        vs.tracks_loaded = true;
                     }
                 }
 
                 vs.pos_tick = vs.pos_tick.wrapping_add(1);
-                if vs.pos_tick.is_multiple_of(30) {
-                    if let (Some(p), Some(w)) = (vs.player.as_ref(), window_timer.upgrade()) {
-                        let pos = p.get_position();
-                        let dur = p.get_duration();
-                        let (buf_active, buf_pct) = p.get_buffering();
-                        let buffered_pos = p.get_buffer_end_fraction();
-                        // Done with p (releases immutable borrow on vs)
-                        let _ = p;
-                        // Also show buffering overlay during initial load: player alive but no
-                        // video data yet after 500 ms grace period (covers HDD spin-up delays
-                        // where paused-for-cache is false because playback hasn't started yet).
-                        let initial_stall = vs.play_start
-                            .is_some_and(|t| t.elapsed() >= Duration::from_millis(500))
-                            && dur == 0.0;
-                        // display-mode-prefetch (2026-09-25): play_start stays
-                        // None for the whole deferred pre-decode wait, so
-                        // initial_stall alone never fires during it — reuse
-                        // this same "Loading…" spinner for that wait too
-                        // rather than leaving a silent black screen.
-                        let buf_active = buf_active || initial_stall || vs.display_sync_prestart_active;
-                        if pos > 0.0 { vs.last_known_pos_ticks = (pos * 10_000_000.0) as i64; }
-                        let g = AppState::get(&w);
-                        // Suppress position updates while a committed seek is settling.
-                        // seek_committed stores 3; each timer tick decrements until 0.
-                        // This gives mpv ~1440 ms to update time-pos before we read it,
-                        // preventing the bar from jumping back to the pre-seek position.
-                        let suppressed = {
-                            let n = seek_suppress.load(Ordering::Relaxed);
-                            if n > 0 { seek_suppress.fetch_sub(1, Ordering::Relaxed); true }
-                            else { false }
-                        };
-                        if !suppressed {
-                            let ratio = if dur > 0.0 { (pos / dur) as f32 } else { 0.0 };
-                            g.set_playback_pos(ratio);
-                            g.set_playback_time(fmt_secs(pos));
-                            g.set_playback_ends_at(fmt_ends_at(dur - pos));
-                            // Also drive music bar position when audio-only
-                            if g.get_is_audio_playing() {
-                                g.set_music_bar_pos(ratio);
-                                g.set_music_bar_elapsed(fmt_secs(pos));
-                            }
-                        }
-                        g.set_playback_total(fmt_secs(dur));
-                        g.set_playback_total_secs(dur as f32);
+                if vs.pos_tick.is_multiple_of(30)
+                    && let (Some(p), Some(w)) = (vs.player.as_ref(), window_timer.upgrade()) {
+                    let pos = p.get_position();
+                    let dur = p.get_duration();
+                    let (buf_active, buf_pct) = p.get_buffering();
+                    let buffered_pos = p.get_buffer_end_fraction();
+                    // Done with p (releases immutable borrow on vs)
+                    let _ = p;
+                    // Also show buffering overlay during initial load: player alive but no
+                    // video data yet after 500 ms grace period (covers HDD spin-up delays
+                    // where paused-for-cache is false because playback hasn't started yet).
+                    let initial_stall = vs.play_start
+                        .is_some_and(|t| t.elapsed() >= Duration::from_millis(500))
+                        && dur == 0.0;
+                    // display-mode-prefetch (2026-09-25): play_start stays
+                    // None for the whole deferred pre-decode wait, so
+                    // initial_stall alone never fires during it — reuse
+                    // this same "Loading…" spinner for that wait too
+                    // rather than leaving a silent black screen.
+                    let buf_active = buf_active || initial_stall || vs.display_sync_prestart_active;
+                    if pos > 0.0 { vs.last_known_pos_ticks = (pos * 10_000_000.0) as i64; }
+                    let g = AppState::get(&w);
+                    // Suppress position updates while a committed seek is settling.
+                    // seek_committed stores 3; each timer tick decrements until 0.
+                    // This gives mpv ~1440 ms to update time-pos before we read it,
+                    // preventing the bar from jumping back to the pre-seek position.
+                    let suppressed = {
+                        let n = seek_suppress.load(Ordering::Relaxed);
+                        if n > 0 { seek_suppress.fetch_sub(1, Ordering::Relaxed); true }
+                        else { false }
+                    };
+                    if !suppressed {
+                        let ratio = if dur > 0.0 { (pos / dur) as f32 } else { 0.0 };
+                        g.set_playback_pos(ratio);
+                        g.set_playback_time(fmt_secs(pos));
+                        g.set_playback_ends_at(fmt_ends_at(dur - pos));
+                        // Also drive music bar position when audio-only
                         if g.get_is_audio_playing() {
-                            g.set_music_bar_total(fmt_secs(dur));
+                            g.set_music_bar_pos(ratio);
+                            g.set_music_bar_elapsed(fmt_secs(pos));
                         }
-                        g.set_buffering_active(buf_active);
-                        g.set_buffering_pct(buf_pct);
-                        g.set_buffered_pos(buffered_pos);
+                    }
+                    g.set_playback_total(fmt_secs(dur));
+                    g.set_playback_total_secs(dur as f32);
+                    if g.get_is_audio_playing() {
+                        g.set_music_bar_total(fmt_secs(dur));
+                    }
+                    g.set_buffering_active(buf_active);
+                    g.set_buffering_pct(buf_pct);
+                    g.set_buffered_pos(buffered_pos);
 
-                        // ── Lyrics active-line tracking ───────────────────────
-                        // Runs for either lyrics surface: the standalone LyricsView
-                        // overlay (show-lyrics) or the inline panel on the Now
-                        // Playing screen (show-now-playing) — without the latter,
-                        // lyrics-active-idx never advanced while only Now Playing
-                        // was open, so its lyrics panel looked frozen / didn't scroll.
-                        if (g.get_show_lyrics() || g.get_show_now_playing()) && g.get_is_audio_playing() {
-                            if let Some(lyrics) = vs.lyrics.as_ref() {
-                                let pos_ms = (pos * 1000.0) as u64;
-                                // Find last line whose start_ms ≤ current position.
-                                let new_idx = lyrics.iter()
-                                    .rposition(|(ms, _)| *ms > 0 && *ms <= pos_ms)
-                                    .map(|i| i as i32)
-                                    .unwrap_or(-1);
-                                if g.get_lyrics_active_idx() != new_idx {
-                                    g.set_lyrics_active_idx(new_idx);
-                                }
-                            }
+                    // ── Lyrics active-line tracking ───────────────────────
+                    // Runs for either lyrics surface: the standalone LyricsView
+                    // overlay (show-lyrics) or the inline panel on the Now
+                    // Playing screen (show-now-playing) — without the latter,
+                    // lyrics-active-idx never advanced while only Now Playing
+                    // was open, so its lyrics panel looked frozen / didn't scroll.
+                    if (g.get_show_lyrics() || g.get_show_now_playing()) && g.get_is_audio_playing()
+                        && let Some(lyrics) = vs.lyrics.as_ref() {
+                        let pos_ms = (pos * 1000.0) as u64;
+                        // Find last line whose start_ms ≤ current position.
+                        let new_idx = lyrics.iter()
+                            .rposition(|(ms, _)| *ms > 0 && *ms <= pos_ms)
+                            .map(|i| i as i32)
+                            .unwrap_or(-1);
+                        if g.get_lyrics_active_idx() != new_idx {
+                            g.set_lyrics_active_idx(new_idx);
                         }
+                    }
 
-                        // Report progress to Jellyfin every ~10 s. Skipped while
-                        // credits_auto_marked_played is true — the credits-trigger
-                        // already told Jellyfin this item is played with position 0
-                        // (see the trigger block below, and tear_down_player's
-                        // identical guard). An ordinary progress report firing before
-                        // teardown would silently re-add a nonzero PlaybackPositionTicks
-                        // and undo that mark, same as the stop-report used to before
-                        // that fix — except this one fires every ~10s throughout the
-                        // rest of playback, not just once at teardown, so it can undo
-                        // the mark long before the user ever stops or reaches EOF.
-                        if vs.pos_tick.is_multiple_of(600) && !vs.credits_auto_marked_played {
-                            if let (Some(cli), Some(id)) = (vs.client.as_ref().map(Arc::clone), vs.item_id.clone()) {
-                                let ticks  = (pos * 10_000_000.0) as i64;
-                                let paused = g.get_is_paused();
-                                rt_handle.spawn(async move {
-                                    if let Err(e) = cli.report_playback_progress(&id, ticks, paused).await {
-                                        warn!("report_playback_progress failed: {e}");
-                                    }
-                                });
+                    // Report progress to Jellyfin every ~10 s. Skipped while
+                    // credits_auto_marked_played is true — the credits-trigger
+                    // already told Jellyfin this item is played with position 0
+                    // (see the trigger block below, and tear_down_player's
+                    // identical guard). An ordinary progress report firing before
+                    // teardown would silently re-add a nonzero PlaybackPositionTicks
+                    // and undo that mark, same as the stop-report used to before
+                    // that fix — except this one fires every ~10s throughout the
+                    // rest of playback, not just once at teardown, so it can undo
+                    // the mark long before the user ever stops or reaches EOF.
+                    if vs.pos_tick.is_multiple_of(600) && !vs.credits_auto_marked_played
+                        && let (Some(cli), Some(id)) = (vs.client.as_ref().map(Arc::clone), vs.item_id.clone()) {
+                        let ticks  = (pos * 10_000_000.0) as i64;
+                        let paused = g.get_is_paused();
+                        rt_handle.spawn(async move {
+                            if let Err(e) = cli.report_playback_progress(&id, ticks, paused).await {
+                                warn!("report_playback_progress failed: {e}");
                             }
-                        }
+                        });
                     }
                 }
 
                 // ── Stats poll every ~512 ms (CR2-7, CR2-8) ──────────────────
                 // Full poll when overlay is visible; 1 read for passthrough only
                 // when hidden so the volume-control guard stays current.
-                if vs.pos_tick.is_multiple_of(32) {
-                    if let (Some(p), Some(w)) = (vs.player.as_ref(), window_timer.upgrade()) {
-                        if AppState::get(&w).get_stats_visible() {
-                            let stats = p.poll_stats();
-                            update_stats_window(&w, &stats);
-                        } else {
-                            AppState::get(&w).set_audio_passthrough_active(p.poll_passthrough());
-                        }
+                if vs.pos_tick.is_multiple_of(32)
+                    && let (Some(p), Some(w)) = (vs.player.as_ref(), window_timer.upgrade()) {
+                    if AppState::get(&w).get_stats_visible() {
+                        let stats = p.poll_stats();
+                        update_stats_window(&w, &stats);
+                    } else {
+                        AppState::get(&w).set_audio_passthrough_active(p.poll_passthrough());
                     }
                 }
 
                 // ── Periodic frame-drop log every 5 min ───────────────────────
-                if vs.pos_tick > 0 && vs.pos_tick.is_multiple_of(18750) {
-                    if let Some(p) = vs.player.as_ref() {
-                        let (drops, dec_drops) = p.get_drop_counts();
-                        let pos = p.get_position();
-                        info!("stats at {:.0}s: frame-drops={} decoder-drops={}", pos, drops, dec_drops);
-                    }
+                if vs.pos_tick > 0 && vs.pos_tick.is_multiple_of(18750) && let Some(p) = vs.player.as_ref() {
+                    let (drops, dec_drops) = p.get_drop_counts();
+                    let pos = p.get_position();
+                    info!("stats at {:.0}s: frame-drops={} decoder-drops={}", pos, drops, dec_drops);
                 }
 
                 // ── Skip segment prompt (Intro / Recap / Preview / Commercial) ─
@@ -3539,10 +3510,9 @@ pub(crate) fn wire_mpv_timer(
                                             // anchor so the next elapsed() read picks up exactly where
                                             // the countdown left off, not from real wall-clock time
                                             // that includes the pause.
-                                            if let Some(paused_at) = vs.skip_timed_paused_since.take() {
-                                                if let Some(anchor) = vs.skip_timed_shown_at.as_mut() {
-                                                    *anchor += paused_at.elapsed();
-                                                }
+                                            if let Some(paused_at) = vs.skip_timed_paused_since.take()
+                                                && let Some(anchor) = vs.skip_timed_shown_at.as_mut() {
+                                                *anchor += paused_at.elapsed();
                                             }
                                             // Update countdown each tick
                                             let elapsed = vs.skip_timed_shown_at.unwrap().elapsed();
@@ -3606,48 +3576,47 @@ pub(crate) fn wire_mpv_timer(
                 // Intro Skipper Credits endpoint is unavailable).
                 // Respects skip_credits_mode: always-skip → immediate auto-advance,
                 // ask → show banner with countdown, never-skip → no trigger.
-                if !vs.next_ep_banner_shown && vs.playing_series_id.is_some() {
-                    if let (Some(pos), Some(dur)) = (live_pos, live_dur) {
-                        let credits_fire = vs.credits_start.is_some_and(|c| c > 0.0 && pos >= c);
-                        // Require dur >= 60 s so the banner doesn't fire instantly on short clips.
-                        let fallback_fire = dur >= 60.0 && pos > 0.0 && dur - pos <= 30.0;
-                        if credits_fire || fallback_fire {
-                            // Whichever condition(s) actually fired — not always
-                            // credits_start, since a short (<30s) end-credits
-                            // sequence makes fallback_fire cross first. The
-                            // rewind-revert check below must compare against
-                            // THIS, or it immediately (same tick) mistakes a
-                            // fallback-triggered mark for "already rewound past
-                            // it" whenever credits_start sits later than dur-30.
-                            let mut fire_threshold = f64::MAX;
-                            if credits_fire  { fire_threshold = fire_threshold.min(vs.credits_start.unwrap()); }
-                            if fallback_fire { fire_threshold = fire_threshold.min(dur - 30.0); }
-                            let (credits_mode, credits_secs) = window_timer.upgrade()
-                                .map(|w| {
-                                    let g = AppState::get(&w);
-                                    (g.get_settings_skip_credits_mode().to_string(),
-                                     g.get_settings_skip_credits_secs() as u32)
-                                })
-                                .unwrap_or_else(|| ("ask".to_string(), 30u32));
-                            if credits_mode != "never-skip" {
-                                vs.next_ep_banner_shown = true;
-                                // always-skip: secs=0 (countdown loop is empty), no banner shown
-                                let (secs, show_banner) = if credits_mode == "always-skip" {
-                                    (0u32, false)
-                                } else {
-                                    (credits_secs, true)
-                                };
-                                banner_trigger = Some((
-                                    vs.playing_series_id.clone().unwrap(),
-                                    vs.client.as_ref().map(Arc::clone),
-                                    secs,
-                                    show_banner,
-                                ));
-                                if let (Some(id), Some(cli)) = (vs.item_id.clone(), vs.client.as_ref().map(Arc::clone)) {
-                                    vs.credits_auto_marked_played = true;
-                                    vs.credits_mark_threshold = Some(fire_threshold);
-                                    credits_mark_played = Some((id, cli, true, None));
-                                }
+                if !vs.next_ep_banner_shown && vs.playing_series_id.is_some()
+                    && let (Some(pos), Some(dur)) = (live_pos, live_dur) {
+                    let credits_fire = vs.credits_start.is_some_and(|c| c > 0.0 && pos >= c);
+                    // Require dur >= 60 s so the banner doesn't fire instantly on short clips.
+                    let fallback_fire = dur >= 60.0 && pos > 0.0 && dur - pos <= 30.0;
+                    if credits_fire || fallback_fire {
+                        // Whichever condition(s) actually fired — not always
+                        // credits_start, since a short (<30s) end-credits
+                        // sequence makes fallback_fire cross first. The
+                        // rewind-revert check below must compare against
+                        // THIS, or it immediately (same tick) mistakes a
+                        // fallback-triggered mark for "already rewound past
+                        // it" whenever credits_start sits later than dur-30.
+                        let mut fire_threshold = f64::MAX;
+                        if credits_fire  { fire_threshold = fire_threshold.min(vs.credits_start.unwrap()); }
+                        if fallback_fire { fire_threshold = fire_threshold.min(dur - 30.0); }
+                        let (credits_mode, credits_secs) = window_timer.upgrade()
+                            .map(|w| {
+                                let g = AppState::get(&w);
+                                (g.get_settings_skip_credits_mode().to_string(),
+                                 g.get_settings_skip_credits_secs() as u32)
+                            })
+                            .unwrap_or_else(|| ("ask".to_string(), 30u32));
+                        if credits_mode != "never-skip" {
+                            vs.next_ep_banner_shown = true;
+                            // always-skip: secs=0 (countdown loop is empty), no banner shown
+                            let (secs, show_banner) = if credits_mode == "always-skip" {
+                                (0u32, false)
+                            } else {
+                                (credits_secs, true)
+                            };
+                            banner_trigger = Some((
+                                vs.playing_series_id.clone().unwrap(),
+                                vs.client.as_ref().map(Arc::clone),
+                                secs,
+                                show_banner,
+                            ));
+                            if let (Some(id), Some(cli)) = (vs.item_id.clone(), vs.client.as_ref().map(Arc::clone)) {
+                                vs.credits_auto_marked_played = true;
+                                vs.credits_mark_threshold = Some(fire_threshold);
+                                credits_mark_played = Some((id, cli, true, None));
                             }
                         }
                     }
@@ -3665,46 +3634,44 @@ pub(crate) fn wire_mpv_timer(
                 // dur-30s fallback fire before credits_start is ever reached), and
                 // recomputing here used to cause an immediate same-tick self-revert
                 // for any such episode, silently dropping the mark_played call.
-                if vs.credits_auto_marked_played {
-                    if let (Some(pos), Some(threshold)) = (live_pos, vs.credits_mark_threshold) {
-                        if pos < threshold - 1.0 {
-                            vs.credits_auto_marked_played = false;
-                            vs.credits_mark_threshold = None;
-                            // Also un-latch the trigger guard: without this, watching
-                            // forward through the credits point a second time after
-                            // this rewind can never re-fire the block above (it's
-                            // gated on !next_ep_banner_shown, which was never reset
-                            // anywhere else once a rewind reverts the mark) — the
-                            // episode would end up genuinely unplayed if the user then
-                            // stops before literal mpv EOF, exactly what this whole
-                            // feature exists to prevent. Re-showing the Up Next banner
-                            // on a second pass through the credits window is correct,
-                            // expected behavior, not a regression of the "once per
-                            // episode" comment above (written before rewind-tracking
-                            // existed) — the banner now fires once per un-reverted
-                            // pass, mirroring credits_auto_marked_played exactly.
-                            vs.next_ep_banner_shown = false;
-                            // Also cancel any in-flight Up Next countdown: clearing
-                            // next_ep_pending makes the countdown task's own per-second
-                            // !pending_ok check bail within ~1s (it already exists for
-                            // the Skip button's on_cancel_auto_advance path — see
-                            // main.rs — this just reuses the same mechanism from here),
-                            // and hide_next_ep_banner tells the UI to hide the banner
-                            // immediately rather than leaving it visible for that ~1s.
-                            // Without this, rewinding while the banner's countdown is
-                            // still running left the ORIGINAL countdown ticking away
-                            // untouched — on expiry it would auto-advance to the next
-                            // episode out from under a user who was still mid-rewatch
-                            // of the current one, regardless of the revert just above.
-                            if vs.next_ep_pending.is_some() {
-                                vs.next_ep_pending = None;
-                                hide_next_ep_banner = true;
-                            }
-                            if let (Some(id), Some(cli)) = (vs.item_id.clone(), vs.client.as_ref().map(Arc::clone)) {
-                                let ticks = (pos * 10_000_000.0) as i64;
-                                credits_mark_played = Some((id, cli, false, Some(ticks)));
-                            }
-                        }
+                if vs.credits_auto_marked_played
+                    && let (Some(pos), Some(threshold)) = (live_pos, vs.credits_mark_threshold)
+                    && pos < threshold - 1.0 {
+                    vs.credits_auto_marked_played = false;
+                    vs.credits_mark_threshold = None;
+                    // Also un-latch the trigger guard: without this, watching
+                    // forward through the credits point a second time after
+                    // this rewind can never re-fire the block above (it's
+                    // gated on !next_ep_banner_shown, which was never reset
+                    // anywhere else once a rewind reverts the mark) — the
+                    // episode would end up genuinely unplayed if the user then
+                    // stops before literal mpv EOF, exactly what this whole
+                    // feature exists to prevent. Re-showing the Up Next banner
+                    // on a second pass through the credits window is correct,
+                    // expected behavior, not a regression of the "once per
+                    // episode" comment above (written before rewind-tracking
+                    // existed) — the banner now fires once per un-reverted
+                    // pass, mirroring credits_auto_marked_played exactly.
+                    vs.next_ep_banner_shown = false;
+                    // Also cancel any in-flight Up Next countdown: clearing
+                    // next_ep_pending makes the countdown task's own per-second
+                    // !pending_ok check bail within ~1s (it already exists for
+                    // the Skip button's on_cancel_auto_advance path — see
+                    // main.rs — this just reuses the same mechanism from here),
+                    // and hide_next_ep_banner tells the UI to hide the banner
+                    // immediately rather than leaving it visible for that ~1s.
+                    // Without this, rewinding while the banner's countdown is
+                    // still running left the ORIGINAL countdown ticking away
+                    // untouched — on expiry it would auto-advance to the next
+                    // episode out from under a user who was still mid-rewatch
+                    // of the current one, regardless of the revert just above.
+                    if vs.next_ep_pending.is_some() {
+                        vs.next_ep_pending = None;
+                        hide_next_ep_banner = true;
+                    }
+                    if let (Some(id), Some(cli)) = (vs.item_id.clone(), vs.client.as_ref().map(Arc::clone)) {
+                        let ticks = (pos * 10_000_000.0) as i64;
+                        credits_mark_played = Some((id, cli, false, Some(ticks)));
                     }
                 }
 
@@ -3745,20 +3712,18 @@ pub(crate) fn wire_mpv_timer(
                 } else {
                     vs.controls_idle_ticks = vs.controls_idle_ticks.saturating_add(1);
                 }
-                if vs.controls_idle_ticks == 187 {
-                    if let Some(w) = window_timer.upgrade() {
-                        let g = AppState::get(&w);
-                        g.set_controls_visible(false);
-                        // Force Slint to re-evaluate the cursor at the last-known position.
-                        // Slint only calls set_cursor_visible() during mouse event processing;
-                        // dispatching PointerMoved at the same coordinates triggers that path
-                        // without changing mouse-x/y (so show-controls won't fire).
-                        let cx = g.get_player_cursor_x();
-                        let cy = g.get_player_cursor_y();
-                        w.window().dispatch_event(WindowEvent::PointerMoved {
-                            position: LogicalPosition::new(cx, cy),
-                        });
-                    }
+                if vs.controls_idle_ticks == 187 && let Some(w) = window_timer.upgrade() {
+                    let g = AppState::get(&w);
+                    g.set_controls_visible(false);
+                    // Force Slint to re-evaluate the cursor at the last-known position.
+                    // Slint only calls set_cursor_visible() during mouse event processing;
+                    // dispatching PointerMoved at the same coordinates triggers that path
+                    // without changing mouse-x/y (so show-controls won't fire).
+                    let cx = g.get_player_cursor_x();
+                    let cy = g.get_player_cursor_y();
+                    w.window().dispatch_event(WindowEvent::PointerMoved {
+                        position: LogicalPosition::new(cx, cy),
+                    });
                 }
             }
 
@@ -3844,31 +3809,27 @@ pub(crate) fn wire_mpv_timer(
             // Gapless transition: mpv already plays the preloaded entry — commit
             // the bookkeeping and hand the UI/report work to the code below.
             let mut gapless_commit: Option<(QueueItem, u64, Option<String>, i64)> = None;
-            if matches!(poll, PollResult::TrackChanged) {
-                if let Some(qi) = vs.preloaded_next.take() {
-                    commit_natural_next(&mut vs, &qi);
-                    let old_id    = vs.item_id.clone();
-                    let old_ticks = vs.last_known_pos_ticks;
-                    vs.playback_generation = vs.playback_generation.wrapping_add(1);
-                    let generation = vs.playback_generation;
-                    vs.item_id              = Some(qi.id.clone());
-                    vs.now_playing          = Some(qi.clone());
-                    vs.current_is_audio     = true;
-                    vs.lyrics               = None;
-                    vs.lyrics_available     = false;
-                    vs.last_known_pos_ticks = 0;
-                    gapless_commit = Some((qi, generation, old_id, old_ticks));
-                }
+            if matches!(poll, PollResult::TrackChanged) && let Some(qi) = vs.preloaded_next.take() {
+                commit_natural_next(&mut vs, &qi);
+                let old_id    = vs.item_id.clone();
+                let old_ticks = vs.last_known_pos_ticks;
+                vs.playback_generation = vs.playback_generation.wrapping_add(1);
+                let generation = vs.playback_generation;
+                vs.item_id              = Some(qi.id.clone());
+                vs.now_playing          = Some(qi.clone());
+                vs.current_is_audio     = true;
+                vs.lyrics               = None;
+                vs.lyrics_available     = false;
+                vs.last_known_pos_ticks = 0;
+                gapless_commit = Some((qi, generation, old_id, old_ticks));
             }
 
             (finished, banner_trigger, gapless_commit, auto_open_now_playing, credits_mark_played,
              hide_next_ep_banner, stalled_now, stall_reload, stall_give_up, trailer_failed)
         };
 
-        if hide_next_ep_banner {
-            if let Some(w) = window_timer.upgrade() {
-                AppState::get(&w).set_show_next_ep_banner(false);
-            }
+        if hide_next_ep_banner && let Some(w) = window_timer.upgrade() {
+            AppState::get(&w).set_show_next_ep_banner(false);
         }
 
         // Stall indicator — distinct from the cache-buffering spinner
@@ -3913,10 +3874,8 @@ pub(crate) fn wire_mpv_timer(
         // Auto-open Now Playing: fires here, after `vs` is released, so its
         // callback chain (refresh-queue-display → push_queue_display) can
         // safely re-lock VideoState without deadlocking this thread.
-        if auto_open_now_playing {
-            if let Some(w) = window_timer.upgrade() {
-                AppState::get(&w).invoke_open_now_playing();
-            }
+        if auto_open_now_playing && let Some(w) = window_timer.upgrade() {
+            AppState::get(&w).invoke_open_now_playing();
         }
 
         // Credits-trigger auto mark-played / rewind-revert (see the block above
@@ -3939,10 +3898,9 @@ pub(crate) fn wire_mpv_timer(
                 // where ws.rs's UserDataChanged handling would otherwise
                 // misread position=0+unplayed as "untouched" and drop the row
                 // from Continue Watching mid-rewatch.
-                if let Some(ticks) = revert_ticks {
-                    if let Err(e) = cli.report_playback_progress(&id, ticks, false).await {
-                        warn!("credits-trigger revert position correction failed: {e:#}");
-                    }
+                if let Some(ticks) = revert_ticks
+                    && let Err(e) = cli.report_playback_progress(&id, ticks, false).await {
+                    warn!("credits-trigger revert position correction failed: {e:#}");
                 }
             });
         }
@@ -3964,10 +3922,8 @@ pub(crate) fn wire_mpv_timer(
             if let Some(cli) = client {
                 let new_id = qi.id.clone();
                 rt_handle.spawn(async move {
-                    if let Some(old) = old_id {
-                        if let Err(e) = cli.report_playback_stopped(&old, old_ticks).await {
-                            warn!("gapless stop report: {e:#}");
-                        }
+                    if let Some(old) = old_id && let Err(e) = cli.report_playback_stopped(&old, old_ticks).await {
+                        warn!("gapless stop report: {e:#}");
                     }
                     if let Err(e) = cli.report_playback_start(&new_id).await {
                         warn!("gapless start report: {e:#}");

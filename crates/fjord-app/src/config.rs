@@ -1676,10 +1676,8 @@ impl<V: Clone> BoundedCache<V> {
         let inner = std::sync::Arc::make_mut(&mut self.inner);
         if !inner.map.contains_key(&key) {
             inner.order.push_back(key.clone());
-            if inner.order.len() > inner.cap {
-                if let Some(oldest) = inner.order.pop_front() {
-                    inner.map.remove(&oldest);
-                }
+            if inner.order.len() > inner.cap && let Some(oldest) = inner.order.pop_front() {
+                inner.map.remove(&oldest);
             }
         }
         inner.map.insert(key, value);

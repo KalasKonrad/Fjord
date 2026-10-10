@@ -119,13 +119,11 @@ use crate::{AppState, CardItem, MainWindow};
 pub(crate) fn update_card_in_all_models(w: &MainWindow, id: &str, played: Option<bool>, fav: Option<bool>) {
     let patch_cards = |model: ModelRc<CardItem>| {
         for i in 0..model.row_count() {
-            if let Some(mut c) = model.row_data(i) {
-                if c.id.as_str() == id {
-                    if let Some(p) = played { c.has_played  = p; }
-                    if let Some(f) = fav    { c.is_favorite = f; }
-                    model.set_row_data(i, c);
-                    break;
-                }
+            if let Some(mut c) = model.row_data(i) && c.id.as_str() == id {
+                if let Some(p) = played { c.has_played  = p; }
+                if let Some(f) = fav    { c.is_favorite = f; }
+                model.set_row_data(i, c);
+                break;
             }
         }
     };
@@ -136,13 +134,11 @@ pub(crate) fn update_card_in_all_models(w: &MainWindow, id: &str, played: Option
     {
         let tracks = g.get_album_tracks();
         for i in 0..tracks.row_count() {
-            if let Some(mut t) = tracks.row_data(i) {
-                if t.id.as_str() == id {
-                    if let Some(p) = played { t.has_played  = p; }
-                    if let Some(f) = fav    { t.is_favorite = f; }
-                    tracks.set_row_data(i, t);
-                    break;
-                }
+            if let Some(mut t) = tracks.row_data(i) && t.id.as_str() == id {
+                if let Some(p) = played { t.has_played  = p; }
+                if let Some(f) = fav    { t.is_favorite = f; }
+                tracks.set_row_data(i, t);
+                break;
             }
         }
     }
@@ -154,13 +150,11 @@ pub(crate) fn update_card_in_all_models(w: &MainWindow, id: &str, played: Option
     {
         let seasons = g.get_series_seasons();
         for i in 0..seasons.row_count() {
-            if let Some(mut s) = seasons.row_data(i) {
-                if s.id.as_str() == id {
-                    if let Some(p) = played { s.played      = p; }
-                    if let Some(f) = fav    { s.is_favorite = f; }
-                    seasons.set_row_data(i, s);
-                    break;
-                }
+            if let Some(mut s) = seasons.row_data(i) && s.id.as_str() == id {
+                if let Some(p) = played { s.played      = p; }
+                if let Some(f) = fav    { s.is_favorite = f; }
+                seasons.set_row_data(i, s);
+                break;
             }
         }
     }
@@ -208,12 +202,10 @@ pub(crate) fn update_card_in_all_models(w: &MainWindow, id: &str, played: Option
 pub(crate) fn patch_watchlist_on_jellyfin_models(g: &AppState, jellyfin_id: &str, on_watchlist: bool) {
     let patch_cards = |model: ModelRc<CardItem>| {
         for i in 0..model.row_count() {
-            if let Some(mut c) = model.row_data(i) {
-                if c.id.as_str() == jellyfin_id && c.on_watchlist != on_watchlist {
-                    c.on_watchlist = on_watchlist;
-                    model.set_row_data(i, c);
-                    break;
-                }
+            if let Some(mut c) = model.row_data(i) && c.id.as_str() == jellyfin_id && c.on_watchlist != on_watchlist {
+                c.on_watchlist = on_watchlist;
+                model.set_row_data(i, c);
+                break;
             }
         }
     };
@@ -510,12 +502,10 @@ fn open_context_menu_state(g: &AppState, state: &Arc<Mutex<FjordState>>, args: O
 pub(crate) fn update_series_unplayed_count(w: &MainWindow, series_id: &str, delta: i32) {
     let patch = |model: slint::ModelRc<crate::CardItem>| {
         for i in 0..model.row_count() {
-            if let Some(mut c) = model.row_data(i) {
-                if c.id.as_str() == series_id {
-                    c.unplayed_count = (c.unplayed_count + delta).max(0);
-                    model.set_row_data(i, c);
-                    break;
-                }
+            if let Some(mut c) = model.row_data(i) && c.id.as_str() == series_id {
+                c.unplayed_count = (c.unplayed_count + delta).max(0);
+                model.set_row_data(i, c);
+                break;
             }
         }
     };
@@ -1427,18 +1417,17 @@ fn refresh_playlists(
                     }
                     // The open playlist detail screen isn't covered by any model
                     // above — reopen it so its tracklist reflects the change (CR11-7).
-                    if let Some(id) = mutated_id {
-                        if g.get_show_album() && g.get_album_is_playlist() && g.get_album_id() == id.as_str() {
-                            let title = g.get_album_title().to_string();
-                            // Invalidate container_tracks_cache first — without this the
-                            // "reopen" below just re-serves the pre-mutation cached
-                            // tracklist (open_music_screen skips its network fetch on a
-                            // cache hit), silently defeating the whole point of this
-                            // reopen: the track the user just added stays invisible on
-                            // the exact screen they're looking at.
-                            state2.lock().unwrap().container_tracks_cache.remove(&id);
-                            crate::album::open_playlist_screen(id, title, state2, ww2, rt2);
-                        }
+                    if let Some(id) = mutated_id
+                        && g.get_show_album() && g.get_album_is_playlist() && g.get_album_id() == id.as_str() {
+                        let title = g.get_album_title().to_string();
+                        // Invalidate container_tracks_cache first — without this the
+                        // "reopen" below just re-serves the pre-mutation cached
+                        // tracklist (open_music_screen skips its network fetch on a
+                        // cache hit), silently defeating the whole point of this
+                        // reopen: the track the user just added stays invisible on
+                        // the exact screen they're looking at.
+                        state2.lock().unwrap().container_tracks_cache.remove(&id);
+                        crate::album::open_playlist_screen(id, title, state2, ww2, rt2);
                     }
                 });
             }

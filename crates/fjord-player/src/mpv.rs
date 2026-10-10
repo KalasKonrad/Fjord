@@ -444,10 +444,8 @@ impl Player {
             // trailer's resolved stream), never local files, so these
             // HTTP-protocol-only options are always applicable.
             init.set_option("stream-lavf-o", "reconnect=1,reconnect_streamed=1,reconnect_delay_max=30")?;
-            if let Some(pos) = config.start_position_secs {
-                if pos > 0.0 {
-                    init.set_option("start", format!("{:.3}", pos).as_str())?;
-                }
+            if let Some(pos) = config.start_position_secs && pos > 0.0 {
+                init.set_option("start", format!("{:.3}", pos).as_str())?;
             }
             // Subtitle appearance — scale/pos are safe to always set (1.0/100
             // are mpv's own defaults). ass-override/color/background are only
@@ -987,15 +985,11 @@ impl Player {
         if let Err(e) = self.mpv.set_property("sub-pos", pos) {
             warn!("set_sub_style: sub-pos failed: {}", e);
         }
-        if !respect_ass_styling {
-            if let Err(e) = self.mpv.set_property("sub-ass-override", "force") {
-                warn!("set_sub_style: sub-ass-override failed: {}", e);
-            }
+        if !respect_ass_styling && let Err(e) = self.mpv.set_property("sub-ass-override", "force") {
+            warn!("set_sub_style: sub-ass-override failed: {}", e);
         }
-        if !color.is_empty() {
-            if let Err(e) = self.mpv.set_property("sub-color", color) {
-                warn!("set_sub_style: sub-color failed: {}", e);
-            }
+        if !color.is_empty() && let Err(e) = self.mpv.set_property("sub-color", color) {
+            warn!("set_sub_style: sub-color failed: {}", e);
         }
         if background {
             if let Err(e) = self.mpv.set_property("sub-back-color", "#C0000000") {
@@ -1178,8 +1172,11 @@ impl MpvRenderCtx {
             ctx:  *mut c_void,
             name: *const std::os::raw::c_char,
         ) -> *mut c_void {
-            let f = &*(ctx as *const &dyn Fn(&CStr) -> *const c_void);
-            f(CStr::from_ptr(name)) as *mut c_void
+            // SAFETY: `ctx` is the `get_proc` reference passed below; `name` is a C string from mpv.
+            unsafe {
+                let f = &*(ctx as *const &dyn Fn(&CStr) -> *const c_void);
+                f(CStr::from_ptr(name)) as *mut c_void
+            }
         }
 
         let mut init_params = sys::mpv_opengl_init_params {
@@ -1201,7 +1198,9 @@ impl MpvRenderCtx {
         ];
 
         let mut ctx: *mut sys::mpv_render_context = std::ptr::null_mut();
-        let rc = sys::mpv_render_context_create(&mut ctx, handle, params.as_mut_ptr());
+        // SAFETY: GL context current and `handle` valid (this fn's contract);
+        // `params` and `get_proc` outlive the synchronous call.
+        let rc = unsafe { sys::mpv_render_context_create(&mut ctx, handle, params.as_mut_ptr()) };
         ensure!(rc == 0, "mpv_render_context_create failed (code {})", rc);
         ensure!(!ctx.is_null(), "mpv_render_context_create returned null");
 
@@ -1262,9 +1261,12 @@ impl MpvRenderCtx {
     /// mpv API — use `slint::invoke_from_event_loop` to queue work.
     pub fn set_update_callback<F: Fn() + Send + 'static>(&mut self, cb: F) {
         unsafe extern "C" fn trampoline(ctx: *mut c_void) {
-            if ctx.is_null() { return; }
-            let f = &*(ctx as *const Box<dyn Fn() + Send + 'static>);
-            f();
+            // SAFETY: `ctx` is the boxed callback set below, alive until it is replaced or dropped.
+            unsafe {
+                if ctx.is_null() { return; }
+                let f = &*(ctx as *const Box<dyn Fn() + Send + 'static>);
+                f();
+            }
         }
 
         // Drop existing callback first.

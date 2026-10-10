@@ -15,6 +15,7 @@ Version history: [CHANGELOG.md](CHANGELOG.md) (git tags `v0.1.0`–`v0.4.2`). Im
 **Check an item off only once it has been clicked through on real hardware** — a clean build/clippy/test says nothing about whether it works. Add a line here the moment something ships "not live-tested". Ticked items are removed at the next cleanup; their story lives in `DEVLOG.md`.
 
 ### 0.5.0 steps 1–2 smoke test (branch `release-0.5`)
+- [ ] **Rust 2024 edition (2026-10-10).** No behaviour change intended; the Slint run below covers it. Watch especially: video in-window and on the separate surface (GL helpers), HDR title (hdr.rs), stall recovery and Up Next/gapless (playback.rs let-chains), profile switch and sign-in (profile.rs).
 - [ ] **Slint 1.18.1 (2026-10-10).** Login; every dashboard (Home/TV/Movies/Music/Discover) with keyboard/remote and mouse wheel (scrolling still follows focus, wheel still scrolls); playback in-window (Separate video surface off) and on the subsurface; HDR title; Back → mini-player thumbnail in the right place; "Video in background" behind a menu; Settings (all sections, toggles, dropdowns); on-screen keyboard; typing in Login / Connect Seerr / Profile Edit fields keeps focus while typing. Held Left on the first card of a row stays there; a fresh Left press enters the sidebar.
 
 ### Security fixes (0.5.0 step 0)
