@@ -26,6 +26,9 @@
 //                    3=similar,4=recommended)
 //   fetch_card_posters  async: parallel poster fetch for a slice of MediaItems; returns pixel buffers
 //   items_to_cards      build Vec<CardItem> from items + pre-fetched buffers (call on UI thread)
+//   wire_detail            callbacks moved from main() (0.5.0 step 3): open the detail page
+//   wire_detail_play       callbacks moved from main() (0.5.0 step 3): detail page play / resume / close
+//   wire_detail_toggles    callbacks moved from main() (0.5.0 step 3): detail page favourite / played
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
 
@@ -1111,5 +1114,310 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
             true
         }
         _ => false,
+    }
+}
+
+// ── wire_detail (moved from main(), 0.5.0 step 3) ────────────────────────
+/// Wires open the detail page: open_detail.
+pub(crate) fn wire_detail(
+    window: &crate::MainWindow,
+    state: &std::sync::Arc<std::sync::Mutex<crate::config::FjordState>>,
+    rt: &tokio::runtime::Runtime,
+) {
+    // Moved verbatim from main(): names resolve as they did there.
+    use crate::*;
+    let window = slint::ComponentHandle::clone_strong(window);
+    let state = std::sync::Arc::clone(state);
+    // ── detail page ───────────────────────────────────────────────────────────
+    {
+        let state2 = Arc::clone(&state);
+        let ww = window.as_weak();
+        let rt_handle = rt.handle().clone();
+        AppState::get(&window).on_open_detail(move |id, item_type| match item_type.as_str() {
+            "MusicArtist" => {
+                let title = {
+                    let s = state2.lock().unwrap();
+                    s.all_artists
+                        .iter()
+                        .find(|a| a.id == id.as_str())
+                        .map(|a| a.display_name())
+                        .unwrap_or_else(|| id.to_string())
+                };
+                artist::open_artist_screen(
+                    id.to_string(),
+                    title,
+                    Arc::clone(&state2),
+                    ww.clone(),
+                    rt_handle.clone(),
+                );
+            }
+            "MusicAlbum" => {
+                let title = {
+                    let s = state2.lock().unwrap();
+                    s.all_albums
+                        .iter()
+                        .find(|a| a.id == id.as_str())
+                        .map(|a| a.display_name())
+                        .unwrap_or_else(|| id.to_string())
+                };
+                album::open_album_screen(
+                    id.to_string(),
+                    title,
+                    Arc::clone(&state2),
+                    ww.clone(),
+                    rt_handle.clone(),
+                );
+            }
+            "Playlist" => {
+                let title = {
+                    let s = state2.lock().unwrap();
+                    s.all_playlists
+                        .iter()
+                        .find(|p| p.id == id.as_str())
+                        .map(|p| p.name.clone())
+                        .unwrap_or_else(|| id.to_string())
+                };
+                album::open_playlist_screen(
+                    id.to_string(),
+                    title,
+                    Arc::clone(&state2),
+                    ww.clone(),
+                    rt_handle.clone(),
+                );
+            }
+            _ => {
+                detail::open_detail(
+                    id.to_string(),
+                    item_type.to_string(),
+                    Arc::clone(&state2),
+                    ww.clone(),
+                    rt_handle.clone(),
+                );
+            }
+        });
+    }
+}
+
+// ── wire_detail_play (moved from main(), 0.5.0 step 3) ───────────────────
+/// Wires detail page play / resume / close: play_detail, resume_detail, close_detail.
+pub(crate) fn wire_detail_play(
+    window: &crate::MainWindow,
+    state: &std::sync::Arc<std::sync::Mutex<crate::config::FjordState>>,
+    video: &std::sync::Arc<std::sync::Mutex<crate::playback::VideoState>>,
+    rt: &tokio::runtime::Runtime,
+) {
+    // Moved verbatim from main(): names resolve as they did there.
+    use crate::*;
+    let window = slint::ComponentHandle::clone_strong(window);
+    let state = std::sync::Arc::clone(state);
+    let video = std::sync::Arc::clone(video);
+    {
+        let state_pd = Arc::clone(&state);
+        let ww = window.as_weak();
+        let video_pd = Arc::clone(&video);
+        let rt_handle = rt.handle().clone();
+        AppState::get(&window).on_play_detail(move || {
+            let Some(w) = ww.upgrade() else { return };
+            let g = AppState::get(&w);
+            let id = g.get_detail_id().to_string();
+            if id.is_empty() || g.get_detail_loading() {
+                return;
+            }
+            let item_type = g.get_detail_item_type().to_string();
+            let series_id = g.get_detail_series_id().to_string();
+            let series_id = if series_id.is_empty() {
+                None
+            } else {
+                Some(series_id)
+            };
+            let title = g.get_detail_title().to_string();
+            // Flag that this play came from the detail page so start_playback keeps it
+            // alive (hidden by !is-playing condition) and reset_playback_ui restores it.
+            video_pd.lock().unwrap().from_detail = true;
+            let s = state_pd.lock().unwrap();
+            let Some(client) = s.client.as_ref().map(Arc::clone) else {
+                return;
+            };
+            let mut config = s.player_config();
+            config.start_position_secs = None;
+            drop(s);
+            let play_url = client.direct_play_url(&id);
+            info!("play_detail: {}", id);
+            start_playback(
+                play_url, id, &item_type, title, config, client, series_id, None, &video_pd, &ww,
+                &rt_handle, &state_pd, None,
+            );
+        });
+    }
+    {
+        let state_rd = Arc::clone(&state);
+        let ww = window.as_weak();
+        let video_rd = Arc::clone(&video);
+        let rt_handle = rt.handle().clone();
+        AppState::get(&window).on_resume_detail(move || {
+            let Some(w) = ww.upgrade() else { return };
+            let g = AppState::get(&w);
+            let id = g.get_detail_id().to_string();
+            if id.is_empty() || g.get_detail_loading() {
+                return;
+            }
+            let item_type = g.get_detail_item_type().to_string();
+            let series_id = g.get_detail_series_id().to_string();
+            let series_id = if series_id.is_empty() {
+                None
+            } else {
+                Some(series_id)
+            };
+            let title = g.get_detail_title().to_string();
+            let resume_pos = g.get_detail_resume_secs();
+            video_rd.lock().unwrap().from_detail = true;
+            let s = state_rd.lock().unwrap();
+            let Some(client) = s.client.as_ref().map(Arc::clone) else {
+                return;
+            };
+            let mut config = s.player_config();
+            config.start_position_secs = if resume_pos > 0.0 {
+                Some(resume_pos as f64)
+            } else {
+                None
+            };
+            drop(s);
+            let play_url = client.direct_play_url(&id);
+            info!(
+                "resume_detail: {} from {:?}s",
+                id, config.start_position_secs
+            );
+            start_playback(
+                play_url, id, &item_type, title, config, client, series_id, None, &video_rd, &ww,
+                &rt_handle, &state_rd, None,
+            );
+        });
+    }
+    {
+        let ww = window.as_weak();
+        AppState::get(&window).on_close_detail(move || {
+            if let Some(w) = ww.upgrade() {
+                let g = AppState::get(&w);
+                g.set_detail_scroll(0.0);
+                g.set_show_detail(false);
+                g.set_detail_id("".into());
+            }
+        });
+    }
+}
+
+// ── wire_detail_toggles (moved from main(), 0.5.0 step 3) ────────────────
+/// Wires detail page favourite / played: toggle_detail_fav, toggle_detail_played.
+pub(crate) fn wire_detail_toggles(
+    window: &crate::MainWindow,
+    state: &std::sync::Arc<std::sync::Mutex<crate::config::FjordState>>,
+    rt: &tokio::runtime::Runtime,
+) {
+    // Moved verbatim from main(): names resolve as they did there.
+    use crate::*;
+    let window = slint::ComponentHandle::clone_strong(window);
+    let state = std::sync::Arc::clone(state);
+    // ── detail page: toggle-fav / toggle-played ───────────────────────────────
+    {
+        let state2 = Arc::clone(&state);
+        let ww2 = window.as_weak();
+        let rt2 = rt.handle().clone();
+        AppState::get(&window).on_toggle_detail_fav(move || {
+            let Some(w) = ww2.upgrade() else { return };
+            let id = AppState::get(&w).get_detail_id().to_string();
+            let cur_fav = AppState::get(&w).get_detail_is_favorite();
+            let s = state2.lock().unwrap();
+            let Some(client) = s.client.as_ref().map(Arc::clone) else {
+                return;
+            };
+            drop(s);
+            let ww3 = ww2.clone();
+            let state3 = Arc::clone(&state2);
+            rt2.spawn(async move {
+                let result = if cur_fav {
+                    client.unset_favorite(&id).await
+                } else {
+                    client.set_favorite(&id).await
+                };
+                if let Err(e) = result {
+                    warn!("toggle-detail-fav: {e}");
+                    return;
+                }
+                let new_fav = !cur_fav;
+                state3
+                    .lock()
+                    .unwrap()
+                    .update_item_user_state(&id, None, Some(new_fav));
+                let ww4 = ww3.clone();
+                let _ = slint::invoke_from_event_loop(move || {
+                    if let Some(w) = ww4.upgrade() {
+                        if AppState::get(&w).get_detail_id().as_str() == id {
+                            AppState::get(&w).set_detail_is_favorite(new_fav);
+                        }
+                        context_menu::update_card_in_all_models(&w, &id, None, Some(new_fav));
+                    }
+                });
+                let rt3 = tokio::runtime::Handle::current();
+                crate::home::refresh_favorites(client, ww3, rt3, state3);
+            });
+        });
+    }
+    {
+        let state2 = Arc::clone(&state);
+        let ww2 = window.as_weak();
+        let rt2 = rt.handle().clone();
+        AppState::get(&window).on_toggle_detail_played(move || {
+            let Some(w) = ww2.upgrade() else { return };
+            let id = AppState::get(&w).get_detail_id().to_string();
+            let cur_play = AppState::get(&w).get_detail_has_played();
+            // Capture series_id now (episode detail only); empty for movies.
+            let sid = AppState::get(&w).get_detail_series_id().to_string();
+            let s = state2.lock().unwrap();
+            let Some(client) = s.client.as_ref().map(Arc::clone) else {
+                return;
+            };
+            drop(s);
+            let ww3 = ww2.clone();
+            let state3 = Arc::clone(&state2);
+            let rt3 = rt2.clone();
+            rt2.spawn(async move {
+                let result = if cur_play {
+                    client.mark_unplayed(&id).await
+                } else {
+                    client.mark_played(&id).await
+                };
+                if let Err(e) = result {
+                    warn!("toggle-detail-played: {e}");
+                    return;
+                }
+                let new_play = !cur_play;
+                state3
+                    .lock()
+                    .unwrap()
+                    .update_item_user_state(&id, Some(new_play), None);
+                let client2 = Arc::clone(&client);
+                let _ = slint::invoke_from_event_loop(move || {
+                    if let Some(w) = ww3.upgrade() {
+                        if AppState::get(&w).get_detail_id().as_str() == id {
+                            AppState::get(&w).set_detail_has_played(new_play);
+                        }
+                        context_menu::update_card_in_all_models(&w, &id, Some(new_play), None);
+                        if new_play {
+                            context_menu::remove_from_dynamic_rows(&w, &id);
+                        }
+                        if !sid.is_empty() {
+                            crate::series::refresh_series_next_up(
+                                sid.clone(),
+                                client2,
+                                ww3.clone(),
+                                rt3,
+                            );
+                            let delta = if new_play { -1 } else { 1 };
+                            context_menu::update_series_unplayed_count(&w, &sid, delta);
+                        }
+                    }
+                });
+            });
+        });
     }
 }

@@ -46,6 +46,7 @@
 //      (ResumePlayer, music-bar-focused, mini-player-bar-focused) RequestDetail/
 //      RequestOptions were added to above — CalendarScreen/its day popup dispatch to
 //      discover::handle_key_calendar/handle_key_calendar_day_popup.
+//   wire_key_dispatch      callbacks moved from main() (0.5.0 step 3): the global key dispatch (fs FocusScope → handle_key)
 // ─────────────────────────────────────────────────────────────────────────────
 
 use serde::{Deserialize, Serialize};
@@ -1075,4 +1076,40 @@ fn caret_key(field: &crate::text_field::DrawnField, key: &str, g: &crate::AppSta
         _ => return false,
     }
     true
+}
+
+// ── wire_key_dispatch (moved from main(), 0.5.0 step 3) ──────────────────
+/// Wires the global key dispatch (fs FocusScope → handle_key): handle_key.
+pub(crate) fn wire_key_dispatch(
+    window: &crate::MainWindow,
+    state: &std::sync::Arc<std::sync::Mutex<crate::config::FjordState>>,
+    video: &std::sync::Arc<std::sync::Mutex<crate::playback::VideoState>>,
+    rt: &tokio::runtime::Runtime,
+    activity_clock: &crate::activity::ActivityClock,
+) {
+    // Moved verbatim from main(): names resolve as they did there.
+    use crate::*;
+    let window = slint::ComponentHandle::clone_strong(window);
+    let state = std::sync::Arc::clone(state);
+    let video = std::sync::Arc::clone(video);
+    // ── keyboard dispatch ────────────────────────────────────────────────────
+    {
+        let state2 = Arc::clone(&state);
+        let video2k = Arc::clone(&video);
+        let ww = window.as_weak();
+        let rt2 = rt.handle().clone();
+        let clock2 = activity_clock.clone();
+        AppState::get(&window).on_handle_key(move |key, shift, ctrl, repeat| {
+            let Some(w) = ww.upgrade() else {
+                return false;
+            };
+            // Any key resets the Now Playing idle-auto-open countdown.
+            video2k.lock().unwrap().music_idle_ticks = 0;
+            // Any key also resets the Bonfire idle-lock clock (Phase 4,
+            // 2026-08-29) — the single choke point every keypress already
+            // passes through, same one music_idle_ticks resets from above.
+            clock2.touch();
+            keys::handle_key(key.as_str(), shift, ctrl, repeat, &state2, &w, &rt2)
+        });
+    }
 }

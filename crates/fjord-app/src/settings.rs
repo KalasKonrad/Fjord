@@ -70,6 +70,10 @@
 //                called with `true` from both of its two call sites, so the
 //                backward branch was dead code — confirmed by reading every
 //                call site before removing it.
+//   wire_device_lists      callbacks moved from main() (0.5.0 step 3): audio/passthrough device and font lists (fetched once) + their dropdowns
+//   wire_profile_defaults  callbacks moved from main() (0.5.0 step 3): default profile / account dropdowns
+//   wire_regions           callbacks moved from main() (0.5.0 step 3): streaming/discover region + display/discover language dropdowns
+//   wire_settings_changed  callbacks moved from main() (0.5.0 step 3): settings-changed, dropdown mouse pick, settings row focus
 // ─────────────────────────────────────────────────────────────────────────────
 
 use crate::keys::Action;
@@ -1802,5 +1806,653 @@ fn settings_row_action(key: &str, g: &crate::AppState<'_>) {
         INT_MANAGE_BLOCKLIST => g.invoke_open_blocklist(),
 
         _ => {}
+    }
+}
+
+// ── wire_device_lists (moved from main(), 0.5.0 step 3) ──────────────────
+/// Wires audio/passthrough device and font lists (fetched once) + their dropdowns: audio_device_selected, passthrough_device_selected, font_family_selected.
+pub(crate) fn wire_device_lists(
+    window: &crate::MainWindow,
+    state: &std::sync::Arc<std::sync::Mutex<crate::config::FjordState>>,
+    rt: &tokio::runtime::Runtime,
+) {
+    // Moved verbatim from main(): names resolve as they did there.
+    use crate::*;
+    let window = slint::ComponentHandle::clone_strong(window);
+    let state = std::sync::Arc::clone(state);
+    // ── audio device list: fetch once at startup ─────────────────────────────
+    {
+        let state_ad = Arc::clone(&state);
+        let ww_ad = window.as_weak();
+        let (cfg_device, cfg_pt_device) = {
+            let s = state.lock().unwrap();
+            (
+                s.config.device.audio_device.clone(),
+                s.config.device.audio_device_passthrough.clone(),
+            )
+        };
+        rt.spawn(async move {
+            let devices = tokio::task::spawn_blocking(fetch_audio_devices)
+                .await
+                .unwrap_or_default();
+            state_ad.lock().unwrap().audio_devices = devices.clone();
+            let display: Vec<slint::SharedString> = devices
+                .iter()
+                .map(|(_, d)| slint::SharedString::from(d.as_str()))
+                .collect();
+            let desc = devices
+                .iter()
+                .find(|(n, _)| n.as_str() == cfg_device.as_str())
+                .map(|(_, d)| d.as_str())
+                .unwrap_or(if cfg_device.is_empty() {
+                    ""
+                } else {
+                    cfg_device.as_str()
+                })
+                .to_string();
+            let pt_desc = devices
+                .iter()
+                .find(|(n, _)| n.as_str() == cfg_pt_device.as_str())
+                .map(|(_, d)| d.as_str())
+                .unwrap_or(if cfg_pt_device.is_empty() {
+                    ""
+                } else {
+                    cfg_pt_device.as_str()
+                })
+                .to_string();
+            let _ = slint::invoke_from_event_loop(move || {
+                if let Some(w) = ww_ad.upgrade() {
+                    let g = AppState::get(&w);
+                    g.set_settings_audio_device_display(slint::ModelRc::new(
+                        slint::VecModel::from(display),
+                    ));
+                    if !desc.is_empty() {
+                        g.set_settings_audio_device_desc(slint::SharedString::from(desc.as_str()));
+                    }
+                    if !pt_desc.is_empty() {
+                        g.set_settings_passthrough_device_desc(slint::SharedString::from(
+                            pt_desc.as_str(),
+                        ));
+                    }
+                }
+            });
+        });
+    }
+
+    // ── audio device selected callback ────────────────────────────────────────
+    {
+        let state_ad = Arc::clone(&state);
+        let ww_ad = window.as_weak();
+        AppState::get(&window).on_audio_device_selected(move |desc| {
+            let name = {
+                let s = state_ad.lock().unwrap();
+                s.audio_devices
+                    .iter()
+                    .find(|(_, d)| d.as_str() == desc.as_str())
+                    .map(|(n, _)| n.clone())
+                    .unwrap_or_else(|| "auto".to_string())
+            };
+            if let Some(w) = ww_ad.upgrade() {
+                let g = AppState::get(&w);
+                g.set_settings_audio_device(slint::SharedString::from(name.as_str()));
+                let pt = g.get_settings_passthrough_device().to_string();
+                let effective = if pt.is_empty() {
+                    name.as_str()
+                } else {
+                    pt.as_str()
+                };
+                g.set_settings_device_is_pipewire(pipewire_fix::is_pipewire_device(effective));
+                g.set_settings_audio_device_desc(desc);
+                g.invoke_settings_changed();
+            }
+        });
+    }
+
+    // ── passthrough device selected callback ─────────────────────────────────
+    {
+        let state_pd = Arc::clone(&state);
+        let ww_pd = window.as_weak();
+        AppState::get(&window).on_passthrough_device_selected(move |desc| {
+            let name = {
+                let s = state_pd.lock().unwrap();
+                s.audio_devices
+                    .iter()
+                    .find(|(_, d)| d.as_str() == desc.as_str())
+                    .map(|(n, _)| n.clone())
+                    .unwrap_or_else(|| "auto".to_string())
+            };
+            if let Some(w) = ww_pd.upgrade() {
+                let g = AppState::get(&w);
+                // "auto" means "same as audio output" here — store empty so
+                // start_playback falls back to the normal device.
+                let (store, show_desc) = if name == "auto" {
+                    (String::new(), slint::SharedString::default())
+                } else {
+                    (name.clone(), desc)
+                };
+                g.set_settings_passthrough_device(slint::SharedString::from(store.as_str()));
+                g.set_settings_passthrough_device_desc(show_desc);
+                let effective = if store.is_empty() {
+                    g.get_settings_audio_device().to_string()
+                } else {
+                    store
+                };
+                g.set_settings_device_is_pipewire(pipewire_fix::is_pipewire_device(&effective));
+                g.invoke_settings_changed();
+            }
+        });
+    }
+
+    // ── system font list: fetch once at startup ───────────────────────────────
+    // settings-font-family (the value MainWindow.font-family actually binds
+    // to) is already set synchronously from Config in apply_settings_to_window
+    // at launch — this only populates the dropdown's display list/label, which
+    // can safely lag behind by however long fc-list takes.
+    {
+        let state_fd = Arc::clone(&state);
+        let ww_fd = window.as_weak();
+        let cfg_font = state.lock().unwrap().config.device.ui_font_family.clone();
+        rt.spawn(async move {
+            let fonts = tokio::task::spawn_blocking(fetch_system_fonts)
+                .await
+                .unwrap_or_default();
+            state_fd.lock().unwrap().system_fonts = fonts.clone();
+            let display: Vec<slint::SharedString> = fonts
+                .iter()
+                .map(|(_, d)| slint::SharedString::from(d.as_str()))
+                .collect();
+            let desc = fonts
+                .iter()
+                .find(|(v, _)| v.as_str() == cfg_font.as_str())
+                .map(|(_, d)| d.clone())
+                .unwrap_or_else(|| "Inter (Fjord default)".to_string());
+            let _ = slint::invoke_from_event_loop(move || {
+                if let Some(w) = ww_fd.upgrade() {
+                    let g = AppState::get(&w);
+                    g.set_settings_font_family_display(slint::ModelRc::new(slint::VecModel::from(
+                        display,
+                    )));
+                    g.set_settings_font_family_desc(slint::SharedString::from(desc.as_str()));
+                }
+            });
+        });
+    }
+
+    // ── font family selected callback ─────────────────────────────────────────
+    {
+        let state_ff = Arc::clone(&state);
+        let ww_ff = window.as_weak();
+        AppState::get(&window).on_font_family_selected(move |desc| {
+            let value = {
+                let s = state_ff.lock().unwrap();
+                s.system_fonts
+                    .iter()
+                    .find(|(_, d)| d.as_str() == desc.as_str())
+                    .map(|(v, _)| v.clone())
+                    .unwrap_or_else(|| "Inter".to_string())
+            };
+            if let Some(w) = ww_ff.upgrade() {
+                let g = AppState::get(&w);
+                g.set_settings_font_family(slint::SharedString::from(value.as_str()));
+                g.set_settings_font_family_desc(desc);
+                g.invoke_settings_changed();
+            }
+        });
+    }
+}
+
+// ── wire_profile_defaults (moved from main(), 0.5.0 step 3) ──────────────
+/// Wires default profile / account dropdowns: default_profile_selected, default_account_selected.
+pub(crate) fn wire_profile_defaults(
+    window: &crate::MainWindow,
+    state: &std::sync::Arc<std::sync::Mutex<crate::config::FjordState>>,
+) {
+    // Moved verbatim from main(): names resolve as they did there.
+    use crate::*;
+    let window = slint::ComponentHandle::clone_strong(window);
+    let state = std::sync::Arc::clone(state);
+    // ── default profile selected callback (Bonfire Phase 1, step 7) ──────────
+    // 100% local, no network round trip — same shape as font-family above.
+    // Resolves the selected display label back to a user_id (duplicate
+    // labels resolve to whichever profile matches first, the same known
+    // limitation refresh_profile_settings_dropdown's own doc comment
+    // already states) and lets the generic on_settings_changed handler
+    // below persist it via read_settings_from_window + save_config.
+    {
+        let state_dp = Arc::clone(&state);
+        let ww_dp = window.as_weak();
+        AppState::get(&window).on_default_profile_selected(move |desc| {
+            let Some(w) = ww_dp.upgrade() else { return };
+            let g = AppState::get(&w);
+            let user_id = {
+                let s = state_dp.lock().unwrap();
+                // Scoped to the current Default Account (2026-08-17, same
+                // fix as refresh_profile_settings_dropdown's own doc
+                // comment) — the dropdown's own option list is already
+                // scoped this way, so this just avoids the pre-existing,
+                // documented "duplicate display label" edge case picking a
+                // same-named profile under a DIFFERENT account by mistake.
+                let account_id = s.config.device.default_account_id.clone();
+                s.config
+                    .profiles
+                    .iter()
+                    .find(|p| {
+                        let label = if p.display_name.is_empty() {
+                            p.user_id.as_str()
+                        } else {
+                            p.display_name.as_str()
+                        };
+                        label == desc.as_str() && profile::account_root_id(p) == account_id
+                    })
+                    .map(|p| p.user_id.clone())
+                    .unwrap_or_default()
+            };
+            g.set_settings_default_profile_id(ss(&user_id));
+            g.set_settings_default_profile_desc(desc);
+            g.invoke_settings_changed();
+        });
+    }
+
+    // ── default account selected callback (2026-08-14) ───────────────────────
+    // Account-tier mirror of default-profile-selected just above — same
+    // 100%-local shape, resolves the display label back to an account's own
+    // root_id via group_into_accounts.
+    {
+        let state_da = Arc::clone(&state);
+        let ww_da = window.as_weak();
+        AppState::get(&window).on_default_account_selected(move |desc| {
+            let Some(w) = ww_da.upgrade() else { return };
+            let g = AppState::get(&w);
+            let root_id = {
+                let s = state_da.lock().unwrap();
+                profile::group_into_accounts(&s.config.profiles)
+                    .into_iter()
+                    .find(|a| {
+                        let label = a
+                            .profiles
+                            .first()
+                            .map(|p| {
+                                if p.display_name.is_empty() {
+                                    p.user_id.clone()
+                                } else {
+                                    p.display_name.clone()
+                                }
+                            })
+                            .unwrap_or_default();
+                        label == desc.as_str()
+                    })
+                    .map(|a| a.root_id)
+                    .unwrap_or_default()
+            };
+            g.set_settings_default_account_id(ss(&root_id));
+            g.set_settings_default_account_desc(desc);
+            // Re-scope Default Profile's own option list to the just-picked
+            // account immediately (2026-08-17) — without this, the profile
+            // dropdown kept showing whatever account's profiles it happened
+            // to load with until Settings was reopened, which could still
+            // let a stale cross-account combination through the UI in the
+            // gap between the two picks even though refresh_profile_settings_dropdown
+            // is now correctly scoped. cfg is cloned+patched locally rather
+            // than persisted here — the real Config write still happens
+            // below via invoke_settings_changed, this is purely a same-tick
+            // display refresh.
+            {
+                let mut cfg = state_da.lock().unwrap().config.clone();
+                cfg.device.default_account_id = root_id;
+                profile::refresh_profile_settings_dropdown(&g, &cfg);
+            }
+            g.invoke_settings_changed();
+        });
+    }
+}
+
+// ── wire_regions (moved from main(), 0.5.0 step 3) ───────────────────────
+/// Wires streaming/discover region + display/discover language dropdowns: streaming_region_selected, discover_region_selected, display_language_selected, discover_language_selected.
+pub(crate) fn wire_regions(
+    window: &crate::MainWindow,
+    state: &std::sync::Arc<std::sync::Mutex<crate::config::FjordState>>,
+    rt: &tokio::runtime::Runtime,
+) {
+    // Moved verbatim from main(): names resolve as they did there.
+    use crate::*;
+    let window = slint::ComponentHandle::clone_strong(window);
+    let state = std::sync::Arc::clone(state);
+    // ── streaming region selected callback ────────────────────────────────────
+    // Unlike font-family (100% local, no network write), this needs an
+    // actual round trip to Seerr — GET the connected user's current general
+    // settings first (see UserGeneralSettings' own doc comment for why a
+    // bare {"streamingRegion": ...} body would blank out their username),
+    // mutate just streamingRegion, POST the whole thing back. Updates
+    // AppState + the FjordState cache resolve_streaming_region reads from
+    // only on success, so a failed write leaves the picker showing the
+    // still-actually-current value rather than a value that didn't take.
+    {
+        let state_sr = Arc::clone(&state);
+        let ww_sr = window.as_weak();
+        let rt_sr = rt.handle().clone();
+        AppState::get(&window).on_streaming_region_selected(move |desc| {
+            let (client, code) = {
+                let s = state_sr.lock().unwrap();
+                let Some(client) = s.seerr_client.clone() else {
+                    return;
+                };
+                let Some((code, _)) = s
+                    .seerr_regions
+                    .iter()
+                    .find(|(_, d)| d.as_str() == desc.as_str())
+                else {
+                    return;
+                };
+                (client, code.clone())
+            };
+            let state2 = Arc::clone(&state_sr);
+            let ww2 = ww_sr.clone();
+            rt_sr.spawn(async move {
+                let result: anyhow::Result<()> = async {
+                    let user = client.get_current_user().await?;
+                    let mut settings = client.get_user_settings(user.id).await?;
+                    settings.streaming_region = Some(code.clone());
+                    client.update_user_settings(user.id, &settings).await
+                }
+                .await;
+                match result {
+                    Ok(()) => {
+                        state2.lock().unwrap().seerr_streaming_region = Some(code);
+                        let _ = slint::invoke_from_event_loop(move || {
+                            if let Some(w) = ww2.upgrade() {
+                                AppState::get(&w).set_settings_streaming_region_desc(desc);
+                            }
+                        });
+                    }
+                    Err(e) => show_toast(ww2, format!("Couldn't update streaming region: {e:#}")),
+                }
+            });
+        });
+    }
+
+    // ── discover region selected callback (2026-07-18, Watchlist + Release ──
+    // Calendar) — same GET-mutate-POST shape as streaming region above, just
+    // mutating discoverRegion instead. Reuses the same seerr_regions list
+    // (region codes are shared between the two settings) for the code lookup.
+    {
+        let state_dr = Arc::clone(&state);
+        let ww_dr = window.as_weak();
+        let rt_dr = rt.handle().clone();
+        AppState::get(&window).on_discover_region_selected(move |desc| {
+            let (client, code) = {
+                let s = state_dr.lock().unwrap();
+                let Some(client) = s.seerr_client.clone() else {
+                    return;
+                };
+                let Some((code, _)) = s
+                    .seerr_regions
+                    .iter()
+                    .find(|(_, d)| d.as_str() == desc.as_str())
+                else {
+                    return;
+                };
+                (client, code.clone())
+            };
+            let state2 = Arc::clone(&state_dr);
+            let ww2 = ww_dr.clone();
+            rt_dr.spawn(async move {
+                let result: anyhow::Result<()> = async {
+                    let user = client.get_current_user().await?;
+                    let mut settings = client.get_user_settings(user.id).await?;
+                    settings.discover_region = Some(code.clone());
+                    client.update_user_settings(user.id, &settings).await
+                }
+                .await;
+                match result {
+                    Ok(()) => {
+                        state2.lock().unwrap().seerr_discover_region = Some(code);
+                        let _ = slint::invoke_from_event_loop(move || {
+                            if let Some(w) = ww2.upgrade() {
+                                AppState::get(&w).set_settings_discover_region_desc(desc);
+                            }
+                        });
+                    }
+                    Err(e) => show_toast(ww2, format!("Couldn't update discover region: {e:#}")),
+                }
+            });
+        });
+    }
+
+    // ── display language selected callback ─────────────────────────────────────
+    // Same GET-mutate-POST shape as streaming region above. "Default
+    // (English)" writes an empty locale — Seerr's own admin-configured
+    // fallback applies server-side (see UserGeneralSettings' doc comment).
+    {
+        let state_dl = Arc::clone(&state);
+        let ww_dl = window.as_weak();
+        let rt_dl = rt.handle().clone();
+        AppState::get(&window).on_display_language_selected(move |desc| {
+            let (client, code) = {
+                let s = state_dl.lock().unwrap();
+                let Some(client) = s.seerr_client.clone() else {
+                    return;
+                };
+                let code = if desc.as_str() == "Default (English)" {
+                    String::new()
+                } else {
+                    let Some((code, _)) = s
+                        .seerr_languages
+                        .iter()
+                        .find(|(_, d)| d.as_str() == desc.as_str())
+                    else {
+                        return;
+                    };
+                    code.clone()
+                };
+                (client, code)
+            };
+            let state2 = Arc::clone(&state_dl);
+            let ww2 = ww_dl.clone();
+            rt_dl.spawn(async move {
+                let result: anyhow::Result<()> = async {
+                    let user = client.get_current_user().await?;
+                    let mut settings = client.get_user_settings(user.id).await?;
+                    settings.locale = Some(code.clone());
+                    client.update_user_settings(user.id, &settings).await
+                }
+                .await;
+                match result {
+                    Ok(()) => {
+                        state2.lock().unwrap().seerr_locale = Some(code);
+                        let _ = slint::invoke_from_event_loop(move || {
+                            if let Some(w) = ww2.upgrade() {
+                                AppState::get(&w).set_settings_display_language_desc(desc);
+                            }
+                        });
+                    }
+                    Err(e) => show_toast(ww2, format!("Couldn't update display language: {e:#}")),
+                }
+            });
+        });
+    }
+
+    // ── discover language selected callback ─────────────────────────────────────
+    // Same shape again. "Default (All Languages)" writes the literal
+    // sentinel `"all"` — NOT an empty string, since Seerr's own
+    // createTmdbWithRegionLanguage treats an empty originalLanguage as
+    // "fall through to the server admin's own default," not "no filter"
+    // (see spawn_seerr_settings_fetch's doc comment).
+    {
+        let state_dg = Arc::clone(&state);
+        let ww_dg = window.as_weak();
+        let rt_dg = rt.handle().clone();
+        AppState::get(&window).on_discover_language_selected(move |desc| {
+            let (client, code) = {
+                let s = state_dg.lock().unwrap();
+                let Some(client) = s.seerr_client.clone() else {
+                    return;
+                };
+                let code = if desc.as_str() == "Default (All Languages)" {
+                    "all".to_string()
+                } else {
+                    let Some((code, _)) = s
+                        .seerr_languages
+                        .iter()
+                        .find(|(_, d)| d.as_str() == desc.as_str())
+                    else {
+                        return;
+                    };
+                    code.clone()
+                };
+                (client, code)
+            };
+            let state2 = Arc::clone(&state_dg);
+            let ww2 = ww_dg.clone();
+            rt_dg.spawn(async move {
+                let result: anyhow::Result<()> = async {
+                    let user = client.get_current_user().await?;
+                    let mut settings = client.get_user_settings(user.id).await?;
+                    settings.original_language = Some(code.clone());
+                    client.update_user_settings(user.id, &settings).await
+                }
+                .await;
+                match result {
+                    Ok(()) => {
+                        state2.lock().unwrap().seerr_original_language = Some(code);
+                        let _ = slint::invoke_from_event_loop(move || {
+                            if let Some(w) = ww2.upgrade() {
+                                AppState::get(&w).set_settings_discover_language_desc(desc);
+                            }
+                        });
+                    }
+                    Err(e) => show_toast(ww2, format!("Couldn't update discover language: {e:#}")),
+                }
+            });
+        });
+    }
+}
+
+// ── wire_settings_changed (moved from main(), 0.5.0 step 3) ──────────────
+/// Wires settings-changed, dropdown mouse pick, settings row focus: settings_changed, dropdown_pick, profile_edit_dropdown_pick, settings_row_focused.
+pub(crate) fn wire_settings_changed(
+    window: &crate::MainWindow,
+    state: &std::sync::Arc<std::sync::Mutex<crate::config::FjordState>>,
+    video: &std::sync::Arc<std::sync::Mutex<crate::playback::VideoState>>,
+    rt: &tokio::runtime::Runtime,
+) {
+    // Moved verbatim from main(): names resolve as they did there.
+    use crate::*;
+    let window = slint::ComponentHandle::clone_strong(window);
+    let state = std::sync::Arc::clone(state);
+    let video = std::sync::Arc::clone(video);
+    // ── settings changed ──────────────────────────────────────────────────────
+    {
+        let state = Arc::clone(&state);
+        let video = Arc::clone(&video);
+        let window_weak = window.as_weak();
+        let rt_handle = rt.handle().clone();
+        AppState::get(&window).on_settings_changed(move || {
+            let Some(w) = window_weak.upgrade() else {
+                return;
+            };
+            let mut s = state.lock().unwrap();
+            // Diagnostics (2026-10-08, a Slint panic right after a settings
+            // change on the HTPC): which settings this change touched.
+            let before = settings_snapshot(&s.config);
+            read_settings_from_window(&w, &mut s);
+            let changed = settings_diff(&before, &settings_snapshot(&s.config));
+            debug!(
+                "settings changed: {}",
+                if changed.is_empty() {
+                    "nothing".to_string()
+                } else {
+                    changed.join(", ")
+                }
+            );
+            // Live-reflect the seerr-enabled toggle: rebuild seerr_client
+            // (build_seerr_client already returns None when seerr_enabled
+            // is false, so this both tears it down on disable and rebuilds
+            // it from the still-saved credentials on re-enable — no forced
+            // reconnect either way) and push seerr-connected/-label so
+            // every row/block gated on `seerr-connected` (Streaming Region,
+            // Display/Discover Language, Trailer Quality, the Settings
+            // sidebar SEERR info block) hides/shows immediately rather than
+            // only after the next app restart. Real bug, user-reported
+            // 2026-07-17 ("for me it shuld turn off seerr") — previously
+            // only the Discover sidebar tab responded to this toggle live.
+            s.seerr_client = seerr_auth::build_seerr_client(s.config.active());
+            seerr_auth::push_seerr_status(&AppState::get(&w), s.config.active());
+            let launch_fs = s.config.device.launch_fullscreen;
+            let irq_enable = s.config.device.audio_spdif
+                && s.config.device.alsa_irq_scheduling
+                && pipewire_fix::is_pipewire_device(
+                    if s.config.device.audio_device_passthrough.is_empty() {
+                        &s.config.device.audio_device
+                    } else {
+                        &s.config.device.audio_device_passthrough
+                    },
+                );
+            // Subtitle appearance applies live to a currently-playing video —
+            // no restart needed, mirrors the existing sub-delay/audio-delay
+            // live-adjust UX. See fjord-player's Player::set_sub_style.
+            let sub_scale = s.config.active().sub_scale_pct as f64 / 100.0;
+            let sub_pos = s.config.active().sub_pos_pct as i64;
+            let sub_respect_ass = s.config.active().sub_respect_ass_styling;
+            let sub_color = sub_color_hex(&s.config.active().sub_color).to_string();
+            let sub_background = s.config.active().sub_background;
+            let cfg = s.config.clone();
+            drop(s);
+            save_config(&cfg);
+            if let Some(p) = video.lock().unwrap().player.as_ref() {
+                p.set_sub_style(
+                    sub_scale,
+                    sub_pos,
+                    sub_respect_ass,
+                    &sub_color,
+                    sub_background,
+                );
+            }
+            w.window().set_fullscreen(launch_fs);
+            rt_handle.spawn_blocking(move || pipewire_fix::apply_alsa_irq_scheduling(irq_enable));
+            info!("settings saved");
+        });
+    }
+
+    // ── keyboard dropdown: mouse pick on overlay ─────────────────────────────
+    {
+        let window_weak = window.as_weak();
+        AppState::get(&window).on_dropdown_pick(move || {
+            let Some(w) = window_weak.upgrade() else {
+                return;
+            };
+            let g = AppState::get(&w);
+            let sf = g.get_settings_focused();
+            let cursor = g.get_settings_dropdown_cursor();
+            crate::settings::apply_dropdown_selection(sf.as_str(), cursor, &g);
+            g.set_settings_dropdown_open(false);
+        });
+        // ProfileEditScreen's own screen-local dropdown overlay (Max
+        // parental rating / Auto-lock) — same mouse-pick shape as the
+        // Settings one right above.
+        let window_weak2 = window.as_weak();
+        AppState::get(&window).on_profile_edit_dropdown_pick(move || {
+            let Some(w) = window_weak2.upgrade() else {
+                return;
+            };
+            let g = AppState::get(&w);
+            let cursor = g.get_profile_edit_dropdown_cursor();
+            crate::profile_edit::apply_profile_edit_dropdown_selection(&g, cursor);
+            g.set_profile_edit_dropdown_open(false);
+        });
+    }
+
+    // ── settings row focused (mouse click on a SettingsRow) ──────────────────
+    // Routes through the same set_focused pairing dispatch_settings's own
+    // keyboard nav uses, so settings-focused-visual-index (settings.slint's
+    // scroll-to-view) never goes stale after a mouse click.
+    {
+        let window_weak = window.as_weak();
+        AppState::get(&window).on_settings_row_focused(move |key| {
+            let Some(w) = window_weak.upgrade() else {
+                return;
+            };
+            let g = AppState::get(&w);
+            crate::settings::row_focused(&g, key.as_str());
+        });
     }
 }

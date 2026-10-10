@@ -67,6 +67,7 @@
 //                       show-onscreen-keyboard stuck true, the identical
 //                       critical bug class already found and fixed once for
 //                       LoginScreen; shared choke point for all 3
+//   wire_profile_edit      callbacks moved from main() (0.5.0 step 3): Manage Profiles + ProfileEditScreen
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
 
@@ -1388,4 +1389,126 @@ pub(crate) fn on_profile_edit_delete(
             }
         }
     });
+}
+
+// ── wire_profile_edit (moved from main(), 0.5.0 step 3) ──────────────────
+/// Wires Manage Profiles + ProfileEditScreen: open_manage_profiles, manage_profiles_select, manage_profiles_add, profile_edit_pin_key, profile_edit_master_pin_key, profile_edit_avatar_color_selected, profile_edit_toggle_library, profile_edit_toggle_device, profile_edit_cancel, profile_edit_save, profile_edit_delete.
+pub(crate) fn wire_profile_edit(
+    window: &crate::MainWindow,
+    state: &std::sync::Arc<std::sync::Mutex<crate::config::FjordState>>,
+    rt: &tokio::runtime::Runtime,
+) {
+    // Moved verbatim from main(): names resolve as they did there.
+    use crate::*;
+    let window = slint::ComponentHandle::clone_strong(window);
+    let state = std::sync::Arc::clone(state);
+    // ── manage profiles / profile edit (Bonfire Phase 2, 2026-08-09) ────────────
+    {
+        let state = Arc::clone(&state);
+        let window_weak = window.as_weak();
+        let rt_handle = rt.handle().clone();
+        AppState::get(&window).on_open_manage_profiles(move || {
+            if let Some(w) = window_weak.upgrade() {
+                profile_edit::open_manage_profiles_screen(&state, &w, &rt_handle);
+            }
+        });
+    }
+    {
+        let state = Arc::clone(&state);
+        let window_weak = window.as_weak();
+        let rt_handle = rt.handle().clone();
+        AppState::get(&window).on_manage_profiles_select(move |user_id| {
+            if let Some(w) = window_weak.upgrade() {
+                profile_edit::on_manage_profiles_select(&state, &w, &rt_handle, user_id);
+            }
+        });
+    }
+    {
+        let state = Arc::clone(&state);
+        let window_weak = window.as_weak();
+        let rt_handle = rt.handle().clone();
+        AppState::get(&window).on_manage_profiles_add(move || {
+            if let Some(w) = window_weak.upgrade() {
+                profile_edit::on_manage_profiles_add(&state, &w, &rt_handle);
+            }
+        });
+    }
+    {
+        let state = Arc::clone(&state);
+        let window_weak = window.as_weak();
+        AppState::get(&window).on_profile_edit_pin_key(move |key| {
+            if let Some(w) = window_weak.upgrade() {
+                profile_edit::on_profile_edit_pin_key(&state, &w, key);
+            }
+        });
+    }
+    {
+        let state = Arc::clone(&state);
+        let window_weak = window.as_weak();
+        AppState::get(&window).on_profile_edit_master_pin_key(move |key| {
+            if let Some(w) = window_weak.upgrade() {
+                profile_edit::on_profile_edit_master_pin_key(&state, &w, key);
+            }
+        });
+    }
+    {
+        let window_weak = window.as_weak();
+        AppState::get(&window).on_profile_edit_avatar_color_selected(move |hex| {
+            if let Some(w) = window_weak.upgrade() {
+                profile_edit::on_profile_edit_avatar_color_selected(&w, hex);
+            }
+        });
+    }
+    {
+        let window_weak = window.as_weak();
+        AppState::get(&window).on_profile_edit_toggle_library(move |idx| {
+            if let Some(w) = window_weak.upgrade() {
+                profile_edit::on_profile_edit_toggle_library(&w, idx);
+            }
+        });
+    }
+    {
+        let window_weak = window.as_weak();
+        AppState::get(&window).on_profile_edit_toggle_device(move |idx| {
+            if let Some(w) = window_weak.upgrade() {
+                profile_edit::on_profile_edit_toggle_device(&w, idx);
+            }
+        });
+    }
+    {
+        let state = Arc::clone(&state);
+        let window_weak = window.as_weak();
+        AppState::get(&window).on_profile_edit_cancel(move || {
+            if let Some(w) = window_weak.upgrade() {
+                profile_edit::on_profile_edit_cancel(&state, &w);
+            }
+        });
+    }
+    {
+        let state = Arc::clone(&state);
+        let window_weak = window.as_weak();
+        let rt_handle = rt.handle().clone();
+        AppState::get(&window).on_profile_edit_save(move |name, blocked_tags, allowed_tags| {
+            profile_edit::on_profile_edit_save(
+                Arc::clone(&state),
+                window_weak.clone(),
+                rt_handle.clone(),
+                name,
+                blocked_tags,
+                allowed_tags,
+            );
+        });
+    }
+    {
+        let state = Arc::clone(&state);
+        let window_weak = window.as_weak();
+        let rt_handle = rt.handle().clone();
+        AppState::get(&window).on_profile_edit_delete(move || {
+            profile_edit::on_profile_edit_delete(
+                Arc::clone(&state),
+                window_weak.clone(),
+                rt_handle.clone(),
+            );
+        });
+    }
 }

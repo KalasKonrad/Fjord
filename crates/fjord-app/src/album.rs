@@ -22,6 +22,8 @@
 //                         Up from track 0 → bio (or button row); C → open-context-menu;
 //                         Delete → playlist-remove-entry (playlists only);
 //                         Enter on track → play-album-track; Down at last track → returns false
+//   wire_album             callbacks moved from main() (0.5.0 step 3): album / playlist screen
+//   wire_album_play_all    callbacks moved from main() (0.5.0 step 3): Play all on the album screen
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
 
@@ -591,5 +593,366 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
             true
         }
         _ => false,
+    }
+}
+
+// ── wire_album (moved from main(), 0.5.0 step 3) ─────────────────────────
+/// Wires album / playlist screen: open_album, close_album, play_album_track, playlist_remove_entry, toggle_album_fav, toggle_album_played.
+pub(crate) fn wire_album(
+    window: &crate::MainWindow,
+    state: &std::sync::Arc<std::sync::Mutex<crate::config::FjordState>>,
+    video: &std::sync::Arc<std::sync::Mutex<crate::playback::VideoState>>,
+    rt: &tokio::runtime::Runtime,
+) {
+    // Moved verbatim from main(): names resolve as they did there.
+    use crate::*;
+    let window = slint::ComponentHandle::clone_strong(window);
+    let state = std::sync::Arc::clone(state);
+    let video = std::sync::Arc::clone(video);
+    // ── album screen ──────────────────────────────────────────────────────────
+    {
+        let state_alb = Arc::clone(&state);
+        let ww = window.as_weak();
+        let rt_handle = rt.handle().clone();
+        AppState::get(&window).on_open_album(move |id, title| {
+            album::open_album_screen(
+                id.to_string(),
+                title.to_string(),
+                Arc::clone(&state_alb),
+                ww.clone(),
+                rt_handle.clone(),
+            );
+        });
+    }
+    {
+        let ww_ca = window.as_weak();
+        AppState::get(&window).on_close_album(move || {
+            if let Some(w) = ww_ca.upgrade() {
+                AppState::get(&w).set_show_album(false);
+            }
+        });
+    }
+    {
+        let state_pt = Arc::clone(&state);
+        let video_pt = Arc::clone(&video);
+        let ww = window.as_weak();
+        let rt_handle = rt.handle().clone();
+        AppState::get(&window).on_play_album_track(move |track_id| {
+            // Spotify-style: Enter on a track plays the WHOLE album/playlist
+            // from that track — the visible tracklist becomes the playlist and
+            // the rest follows (gapless applies). Was: single track only.
+            let track_id = track_id.to_string();
+            let Some(w) = ww.upgrade() else { return };
+            let g = AppState::get(&w);
+            let tracks = g.get_album_tracks();
+            let count = tracks.row_count();
+            if count == 0 {
+                return;
+            }
+            let s = state_pt.lock().unwrap();
+            let Some(client) = s.client.as_ref().map(Arc::clone) else {
+                return;
+            };
+            let mut config = s.player_config();
+            drop(s);
+            config.start_position_secs = None;
+            let album_id = g.get_album_id().to_string();
+            let artist = g.get_album_artist().to_string();
+            let mut start_idx = 0usize;
+            {
+                let mut vs = video_pt.lock().unwrap();
+                // Rebuild the playlist but keep vs.queue (Phase 56).
+                vs.playlist.clear();
+                vs.shuffle_order.clear();
+                for i in 0..count {
+                    if let Some(t) = tracks.row_data(i) {
+                        if t.id.as_str() == track_id {
+                            start_idx = i;
+                        }
+                        let t_art = if t.artist.is_empty() {
+                            artist.clone()
+                        } else {
+                            t.artist.to_string()
+                        };
+                        let t_alb = if t.album_id.is_empty() {
+                            album_id.clone()
+                        } else {
+                            t.album_id.to_string()
+                        };
+                        vs.playlist.push(crate::playback::QueueItem {
+                            id: t.id.to_string(),
+                            item_type: "Audio".into(),
+                            series_id: None,
+                            title: t.title.to_string(),
+                            audio_meta: Some((t_art, t_alb)),
+                        });
+                    }
+                }
+                vs.playlist_index = start_idx;
+                crate::playback::rebuild_shuffle_order(&mut vs);
+                push_queue_display(&vs, &g);
+            }
+            if let Some(t) = tracks.row_data(start_idx) {
+                let url = client.direct_play_url(&track_id);
+                let t_art = if t.artist.is_empty() {
+                    artist
+                } else {
+                    t.artist.to_string()
+                };
+                let t_alb = if t.album_id.is_empty() {
+                    album_id
+                } else {
+                    t.album_id.to_string()
+                };
+                start_playback(
+                    url,
+                    track_id,
+                    "Audio",
+                    t.title.to_string(),
+                    config,
+                    client,
+                    None,
+                    Some((t_art, t_alb)),
+                    &video_pt,
+                    &ww,
+                    &rt_handle,
+                    &state_pt,
+                    None,
+                );
+            }
+        });
+    }
+    {
+        let state_pr = Arc::clone(&state);
+        let ww_pr = window.as_weak();
+        let rt_pr = rt.handle().clone();
+        AppState::get(&window).on_playlist_remove_entry(move |idx| {
+            let Some(w) = ww_pr.upgrade() else { return };
+            let g = AppState::get(&w);
+            if !g.get_album_is_playlist() {
+                return;
+            }
+            let Some(t) = g.get_album_tracks().row_data(idx as usize) else {
+                return;
+            };
+            let entry_id = t.entry_id.to_string();
+            if entry_id.is_empty() {
+                return;
+            }
+            let playlist_id = g.get_album_id().to_string();
+            let s = state_pr.lock().unwrap();
+            let Some(client) = s.client.as_ref().map(Arc::clone) else {
+                return;
+            };
+            drop(s);
+            let ww2 = ww_pr.clone();
+            let state_pr2 = Arc::clone(&state_pr);
+            rt_pr.spawn(async move {
+                let eid = entry_id.clone();
+                if let Err(e) = client.remove_from_playlist(&playlist_id, &[eid]).await {
+                    warn!("remove_from_playlist: {e:#}");
+                    crate::show_toast(ww2, "Couldn't remove from playlist".to_string());
+                    return;
+                }
+                // Screen-open cache (Phase 102/103): container_tracks_cache holds
+                // this playlist's track list keyed by its own id. Without
+                // invalidating it here, reopening this exact playlist (even just
+                // by navigating away and back) hits the cache and shows the
+                // just-removed track again until an unrelated WS event or the
+                // ambient refresh happens to correct it.
+                state_pr2
+                    .lock()
+                    .unwrap()
+                    .container_tracks_cache
+                    .remove(&playlist_id);
+                let _ = slint::invoke_from_event_loop(move || {
+                    let Some(w) = ww2.upgrade() else { return };
+                    let g = AppState::get(&w);
+                    // Only mutate if the same playlist is still open.
+                    if !g.get_album_is_playlist() || g.get_album_id().as_str() != playlist_id {
+                        return;
+                    }
+                    let model = g.get_album_tracks();
+                    let mut kept: Vec<crate::TrackItem> = (0..model.row_count())
+                        .filter_map(|i| model.row_data(i))
+                        .filter(|t| t.entry_id.as_str() != entry_id)
+                        .collect();
+                    for (i, t) in kept.iter_mut().enumerate() {
+                        t.track_number = (i + 1) as i32;
+                    }
+                    let len = kept.len() as i32;
+                    g.set_album_tracks(slint::ModelRc::new(slint::VecModel::from(kept)));
+                    if g.get_album_focused_track() >= len && len > 0 {
+                        g.set_album_focused_track(len - 1);
+                    }
+                });
+            });
+        });
+    }
+    {
+        let state_tf = Arc::clone(&state);
+        let ww_tf = window.as_weak();
+        let rt_tf = rt.handle().clone();
+        AppState::get(&window).on_toggle_album_fav(move || {
+            let Some(w) = ww_tf.upgrade() else { return };
+            let g = AppState::get(&w);
+            let id = g.get_album_id().to_string();
+            let new_fav = !g.get_album_is_favorite();
+            g.set_album_is_favorite(new_fav);
+            let s = state_tf.lock().unwrap();
+            let Some(client) = s.client.as_ref().map(Arc::clone) else {
+                return;
+            };
+            let ww3 = ww_tf.clone();
+            drop(s);
+            let rth = rt_tf.clone();
+            let state_rf = Arc::clone(&state_tf);
+            rt_tf.spawn(async move {
+                let result = if new_fav {
+                    client.set_favorite(&id).await
+                } else {
+                    client.unset_favorite(&id).await
+                };
+                if let Err(e) = result {
+                    warn!("toggle_album_fav: {e}");
+                    crate::show_toast(ww3, format!("Favourite error: {e}"));
+                    return;
+                }
+                let ww4 = ww3.clone();
+                let id2 = id.clone();
+                let _ = slint::invoke_from_event_loop(move || {
+                    if let Some(w) = ww4.upgrade() {
+                        crate::context_menu::update_card_in_all_models(
+                            &w,
+                            &id2,
+                            None,
+                            Some(new_fav),
+                        );
+                    }
+                });
+                crate::home::refresh_favorites(client, ww3, rth, state_rf);
+            });
+        });
+    }
+    {
+        let state_tp = Arc::clone(&state);
+        let ww_tp = window.as_weak();
+        let rt_tp = rt.handle().clone();
+        AppState::get(&window).on_toggle_album_played(move || {
+            let Some(w) = ww_tp.upgrade() else { return };
+            let g = AppState::get(&w);
+            let id = g.get_album_id().to_string();
+            let new_played = !g.get_album_has_played();
+            g.set_album_has_played(new_played);
+            let s = state_tp.lock().unwrap();
+            let Some(client) = s.client.as_ref().map(Arc::clone) else {
+                return;
+            };
+            let ww3 = ww_tp.clone();
+            drop(s);
+            rt_tp.spawn(async move {
+                let result = if new_played {
+                    client.mark_played(&id).await
+                } else {
+                    client.mark_unplayed(&id).await
+                };
+                if let Err(e) = result {
+                    warn!("toggle_album_played: {e}");
+                    crate::show_toast(ww3, format!("Played error: {e}"));
+                }
+            });
+        });
+    }
+}
+
+// ── wire_album_play_all (moved from main(), 0.5.0 step 3) ────────────────
+/// Wires Play all on the album screen: play_album_all.
+pub(crate) fn wire_album_play_all(
+    window: &crate::MainWindow,
+    state: &std::sync::Arc<std::sync::Mutex<crate::config::FjordState>>,
+    video: &std::sync::Arc<std::sync::Mutex<crate::playback::VideoState>>,
+    rt: &tokio::runtime::Runtime,
+) {
+    // Moved verbatim from main(): names resolve as they did there.
+    use crate::*;
+    let window = slint::ComponentHandle::clone_strong(window);
+    let state = std::sync::Arc::clone(state);
+    let video = std::sync::Arc::clone(video);
+    {
+        let state_pa = Arc::clone(&state);
+        let video_pa = Arc::clone(&video);
+        let ww_pa = window.as_weak();
+        let rt_pa = rt.handle().clone();
+        AppState::get(&window).on_play_album_all(move || {
+            let Some(w) = ww_pa.upgrade() else { return };
+            let g = AppState::get(&w);
+            let tracks = g.get_album_tracks();
+            let count = tracks.row_count();
+            if count == 0 {
+                return;
+            }
+            let s = state_pa.lock().unwrap();
+            let Some(client) = s.client.as_ref().map(Arc::clone) else {
+                return;
+            };
+            let mut config = s.player_config();
+            drop(s);
+            let album_id = g.get_album_id().to_string();
+            let artist = g.get_album_artist().to_string();
+            // Populate the full playlist (all tracks) before starting track 0.
+            {
+                let mut vs = video_pa.lock().unwrap();
+                // Rebuild the playlist but keep vs.queue (Phase 56).
+                vs.playlist.clear();
+                vs.playlist_index = 0;
+                vs.shuffle_order.clear();
+                for i in 0..count {
+                    if let Some(t) = tracks.row_data(i) {
+                        // Playlist rows carry their own artist + owning album id
+                        // (music-bar art); album rows fall back to screen context.
+                        let t_art = if t.artist.is_empty() {
+                            artist.clone()
+                        } else {
+                            t.artist.to_string()
+                        };
+                        let t_alb = if t.album_id.is_empty() {
+                            album_id.clone()
+                        } else {
+                            t.album_id.to_string()
+                        };
+                        vs.playlist.push(crate::playback::QueueItem {
+                            id: t.id.to_string(),
+                            item_type: "Audio".into(),
+                            series_id: None,
+                            title: t.title.to_string(),
+                            audio_meta: Some((t_art, t_alb)),
+                        });
+                    }
+                }
+                crate::playback::rebuild_shuffle_order(&mut vs);
+                push_queue_display(&vs, &g);
+            }
+            if let Some(t) = tracks.row_data(0) {
+                let track_id = t.id.to_string();
+                let title = t.title.to_string();
+                let url = client.direct_play_url(&track_id);
+                let t_art = if t.artist.is_empty() {
+                    artist
+                } else {
+                    t.artist.to_string()
+                };
+                let t_alb = if t.album_id.is_empty() {
+                    album_id
+                } else {
+                    t.album_id.to_string()
+                };
+                let audio_meta = Some((t_art, t_alb));
+                config.start_position_secs = None;
+                start_playback(
+                    url, track_id, "Audio", title, config, client, None, audio_meta, &video_pa,
+                    &ww_pa, &rt_pa, &state_pa, None,
+                );
+            }
+        });
     }
 }

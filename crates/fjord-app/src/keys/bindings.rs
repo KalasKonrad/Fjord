@@ -23,6 +23,7 @@
 //   action_key_labels  all KeyCombos for an Action joined into a display string
 //   push_keybinding_rows  build + push keybinding model to AppState
 //   dispatch_keybinding_nav  Settings → Keybindings section navigation
+//   wire_keybindings       callbacks moved from main() (0.5.0 step 3): keybinding reset + rebind collision confirm/cancel
 // ─────────────────────────────────────────────────────────────────────────────
 use super::*;
 
@@ -868,5 +869,72 @@ pub(crate) fn dispatch_keybinding_nav(action: Action, g: &crate::AppState<'_>) -
             true
         }
         _ => false,
+    }
+}
+
+// ── wire_keybindings (moved from main(), 0.5.0 step 3) ───────────────────
+/// Wires keybinding reset + rebind collision confirm/cancel: keybinding_reset_defaults, keybinding_collision_confirmed, keybinding_collision_cancelled.
+pub(crate) fn wire_keybindings(
+    window: &crate::MainWindow,
+    state: &std::sync::Arc<std::sync::Mutex<crate::config::FjordState>>,
+) {
+    // Moved verbatim from main(): names resolve as they did there.
+    use crate::*;
+    let window = slint::ComponentHandle::clone_strong(window);
+    let state = std::sync::Arc::clone(state);
+    // ── keybinding reset ─────────────────────────────────────────────────────
+    {
+        let state2 = Arc::clone(&state);
+        let ww = window.as_weak();
+        AppState::get(&window).on_keybinding_reset_defaults(move || {
+            let Some(w) = ww.upgrade() else {
+                return;
+            };
+            info!("keybindings: reset to defaults");
+            {
+                let mut st = state2.lock().unwrap();
+                st.keybindings = keys::default_keybindings();
+                config::save_keybindings(&st.keybindings);
+            }
+            keys::push_keybinding_rows(&w, &state2);
+        });
+    }
+
+    // ── keybinding rebind collision confirm/cancel ───────────────────────────
+    // rebind_action (keys.rs) stashes a colliding rebind in
+    // FjordState.pending_keybind_rebind and shows the confirm dialog
+    // instead of applying it directly — these two resolve it either way.
+    // Reachable from both settings.slint's ConfirmDialog (mouse) and
+    // keys::dispatch_keybinding_nav (keyboard), which both just invoke
+    // these same callbacks rather than duplicating the apply/discard logic.
+    {
+        let state_kc = Arc::clone(&state);
+        let ww_kc = window.as_weak();
+        AppState::get(&window).on_keybinding_collision_confirmed(move || {
+            let Some(w) = ww_kc.upgrade() else {
+                return;
+            };
+            let pending = state_kc.lock().unwrap().pending_keybind_rebind.take();
+            if let Some(p) = pending {
+                info!(
+                    "keybindings: collision confirmed, reassigning {:?}",
+                    p.combo
+                );
+                keys::apply_rebind(p.fi, p.combo, &state_kc, &w);
+            }
+            AppState::get(&w).set_show_keybinding_collision_confirm(false);
+        });
+    }
+    {
+        let state_kc2 = Arc::clone(&state);
+        let ww_kc2 = window.as_weak();
+        AppState::get(&window).on_keybinding_collision_cancelled(move || {
+            let Some(w) = ww_kc2.upgrade() else {
+                return;
+            };
+            debug!("keybindings: collision cancelled");
+            state_kc2.lock().unwrap().pending_keybind_rebind = None;
+            AppState::get(&w).set_show_keybinding_collision_confirm(false);
+        });
     }
 }

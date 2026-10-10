@@ -35,6 +35,8 @@
 //                           Missing Seasons, 2026-07-29)
 //   handle_key              keyboard dispatch for the series screen; row order top-to-bottom:
 //                           episodes → missing-seasons → cast → similar → recommended (2026-07-29)
+//   wire_series            callbacks moved from main() (0.5.0 step 3): series drill-down
+//   wire_series_toggles    callbacks moved from main() (0.5.0 step 3): series favourite / played
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
 
@@ -1890,5 +1892,321 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &crate::AppState) -> b
             true
         }
         _ => false,
+    }
+}
+
+// ── wire_series (moved from main(), 0.5.0 step 3) ────────────────────────
+/// Wires series drill-down: open_series, series_select_season, play_series_episode, close_series.
+pub(crate) fn wire_series(
+    window: &crate::MainWindow,
+    state: &std::sync::Arc<std::sync::Mutex<crate::config::FjordState>>,
+    video: &std::sync::Arc<std::sync::Mutex<crate::playback::VideoState>>,
+    rt: &tokio::runtime::Runtime,
+) {
+    // Moved verbatim from main(): names resolve as they did there.
+    use crate::*;
+    let window = slint::ComponentHandle::clone_strong(window);
+    let state = std::sync::Arc::clone(state);
+    let video = std::sync::Arc::clone(video);
+    // ── series drill-down ─────────────────────────────────────────────────────
+    {
+        let state_os = Arc::clone(&state);
+        let ww_os = window.as_weak();
+        let rth_os = rt.handle().clone();
+        AppState::get(&window).on_open_series(move |id| {
+            open_series_screen(
+                id.to_string(),
+                state_os.clone(),
+                ww_os.clone(),
+                rth_os.clone(),
+            );
+        });
+    }
+    {
+        let state_ss = Arc::clone(&state);
+        let ww_ss = window.as_weak();
+        let rth_ss = rt.handle().clone();
+        AppState::get(&window).on_series_select_season(move |idx| {
+            let idx = idx as usize;
+            let mut s = state_ss.lock().unwrap();
+            let Some(client) = s.client.as_ref().map(Arc::clone) else {
+                return;
+            };
+            let series_id = s.series_open_id.clone();
+            let Some(season_id) = s.series_season_ids.get(idx).cloned() else {
+                return;
+            };
+
+            // Cache hit — we're on the UI thread (Slint callback), set directly.
+            if let Some(cached) = s.series_episode_cache.get(&season_id).cloned() {
+                s.series_episode_items = cached.clone();
+                drop(s);
+                if let Some(w) = ww_ss.upgrade()
+                    && AppState::get(&w).get_series_id().as_str() == series_id
+                {
+                    let cards: Vec<CardItem> = cached.iter().map(ep_to_card).collect();
+                    let g = AppState::get(&w);
+                    g.set_series_episode_cards(ModelRc::new(VecModel::from(cards)));
+                    g.set_series_focused_ep(0);
+                    g.set_series_loading(false);
+                }
+                spawn_episode_thumb_loading(
+                    client,
+                    cached,
+                    series_id,
+                    ww_ss.clone(),
+                    rth_ss.clone(),
+                );
+                return;
+            }
+
+            // Not cached — increment generation counter and fetch from network.
+            s.series_season_generation += 1;
+            let generation = s.series_season_generation;
+            drop(s);
+
+            if let Some(w) = ww_ss.upgrade() {
+                let g = AppState::get(&w);
+                g.set_series_loading(true);
+                g.set_series_episode_cards(ModelRc::new(VecModel::<CardItem>::default()));
+                g.set_series_focused_ep(0);
+            }
+            let state_ss2 = state_ss.clone();
+            let ww_ss2 = ww_ss.clone();
+            let ww_ss3 = ww_ss.clone();
+            let rth_ss2 = rth_ss.clone();
+            let sid2 = series_id.clone();
+            rth_ss.spawn(async move {
+                let eps = client
+                    .get_season_episodes(&sid2, &season_id)
+                    .await
+                    .unwrap_or_else(|e| {
+                        warn!("get_season_episodes {} {}: {:#}", sid2, season_id, e);
+                        vec![]
+                    });
+                debug!(
+                    "series {} season {} — {} episode(s)",
+                    sid2,
+                    season_id,
+                    eps.len()
+                );
+                {
+                    let mut s = state_ss2.lock().unwrap();
+                    if s.series_season_generation != generation {
+                        return;
+                    }
+                    s.series_episode_items = eps.clone();
+                    s.series_episode_cache
+                        .insert(season_id.clone(), eps.clone());
+                }
+                // Pass Vec<MediaItem> (Send) and build Vec<CardItem> (!Send) inside the closure.
+                let eps_send = eps.clone();
+                let sid3 = sid2.clone();
+                let _ = slint::invoke_from_event_loop(move || {
+                    let Some(w) = ww_ss2.upgrade() else { return };
+                    if AppState::get(&w).get_series_id().as_str() != sid3 {
+                        return;
+                    }
+                    let cards: Vec<CardItem> = eps_send.iter().map(ep_to_card).collect();
+                    AppState::get(&w).set_series_episode_cards(ModelRc::new(VecModel::from(cards)));
+                    AppState::get(&w).set_series_loading(false);
+                });
+                spawn_episode_thumb_loading(client, eps, sid2, ww_ss3, rth_ss2);
+            });
+        });
+    }
+    {
+        let state_pe = Arc::clone(&state);
+        let video_pe = Arc::clone(&video);
+        let ww_pe = window.as_weak();
+        let rth_pe = rt.handle().clone();
+        AppState::get(&window).on_play_series_episode(move |id| {
+            let id = id.to_string();
+            let s = state_pe.lock().unwrap();
+            let Some(client) = s.client.as_ref().map(Arc::clone) else {
+                return;
+            };
+            let ep_item = s.series_episode_items.iter().find(|i| i.id == id).cloned();
+            let mut config = s.player_config();
+            let series_id = ep_item
+                .as_ref()
+                .and_then(|i| i.series_id.clone())
+                .or_else(|| Some(s.series_open_id.clone()).filter(|sid| !sid.is_empty()));
+            drop(s);
+            // Set restore flags synchronously on the UI thread so reset_playback_ui always
+            // finds them set, regardless of async timing. Also set vs.from_series so
+            // start_playback knows NOT to clear playback_from_series for this play.
+            if let Some(w) = ww_pe.upgrade() {
+                let g = AppState::get(&w);
+                let was_season = g.get_show_season();
+                g.set_show_series(false);
+                g.set_show_season(false);
+                g.set_playback_from_series(true);
+                g.set_playback_from_season(was_season);
+                video_pe.lock().unwrap().from_series = true;
+            }
+            let play_url = client.direct_play_url(&id);
+            // series_episode_items comes from get_series_episodes (Fields=MediaStreams),
+            // so this is usually already known; the detail fetch below is the fallback.
+            let ep_video_info = ep_item.as_ref().and_then(|i| i.video_stream_info());
+            let title = ep_item
+                .map(|i| i.display_name())
+                .unwrap_or_else(|| id.clone());
+            let video_pe2 = Arc::clone(&video_pe);
+            let ww_pe2 = ww_pe.clone();
+            let rth_pe2 = rth_pe.clone();
+            let state_pe2 = Arc::clone(&state_pe);
+            info!("play_series_episode: {}", id);
+            rth_pe.spawn(async move {
+                let detail = client.get_item_detail(&id).await.ok();
+                let video_info = detail
+                    .as_ref()
+                    .and_then(|i| i.video_stream_info())
+                    .or(ep_video_info);
+                config.start_position_secs = detail.and_then(|i| i.resume_position_secs());
+                let _ = slint::invoke_from_event_loop(move || {
+                    start_playback(
+                        play_url, id, "Episode", title, config, client, series_id, None,
+                        &video_pe2, &ww_pe2, &rth_pe2, &state_pe2, video_info,
+                    );
+                });
+            });
+        });
+    }
+    {
+        let state_cs = Arc::clone(&state);
+        let ww_cs = window.as_weak();
+        AppState::get(&window).on_close_series(move || {
+            debug!("close_series");
+            if let Some(w) = ww_cs.upgrade() {
+                let g = AppState::get(&w);
+                // User explicitly closed the series screen. If the player is minimized
+                // and was waiting to restore here on stop, cancel that restore so stop
+                // lands on the library/dashboard instead.
+                if g.get_has_background_player() {
+                    g.set_playback_from_series(false);
+                    g.set_playback_from_season(false);
+                }
+                g.set_show_season(false);
+                g.set_season_id("".into());
+                g.set_show_series(false);
+                g.set_series_id("".into());
+            }
+            let mut s = state_cs.lock().unwrap();
+            s.series_open_id.clear();
+            s.series_season_ids.clear();
+            s.series_episode_items.clear();
+        });
+    }
+}
+
+// ── wire_series_toggles (moved from main(), 0.5.0 step 3) ────────────────
+/// Wires series favourite / played: toggle_series_played, toggle_series_fav.
+pub(crate) fn wire_series_toggles(
+    window: &crate::MainWindow,
+    state: &std::sync::Arc<std::sync::Mutex<crate::config::FjordState>>,
+    rt: &tokio::runtime::Runtime,
+) {
+    // Moved verbatim from main(): names resolve as they did there.
+    use crate::*;
+    let window = slint::ComponentHandle::clone_strong(window);
+    let state = std::sync::Arc::clone(state);
+    {
+        let state2 = Arc::clone(&state);
+        let ww2 = window.as_weak();
+        let rt2 = rt.handle().clone();
+        AppState::get(&window).on_toggle_series_played(move || {
+            let Some(w) = ww2.upgrade() else { return };
+            let id = AppState::get(&w).get_series_id().to_string();
+            let cur_play = AppState::get(&w).get_series_has_played();
+            let s = state2.lock().unwrap();
+            let Some(client) = s.client.as_ref().map(Arc::clone) else {
+                return;
+            };
+            drop(s);
+            let ww3 = ww2.clone();
+            let state3 = Arc::clone(&state2);
+            let rt3 = rt2.clone();
+            rt2.spawn(async move {
+                let result = if cur_play {
+                    client.mark_unplayed(&id).await
+                } else {
+                    client.mark_played(&id).await
+                };
+                if let Err(e) = result {
+                    warn!("toggle-series-played: {e}");
+                    return;
+                }
+                let new_play = !cur_play;
+                state3
+                    .lock()
+                    .unwrap()
+                    .update_item_user_state(&id, Some(new_play), None);
+                let client2 = Arc::clone(&client);
+                let _ = slint::invoke_from_event_loop(move || {
+                    if let Some(w) = ww3.upgrade() {
+                        if AppState::get(&w).get_series_id().as_str() == id {
+                            AppState::get(&w).set_series_has_played(new_play);
+                        }
+                        context_menu::update_card_in_all_models(&w, &id, Some(new_play), None);
+                        if new_play {
+                            context_menu::remove_from_dynamic_rows(&w, &id);
+                        }
+                        // Refresh the series Next Up row (mark-played → clears it;
+                        // mark-unplayed → re-fetches first unwatched episode).
+                        crate::series::refresh_series_next_up(
+                            id.clone(),
+                            client2,
+                            ww3.clone(),
+                            rt3,
+                        );
+                    }
+                });
+            });
+        });
+    }
+    {
+        let state2 = Arc::clone(&state);
+        let ww2 = window.as_weak();
+        let rt2 = rt.handle().clone();
+        AppState::get(&window).on_toggle_series_fav(move || {
+            let Some(w) = ww2.upgrade() else { return };
+            let id = AppState::get(&w).get_series_id().to_string();
+            let cur_fav = AppState::get(&w).get_series_is_favorite();
+            let s = state2.lock().unwrap();
+            let Some(client) = s.client.as_ref().map(Arc::clone) else {
+                return;
+            };
+            drop(s);
+            let ww3 = ww2.clone();
+            let state3 = Arc::clone(&state2);
+            rt2.spawn(async move {
+                let result = if cur_fav {
+                    client.unset_favorite(&id).await
+                } else {
+                    client.set_favorite(&id).await
+                };
+                if let Err(e) = result {
+                    warn!("toggle-series-fav: {e}");
+                    return;
+                }
+                let new_fav = !cur_fav;
+                state3
+                    .lock()
+                    .unwrap()
+                    .update_item_user_state(&id, None, Some(new_fav));
+                let ww4 = ww3.clone();
+                let _ = slint::invoke_from_event_loop(move || {
+                    if let Some(w) = ww4.upgrade() {
+                        if AppState::get(&w).get_series_id().as_str() == id {
+                            AppState::get(&w).set_series_is_favorite(new_fav);
+                        }
+                        context_menu::update_card_in_all_models(&w, &id, None, Some(new_fav));
+                    }
+                });
+                let rt3 = tokio::runtime::Handle::current();
+                crate::home::refresh_favorites(client, ww3, rt3, state3);
+            });
+        });
     }
 }

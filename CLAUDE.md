@@ -45,7 +45,9 @@ Needs `mpv`/libmpv (`pacman -S mpv`). Optional at runtime: `yt-dlp` (trailers), 
 - `crates/fjord-app` — the binary: `ui/*.slint` + `src/*.rs`, one module per screen/concern.
 
 `fjord-app/src` at a glance:
-- `main.rs` — entry point, module wiring, most `AppState` callbacks. Shared helpers: `show_toast`,
+- `main.rs` — entry point: setup, apply saved config, then one `wire_*` call per area — each area's `AppState`
+  callbacks live in its own module (`detail::wire_detail`, `music::wire_queue`, …; add new callbacks there, not in
+  `main()`). Shared helpers: `show_toast`,
   `session_current`/`seerr_session_current`, `reset_session_state`, `close_login_screen`,
   `apply_cards_preserving_identity`, `item_to_card_item`/`items_to_model`, `strip_html_to_text`,
   `trim_last_grapheme` + caret helpers (`insert_at_grapheme`, `delete_before_grapheme`, `with_caret`…),
@@ -61,7 +63,7 @@ Needs `mpv`/libmpv (`pacman -S mpv`). Optional at runtime: `yt-dlp` (trailers), 
   `wire_rendering_notifier` (GL/FBO); `timer.rs`: `wire_mpv_timer` (16 ms tick: position, skip segments, Up Next,
   stall recovery, gapless, HDR/display-sync); `stall.rs`, `queue.rs` (playlist/queue/repeat), `tracks.rs`,
   `inhibit.rs`. Submodules are re-exported, so callers use `crate::playback::*`.
-- `controls.rs` (player callbacks), `stats.rs` (stats overlay).
+- `controls.rs` (player callbacks), `stats.rs` (stats overlay), `music.rs` (music bar, queue controls/panel, lyrics).
 - Screens: `detail`, `series`, `season`, `collection`, `album` (albums + playlists), `artist`, `person`,
   `browse`, `home`/`movies`/`poster` (dashboards, library grid, poster loading), `discover/` (Discover,
   RequestDetail, Calendar, Watchlist — one file per area, list in `discover/mod.rs`), `blocklist`, `settings`, `context_menu`.

@@ -14,6 +14,7 @@
 //   handle_key               keyboard dispatch for the browse list / sidebar
 //   sidebar_nav              sidebar Up/Down cycle; nav=6 (Discover) only participates when
 //                            settings-seerr-enabled, otherwise 5 <-> 10 skip it entirely
+//   wire_play_item         callbacks moved from main() (0.5.0 step 3): play from the Browse list
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -692,4 +693,66 @@ pub(crate) fn sidebar_nav(g: &AppState, dir: i32) {
         g.invoke_browse_search_clear();
     }
     g.invoke_nav_selected(next);
+}
+
+// ── wire_play_item (moved from main(), 0.5.0 step 3) ─────────────────────
+/// Wires play from the Browse list: play_item.
+pub(crate) fn wire_play_item(
+    window: &crate::MainWindow,
+    state: &std::sync::Arc<std::sync::Mutex<crate::config::FjordState>>,
+    video: &std::sync::Arc<std::sync::Mutex<crate::playback::VideoState>>,
+    rt: &tokio::runtime::Runtime,
+) {
+    // Moved verbatim from main(): names resolve as they did there.
+    use crate::*;
+    let window = slint::ComponentHandle::clone_strong(window);
+    let state = std::sync::Arc::clone(state);
+    let video = std::sync::Arc::clone(video);
+    // ── play from browse list ─────────────────────────────────────────────────
+    {
+        let state = Arc::clone(&state);
+        let video2 = Arc::clone(&video);
+        let window_weak = window.as_weak();
+        let rt_handle = rt.handle().clone();
+
+        AppState::get(&window).on_play_item(move |idx| {
+            let s = state.lock().unwrap();
+            let Some(client) = s.client.as_ref().map(Arc::clone) else {
+                return;
+            };
+            let Some(item) = s.filtered_items.get(idx as usize) else {
+                return;
+            };
+            let item_id = item.id.clone();
+            let item_title = item.display_name();
+            if item.item_type == "Series" {
+                let state2 = state.clone();
+                let ww2 = window_weak.clone();
+                let rt_handle2 = rt_handle.clone();
+                drop(s);
+                open_series_screen(item_id, state2, ww2, rt_handle2);
+                return;
+            }
+            let play_url = client.direct_play_url(&item_id);
+            let mut config = s.player_config();
+            let item_type = item.item_type.clone();
+            let series_id = item.series_id.clone();
+            drop(s);
+            let video2b = Arc::clone(&video2);
+            let ww2 = window_weak.clone();
+            let rth2 = rt_handle.clone();
+            let state2b = Arc::clone(&state);
+            rt_handle.spawn(async move {
+                let detail = client.get_item_detail(&item_id).await.ok();
+                let video_info = detail.as_ref().and_then(|i| i.video_stream_info());
+                config.start_position_secs = detail.and_then(|i| i.resume_position_secs());
+                let _ = slint::invoke_from_event_loop(move || {
+                    start_playback(
+                        play_url, item_id, &item_type, item_title, config, client, series_id, None,
+                        &video2b, &ww2, &rth2, &state2b, video_info,
+                    );
+                });
+            });
+        });
+    }
 }

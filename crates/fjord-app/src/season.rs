@@ -8,6 +8,8 @@
 //                       episode row (default) ↔ cast row (when cast-focused ≥ 0);
 //                       Enter plays focused episode; I opens episode detail;
 //                       C opens context menu; Back closes season detail
+//   wire_season            callbacks moved from main() (0.5.0 step 3): season detail
+//   wire_season_toggles    callbacks moved from main() (0.5.0 step 3): season favourite / played
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
 
@@ -567,5 +569,150 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &crate::AppState) -> b
             true
         }
         _ => false,
+    }
+}
+
+// ── wire_season (moved from main(), 0.5.0 step 3) ────────────────────────
+/// Wires season detail: open_season_detail, close_season_detail.
+pub(crate) fn wire_season(
+    window: &crate::MainWindow,
+    state: &std::sync::Arc<std::sync::Mutex<crate::config::FjordState>>,
+    rt: &tokio::runtime::Runtime,
+) {
+    // Moved verbatim from main(): names resolve as they did there.
+    use crate::*;
+    let window = slint::ComponentHandle::clone_strong(window);
+    let state = std::sync::Arc::clone(state);
+    // ── season detail ─────────────────────────────────────────────────────────
+    {
+        let state_osd = Arc::clone(&state);
+        let ww_osd = window.as_weak();
+        let rth_osd = rt.handle().clone();
+        AppState::get(&window).on_open_season_detail(move |season_id, series_id| {
+            season::open_season_screen(
+                season_id.to_string(),
+                series_id.to_string(),
+                state_osd.clone(),
+                ww_osd.clone(),
+                rth_osd.clone(),
+            );
+        });
+    }
+    {
+        let ww_csd = window.as_weak();
+        AppState::get(&window).on_close_season_detail(move || {
+            if let Some(w) = ww_csd.upgrade() {
+                let g = AppState::get(&w);
+                // Closing season detail returns to series screen — clear only the
+                // season restore flag; series screen will still show (or restore on stop).
+                if g.get_has_background_player() {
+                    g.set_playback_from_season(false);
+                }
+                g.set_show_season(false);
+                g.set_season_id("".into());
+                g.set_season_cast_focused(-1);
+            }
+        });
+    }
+}
+
+// ── wire_season_toggles (moved from main(), 0.5.0 step 3) ────────────────
+/// Wires season favourite / played: toggle_season_fav, toggle_season_played.
+pub(crate) fn wire_season_toggles(
+    window: &crate::MainWindow,
+    state: &std::sync::Arc<std::sync::Mutex<crate::config::FjordState>>,
+    rt: &tokio::runtime::Runtime,
+) {
+    // Moved verbatim from main(): names resolve as they did there.
+    use crate::*;
+    let window = slint::ComponentHandle::clone_strong(window);
+    let state = std::sync::Arc::clone(state);
+    // ── season fav / played toggles ───────────────────────────────────────────
+    {
+        let state2 = Arc::clone(&state);
+        let ww2 = window.as_weak();
+        let rt2 = rt.handle().clone();
+        AppState::get(&window).on_toggle_season_fav(move || {
+            let Some(w) = ww2.upgrade() else { return };
+            let id = AppState::get(&w).get_season_id().to_string();
+            let cur_fav = AppState::get(&w).get_season_is_favorite();
+            let s = state2.lock().unwrap();
+            let Some(client) = s.client.as_ref().map(Arc::clone) else {
+                return;
+            };
+            drop(s);
+            let ww3 = ww2.clone();
+            let state3 = Arc::clone(&state2);
+            rt2.spawn(async move {
+                let result = if cur_fav {
+                    client.unset_favorite(&id).await
+                } else {
+                    client.set_favorite(&id).await
+                };
+                if let Err(e) = result {
+                    warn!("toggle-season-fav: {e}");
+                    return;
+                }
+                let new_fav = !cur_fav;
+                state3
+                    .lock()
+                    .unwrap()
+                    .update_item_user_state(&id, None, Some(new_fav));
+                let _ = slint::invoke_from_event_loop(move || {
+                    if let Some(w) = ww3.upgrade()
+                        && AppState::get(&w).get_season_id().as_str() == id
+                    {
+                        AppState::get(&w).set_season_is_favorite(new_fav);
+                    }
+                });
+            });
+        });
+    }
+    {
+        let state2 = Arc::clone(&state);
+        let ww2 = window.as_weak();
+        let rt2 = rt.handle().clone();
+        AppState::get(&window).on_toggle_season_played(move || {
+            let Some(w) = ww2.upgrade() else { return };
+            let id = AppState::get(&w).get_season_id().to_string();
+            let cur_play = AppState::get(&w).get_season_has_played();
+            // Capture the parent series_id so the series Next Up row can be refreshed.
+            let sid = AppState::get(&w).get_series_id().to_string();
+            let s = state2.lock().unwrap();
+            let Some(client) = s.client.as_ref().map(Arc::clone) else {
+                return;
+            };
+            drop(s);
+            let ww3 = ww2.clone();
+            let state3 = Arc::clone(&state2);
+            let rt3 = rt2.clone();
+            rt2.spawn(async move {
+                let result = if cur_play {
+                    client.mark_unplayed(&id).await
+                } else {
+                    client.mark_played(&id).await
+                };
+                if let Err(e) = result {
+                    warn!("toggle-season-played: {e}");
+                    return;
+                }
+                let new_play = !cur_play;
+                state3
+                    .lock()
+                    .unwrap()
+                    .update_item_user_state(&id, Some(new_play), None);
+                let client2 = Arc::clone(&client);
+                let _ = slint::invoke_from_event_loop(move || {
+                    if let Some(w) = ww3.upgrade() {
+                        if AppState::get(&w).get_season_id().as_str() == id {
+                            AppState::get(&w).set_season_has_played(new_play);
+                        }
+                        if !sid.is_empty() {
+                            crate::series::refresh_series_next_up(sid, client2, ww3.clone(), rt3);
+                        }
+                    }
+                });
+            });
+        });
     }
 }
