@@ -19170,3 +19170,378 @@ Above `let seerr_on = g.get_settings_seerr_enabled();`:
 //   wire_play_item         callbacks moved from main() (0.5.0 step 3): play from the Browse list
 // ─────────────────────────────────────────────────────────────────────────────
 ```
+
+#### `crates/fjord-api/src/client.rs`
+
+Above `pub(crate) fn api_url(&self, path: &str) -> Result<Url> {`:
+```
+/// Build an endpoint URL preserving any base path on the server URL.
+/// `Url::join("/Users/…")` with a leading slash discards the base path, so
+/// reverse-proxy subpath setups (e.g. `https://host/jellyfin`) broke on
+/// every request (CR10-14). Ensures a trailing slash on the base, then
+/// joins the path relative.
+```
+
+Above `pub async fn get_plugins(&self) -> Result<Vec<PluginInfo>> {`:
+```
+/// Every installed server plugin (Bonfire Phase 1, 2026-08-09) — feeds
+/// FjordState.available_plugins, a fast-path presence check for Bonfire's
+/// own gate and (later) Intro Skipper detection, which today only ever
+/// infers presence per-episode via a 404. Best-effort: a non-2xx status
+/// or a parse failure returns an empty list rather than propagating an
+/// error, matching get_episode_timestamps's own tolerance for a
+/// plugin-detection call failing — a plugin list is a nice-to-have
+/// signal, never required for core playback.
+```
+
+Above `pub async fn get_user_info(&self) -> Result<UserDto> {`:
+```
+/// Plain `GET /Users/{id}` — the caller's own real Jellyfin display name
+/// (2026-08-14, backfilling a blank ProfileSettings.display_name for the
+/// auto-login/session-resume path, which — unlike a fresh password login —
+/// never sees the login response's own `auth.user.name` at all). Reuses
+/// `UserDto` (id + name only) even though the real response carries far
+/// more fields; no `deny_unknown_fields` anywhere on that struct, so the
+/// extras are silently ignored, same as every other "only model what's
+/// consumed" type in this crate.
+```
+
+Above `async fn get_items_by_ids_page(&self, ids: &[String]) -> Result<Vec<MediaItem>> {`:
+```
+// ProviderIds included alongside get_all_movies/get_all_series' own
+// Fields — this is the WS delta-sync upsert path (ws.rs), and omitting
+// it here would silently wipe provider_ids back to empty on any
+// LibraryChanged-triggered refresh of an already-cached movie/series,
+// the same class of "field dropped on one of two landing points" bug
+// this project has hit before (see CLAUDE.md's Phase 100 note).
+```
+
+Above `pub async fn get_items_by_ids_detailed(&self, ids: &[String]) -> Result<Vec<MediaItem>> {`:
+```
+/// Same batch shape as `get_items_by_ids`, but with the richer Fields list
+/// `get_item_detail` (single-item) returns by default — People/Genres/Studios/
+/// Taglines/BackdropImageTags/CommunityRating/OfficialRating/RunTimeTicks/
+/// RecursiveItemCount, plus everything `get_items_by_ids` already fetches.
+/// Used to bulk-refresh the app's screen-open detail cache without one
+/// individual `/Items/{id}` round trip per cached item (Phase 103).
+```
+
+Above `pub async fn search_persons_by_name(&self, name: &str) -> Result<Vec<MediaItem>> {`:
+```
+/// Best-effort name search over local Jellyfin `Person` catalog entries
+/// (2026-08-13 — resolving a Discover/TMDB cast member, which only
+/// ever carries a name + TMDB id, to a matching LOCAL Person so the
+/// real native person screen — bio/filmography/watch-state — can be
+/// opened instead of a TMDB-only fallback). `Fields=ProviderIds` lets
+/// the caller cross-check the candidate's own `Tmdb` provider id
+/// against the known TMDB id, for a confident match rather than name
+/// alone.
+///
+/// **Real bug, live-diagnosed and fixed 2026-08-19** — this originally
+/// queried `/Users/{userId}/Items?IncludeItemTypes=Person&Recursive=
+/// true&SearchTerm=...`, flagged at the time as "not live-verified" and
+/// confirmed the hard way: it unconditionally returned zero results for
+/// EVERY search, including a person the reporting user directly
+/// confirmed genuinely exists locally with real filmography. Diagnosed
+/// with a one-off raw-HTTP test against the real server (this crate's
+/// established discipline for exactly this class of doubt): `Person`
+/// items are not part of the recursive library-folder tree `/Items`
+/// walks at all — `Recursive=true` combined with `IncludeItemTypes=
+/// Person` has nothing to recurse into and always comes back empty,
+/// regardless of `SearchTerm`/`NameStartsWith`/anything else tried.
+/// Jellyfin exposes the person catalog through a **separate, dedicated**
+/// `GET /Persons` endpoint instead — confirmed live to return the exact
+/// expected match (`Tom Holland`, `ProviderIds.Tmdb` matching the known
+/// TMDB id precisely) once pointed at the right place. Same response
+/// envelope shape as `/Items` (`ItemsResponse`), so no model change was
+/// needed, only the URL/params. `UserId=` scopes results to what the
+/// querying profile can actually see (relevant for a Bonfire sub-profile
+/// with restricted library access) — confirmed present/accepted live,
+/// though its actual filtering effect couldn't be exercised against a
+/// genuinely restricted profile in this same diagnostic pass.
+```
+
+Above `pub async fn get_album_tracks(&self, album_id: &str) -> Result<Vec<MediaItem>> {`:
+```
+/// All Audio tracks in an album, sorted by disc then track number.
+///
+/// Real bug, live-reported 2026-08-17 ("when playing all on a multi cd
+/// album the order is wring you get first track cd1 then first track
+/// cd 2 not cd1 firtst - last and then cd2 first to last"): `SortBy`
+/// was `IndexNumber` alone — for a multi-disc album, `IndexNumber` is
+/// the TRACK number *within its own disc* (it resets back to 1 on
+/// disc 2), and disc number lives in a separate field,
+/// `ParentIndexNumber` (the same field `MediaItem::parent_index_number`
+/// already carries for Episodes as season number — Jellyfin reuses one
+/// field name for both, depending on item type). Sorting by
+/// `IndexNumber` alone groups every disc's "track 1"s together, then
+/// every "track 2"s, etc. — exactly the reported symptom. `SortBy`
+/// accepts a comma-separated priority list (confirmed in JELLYFIN.md),
+/// so `ParentIndexNumber,IndexNumber` sorts disc-first, track-second:
+/// disc 1's tracks in order, then disc 2's, matching every other real
+/// media player's convention for a multi-disc "Play All."
+```
+
+#### `crates/fjord-api/src/client.rs` — file header (TOC)
+```
+// ── fjord-api · client.rs ────────────────────────────────────────────────────
+//   JellyfinClient  HTTP client wrapper (server URL, user_id, token, device_id); 30 s request timeout
+//     library       get_all_items, get_all_movies, get_all_series (all paginated), get_item_detail, search_items,
+//                   get_similar_items, get_all_boxsets, get_boxset_items, get_person_filmography,
+//                   search_persons_by_name (2026-08-13, TMDB-cast-member-to-local-Person matching),
+//                   get_items_by_ids (chunked/concurrent Ids= batch fetch — WS delta-sync merge, light Fields),
+//                   get_items_by_ids_detailed (same chunking, rich Fields matching get_item_detail —
+//                     screen-open detail cache bulk-refresh, Phase 103); get_item_detail/get_boxset_items/
+//                     get_person_filmography Fields all gained ProviderIds 2026-07-29 (Deep Seerr
+//                     integration — Person/Collection TMDB-id resolution needs it)
+//     images        fetch_poster_bytes, fetch_backdrop_bytes
+//     seasons       get_seasons (Fields gained IndexNumber 2026-07-29 — Series "Missing Seasons" row
+//                     needs the real season number, not just id/name), get_season_episodes,
+//                     get_series_episodes (all eps, airing order)
+//     home data     get_continue_watching, get_next_up, get_latest (grouped "Latest Media", incl. played), get_unwatched,
+//                   get_recently_added_collections, get_unwatched_collections
+//     music         get_latest_music (Views→music ParentId; Latest ignores IncludeItemTypes=Audio),
+//                   get_recently_played_albums (played tracks → parent albums), get_album_tracks
+//                   (sorted ParentIndexNumber,IndexNumber — disc then track; 2026-08-17 fix, was
+//                   IndexNumber alone, which interleaved multi-disc albums by same-numbered track),
+//                   get_album_artists, get_artist_albums, get_all_albums, get_lyrics (ticks→ms conversion)
+//     playlists     get_all_playlists (audio only), get_playlist_items (with PlaylistItemId),
+//                   create_playlist, add_to_playlist, remove_from_playlist (EntryIds)
+//     favorites     get_favorites(item_types) — IsFavorite filter for any item type(s)
+//     playback      direct_play_url, report_playback_start/progress/stopped
+//     user actions  mark_played, mark_unplayed, set_favorite, unset_favorite
+//     plugins       get_episode_timestamps (Intro Skipper v2+: intro+credits in one call), get_next_up_for_series
+//     auth          logout (POST /Sessions/Logout — revokes this client's token, 2026-10-09),
+//                   check_auth, get_user_info (GET /Users/{id} — real display name, 2026-08-14:
+//                     backfills a blank ProfileSettings.display_name on the auto-login path,
+//                     which unlike a fresh password login never sees the login response's name)
+//     server        get_system_info (name + version via /System/Info/Public), get_plugins
+//                   (get_plugins: a 403 — non-admin profile — logs at debug, not warn)
+//                   (best-effort — empty Vec on any failure, never propagates an error)
+//     websocket     ws_url() → ws[s]://host/socket?api_key=…&deviceId=…
+//   MediaStreams  added to Fields of get_item_detail, get_items_by_ids_detailed (kept in sync),
+//                 get_next_up_for_series and get_series_episodes (2026-09-25, display-mode-prefetch —
+//                 MediaItem::video_stream_info() needs Width/RealFrameRate/VideoRange before playback)
+// ─────────────────────────────────────────────────────────────────────────────
+```
+
+#### `crates/fjord-app/ui/discover.slint`
+
+Above `property <length> content-h: root.height - 146px;`:
+```
+// Both fl-container (grid) and landing-container (rows) below are
+// conditionally mounted inside the outer VerticalLayout — reading their
+// own self.height in a changed-tracked property from there is the
+// documented "Recursion detected" crash pattern (Slint gotcha in
+// CLAUDE.md: a conditional VerticalLayout child's self.width/height reads
+// the parent layout cache mid-evaluation). Fixed the same documented way:
+// root.height instead of self.height — root (DiscoverScreen itself) gets
+// its height from AppShell's own HorizontalLayout, a different layout
+// pass than the inner VerticalLayout doing the conditional mounting, so
+// it's not part of the same re-entrant cache computation. 146px = 54px
+// top bar + 52px search bar + 40px filter bar (2026-07-18, Discover
+// filters — was 106px before the filter bar became a 3rd fixed-height
+// sibling), the three fixed-height siblings above whichever of the
+// three flex regions (landing rows / filtered-browse+search grid /
+// empty states) is showing.
+```
+
+Above `if AppState.discover-query == "" && !AppState.discover-filters-active && !has-landing-rows: Rectangl`:
+```
+// Real gap, user-reported 2026-07-18: this state (no query, no
+// landing rows yet) previously showed the "Loading…" text alone —
+// no spinner, easy to mistake for an empty/error state at a glance
+// rather than "still fetching." Only shown while seerr-connected
+// (the genuine loading case); the not-connected branch below still
+// has nothing to spin for. Excludes filters-active (2026-07-18) —
+// that state has its own empty-state message below, in the
+// fl-container's "no results" block, since filtered-browse shares
+// discover-results with search rather than the landing-row models
+// this message is about.
+```
+
+Above `if AppState.discover-query == "" && !AppState.discover-filters-active && has-landing-rows: landing-c`:
+```
+// ── Landing rows (no query, no filters active) — mirrors HomeScreen's ──
+// section-y/kb-y idiom. !discover-filters-active (2026-07-18): once any
+// filter is set, the filtered-browse grid (fl-container below,
+// discover-results) replaces this view entirely — the landing-row
+// models themselves are left untouched underneath, so clearing all
+// filters brings this same content straight back.
+```
+
+Above `pure function row-y(s: int) -> length {`:
+```
+// Real bug, live-reported 2026-07-19 ("keybord navigation still go
+// pas new in theater"): this formula was never extended when rows
+// 5 (Requested)/6 (New in Theaters)/7 (Coming Up) were added over
+// the course of this session — it only ever summed heights for
+// rows 0-4, so row-y(5), row-y(6), and row-y(7) all returned the
+// SAME value (the sum through row 4). The auto-scroll-to-focused-
+// row target never advanced past that point, so navigating onto
+// row 6 or 7 left the viewport exactly where it was for row 4/5 —
+// the newly-focused row was still rendered further down, off the
+// bottom of the visible viewport, reading as "keyboard nav goes
+// past it into nothing."
+```
+
+Above `+ (AppState.discover-coming-up.length > 0 && s > 7 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)`:
+```
+// Row 8 (Watchlist, 2026-07-20) needs to know row 7's
+// (Coming Up) height to scroll past it — this term was
+// missing until Watchlist was added, the same "never
+// extended when the next row was added" gap already found
+// and fixed once for rows 5/6/7 above.
+```
+
+Above `if AppState.discover-coming-up.length > 0: SectionRow {`:
+```
+// "Coming Up" (2026-07-18, Watchlist + Release Calendar) —
+// last card is a poster-less sentinel ("id" == "") opening
+// CalendarScreen instead of an item detail; keyboard's own
+// equivalent special-case lives in handle_key_landing
+// (discover.rs) — see that function's own comment for why
+// this needs one, unlike every other row.
+```
+
+Above `if AppState.discover-watchlist-mixed.length > 0: SectionRow {`:
+```
+// "Watchlist" (2026-07-20, user request — "add a row
+// for the watchlist as in seerr") — every item on the
+// Seerr watchlist, structurally identical to every
+// other landing row (no sentinel card, unlike Coming
+// Up). Deliberately NOT deduped against Coming Up or
+// any other row — see discover.rs's own comment on this.
+```
+
+Above `if (AppState.discover-query != "" || AppState.discover-filters-active) && AppState.discover-results.`:
+```
+// Covers both search (query != "") and the filtered-browse view
+// (query == "" but discover-filters-active, 2026-07-18) — the two
+// share discover-results, so they share this empty-state message
+// too, just with different wording since a filtered-browse result
+// set has no query string to report.
+```
+
+Above `if AppState.discover-popup-open != "": Rectangle {`:
+```
+// ── Filter popup (2026-07-18) — free-floating, sibling of the
+// VerticalLayout above, NOT a participant in it (see this file's own
+// header comment on why an inline-expanding popup would reopen a
+// documented layout-fragility gotcha). Fixed box dimensions throughout
+// (no width/height derived from self/content) — sidesteps that same
+// gotcha class entirely rather than needing a root.width-style
+// workaround, since this box never needs to be responsive.
+```
+
+Above `if AppState.discover-popup-open == "genre": Rectangle {`:
+```
+// Genre/Provider chip strips — fixed 300px inner width (340px
+// box - 40px padding), a compile-time literal rather than
+// self.width/parent.width, so kb-x below never reads a
+// conditionally-mounted element's own resolved size (the
+// documented "Recursion detected" trap this file's header
+// comment already flags).
+```
+
+Above `if AppState.show-onscreen-keyboard && AppState.settings-onscreen-keyboard-enabled && AppState.onscre`:
+```
+// On-screen alphanumeric keyboard (2026-08-23, full rollout beyond
+// Login). No .text/set-selection-offsets to mutate here — the search
+// field is a hand-drawn Text with a caret glyph, backed by real
+// Rust-invokable callbacks Rust itself already calls from keys.rs, so
+// this inline handler just calls those directly rather than needing a
+// full dispatch-onscreen-key function the way a real LineEdit does.
+```
+
+Above `y: (parent.height - self.height) / 2;`:
+```
+// Window-centered, not docked at the very bottom (2026-08-25, live-
+// reported: "not nice on some backgrounds... move it up more to
+// the center"). Safe here specifically because the search field
+// this targets sits in a fixed header band at the true top of the
+// screen (y≈0), nowhere near where a vertically-centered keyboard
+// renders, regardless of window size.
+```
+
+#### `crates/fjord-app/ui/discover.slint` — file header (TOC)
+```
+// ── fjord-app · discover.slint ───────────────────────────────────────────────
+//   FilterPill      file-local filter-bar pill (2026-07-18) — pre-formatted `text`,
+//                   `active` (focus ring), `idx` (which pill, for the click handler to
+//                   report back to Rust); click sets discover-filter-bar-active/-focused
+//                   then invokes discover-filter-bar-confirm() — the exact same Rust
+//                   dispatch keyboard Enter uses, so mouse/keyboard can't disagree.
+//   PopupOption     file-local single-select popup row (2026-07-18, Type/Sort/Rating/Year) —
+//                   mirrors SettingsDropdown's accent-muted/600-weight-when-current styling;
+//                   click sets discover-popup-cursor then invokes discover-popup-confirm(),
+//                   same mouse/keyboard-can't-diverge shape as FilterPill above.
+//   FilterChip      file-local multi-select popup chip (2026-07-18, Genre/Provider) —
+//                   fixed 110x36px with elided text (same reasoning as RequestOptionsOverlay's
+//                   tag chips: a variable-width chip would break the fixed-stride kb-x scroll
+//                   math); click sets discover-popup-cursor then invokes discover-popup-confirm().
+//   DiscoverScreen  Seerr search + results grid, or (no query + no filters active) 9
+//                   landing SectionRows — Trending/Popular Movies/Popular TV/Upcoming
+//                   Movies/Upcoming TV/Requested (still-pending requests,
+//                   posters resolved via per-item detail fetch — see
+//                   discover.rs's fetch_requested_row)/New in Theaters (2026-07-18,
+//                   an honest primaryReleaseDate-window approximation, no verified
+//                   "still showing" signal exists)/Coming Up (2026-07-18, Watchlist +
+//                   Release Calendar — soonest-upcoming release/air dates for
+//                   watchlisted + requested items; its LAST card is a text-only "📅
+//                   Full Calendar" sentinel whose item-play/item-context-full both
+//                   check id=="" and call AppState.open-calendar() / no-op instead of
+//                   the generic open-discover-item/open-context-menu-discover — the
+//                   keyboard path (discover.rs::handle_key_landing) has the identical
+//                   check, so Enter/C on the sentinel via keyboard can't diverge from
+//                   the mouse path either)/Watchlist (row 8, appended 2026-07-20 —
+//                   user request, "add a row for the watchlist as in seerr" — EVERY
+//                   watchlisted item, not just ones with a known date like Coming Up;
+//                   deliberately not deduped against Coming Up or any other row, same
+//                   precedent as Coming Up vs. Requested), reusing home.slint's
+//                   SectionRow component and section-y/kb-y scroll idiom verbatim.
+//                   AppShell content slot at active-nav == 6, same tier as
+//                   Home/Movies/TV dashboards — no Back button (it IS the
+//                   base screen for that tab, not an overlay). Search field
+//                   (2026-10-04: the drawn caret sits at discover-query-cursor — discover-query-shown)
+//                   mirrors LibraryGrid's (hand-drawn cursor,
+//                   discover-header-focused state); grid reuses the same
+//                   Flickable+kb-y scroll idiom and MediaCard component — and is now
+//                   ALSO how the filtered-browse view (query=="", ≥1 filter active,
+//                   2026-07-18) renders, since both write into the same
+//                   discover-results model; no separate grid markup needed.
+//                   Empty states: not-connected/no-rows-yet (now with a LoadingSpinner
+//                   while seerr-connected, 2026-07-18 — was text-only before), no results.
+//                   Context menu (2026-07-18): grid MediaCard right-clicked and each landing
+//                   row's item-context-full both call AppState.open-context-menu-discover(item)
+//                   — see context_menu.slint's own doc comment for the resulting row family.
+//                   Filter bar (2026-07-18): fixed 40px 3rd sibling (below the search field,
+//                   above the flex content region — content-h's own comment has the exact
+//                   pixel budget) with 7 pills (Type/Genre/Sort/Rating/Year/Provider/Clear) —
+//                   see discover.rs's own notes on why this is real, non-trivial keyboard
+//                   wiring, not a drop-in "nearest zone" hand-off. Popup overlay (single-select
+//                   list for Type/Sort/Rating/Year, horizontal chip strip for Genre/Provider)
+//                   is a free-floating, absolutely-positioned sibling OUTSIDE the main
+//                   VerticalLayout — deliberately NOT an inline-expanding element, since that
+//                   would make content-h's own fixed budget dynamic and reopen the exact
+//                   "Recursion detected" class of layout fragility CLAUDE.md's Slint gotchas
+//                   section documents (see discover.rs's own layout-risk note for the reasoning).
+//                   Keyboard-nav fixes (2026-07-18): the search field's click and FilterPill's
+//                   click now clear each other's focus flag (discover-header-focused /
+//                   discover-filter-bar-active + discover-popup-open) — previously a click
+//                   sequence between the two could leave both "focused" at once, silently
+//                   routing keystrokes meant for an open popup into the hidden search field.
+//                   Each landing-row SectionRow now wires card-focused(idx) to sync
+//                   focused-section/discover-landing-card/discover-header-focused, which a
+//                   mouse click into a landing row previously left stale.
+//                   Real bug fixed 2026-07-19 ("keybord navigation still go pas new in
+//                   theater"): landing-container's row-y() auto-scroll formula and
+//                   has-landing-rows were both never extended past row 4 (Upcoming TV) when
+//                   Requested/New in Theaters/Coming Up (rows 5-7) were added over the
+//                   course of this session — row-y(5), row-y(6), row-y(7) all returned the
+//                   same value, so the viewport never actually scrolled far enough to bring
+//                   those rows into view even though AppState.focused-section correctly
+//                   advanced onto them; keyboard nav "worked" internally but visually looked
+//                   like it ran off the end of the screen. Both fixed to account for all 8 rows.
+// ─────────────────────────────────────────────────────────────────────────────
+```

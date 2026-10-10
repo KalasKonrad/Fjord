@@ -1,41 +1,36 @@
 // ── fjord-api · client.rs ────────────────────────────────────────────────────
-//   JellyfinClient  HTTP client wrapper (server URL, user_id, token, device_id); 30 s request timeout
-//     library       get_all_items, get_all_movies, get_all_series (all paginated), get_item_detail, search_items,
-//                   get_similar_items, get_all_boxsets, get_boxset_items, get_person_filmography,
-//                   search_persons_by_name (2026-08-13, TMDB-cast-member-to-local-Person matching),
-//                   get_items_by_ids (chunked/concurrent Ids= batch fetch — WS delta-sync merge, light Fields),
-//                   get_items_by_ids_detailed (same chunking, rich Fields matching get_item_detail —
-//                     screen-open detail cache bulk-refresh, Phase 103); get_item_detail/get_boxset_items/
-//                     get_person_filmography Fields all gained ProviderIds 2026-07-29 (Deep Seerr
-//                     integration — Person/Collection TMDB-id resolution needs it)
+//   JellyfinClient  HTTP client wrapper (server URL, user_id, token, device_id); 30 s request
+//                   timeout; api_url keeps a reverse-proxy base path
+//     library       get_all_items, get_all_movies, get_all_series (paginated), get_item_detail,
+//                   search_items, get_similar_items, get_all_boxsets, get_boxset_items,
+//                   get_person_filmography, search_persons_by_name (GET /Persons),
+//                   get_items_by_ids (chunked Ids= batches, light Fields — WS delta merge),
+//                   get_items_by_ids_detailed (same, get_item_detail's Fields — detail cache)
 //     images        fetch_poster_bytes, fetch_backdrop_bytes
-//     seasons       get_seasons (Fields gained IndexNumber 2026-07-29 — Series "Missing Seasons" row
-//                     needs the real season number, not just id/name), get_season_episodes,
-//                     get_series_episodes (all eps, airing order)
-//     home data     get_continue_watching, get_next_up, get_latest (grouped "Latest Media", incl. played), get_unwatched,
-//                   get_recently_added_collections, get_unwatched_collections
-//     music         get_latest_music (Views→music ParentId; Latest ignores IncludeItemTypes=Audio),
-//                   get_recently_played_albums (played tracks → parent albums), get_album_tracks
-//                   (sorted ParentIndexNumber,IndexNumber — disc then track; 2026-08-17 fix, was
-//                   IndexNumber alone, which interleaved multi-disc albums by same-numbered track),
-//                   get_album_artists, get_artist_albums, get_all_albums, get_lyrics (ticks→ms conversion)
+//     seasons       get_seasons (with IndexNumber), get_season_episodes, get_series_episodes
+//                   (all episodes, airing order)
+//     home data     get_continue_watching, get_next_up, get_latest (grouped "Latest Media", incl.
+//                   played), get_unwatched, get_recently_added_collections,
+//                   get_unwatched_collections
+//     music         get_latest_music (Views → music ParentId; Latest ignores
+//                   IncludeItemTypes=Audio), get_recently_played_albums, get_album_tracks (disc,
+//                   then track), get_album_artists, get_artist_albums, get_all_albums, get_lyrics
 //     playlists     get_all_playlists (audio only), get_playlist_items (with PlaylistItemId),
 //                   create_playlist, add_to_playlist, remove_from_playlist (EntryIds)
-//     favorites     get_favorites(item_types) — IsFavorite filter for any item type(s)
+//     favorites     get_favorites(item_types)
 //     playback      direct_play_url, report_playback_start/progress/stopped
 //     user actions  mark_played, mark_unplayed, set_favorite, unset_favorite
-//     plugins       get_episode_timestamps (Intro Skipper v2+: intro+credits in one call), get_next_up_for_series
-//     auth          logout (POST /Sessions/Logout — revokes this client's token, 2026-10-09),
-//                   check_auth, get_user_info (GET /Users/{id} — real display name, 2026-08-14:
-//                     backfills a blank ProfileSettings.display_name on the auto-login path,
-//                     which unlike a fresh password login never sees the login response's name)
-//     server        get_system_info (name + version via /System/Info/Public), get_plugins
-//                   (get_plugins: a 403 — non-admin profile — logs at debug, not warn)
-//                   (best-effort — empty Vec on any failure, never propagates an error)
+//     plugins       get_episode_timestamps (Intro Skipper v2+: intro + credits),
+//                   get_next_up_for_series
+//     auth          logout (POST /Sessions/Logout — revokes this client's token), check_auth,
+//                   get_user_info (GET /Users/{id} — display name)
+//     server        get_system_info (/System/Info/Public), get_plugins (best-effort: empty on any
+//                   failure; a 403 for a non-admin logs at debug)
 //     websocket     ws_url() → ws[s]://host/socket?api_key=…&deviceId=…
-//   MediaStreams  added to Fields of get_item_detail, get_items_by_ids_detailed (kept in sync),
-//                 get_next_up_for_series and get_series_episodes (2026-09-25, display-mode-prefetch —
-//                 MediaItem::video_stream_info() needs Width/RealFrameRate/VideoRange before playback)
+//   Fields          ProviderIds on detail/boxset/filmography/by-ids fetches (TMDB resolution);
+//                   MediaStreams on get_item_detail, get_items_by_ids_detailed (keep in sync),
+//                   get_next_up_for_series and get_series_episodes (video_stream_info() before
+//                   playback)
 // ─────────────────────────────────────────────────────────────────────────────
 use anyhow::Result;
 use reqwest::StatusCode;
@@ -68,8 +63,6 @@ impl JellyfinClient {
         })
     }
 
-    // pub(crate), not private — bonfire.rs's own `impl JellyfinClient` block
-    // (a separate module, same crate) needs both of these.
     /// Ends this session on the server: `POST /Sessions/Logout` revokes the
     /// token this client uses (jellyfin/jellyfin SessionController →
     /// `SessionManager.Logout(token)`, verified 2026-10-09).
@@ -92,6 +85,8 @@ impl JellyfinClient {
         Ok(())
     }
 
+    // pub(crate), not private — bonfire.rs's own `impl JellyfinClient` block
+    // (a separate module, same crate) needs both of these.
     pub(crate) fn auth_header(&self) -> String {
         format!(
             r#"MediaBrowser Client="Fjord", Device="Linux", DeviceId="{}", Version="0.1.0", Token="{}""#,
@@ -99,11 +94,9 @@ impl JellyfinClient {
         )
     }
 
-    /// Build an endpoint URL preserving any base path on the server URL.
-    /// `Url::join("/Users/…")` with a leading slash discards the base path, so
-    /// reverse-proxy subpath setups (e.g. `https://host/jellyfin`) broke on
-    /// every request (CR10-14). Ensures a trailing slash on the base, then
-    /// joins the path relative.
+    /// Build an endpoint URL preserving any base path on the server URL: `Url::join("/Users/…")`
+    /// with a leading slash drops the base path (breaking reverse-proxy subpaths like
+    /// `https://host/jellyfin`). Ensures a trailing slash on the base, then joins relative.
     pub(crate) fn api_url(&self, path: &str) -> Result<Url> {
         let mut base = self.server_url.clone();
         if !base.path().ends_with('/') {
@@ -187,9 +180,9 @@ impl JellyfinClient {
         Ok(self.get_items_response(start_index, limit).await?.items)
     }
 
-    /// Paginated fetch for a single item type with custom fields.
-    /// Fetches the first page to get the total count, then remaining pages in parallel (4 concurrent).
-    /// Guarantees all items are returned regardless of the server's MaxPageSize.
+    /// Paginated fetch for a single item type with custom fields. Fetches the first page to get the
+    /// total count, then remaining pages in parallel (4 concurrent). Guarantees all items are
+    /// returned regardless of the server's MaxPageSize.
     async fn get_all_paged(&self, include_types: &str, fields: &str) -> Result<Vec<MediaItem>> {
         const PAGE: usize = 1000;
 
@@ -578,14 +571,9 @@ impl JellyfinClient {
             .await?)
     }
 
-    /// Every installed server plugin (Bonfire Phase 1, 2026-08-09) — feeds
-    /// FjordState.available_plugins, a fast-path presence check for Bonfire's
-    /// own gate and (later) Intro Skipper detection, which today only ever
-    /// infers presence per-episode via a 404. Best-effort: a non-2xx status
-    /// or a parse failure returns an empty list rather than propagating an
-    /// error, matching get_episode_timestamps's own tolerance for a
-    /// plugin-detection call failing — a plugin list is a nice-to-have
-    /// signal, never required for core playback.
+    /// Every installed server plugin → FjordState.available_plugins (a fast presence check, e.g.
+    /// for Bonfire). Best-effort: a non-2xx or parse failure gives an empty list — never required
+    /// for playback.
     pub async fn get_plugins(&self) -> Result<Vec<PluginInfo>> {
         let url = self.api_url("/Plugins")?;
         let resp = self
@@ -608,14 +596,9 @@ impl JellyfinClient {
         Ok(resp.json::<Vec<PluginInfo>>().await.unwrap_or_default())
     }
 
-    /// Plain `GET /Users/{id}` — the caller's own real Jellyfin display name
-    /// (2026-08-14, backfilling a blank ProfileSettings.display_name for the
-    /// auto-login/session-resume path, which — unlike a fresh password login —
-    /// never sees the login response's own `auth.user.name` at all). Reuses
-    /// `UserDto` (id + name only) even though the real response carries far
-    /// more fields; no `deny_unknown_fields` anywhere on that struct, so the
-    /// extras are silently ignored, same as every other "only model what's
-    /// consumed" type in this crate.
+    /// Plain `GET /Users/{id}` — the user's display name, to backfill a blank
+    /// ProfileSettings.display_name on auto-login (which never sees a login response). Only id +
+    /// name are modeled (UserDto ignores the rest).
     pub async fn get_user_info(&self) -> Result<UserDto> {
         let url = self.api_url(&format!("/Users/{}", self.user_id))?;
         Ok(self
@@ -653,7 +636,8 @@ impl JellyfinClient {
         self.get_all_paged("Movie", "UserData,ProviderIds").await
     }
 
-    /// 15 most recently added BoxSets (no IsUnplayed filter — shows newly added regardless of status).
+    /// 15 most recently added BoxSets (no IsUnplayed filter — shows newly added regardless of
+    /// status).
     pub async fn get_recently_added_collections(&self) -> Result<Vec<MediaItem>> {
         let mut url = self.api_url(&format!("/Users/{}/Items", self.user_id))?;
         url.query_pairs_mut()
@@ -769,12 +753,8 @@ impl JellyfinClient {
         Ok(all)
     }
 
-    // ProviderIds included alongside get_all_movies/get_all_series' own
-    // Fields — this is the WS delta-sync upsert path (ws.rs), and omitting
-    // it here would silently wipe provider_ids back to empty on any
-    // LibraryChanged-triggered refresh of an already-cached movie/series,
-    // the same class of "field dropped on one of two landing points" bug
-    // this project has hit before (see CLAUDE.md's Phase 100 note).
+    // ProviderIds as in get_all_movies/get_all_series: this is the WS delta upsert path, and
+    // leaving it out would wipe provider_ids on every refresh of a cached movie/series.
     async fn get_items_by_ids_page(&self, ids: &[String]) -> Result<Vec<MediaItem>> {
         let mut url = self.api_url(&format!("/Users/{}/Items", self.user_id))?;
         url.query_pairs_mut()
@@ -792,12 +772,10 @@ impl JellyfinClient {
             .items)
     }
 
-    /// Same batch shape as `get_items_by_ids`, but with the richer Fields list
-    /// `get_item_detail` (single-item) returns by default — People/Genres/Studios/
-    /// Taglines/BackdropImageTags/CommunityRating/OfficialRating/RunTimeTicks/
-    /// RecursiveItemCount, plus everything `get_items_by_ids` already fetches.
-    /// Used to bulk-refresh the app's screen-open detail cache without one
-    /// individual `/Items/{id}` round trip per cached item (Phase 103).
+    /// Same batch shape as get_items_by_ids, with get_item_detail's richer Fields
+    /// (People/Genres/Studios/Taglines/BackdropImageTags/CommunityRating/OfficialRating/
+    /// RunTimeTicks/RecursiveItemCount) — bulk-refreshes the screen-open detail cache without one
+    /// /Items/{id} call per item.
     pub async fn get_items_by_ids_detailed(&self, ids: &[String]) -> Result<Vec<MediaItem>> {
         if ids.is_empty() {
             return Ok(Vec::new());
@@ -867,37 +845,14 @@ impl JellyfinClient {
             .items)
     }
 
-    /// Best-effort name search over local Jellyfin `Person` catalog entries
-    /// (2026-08-13 — resolving a Discover/TMDB cast member, which only
-    /// ever carries a name + TMDB id, to a matching LOCAL Person so the
-    /// real native person screen — bio/filmography/watch-state — can be
-    /// opened instead of a TMDB-only fallback). `Fields=ProviderIds` lets
-    /// the caller cross-check the candidate's own `Tmdb` provider id
-    /// against the known TMDB id, for a confident match rather than name
-    /// alone.
+    /// Name search over the local Person catalog — matches a Discover/TMDB cast member (name +
+    /// TMDB id) to a local Person for the native person screen. Fields=ProviderIds lets the
+    /// caller compare the candidate's Tmdb id.
     ///
-    /// **Real bug, live-diagnosed and fixed 2026-08-19** — this originally
-    /// queried `/Users/{userId}/Items?IncludeItemTypes=Person&Recursive=
-    /// true&SearchTerm=...`, flagged at the time as "not live-verified" and
-    /// confirmed the hard way: it unconditionally returned zero results for
-    /// EVERY search, including a person the reporting user directly
-    /// confirmed genuinely exists locally with real filmography. Diagnosed
-    /// with a one-off raw-HTTP test against the real server (this crate's
-    /// established discipline for exactly this class of doubt): `Person`
-    /// items are not part of the recursive library-folder tree `/Items`
-    /// walks at all — `Recursive=true` combined with `IncludeItemTypes=
-    /// Person` has nothing to recurse into and always comes back empty,
-    /// regardless of `SearchTerm`/`NameStartsWith`/anything else tried.
-    /// Jellyfin exposes the person catalog through a **separate, dedicated**
-    /// `GET /Persons` endpoint instead — confirmed live to return the exact
-    /// expected match (`Tom Holland`, `ProviderIds.Tmdb` matching the known
-    /// TMDB id precisely) once pointed at the right place. Same response
-    /// envelope shape as `/Items` (`ItemsResponse`), so no model change was
-    /// needed, only the URL/params. `UserId=` scopes results to what the
-    /// querying profile can actually see (relevant for a Bonfire sub-profile
-    /// with restricted library access) — confirmed present/accepted live,
-    /// though its actual filtering effect couldn't be exercised against a
-    /// genuinely restricted profile in this same diagnostic pass.
+    /// `GET /Persons`, not `/Users/{id}/Items?IncludeItemTypes=Person&Recursive=true`: persons
+    /// aren't in the library folder tree, so that always returns nothing (verified against a live
+    /// server). Same ItemsResponse envelope. `UserId=` scopes to what the profile can see
+    /// (accepted live; its filtering wasn't tested with a restricted profile).
     pub async fn search_persons_by_name(&self, name: &str) -> Result<Vec<MediaItem>> {
         let mut url = self.api_url("/Persons")?;
         url.query_pairs_mut()
@@ -1236,23 +1191,10 @@ impl JellyfinClient {
             .items)
     }
 
-    /// All Audio tracks in an album, sorted by disc then track number.
-    ///
-    /// Real bug, live-reported 2026-08-17 ("when playing all on a multi cd
-    /// album the order is wring you get first track cd1 then first track
-    /// cd 2 not cd1 firtst - last and then cd2 first to last"): `SortBy`
-    /// was `IndexNumber` alone — for a multi-disc album, `IndexNumber` is
-    /// the TRACK number *within its own disc* (it resets back to 1 on
-    /// disc 2), and disc number lives in a separate field,
-    /// `ParentIndexNumber` (the same field `MediaItem::parent_index_number`
-    /// already carries for Episodes as season number — Jellyfin reuses one
-    /// field name for both, depending on item type). Sorting by
-    /// `IndexNumber` alone groups every disc's "track 1"s together, then
-    /// every "track 2"s, etc. — exactly the reported symptom. `SortBy`
-    /// accepts a comma-separated priority list (confirmed in JELLYFIN.md),
-    /// so `ParentIndexNumber,IndexNumber` sorts disc-first, track-second:
-    /// disc 1's tracks in order, then disc 2's, matching every other real
-    /// media player's convention for a multi-disc "Play All."
+    /// All Audio tracks in an album, disc first, then track: `SortBy=ParentIndexNumber,
+    /// IndexNumber` — IndexNumber restarts on each disc, and the disc number is
+    /// ParentIndexNumber (the field episodes use for the season). IndexNumber alone interleaved
+    /// the discs' track 1s, 2s, …
     pub async fn get_album_tracks(&self, album_id: &str) -> Result<Vec<MediaItem>> {
         let mut url = self.api_url(&format!("/Users/{}/Items", self.user_id))?;
         url.query_pairs_mut()
