@@ -1,31 +1,17 @@
 // ── fjord-app · home.slint ───────────────────────────────────────────────────
-//   SectionRow            horizontal-scroll card row with labelled title heading;
-//                         item-context-full(CardItem) additive callback (2026-07-18,
-//                         Discover landing rows' context menu — see own doc comment);
-//                         card-focused(int) additive callback (2026-07-18, keyboard-nav
-//                         fix — fires the clicked card's row-local index so Discover's
-//                         landing rows can sync focused-section/discover-landing-card on
-//                         a mouse click, which previously left them stale)
-//   LibraryGrid           2-D poster grid for full library browse; Back button shows kbd-focused ring when library-back-focused
-//                         search field caret at library-query-cursor (text_field.rs, 2026-10-05)
-//   HomeScreen            Home tab: 5 curated rows (continue, next-up, recent shows/movies/albums)
-//                         + an optional 6th "Watchlist" row (2026-07-20, user request —
-//                         mixed movies+series, AppState.discover-watchlist-mixed via
-//                         main.slint) + an optional 7th "Coming Up" row (2026-08-02, user
-//                         request — mixed, AppState.discover-coming-up-mixed) when non-empty;
-//                         both deliberately excluded from the page's own LoadingSpinner
-//                         empty-check (their own fetches are independent/slower — see
-//                         discover.rs's ensure_discover_watchlist/build_calendar_entries —
-//                         and shouldn't keep an otherwise-ready page spinning)
-//   DashboardScreen       Movies or TV tab: 3-5 rows (continue, next-up, recently-added,
-//                         not-watched, favorites) + an optional 6th "Watchlist" row
-//                         (2026-07-20, same generic-property-per-instantiation pattern as
-//                         the other 5 — main.slint binds discover-watchlist-tv for TV/nav1,
-//                         discover-watchlist-movies for Movies/nav2) + an optional 7th
-//                         "Coming Up" row (2026-08-02, same pattern — discover-coming-up-tv/
-//                         -movies, filtered to each dashboard's own media type)
+//   SectionRow            horizontal-scroll card row with a title; item-context-full(CardItem) and
+//                         card-focused(int) callbacks for Discover-style rows (whole card for the
+//                         Discover menu; clicked index syncs keyboard focus)
+//   LibraryGrid           2-D poster grid for full library browse (Back button ring when
+//                         library-back-focused; search caret at library-query-cursor)
+//   HomeScreen            Home tab: Continue Watching, Next Up, recently added shows/movies/albums,
+//                         then Watchlist and Coming Up (Seerr, mixed movies + series) when non-empty —
+//                         those two don't hold up the LoadingSpinner (their fetches are independent)
+//   DashboardScreen       Movies or TV tab: continue, next up, recently added, not watched, favorites,
+//                         then Watchlist and Coming Up filtered to the tab's media type (main.slint
+//                         binds the -tv / -movies properties)
 //   CollectionsDashboard  Collections tab: Recently Added + Unwatched rows
-//   MusicDashboard        Music tab: Recently Added Albums + Recently Played + Favorites + Playlists rows
+//   MusicDashboard        Music tab: Recently Added Albums + Recently Played + Favorites + Playlists
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme, CardItem } from "theme.slint";
 import { AppState } from "app_state.slint";
@@ -47,21 +33,13 @@ export component SectionRow inherits Rectangle {
     in property <length> card-h: 224px;
     callback item-play(/* id */ string, /* item_type */ string);
     callback item-context(string, bool, bool, float, string, string); // id, played, fav, resume-pct, item-type, series-id
-    // Additive (2026-07-18) — fires alongside item-context above on every
-    // right-click, carrying the whole card struct instead of six scalars.
-    // Existing callers (Home/dashboard rows, episode rows, etc.) simply
-    // never connect it — a no-op, zero behavior change for them. Added for
-    // Discover's landing rows, whose context menu needs fields (request-id,
-    // availability, requested-4k) the six-scalar signature above has no
-    // room for; see context_menu.slint's own doc comment.
+    // Fires alongside item-context on every right-click, with the whole card — for Discover's
+    // landing rows, whose context menu needs request-id/availability/requested-4k. Other
+    // callers don't connect it.
     callback item-context-full(CardItem);
-    // Additive (2026-07-18, keyboard-nav fix) — fires the row-local card
-    // index on every click/right-click, alongside item-play/item-context-full
-    // above. Existing callers never connect it (no-op, zero behavior change).
-    // Added so Discover's landing rows can sync focused-section/discover-
-    // landing-card to the clicked card, matching what keyboard nav already
-    // sets — a mouse click into this row previously left those properties
-    // stale, so a following keypress acted on the wrong card/row.
+    // The row-local card index on every click/right-click, so Discover's landing rows can sync
+    // focused-section/discover-landing-card like keyboard nav does. Other callers don't connect
+    // it.
     callback card-focused(int);
 
     height: card-h + 56px;
@@ -522,21 +500,8 @@ export component LibraryGrid inherits Rectangle {
                             visible: idx < AppState.library-display.length;
                             item: AppState.library-display[idx];
                             width: card-w;
-                            // Real bug, live-reported 2026-08-12: "the
-                            // higlight for a item stays when you move to
-                            // search and filter and sort on libray
-                            // screens" — every other analogous screen
-                            // (artist.slint's `&& !artist-back-focused`,
-                            // collection.slint's `&& !collection-back-
-                            // focused`, album.slint's `!album-back-focused
-                            // && album-btn-focused < 0`, discover.slint's
-                            // `&& !discover-header-focused`) already
-                            // excludes its own other on-screen zones from
-                            // the card's own focus ring; this was the one
-                            // place that never did, so the previously-
-                            // focused card kept showing highlighted even
-                            // after focus moved to the search field, sort
-                            // bar, alphabet scrubber, or Back button.
+                            // No card ring while focus is in another zone (search, sort bar, alphabet scrubber, Back) —
+                            // like every other grid screen.
                             focused: idx == AppState.library-focused
                                 && !AppState.library-header-focused
                                 && !AppState.library-sort-focused
@@ -548,14 +513,8 @@ export component LibraryGrid inherits Rectangle {
                                 AppState.library-focused = idx;
                                 AppState.library-focused-row = row-idx;
                                 let c = AppState.library-display[idx];
-                                // Real bug, live-reported 2026-07-30: this always called
-                                // open-detail regardless of item type, so clicking a
-                                // BoxSet card with the mouse opened the generic Detail
-                                // Page (which has its own More Like This/Recommended
-                                // rows) instead of CollectionScreen's member grid —
-                                // keyboard Enter already had this exact check
-                                // (keys.rs::dispatch_library, active-nav == 3), the
-                                // mouse path just never got it.
+                                // Collections (nav 3) open CollectionScreen for a BoxSet, like keyboard Enter in
+                                // keys.rs's dispatch_library.
                                 if AppState.active-nav == 3 {
                                     AppState.open-collection(c.id, c.title);
                                 } else {
@@ -653,17 +612,10 @@ export component LibraryGrid inherits Rectangle {
         }
     }
 
-    // On-screen alphanumeric keyboard (2026-08-25 — missed in the original
-    // rollout, live-reported gap). Vertically centered rather than docked
-    // at the very bottom of the window — safe here since the search field
-    // this targets always sits in a fixed 52px band near the TOP of the
-    // screen (below the 54px title bar + 40px sort bar), never at risk of
-    // being covered regardless of where the keyboard renders. LibraryGrid
-    // is a permanently-mounted sibling (per this screen's own documented
-    // mount-lifecycle history), so the coexistence guard on both the mount
-    // condition and the physical-key-mirror tracker is essential, not
-    // optional — without it this would fire on every OTHER screen's
-    // physical keystroke too, even while the library grid is fully hidden.
+    // On-screen alphanumeric keyboard, vertically centered — the search field is in a fixed band
+    // near the top, never covered. LibraryGrid is permanently mounted, so the coexistence guard
+    // (mount condition + physical-key mirror) is essential: otherwise it reacts to other
+    // screens' keys while hidden.
     if AppState.show-onscreen-keyboard && AppState.settings-onscreen-keyboard-enabled && AppState.onscreen-keyboard-target == "library-search": QwertyKeyboard {
         x: (parent.width - self.width) / 2;
         y: (parent.height - self.height) / 2;
@@ -693,15 +645,11 @@ export component HomeScreen inherits Rectangle {
     in property <[CardItem]> recently-added;
     in property <[CardItem]> recently-added-movies;
     in property <[CardItem]> recently-added-albums;
-    // Seerr Watchlist (2026-07-20, user request — "add a row for the
-    // watchlist as in seerr... culd also add it to the home dashbord"),
-    // mixed movies+series — bound to AppState.discover-watchlist-mixed in
-    // main.slint, the SAME property Discover's own landing row reads.
+    // Seerr Watchlist, movies + series — AppState.discover-watchlist-mixed (bound in main.slint),
+    // the same data as Discover's landing row.
     in property <[CardItem]> watchlist;
-    // Coming Up (2026-08-02, user request — "the coming up row shuld also
-    // be in home dashbord"), mixed movies+series — bound to
-    // AppState.discover-coming-up-mixed in main.slint, sentinel-free (see
-    // that property's own doc comment).
+    // Coming Up, movies + series — AppState.discover-coming-up-mixed (sentinel-free, see that
+    // property).
     in property <[CardItem]> coming-up;
 
     background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg;
@@ -713,13 +661,7 @@ export component HomeScreen inherits Rectangle {
             + (recently-added.length > 0 && s > 2 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
             + (recently-added-movies.length > 0 && s > 3 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
             + (recently-added-albums.length > 0 && s > 4 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
-        // Missing term for row 5 (Watchlist) added alongside row 6 (Coming
-        // Up, below) — until now Watchlist was always the LAST row, so
-        // section-y never needed to account for ITS OWN height (nothing
-        // scrolled past it). This is the exact "row-y never extended for a
-        // newly-added row after it" gap CLAUDE.md documents once already
-        // for the Discover screen's own row-y — caught here before
-        // shipping rather than after.
+        // Row 5 (Watchlist) needs its own term now that Coming Up follows it.
         + (watchlist.length > 0 && s > 5 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
     }
 
@@ -823,18 +765,10 @@ export component HomeScreen inherits Rectangle {
                         item-play(id, _) => { AppState.item-play(id); }
                         item-context(id, hp, fav, rp, it, sid) => { AppState.open-context-menu(id, hp, fav, rp, it, sid); }
                     }
-                    // Watchlist row (2026-07-20) — Discover/TMDB-sourced
-                    // cards, not Jellyfin ones, so item-play/item-context-full
-                    // route through open-discover-item/open-context-menu-discover
-                    // (matching Discover's own landing rows) rather than the
-                    // plain item-play/open-context-menu the 5 Jellyfin rows
-                    // above use — this also gets the in-library redirect
-                    // (find_local_item) and the Discover context menu's
-                    // Watchlist toggle row for free. Deliberately NOT part of
-                    // the LoadingSpinner condition below — its own fetch is
-                    // independent of and typically slower than the Jellyfin
-                    // rows, so gating the spinner on it too would keep an
-                    // otherwise-ready Home page spinning on Seerr alone.
+                    // Watchlist row: Discover/TMDB cards, so play/context go through
+                    // open-discover-item/open-context-menu-discover (in-library redirect, Discover menu with the
+                    // Watchlist toggle). Not part of the LoadingSpinner condition — its Seerr fetch is
+                    // independent and usually slower.
                     if watchlist.length > 0: SectionRow {
                         section-title: "Watchlist";
                         items: watchlist;
@@ -845,11 +779,8 @@ export component HomeScreen inherits Rectangle {
                         item-play(id, it) => { AppState.open-discover-item(it == "DiscoverMovie" ? "movie" : "tv", id); }
                         item-context-full(itm) => { AppState.open-context-menu-discover(itm); }
                     }
-                    // Coming Up row (2026-08-02) — same Discover/TMDB
-                    // routing as Watchlist immediately above (sentinel-free
-                    // subset of the same data, see coming-up's own doc
-                    // comment); also excluded from the LoadingSpinner
-                    // condition below for the same reason.
+                    // Coming Up row: same Discover routing as Watchlist; also outside the LoadingSpinner
+                    // condition.
                     if coming-up.length > 0: SectionRow {
                         section-title: "Coming Up";
                         items: coming-up;
@@ -877,16 +808,10 @@ export component DashboardScreen inherits Rectangle {
     in property <[CardItem]> recently-added;
     in property <[CardItem]> not-watched;
     in property <[CardItem]> favorites;
-    // Seerr Watchlist (2026-07-20, user request) — bound to
-    // AppState.discover-watchlist-tv (nav==1/TV) or
-    // -watchlist-movies (nav==2/Movies) in main.slint; each dashboard shows
-    // only its own media type, unlike Home's mixed row.
+    // Seerr Watchlist for this dashboard's type: AppState.discover-watchlist-tv (nav 1) or
+    // -movies (nav 2), bound in main.slint.
     in property <[CardItem]> watchlist;
-    // Coming Up (2026-08-02, user request — "coming up in series dashbord
-    // that is filtered for series and in movies dashbord that is filtered
-    // for movies") — bound to AppState.discover-coming-up-tv (nav==1/TV) or
-    // -coming-up-movies (nav==2/Movies), same per-dashboard-type split as
-    // watchlist above.
+    // Coming Up for this dashboard's type: discover-coming-up-tv (nav 1) or -movies (nav 2).
     in property <[CardItem]> coming-up;
 
     background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg;
@@ -1004,13 +929,8 @@ export component DashboardScreen inherits Rectangle {
                         item-play(id, _) => { AppState.item-play(id); }
                         item-context(id, hp, fav, rp, it, sid) => { AppState.open-context-menu(id, hp, fav, rp, it, sid); }
                     }
-                    // Watchlist row (2026-07-20) — Discover/TMDB-sourced,
-                    // routes through open-discover-item/open-context-menu-
-                    // discover like Discover's own landing rows, not the
-                    // plain item-play/open-context-menu the 5 Jellyfin rows
-                    // above use (same reasoning as HomeScreen's own copy of
-                    // this row). Not part of the LoadingSpinner condition
-                    // below, same reasoning as HomeScreen.
+                    // Watchlist row: Discover routing and outside the LoadingSpinner condition, as on
+                    // HomeScreen.
                     if watchlist.length > 0: SectionRow {
                         section-title: "Watchlist";
                         items: watchlist;
@@ -1021,10 +941,7 @@ export component DashboardScreen inherits Rectangle {
                         item-play(id, it) => { AppState.open-discover-item(it == "DiscoverMovie" ? "movie" : "tv", id); }
                         item-context-full(itm) => { AppState.open-context-menu-discover(itm); }
                     }
-                    // Coming Up row (2026-08-02) — same Discover/TMDB
-                    // routing as Watchlist immediately above, filtered to
-                    // this dashboard's own media type via which AppState
-                    // property main.slint binds coming-up to.
+                    // Coming Up row: same routing as Watchlist, this dashboard's media type.
                     if coming-up.length > 0: SectionRow {
                         section-title: "Coming Up";
                         items: coming-up;

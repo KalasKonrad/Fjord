@@ -18332,3 +18332,494 @@ Above `g.set_playlist_picker_name("".into());`:
 //                      ONLY way out of an empty/cleared search field
 // ─────────────────────────────────────────────────────────────────────────────
 ```
+
+#### `crates/fjord-app/ui/connect_seerr.slint`
+
+Above `border-width: (ta.pressed || pulse.pulsing) ? 3px : (kbd-focused && active ? 2px : 0px);`:
+```
+// Real bug, code review 2026-08-26: this only ever lit up on a
+// transient press flash — there was no persistent ring for plain
+// `kbd-focused` at all, despite this file's own header doc comment
+// claiming "the same border-ring + PressPulse treatment every other
+// keyboard-navigable element already has." Matches
+// VirtualKeyboardKey's own established `pressed ? 3px : (focused ?
+// 2px : 0px)` convention now.
+//
+// Second real bug, live-reported the next day (screenshot: every one
+// of the 4 tabs showed a ring at once): `kbd-focused` is bound
+// IDENTICALLY on all 4 MethodTab instances to `connect-seerr-zone ==
+// 1` — there's only one shared zone for the whole tab row (Left/Right
+// switches the active tab directly rather than moving a separate
+// cursor within it), so every instance reported "focused"
+// simultaneously the moment the D-pad reached the row. `pulse.pulsing`
+// never showed this bug since its own `active:` binding (below)
+// already ANDs in `root.active` — the persistent-ring branch was the
+// one place that check was missing. Fixed to match: the ring, like
+// the press-pulse, only ever means anything on the currently-selected
+// tab, which is the closest thing this row has to a real cursor
+// position.
+```
+
+Above `color: active ? #ffffff : Theme.text;`:
+```
+// Was Theme.bg (#0d0d0d, near-black) — live-reported the same day:
+// "why is the text black? its not black on any other blue button
+// i the whole program?" Confirmed against theme.slint and every
+// other accent-filled control in the app (FjordButton,
+// VirtualKeyboardKey) — all of them use plain white on an
+// accent-filled background, never Theme.bg. This was the one
+// outlier, not a deliberate choice.
+```
+
+Above `init => {`:
+```
+// Grabs real native focus into url-input the instant this screen
+// mounts (2026-08-26, part of the zone 0/1 renumbering fix) — mirrors
+// login.slint's own `init => { server-input.focus(); }` precedent,
+// minus its Timer-deferred workaround: that exists solely for
+// LoginScreen's own cold-start race (show-login can default true
+// before window.run() ever starts pumping events), which structurally
+// can't happen here — show-connect-seerr defaults false and this
+// screen is only ever opened by a live, already-running user action
+// well after the event loop is up, so a direct call is safe. Setting
+// connect-seerr-zone explicitly (rather than relying solely on the
+// has-focus handler's own side effect) matches login-zone's own
+// "set the zone AND grab focus together" convention. Without this,
+// on_open_connect_seerr's own `g.set_connect_seerr_zone(0)` (seerr_
+// auth.rs) would be a silent no-op whenever the zone was ALREADY 0
+// from a previous open — Slint's `changed` only fires on a genuine
+// value transition — leaving zone 0 (now url-input, a real LineEdit)
+// with no native focus and no way for keys.rs's dispatch tier to
+// reach it either, the exact "stranded zone" bug class this same
+// review already fixed once for Quick Connect.
+```
+
+Above `function close-keyboard-if-orphaned() {`:
+```
+// Code review, 2026-08-26 — a real bug found live: MethodTab's own
+// `clicked` handler is reachable by mouse regardless of the on-screen
+// keyboard's current state (unlike a keyboard-driven method switch,
+// which can only ever leave zone 0 with the keyboard closed or
+// targeting the always-mounted url-input, since every path back to
+// zone 0 passes through it first). Clicking a DIFFERENT tab while the
+// keyboard is open and targeting one of the OLD tab's own
+// conditionally-mounted fields (e.g. "connect-seerr-key" on the API
+// key tab) unmounts that field's whole conditional block — including
+// the local `_relay-mirror` tracker that's the only thing listening
+// for further keystrokes — so the keyboard stays visibly open but
+// silently stops accepting any input. "connect-seerr-url" is the one
+// target that's always safe across every tab (unconditionally
+// mounted), so this only needs to close the keyboard when the target
+// is a real method-specific field, not the shared URL one.
+```
+
+Above `AppState.onscreen-keyboard-cursor = AppState.onscreen-keyboard-done-cursor;`:
+```
+// Default to Done, not the top-left "q" key
+// (code review, 2026-08-26) — retargeting
+// the keyboard to a different field via a
+// mouse click mid-typing left it landed on
+// a letter key instead of the "dismiss with
+// one more Enter" default every genuine
+// OPEN site already uses, an inconsistency
+// this project's own precedent (the Login
+// rollout) explicitly designed against.
+```
+
+Above `AppState.connect-seerr-zone = -1;`:
+```
+// Up from url-input (now the topmost navigable
+// zone, per the 2026-08-26 renumbering) goes to
+// Close, not the tab row — url-input sits
+// directly below the header, with nothing else
+// visually between them.
+```
+
+Above `if AppState.show-connect-seerr && AppState.connect-seerr-zone == 3 && !AppState.connect-seerr-busy {`:
+```
+// !connect-seerr-busy guard added, code review 2026-08-26:
+// the mouse Save button already has this via `enabled:`
+// (line above), but this Enter-driven path had no
+// equivalent — a rapid double-Enter (real on a D-pad/
+// remote, where button bounce is common) bumped
+// kb-activate-pulse twice before the first request
+// resolved, firing two concurrent verify-key attempts
+// racing to call commit_connection.
+```
+
+Above `if AppState.show-onscreen-keyboard && AppState.settings-onscreen-keyboard-enabled && root.is-my-onsc`:
+```
+// On-screen alphanumeric keyboard (2026-08-23, full rollout beyond
+// Login) — positioned below the card, mirroring login.slint's own
+// placement/shape exactly, including the coexistence guard (see this
+// file's own header doc comment).
+```
+
+Above `y: min(card.y + card.height + 16px, parent.height - self.height - 16px);`:
+```
+// Clamped to the window bottom (code review, 2026-08-26) — matching
+// PlaylistPicker's own identical clamp on the same "dock below a
+// roughly-centered card" shape. Unclamped, a real short/HTPC-
+// resolution window (this card's own vertical center can sit well
+// past the halfway point once the taller Jellyfin/Local tabs are
+// active) renders the keyboard's own bottom rows — including Done,
+// the one key that can always close it — partly or fully off-screen.
+```
+
+Above `property <int> _pulse-mirror: AppState.kb-activate-pulse;`:
+```
+// Zone-2's own D-pad Enter on Quick Connect's "Get Code" button has no
+// Rust-side arm — the actual quickconnect-start call needs a live
+// url-input.text value Rust can't read, same "Rust can only bump
+// kb-activate-pulse, a Slint-side changed tracker does the real work"
+// pattern login-zone's own zone 4 (Connect) already uses. The other 3
+// tabs' own submit buttons have their own LOCAL copy of this same
+// tracker (see this file's header doc comment) since their own
+// zone/method combination can't be checked from root scope without
+// also needing to reference their conditionally-mounted fields. Zone -1
+// (close) is handled directly in keys.rs instead — closing needs no
+// live text at all, so there's no reason to route it through this
+// indirection.
+```
+
+Above `if AppState.show-connect-seerr && AppState.connect-seerr-method == 2`:
+```
+// !connect-seerr-busy added, code review 2026-08-26 — !qc-polling
+// alone left a real, narrow race: busy is set synchronously the
+// instant this fires, but qc-polling only becomes true later, once
+// quickconnect-start's own async task actually succeeds. A second
+// rapid Enter landing in that gap re-read !qc-polling as still
+// false and fired a second concurrent quickconnect-start.
+```
+
+#### `crates/fjord-app/ui/connect_seerr.slint` — file header (TOC)
+```
+// ── fjord-app · connect_seerr.slint ──────────────────────────────────────────
+//   ConnectSeerrScreen  free-floating overlay, mounted + fade-gated by
+//                       main.slint (gate30 := FadeGate { show: AppState.show-
+//                       connect-seerr; }, opacity passed in from there — same
+//                       pattern as PlaylistPicker/ContextMenu; the FadeGate
+//                       instance must live at the mount site, not inside this
+//                       component, or delayed-unmount never gets a chance to
+//                       run before the whole component is destroyed). Server
+//                       URL LineEdit shared across all 4 methods; a 4-tab
+//                       method selector switches which fields show below it.
+//                       All 4 methods converge on AppState's on-success path
+//                       (seerr_auth.rs) which closes this screen. Errors stay
+//                       on-screen (mirrors LoginScreen), not a toast.
+//
+//   On-screen keyboard turned off in Settings (2026-10-10): Enter in the URL field
+//   moves to the sign-in method's first field (zone 2), user/email → password
+//   (zone 3), and the last field presses that method's Save / Sign In.
+//
+//   Full D-pad keyboard navigation + on-screen alphanumeric keyboard,
+//                       (2026-10-05: on-screen keys edit at the keyboard's caret — onscreen-keyboard-edit)
+//   2026-08-23 — this screen had ZERO keyboard nav before (pure mouse +
+//   native Tab order); see app_state.slint's connect-seerr-zone doc comment
+//   for the full zone design (mirrors login-zone's shape — dispatch lives
+//   inline in keys.rs's show_connect_seerr tier, not a delegate function the
+//   way ProfileEditScreen's larger zone system does). MethodTab gets a real
+//   kbd-focused prop (bound to connect-seerr-zone == 1 on all 4 instances —
+//   the D-pad cursor for the tab row and the currently-selected tab ARE the
+//   same value, connect-seerr-method, so there's no separate per-tab cursor
+//   concept) plus the same border-ring + PressPulse treatment every other
+//   keyboard-navigable element in this app already has, mirroring NavItem's
+//   own shape (active && kbd-focused gates the flash). Every submit/"Get
+//   Code" button gets kbd-focused too, bound to whichever zone value
+//   resolves to "the last zone in the list" for its own tab (2 for Quick
+//   Connect, 3 for API key, 4 for Jellyfin/Local) — see
+//   seerr_auth::existing_connect_seerr_zones' own doc comment for why that's
+//   always the button, never a text field, regardless of tab.
+//
+//   Zone 0/1 numbering fixed 2026-08-26 — real, live-reported bug ("the
+//   keybord nav on seerr connect seams off it do not go where you are
+//   expekting"): zone 0 was originally the tab row and zone 1 was
+//   url-input, the REVERSE of this screen's own visual layout (url-
+//   field-wrap is declared, and renders, ABOVE the tab row's
+//   HorizontalLayout below). keys.rs's next_zone/prev_zone walk the zone
+//   LIST purely by position, with no idea which physical element a given
+//   number represents — so Down from the tab row (the next zone in the
+//   list) visually moved UP the screen to url-input, and url-input's own
+//   Down handler jumped straight past the tab row to zone 2, never
+//   reaching it on the way back down at all. Renumbered so 0 = url-input
+//   (the topmost navigable field, directly below Close) and 1 = the tab
+//   row, matching true top-to-bottom visual order — url-input now also
+//   gets a root-level `init =>` focus grab (mirroring login.slint's own
+//   precedent, minus its Timer workaround, which exists solely for
+//   LoginScreen's own cold-start-before-window.run() race that can't
+//   happen here — ConnectSeerrScreen is only ever opened by a live,
+//   already-running user action).
+//
+//   Real scoping constraint found while building this, not anticipated by
+//   the plan: the 5 method-specific fields (key-input/jf-user/jf-pass/
+//   local-email/local-pass) each sit inside their own `if connect-seerr-
+//   method == N:` conditional — Slint's hard rule that "an element declared
+//   inside an if block is not a valid identifier outside it" (confirmed at
+//   COMPILE TIME while writing this, not a style choice) means none of them
+//   can be referenced from a shared, root-level function/tracker the way
+//   login.slint's 3 always-mounted fields can. Fixed with a relay: root-
+//   level dispatch-onscreen-key handles "done" and the always-mounted
+//   url-input directly, but relays anything else (one of the 5 method-
+//   specific targets) through a payload+counter pair (_relay-key/-seq, same
+//   shape as onscreen-keyboard-physical-key/-seq — needed so `changed`
+//   fires even on a repeated identical key) that each text-field-bearing
+//   conditional block picks up with its OWN local mirror tracker, scoped
+//   to see only its own field(s). The same split applies to focus-restore-
+//   on-close and zone→focus hand-off (each conditional block gets its own
+//   small local trackers for these too) and to Enter-driven submit (each
+//   text-field tab's own local _pulse-mirror-equivalent calls its own
+//   connect-seerr-* callback; Quick Connect's Get Code needs no such local
+//   copy since it only ever references the always-mounted url-input, so it
+//   stays at root scope). Referencing an UNCONDITIONALLY-mounted sibling
+//   (url-input) FROM INSIDE a conditional block is fine — confirmed by the
+//   compiler accepting it in every one of the 3 text-field tabs' own submit
+//   buttons — it's only the reverse direction (conditional → outside) that's
+//   the hard rule.
+//
+//   root.close-screen() is the one choke point every close path (backdrop
+//   click, the ✕ button, and every field's own Escape branch) routes
+//   through — unconditionally clears the on-screen keyboard's 3 properties
+//   alongside show-connect-seerr, mirroring close_login_screen/
+//   close_profile_edit_screen's established precedent (Bonfire Phase 3's
+//   original code review, Finding 1): without this, closing the screen
+//   while the on-screen keyboard is open would leave AppState.show-
+//   onscreen-keyboard stuck true — that gate runs before EVERY other
+//   screen's own tier in keys.rs, so a stuck keyboard permanently swallows
+//   all subsequent input app-wide, not just on this screen. keys.rs's own
+//   Rust-side close sites (Escape at zone -1/0, zone -1's own Enter) do the
+//   Rust-side equivalent directly (this Slint function can't be called from
+//   Rust) — kept in sync by hand, same as every other Rust/Slint dual-side
+//   mechanism in this app.
+//
+//   The 3 `accepted =>` handlers key-input/jf-pass/local-pass used to have
+//   are gone (2026-08-23) — physical Enter now opens the on-screen keyboard
+//   on every field, matching Login's own identical removal and the same
+//   reasoning ("if they press enter on a textfield they want to enter it to
+//   type"); submitting moves entirely to each tab's own button, reachable
+//   via Down from the last field once the keyboard is closed.
+//
+//   Coexistence guard (is-my-onscreen-target()) — this screen isn't
+//   permanently mounted the way Browse/Discover are, but it IS a
+//   free-floating overlay reachable independent of whatever's underneath,
+//   so its QwertyKeyboard mount condition and _physical-key-mirror both
+//   check the target explicitly rather than bare show-onscreen-keyboard
+//   alone, same discipline established for ProfileEditScreen/Discover/
+//   Browse/PlaylistPicker (see CLAUDE.md's own "coexistence guard" write-up
+//   for the full reasoning — without it, two screens' keyboard interactions
+//   could cross-fire on each other's keystrokes).
+//
+//   Code review, 2026-08-26 — 5 real bugs found and fixed: (1) MethodTab had
+//   no persistent kbd-focused border, only a transient press flash, despite
+//   this header's own claim otherwise — fixed to match VirtualKeyboardKey's
+//   established pressed/focused/idle 3-state border-width convention.
+//   (2) Clicking a different MethodTab via mouse while the on-screen
+//   keyboard was open and targeting the OLD tab's own method-specific field
+//   unmounted that field's conditional block — including the ONLY listener
+//   for further keystrokes — leaving the keyboard visibly open but
+//   completely inert; fixed via close-keyboard-if-orphaned(), called from
+//   all 4 tab clicks (never needed on the keyboard-driven path, since every
+//   route back to zone 0 passes through the always-mounted url-input
+//   first). (3) The 6 changed has-focus handlers that retarget the keyboard
+//   when a DIFFERENT field is clicked mid-typing all reset the cursor to 0
+//   (a letter key) instead of onscreen-keyboard-done-cursor, unlike every
+//   genuine open site — fixed to match. (4) The keyboard's own y: position
+//   had no bottom clamp, unlike PlaylistPicker's identical "dock below a
+//   centered card" shape — could render its own Done key off-screen on a
+//   short/HTPC-resolution window. (5) The 3 text-field tabs' own
+//   _pulse-local-mirror trackers (and the root one for Quick Connect) had
+//   no !connect-seerr-busy guard, unlike the mouse Save/Sign-In buttons'
+//   own `enabled:` binding — a rapid double-Enter could fire two concurrent
+//   auth attempts.
+// ─────────────────────────────────────────────────────────────────────────────
+```
+
+#### `crates/fjord-app/ui/home.slint`
+
+Above `callback item-context-full(CardItem);`:
+```
+// Additive (2026-07-18) — fires alongside item-context above on every
+// right-click, carrying the whole card struct instead of six scalars.
+// Existing callers (Home/dashboard rows, episode rows, etc.) simply
+// never connect it — a no-op, zero behavior change for them. Added for
+// Discover's landing rows, whose context menu needs fields (request-id,
+// availability, requested-4k) the six-scalar signature above has no
+// room for; see context_menu.slint's own doc comment.
+```
+
+Above `callback card-focused(int);`:
+```
+// Additive (2026-07-18, keyboard-nav fix) — fires the row-local card
+// index on every click/right-click, alongside item-play/item-context-full
+// above. Existing callers never connect it (no-op, zero behavior change).
+// Added so Discover's landing rows can sync focused-section/discover-
+// landing-card to the clicked card, matching what keyboard nav already
+// sets — a mouse click into this row previously left those properties
+// stale, so a following keypress acted on the wrong card/row.
+```
+
+Above `focused: idx == AppState.library-focused`:
+```
+// Real bug, live-reported 2026-08-12: "the
+// higlight for a item stays when you move to
+// search and filter and sort on libray
+// screens" — every other analogous screen
+// (artist.slint's `&& !artist-back-focused`,
+// collection.slint's `&& !collection-back-
+// focused`, album.slint's `!album-back-focused
+// && album-btn-focused < 0`, discover.slint's
+// `&& !discover-header-focused`) already
+// excludes its own other on-screen zones from
+// the card's own focus ring; this was the one
+// place that never did, so the previously-
+// focused card kept showing highlighted even
+// after focus moved to the search field, sort
+// bar, alphabet scrubber, or Back button.
+```
+
+Above `if AppState.active-nav == 3 {`:
+```
+// Real bug, live-reported 2026-07-30: this always called
+// open-detail regardless of item type, so clicking a
+// BoxSet card with the mouse opened the generic Detail
+// Page (which has its own More Like This/Recommended
+// rows) instead of CollectionScreen's member grid —
+// keyboard Enter already had this exact check
+// (keys.rs::dispatch_library, active-nav == 3), the
+// mouse path just never got it.
+```
+
+Above `if AppState.show-onscreen-keyboard && AppState.settings-onscreen-keyboard-enabled && AppState.onscre`:
+```
+// On-screen alphanumeric keyboard (2026-08-25 — missed in the original
+// rollout, live-reported gap). Vertically centered rather than docked
+// at the very bottom of the window — safe here since the search field
+// this targets always sits in a fixed 52px band near the TOP of the
+// screen (below the 54px title bar + 40px sort bar), never at risk of
+// being covered regardless of where the keyboard renders. LibraryGrid
+// is a permanently-mounted sibling (per this screen's own documented
+// mount-lifecycle history), so the coexistence guard on both the mount
+// condition and the physical-key-mirror tracker is essential, not
+// optional — without it this would fire on every OTHER screen's
+// physical keystroke too, even while the library grid is fully hidden.
+```
+
+Above `in property <[CardItem]> watchlist;`:
+```
+// Seerr Watchlist (2026-07-20, user request — "add a row for the
+// watchlist as in seerr... culd also add it to the home dashbord"),
+// mixed movies+series — bound to AppState.discover-watchlist-mixed in
+// main.slint, the SAME property Discover's own landing row reads.
+```
+
+Above `in property <[CardItem]> coming-up;`:
+```
+// Coming Up (2026-08-02, user request — "the coming up row shuld also
+// be in home dashbord"), mixed movies+series — bound to
+// AppState.discover-coming-up-mixed in main.slint, sentinel-free (see
+// that property's own doc comment).
+```
+
+Above `+ (watchlist.length > 0 && s > 5 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)`:
+```
+// Missing term for row 5 (Watchlist) added alongside row 6 (Coming
+// Up, below) — until now Watchlist was always the LAST row, so
+// section-y never needed to account for ITS OWN height (nothing
+// scrolled past it). This is the exact "row-y never extended for a
+// newly-added row after it" gap CLAUDE.md documents once already
+// for the Discover screen's own row-y — caught here before
+// shipping rather than after.
+```
+
+Above `if watchlist.length > 0: SectionRow {`:
+```
+// Watchlist row (2026-07-20) — Discover/TMDB-sourced
+// cards, not Jellyfin ones, so item-play/item-context-full
+// route through open-discover-item/open-context-menu-discover
+// (matching Discover's own landing rows) rather than the
+// plain item-play/open-context-menu the 5 Jellyfin rows
+// above use — this also gets the in-library redirect
+// (find_local_item) and the Discover context menu's
+// Watchlist toggle row for free. Deliberately NOT part of
+// the LoadingSpinner condition below — its own fetch is
+// independent of and typically slower than the Jellyfin
+// rows, so gating the spinner on it too would keep an
+// otherwise-ready Home page spinning on Seerr alone.
+```
+
+Above `if coming-up.length > 0: SectionRow {`:
+```
+// Coming Up row (2026-08-02) — same Discover/TMDB
+// routing as Watchlist immediately above (sentinel-free
+// subset of the same data, see coming-up's own doc
+// comment); also excluded from the LoadingSpinner
+// condition below for the same reason.
+```
+
+Above `in property <[CardItem]> watchlist;`:
+```
+// Seerr Watchlist (2026-07-20, user request) — bound to
+// AppState.discover-watchlist-tv (nav==1/TV) or
+// -watchlist-movies (nav==2/Movies) in main.slint; each dashboard shows
+// only its own media type, unlike Home's mixed row.
+```
+
+Above `in property <[CardItem]> coming-up;`:
+```
+// Coming Up (2026-08-02, user request — "coming up in series dashbord
+// that is filtered for series and in movies dashbord that is filtered
+// for movies") — bound to AppState.discover-coming-up-tv (nav==1/TV) or
+// -coming-up-movies (nav==2/Movies), same per-dashboard-type split as
+// watchlist above.
+```
+
+Above `if watchlist.length > 0: SectionRow {`:
+```
+// Watchlist row (2026-07-20) — Discover/TMDB-sourced,
+// routes through open-discover-item/open-context-menu-
+// discover like Discover's own landing rows, not the
+// plain item-play/open-context-menu the 5 Jellyfin rows
+// above use (same reasoning as HomeScreen's own copy of
+// this row). Not part of the LoadingSpinner condition
+// below, same reasoning as HomeScreen.
+```
+
+Above `if coming-up.length > 0: SectionRow {`:
+```
+// Coming Up row (2026-08-02) — same Discover/TMDB
+// routing as Watchlist immediately above, filtered to
+// this dashboard's own media type via which AppState
+// property main.slint binds coming-up to.
+```
+
+#### `crates/fjord-app/ui/home.slint` — file header (TOC)
+```
+// ── fjord-app · home.slint ───────────────────────────────────────────────────
+//   SectionRow            horizontal-scroll card row with labelled title heading;
+//                         item-context-full(CardItem) additive callback (2026-07-18,
+//                         Discover landing rows' context menu — see own doc comment);
+//                         card-focused(int) additive callback (2026-07-18, keyboard-nav
+//                         fix — fires the clicked card's row-local index so Discover's
+//                         landing rows can sync focused-section/discover-landing-card on
+//                         a mouse click, which previously left them stale)
+//   LibraryGrid           2-D poster grid for full library browse; Back button shows kbd-focused ring when library-back-focused
+//                         search field caret at library-query-cursor (text_field.rs, 2026-10-05)
+//   HomeScreen            Home tab: 5 curated rows (continue, next-up, recent shows/movies/albums)
+//                         + an optional 6th "Watchlist" row (2026-07-20, user request —
+//                         mixed movies+series, AppState.discover-watchlist-mixed via
+//                         main.slint) + an optional 7th "Coming Up" row (2026-08-02, user
+//                         request — mixed, AppState.discover-coming-up-mixed) when non-empty;
+//                         both deliberately excluded from the page's own LoadingSpinner
+//                         empty-check (their own fetches are independent/slower — see
+//                         discover.rs's ensure_discover_watchlist/build_calendar_entries —
+//                         and shouldn't keep an otherwise-ready page spinning)
+//   DashboardScreen       Movies or TV tab: 3-5 rows (continue, next-up, recently-added,
+//                         not-watched, favorites) + an optional 6th "Watchlist" row
+//                         (2026-07-20, same generic-property-per-instantiation pattern as
+//                         the other 5 — main.slint binds discover-watchlist-tv for TV/nav1,
+//                         discover-watchlist-movies for Movies/nav2) + an optional 7th
+//                         "Coming Up" row (2026-08-02, same pattern — discover-coming-up-tv/
+//                         -movies, filtered to each dashboard's own media type)
+//   CollectionsDashboard  Collections tab: Recently Added + Unwatched rows
+//   MusicDashboard        Music tab: Recently Added Albums + Recently Played + Favorites + Playlists rows
+// ─────────────────────────────────────────────────────────────────────────────
+```
