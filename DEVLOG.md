@@ -16382,3 +16382,555 @@ Above `export struct BonfireAdminRow {`:
 //                   title, blocklisted-by, blocklisted-at; no poster, GET /blocklist carries none
 // ─────────────────────────────────────────────────────────────────────────────
 ```
+
+#### `crates/fjord-app/src/display_sync.rs`
+
+Above `fn strip_ansi(s: &str) -> String {`:
+```
+/// Strips SGR ANSI color codes (`\x1b[...m`) from `kscreen-doctor`'s own
+/// colorized output — a plain state-machine walk rather than a `regex`
+/// dependency, since this tool's output only ever uses this one escape
+/// shape (confirmed live on this dev machine).
+```
+
+Above `pub(crate) fn supported_resolutions_and_hz(screen: &str) -> (Vec<String>, Vec<String>) {`:
+```
+/// Distinct resolutions and Hz values `screen` genuinely supports, each in a
+/// sensible dropdown order — resolutions by pixel count descending (largest,
+/// most likely intentional choice first), Hz ascending. Backs the Settings
+/// screen's "Default resolution"/"Default refresh rate" dynamic dropdowns
+/// (`main.rs`, same shape as the Output row's own `list_outputs_with_priority`
+/// fetch) — a plain derived view over `get_supported_modes`'s own already-
+/// parsed set, not a second `kscreen-doctor` shell-out. Both empty when the
+/// query itself failed (missing binary, unknown output name) — callers
+/// leave whatever the dropdown already showed untouched in that case, the
+/// same "don't clear a working value over a transient/absent query" precedent
+/// `list_outputs_with_priority`'s own screen-name pre-fill already follows.
+```
+
+Above `fn enabled_connected_outputs() -> Vec<(String, u32)> {`:
+```
+/// Every output currently reported both `enabled` and `connected` by
+/// `kscreen-doctor -o`, paired with its real KDE `priority` (lower = more
+/// preferred; `priority 1` is specifically what `kscreenctl set-primary`
+/// sets to make an output primary — confirmed directly from KDE's own
+/// libkscreen/kscreen source, not assumed), in the order `-o` lists them.
+/// Used by `list_outputs_with_priority` below for both the Settings
+/// dropdown's full option list AND (by checking the returned `Vec`'s own
+/// length at the call site, `main.rs`'s startup fetch) the one-shot "exactly
+/// one candidate" pre-fill check — deliberately one shell-out serving both
+/// purposes rather than two.
+```
+
+Above `pub(crate) fn list_outputs_with_priority() -> Vec<(String, u32, Option<String>)> {`:
+```
+/// Settings-dropdown option list for `display_sync_screen_name` — every
+/// currently enabled+connected output, paired with its real KDE priority
+/// (`main.rs` marks whichever one has `priority == 1` as "(Primary)") AND a
+/// best-effort friendly "Vendor Model" name read directly from that
+/// output's own EDID (see `friendly_output_name`'s own doc comment — direct
+/// user request: "what is conneceted to the output"). Neither annotation
+/// ever reaches the persisted value itself — `display_sync_screen_name` is
+/// always the bare connector name, same as before either was added. Read
+/// only at app startup (`main.rs`), never at runtime by `display_sync.rs`
+/// itself (see `DeviceConfig.display_sync_screen_name`'s own doc comment
+/// for why re-detecting on every playback would be wrong the moment a
+/// second output exists) — the caller also uses this same list's length to
+/// decide whether to auto-pre-fill an still-empty stored value (exactly one
+/// candidate) or leave it for the user to pick explicitly (zero or 2+
+/// candidates).
+```
+
+Above `fn friendly_output_name(connector: &str) -> Option<String> {`:
+```
+/// Best-effort "Vendor Model" friendly name for a kscreen-doctor connector
+/// name (e.g. "HDMI-A-2"), read directly from the standard Linux DRM sysfs
+/// EDID attribute (`/sys/class/drm/cardN-<connector>/edid`) and decoded per
+/// the VESA E-EDID standard's Display Product Name descriptor (tag 0xFC) —
+/// no dependency on `kscreen-console` (a separate-package internal KDE
+/// debug tool this project tried and couldn't get to produce any output at
+/// all) or any new external binary, just a plain sysfs file read + a small,
+/// self-contained parser. Confirmed correct against this dev machine's own
+/// 3 real monitors, cross-checked directly against KDE's own Display
+/// Configuration panel (which reads the identical EDID data, just via
+/// libkscreen's C++ API rather than sysfs directly): `card0-HDMI-A-2` →
+/// "Philips 245P", `card1-DP-3` → "HP ZR24w", `card1-HDMI-A-1` → "Philips
+/// 245P" (a second, different physical unit of the same model — its own
+/// distinct serial-number descriptor is deliberately not surfaced here,
+/// since the connector name Fjord already always prefixes the label with
+/// is itself a sufficient, always-unique disambiguator; KDE's own panel
+/// needs the serial specifically because ITS list has no such prefix).
+/// `None` on any failure (missing/unreadable/malformed EDID, no matching
+/// sysfs entry, no Display Product Name descriptor present at all — some
+/// real monitors simply don't carry one) — this is a display nicety layered
+/// on top of the already-working connector-name-based flow, never load-
+/// bearing for anything.
+```
+
+Above `if mode_changed || hdr_changed {`:
+```
+// Mode + scale and HDR + WCG in ONE kscreen-doctor call (2026-10-06):
+// KWin applies them as one config change, so the TV re-syncs once, and
+// the single wait below covers it — HDR used to be switched separately,
+// after the wait, so the film started while the TV was still changing to
+// HDR (HTPC: "plays 1-3 s, then changes to HDR and loads again"). HDR/WCG
+// are still only re-applied together and only when HDR's own effective
+// value changed, as in the proven script.
+```
+
+Above `pub(crate) async fn sync_before_load(`:
+```
+/// display-mode-prefetch (2026-09-25) — the pre-decode entry point,
+/// called from `start_playback`'s own new deferred-load task before mpv has
+/// ever been told to load the file, instead of `sync_to_source`'s usual
+/// post-decode trigger in `wire_mpv_timer`. Deliberately a thin wrapper, not
+/// a second implementation: `sync_to_source` itself is untouched, since it
+/// only ever reads `dims.0`/`dims.2` (width/fps) and `meta.gamma` (checked
+/// against `"pq"`/`"hlg"` for the is-this-HDR decision) — everything else on
+/// `SourceHdrMetadata` (primaries, min/max luma, MaxCLL, MaxFALL) is real
+/// per-file SEI data mpv itself reports post-decode, which Jellyfin's own
+/// `MediaStreams` API never exposes at all (live-verified) and which this
+/// pre-decode call has no way to supply — so this only ever builds a
+/// synthetic `gamma` sentinel and leaves every other `meta` field at its
+/// `Default`. HDR Stage 3's own real negotiation (`hdr::maybe_negotiate`)
+/// still runs later, post-decode, with mpv's real precise metadata,
+/// completely unaffected by this call — see DEVLOG.md's display-mode-
+/// prefetch section for the full scope reasoning.
+```
+
+Above `fn needs_revert(`:
+```
+/// Whether a genuine stop must put the display back to its default mode:
+/// only when Fjord itself applied something this session that differs from
+/// it. Nothing applied yet (both `None`, e.g. the session reset when picking
+/// a profile at startup) → no revert — 2026-10-04, seen on both machines:
+/// the 2026-09-24 version compared `current_mode != Some(default)`, which is
+/// also true for `None`, so every stop with nothing played re-applied the
+/// default mode and HDR off. Already at default (after one revert) → no
+/// revert either, which was the point of the 2026-09-24 fix.
+```
+
+Above `{`:
+```
+// ── display_sync output list: fetch once at startup ───────────────────────
+// Same shape as the system-font fetch just above (shell out once, patch
+// the dropdown's display list in whenever it lands) — this one queries
+// `kscreen-doctor -o` for every currently enabled+connected output name,
+// paired with its real KDE priority AND a best-effort friendly "Vendor
+// Model" name read straight from that output's own EDID via sysfs (see
+// `display_sync::friendly_output_name`'s own doc comment) — direct user
+// requests: "mark witch output is the primary" and "what is conneceted
+// to the output". Priority `== 1` (confirmed against libkscreen/kscreen
+// source: exactly what `kscreenctl set-primary` sets — not guessed)
+// gets labeled "(Primary)"; the friendly name, when found, is appended
+// as "{connector} — {model}" (e.g. "DP-3 — HP ZR24w (Primary)"). Both
+// annotations are display-only — `FjordState.display_sync_outputs`
+// (name, label) is the lookup `on_display_sync_screen_selected` below
+// resolves a picked label back to the real connector name with, mirroring
+// `audio_devices`'/`on_audio_device_selected`'s own established shape
+// exactly, since `display_sync_screen_name` must always persist the bare
+// connector name, never an annotated label.
+//
+// If the stored screen name is still empty (a fresh install, or one that
+// predates this feature), pre-fills it here — but only when exactly one
+// candidate exists (`DeviceConfig.display_sync_screen_name`'s own doc
+// comment: guessing among 2+ plausible outputs would be wrong the
+// instant a second display is connected) — and persists it immediately
+// via `invoke_settings_changed()` so this one-time detection never runs
+// again for this install. Also kicks off the resolution/Hz modes fetch
+// below for whichever screen name ends up effective (the already-stored
+// one, or the just-autodetected sole candidate) — real dev-machine
+// report: the original fixed 3-resolution/7-Hz lists were both too
+// narrow AND not guaranteed to contain anything the actual display
+// supports.
+```
+
+Above `{`:
+```
+// ── display_sync screen selected callback ─────────────────────────────────
+// desc is the annotated display label ("DP-3 (Primary)"), resolved back
+// to the real bare connector name via FjordState.display_sync_outputs —
+// same shape as on_audio_device_selected's own name<->desc lookup,
+// needed here (unlike this row's original "desc is the value" design)
+// specifically because the label can now differ from the persisted
+// value. Also re-fetches resolution/Hz options for the newly-selected
+// output — the previous output's own supported modes are meaningless
+// for a different display.
+```
+
+Above `pub(crate) fn spawn_display_sync_modes_fetch(`:
+```
+/// Fetches `display_sync::supported_resolutions_and_hz(screen)` off-thread
+/// and patches `settings-display-sync-resolution-options`/`-hz-options` —
+/// called once at startup for whichever output ends up effective, and again
+/// every time the Output row's own selection actually changes (a previous
+/// output's supported modes are meaningless for a different display). Never
+/// clears an already-populated list on a failed/empty query (missing
+/// binary, unknown output name) — same "don't stomp a working value over a
+/// transient/absent query" precedent `list_outputs_with_priority`'s own
+/// screen-name pre-fill already follows.
+```
+
+Above `const EDID_PHILIPS_245P_A: [u8; 128] = [`:
+```
+// Real 128-byte EDID base blocks, captured directly from
+// /sys/class/drm/*/edid on the dev machine that verified this whole
+// friendly_output_name feature (2026-09-19) — cross-checked against
+// KDE's own Display Configuration panel, which shows the identical
+// vendor/model/serial for these exact 3 real monitors. Plain hardware
+// identifiers, nothing sensitive, kept as a permanent regression fixture
+// rather than a one-off diagnostic.
+```
+
+#### `crates/fjord-app/src/display_sync.rs` — file header (TOC)
+```
+// ── fjord-app · display_sync.rs ─────────────────────────────────────────────
+//   Native resolution/refresh-rate/HDR/WCG matching to source, replacing the
+//   external `media_display_sync` Python script's job for Fjord's own
+//   playback (2026-09-18). Ports that script's proven `kscreen-doctor`
+//   mode-selection mechanism, not its detection mechanism — Fjord already
+//   knows synchronously, from its own mpv instance, exactly what's playing
+//   the instant VideoReconfig fires, so none of the script's own external
+//   polling/timeout/grace-period machinery is needed. KDE Plasma Wayland
+//   only; degrades to a silent no-op wherever `kscreen-doctor` isn't found
+//   (X11, other Wayland compositors — Fjord ships `fjord-x11.desktop`).
+//
+//   HdrMode / WcgMode      parsed from Config.device.display_sync_hdr_mode/
+//                          _wcg_mode ("yes"/"no"/"always", "auto"/"yes"/"no")
+//   DisplaySyncSettings    everything compute_target_mode/sync_to_source need,
+//                          extracted from DeviceConfig ONCE per trigger (not
+//                          cloning the whole DeviceConfig every 16ms tick)
+//   compute_target_mode    pure, unit-tested port of the proven script's own
+//                          media_display_sync.py:202-237 fps->Hz cadence
+//                          table + fallback chain (exact -> closest Hz at the
+//                          same resolution -> the configured default mode)
+//   get_supported_modes    kscreen-doctor -o output parse -> {(res, hz)} —
+//                          plain string parsing, no regex dependency added
+//                          for this one narrow, well-known CLI format
+//   supported_resolutions_ derived, sorted Vecs over get_supported_modes'
+//     and_hz                own set — backs the "Default resolution"/
+//                          "Default refresh rate" Settings dropdowns
+//                          (main.rs), fetched at startup and again whenever
+//                          Output changes, replacing 2026-09-18's original
+//                          fixed 3-resolution/7-Hz compile-time lists (a
+//                          real dev-machine report: too few choices, and
+//                          none of them guaranteed to be modes the actual
+//                          display supports)
+//   list_outputs_with_       Settings-dropdown option list, paired with each
+//     priority               output's real KDE priority (1 = primary,
+//                          confirmed against libkscreen/kscreen source) so
+//                          main.rs can label it "(Primary)" — AND (via its
+//                          own length at the call site) the one-shot
+//                          "exactly one candidate" pre-fill check — never
+//                          read at runtime by this module itself, only at
+//                          startup (main.rs)
+//   apply_display_switch   mode + scale and/or HDR + WCG in ONE kscreen-doctor call
+//                          (display_switch_args, unit-tested; 2026-10-06) — best-effort
+//                          logged, a missing binary is a silent one-time-logged no-op
+//   sync_to_source         the real per-item orchestration: get supported
+//                          modes, compute target, apply mode+scale (+3s
+//                          settle) and HDR/WCG only when they actually
+//                          changed from FjordState's own "what's currently
+//                          applied" tracking — called from wire_mpv_timer's
+//                          own hook (playback.rs), which is also what
+//                          sequences this to complete BEFORE HDR Stage 3's
+//                          negotiation ever runs when both are enabled (see
+//                          DEVLOG.md's dated section for the real race this
+//                          avoids — kscreen-doctor's own HDR toggle and
+//                          hdr.rs's Wayland surface negotiation are two
+//                          different, both-heavyweight operations that must
+//                          not fire concurrently)
+//   sync_before_load       display-mode-prefetch (2026-09-25): thin wrapper
+//                          over sync_to_source fed from Jellyfin's
+//                          MediaStreams (width/fps/HDR) instead of mpv —
+//                          called by start_playback BEFORE mpv loads the
+//                          file, so the mode switch no longer blinks
+//                          mid-playback. The post-decode trigger above still
+//                          runs afterwards and is normally a cached no-op.
+//   revert_to_default      called from the 3 genuine-stop call sites
+//                          (quit_cleanup, do_stop_playback, wire_mpv_timer's
+//                          natural-EOF branch once nothing turns out to be
+//                          next) — never from a replace-in-place teardown
+//   needs_revert           pure: revert only if Fjord changed the display this
+//                          session and it isn't back at default (unit-tested)
+//   wire_display_sync      callbacks moved from main() (0.5.0 step 3): display-sync output list (fetched once) + screen/resolution/Hz dropdowns
+//   spawn_display_sync_modes_fetch  resolutions/Hz of the chosen output (Settings dropdowns)
+// ─────────────────────────────────────────────────────────────────────────────
+```
+
+#### `crates/fjord-app/src/ws.rs`
+
+Above `state.lock().unwrap().ws_connected = true;`:
+```
+// Live connection-health signal (2026-08-28) — see its own
+// doc comment on FjordState for why: the WS's own
+// connected-ness is the cheapest available proxy for "is
+// the Jellyfin server actually reachable," consulted by
+// wire_mpv_timer's stall-recovery to distinguish a
+// genuinely broken connection from a stalled stream on an
+// otherwise-healthy one (e.g. a slow-to-wake library
+// drive, which blocks server-side disk I/O, not this
+// socket).
+```
+
+Above `fn sync_open_episodes(`:
+```
+// Phase 6: if any of `episodes` belongs to the series+season currently on
+// screen (series screen's episode row, or the season detail overlay — both
+// read the same series-episode-cards model), rebuild that model from the
+// updated, re-sorted FjordState.series_episode_items and re-anchor keyboard
+// focus (§0) onto whatever episode was focused before, by id. Only ever
+// inserts/updates — removed episodes are handled separately by
+// remove_item_from_all_models, so a focused episode can't have vanished out
+// from under this function; the None branch below is defensive, matching the
+// same clamp behavior used for the library grid. Must run on the UI thread.
+```
+
+Above `let model = crate::apply_cards_preserving_identity(&g.get_series_episode_cards(), cards);`:
+```
+// apply_cards_preserving_identity (Phase 96): mutates in place when the season's
+// episode ids/order are unchanged, so unrelated episode cards' poster Images
+// don't get destroyed/recreated (re-triggering FadeInTrigger) just because one
+// episode in the season changed.
+```
+
+Above `fn maybe_spawn_delta_refresh(`:
+```
+// Debounce (5 s) + spawn the shared delta-refresh task: ranked home rows (Continue
+// Watching/Next Up/Recently Added/Favorites/Recently Played — Phase 2/3, already
+// fully covered by the unconditional fetch_home_data call below, no bespoke upsert
+// needed) plus a get_items_by_ids batch for whatever's queued in pending_upsert_ids
+// (Phase 1's six flat library lists + Phase 5's movie_collections + Phase 4's
+// targeted series unplayed-count refresh). Only one instance runs at a time
+// (refresh_pending gate); callers just merge ids first and call this.
+```
+
+Above `pending.store(false, Ordering::SeqCst);`:
+```
+// NOTE (diagnostic, 2026-07-09): this reset happens before fetch_home_data
+// below actually completes, so a second delta refresh CAN be scheduled and
+// start overlapping with this one still in flight — suspected contributor
+// to the reported "favorite flashes twice, briefly shows unfavorited" bug.
+// Logged explicitly until confirmed/fixed.
+```
+
+Above `let (home_data, items_res, detailed_res) = tokio::join!(`:
+```
+// Ranked home rows (Continue Watching/Next Up/Recently Added/Not
+// Watched/Favorites/Recently Played Albums/Playlists) always get a
+// real re-fetch here — Phase 2/3's row content is entirely covered
+// by this one call, so LibraryChanged and UserDataChanged both just
+// need to reach this task; no separate insert-by-date/insert-by-
+// favorite path is needed on top of it.
+// Screen-open caches (Phase 103): piggyback a richer-fields batch fetch
+// onto the same upsert_ids batch already being fetched below for the
+// flat-list purpose, so item_detail_cache reflects a genuine delta
+// (only ids that actually changed) rather than going stale until the
+// affected screen happens to be reopened. Any id present as a *key* in
+// one of the 5 relationship caches is invalidated (not re-fetched —
+// no batch endpoint for those) since the event doesn't distinguish
+// "metadata changed" from "membership changed" for a boxset/artist/etc.
+```
+
+Above `let mut movies      = Vec::new();`:
+```
+// Bucket by type — six flat library lists this phase covers, plus
+// Episode for Phase 4's targeted series refresh below. Audio isn't
+// bucketed: Phase 3's Recently Played Albums row is covered by
+// fetch_home_data above, nothing else currently needs raw Audio items.
+```
+
+Above `let missing_series: Vec<String> = episodes.iter()`:
+```
+// Phase 4: an added/updated episode's parent series doesn't necessarily
+// appear in the same LibraryChanged/UserDataChanged report, so its
+// unplayed-count badge (all_series / library grid) would otherwise go
+// stale. Fetch any such series explicitly rather than waiting to be told.
+```
+
+Above `let series_to_remove: Vec<(i64, String)> = {`:
+```
+// Watchlisted-but-Continuing series that just stopped Continuing
+// (2026-08-02, user request — see run_session's UserDataChanged
+// handling for the fuller reasoning: a still-airing series is
+// deliberately NOT removed from the watchlist just for being fully
+// caught up, since there's no way to know if another season is
+// coming; this is where the deferred removal actually happens,
+// once Jellyfin's own metadata refresh reports the series as no
+// longer Continuing). That surfaces here — a LibraryChanged
+// ItemsUpdated feeding this same delta refresh's series upsert
+// above — rather than as a UserDataChanged event, since nothing
+// about the series' own played state changed, only its Status
+// field did. Re-checks the full played+watchlist+status condition
+// unconditionally rather than diffing old vs. new status — simpler,
+// and self-guarding: once actually removed, jellyfin_watchlist_ids
+// no longer contains it, so re-running this on a later refresh of
+// the same (already-removed) series is just a no-op.
+```
+
+Above `{`:
+```
+// Phase 6: upsert into any season whose episode list is already cached
+// (series_episode_cache — populated on season-tab switch, see main.rs
+// on_series_select_season). Only touches seasons already known; never
+// speculatively creates a new cache entry. Sorted by episode number so
+// a brand-new episode lands in the right slot, not appended at the end.
+```
+
+Above `let mut keepalive = tokio::time::interval(Duration::from_secs(30));`:
+```
+// Client-driven keep-alive. Jellyfin expects a KeepAlive message at least
+// every timeout/2 (default timeout 60 s) and ACKS each one with another
+// KeepAlive. Replying to those acks (pre-Phase 62) created a wire-speed
+// feedback loop — ~9k messages/s and a 6.4 GB debug log.
+```
+
+Above `let mut newly_watched_on_watchlist: Vec<(i64, String)> = Vec::new();`:
+```
+// Watchlisted item marked watched -> remove it from the Seerr
+// watchlist (2026-08-02, user request — "if something is
+// watched that are in the watchlist it shuld be removed from
+// the watchlist"). Resolved here, inside the same lock scope
+// update_item_user_state already uses (cheap, no network —
+// just a local id lookup + discover_watchlist_ids membership
+// check), but the actual removal (discover::
+// discover_toggle_watchlist) is dispatched AFTER the lock is
+// dropped below: it takes its own state.lock() internally, and
+// calling it from inside an already-held lock on the same
+// Mutex would self-deadlock (the exact class of bug this
+// project already hit once for ensure_discover_watchlist
+// called from inside a locked block at startup).
+```
+
+Above `s.item_detail_cache.remove(id);`:
+```
+// Screen-open cache (Phase 103): played/favorite state
+// lives inside the cached MediaItem too — invalidate
+// rather than re-fetch (cheap, no extra network call);
+// self-heals via a normal fetch next time this item's
+// screen is opened. UserDataChanged never affects list
+// membership, so the 5 relationship caches are untouched.
+```
+
+Above `let still_continuing = media_type == "tv"`:
+```
+// A still-airing series stays on the
+// watchlist even once fully caught up
+// (2026-08-02, user request — "keep it
+// but if it get canceld later and
+// everything is watched it shuld get
+// removed... you dont konw if there
+// will be another season"): only movies
+// and non-Continuing (Ended/unknown-
+// status) series are eligible for
+// removal here. A Continuing series is
+// instead caught later, once Jellyfin
+// itself reports it as no longer
+// Continuing — see
+// maybe_spawn_delta_refresh's own
+// series-status check, above in this
+// file.
+```
+
+Above `let mut needs_refresh = false;`:
+```
+// Phase 3: removal is immediate and cheap (no fetch needed — the card's
+// already in a visible model or it isn't). Insertion of a *new* favorite/
+// resumable item instead waits for the shared debounced refresh below,
+// whose unconditional fetch_home_data call already re-fetches every home
+// row (Favorites/Continue Watching/Recently Played) from the server —
+// a bespoke client-side insert-by-id path would just be immediately
+// overwritten by that fetch, so there's nothing to build here beyond
+// deciding *whether* a transition happened worth waking that task for.
+```
+
+Above `let in_known_collection =`:
+```
+// Real bug, live-reported 2026-08-03 ("in the
+// unwatched collection row shows collections that
+// is watched"): remove_from_dynamic_rows' own
+// unwatched-collections filter checks the just-
+// watched MOVIE's id against each BOXSET card's
+// own id — which can never match, a BoxSet's id is
+// never one of its member movies' ids — so a
+// collection whose last unwatched movie was just
+// marked played never actually got removed from
+// this row locally; it only ever self-healed
+// whenever something ELSE happened to trigger a
+// fresh fetch_home_data. Rather than replicate
+// Jellyfin's own "is every member of this BoxSet
+// played" computation client-side against
+// potentially-stale cached membership, just wake
+// the same debounced refresh the favorite/
+// resumable-transition path already uses below —
+// fetch_home_data re-derives unwatched_collections
+// from the server's own IsUnplayed filter
+// regardless of whether THIS specific collection is
+// now fully watched, so it's correct (and harmless
+// to over-trigger) even when the movie wasn't the
+// collection's last unwatched one.
+```
+
+#### `crates/fjord-app/src/ws.rs` — file header (TOC)
+```
+// ── fjord-app · ws.rs ─────────────────────────────────────────────────────────
+//   start_websocket  spawn reconnect loop; returns AbortHandle for sign-out cleanup
+//   ws_loop          outer reconnect loop with exponential backoff (1 s → 60 s max);
+//                    owns pending_upsert_ids (LibraryChanged Added/Updated ids +
+//                    UserDataChanged favorite/resume candidates, shared accumulator);
+//                    the URL carries api_key — logged only via redact_api_key (2026-10-08)
+//   row_has_id                found-by-id check on a CardItem model (Phase 3 transition gate)
+//   sync_open_episodes         Phase 6: if an added/updated episode belongs to the series+season
+//                              currently on screen (series screen episode row or season detail
+//                              overlay — both read series-episode-cards), upsert + re-sort
+//                              FjordState.series_episode_items, rebuild the model, and re-anchor
+//                              season-focused-ep/series-focused-ep (§0) by id
+//   upsert_library_bucket      upsert a delta batch into one all_X model + library-display
+//                              in place (with focus re-anchoring) if that grid+view is open
+//   maybe_spawn_delta_refresh  debounced (5 s) shared refresh task, callable from both event
+//                              types: fetch_home_data (ranked rows — Continue Watching/Next Up/
+//                              Recently Added/Not Watched/Favorites/Recently Played Albums —
+//                              already covers Phase 2/3's row content, no bespoke upsert needed)
+//                              + get_items_by_ids(pending_upsert_ids) bucketed by type into the
+//                              six flat library lists (Phase 1) + Episode (Phase 4: fetches any
+//                              missing parent series explicitly so the unplayed-count badge
+//                              doesn't depend on Jellyfin reporting the series itself; also feeds
+//                              sync_open_episodes and series_episode_cache, Phase 6) +
+//                              movie_collections reconciliation for any BoxSet in the batch
+//                              (Phase 5); session-guarded (bails if the client that queued it is
+//                              no longer FjordState's active one, CR11-2); also (Phase 103)
+//                              get_items_by_ids_detailed(upsert_ids) refreshes item_detail_cache
+//                              in place (genuine delta, piggybacked on the same batch), and
+//                              invalidates any of the 5 relationship caches keyed by an upsert id;
+//                              also (2026-08-02) removes a watched, watchlisted series from the
+//                              Seerr watchlist once its own Status stops being "Continuing" —
+//                              the deferred half of run_session's own watchlist-removal hook below,
+//                              for a series that was deliberately left on the watchlist while still
+//                              airing (see that hook's own doc comment for the full reasoning)
+//   run_session      process messages until the connection drops; periodic client KeepAlive
+//                    every 30 s (server acks ignored — replying looped at wire speed, Phase 62);
+//                    LibraryChanged: parse ItemsAdded/Updated/Removed — clear *_fetched flags,
+//                    purge removed ids from state/models/poster cache immediately (also, Phase
+//                    103, from all 6 screen-open caches), queue added/updated ids +
+//                    maybe_spawn_delta_refresh (no more immediate full re-fetch of an open grid);
+//                    UserDataChanged: patch has-played/is-favorite in place (unchanged), then
+//                    immediate removal — played=true drops from every dynamic row, a bare
+//                    position reset to 0 only drops from Continue Watching (NOT Not Watched,
+//                    which has the opposite membership rule — see remove_from_continue_watching)
+//                    — and favorites (unfavorited) — cheap, no fetch; also (Phase 103) removes
+//                    the changed id from item_detail_cache (cheap invalidate, self-heals on next
+//                    open — this event never affects list membership so the 5 relationship
+//                    caches are untouched); a genuine favorite/resume transition (not already
+//                    present in the row) triggers maybe_spawn_delta_refresh so other-client
+//                    changes reach Favorites/Continue Watching within ~5 s; a played=true
+//                    transition on an item that's on the Seerr watchlist also removes it from
+//                    the watchlist (2026-08-02, user request — one hook covers Fjord's own
+//                    context-menu Mark Played, the credits auto-mark, and any other client,
+//                    since Jellyfin echoes all of them back through this same event) — EXCEPT a
+//                    series whose Status is still "Continuing", which deliberately stays on the
+//                    watchlist while fully caught up (2026-08-02, user request — you don't know
+//                    if another season is coming) until maybe_spawn_delta_refresh's own check
+//                    above removes it once the series genuinely stops Continuing;
+//                    KeepAlive
+// ─────────────────────────────────────────────────────────────────────────────
+```
