@@ -1,152 +1,29 @@
 // ── fjord-app · main.rs ──────────────────────────────────────────────────────
-//   model helpers        item_to_card_item, items_to_model — both now take `watchlist:
-//                        &HashSet<String>` (2026-07-20, real bug fix: FjordState.jellyfin_watchlist_ids
-//                        consulted directly at construction time, since a live model patch alone
-//                        gets silently wiped by the next rebuild — see that field's own doc
-//                        comment in config.rs); apply_cards_preserving_identity (mutate an
-//                        existing model in place when ids/order match, so unrelated cards' poster Image
-//                        elements survive a refresh instead of re-fading, Phase 96), push_section_model
-//                        (takes HomeSection), show_toast (any-thread toast helper),
-//                        set_server_url_ui (server-url + server-unencrypted together)
-//   trim_last_grapheme   removes exactly one Unicode grapheme cluster (not scalar value) from the
-//   grapheme_count/insert_at_grapheme/delete_before_grapheme/delete_at_grapheme/with_caret
-//                        caret editing by grapheme for the hand-drawn text fields (2026-10-04)
-//                        end of a string — extracted from the on-screen keyboard's own Backspace
-//                        handler (2026-08-23) so every plain append/remove-from-the-end search/
-//                        naming field (Browse, Discover, Library grid, PlaylistPicker naming — none
-//                        of them a real LineEdit with cursor-position risk) shares the same
-//                        emoji/accent-safe backspace on ordinary typing too, not just the on-screen
-//                        keyboard's own ⌫ key
-//   panic hook           writes "PANIC" + backtrace to fjord.log (timestamp + thread since 2026-10-08)
-//   restrict_log_permissions  log folder 0700, fjord.log + rotated logs 0600 (best-effort,
-//                        failures logged once; 2026-10-09 security review; unit-tested)
-//   session_current      Arc::ptr_eq guard against FjordState.client — shared by
-//                        spawn_screen_cache_refresh (above) and prewarm.rs::spawn_metadata_prewarm;
-//                        see doc comment at definition
-//   should_revalidate    rate-limits the 7 screen "revalidate on cache hit" functions (Collection/
-//                        Detail/Series/Season/Artist/Person/Album) to once per 60s per item id
-//                        (2026-07-31, same missing-guard bug class as discover's own
-//                        seerr_admin_last_refresh cooldown, fixed the same day) — see doc comment
-//                        at definition
-//   profile::wire_idle_lock_timer  15s repeating slint::Timer (Bonfire Phase 4, inactivity
-//                        auto-lock, 2026-08-29) — see its own doc comment in profile.rs for the
-//                        full mechanism; wired here alongside the other 4 periodic timers.
-//   on_handle_key/activity::FjordApplicationHandler  the two activity-reset sites for
-//                        wire_idle_lock_timer's own idle clock — every keypress (on_handle_key)
-//                        and, since the event-loop branch (2026-09-08), TRUE global mouse
-//                        activity via a winit-level slint::BackendSelector hook (activity.rs) that
-//                        observes every raw CursorMoved/MouseInput/MouseWheel before Slint's own
-//                        hit-testing — replaces the old best-effort AppState.record-activity()
-//                        TouchArea mechanism, which only ever saw movement over uncovered
-//                        background, never over a MediaCard/FjordButton/NavItem sitting on top.
-//   main                 entry point; log rotation (fjord.log → .old each start) + per-layer
-//                        callbacks: one wire_* call per area — the code lives in that area's module
-//                        (0.5.0 step 3); helpers that moved out are re-exported below the `mod` list
-//                        filters (console + file both use Config.log_level, read directly off
-//                        disk before the subscriber exists; RUST_LOG still overrides either —
-//                        Settings→General row, applies on next launch); panic hook (writes to
-//                        fjord.log); logs "fjord version: {FJORD_BUILD_ID}"; wires all AppState
-//                        global callbacks
-//     apply saved cfg    cold-start vs warm-start; sets show-connecting, calls spawn_auto_login
-//                        — cached content is no longer shown before connectivity is confirmed
-//                        (a full outage used to look identical to normal quiet operation)
-//     login              on_do_login → auth::do_login (also starts websocket)
-//     browse play        on_play_item (server-side search results)
-//     home / library     on_item_play, on_open_library (lazy fetch: nav=1=TV, nav=2=Movies, nav=3=Collections, nav=4=Artists)
-//     detail             on_play_detail, on_resume_detail, on_close_detail
-//     collection         on_open_collection → collection::open_collection_screen
-//     artist             on_open_artist → artist::open_artist_screen; on_close_artist;
-//                        on_toggle_artist_fav; on_play_artist_all (fetches all album tracks, starts queue)
-//     album              on_open_album → album::open_album_screen; on_close_album; on_play_album_track;
-//                        on_toggle_album_fav; on_toggle_album_played
-//     series             on_open_series, on_series_select_season (cache+generation guard), on_play_series_episode,
-//                        on_toggle_series_played, on_toggle_series_fav
-//     season             on_open_season_detail, on_close_season_detail, on_toggle_season_fav, on_toggle_season_played
-//     person             on_open_person, on_open_discover_person (2026-08-13, TMDB cast member), on_close_person
-//     Up Next banner     on_cancel_auto_advance (Skip), on_play_next_ep (Play Now)
-//     player controls    wire_controls
-//     context menu       wire_context_menu, wire_queue_callbacks
-//     queue panel        on_open_queue_panel (mouse entry point for the music-bar ⋮ button —
-//                        mirrors keys.rs's 'q' path, plus a keyboard focus re-grab, CR11-6)
-//     audio devices      fetch_audio_devices (startup), on_audio_device_selected
-//     system fonts       fetch_system_fonts (startup), on_font_family_selected — same pattern,
-//                        for Settings → UI → Text font; settings-font-family (the value bound
-//                        to MainWindow.font-family) is set synchronously from Config at launch,
-//                        not left waiting on the async fc-list enumeration
-//     yt-dlp detection   detect_yt_dlp (startup, same fetch-once-locally pattern as audio
-//                        devices/fonts above) — gates Watch Trailer button visibility;
-//                        trailer_ytdl_format maps Trailer Quality to an mpv ytdl-format string;
-//                        on_play_trailer registered here (not discover.rs — see its own comment
-//                        at the call site) since it needs VideoState
-//     settings           on_settings_changed (also live-applies subtitle appearance via
-//                        Player::set_sub_style when a player is active, no restart needed;
-//                        also rebuilds seerr_client + push_seerr_status every save so
-//                        toggling seerr-enabled live-hides/shows every seerr-connected-gated
-//                        row instead of only taking effect after a restart, 2026-07-17);
-//                        client-version set once at startup (FJORD_BUILD_ID), unlike
-//                        server-name/server-version which are set per-login;
-//                        on_settings_row_focused (mouse click path, → settings::row_focused);
-//                        on_keybinding_collision_confirmed/_cancelled (2026-08-07, Key
-//                        Bindings rebind-collision confirm — the only two places that ever
-//                        call keys::apply_rebind for the collision path, keyboard and mouse
-//                        both funnel through these same two callbacks)
-//     spawn_seerr_settings_fetch  streaming region + display language + discover language +
-//                        discover region (2026-07-18), one round trip (2026-07-17, extended
-//                        from streaming-region-only); also captures the connected account's
-//                        own id + MANAGE_REQUESTS bit (FjordState.seerr_user_id/seerr_is_admin,
-//                        AppState.seerr-is-admin — piggybacks on the same /auth/me call, no new
-//                        round trip) for the Discover context menu's ownership check +
-//                        Approve/Decline gate (2026-07-18); detect_yt_dlp, fetch_audio_devices,
-//                        fetch_system_fonts — same fetch-once-at-startup shape, gated on a live
-//                        Seerr connection first
-//     on_discover_region_selected  Settings → Integrations → Discover Region (2026-07-18,
-//                        Watchlist + Release Calendar) — same GET-mutate-POST round trip as
-//                        on_streaming_region_selected, writes UserGeneralSettings.discover_region
-//     discover watchlist  discover::ensure_discover_watchlist called here too (2026-07-20,
-//                        Watchlist row), alongside the existing nav==6 trigger in
-//                        discover.rs::wire_discover — its own discover_watchlist_fetched guard
-//                        makes calling it redundantly from both sites safe, whichever fires first
-//                        wins; the Discover/dashboard Watchlist rows and the in-library star
-//                        (patch_watchlist_on_jellyfin_models) both need it populated well before
-//                        a user ever visits the Discover tab. Deliberately called AFTER the
-//                        seerr-client block's own `s` MutexGuard is dropped, not from inside
-//                        it — real bug fixed same day, live-reported "fjord do not even start":
-//                        ensure_discover_watchlist synchronously locks `state` itself before
-//                        spawning, and std::sync::Mutex isn't reentrant, so calling it while `s`
-//                        was still held there self-deadlocked the whole app before window.run()
-//                        was ever reached (see this function's own inline comment at the call
-//                        site, and CLAUDE.md's Seerr integration section, for the full trace)
-//     fullscreen         on_toggle_fullscreen, launch-fullscreen setting; the startup gate's
-//                        own launch_fullscreen apply (2026-08-14 fix) is hoisted ABOVE the
-//                        show_picker/auto-login split so a picker launch gets it too, not
-//                        just plain auto-login
-//     account/profile picker (2026-08-14, 2-tier redesign)  on_account_picker_select,
-//                        on_account_picker_add_account, on_settings_add_account,
-//                        on_profile_picker_back_to_accounts, on_default_account_selected —
-//                        mirror the pre-existing profile-tier callbacks one tier up; see
-//                        profile.rs's own header for what each does
-//     reset_session_state  shared teardown between sign-out and Bonfire profile switching
-//                        (Phase 1 step 3, 2026-08-09) — stops playback, aborts the
-//                        websocket, clears every in-memory FjordState list/cache and closes
-//                        every content-bearing screen (extended 2026-08-14 for the account
-//                        picker's own show/source/prefill state; extended 2026-08-16, code
-//                        review, to also clear show-profile-picker itself — previously only
-//                        its sibling show-account-picker was cleared here, despite this
-//                        function's own doc comment already claiming to cover "either tier's
-//                        overlay"); extended again 2026-08-29 (Bonfire Phase 4 review) to also
-//                        clear show-blocklist/show-playlist-picker — the identical "outgoing
-//                        content still visible" gap, found while designing the idle-lock timer
-//                        (an unattended background lock is far more likely to actually catch a
-//                        user on one of these two screens than a deliberate sign-out click is);
-//                        does NOT touch Config's auth/Seerr fields or decide what
-//                        shows next, both genuinely caller-specific
-//     sign-out           on_sign_out: removes the signed-out profile (+ its Bonfire
-//                        sub-profiles) from Config.profiles, reset_session_state, then routes
-//                        to the account picker if 2+ accounts remain, else plain Login
-//                        (2026-08-16, code review — was always Login unconditionally, even
-//                        with another valid account still known; resolved via AskUserQuestion)
-//     retry connection   on_retry_connection (OfflineScreen's Retry button + Enter key) →
-//                        re-invokes spawn_auto_login with fresh clones
+//   error helpers        is_unauthorized, is_not_found, is_rate_limited
+//   session guards       session_current / seerr_session_current (Arc::ptr_eq against the live
+//                        client — async results that land after a profile switch are dropped)
+//   should_revalidate    once-per-60 s (REVALIDATE_COOLDOWN) per item id for the screens'
+//                        "revalidate on cache hit" fetches
+//   purge_deleted_item   drops an item the server no longer has from every cache and model
+//   show_toast           toast from any thread
+//   strip_html_to_text   server HTML (overviews) → plain text (unit-tested)
+//   model helpers        item_to_card_item / items_to_model (watchlist set consulted at
+//                        construction), apply_cards_preserving_identity (patch rows in place when
+//                        ids/order match — no delegate rebuild, no poster flash),
+//                        push_section_model / get_section_model (HomeSection), to_slint_model,
+//                        display_names, timed (logs `timing:` lines)
+//   text helpers         trim_last_grapheme; grapheme_count / insert_at_grapheme /
+//                        delete_before_grapheme / delete_at_grapheme / with_caret — caret editing by
+//                        grapheme cluster for the hand-drawn text fields (unit-tested)
+//   set_server_url_ui    server-url + server-unencrypted together
+//   close_login_screen   the one close path for the login screen (also closes the on-screen keyboard)
+//   logging              LocalTimer; LOG_GENERATIONS_KEPT, rotate_logs, restrict_log_permissions
+//                        (folder 0700, files 0600, best-effort; unit-tested)
+//   main                 logging setup + panic hook (writes PANIC + backtrace to fjord.log), backend
+//                        with the activity tap (activity.rs), app_id, periodic timers, apply saved
+//                        config + the startup gate (profile picker or auto-login), then one wire_*
+//                        call per area — the callbacks live in that area's module; helpers that
+//                        moved out of main.rs are re-exported below the `mod` list
 // ─────────────────────────────────────────────────────────────────────────────
 slint::include_modules!();
 
@@ -253,16 +130,10 @@ pub(crate) fn is_not_found(e: &anyhow::Error) -> bool {
         .unwrap_or(false)
 }
 
-/// Bonfire's own real developer-api.md (fetched live, 2026-08-29, after a
-/// live report of hitting this): both `/plugins/profiles/switch` and
-/// `/plugins/profiles/verify-pin` are "rate limited to 5 failed attempts in
-/// 15 minutes" — an anti-brute-force lockout on the PIN, not a blanket
-/// per-request limit, and NOT distinguishable from a wrong PIN by anything
-/// but this status code (400 = wrong PIN/bad request, 429 = rate-limited).
-/// Used by `switch_to_profile` to swap the raw `HTTP status client error
-/// (429 Too Many Requests) for url (...)` text for something a user can
-/// actually act on — a wire_idle_lock_timer-triggered unlock is exactly as
-/// capable of tripping this as a manual switch is.
+/// Bonfire's developer-api.md: `/plugins/profiles/switch` and `/verify-pin` allow 5 failed
+/// attempts per 15 minutes (anti-brute-force on the PIN) — only the status tells it from
+/// a wrong PIN (400 = wrong PIN/bad request, 429 = rate-limited). Lets switch_to_profile
+/// show a readable message instead of the raw 429 text (also for the idle-lock unlock).
 pub(crate) fn is_rate_limited(e: &anyhow::Error) -> bool {
     e.downcast_ref::<reqwest::Error>()
         .and_then(|e| e.status())
@@ -270,15 +141,11 @@ pub(crate) fn is_rate_limited(e: &anyhow::Error) -> bool {
         .unwrap_or(false)
 }
 
-/// True if `client` is still the session's live client. Multi-second (or, for
-/// the opt-in prewarm, multi-minute) background sweeps write per-user data
-/// (`MediaItem`s embed `UserData`: played/favorite) into shared `FjordState`
-/// caches; without this guard, a sign-out (or a different account signing
-/// back in on a shared HTPC) mid-sweep lets the old account's results keep
-/// landing in the new session's caches for as long as the sweep keeps
-/// running. Mirrors `ws.rs`'s identical guard (CR11-2) for the same class of
-/// risk. Shared by `spawn_screen_cache_refresh` (below, runs on every login)
-/// and `prewarm.rs::spawn_metadata_prewarm` (opt-in, user-triggered).
+/// True if `client` is still the session's live client (Arc::ptr_eq). Long background
+/// sweeps write per-user data (MediaItems carry UserData) into shared FjordState caches;
+/// after a sign-out or a different account signing in, the old sweep's results must not
+/// land in the new session. Like ws.rs's guard. Used by spawn_screen_cache_refresh and
+/// prewarm::spawn_metadata_prewarm.
 pub(crate) fn session_current(state: &Mutex<FjordState>, client: &Arc<JellyfinClient>) -> bool {
     state
         .lock()
@@ -288,16 +155,10 @@ pub(crate) fn session_current(state: &Mutex<FjordState>, client: &Arc<JellyfinCl
         .is_some_and(|c| Arc::ptr_eq(c, client))
 }
 
-/// The Seerr-flavored twin of `session_current` (Bonfire Phase 1, step 8
-/// audit, 2026-08-09) — Discover's own long-running fetches (landing rows,
-/// watchlist, search) hold an `Arc<SeerrClient>`, not an
-/// `Arc<JellyfinClient>`, so they need their own `Arc::ptr_eq` check against
-/// `FjordState.seerr_client` rather than `session_current`'s Jellyfin one.
-/// Same reasoning: `reset_session_state` clears `seerr_client` on both
-/// sign-out and a Bonfire profile switch (a different Jellyfin user can have
-/// a completely different, or no, Seerr connection), and Discover's fetches
-/// are comparatively long (several sequential/parallel TMDB calls) with no
-/// other per-fetch staleness guard of their own.
+/// The Seerr twin of `session_current`: Discover's long fetches hold an
+/// `Arc<SeerrClient>`, compared against `FjordState.seerr_client`. reset_session_state
+/// clears it on sign-out and profile switch (another Jellyfin user can have a different
+/// Seerr connection, or none).
 pub(crate) fn seerr_session_current(
     state: &Mutex<FjordState>,
     client: &Arc<fjord_seerr::SeerrClient>,
@@ -310,15 +171,10 @@ pub(crate) fn seerr_session_current(
         .is_some_and(|c| Arc::ptr_eq(c, client))
 }
 
-// Rate-limits the 7 screen-open "revalidate on a cache hit" functions
-// (collection.rs/detail.rs/series.rs/season.rs/artist.rs/person.rs/album.rs'
-// spawn_X_revalidate) — same bug class, same fix shape as
-// discover::refresh_seerr_admin_status's own cooldown (2026-07-31): each of
-// these fired a full item-detail + list + N-poster refetch on EVERY open of
-// an already-cached screen, no guard at all, so rapid back-and-forth between
-// a couple of recently-viewed items (an ordinary browsing pattern, not an
-// edge case) re-fired the whole fetch set every time. Jellyfin item ids are
-// unique GUIDs, so one shared map (not one per screen type) is sufficient.
+// Rate-limits the 7 screens' "revalidate on cache hit" (spawn_*_revalidate in collection/
+// detail/series/season/artist/person/album.rs): without it, going back and forth between
+// a few recently viewed items re-fired the full detail + list + poster fetch every time.
+// Jellyfin ids are unique GUIDs, so one shared map is enough.
 const REVALIDATE_COOLDOWN: Duration = Duration::from_secs(60);
 
 pub(crate) fn should_revalidate(state: &Mutex<FjordState>, id: &str) -> bool {
@@ -387,18 +243,11 @@ pub(crate) fn show_toast(ww: slint::Weak<MainWindow>, msg: String) {
     });
 }
 
-/// Strips embedded HTML markup out of a metadata field, converting basic
-/// structure (paragraphs, list items, line breaks) into plain-text
-/// equivalents rather than just deleting tags outright. Some metadata
-/// providers — anime-focused ones especially, confirmed live via a
-/// screenshot of a person's bio rendering raw `<p>`/`<strong>`/`<a href>`/
-/// `<ul><li>` markup verbatim — return `Overview`/bio text as real HTML that
-/// Jellyfin passes through unprocessed; Fjord never sanitized it anywhere.
-/// No HTML-parsing crate was added for this — confirmed via `Cargo.toml`
-/// that neither `regex` nor any html crate is a workspace dependency, and
-/// the tag vocabulary actually seen in the wild (`p`, `br`, `strong`, `em`,
-/// `a`, `ul`/`li`, `div`, `span`) is small and well-known enough that a
-/// plain linear scan covers it without one.
+/// Strips HTML out of a metadata field, turning paragraphs/list items/line breaks into
+/// plain-text equivalents. Some metadata providers (anime ones especially) return
+/// Overview/bio text as real HTML that Jellyfin passes through. A plain linear scan —
+/// the tags seen in the wild (p, br, strong, em, a, ul/li, div, span) are few; no
+/// regex/html crate in the workspace.
 pub(crate) fn strip_html_to_text(s: &str) -> String {
     if !s.contains('<') {
         // Fast path — no markup at all, the overwhelming common case.
@@ -475,12 +324,9 @@ pub(crate) fn strip_html_to_text(s: &str) -> String {
 
 // ── model helpers ─────────────────────────────────────────────────────────────
 
-/// `watchlist` is the resolved set of LOCAL Jellyfin ids currently on the
-/// Seerr watchlist (`FjordState.jellyfin_watchlist_ids`) — consulted here,
-/// at construction time, rather than relying solely on a live model patch
-/// afterward, since a patch alone gets silently wiped by the next rebuild
-/// (see `FjordState.jellyfin_watchlist_ids`'s own doc comment for the real
-/// bug this fixes, 2026-07-20).
+/// `watchlist` = the LOCAL Jellyfin ids on the Seerr watchlist
+/// (`FjordState.jellyfin_watchlist_ids`), read at construction time — a live patch alone
+/// would be wiped by the next rebuild.
 pub(crate) fn item_to_card_item(
     i: &MediaItem,
     watchlist: &std::collections::HashSet<String>,
@@ -512,16 +358,11 @@ pub(crate) fn items_to_model(
     ))
 }
 
-/// Apply `fresh` cards to `old`'s model. If `fresh` has the same ids in the same
-/// order as what's already there, mutate the EXISTING model row-by-row via
-/// set_row_data instead of returning a new ModelRc — swapping the model instance
-/// makes Slint destroy and recreate every delegate element (including each card's
-/// poster Image), which re-triggers FadeInTrigger's fade-in even when nothing
-/// about the card actually changed. Only a genuine membership/order difference
-/// rebuilds a new model, which is correct there (a fade is expected). Shared by
-/// every place that builds a fresh Vec<CardItem> and pushes it to a model —
-/// poster.rs's home/series decode, movies.rs's library decode, home.rs's row
-/// merges, context_menu.rs's WS delta-sync upserts (Phase 96 consolidation).
+/// Apply `fresh` cards to `old`'s model: with the same ids in the same order, mutate the
+/// EXISTING rows via set_row_data instead of returning a new ModelRc — a new model makes
+/// Slint recreate every delegate (each poster Image), a visible flash. Only a real
+/// membership/order change builds a new model. Used by every place that pushes a fresh
+/// Vec<CardItem> (poster.rs, movies.rs, home.rs, context_menu.rs's WS upserts, …).
 pub(crate) fn apply_cards_preserving_identity(
     old: &ModelRc<CardItem>,
     fresh: Vec<CardItem>,
@@ -608,15 +449,9 @@ pub(crate) fn get_section_model(window: &MainWindow, sec: HomeSection) -> ModelR
     }
 }
 
-/// Wraps a future with `debug!` timing — user question, 2026-08-14 ("can we
-/// make the login faster, what is it that make it take some time"). The
-/// login/session-setup pipeline (`finish_session_setup`'s own 4-way join,
-/// `fetch_home_data`'s 14-way join inside it) was already confirmed fully
-/// parallel — nothing sequential to fix there — so the real answer to "what
-/// makes it slow" is "whichever single request is slowest," which no log
-/// anywhere currently identifies. Wrapping each branch with this makes the
-/// next real login/session-setup show exactly which call dominates, instead
-/// of only ever seeing the combined `tokio::join!` total.
+/// Wraps a future with `debug!` timing (`timing: <label> took …`): the session setup
+/// joins are fully parallel, so what makes them slow is the single slowest request —
+/// this names it in the log.
 pub(crate) async fn timed<T>(label: &str, fut: impl std::future::Future<Output = T>) -> T {
     let started = std::time::Instant::now();
     let r = fut.await;
@@ -647,24 +482,10 @@ fn ss(s: &str) -> SharedString {
     SharedString::from(s)
 }
 
-/// Drop the last Unicode GRAPHEME CLUSTER from `s`, not the last `char`
-/// (Unicode scalar value). A naive char-based trim never splits a
-/// multi-byte character in half, but it DOES leave a dangling combining
-/// mark behind for a decomposed accented character (e.g. NFD "café" =
-/// 'c','a','f','e', COMBINING ACUTE ACCENT — one backspace removes only
-/// the accent, leaving a bare 'e'), or half a flag emoji (a
-/// regional-indicator pair) — both empirically reproduced with a throwaway
-/// test before this was first fixed for the on-screen keyboard (code
-/// review, 2026-08-22). unicode-segmentation's real UAX #29 grapheme-
-/// cluster boundaries handle both correctly; it's already a direct
-/// `fjord-app` dependency. Extracted (2026-08-23, full on-screen-keyboard
-/// rollout) from `on_onscreen_keyboard_trim_last`'s own closure body so
-/// Discover/Browse/PlaylistPicker's own native (non-on-screen-keyboard)
-/// backspace handling can share the identical fix — those 3 fields are
-/// always append/remove-from-the-end only (no cursor-position concept
-/// exists for them, unlike a real `LineEdit`), so unlike Login's own field
-/// this is safe to apply unconditionally, not just via the on-screen
-/// keyboard's own dispatch path.
+/// Drop the last Unicode GRAPHEME CLUSTER from `s`, not the last `char`: a char-based
+/// trim leaves a dangling combining mark (NFD "café") or half a flag emoji.
+/// unicode-segmentation's UAX #29 boundaries handle both. Used by the on-screen keyboard
+/// and the drawn fields' backspace.
 pub(crate) fn trim_last_grapheme(s: &str) -> String {
     use unicode_segmentation::UnicodeSegmentation;
     let mut graphemes: Vec<&str> = s.graphemes(true).collect();
@@ -679,11 +500,9 @@ pub(crate) fn set_server_url_ui(g: &AppState, url: &str) {
     g.set_server_unencrypted(url.trim().to_ascii_lowercase().starts_with("http://"));
 }
 
-// ── Text cursor for the hand-drawn search fields (2026-10-04) ────────────────
-// Live-reported: in Discover search you couldn't move back to fix one letter,
-// only delete everything after it. `cursor` counts grapheme clusters before
-// the caret (same unit as trim_last_grapheme, so an accented letter or a flag
-// is one step); out-of-range cursors are clamped to the end.
+// ── Text cursor for the hand-drawn search fields ────────────────────────────
+// `cursor` counts grapheme clusters before the caret (the unit trim_last_grapheme uses,
+// so an accented letter or a flag is one step); out-of-range cursors clamp to the end.
 pub(crate) fn grapheme_count(s: &str) -> usize {
     use unicode_segmentation::UnicodeSegmentation;
     s.graphemes(true).count()
@@ -750,19 +569,9 @@ impl tracing_subscriber::fmt::time::FormatTime for LocalTimer {
 }
 
 // ── close_login_screen ───────────────────────────────────────────────────────
-// Real bug, code-review-confirmed 2026-08-22 (Bonfire Phase 3's on-screen
-// keyboard): every one of LoginScreen's 5 real exit paths (auth.rs's two
-// finish_session_setup success closures, profile.rs's open_profile_picker/
-// open_account_picker/on_cancel_add_account) called `g.set_show_login(false)`
-// directly with no guarantee the on-screen keyboard — if a mouse click had
-// skipped its own Done key — was ever closed alongside it. keys.rs's
-// show-onscreen-keyboard gate is checked before every other input tier, so a
-// stray `true` surviving past LoginScreen permanently swallows almost all
-// keyboard/remote input app-wide until sign-out or a profile switch. All 5
-// sites already shared one line, so this is a genuine single choke point
-// rather than 5 independent inline resets — the general fix this class of
-// bug keeps needing, per this project's own "fix at the shared point when
-// one naturally exists" precedent.
+// The one way to close LoginScreen (auth.rs's success paths, profile.rs's pickers and
+// cancel-add-account): it also closes the on-screen keyboard — a stuck
+// show-onscreen-keyboard would swallow input app-wide (keys.rs checks it first).
 pub(crate) fn close_login_screen(g: &AppState) {
     g.set_show_login(false);
     g.set_show_onscreen_keyboard(false);
@@ -770,32 +579,15 @@ pub(crate) fn close_login_screen(g: &AppState) {
     g.set_onscreen_keyboard_cursor(0);
 }
 
-/// How many previous sessions' logs to keep, on top of the current one
-/// (2026-08-15, live-reported: "can we also make it so we save more than
-/// one log" — a single `.old` generation genuinely wasn't enough during a
-/// real multi-restart HTPC testing session that same day: content needed to
-/// diagnose a live-reported bug got rotated away twice in a row before it
-/// could be read, once each time the app was relaunched for an unrelated
-/// test). 10 is a plain, generous-but-bounded round number — matches this
-/// project's own original reasoning for rotating at all in the first place
-/// (an unbounded file once reached 6.4 GB, Phase 62), just applied to N
-/// generations instead of 1.
+/// How many previous sessions' logs to keep besides the current one — one generation
+/// wasn't enough during multi-restart testing (the log needed got rotated away).
+/// Bounded, because an unrotated log once reached 6.4 GB.
 const LOG_GENERATIONS_KEPT: usize = 10;
 
-/// Rotates `fjord.log` → `fjord.log.1` → `fjord.log.2` → ... → `fjord.log.N`
-/// (deleted once past N) in `log_dir`, called once at the very top of every
-/// launch, before anything is written to the new `fjord.log`. Generalizes
-/// the original single `fjord.log` → `fjord.log.old` swap to N generations —
-/// see `LOG_GENERATIONS_KEPT`'s own doc comment for why one generation
-/// stopped being enough. Every step is best-effort (`let _ =`) — a rotation
-/// failure (e.g. a stale generation the user has open in another program)
-/// should never block startup; worst case is one generation not shifting
-/// this run, not a crash.
-/// Owner-only logs (2026-10-09 security review — they hold the server
-/// address and user/device ids): folder 0700, `fjord.log` created 0600
-/// before the appender opens it (appending keeps the mode), and every
-/// rotated generation 0600. Best-effort — the HTPC's log folder is a link to
-/// an NFS share — so failures are returned and logged once tracing is up.
+/// Owner-only logs (they hold the server address and user/device ids): folder 0700,
+/// `fjord.log` created 0600 before the appender opens it (appending keeps the mode),
+/// every rotated generation 0600. Best-effort — the HTPC's log folder is a link to an
+/// NFS share — so failures are returned and logged once tracing is up.
 fn restrict_log_permissions(log_dir: &std::path::Path, keep: usize) -> Vec<String> {
     #[cfg(unix)]
     {
@@ -832,6 +624,9 @@ fn restrict_log_permissions(log_dir: &std::path::Path, keep: usize) -> Vec<Strin
     }
 }
 
+/// Rotates `fjord.log` → `fjord.log.1` → … → `fjord.log.N` (deleted past N), once at the
+/// start of every launch, before anything is written. Best-effort (`let _ =`): a
+/// rotation failure (a file open elsewhere) must never block startup.
 fn rotate_logs(log_dir: &std::path::Path, keep: usize) {
     let gen_path = |n: usize| log_dir.join(format!("fjord.log.{n}"));
     let _ = std::fs::remove_file(gen_path(keep));
@@ -851,14 +646,8 @@ fn main() -> Result<()> {
             std::path::PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(".cache")
         })
         .join("fjord");
-    // Logs move into their own logs/ subdirectory (2026-08-15, same
-    // live-reported request as LOG_GENERATIONS_KEPT above — "move the logs
-    // to .cache/fjord/logs") rather than sitting flat alongside posters/,
-    // discover_posters/, profiles/, etc. One-time best-effort cleanup of the
-    // old flat fjord.log/fjord.log.old (pre-move location) — not a real
-    // migration (nothing in either is worth preserving once superseded by
-    // the new rotation scheme), just avoiding two stale, orphaned copies
-    // sitting around forever.
+    // Logs live in logs/ (fjord.log + rotated generations); remove the old flat
+    // fjord.log / fjord.log.old once (nothing worth keeping).
     let _ = std::fs::remove_file(cache_dir.join("fjord.log"));
     let _ = std::fs::remove_file(cache_dir.join("fjord.log.old"));
     let log_dir = cache_dir.join("logs");
@@ -869,12 +658,9 @@ fn main() -> Result<()> {
     let file_appender = tracing_appender::rolling::never(&log_dir, "fjord.log");
     let (file_writer, _guard) = tracing_appender::non_blocking(file_appender);
     use tracing_subscriber::{EnvFilter, Layer, layer::SubscriberExt, util::SubscriberInitExt};
-    // User's Settings→General log-level choice (default "info"), read directly from
-    // disk before the subscriber exists — the full config load happens later once
-    // `state`/`window` exist, this is just a cheap early peek. Applies on next
-    // launch, not live. RUST_LOG still wins over this when set (dev override) —
-    // the file used to grow without bound before Phase 62's per-launch rotation,
-    // so a debug-level file is now bounded to one session's worth.
+    // Settings → General log level (default "info"), read straight from disk before the
+    // subscriber exists (the full config load comes later). Applies on the next launch;
+    // RUST_LOG overrides it.
     let user_level = load_config()
         .map(|c| c.device.log_level)
         .unwrap_or_default();
@@ -950,19 +736,10 @@ fn main() -> Result<()> {
 
     let rt = tokio::runtime::Runtime::new()?;
 
-    // event-loop branch (2026-09-08) — true global mouse-activity tap,
-    // replacing the old best-effort AppState.record-activity() TouchArea
-    // mechanism. Must run before MainWindow::new(): this is what actually
-    // selects/builds the winit backend with our custom handler attached.
-    // Self-contained (activity::ActivityClock has no dependency on
-    // FjordState/VideoState, which aren't constructed until after this),
-    // and best-effort itself, matching slint::set_xdg_app_id's own
-    // established pattern a few lines below: on any failure,
-    // i-slint-backend-selector's select_internal() (confirmed directly
-    // against its own source) returns before ever calling
-    // i_slint_core::platform::set_platform, so nothing has been partially
-    // applied — Slint's own implicit lazy default-platform init runs
-    // completely normally the moment MainWindow::new() needs one.
+    // Global mouse/keyboard activity tap for the idle lock (activity.rs) — must run before
+    // MainWindow::new(): it selects the winit backend with our handler attached.
+    // Self-contained and best-effort: on failure the backend selector never sets a platform
+    // (checked in its source), so Slint's normal lazy default applies.
     let activity_clock = activity::ActivityClock::new();
     if let Err(e) = slint::BackendSelector::new()
         .with_winit_custom_application_handler(activity::FjordApplicationHandler {
@@ -978,36 +755,13 @@ fn main() -> Result<()> {
 
     let window = MainWindow::new()?;
 
-    // Real bug, live-reported 2026-09-04 ("nothing showed up so i did
-    // start it again" — a double-click on the desktop/taskbar launcher
-    // spawned two full, independent processes, confirmed from the HTPC
-    // log). Root cause, verified directly against Slint 1.16.1's and
-    // winit 0.30.13's own vendored source: Fjord never set a Wayland/X11
-    // app_id anywhere — `i-slint-backend-winit`'s own `ensure_window()`
-    // only calls `window_attributes.with_name(...)` when
-    // `WindowInner::xdg_app_id()` returns `Some` (there is NO fallback to
-    // the executable's own basename), so without this call winit's
-    // Wayland backend never calls `window.set_app_id(...)` at all. With
-    // no app_id, KDE's Task Manager has nothing to match a running Fjord
-    // window against `fjord.desktop` — clicking the launcher/taskbar icon
-    // while Fjord is already running can never recognize that and just
-    // runs `Exec=fjord` fresh every time, structurally, regardless of
-    // timing. This is a materially better fix than a custom single-
-    // instance guard (investigated and explicitly rejected, per direct
-    // user decision — see this commit's own message/CLAUDE.md): a
-    // background process can never truly force-focus a window on Wayland
-    // (winit's own `focus_window()` is a literal no-op there), but a real
-    // click on an existing KDE taskbar entry IS a legitimate, compositor-
-    // mediated interaction, which genuinely can raise+focus a window —
-    // this fix just lets that already-correct KDE mechanism actually see
-    // Fjord's window at all. Must be set before the window is shown (per
-    // `set_xdg_app_id`'s own doc comment) — `MainWindow::new()` alone
-    // doesn't show it, only `window.run()` further down does, so this is
-    // safely placed right after construction. `pkg/fjord.desktop` and
-    // `pkg/fjord-x11.desktop` both declare `StartupWMClass=fjord` to
-    // match this exact value regardless of which launcher started it.
-    // Defensive: a failure here (shouldn't realistically happen on this
-    // Linux-only target) must never be a reason Fjord fails to start.
+    // Set the Wayland/X11 app_id: Slint's winit backend only names the window when an xdg
+    // app_id is set (no fallback to the binary name), and without it KDE's task manager
+    // can't match the window to fjord.desktop — so clicking the launcher while Fjord runs
+    // started a second process instead of raising the window. (A single-instance guard was
+    // considered and rejected: a background process can't focus a window on Wayland, but
+    // a taskbar click can.) Must happen before the window is shown (window.run() below);
+    // the .desktop files declare StartupWMClass=fjord. A failure must never stop startup.
     if let Err(e) = slint::set_xdg_app_id("fjord") {
         tracing::warn!("couldn't set Wayland/X11 app id: {e}");
     }
@@ -1122,22 +876,10 @@ fn main() -> Result<()> {
                 );
             }
         }
-        // Also triggers the Home/Movies/TV dashboard Watchlist rows (2026-07-20)
-        // — needs to fire at startup, not just on first Discover-tab arrival
-        // (nav==6's own call), since Home is the very first screen shown after
-        // login. Its own discover_watchlist_fetched guard makes calling it
-        // redundantly alongside that nav==6 trigger safe. Deliberately called
-        // AFTER the block above's `s` lock guard is dropped, not inside it —
-        // ensure_discover_watchlist synchronously locks `state` itself before
-        // spawning (to check discover_watchlist_fetched and clone the client),
-        // and std::sync::Mutex isn't reentrant: calling it while `s` was still
-        // held above self-deadlocked the whole app before window.run() was
-        // ever reached (real bug, live-reported "fjord do not even start" —
-        // the process hung forever with no window, confirmed via fjord.log
-        // stopping right after the async-spawned seerr debug line, and via
-        // /proc/<pid>/wchan showing futex_do_wait on every launch attempt).
-        // It has its own internal seerr_client presence check, so it doesn't
-        // need to be nested inside the `if let Some(client) = ...` above.
+        // Also fills the Home/Movies/TV Watchlist rows, so it runs at startup, not only on the
+        // first Discover visit (its own fetched-once guard makes the double call safe). Called
+        // AFTER the `s` guard above is dropped: it locks `state` itself, and std::sync::Mutex
+        // isn't reentrant — calling it under `s` hung startup before any window appeared.
         discover::ensure_discover_watchlist(
             Arc::clone(&state),
             window.as_weak(),
@@ -1145,32 +887,16 @@ fn main() -> Result<()> {
         );
         apply_settings_to_window(&window, &state.lock().unwrap());
 
-        // Bonfire Phase 1, step 6 (2026-08-09): with 2+ known profiles, the
-        // launch policy decides whether to ask which one via the picker
-        // instead of silently resuming — see should_show_picker_at_startup's
-        // own doc comment. With 0 or 1 profile (every existing single-
-        // profile install, today) this is unconditionally AutoLogin and the
-        // auto-login flow below is byte-for-byte what it always was.
-        // Returns a 3-way StartupGate, not a plain bool, since 2026-08-14 —
-        // a PIN-protected "Remember Last"/"Default Profile" target now
-        // needs its own picker-with-PIN-already-open path instead of either
-        // silently skipping the PIN (the real bug this fixed) or falling
-        // back to an untargeted full picker.
+        // The startup gate (profile::should_show_picker_at_startup): with 0–1 profiles always
+        // AutoLogin (the plain auto-login below); otherwise the launch policies may ask via a
+        // picker, open the PIN pad for a remembered/default profile, or require a password.
         let gate = {
             let mut s = state.lock().unwrap();
             profile::should_show_picker_at_startup(&mut s.config)
         };
 
-        // Launch Fullscreen is device-scoped (DeviceConfig, not
-        // ProfileSettings) — applies before either branch below, not just
-        // inside the auto-login `else`. Real bug, live-reported 2026-08-14
-        // ("it shuld also respect the fullscreen toggle in the config"):
-        // this used to sit inside the `else` block only, so any install
-        // that hits the picker (2+ profiles, launch policy Always Ask or
-        // Remember Last with no valid resumable profile) launched windowed
-        // regardless of the setting — the picker itself, and whichever
-        // profile the user then picks, both need the window already
-        // fullscreen by the time they show, not just the eventual dashboard.
+        // Launch Fullscreen is device-scoped and applies before every branch below — the
+        // pickers (and the profile picked there) need the window fullscreen already.
         if state.lock().unwrap().config.device.launch_fullscreen {
             window.window().set_fullscreen(true);
         }
@@ -1178,15 +904,9 @@ fn main() -> Result<()> {
         match gate {
             profile::StartupGate::ShowAccountPicker => {
                 profile::open_account_picker(&state, &window, false);
-                // Real bug, live-reported 2026-09-01 — see
-                // sync_all_known_accounts_in_background's own doc comment for
-                // the full story: a change made entirely outside Fjord (here,
-                // kicking an account via Jellyfin's own web UI) has no way to
-                // reach the cold-start picker before this call, since no
-                // authenticated session exists yet at this exact point. Fired
-                // AFTER the picker opens (matches the sidebar's own "Switch
-                // Profile"/"Switch Account" precedent) — instant open from
-                // cached data, self-corrects a moment later if anything changed.
+                // Refresh every known account's Bonfire data in the background while the cold-start
+                // picker shows from cache (changes made elsewhere, e.g. a kick via Jellyfin's web UI,
+                // correct themselves a moment later) — see sync_all_known_accounts_in_background.
                 profile::sync_all_known_accounts_in_background(&state, &window, rt.handle());
             }
             profile::StartupGate::ShowProfilePicker(account_root_id) => {
@@ -1208,19 +928,12 @@ fn main() -> Result<()> {
                 g.set_login_username_prefill(ss(&username));
                 g.set_login_append_mode(false);
                 g.set_login_append_source(ss(""));
-                // login-remember reflects this account's own already-known
-                // false value (code review 2026-08-16, resolved via
-                // AskUserQuestion) — a plain re-login without touching the
-                // checkbox keeps remember_login=false, rather than silently
-                // flipping it back to the default true. Mirrors
-                // profile::require_login_for_account's identical fix for the
-                // mid-session (picker-driven) RequireLogin path.
+                // "Remember this login" starts as this account's stored value (off), so a plain re-login
+                // doesn't turn it back on — like profile::require_login_for_account.
                 g.set_login_remember(false);
                 g.set_show_login(true);
-                // Deferred (2026-08-15) — this arm runs synchronously, before
-                // window.run() has started the event loop, same as the picker
-                // arms right above it; see profile::grab_focus_deferred's own
-                // doc comment for the full reasoning.
+                // Deferred: this runs before window.run() starts the event loop (see
+                // profile::grab_focus_deferred).
                 profile::grab_focus_deferred(&window);
             }
             profile::StartupGate::AutoLogin => {
@@ -1408,13 +1121,8 @@ fn main() -> Result<()> {
         });
     }
 
-    // On-screen alphanumeric keyboard (Bonfire Phase 3, 2026-08-22) — two
-    // small, pure, generic string utilities Slint's own expression language
-    // can't do on its own (no `.length`/`.substring()` on `string`, only
-    // `.character-count()`/`.to-uppercase()`/`.to-lowercase()`/`.is-empty()`,
-    // confirmed against the real Slint 1.16.1 compiler source). No screen or
-    // field knowledge here — reusable by every future screen this keyboard
-    // gets wired into, not just Login.
+    // On-screen keyboard string helpers Slint can't do itself (strings have no
+    // length/substring) — screen-agnostic.
     AppState::get(&window).on_onscreen_keyboard_trim_last(
         |s: slint::SharedString| -> slint::SharedString { trim_last_grapheme(&s).into() },
     );
