@@ -106,7 +106,7 @@
 //                        on_toggle_artist_fav; on_play_artist_all (fetches all album tracks, starts queue)
 //     album              on_open_album → album::open_album_screen; on_close_album; on_play_album_track;
 //                        on_toggle_album_fav; on_toggle_album_played
-//     series             on_open_series, on_series_select_season (cache+gen guard), on_play_series_episode,
+//     series             on_open_series, on_series_select_season (cache+generation guard), on_play_series_episode,
 //                        on_toggle_series_played, on_toggle_series_fav
 //     season             on_open_season_detail, on_close_season_detail, on_toggle_season_fav, on_toggle_season_played
 //     person             on_open_person, on_open_discover_person (2026-08-13, TMDB cast member), on_close_person
@@ -4564,7 +4564,7 @@ fn main() -> Result<()> {
 
             // Not cached — increment generation counter and fetch from network.
             s.series_season_generation += 1;
-            let gen = s.series_season_generation;
+            let generation = s.series_season_generation;
             drop(s);
 
             if let Some(w) = ww_ss.upgrade() {
@@ -4586,7 +4586,7 @@ fn main() -> Result<()> {
                 debug!("series {} season {} — {} episode(s)", sid2, season_id, eps.len());
                 {
                     let mut s = state_ss2.lock().unwrap();
-                    if s.series_season_generation != gen { return; }
+                    if s.series_season_generation != generation { return; }
                     s.series_episode_items = eps.clone();
                     s.series_episode_cache.insert(season_id.clone(), eps.clone());
                 }

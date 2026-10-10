@@ -4,7 +4,7 @@
 //                        app-content-loading=true when either is a miss; spawn async: fetch
 //                        artist albums + portrait + detail in parallel (cached ones skip their
 //                        network call); build CardItem model with posters, applied via
-//                        apply_cards_preserving_identity; gen-guarded invoke_from_event_loop
+//                        apply_cards_preserving_identity; generation-guarded invoke_from_event_loop
 //                        shows page (show-artist=true)
 //   handle_key           keyboard dispatch: Back button / btn row / bio (slot 2) / album grid;
 //                        Up from row 0 → bio (or btn row); btn row → Back / bio / grid;
@@ -39,7 +39,7 @@ pub(crate) fn open_artist_screen(
     let is_cache_hit = cached_albums.is_some() && cached_detail.is_some();
     tracing::debug!("open_artist_screen({id}): cache_hit={is_cache_hit}");
 
-    let gen = if let Some(w) = ww.upgrade() {
+    let generation = if let Some(w) = ww.upgrade() {
         let g = AppState::get(&w);
         g.set_artist_id(id.as_str().into());
         g.set_artist_title(title.as_str().into());
@@ -96,7 +96,7 @@ pub(crate) fn open_artist_screen(
                 let _ = slint::invoke_from_event_loop(move || {
                     if let Some(w) = ww_err.upgrade() {
                         let g = AppState::get(&w);
-                        if g.get_artist_open_gen() == gen {
+                        if g.get_artist_open_gen() == generation {
                             g.set_app_content_loading(false);
                         }
                     }
@@ -114,7 +114,7 @@ pub(crate) fn open_artist_screen(
                 let _ = slint::invoke_from_event_loop(move || {
                     if let Some(w) = ww.upgrade() {
                         let g = AppState::get(&w);
-                        if g.get_artist_open_gen() == gen {
+                        if g.get_artist_open_gen() == generation {
                             g.set_app_content_loading(false);
                         }
                     }
@@ -171,10 +171,10 @@ pub(crate) fn open_artist_screen(
         let _ = slint::invoke_from_event_loop(move || {
             let Some(w) = ww2.upgrade() else { return };
             let g = AppState::get(&w);
-            if g.get_artist_open_gen() != gen { return; }
+            if g.get_artist_open_gen() != generation { return; }
             // Session guard (Bonfire Phase 1, step 8 audit, 2026-08-09) —
             // see collection.rs's own open_collection_screen for the full
-            // reasoning (same gen-counter-alone gap, same fix).
+            // reasoning (same generation-counter-alone gap, same fix).
             if !crate::session_current(&state_task, &client) { return; }
 
             g.set_artist_meta(meta2.as_str().into());
@@ -223,13 +223,13 @@ pub(crate) fn open_artist_screen(
     // fallback. This revalidation is what closes that gap for whatever's
     // actually on screen right now.
     if is_cache_hit {
-        spawn_artist_revalidate(id_revalidate, gen, state_revalidate, ww_revalidate, rt_revalidate);
+        spawn_artist_revalidate(id_revalidate, generation, state_revalidate, ww_revalidate, rt_revalidate);
     }
 }
 
 fn spawn_artist_revalidate(
     id:    String,
-    gen:   i32,
+    generation:   i32,
     state: Arc<Mutex<FjordState>>,
     ww:    slint::Weak<MainWindow>,
     rt:    tokio::runtime::Handle,
@@ -284,7 +284,7 @@ fn spawn_artist_revalidate(
         let _ = slint::invoke_from_event_loop(move || {
             let Some(w) = ww.upgrade() else { return };
             let g = AppState::get(&w);
-            if g.get_artist_open_gen() != gen { return; }
+            if g.get_artist_open_gen() != generation { return; }
             g.set_artist_meta(meta.as_str().into());
             g.set_artist_overview(crate::strip_html_to_text(detail.overview.clone().unwrap_or_default().trim()).into());
             g.set_artist_is_favorite(detail.user_data.is_favorite);

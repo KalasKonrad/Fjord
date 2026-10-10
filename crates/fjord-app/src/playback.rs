@@ -3046,7 +3046,7 @@ pub(crate) fn wire_mpv_timer(
                         // Already negotiated at VideoReconfig when presynced.
                         let negotiate_after = !vs.hdr_negotiation_attempted;
                         vs.hdr_negotiation_attempted = true;
-                        let gen = vs.playback_generation;
+                        let generation = vs.playback_generation;
                         let ds_settings = crate::display_sync::DisplaySyncSettings::from_device_config(
                             &state_timer.lock().unwrap().config.device,
                         );
@@ -3056,7 +3056,7 @@ pub(crate) fn wire_mpv_timer(
                             if fps_known {
                                 crate::display_sync::sync_to_source(state2, dims, meta.clone(), ds_settings).await;
                             }
-                            if video2.lock().unwrap().playback_generation != gen {
+                            if video2.lock().unwrap().playback_generation != generation {
                                 // Stopped/replaced while the mode switch was
                                 // settling — whatever's playing now already
                                 // ran (or will run) its own Branch B trigger.
@@ -3850,14 +3850,14 @@ pub(crate) fn wire_mpv_timer(
                     let old_id    = vs.item_id.clone();
                     let old_ticks = vs.last_known_pos_ticks;
                     vs.playback_generation = vs.playback_generation.wrapping_add(1);
-                    let gen = vs.playback_generation;
+                    let generation = vs.playback_generation;
                     vs.item_id              = Some(qi.id.clone());
                     vs.now_playing          = Some(qi.clone());
                     vs.current_is_audio     = true;
                     vs.lyrics               = None;
                     vs.lyrics_available     = false;
                     vs.last_known_pos_ticks = 0;
-                    gapless_commit = Some((qi, gen, old_id, old_ticks));
+                    gapless_commit = Some((qi, generation, old_id, old_ticks));
                 }
             }
 
@@ -3948,9 +3948,9 @@ pub(crate) fn wire_mpv_timer(
         }
 
         // ── Gapless transition: update UI + progress reports, no teardown ─────
-        if let Some((qi, gen, old_id, old_ticks)) = gapless_commit {
+        if let Some((qi, generation, old_id, old_ticks)) = gapless_commit {
             info!("gapless: now playing {} — {}", qi.id, qi.title);
-            apply_audio_track(&video_timer, &window_timer, &rt_handle, &qi, gen);
+            apply_audio_track(&video_timer, &window_timer, &rt_handle, &qi, generation);
             if let Some(w) = window_timer.upgrade() {
                 crate::push_queue_display(&video_timer.lock().unwrap(), &AppState::get(&w));
             }
