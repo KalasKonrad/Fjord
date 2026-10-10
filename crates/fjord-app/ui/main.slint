@@ -1,123 +1,38 @@
 // ── fjord-app · main.slint ───────────────────────────────────────────────────
-//   MainWindow    window root: sync-layout, auto-advance banner, FocusScope
-//   keyboard handler  single AppState.handle-key() callback → Rust keys.rs
-//   idle-activity tracker  (Bonfire Phase 4, 2026-08-29) always-mounted, lowest-z-order
-//                 full-window TouchArea, declared before everything else — best-effort mouse
-//                 activity for profile.rs::wire_idle_lock_timer's idle clock (only receives
-//                 `moved` for screen regions nothing else currently covers); gate34/gate24
-//                 (Blocklist/PlaylistPicker) also gained the !show-profile-picker/
-//                 !show-account-picker exclusion every sibling overlay already had
-//   bar layout    bottom of window: MusicPlayerBar (72px, is-audio-playing) stacked above
-//                 MiniPlayerBar (108/56px, has-background-player && !is-playing);
-//   HDR Stage 5 (2026-10-05): background transparent while AppState.video-surface-active;
-//                 layer 1 gets a VideoSpot (its Image hidden); layer 2 isn't mounted then;
-//                 _video-covers-content hides AppShell + Browse/Library/Discover under the
-//                 fullscreen player and layer 2's area instead of covering them
-//                 total-bar-h = music-bar-h + bar-h; content fills y=0 height=parent.height-total-bar-h
-//   screen slots  ConnectingScreen / OfflineScreen (startup connectivity gate, checked
-//                 before show-login) / AccountPickerScreen (gate40, 2026-08-14, 2-tier
-//                 account/profile redesign — sits above ProfilePickerScreen, shown with
-//                 2+ known accounts) / ProfilePickerScreen (gate35, Bonfire Phase 1,
-//                 account-scoped) / LoginScreen, AppShell + HomeScreen / DashboardScreen /
-//                 MusicDashboard / CollectionsDashboard /
-//                 nav: 0=Home, 1=TV Shows, 2=Movies, 3=Collections, 4=Music, 5=Browse All, 6=Discover
-//                 (Discover hidden unless settings-seerr-enabled)
-//   BrowseScreen  NOT an AppShell content slot (2026-07-31) — permanently-mounted sibling right
-//                 after AppShell, `visible: show-browse` toggles it, `browse-ever-shown` latches
-//                 the one-time mount; its ~800-element list would otherwise be torn down/rebuilt
-//                 on every sidebar pass through nav==5, a real HTPC hitch — see CLAUDE.md
-//   LibraryGrid   also NOT an AppShell content slot (2026-07-31) — ONE permanently-mounted sibling
-//                 shared across nav=1,2,3,4 (with show-library), `library-ever-shown` latches the
-//                 one-time mount, `grid-title` computed from active-nav replaces the 4 old static
-//                 per-nav literals; same reasoning as BrowseScreen, its MediaCard grid is heavier
-//                 per-element and up to ~600 items — see CLAUDE.md
-//   DiscoverScreen  also NOT an AppShell content slot (2026-07-31) — permanently-mounted sibling,
-//                 `discover-ever-shown` latches the one-time mount; deferred from the original
-//                 Browse/LibraryGrid pass (smaller item counts in practice), converted when asked
-//                 directly whether the deferral still stood — see CLAUDE.md
-//   overlay z-order (bottom→top)  SeriesScreen, SeasonScreen, ArtistScreen, CollectionScreen, AlbumScreen,
-//   _osk-open           resets AppState.onscreen-keyboard-caret to the end whenever the on-screen
-//                       keyboard opens (2026-10-05)
-//                                  DetailPage, RequestDetailScreen (Seerr), RequestOptionsOverlay (Seerr,
-//                                  4K/tags/seasons modal opened from RequestDetailScreen's Request button),
-//                                  CalendarScreen (Seerr, 2026-07-18, opened from Discover's "Coming Up"
-//                                  row sentinel — see calendar.slint), BlocklistScreen (Seerr, 2026-08-06,
-//                                  Manage Blocklist — opened from Settings, see blocklist.slint),
-//                                  PersonScreen, ContextMenu;
-//                                  ConnectSeerrScreen (Seerr) layers above PlaylistPicker, below nothing else
-//   video-behind-UI layer  above AppShell, only when overlay screen is open
-//   loading overlay   semi-transparent #000000c0 + LoadingSpinner while app-content-loading
-//   toast overlay     bottom-center error pill; auto-dismissed after 4 s by toast-timer
-//   PersonScreen overlay (above Detail/Season/Series/Artist/Collection/Album; below ContextMenu)
-//   QueuePanel overlay (above ContextMenu, shown when AppState.show-queue-panel)
-//   LyricsView overlay (above QueuePanel, shown when show-lyrics && is-audio-playing && !show-now-playing —
-//                       suppressed during Now Playing, which already embeds its own lyrics panel, CR11-8)
-//   NowPlayingScreen fullscreen music view (below ContextMenu/QueuePanel/LyricsView, shown when show-now-playing && is-audio-playing)
-//   ContextMenu overlay (shown when AppState.show-context-menu)
-//   screen-change fade  two different mechanisms, split by whether the site is inside a
-//                       shared Layout or free-floating:
-//                       - FadeGate (widgets.slint), fade BOTH in and out — every free-floating
-//                         direct child of MainWindow with no enclosing Layout
-//                         (ConnectingScreen/OfflineScreen/LoginScreen, all 7 overlay
-//                         screens series/season/artist/collection/album/detail/person, now
-//                         playing, context menu, playlist picker, queue panel, lyrics,
-//                         volume overlay, toast, the Up Next banner, plus Seerr's
-//                         ConnectSeerrScreen, RequestDetailScreen, and RequestOptionsOverlay
-//                         (same dim-backdrop-plus-centered-box shape as PlaylistPicker)):
-//                         `gateN := FadeGate {
-//                         show: <condition>; }` declared as an always-present sibling, gating
-//                         `if gateN.mounted: X { opacity: gateN.fade-opacity; animate opacity
-//                         {...} }` — FadeGate keeps `mounted` true for one fade-out's worth of
-//                         time after `show` goes false, so Back/switching-away plays a real
-//                         fade instead of Slint's `if` destroying the element the instant the
-//                         condition flips.
-//                       - FadeInTrigger (widgets.slint), fade IN ONLY — BrowseScreen,
-//                         LibraryGrid, and DiscoverScreen's own one-time mount fade (they moved
-//                         out to permanently-mounted siblings 2026-07-31, see browse-ever-shown/
-//                         library-ever-shown/discover-ever-shown below; every open after the
-//                         first is a plain `visible` toggle with no fade at all, entrance-only
-//                         is all a one-time mount ever needs), plus player.slint's 3
-//                         skip-segment overlays.
-//                       - The AppShell `@children` sites (HomeScreen, 2×DashboardScreen,
-//                         CollectionsDashboard, MusicDashboard, SettingsScreen) use neither —
-//                         see the dedicated shown-nav/nav-fade block right before AppShell's own
-//                         instantiation below for why and how. Short version: AppShell `inherits
-//                         HorizontalLayout` (layout.slint) and each of these gets
-//                         `horizontal-stretch: 1` in that same content slot, which assumes
-//                         exactly one is mounted at a time — a true FadeGate-style simultaneous
-//                         crossfade was tried here once (2026-07-13) and broke every dashboard
-//                         switch (both screens mounted during the fade-out, the layout
-//                         squeezing space between them instead of giving it all to one),
-//                         reverted same day to instant-unmount + entrance-only fade — which
-//                         itself reads as a flash regardless of duration (real UX research: a
-//                         hard cut into a fade is jarring no matter how the fade is tuned, live-
-//                         reported here the same way, 2026-08-21). Fixed properly by making the
-//                         switch itself sequential rather than instant — fade the outgoing
-//                         screen out FIRST, swap while invisible, then fade the incoming one in
-//                         — never two mounted at once, so the 2026-07-13 bug can't recur.
-//                       All of the above scale with settings-animation-speed.
-//                       PlayerScreen and the two docked bars (MiniPlayerBar/
-//                       MusicPlayerBar) are deliberately excluded — video start latency is
-//                       too perception-sensitive, and the bars share total-bar-h with the
-//                       content area's height so fading their opacity alone (without also
-//                       delaying the resulting layout shift) would look like a gap
-//   bundled fonts   NotoSansSymbols2-Regular.ttf + NotoSansMath-Regular.ttf (Apache-2.0,
-//                   assets/fonts/) imported here purely for their compile-time side effect —
-//                   Slint registers every `import "*.ttf"` found anywhere in the project as a
-//                   glyph-coverage fallback for the whole app, no font-family binding needed
-//                   anywhere else. Added because many of the Unicode symbol glyphs used
-//                   throughout the UI (⏮⏭⋮🔉🔊 and others) aren't covered by every system's
-//                   default font stack — confirmed live on the HTPC, which was missing them
-//                   while the dev machine's fuller desktop font set happened to cover them,
-//                   exactly the kind of system-dependent inconsistency this eliminates.
-//                   Inter-Regular/Bold.ttf (OFL-1.1) + AdwaitaSans-Regular.ttf (OFL-1.1) are
-//                   bundled the same way: Inter is Fjord's own designed-around default body
-//                   font (`MainWindow.font-family`, Settings → UI → Text font can override it
-//                   with any font installed on the host); Adwaita Sans supplies ♥/✓ specifically
-//                   (IconCircleButton, widgets.slint) — hard-pinned regardless of which text
-//                   font is active, since several candidate fonts turned out to have their own
-//                   competing glyphs for common icons (confirmed via a live font-comparison
-//                   pass), which would otherwise make icon appearance depend on font choice.
+//   MainWindow    window root: sync-layout (grid/card sizes from the width), the Up Next banner
+//                 (gate29, outside the fullscreen player), the one FocusScope `fs` →
+//                 AppState.handle-key() → keys.rs
+//   bar layout    MusicPlayerBar (72px, is-audio-playing) above MiniPlayerBar (108/56px,
+//                 has-background-player && !is-playing); content fills
+//                 height = parent.height - total-bar-h
+//   video behind UI  layer 1 below AppShell (dashboard gaps show the video), layer 2 above it
+//                 while a Detail/Series/… screen is open. HDR Stage 5: the window is transparent
+//                 while video-surface-active — layer 1 gets a VideoSpot, layer 2 isn't mounted,
+//                 and _video-covers-content hides AppShell + the permanently-mounted screens
+//                 under the player / layer 2 instead
+//   startup tier  ConnectingScreen / OfflineScreen (connectivity gate) / LoginScreen /
+//                 ProfilePickerScreen (gate35) / AccountPickerScreen (gate40, above it)
+//   AppShell      dashboards in its content slot (nav 0 Home, 1 TV, 2 Movies, 3 Collections,
+//                 4 Music, 5 Browse All, 6 Discover if Seerr is enabled, 10 Settings): switched
+//                 sequentially by shown-nav/nav-fade (fade out, swap, fade in — never two mounted)
+//   BrowseScreen / LibraryGrid / DiscoverScreen  permanently-mounted siblings outside the content
+//                 slot (big lists built once; `*-ever-shown` latches, then `visible` toggles);
+//                 LibraryGrid serves navs 1–4
+//   _osk-open     resets AppState.onscreen-keyboard-caret when the on-screen keyboard opens
+//   overlays (bottom → top)  PlayerScreen; Series, Season, Artist, Collection, Album, Detail,
+//                 RequestDetail, RequestOptions, Calendar, Blocklist, Person (last — covers the
+//                 screens it opens from); NowPlaying, ContextMenu, PlaylistPicker,
+//                 SidebarProfileMenu, ConnectSeerr, ManageProfiles, ProfileEdit,
+//                 RememberLoginConfirm, BonfireGroup, BonfireAdmin, Sign Out confirm, Cancel
+//                 Request confirm, QueuePanel, LyricsView, VolumeOverlay, Toast (4 s)
+//   fades         free-floating overlays mount through `gateN := FadeGate` (fade in and out);
+//                 the permanently-mounted screens use FadeInTrigger once; PlayerScreen and the
+//                 bars don't fade (start latency; bars change the layout height). All scale
+//                 with settings-animation-speed. Overlays over content get a !is-playing guard.
+//   bundled fonts  imported for their side effect (Slint registers every imported .ttf as an
+//                 app-wide fallback): Noto Sans Symbols 2 + Math (symbol glyphs some systems
+//                 lack), Inter (default text font, MainWindow.font-family), Adwaita Sans (♥ ✓,
+//                 pinned on those icons whatever the text font)
 // ─────────────────────────────────────────────────────────────────────────────
 import "../../../assets/fonts/NotoSansSymbols2-Regular.ttf";
 import "../../../assets/fonts/NotoSansMath-Regular.ttf";
@@ -303,69 +218,40 @@ export component MainWindow inherits Window {
     property <length> music-bar-h: AppState.is-audio-playing ? 72px : 0px;
     property <length> total-bar-h: bar-h + music-bar-h;
 
-    // Browse All's list is a plain `for` over AppState.media-items (~800 items
-    // on a real library, no virtualization) — as an ordinary AppShell content
-    // slot it used to be torn down and rebuilt in full on every single sidebar
-    // move through nav==5, including a fraction-of-a-second pass-through while
-    // holding an arrow key. Live-reported HTPC hitch, 2026-07-31. Pulled out
-    // of AppShell's shared horizontal-stretch:1 layout (below) into this
-    // permanently-mounted sibling instead: `browse-ever-shown` latches true
-    // the first time show-browse ever goes true and never resets, so the
-    // ~800 elements are constructed exactly once per session — every
-    // subsequent open/close after that is a plain `visible` toggle (which,
-    // per this codebase's own documented gotcha, also correctly removes it
-    // from hit-testing when false), not a rebuild.
-    // Local mirror triggers the changed callback (same idiom as _toast-vis
-    // below) — Slint's `changed` only observes a property declared on this
-    // component, not a dotted path straight into an imported global.
+    // Browse All's list is a plain `for` over AppState.media-items (~800 items, no
+    // virtualization): rebuilding it on every sidebar pass through nav 5 caused hitches. So it
+    // lives outside AppShell's content slot, permanently mounted once first shown
+    // (browse-ever-shown latches) and toggled with `visible` (which also removes it from
+    // hit-testing). The local mirror is needed because `changed` only watches this component's
+    // properties.
     property <bool> _browse-vis: AppState.show-browse;
     property <bool> browse-ever-shown: false;
     changed _browse-vis => { if _browse-vis { browse-ever-shown = true; } }
 
-    // LibraryGrid — same class of issue, same fix, 2026-07-31 follow-up.
-    // `home.slint`'s grid is a plain `for row: for col: MediaCard {...}` over
-    // the full AppState.library-display (up to ~600 real items on a real
-    // library), and MediaCard is markedly heavier per-instance than
-    // BrowseItem (a poster Image, up to 4 conditional badges, a progress
-    // bar). It used to be 4 separate AppShell content slots (nav 1/2/3/4),
-    // each an ordinary mount/unmount. All 4 already read the exact same
-    // shared AppState.library-display/library-cols regardless of which nav
-    // opened them — the only thing that varied was a static title string —
-    // so this consolidates into ONE permanently-mounted sibling rather than
-    // 4, unlike Browse All which only ever needed one to begin with.
+    // LibraryGrid — same fix: home.slint's grid is a plain `for` over library-display (up to
+    // ~600 MediaCards, each heavier than a BrowseItem). Navs 1–4 all show the same
+    // library-display, so one permanently-mounted instance serves them all.
     property <bool> _library-vis: !AppState.show-browse && AppState.show-library &&
         (AppState.active-nav == 1 || AppState.active-nav == 2 || AppState.active-nav == 3 || AppState.active-nav == 4);
     property <bool> library-ever-shown: false;
     changed _library-vis => { if _library-vis { library-ever-shown = true; } }
 
-    // DiscoverScreen — same class of issue, 2026-07-31 follow-up (deferred
-    // from the original Browse/LibraryGrid pass, then requested explicitly).
-    // discover.slint's search/filtered-browse grid (AppState.discover-results)
-    // grows unboundedly via accumulating pagination (maybe_autofill_grid has
-    // no upper cap) and shares the identical AppShell content-slot mount-
-    // churn shape — torn down and reconstructed on every sidebar pass through
-    // nav==6. In practice this holds dozens of items, not Browse's ~800 or
-    // LibraryGrid's ~600, but the fix is the same low-risk mechanical pattern
-    // either way: confirmed no init => block or other component-lifecycle-
-    // dependent local state in DiscoverScreen before relying on that (its
-    // internal kb-y/kb-x/content-h properties are all either AppState-driven
-    // or safely read root's own size, unaffected by hosting context).
-    // The on-screen keyboard's own caret for LineEdit targets starts at the
-    // end of the field every time the keyboard opens (2026-10-05, ◀ ▶ keys —
-    // see AppState.onscreen-keyboard-edit). One tracker here instead of a
-    // reset at each of the ~20 places that open the keyboard.
-    // HDR Stage 5 (2026-10-05): with the window transparent over the video
-    // subsurface, whatever an opaque video used to cover would show through
-    // instead — the fullscreen player, and layer 2 below (video behind an
-    // open Detail/Series/… screen). Those hide AppShell + the three
-    // permanently-mounted screens instead of covering them.
+    // HDR Stage 5: with the window transparent over the video subsurface, what an opaque
+    // video used to cover would show through — the fullscreen player, and layer 2 below
+    // (video behind an open Detail/Series/… screen). Those hide AppShell and the three
+    // permanently-mounted screens instead.
     property <bool> _layer2-shown: AppState.video-behind-ui && AppState.has-background-player && !AppState.is-playing
         && (AppState.show-detail || AppState.show-series || AppState.show-season || AppState.show-person || AppState.show-collection || AppState.show-album || AppState.show-artist);
     property <bool> _video-covers-content: AppState.video-surface-active && (AppState.is-playing || _layer2-shown);
 
+    // The on-screen keyboard's caret for LineEdit targets starts at the end of the field every
+    // time it opens (◀ ▶ keys, see AppState.onscreen-keyboard-edit) — one tracker here instead
+    // of a reset at each place that opens the keyboard.
     property <bool> _osk-open: AppState.show-onscreen-keyboard;
     changed _osk-open => { if _osk-open { AppState.onscreen-keyboard-caret = -1; } }
 
+    // DiscoverScreen — same fix again: its grid grows with pagination
+    // (maybe_autofill_grid has no cap). It has no lifecycle-dependent state (no init =>).
     property <bool> _discover-vis: !AppState.show-browse && AppState.active-nav == 6;
     property <bool> discover-ever-shown: false;
     changed _discover-vis => { if _discover-vis { discover-ever-shown = true; } }
@@ -444,10 +330,8 @@ export component MainWindow inherits Window {
             easing: ease-out-expo;
         }
     }
-    // Account tier (2026-08-14) — same shape as gate35, sits above it: a
-    // profile-tier switch (via account-picker-select) explicitly hides
-    // show-account-picker before opening ProfilePickerScreen, so the two
-    // never race to both be true at once.
+    // Account tier — same shape as gate35, above it: account-picker-select hides
+    // show-account-picker before opening ProfilePickerScreen, so the two are never both true.
     gate40 := FadeGate {
         show: !AppState.show-connecting && !AppState.show-offline && AppState.show-account-picker;
     }
@@ -460,51 +344,17 @@ export component MainWindow inherits Window {
         }
     }
 
-    // Dashboard tab switch — sequential fade-out-then-switch-then-fade-in,
-    // 2026-08-21. The 6 content-slot screens below each carry
-    // `horizontal-stretch: 1` in AppShell's one shared HorizontalLayout
-    // slot (see this file's own screen-change-fade doc comment above),
-    // which assumes exactly one is mounted at any instant — a true
-    // simultaneous crossfade (FadeGate) was tried here once (2026-07-13)
-    // and broke every dashboard switch for the whole fade-out window, both
-    // screens mounted at once, the layout splitting/squeezing space
-    // between them instead of giving it all to one. Reverted that day to
-    // instant-unmount + fade-in-only (FadeInTrigger) — but that trade is
-    // itself an asymmetric transition (a hard cut, then a fade), which
-    // real UX research (NN/g's animation-duration guidance, Material/HIG's
-    // convergence on ~200-250ms for navigational moves) calls out
-    // directly: a hard cut into a fade reads as jarring regardless of how
-    // the fade-in itself is tuned — live-reported the same way here
-    // ("mabey you culd take a look at the ux/ui... slow down the
-    // page/screen switches"). The standard fix for exactly this
-    // constraint (can't truly overlap two elements sharing one layout
-    // slot) is sequential, not simultaneous: fade the outgoing screen out
-    // FIRST, swap while it's invisible, then fade the incoming one in —
-    // never having two mounted at once, so the 2026-07-13 layout bug
-    // can't recur.
+    // Dashboard tab switch: sequential fade-out → switch → fade-in. The 6 content-slot screens
+    // share AppShell's one HorizontalLayout slot (horizontal-stretch: 1) and must never be
+    // mounted together — a simultaneous crossfade split the space between two screens — and a
+    // hard cut followed by a fade-in looked jarring.
     //
-    // `shown-nav` is a deliberately-lagging mirror of `active-nav` — the 6
-    // conditions below key off `shown-nav`, not `active-nav` directly, so
-    // the OLD screen keeps rendering (now fading toward 0) for one short
-    // beat after the real nav has already moved on. `nav-fade` drives
-    // opacity for whichever of the 6 is currently mounted, in EITHER
-    // direction — replaces the 6 individual FadeInTrigger instances this
-    // block used to carry, since a single shared property now owns both
-    // halves of the transition instead of only the entrance half.
-    //
-    // Fade-out is deliberately shorter than fade-in (100ms vs 200ms base,
-    // matching "ease-out to emphasize exit, ease-in to emphasize entry"
-    // from the same research) — keeps the added latency on a tab switch
-    // small while still avoiding a hard cut. Rapid re-navigation (holding
-    // an arrow key through several sidebar tabs) is handled for free by
-    // Slint's own dirty-checked `Timer.running` (setting it `true` while
-    // already running is a no-op, confirmed against this exact behavior
-    // elsewhere in this codebase — see PressPulse's own history): a
-    // fadeout timer already in flight is NOT restarted by a second nav
-    // change landing before it fires, so a held key settles on whichever
-    // tab is active when the ORIGINAL 100ms elapses, not each intermediate
-    // one, and animate's own mid-flight retargeting means an interrupted
-    // fade never jumps, just smoothly redirects toward the new target.
+    // `shown-nav` lags `active-nav`: the conditions below use shown-nav, so the old screen keeps
+    // rendering while nav-fade takes it to 0, then the swap happens while invisible and the new
+    // one fades in. Fade-out 100 ms, fade-in 200 ms (base, × animation speed). Holding an arrow
+    // key through several tabs: a running fade-out timer isn't restarted (Timer.running = true
+    // is a no-op while running), so it settles on whatever tab is active when it fires;
+    // `animate` retargets smoothly mid-flight.
     property <int> shown-nav: AppState.active-nav;
     property <float> nav-fade:  1;
 
@@ -530,18 +380,9 @@ export component MainWindow inherits Window {
         }
     }
 
-    // Same "bump opacity a frame after mounting" trick FadeInTrigger/
-    // FadeGate's own kick-timers already use, needed so the newly-mounted
-    // screen's `animate opacity` below has a real 0→1 transition to
-    // interpolate rather than an already-settled value. Guarded on
-    // `active-nav == shown-nav` (still matching what this exact kick was
-    // scheduled for) to close a narrow, rare race: a second nav change
-    // landing inside this timer's own 16ms window — after the FIRST
-    // transition's fadeout already fired and re-armed this kick, but
-    // before this kick itself has run — would otherwise force nav-fade
-    // back to 1 right as the SECOND transition is trying to fade back out
-    // to 0, a one-frame glitch; the guard makes it a no-op instead,
-    // leaving the second transition's own fadeout timer to finish the job.
+    // Bump nav-fade a frame after mounting so `animate opacity` has a real 0→1 transition (the
+    // FadeGate kick trick). Guarded on active-nav == shown-nav: a second nav change inside
+    // these 16 ms would otherwise force nav-fade back to 1 while it is fading out again.
     nav-fadein-kick := Timer {
         interval: 16ms;
         running: false;
@@ -839,10 +680,7 @@ export component MainWindow inherits Window {
         }
     }
 
-    // Calendar screen (2026-07-18, Watchlist + Release Calendar) — opened
-    // from Discover's "Coming Up" row sentinel card. Same !is-playing guard
-    // every overlay-style screen needs (RequestOptionsOverlay was the one
-    // that shipped without it and had to be live-patched this session).
+    // Calendar (from Discover's "Coming Up" row). Like every overlay, guarded by !is-playing.
     gate33 := FadeGate {
         show: AppState.show-calendar && !AppState.is-playing;
     }
@@ -857,15 +695,8 @@ export component MainWindow inherits Window {
         }
     }
 
-    // Manage Blocklist screen (2026-08-06, Seerr Blocklist support) —
-    // opened from Settings -> Integrations -> Manage Blocklist. Same
-    // !is-playing guard every overlay-style screen needs.
-    // Bonfire Phase 4 review, 2026-08-29: was missing the
-    // !show-profile-picker/!show-account-picker exclusion every sibling
-    // overlay already has — a mid-session idle-lock (or any other forced
-    // jump to the picker) left this screen painted on top of the
-    // now-open PIN pad instead of the picker actually being visible. See
-    // reset_session_state's own matching fix in main.rs.
+    // Manage Blocklist (Settings → Integrations). !is-playing, and hidden under the pickers
+    // (otherwise an idle lock left it painted over the PIN pad — see reset_session_state).
     gate34 := FadeGate {
         show: AppState.show-blocklist && !AppState.is-playing && !AppState.show-profile-picker && !AppState.show-account-picker;
     }
@@ -880,28 +711,9 @@ export component MainWindow inherits Window {
         }
     }
 
-    // PersonScreen — real bug, live-reported 2026-08-17 ("cant open a
-    // person detail from discover"): this used to be declared right after
-    // DetailPage/SeriesScreen/etc. (the 6 screens person.rs's own NATIVE
-    // open_person_screen is reachable from), which correctly covered all
-    // of them since Person was always the LAST z-order sibling — none of
-    // those 6 ever clear their own show-X flag when opening Person, they
-    // rely entirely on this ordering to visually cover them. RequestDetail
-    // Screen/RequestOptionsOverlay/CalendarScreen/BlocklistScreen were all
-    // added later, AFTER Person's old position — so the same "just rely on
-    // z-order" assumption silently broke the moment Discover-context
-    // person-opening (open_person_from_discover, 2026-08-13) needed to
-    // cover RequestDetailScreen specifically: show-person correctly became
-    // true (confirmed live via fjord.log — the data fetch completes fine),
-    // but show-request-detail was never cleared, and RequestDetailScreen
-    // — declared textually after Person at the time — painted on top,
-    // completely hiding the just-opened PersonScreen with no visible
-    // change at all. Fixed by moving Person to the END of this whole
-    // overlay block instead of threading a show-request-detail clear
-    // through every one of open_person_from_discover's 3 call paths —
-    // restores the original "Person always covers everything else"
-    // invariant for every current AND future sibling overlay, matching
-    // how the other 6 screens already behave for free.
+    // PersonScreen stays the LAST overlay here: the screens it opens from (Detail, Series, …,
+    // RequestDetail) don't clear their own show-X flags — Person covers them by z-order. Keep
+    // any new sibling overlay above this one.
     gate21 := FadeGate {
         show: AppState.show-person;
     }
@@ -1009,11 +821,8 @@ export component MainWindow inherits Window {
         }
     }
 
-    // Sidebar profile quick-menu (2026-08-14) — only reachable via the
-    // sidebar, which is itself unreachable during fullscreen playback, but
-    // !is-playing is added anyway matching this file's own established rule
-    // for every free-floating overlay (RequestOptionsOverlay shipped once
-    // without it and needed a live patch after getting stuck on top of video).
+    // Sidebar profile quick-menu. The sidebar can't be reached during playback, but
+    // !is-playing anyway, as for every free-floating overlay.
     gate38 := FadeGate {
         show: AppState.show-sidebar-profile-menu && !AppState.is-playing;
     }
@@ -1045,11 +854,8 @@ export component MainWindow inherits Window {
         }
     }
 
-    // Manage Profiles / Profile Edit (Bonfire Phase 2, 2026-08-09) — reached
-    // from Settings → Profiles, same free-floating overlay shape as
-    // ConnectSeerrScreen above. !is-playing guard from the start (this
-    // whole class of overlay has shipped without it once before and needed
-    // a live patch — see RequestOptionsOverlay's own history in CLAUDE.md).
+    // Manage Profiles / Profile Edit (Settings → Profiles), a free-floating overlay like
+    // ConnectSeerrScreen, with the !is-playing guard.
     gate36 := FadeGate {
         show: AppState.show-manage-profiles && !AppState.is-playing;
     }
@@ -1096,11 +902,8 @@ export component MainWindow inherits Window {
         }
     }
 
-    // Bonfire Group (Phase 5, cross-household groups, 2026-08-29) — reached
-    // from Settings → Profiles, same free-floating overlay shape as
-    // ManageProfilesScreen above, !is-playing guard from the start (see
-    // gate36's own comment for the RequestOptionsOverlay history this
-    // guards against).
+    // Bonfire Group (Settings → Profiles), same overlay shape as Manage Profiles, with the
+    // !is-playing guard.
     gate44 := FadeGate {
         show: AppState.show-bonfire-group && !AppState.is-playing;
     }
@@ -1135,14 +938,9 @@ export component MainWindow inherits Window {
         }
     }
 
-    // Sign Out confirm dialog, 2026-08-22 — see show-sign-out-confirm's own
-    // doc comment in app_state.slint. Global (this dialog is reachable from
-    // 3 genuinely different contexts — Settings' Profiles row, the sidebar
-    // quick-menu, OfflineScreen's Change Server button — none of which own
-    // it individually), so it lives here rather than inside any one
-    // screen's own component, same shape as RememberLoginConfirmOverlay
-    // right above. Keyboard is handled by keys.rs's own pre-active_mode()
-    // raw-key tier, not here — ConfirmDialog itself is keyboard-dumb.
+    // Sign Out confirm (see show-sign-out-confirm in app_state.slint). Global because three
+    // places open it (Settings' Profiles row, the sidebar quick-menu, OfflineScreen's Change
+    // Server). Keyboard: keys.rs's pre-active_mode() raw-key tier (ConfirmDialog has none).
     gate42 := FadeGate {
         show: AppState.show-sign-out-confirm && !AppState.is-playing;
     }
@@ -1170,13 +968,9 @@ export component MainWindow inherits Window {
         }
     }
 
-    // Cancel-Seerr-request confirm dialog, 2026-08-22 — see show-cancel-
-    // request-confirm's own doc comment in app_state.slint. Global for the
-    // same reason as the Sign Out dialog above: reachable from 2 screens
-    // (the Discover grid's own context menu, and RequestDetailScreen's ⋮
-    // More menu, which reuses that exact overlay). The actual DELETE
-    // /request call happens in discover.rs's on_cancel_request_confirmed,
-    // not here.
+    // Cancel-Seerr-request confirm (see show-cancel-request-confirm in app_state.slint).
+    // Global: opened from the Discover context menu, also used by RequestDetailScreen's ⋮ More.
+    // The DELETE happens in discover's on_cancel_request_confirmed.
     gate43 := FadeGate {
         show: AppState.show-cancel-request-confirm && !AppState.is-playing;
     }
