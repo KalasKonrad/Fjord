@@ -17465,3 +17465,525 @@ Above `g.set_person_in_other_work_row(true);`:
 //   wire_person            callbacks moved from main() (0.5.0 step 3): person screen
 // ─────────────────────────────────────────────────────────────────────────────
 ```
+
+#### `crates/fjord-seerr/src/client.rs`
+
+Above `pub async fn search(&self, query: &str, page: u32) -> Result<SearchResponse> {`:
+```
+// ── Content ───────────────────────────────────────────────────────────
+/// Query is percent-encoded by hand (`%20` for spaces) rather than via
+/// `query_pairs_mut()`, which follows the WHATWG application/x-www-form-
+/// urlencoded serializer and always encodes space as `+` — real bug,
+/// found live: Seerr's `/search` route (confirmed from its actual
+/// source) reads `req.query.query` and passes it straight to TMDB with
+/// no `+`-to-space decoding anywhere in that path, so any multi-word
+/// search 400'd. `%20` round-trips correctly through every hop, since
+/// RFC 3986 percent-decoding is unambiguous — `+` only means space under
+/// the specific form-urlencoded convention, which nothing here honors.
+```
+
+Above `async fn discover_list(`:
+```
+/// Shared by the 5 unfiltered `/discover/*` landing-row endpoints below
+/// (each calling through with `&DiscoverFilters::default()`, i.e. every
+/// field `None`) AND the filtered `discover_movies_filtered`/
+/// `discover_tv_filtered` (Discover filters, 2026-07-18) — all return
+/// the exact same `{page, totalPages, totalResults, results}` shape as
+/// `/search` (confirmed from the OpenAPI spec). `DiscoverFilters`'
+/// fields are appended only when `Some`/non-empty; multi-value fields
+/// (genre/provider ids) are pipe-joined — see `DiscoverFilters`' own
+/// doc comment for why (OR logic, confirmed from Seerr's real source).
+```
+
+Above `pub async fn requested_not_available(`:
+```
+/// Requests that are still on the way — neither declined nor already
+/// fully available/deleted — for the Discover "Requested" landing row.
+/// `(movies, tv)`, one `GET /request?mediaType=...` call each so the
+/// caller knows each result's type by construction (`MediaRequest`
+/// itself carries no type field to infer it from). Filtered client-side
+/// rather than relying on Seerr's own `filter` query enum, whose exact
+/// semantics blend request-approval state and media-fulfillment state in
+/// ways not worth depending on precisely — `MediaRequest.status == 3` is
+/// DECLINED, and the relevant fulfillment status is `MediaInfo.status4k`
+/// when `r.is4k` else `MediaInfo.status` — checking `status` alone
+/// regardless of tier (the original version of this function) is a real
+/// bug, live-reproduced 2026-07-18: `status`/`status4k` are tracked
+/// completely independently by Seerr (an item can be `status: Unknown`
+/// (1, non-4K tier never requested) while genuinely `status4k:
+/// Available` (5)), so an already-fulfilled 4K request kept showing in
+/// this row on any account where most requests are 4K, since the
+/// (wrong) tier's status was still Unknown/Pending. AVAILABLE/DELETED
+/// (5/7 — see `MediaStatus`'s own doc comment for the live-confirmed
+/// numbering) are excluded either way. A request with no linked `media`
+/// (shouldn't happen in practice, but the field is `Option`) is kept
+/// rather than dropped — erring toward showing it over silently hiding
+/// a real request.
+```
+
+Above `async fn related_list(&self, path: &str, page: u32) -> Result<SearchResponse> {`:
+```
+/// Shared by the 4 recommendations/similar endpoints below — confirmed
+/// from Seerr's real `server/routes/movie.ts`/`tv.ts`: both routes
+/// return the exact same `{page, totalPages, totalResults, results}`
+/// envelope as `/search`/`/discover/*` (same `mapMovieResult`/
+/// `mapTvResult` functions), so `SearchResponse`/`SearchResult` are
+/// reused verbatim — no new structs (2026-07-29, Deep Seerr integration).
+```
+
+Above `pub async fn get_person_combined_credits(&self, person_id: i64) -> Result<CombinedCredits> {`:
+```
+/// `GET /person/{id}/combined_credits` — an actor/director's full TMDB
+/// filmography, backing the Person screen's "Other Work" row
+/// (2026-07-29). Originally shipped with no `get_person` (plain person
+/// details) at all, reasoning Fjord always has the person's Jellyfin-
+/// side bio/portrait for that feature — true for that call site, but
+/// not for the TMDB-only person screen added 2026-08-13 (a Discover
+/// cast member with no matching local Jellyfin Person), which is what
+/// `get_person` below now exists for.
+```
+
+Above `pub async fn get_person(&self, person_id: i64) -> Result<PersonDetails> {`:
+```
+/// `GET /person/{id}` — TMDB's own name/biography/profile photo, for a
+/// Discover-context cast member with no matching local Jellyfin Person
+/// (2026-08-13) — see `PersonDetails`'s own doc comment for the field
+/// shape and how it was verified.
+```
+
+Above `pub async fn get_watchlist(&self, page: u32) -> Result<WatchlistResponse> {`:
+```
+/// `GET /discover/watchlist?page=` — the connected user's own Watchlist
+/// (local table for non-Plex auth, which is every one of Fjord's 4
+/// methods — see `WatchlistResponse`'s own doc comment). Watchlist +
+/// Release Calendar, 2026-07-18.
+```
+
+Above `pub async fn add_blocklist(`:
+```
+/// `POST /blocklist` — requires `MANAGE_BLOCKLIST` server-side.
+/// `user_id` is the connected user's own id (`FjordState.seerr_user_id`,
+/// already resolved via `get_current_user`) — Seerr's real request body
+/// requires it explicitly, it's not inferred from the auth session.
+/// 2026-08-06, Seerr Blocklist support.
+```
+
+Above `pub async fn remove_blocklist(&self, tmdb_id: i64, media_type: &str) -> Result<()> {`:
+```
+/// `DELETE /blocklist/{tmdbId}?mediaType=` — also deletes the whole
+/// underlying `Media` row server-side (confirmed from Seerr's real
+/// route source), so the item genuinely reverts to untouched/Unknown
+/// status, not just "not blocklisted." 2026-08-06, Seerr Blocklist
+/// support.
+```
+
+Above `pub async fn get_current_user(&self) -> Result<User> {`:
+```
+/// `GET /auth/me` — the currently authenticated user. Works uniformly
+/// for session-cookie AND API-key auth (Seerr resolves an API key to
+/// its "owner" user internally) — unlike the 4 sign-in flows' own
+/// returned `User` (only 3 of which produce one; API-key auth has
+/// none), this is the one way to learn "who am I" regardless of which
+/// of Fjord's connection methods was used. Needed for
+/// `get_user_settings`/`update_user_settings` below, which are keyed
+/// by user id.
+```
+
+Above `pub async fn update_user_settings(`:
+```
+/// `POST /user/{id}/settings/main` — see `UserGeneralSettings`'s own
+/// doc comment for why `settings` must be the full, already-fetched
+/// struct (mutated in place by the caller) rather than one built from
+/// scratch with unrelated fields left `None`.
+///
+/// Reads the response body on failure rather than calling
+/// `error_for_status()` directly — Seerr returns a real JSON error
+/// message on a 500 (e.g. a SQL constraint violation), and the plain
+/// `error_for_status()` this used before discarded it, surfacing only
+/// "500 Internal Server Error" with no indication of why. That gap is
+/// what turned a one-field `NOT NULL` mismatch (see the doc comment on
+/// `UserGeneralSettings`) into a multi-round-trip live debugging
+/// session instead of an immediately obvious error.
+```
+
+Above `pub async fn get_request(&self, request_id: i64) -> Result<MediaRequest> {`:
+```
+/// `GET /request/{id}` — single-request detail, used to fetch a fresh
+/// copy of `profile_id`/`tags`/`seasons` right when Edit Request opens
+/// (Discover context menu, 2026-07-18) rather than caching a snapshot
+/// from whenever the Requested row was last built — simpler and always
+/// current, at the cost of one extra round trip on an infrequent action.
+```
+
+Above `pub async fn delete_request(&self, request_id: i64) -> Result<()> {`:
+```
+/// `DELETE /request/{id}` — Cancel Request (Discover context menu,
+/// 2026-07-18). Confirmed from Seerr's real route source
+/// (`server/routes/request.ts`): self-service only while the request's
+/// own `status` is still Pending; a `MANAGE_REQUESTS` account can delete
+/// any request in any status. Fjord doesn't pre-check this client-side —
+/// the context menu only ever shows Cancel when its own local state
+/// already implies one of those is true, and a real 403 (state drifted
+/// since the menu opened) surfaces through the normal error/toast path.
+```
+
+Above `pub async fn update_request(`:
+```
+/// `PUT /request/{id}` — Edit Request (Discover context menu,
+/// 2026-07-18). Same body shape as `create_request` minus
+/// `mediaType`/`mediaId`/`is4k` — confirmed from Seerr's real route
+/// source (`server/routes/request.ts`) that the tier (`is4k`) is NOT an
+/// editable field on this endpoint at all (no `request.is4k = ...` line
+/// anywhere in the handler); switching tiers requires cancel + a fresh
+/// request, not an edit. `media_type` is still needed as a Rust-side
+/// parameter (not sent in the body) because the TV branch requires a
+/// non-empty `seasons` array — the server rejects an empty/missing one
+/// with "Missing seasons. If you want to cancel a series request, use
+/// the DELETE method," so `update_request` mirrors that requirement
+/// rather than silently sending an empty array. Season merging against
+/// sibling requests for other seasons of the same show is handled
+/// entirely server-side — this just sends the season numbers wanted for
+/// THIS request.
+```
+
+Above `body["tags"] = serde_json::to_value(&tags)?;`:
+```
+// Unlike create_request's omit-if-empty (fine there — a brand new
+// request has no prior tags to preserve either way), Edit means
+// "set the request to exactly this state": tags is always sent
+// explicitly, including `[]` for "user cleared every tag" — the PUT
+// handler unconditionally does `request.tags = req.body.tags`, so
+// an omitted key would send JS `undefined` through that assignment
+// with genuinely unclear (and untested) effect on the stored value.
+```
+
+Above `async fn fetch_server_options(`:
+```
+/// Empty lists (not an error) when there's no default server configured
+/// — not every Seerr instance has Radarr/Sonarr wired up, and a plain
+/// request without tags/an explicit profile is still perfectly valid.
+/// Genuine failures (network, permissions — the `/service/*` endpoints
+/// may require elevated permissions on some instances) propagate as
+/// `Err`; callers should treat that as "nothing available" too rather
+/// than blocking the request flow on it.
+```
+
+#### `crates/fjord-seerr/src/client.rs` — file header (TOC)
+```
+// ── fjord-seerr · client.rs ──────────────────────────────────────────────────
+//   SeerrAuth          ApiKey(String) | Session(String) — the "connect.sid=…"
+//                      cookie pair, not just the raw value; one branch point,
+//                      every authenticated request attaches whichever it holds
+//   SeerrClient        base_url + auth; 30s timeout, mirrors JellyfinClient::new
+//     status           get_status (associated fn, unauthenticated — /status, version + reachability)
+//     auth (assoc fns) sign_in_jellyfin, sign_in_local, quick_connect_initiate/
+//                      check/authenticate — each returns (SeerrAuth, User) on
+//                      success so the caller can build a real SeerrClient
+//     session          logout
+//     content          search, get_movie, get_tv, create_request (tags: Vec<i64>, is_4k,
+//                      profile_id — all three undocumented in the OpenAPI spec, confirmed
+//                      from Seerr's TS source); related_list shared helper backs
+//                      get_movie_recommendations/get_movie_similar/get_tv_recommendations/
+//                      get_tv_similar (2026-07-29, Detail/Series "Recommended" rows — all four
+//                      reuse SearchResponse verbatim, confirmed same envelope as /search);
+//                      get_collection (GET /collection/{id}, Collection screen's missing-items
+//                      row); get_person_combined_credits (GET /person/{id}/combined_credits,
+//                      Person screen's "Other Work" row) — deliberately no plain get_person,
+//                      Fjord already has the person's Jellyfin bio/portrait
+//     watchlist        get_watchlist(page) (GET /discover/watchlist), add_watchlist/
+//                      remove_watchlist (POST/DELETE /watchlist) — local per-user Watchlist,
+//                      independent of Requests (2026-07-18, Watchlist + Release Calendar)
+//     blocklist        get_blocklist(take,skip) (GET /blocklist), add_blocklist/remove_blocklist
+//                      (POST/DELETE /blocklist) — global per-server, independent of Watchlist
+//                      (2026-08-06, Seerr Blocklist support — see BlocklistItem's own doc
+//                      comment); add_blocklist_collection/remove_blocklist_collection
+//                      (POST/DELETE /blocklist/collection/{id}) bulk-blocklist every part of a
+//                      TMDB collection at once, resolved server-side from just the collection id
+//     user settings    get_current_user (GET /auth/me, works for session or API-key auth),
+//                      get_watch_provider_regions (GET /watchproviders/regions, unauthenticated),
+//                      get_user_settings/update_user_settings (GET/POST /user/{id}/settings/main
+//                      — gated by isOwnProfileOrAdmin(), not admin permission, confirmed from
+//                      source; used both by resolve_streaming_region's read path and the
+//                      Settings -> Integrations -> Streaming Region write path in fjord-app)
+//     discover         discover_trending, discover_movies(_upcoming), discover_tv(_upcoming) —
+//                      Discover screen's no-query landing rows, all reuse SearchResponse;
+//                      discover_list generalized to take &DiscoverFilters (2026-07-18, Discover
+//                      filters — every landing-row method above now calls through with
+//                      &DiscoverFilters::default()); discover_movies_filtered/discover_tv_filtered
+//                      are the two callers that pass real filter content; get_movie_genres/
+//                      get_tv_genres (GET /genres/{type}) and get_movie_watch_providers/
+//                      get_tv_watch_providers (GET /watchproviders/{type}?watchRegion=, distinct
+//                      from get_watch_provider_regions below which lists regions not providers)
+//                      populate the Genre/Provider filter chip pickers
+//     requests         requested_not_available(take_per_type) — (movies, tv) MediaRequests
+//                      still on the way (not declined, not already available/deleted per the
+//                      REQUESTED tier specifically — status vs status4k picked by r.is4k, real
+//                      bug fixed 2026-07-18, see this fn's own doc comment), for the Discover
+//                      "Requested" landing row; list_requests is the shared per-mediaType
+//                      GET /request helper; get_request (single-item GET, fresh
+//                      profile/tags/seasons snapshot for Edit Request's pre-fill);
+//                      delete_request (DELETE, self-service only while Pending,
+//                      MANAGE_REQUESTS bypasses both checks), approve_request/
+//                      decline_request (POST /request/{id}/approve|decline, admin-only,
+//                      set_request_status shared helper), update_request (PUT — Edit Request;
+//                      same body as create_request minus mediaType/mediaId/is4k, which is NOT
+//                      editable server-side; tags/profileId always sent explicitly, not
+//                      omitted, since the PUT handler unconditionally overwrites both —
+//                      Discover context menu, 2026-07-18)
+//     tags/profiles    service_servers/pick_default_server/fetch_server_options — building
+//                      blocks; available_request_options_both_tiers(media_type) fetches the
+//                      regular AND 4K tier's tags + quality profiles in one round of calls
+//                      (dedups the detail fetch when both tiers share one server) so the
+//                      Request Options modal's Quality toggle can swap between them with no
+//                      re-fetch; ([], []) per tier (not Err) when no default server configured
+// ─────────────────────────────────────────────────────────────────────────────
+```
+
+#### `crates/fjord-app/src/seerr_auth.rs`
+
+Above `async fn resolve_seerr_url(url: &str) -> anyhow::Result<(Url, StatusInfo)> {`:
+```
+/// Resolves a raw, possibly-schemeless Seerr server URL the same way
+/// Login's own `auth::candidate_server_urls`/`authenticate_with_fallback`
+/// already do for Jellyfin (2026-08-23 — the identical bare-host-fails-
+/// outright gap existed here too: every one of `wire_connect_seerr`'s 5
+/// closures did a plain `Url::parse(&url)` with no fallback at all). Tries
+/// each HTTPS-then-HTTP candidate via the cheap, unauthenticated
+/// `get_status` probe, moving to the next candidate only on a genuine
+/// connectivity failure (DNS/connect/TLS/timeout — never got a real HTTP
+/// response back); a candidate that reaches the server (even a non-2xx
+/// status) is the final answer, same reasoning as Login's own fallback —
+/// retrying under a different scheme can't fix a real server-side error.
+/// `get_status` doubles as the version-string fetch every one of
+/// `wire_connect_seerr`'s auth closures already needs after a successful
+/// attempt, so this resolves AND supplies that value in one step — 4 of
+/// the 5 closures that used to call `get_status` a second time afterward
+/// now just reuse the already-fetched `StatusInfo` instead (Quick
+/// Connect's own `start` closure never called `get_status` before this,
+/// so for it specifically this genuinely adds one new, but cheap, network
+/// call it didn't previously make).
+```
+
+Above `let is_connectivity = crate::auth::is_connectivity_failure(&e);`:
+```
+// Code review, 2026-08-26: was `re.status().is_none()`,
+// which also matches a JSON-decode failure on a genuinely
+// reachable HTTPS server — see
+// `auth::is_connectivity_failure`'s own doc comment for the
+// full "why," shared verbatim rather than re-derived here.
+```
+
+Above `pub(crate) fn existing_connect_seerr_zones(g: &AppState) -> Vec<i32> {`:
+```
+/// The current, valid ordered zone list for whichever ConnectSeerrScreen
+/// tab/polling-state combination is active (2026-08-23, full D-pad
+/// rollout) — same "gaps are fine, recomputed live off current state, not
+/// cached" shape as `profile_edit::existing_profile_edit_zones`. Zone -1 is
+/// the close-✕ button (reached via Up from zone 0); zone 0 is the shared
+/// `url-input` (always present regardless of tab); zone 1 is the tab row
+/// (always present); zones 2+ vary by `connect-seerr-method` and, for
+/// Quick Connect specifically, `connect-seerr-qc-polling` — a polling Quick
+/// Connect tab has nothing interactive below the URL field at all (its body
+/// swaps to a code display + a 2s-Timer-driven poll, no button to focus).
+/// 0 and 1 were originally swapped relative to this (tab row = 0, url-input
+/// = 1) — a real, live-reported navigation bug fixed 2026-08-26: the list's
+/// own ordering is purely positional (next_zone/prev_zone don't know which
+/// physical element a number represents), so that swap meant Down from the
+/// tab row jumped UP the screen to url-input, which renders visually ABOVE
+/// it. Renumbered to match true visual top-to-bottom order.
+```
+
+Above `s.person_tmdb_id_cache.clear();`:
+```
+// Deep Seerr integration (2026-07-29) — same precedented gap this
+// function's own doc comment already warns about below: these two hold
+// request/watchlist-patched results that would otherwise show stale
+// pill state from the just-cleared connection.
+```
+
+Above `g.set_discover_watchlist_mixed(crate::items_to_model(`:
+```
+// Dashboard Watchlist rows (2026-07-20) — real bug class this
+// project has already been bitten by once (discover_watchlist_ids/
+// discover_calendar_entries/seerr_discover_region were originally
+// missing from this same reset): a disconnect must clear the 3
+// Slint-side watchlist models too, or they'd show stale content
+// from the just-cleared connection.
+```
+
+Above `g.set_discover_watchlist_mixed(crate::items_to_model(`:
+```
+// A fresh connect may point at a different server/catalog — clear
+// any watchlist content still showing from the previous connection
+// rather than leaving it visible until ensure_discover_watchlist's
+// own fetch (above) lands (2026-07-20, same reset-completeness gap
+// this doc already documents having been bitten by once for
+// discover_watchlist_ids/discover_calendar_entries/seerr_discover_region).
+```
+
+Above `g.set_connect_seerr_qc_polling(false);`:
+```
+// Real bug fixed 2026-07-18: these three were never reset on
+// open, only by the poll callback's own success/error arms —
+// closing the screen mid-Quick-Connect (before approval or
+// expiry) and reopening re-showed the stale "waiting for
+// approval" view against an old, likely-expired secret, with
+// no visible way back to the method picker short of closing
+// the whole screen again (which didn't fix it either, since
+// nothing here cleared it). Every open now starts clean.
+```
+
+Above `g.set_connect_seerr_zone(0);`:
+```
+// Real bug, code review 2026-08-26: connect-seerr-zone (and
+// the on-screen keyboard's own state) were never reset here,
+// unlike every other transient field above. Closing the
+// screen while a text-field zone was focused (e.g. zone 2)
+// and reopening left that same zone value in place — since
+// Slint's `changed` only fires on a genuine value
+// transition, the zone→focus mirror trackers never re-fire,
+// so no field gets native focus, and (per keys.rs's own
+// dispatchable check) zone 2 isn't reachable there either —
+// the screen looked interactive but the D-pad was
+// completely dead until the user reached for the mouse.
+```
+
+Above `let poll_in_flight = Arc::new(std::sync::atomic::AtomicBool::new(false));`:
+```
+// Both captured once, for the lifetime of this closure registration
+// (this callback is registered exactly once in wire_connect_seerr,
+// not re-registered per poll) — code review, 2026-08-26, real bug:
+// `resolve_seerr_url`'s own HTTPS-then-HTTP fallback can genuinely
+// take longer than the 2s Timer interval against a hung (not
+// refused) connection, and the ORIGINAL `Err(_) => return` silently
+// swallowed every resolve failure forever with qc-polling never
+// reset — a server that goes unreachable mid-poll left the screen
+// stuck on "waiting for approval," with no error and no way out
+// short of Escape (abandoning the whole attempt), for as long as
+// the user left it open, while also piling up a fresh overlapping
+// probe every 2 seconds against a server that was never going to
+// answer any of them.
+```
+
+Above `pub(crate) fn spawn_seerr_settings_fetch(`:
+```
+// ── Seerr user-settings discovery (region + display language + discover language) ──
+// Same (value, display) shape as fetch_audio_devices/fetch_system_fonts above,
+// but fetched from Seerr instead of a local process, and only once a
+// connection actually exists — called both at startup (if a saved connection
+// exists) and right after a fresh connect (seerr_auth.rs::commit_connection),
+// mirroring spawn_refresh_seerr_version's own dual call sites. Populates all
+// three Settings -> Integrations dropdowns (Streaming Region, Display
+// Language, Discover Language) in ONE round trip — regions/languages fetched
+// in parallel, and the single `get_current_user`+`get_user_settings` call
+// covers streamingRegion/locale/originalLanguage together rather than
+// issuing that same pair of requests three times (2026-07-17: this function
+// used to be streaming-region-only; extended in place rather than adding two
+// near-duplicate sibling functions, since all three genuinely share one
+// underlying settings object).
+```
+
+Above `let can_manage_blocklist = current_user.as_ref().is_some_and(|u| u.can_manage_blocklist());`:
+```
+// MANAGE_BLOCKLIST — a genuinely separate permission bit from
+// MANAGE_REQUESTS/ADMIN (see can_manage_blocklist's own doc
+// comment) — piggybacks on this same already-fetched user, zero
+// extra network cost. 2026-08-06, Seerr Blocklist support.
+```
+
+Above `let current_discover_region_code = settings`:
+```
+// Discover Region (2026-07-18, Watchlist + Release Calendar) — a
+// genuinely different setting from streaming_region above (see
+// resolve_discover_region's own doc comment in discover.rs), just
+// resolved from the same already-fetched region_pairs list here
+// rather than a second fetch.
+```
+
+Above `let current_locale_code = settings.as_ref().and_then(|s| s.locale.clone()).unwrap_or_default();`:
+```
+// "" = "Default (English)" (Seerr's own admin-configured fallback,
+// see UserGeneralSettings' doc comment — locale is never actually
+// absent once a settings row exists, but a fresh account's GET can
+// still omit it, which deserializes to None here).
+```
+
+Above `let current_lang_code = settings`:
+```
+// "all" (the literal sentinel, not "") = "Default (All Languages)" —
+// see discover.ts's createTmdbWithRegionLanguage: an empty string
+// would fall through to the ADMIN's originalLanguage default
+// instead of meaning "no filter."
+```
+
+Above `let mut discover_lang_display = language_display.clone();`:
+```
+// Both language dropdowns prepend their own "Default" sentinel row —
+// NOT shared, since the two synthetic labels differ ("Default
+// (English)" vs "Default (All Languages)"), matching Seerr's own
+// web UI wording exactly.
+```
+
+#### `crates/fjord-app/src/seerr_auth.rs` — file header (TOC)
+```
+// ── fjord-app · seerr_auth.rs ────────────────────────────────────────────────
+//   build_seerr_client   Config.seerr_* -> SeerrClient, if enabled + a valid
+//                        cookie/key is present (used at startup and after
+//                        every successful ConnectSeerrScreen flow)
+//   connected_label      Config.seerr_auth_method -> human-readable "Connected
+//                        via X" string for the Settings → Integrations row
+//   push_seerr_status    pushes seerr-connected / seerr-connected-label / seerr-unencrypted
+//                        to AppState from a Config snapshot; every successful connect calls
+//                        auth::note_if_http_fallback first
+//   spawn_refresh_seerr_version  GET /status (unauthenticated) -> AppState.seerr-version;
+//                        called after every successful connect and once at startup
+//   resolve_seerr_url    HTTPS-then-HTTP scheme-fallback for a raw, possibly-schemeless
+//                        server URL (2026-08-23, mirroring auth.rs::authenticate_with_fallback
+//                        for Jellyfin's own Login screen) — reuses the cheap, unauthenticated
+//                        get_status probe as both the reachability check AND the version-
+//                        string fetch every auth closure below already needs, so 4 of the 5
+//                        no longer call get_status a second time; classifies a connectivity
+//                        failure via the shared auth::is_connectivity_failure (2026-08-26,
+//                        code review — was a bare status().is_none() check, which also
+//                        matched a JSON-decode failure on a genuinely reachable server)
+//   Quick Connect poll   on_connect_seerr_quickconnect_poll gained an in-flight AtomicBool
+//                        guard + a bounded consecutive-resolve-failure AtomicU32 counter
+//                        (2026-08-26, code review) — the original `Err(_) => return` on a
+//                        resolve failure silently swallowed a mid-poll outage forever (no
+//                        error, qc-polling never reset) while also piling up an overlapping
+//                        probe every 2s tick against a server that was never going to answer
+//   existing_connect_seerr_zones  ConnectSeerrScreen's D-pad zone list, recomputed live off
+//                        connect-seerr-method/-qc-polling (2026-08-23 — this screen had zero
+//                        keyboard nav before), dispatched inline in keys.rs's show_connect_seerr
+//                        tier (mirrors login-zone's inline shape, not ProfileEditScreen's
+//                        delegate-to-a-separate-function one)
+//   wire_connect_seerr   registers all ConnectSeerrScreen callbacks: the 4
+//                        auth methods (API key, Jellyfin login, Quick Connect,
+//                        local account) plus open/disconnect; on_open_connect_seerr
+//                        also resets Quick Connect's polling/code/secret on every
+//                        open (real bug fixed 2026-07-18: these were only ever
+//                        cleared by the poll callback's own success/error arms, so
+//                        closing the screen mid-flow and reopening re-showed a
+//                        stale "waiting for approval" view against an expired secret)
+//                        and, since 2026-08-26 (code review), also connect-seerr-zone
+//                        + the on-screen keyboard's own 3 properties — a stale
+//                        non-zero zone surviving a close/reopen left the D-pad
+//                        completely dead on the next open, since Slint's `changed`
+//                        never re-fires when the value didn't actually change;
+//                        all 5 auth closures resolve their typed server URL via
+//                        resolve_seerr_url instead of a bare Url::parse (2026-08-23)
+//   clear_connection     also resets the 3 discover-watchlist-mixed/movies/tv AppState
+//                        models to empty (2026-07-20, Watchlist row) — same connection-
+//                        scoped cache cleanup this function already does for the
+//                        Calendar/filter caches; also clears person_tmdb_id_cache/
+//                        person_other_work_cache (2026-07-29, Deep Seerr integration)
+//   commit_connection    also calls discover::ensure_discover_watchlist right after a
+//                        fresh connect (2026-07-20, same site spawn_seerr_settings_fetch
+//                        is already called from) and resets the same 3 watchlist models
+//                        before the new connection's own fetch populates them; also
+//                        clears person_tmdb_id_cache/person_other_work_cache (2026-07-29,
+//                        Deep Seerr integration) — a (re)connect may point at a different
+//                        server/catalog, same reasoning as the caches above
+//   spawn_seerr_settings_fetch  Seerr-side settings for the Settings dropdowns (region, languages)
+// ─────────────────────────────────────────────────────────────────────────────
+```

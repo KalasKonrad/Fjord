@@ -1,69 +1,37 @@
 // ── fjord-seerr · client.rs ──────────────────────────────────────────────────
-//   SeerrAuth          ApiKey(String) | Session(String) — the "connect.sid=…"
-//                      cookie pair, not just the raw value; one branch point,
+//   SeerrAuth          ApiKey(String) | Session(String) (the whole "connect.sid=…" cookie pair);
 //                      every authenticated request attaches whichever it holds
-//   SeerrClient        base_url + auth; 30s timeout, mirrors JellyfinClient::new
-//     status           get_status (associated fn, unauthenticated — /status, version + reachability)
-//     auth (assoc fns) sign_in_jellyfin, sign_in_local, quick_connect_initiate/
-//                      check/authenticate — each returns (SeerrAuth, User) on
-//                      success so the caller can build a real SeerrClient
-//     session          logout
-//     content          search, get_movie, get_tv, create_request (tags: Vec<i64>, is_4k,
-//                      profile_id — all three undocumented in the OpenAPI spec, confirmed
-//                      from Seerr's TS source); related_list shared helper backs
-//                      get_movie_recommendations/get_movie_similar/get_tv_recommendations/
-//                      get_tv_similar (2026-07-29, Detail/Series "Recommended" rows — all four
-//                      reuse SearchResponse verbatim, confirmed same envelope as /search);
-//                      get_collection (GET /collection/{id}, Collection screen's missing-items
-//                      row); get_person_combined_credits (GET /person/{id}/combined_credits,
-//                      Person screen's "Other Work" row) — deliberately no plain get_person,
-//                      Fjord already has the person's Jellyfin bio/portrait
-//     watchlist        get_watchlist(page) (GET /discover/watchlist), add_watchlist/
-//                      remove_watchlist (POST/DELETE /watchlist) — local per-user Watchlist,
-//                      independent of Requests (2026-07-18, Watchlist + Release Calendar)
-//     blocklist        get_blocklist(take,skip) (GET /blocklist), add_blocklist/remove_blocklist
-//                      (POST/DELETE /blocklist) — global per-server, independent of Watchlist
-//                      (2026-08-06, Seerr Blocklist support — see BlocklistItem's own doc
-//                      comment); add_blocklist_collection/remove_blocklist_collection
-//                      (POST/DELETE /blocklist/collection/{id}) bulk-blocklist every part of a
-//                      TMDB collection at once, resolved server-side from just the collection id
-//     user settings    get_current_user (GET /auth/me, works for session or API-key auth),
-//                      get_watch_provider_regions (GET /watchproviders/regions, unauthenticated),
-//                      get_user_settings/update_user_settings (GET/POST /user/{id}/settings/main
-//                      — gated by isOwnProfileOrAdmin(), not admin permission, confirmed from
-//                      source; used both by resolve_streaming_region's read path and the
-//                      Settings -> Integrations -> Streaming Region write path in fjord-app)
-//     discover         discover_trending, discover_movies(_upcoming), discover_tv(_upcoming) —
-//                      Discover screen's no-query landing rows, all reuse SearchResponse;
-//                      discover_list generalized to take &DiscoverFilters (2026-07-18, Discover
-//                      filters — every landing-row method above now calls through with
-//                      &DiscoverFilters::default()); discover_movies_filtered/discover_tv_filtered
-//                      are the two callers that pass real filter content; get_movie_genres/
-//                      get_tv_genres (GET /genres/{type}) and get_movie_watch_providers/
-//                      get_tv_watch_providers (GET /watchproviders/{type}?watchRegion=, distinct
-//                      from get_watch_provider_regions below which lists regions not providers)
-//                      populate the Genre/Provider filter chip pickers
-//     requests         requested_not_available(take_per_type) — (movies, tv) MediaRequests
-//                      still on the way (not declined, not already available/deleted per the
-//                      REQUESTED tier specifically — status vs status4k picked by r.is4k, real
-//                      bug fixed 2026-07-18, see this fn's own doc comment), for the Discover
-//                      "Requested" landing row; list_requests is the shared per-mediaType
-//                      GET /request helper; get_request (single-item GET, fresh
-//                      profile/tags/seasons snapshot for Edit Request's pre-fill);
-//                      delete_request (DELETE, self-service only while Pending,
-//                      MANAGE_REQUESTS bypasses both checks), approve_request/
-//                      decline_request (POST /request/{id}/approve|decline, admin-only,
-//                      set_request_status shared helper), update_request (PUT — Edit Request;
-//                      same body as create_request minus mediaType/mediaId/is4k, which is NOT
-//                      editable server-side; tags/profileId always sent explicitly, not
-//                      omitted, since the PUT handler unconditionally overwrites both —
-//                      Discover context menu, 2026-07-18)
-//     tags/profiles    service_servers/pick_default_server/fetch_server_options — building
-//                      blocks; available_request_options_both_tiers(media_type) fetches the
-//                      regular AND 4K tier's tags + quality profiles in one round of calls
-//                      (dedups the detail fetch when both tiers share one server) so the
-//                      Request Options modal's Quality toggle can swap between them with no
-//                      re-fetch; ([], []) per tier (not Err) when no default server configured
+//                      (is_session_auth / auth_method_tag / auth_secret for persisting it)
+//   SeerrClient        base_url + auth, 30 s timeout (like JellyfinClient::new)
+//     status           get_status (unauthenticated /status: version + reachability)
+//     auth (assoc fns) sign_in_jellyfin, sign_in_local, quick_connect_initiate/check/authenticate
+//                      — each returns (SeerrAuth, User); logout
+//     content          search (hand-encoded %20), get_movie, get_tv, get_collection,
+//                      get_movie/tv_recommendations + _similar (related_list; /search envelope),
+//                      get_person, get_person_combined_credits
+//     discover         discover_trending, discover_movies(_upcoming), discover_tv(_upcoming),
+//                      discover_movies_filtered/discover_tv_filtered (discover_list +
+//                      DiscoverFilters); get_movie/tv_genres and get_movie/tv_watch_providers for
+//                      the filter chips
+//     watchlist        get_watchlist, add_watchlist/remove_watchlist (per user, independent of
+//                      requests)
+//     blocklist        get_blocklist, add_blocklist/remove_blocklist (per server; remove also
+//                      deletes the Media row), add/remove_blocklist_collection (whole TMDB
+//                      collection, resolved server-side)
+//     user settings    get_current_user (/auth/me — session or API key),
+//                      get_watch_provider_regions, get_languages, get_user_settings/
+//                      update_user_settings (GET-mutate-POST of the whole object;
+//                      isOwnProfileOrAdmin on the server)
+//     requests         create_request (tags, is_4k, profile_id — undocumented, from Seerr's
+//                      source), requested_not_available (the Discover "Requested" row; per-tier
+//                      status), list_requests, get_request, delete_request (owner while Pending,
+//                      MANAGE_REQUESTS always), approve_request/decline_request
+//                      (set_request_status), update_request (tier not editable; tags/profileId
+//                      always sent)
+//     tags/profiles    service_servers / pick_default_server / fetch_server_options;
+//                      available_request_options_both_tiers fetches both tiers' tags + quality
+//                      profiles in one round (one detail fetch when they share a server), so the
+//                      Quality toggle needs no re-fetch; ([], []) per tier without a default server
 // ─────────────────────────────────────────────────────────────────────────────
 use anyhow::{Result, anyhow};
 use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
@@ -257,15 +225,9 @@ impl SeerrClient {
     }
 
     // ── Content ───────────────────────────────────────────────────────────
-    /// Query is percent-encoded by hand (`%20` for spaces) rather than via
-    /// `query_pairs_mut()`, which follows the WHATWG application/x-www-form-
-    /// urlencoded serializer and always encodes space as `+` — real bug,
-    /// found live: Seerr's `/search` route (confirmed from its actual
-    /// source) reads `req.query.query` and passes it straight to TMDB with
-    /// no `+`-to-space decoding anywhere in that path, so any multi-word
-    /// search 400'd. `%20` round-trips correctly through every hop, since
-    /// RFC 3986 percent-decoding is unambiguous — `+` only means space under
-    /// the specific form-urlencoded convention, which nothing here honors.
+    // The query is percent-encoded by hand (`%20` for spaces): query_pairs_mut() encodes a space
+    // as `+`, and Seerr's /search passes req.query.query to TMDB without decoding `+` — every
+    // multi-word search 400'd.
     pub async fn search(&self, query: &str, page: u32) -> Result<SearchResponse> {
         let mut url = api_url(&self.base_url, "/search")?;
         let encoded_query = utf8_percent_encode(query, NON_ALPHANUMERIC);
@@ -279,15 +241,10 @@ impl SeerrClient {
             .await?)
     }
 
-    /// Shared by the 5 unfiltered `/discover/*` landing-row endpoints below
-    /// (each calling through with `&DiscoverFilters::default()`, i.e. every
-    /// field `None`) AND the filtered `discover_movies_filtered`/
-    /// `discover_tv_filtered` (Discover filters, 2026-07-18) — all return
-    /// the exact same `{page, totalPages, totalResults, results}` shape as
-    /// `/search` (confirmed from the OpenAPI spec). `DiscoverFilters`'
-    /// fields are appended only when `Some`/non-empty; multi-value fields
-    /// (genre/provider ids) are pipe-joined — see `DiscoverFilters`' own
-    /// doc comment for why (OR logic, confirmed from Seerr's real source).
+    /// Shared by the 5 unfiltered /discover/* landing-row endpoints (with
+    /// `DiscoverFilters::default()`) and discover_movies_filtered/discover_tv_filtered — all
+    /// return the /search envelope `{page, totalPages, totalResults, results}`. Filter fields are
+    /// appended only when set; multi-value ids are pipe-joined (OR — see DiscoverFilters).
     async fn discover_list(
         &self,
         path: &str,
@@ -459,28 +416,13 @@ impl SeerrClient {
         Ok(resp.results)
     }
 
-    /// Requests that are still on the way — neither declined nor already
-    /// fully available/deleted — for the Discover "Requested" landing row.
-    /// `(movies, tv)`, one `GET /request?mediaType=...` call each so the
-    /// caller knows each result's type by construction (`MediaRequest`
-    /// itself carries no type field to infer it from). Filtered client-side
-    /// rather than relying on Seerr's own `filter` query enum, whose exact
-    /// semantics blend request-approval state and media-fulfillment state in
-    /// ways not worth depending on precisely — `MediaRequest.status == 3` is
-    /// DECLINED, and the relevant fulfillment status is `MediaInfo.status4k`
-    /// when `r.is4k` else `MediaInfo.status` — checking `status` alone
-    /// regardless of tier (the original version of this function) is a real
-    /// bug, live-reproduced 2026-07-18: `status`/`status4k` are tracked
-    /// completely independently by Seerr (an item can be `status: Unknown`
-    /// (1, non-4K tier never requested) while genuinely `status4k:
-    /// Available` (5)), so an already-fulfilled 4K request kept showing in
-    /// this row on any account where most requests are 4K, since the
-    /// (wrong) tier's status was still Unknown/Pending. AVAILABLE/DELETED
-    /// (5/7 — see `MediaStatus`'s own doc comment for the live-confirmed
-    /// numbering) are excluded either way. A request with no linked `media`
-    /// (shouldn't happen in practice, but the field is `Option`) is kept
-    /// rather than dropped — erring toward showing it over silently hiding
-    /// a real request.
+    /// Requests still on the way — not declined, not yet available/deleted — for the Discover
+    /// "Requested" row: `(movies, tv)`, one `GET /request?mediaType=` each (MediaRequest has no
+    /// type field). Filtered client-side (Seerr's `filter` enum mixes approval and fulfillment
+    /// state): `MediaRequest.status == 3` is DECLINED; fulfillment is `MediaInfo.status4k` when
+    /// `r.is4k`, else `MediaInfo.status` — the two tiers are independent (status can be Unknown
+    /// while status4k is Available). AVAILABLE/DELETED (5/7, see MediaStatus) are excluded. A
+    /// request without `media` is kept rather than hidden.
     pub async fn requested_not_available(
         &self,
         take_per_type: u32,
@@ -530,12 +472,9 @@ impl SeerrClient {
             .await?)
     }
 
-    /// Shared by the 4 recommendations/similar endpoints below — confirmed
-    /// from Seerr's real `server/routes/movie.ts`/`tv.ts`: both routes
-    /// return the exact same `{page, totalPages, totalResults, results}`
-    /// envelope as `/search`/`/discover/*` (same `mapMovieResult`/
-    /// `mapTvResult` functions), so `SearchResponse`/`SearchResult` are
-    /// reused verbatim — no new structs (2026-07-29, Deep Seerr integration).
+    /// Shared by the 4 recommendations/similar endpoints — Seerr's movie.ts/tv.ts return the same
+    /// envelope as /search (mapMovieResult/mapTvResult), so SearchResponse/SearchResult are
+    /// reused.
     async fn related_list(&self, path: &str, page: u32) -> Result<SearchResponse> {
         let mut url = api_url(&self.base_url, path)?;
         url.query_pairs_mut().append_pair("page", &page.to_string());
@@ -585,14 +524,8 @@ impl SeerrClient {
             .await?)
     }
 
-    /// `GET /person/{id}/combined_credits` — an actor/director's full TMDB
-    /// filmography, backing the Person screen's "Other Work" row
-    /// (2026-07-29). Originally shipped with no `get_person` (plain person
-    /// details) at all, reasoning Fjord always has the person's Jellyfin-
-    /// side bio/portrait for that feature — true for that call site, but
-    /// not for the TMDB-only person screen added 2026-08-13 (a Discover
-    /// cast member with no matching local Jellyfin Person), which is what
-    /// `get_person` below now exists for.
+    /// `GET /person/{id}/combined_credits` — the person's full TMDB filmography (the Person
+    /// screen's "Other Work" row and the TMDB-only person screen).
     pub async fn get_person_combined_credits(&self, person_id: i64) -> Result<CombinedCredits> {
         let url = api_url(
             &self.base_url,
@@ -607,10 +540,8 @@ impl SeerrClient {
             .await?)
     }
 
-    /// `GET /person/{id}` — TMDB's own name/biography/profile photo, for a
-    /// Discover-context cast member with no matching local Jellyfin Person
-    /// (2026-08-13) — see `PersonDetails`'s own doc comment for the field
-    /// shape and how it was verified.
+    /// `GET /person/{id}` — TMDB name/biography/photo, for a Discover cast member with no local
+    /// Jellyfin Person (see PersonDetails).
     pub async fn get_person(&self, person_id: i64) -> Result<PersonDetails> {
         let url = api_url(&self.base_url, &format!("/person/{person_id}"))?;
         Ok(self
@@ -622,10 +553,8 @@ impl SeerrClient {
             .await?)
     }
 
-    /// `GET /discover/watchlist?page=` — the connected user's own Watchlist
-    /// (local table for non-Plex auth, which is every one of Fjord's 4
-    /// methods — see `WatchlistResponse`'s own doc comment). Watchlist +
-    /// Release Calendar, 2026-07-18.
+    /// `GET /discover/watchlist?page=` — the connected user's Watchlist (Seerr's local table for
+    /// non-Plex auth, i.e. all of Fjord's sign-in methods — see WatchlistResponse).
     pub async fn get_watchlist(&self, page: u32) -> Result<WatchlistResponse> {
         let mut url = api_url(&self.base_url, "/discover/watchlist")?;
         url.query_pairs_mut().append_pair("page", &page.to_string());
@@ -684,11 +613,8 @@ impl SeerrClient {
             .await?)
     }
 
-    /// `POST /blocklist` — requires `MANAGE_BLOCKLIST` server-side.
-    /// `user_id` is the connected user's own id (`FjordState.seerr_user_id`,
-    /// already resolved via `get_current_user`) — Seerr's real request body
-    /// requires it explicitly, it's not inferred from the auth session.
-    /// 2026-08-06, Seerr Blocklist support.
+    /// `POST /blocklist` — needs MANAGE_BLOCKLIST. `user_id` (FjordState.seerr_user_id, from
+    /// get_current_user) is required in the body; the server doesn't infer it.
     pub async fn add_blocklist(
         &self,
         tmdb_id: i64,
@@ -708,11 +634,8 @@ impl SeerrClient {
         Ok(())
     }
 
-    /// `DELETE /blocklist/{tmdbId}?mediaType=` — also deletes the whole
-    /// underlying `Media` row server-side (confirmed from Seerr's real
-    /// route source), so the item genuinely reverts to untouched/Unknown
-    /// status, not just "not blocklisted." 2026-08-06, Seerr Blocklist
-    /// support.
+    /// `DELETE /blocklist/{tmdbId}?mediaType=` — also deletes the underlying Media row, so the
+    /// item reverts to untouched/Unknown.
     pub async fn remove_blocklist(&self, tmdb_id: i64, media_type: &str) -> Result<()> {
         let mut url = api_url(&self.base_url, &format!("/blocklist/{tmdb_id}"))?;
         url.query_pairs_mut().append_pair("mediaType", media_type);
@@ -763,14 +686,9 @@ impl SeerrClient {
         Ok(())
     }
 
-    /// `GET /auth/me` — the currently authenticated user. Works uniformly
-    /// for session-cookie AND API-key auth (Seerr resolves an API key to
-    /// its "owner" user internally) — unlike the 4 sign-in flows' own
-    /// returned `User` (only 3 of which produce one; API-key auth has
-    /// none), this is the one way to learn "who am I" regardless of which
-    /// of Fjord's connection methods was used. Needed for
-    /// `get_user_settings`/`update_user_settings` below, which are keyed
-    /// by user id.
+    /// `GET /auth/me` — the authenticated user, for session cookies AND API keys (a key resolves
+    /// to its owner); the one way to learn "who am I" for every sign-in method (API-key auth has
+    /// no sign-in response). get_user_settings/update_user_settings are keyed by this id.
     pub async fn get_current_user(&self) -> Result<User> {
         let url = api_url(&self.base_url, "/auth/me")?;
         Ok(self
@@ -830,19 +748,9 @@ impl SeerrClient {
             .await?)
     }
 
-    /// `POST /user/{id}/settings/main` — see `UserGeneralSettings`'s own
-    /// doc comment for why `settings` must be the full, already-fetched
-    /// struct (mutated in place by the caller) rather than one built from
-    /// scratch with unrelated fields left `None`.
-    ///
-    /// Reads the response body on failure rather than calling
-    /// `error_for_status()` directly — Seerr returns a real JSON error
-    /// message on a 500 (e.g. a SQL constraint violation), and the plain
-    /// `error_for_status()` this used before discarded it, surfacing only
-    /// "500 Internal Server Error" with no indication of why. That gap is
-    /// what turned a one-field `NOT NULL` mismatch (see the doc comment on
-    /// `UserGeneralSettings`) into a multi-round-trip live debugging
-    /// session instead of an immediately obvious error.
+    /// `POST /user/{id}/settings/main` — `settings` must be the full, already-fetched struct,
+    /// mutated by the caller (see UserGeneralSettings). On failure the response body goes into
+    /// the error: Seerr returns a real JSON message on a 500 (e.g. a NOT NULL violation).
     pub async fn update_user_settings(
         &self,
         user_id: i64,
@@ -901,11 +809,8 @@ impl SeerrClient {
             .await?)
     }
 
-    /// `GET /request/{id}` — single-request detail, used to fetch a fresh
-    /// copy of `profile_id`/`tags`/`seasons` right when Edit Request opens
-    /// (Discover context menu, 2026-07-18) rather than caching a snapshot
-    /// from whenever the Requested row was last built — simpler and always
-    /// current, at the cost of one extra round trip on an infrequent action.
+    /// `GET /request/{id}` — a fresh profile_id/tags/seasons when Edit Request opens (one extra
+    /// round trip on a rare action, instead of a snapshot from the Requested row).
     pub async fn get_request(&self, request_id: i64) -> Result<MediaRequest> {
         let url = api_url(&self.base_url, &format!("/request/{request_id}"))?;
         Ok(self
@@ -917,14 +822,9 @@ impl SeerrClient {
             .await?)
     }
 
-    /// `DELETE /request/{id}` — Cancel Request (Discover context menu,
-    /// 2026-07-18). Confirmed from Seerr's real route source
-    /// (`server/routes/request.ts`): self-service only while the request's
-    /// own `status` is still Pending; a `MANAGE_REQUESTS` account can delete
-    /// any request in any status. Fjord doesn't pre-check this client-side —
-    /// the context menu only ever shows Cancel when its own local state
-    /// already implies one of those is true, and a real 403 (state drifted
-    /// since the menu opened) surfaces through the normal error/toast path.
+    /// `DELETE /request/{id}` — Cancel Request. Seerr (server/routes/request.ts): the owner only
+    /// while Pending; MANAGE_REQUESTS any status. Not pre-checked here — the menu only offers it
+    /// when local state allows, and a 403 from drifted state surfaces as a toast.
     pub async fn delete_request(&self, request_id: i64) -> Result<()> {
         let url = api_url(&self.base_url, &format!("/request/{request_id}"))?;
         let resp = self.authed(self.http.delete(url)).send().await?;
@@ -956,21 +856,11 @@ impl SeerrClient {
         Ok(())
     }
 
-    /// `PUT /request/{id}` — Edit Request (Discover context menu,
-    /// 2026-07-18). Same body shape as `create_request` minus
-    /// `mediaType`/`mediaId`/`is4k` — confirmed from Seerr's real route
-    /// source (`server/routes/request.ts`) that the tier (`is4k`) is NOT an
-    /// editable field on this endpoint at all (no `request.is4k = ...` line
-    /// anywhere in the handler); switching tiers requires cancel + a fresh
-    /// request, not an edit. `media_type` is still needed as a Rust-side
-    /// parameter (not sent in the body) because the TV branch requires a
-    /// non-empty `seasons` array — the server rejects an empty/missing one
-    /// with "Missing seasons. If you want to cancel a series request, use
-    /// the DELETE method," so `update_request` mirrors that requirement
-    /// rather than silently sending an empty array. Season merging against
-    /// sibling requests for other seasons of the same show is handled
-    /// entirely server-side — this just sends the season numbers wanted for
-    /// THIS request.
+    /// `PUT /request/{id}` — Edit Request. Body like create_request minus mediaType/mediaId/is4k:
+    /// the tier can't be edited (request.ts never assigns is4k) — switching tiers means cancel +
+    /// new request. `media_type` stays a Rust parameter because TV requires a non-empty `seasons`
+    /// (the server rejects an empty one: "Missing seasons …"). Merging with sibling requests for
+    /// other seasons is done server-side.
     pub async fn update_request(
         &self,
         request_id: i64,
@@ -987,13 +877,9 @@ impl SeerrClient {
             };
             body["seasons"] = serde_json::to_value(seasons)?;
         }
-        // Unlike create_request's omit-if-empty (fine there — a brand new
-        // request has no prior tags to preserve either way), Edit means
-        // "set the request to exactly this state": tags is always sent
-        // explicitly, including `[]` for "user cleared every tag" — the PUT
-        // handler unconditionally does `request.tags = req.body.tags`, so
-        // an omitted key would send JS `undefined` through that assignment
-        // with genuinely unclear (and untested) effect on the stored value.
+        // Always sent, including `[]` (the user cleared every tag): Edit sets exactly this state,
+        // and the PUT handler assigns req.body.tags unconditionally — an omitted key would assign
+        // `undefined`.
         body["tags"] = serde_json::to_value(&tags)?;
         // Same "always explicit" reasoning as tags above — `null` for the
         // synthetic "Default" (0) selection, not an omitted key, since the
@@ -1041,13 +927,9 @@ impl SeerrClient {
             .map(|s| s.id)
     }
 
-    /// Empty lists (not an error) when there's no default server configured
-    /// — not every Seerr instance has Radarr/Sonarr wired up, and a plain
-    /// request without tags/an explicit profile is still perfectly valid.
-    /// Genuine failures (network, permissions — the `/service/*` endpoints
-    /// may require elevated permissions on some instances) propagate as
-    /// `Err`; callers should treat that as "nothing available" too rather
-    /// than blocking the request flow on it.
+    /// Empty lists (not an error) when no default server is configured — a request without tags
+    /// or an explicit profile is valid. Real failures (network, permissions — /service/* may need
+    /// elevated rights) are `Err`; callers treat them as "nothing available" too.
     async fn fetch_server_options(
         &self,
         kind: &str,
