@@ -1,106 +1,46 @@
 // ── fjord-app · context_menu.rs ──────────────────────────────────────────────
-//   wire_context_menu   register all AppState context-menu callbacks:
-//     open-context-menu             set menu state from CardItem fields
-//     open-context-menu-browse      resolve browse index → MediaItem → set state
-//     open-context-menu-series-ep   set menu state for a series episode
-//     context-mark-played           POST/DELETE /Users/{id}/PlayedItems/{itemId};
-//                                   on success: update all models; if played→remove from dynamic rows;
-//                                   always call refresh_series_next_up (both mark-played and unplayed)
-//     context-toggle-fav            POST/DELETE /Users/{id}/FavoriteItems/{itemId}
-//     context-play-from-start       series → get_next_up_for_series (from start); movie/ep → start_position_secs = None;
-//                                   BoxSet toasts instead of playing a dead /Videos/{id}/stream URL (CR11-1)
-//     context-jf-toggle-watchlist   Watchlist row 8 on the JELLYFIN menu family (2026-07-19,
-//                                   real gap live-reported — "you cant add anyting from the
-//                                   library to the watchlist"); reuses discover_toggle_watchlist
-//                                   (discover.rs) verbatim, sourced from context-menu-jf-tmdb-id/
-//                                   -jf-media-type (resolved at open time, see below)
-//   patch_watchlist_on_jellyfin_models  in-library watchlist star (2026-07-20, user request —
-//                                   "if its in library it shuld also show there") — same 20-model
-//                                   list as update_card_in_all_models, keyed by Jellyfin id; sets
-//                                   on_watchlist to the exact given value (not add-only, so a
-//                                   mid-session external unwatchlist clears a stale star too);
-//                                   called from discover_toggle_watchlist's own success handler
-//                                   (single-item) and discover.rs::resync_jellyfin_watchlist_stars
-//                                   (bulk, after every watchlist fetch)
-//   resolve_tmdb_for_jellyfin_item  local item id + item_type (Movie/Series only) -> TMDB id +
-//                                   "movie"/"tv", via MediaItem.provider_ids["Tmdb"] — the reverse
-//                                   of discover.rs::find_local_item's own TMDB-id -> local-item lookup;
-//                                   made pub(crate) 2026-07-29 (Deep Seerr integration) — detail.rs/
-//                                   series.rs/collection.rs's new Recommended/Missing-* rows all
-//                                   reuse it directly instead of duplicating the ProviderIds scan
-//   existing_jellyfin_menu_rows      "gaps are fine" row-index list (0=Resume conditional, 1-6
-//                                   always, 7=Add to Playlist conditional, 8=Watchlist conditional) —
-//                                   replaced a plain min/max range once a SECOND independent optional
-//                                   row (8) joined row 7 at the end; a min/max pair can't skip an
-//                                   interior gap (7 absent, 8 present)
-//   open_context_menu_state         set all context-menu AppState fields incl. series-id + the
-//                                   resolved Watchlist fields above (shared by all three open handlers,
-//                                   now also takes `state: &Arc<Mutex<FjordState>>` for the TMDB lookup)
-//   update_series_unplayed_count    ±1 unplayed-count on the parent series card after mark-played (also called from main.rs)
-//   remove_item_from_all_models     rebuild-filter every CardItem model to drop a deleted id (WS ItemsRemoved,
-//                                   purge_deleted_item); also clamps library-focused/series-focused-ep/
-//                                   season-focused-ep (§0 focus safety) if the removed row was the focused one
-//   update_card_in_all_models       patch has-played / is-favorite across every model (incl. series-next-up-cards
-//                                   and the album-tracks TrackItem model — track ♥ indicator)
-//   remove_from_dynamic_rows        remove item from Next Up/Continue Watching/Not Watched rows;
-//                                   matches card.id==id (item) OR card.series_id==id (series → all its episodes);
-//                                   does NOT touch series-next-up-cards (refresh_series_next_up handles that)
-//   remove_from_favorites           remove item from the three favorite-X rows only (WS IsFavorite=false)
-//   remove_from_continue_watching   remove item from Next Up/Continue Watching only (NOT Not Watched — opposite
-//                                   membership rule); used for a position-reset-to-0 that isn't also played=true
-//   reanchor_focus                  find an item's new index by id after a model mutation, so a keyboard-focus
-//                                   index (library-focused/season-focused-ep/series-focused-ep) can follow the
-//                                   same logical item instead of pointing at whatever now sits at the old index
-//   upsert_cards_in_model           insert/replace items by id into a CardItem model (WS delta-sync merge —
-//                                   the upsert counterpart to remove_item_from_all_models); poster-preserving,
-//                                   and (2026-07-20) on_watchlist-preserving too — same real-bug-fix idiom as
-//                                   home::refresh_row_preserving_posters/movies.rs::push_library_cards
-//   find_title_in_state             scan FjordState media lists by item id → display name
-//   enqueue_item                    insert into playlist (play-next) or append to queue
-//   queue_from_context_menu         shared add/play-next body; Series resolved to next-up episode (CR10-7);
-//                                   MusicAlbum/MusicArtist expanded to their Audio tracks; BoxSet toasts;
-//                                   title from context-menu-title (set by every open site), state/model scans as fallback
+//   Model patchers (every CardItem model must be listed in update_card_in_all_models):
+//   update_card_in_all_models       patch has-played / is-favorite everywhere (incl. series next-up
+//                                   cards, season tabs and the album-tracks TrackItem model)
+//   patch_watchlist_on_jellyfin_models  in-library watchlist star by Jellyfin id (exact value, so
+//                                   external removals clear it); from discover_toggle_watchlist and
+//                                   discover's resync_jellyfin_watchlist_stars
+//   remove_item_from_all_models     drop a deleted id from every model (WS ItemsRemoved,
+//                                   purge_deleted_item); clamps library/series/season focus
+//   remove_from_dynamic_rows        Next Up/Continue Watching/Not Watched, by item id or series id
+//                                   (not series-next-up-cards — refresh_series_next_up does those)
+//   remove_from_continue_watching   in-progress rows only (position reset without played)
+//   remove_from_favorites           the three favorite rows (WS IsFavorite=false)
+//   reanchor_focus                  an item's new index by id after a model change
+//   upsert_cards_in_model           WS delta merge by id; keeps posters and on_watchlist
+//   update_series_unplayed_count    ±1 on the parent series card after mark-played (also detail.rs)
+//   Menu:
+//   resolve_tmdb_for_jellyfin_item  Movie/Series id → TMDB id + "movie"/"tv"
+//                                   (provider_ids["Tmdb"]); also used by detail/series/collection
+//   open_context_menu_state         set every context-menu AppState field (shared by the open
+//                                   handlers), incl. the resolved Watchlist fields
+//   wire_context_menu               open-context-menu (/-browse/-series-ep), mark played/unplayed
+//                                   (then refresh_series_next_up), favourite, play from start
+//                                   (series → next up; BoxSet toasts), Jellyfin-menu Watchlist row
+//   handle_key / existing_jellyfin_menu_rows  keyboard dispatch; row ids with gaps: 0 Resume,
+//                                   1–6 fixed, 7 Add to Playlist (music), 8 Watchlist; a Season
+//                                   gets a narrower menu; Discover* item types go to:
+//   handle_key_discover_menu / existing_discover_menu_rows  Discover family: 0 View Details,
+//                                   5 View Request, 1 Request/Edit, 2 Cancel, 3 Approve, 4 Decline,
+//                                   6 Watchlist, 7 Blocklist — gated by Seerr's real per-endpoint
+//                                   permissions; Confirm calls discover's on_context_discover_*
+//   Queue:
+//   find_title_in_state / find_title_in_models  title fallbacks by id
+//   enqueue_item / queue_from_context_menu  play next or append; Series → next-up episode,
+//                                   MusicAlbum/MusicArtist → their tracks, BoxSet toasts
 //   wire_queue_callbacks            on_queue_add_item / on_queue_play_next_item
-//   wire_playlist_picker            open-playlist-picker (populate + bg refresh) /
-//                                   playlist-picker-select (add to existing) /
-//                                   playlist-picker-create (POST /Playlists);
-//                                   resolve_music_ids expands MusicAlbum → track ids (empty result toasts, CR11-14);
-//                                   refresh_playlists updates state/cache/models after change, and reopens the
-//                                   playlist detail screen if it's showing the just-mutated playlist (CR11-7);
-//                                   also refreshes the Music dashboard Playlists row (music-playlists) with
-//                                   posters, instead of waiting ~30 s for Jellyfin's LibraryChanged (2026-09-26)
-//   handle_key                      keyboard dispatch for the context-menu overlay
-//                                   (row 7 = Add to Playlist, music items only); branches
-//                                   entirely to handle_key_discover_menu when
-//                                   context-menu-item-type is Discover* (2026-07-18) — a
-//                                   completely different row family, see context_menu.slint
-//   existing_discover_menu_rows/handle_key_discover_menu  Discover context menu's own
-//                                   Up/Down/Confirm — fixed index scheme (0=View Details,
-//                                   5=View Request [requested only — bypasses the
-//                                   find_local_item redirect, traversed 2nd despite the
-//                                   high index, see the function's own doc comment],
-//                                   1=Request/Edit Request, 2=Cancel, 3=Approve, 4=Decline),
-//                                   existing_discover_menu_rows resolves which indices exist
-//                                   for the current card's request state (same "gaps are
-//                                   fine" idiom as the Jellyfin menu's own Resume row) —
-//                                   gated against Seerr's REAL per-endpoint permission
-//                                   checks (edit/approve/decline need no pending status,
-//                                   only cancel does for non-admins; fixed 2026-07-18 after
-//                                   a blanket `pending` requirement hid every action on any
-//                                   auto-approved request); Confirm dispatches to
-//                                   discover.rs's on_context_discover_* handlers, which each
-//                                   close the menu themselves (2026-07-18); row 6 = Watchlist
-//                                   toggle (2026-07-18, Watchlist + Release Calendar) — always
-//                                   visible, unlike Request/Edit/Cancel/Approve/Decline which
-//                                   are gated on request state; row 7 = Blocklist toggle
-//                                   (2026-08-06, Seerr Blocklist support) — gated on
-//                                   seerr-can-manage-blocklist (a permission genuinely
-//                                   separate from admin/MANAGE_REQUESTS) AND the item being
-//                                   untouched or already blocklisted, mirroring Seerr's own
-//                                   real UI gate; the Confirm match ALSO gained arms for rows
-//                                   6/7 in the same pass — row 6 previously had none at all
-//                                   (a real pre-existing bug: keyboard Enter silently did
-//                                   nothing on Watchlist, only mouse click worked)
+//   Playlists:
+//   wire_playlist_picker            open (populate + background refresh), select (add to existing),
+//                                   create (POST /Playlists), name editing at the caret;
+//                                   resolve_music_ids / music_container_tracks expand albums and
+//                                   artists to tracks; refresh_playlists updates the state, cache
+//                                   and models, reopens a showing playlist screen and refreshes the
+//                                   Music dashboard's Playlists row
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
 
@@ -159,11 +99,8 @@ pub(crate) fn update_card_in_all_models(
             }
         }
     }
-    // Season tabs are SeasonEntry, not CardItem either (2026-08-12,
-    // season-tab context menu) — patch the same way, so re-opening the
-    // context menu for the same season tab right after marking it
-    // watched/favourited shows the real current state instead of what
-    // SeasonEntry was populated with when the series screen first opened.
+    // Season tabs are SeasonEntry, not CardItem — patch them too, so reopening the menu on the
+    // same tab shows the current state.
     {
         let seasons = g.get_series_seasons();
         for i in 0..seasons.row_count() {
@@ -210,18 +147,10 @@ pub(crate) fn update_card_in_all_models(
     patch_cards(g.get_person_filmography());
 }
 
-/// Patches the watchlist star (2026-07-20, user request — "if its in
-/// library it shuld also show there") onto a NATIVE Jellyfin card by
-/// Jellyfin item id match — the counterpart to `discover.rs`'s own
-/// `patch_watchlist_on_all_models`, which matches by tmdb id across
-/// Discover-sourced models instead. Mirrors this exact function's own
-/// model list (skips `album_tracks`/`TrackItem` — music has no TMDB
-/// provider-id path, so a watchlisted Movie/Series id can never legitimately
-/// match a track row anyway). Sets `on_watchlist` to the EXACT given value
-/// (not add-only) so a mid-session external removal (e.g. via Seerr's own
-/// web UI) correctly clears a stale star too — the identical bug class
-/// already found and fixed once this session for the Coming Up row's own
-/// `on_watchlist` field.
+/// Sets the watchlist star on NATIVE Jellyfin cards by Jellyfin item id — the counterpart
+/// to discover's patch_watchlist_on_all_models (tmdb id, Discover models). Same model list as
+/// this file's other patchers minus album_tracks (music has no TMDB id). Sets the exact value
+/// (not add-only), so an external removal (e.g. Seerr's web UI) clears a stale star.
 pub(crate) fn patch_watchlist_on_jellyfin_models(
     g: &AppState,
     jellyfin_id: &str,
@@ -372,15 +301,10 @@ pub(crate) fn remove_from_dynamic_rows(w: &MainWindow, id: &str) {
     // the row (and redirect focus) once the server response arrives.
 }
 
-/// Remove an id from the four "in progress" rows (Next Up/Continue Watching) only — used
-/// when playback position resets to 0 WITHOUT the item being marked played. Deliberately
-/// distinct from remove_from_dynamic_rows: Not Watched rows have the OPPOSITE membership
-/// rule from Continue Watching (untouched = position 0, vs in-progress = position > 0), so
-/// folding a position-reset into remove_from_dynamic_rows's shared played-or-position==0
-/// condition incorrectly stripped a freshly-favorited-but-never-watched item out of Not
-/// Watched purely because its position already happens to be 0 — not because anything
-/// about its watch state actually changed (found while investigating a WS delta-sync
-/// dashboard-flash report, Phase 89 follow-up).
+/// Remove an id from the in-progress rows (Next Up/Continue Watching) only — for a position
+/// reset to 0 without being marked played. Not remove_from_dynamic_rows: Not Watched has the
+/// opposite membership rule (position 0), and that shared condition dropped never-watched
+/// items from it.
 pub(crate) fn remove_from_continue_watching(w: &MainWindow, id: &str) {
     let filter = |model: ModelRc<CardItem>| -> ModelRc<CardItem> {
         let kept: Vec<CardItem> = (0..model.row_count())
@@ -428,13 +352,10 @@ pub(crate) fn reanchor_focus(model: &ModelRc<CardItem>, focused_id: &str) -> Opt
 }
 
 /// Insert/replace `items` by id into a CardItem model — the WS delta-sync counterpart to
-/// remove_item_from_all_models's rebuild-filter, upserting instead of removing. `posters`
-/// supplies already-decoded art for the delta (from poster::fetch_posters_for_delta, keyed by
-/// item id); a miss falls back to whatever poster the row already had rather than flashing to
-/// no-poster (fetch_posters_for_delta re-resolves every item in the batch including unchanged
-/// ones, so a miss here should be rare — only on a fetch failure — not the common case). The
-/// actual model apply is delegated to crate::apply_cards_preserving_identity (Phase 96, shared
-/// with poster.rs/movies.rs/home.rs) so an upsert-only batch (no new rows) mutates in place.
+/// remove_item_from_all_models. `posters` holds already-decoded art for the delta
+/// (poster::fetch_posters_for_delta, by item id); a miss keeps the row's existing poster
+/// instead of flashing to none. Applied through crate::apply_cards_preserving_identity, so a
+/// batch without new rows mutates in place.
 pub(crate) fn upsert_cards_in_model(
     model: ModelRc<CardItem>,
     items: &[fjord_api::models::MediaItem],
@@ -464,24 +385,14 @@ pub(crate) fn upsert_cards_in_model(
             None => rows.push(card),
         }
     }
-    // Delegate the apply to the shared primitive (Phase 96): when nothing was
-    // appended, `rows` has the exact same ids in the exact same order as `model`
-    // already had, so it mutates in place instead of destroying/recreating every
-    // OTHER card's poster Image too — a WS delta batch usually only touches one
-    // or two items in a grid of hundreds.
+    // When nothing was appended, ids and order are unchanged and this mutates in place — other
+    // cards keep their poster Images (a delta usually touches one or two of hundreds).
     crate::apply_cards_preserving_identity(&model, rows)
 }
 
-/// Movie/Series only, matching Seerr's own Watchlist mediaType enum (movie|tv)
-/// — an Episode/BoxSet/MusicAlbum/etc has no sensible Seerr counterpart.
-/// Scans the same `all_movies`/`all_series` lists `discover.rs::find_local_item`
-/// already scans in the opposite direction (TMDB id -> local item); this is
-/// the reverse (local item -> TMDB id), via the same `provider_ids["Tmdb"]`
-/// field. Real gap, live-reported 2026-07-19 ("you cant add anyting from the
-/// library to the watchlist") — an already-in-library item redirects
-/// straight to this Jellyfin-flavored menu, which never had a Watchlist row
-/// at all; Discover's own Watchlist toggle only ever lived on the separate
-/// Discover-card menu family, unreachable once `find_local_item` redirects.
+/// Local item → TMDB id via provider_ids["Tmdb"] (the reverse of discover's find_local_item),
+/// scanning all_movies/all_series. Movie/Series only — Seerr's watchlist knows movie|tv. Gives
+/// in-library items (which open this Jellyfin menu) a Watchlist row.
 pub(crate) fn resolve_tmdb_for_jellyfin_item(
     s: &FjordState,
     id: &str,
@@ -498,11 +409,7 @@ pub(crate) fn resolve_tmdb_for_jellyfin_item(
         .map(|tmdb_id| (tmdb_id.clone(), media_type))
 }
 
-// Bundled to keep open_context_menu_state under clippy's too-many-arguments
-// threshold (8 > 7) once the state param joined the original 6 CardItem-ish
-// fields, 2026-07-19 — same "group loose scalars into one struct" fix this
-// codebase already applied to movie_details_to_meta/tv_details_to_meta
-// (discover.rs) for the identical reason.
+// Bundled to keep open_context_menu_state under clippy's too-many-arguments limit.
 struct OpenMenuArgs {
     id: SharedString,
     item_type: SharedString,
@@ -550,10 +457,8 @@ fn open_context_menu_state(g: &AppState, state: &Arc<Mutex<FjordState>>, args: O
             }
         }
     }
-    // Derive initial focus from the same visible-row list Up/Down/Confirm
-    // already use, rather than a hardcoded 0/1 — needed since the Season
-    // item type (2026-08-12) hides rows 0/1 entirely, so hardcoding "1"
-    // here would land initial focus on a row that isn't even mounted.
+    // Initial focus from the visible-row list (a Season hides rows 0/1, so a fixed index could
+    // land on an unmounted row).
     let rows = existing_jellyfin_menu_rows(g);
     g.set_context_menu_focused(rows.first().copied().unwrap_or(1));
     g.set_show_context_menu(true);
@@ -678,13 +583,9 @@ pub(crate) fn wire_context_menu(
         );
     }
 
-    // ── context-jf-toggle-watchlist: Watchlist row on the JELLYFIN menu
-    // family (row 8, 2026-07-19) — resolved at open time into
-    // context-menu-jf-tmdb-id/-jf-media-type by open_context_menu_state
-    // above; reuses discover_toggle_watchlist (discover.rs) verbatim, the
-    // same function the Discover-card menu's own Watchlist row calls —
-    // watchlisting is a plain TMDB-id action with no Jellyfin-vs-Discover
-    // distinction once the id is known.
+    // ── context-jf-toggle-watchlist: Watchlist row of the JELLYFIN menu (row 8). The tmdb id and
+    // media type are resolved at open time (open_context_menu_state); then it's the same
+    // discover_toggle_watchlist the Discover menu uses.
     {
         let state = Arc::clone(&state);
         let ww = window.as_weak();
@@ -764,13 +665,15 @@ pub(crate) fn wire_context_menu(
                             }
                             update_card_in_all_models(&w, &id2, Some(new_played), None);
                             if new_played {
-                                // Remove from curated rows (Next Up, Continue Watching, Not Watched,
-                                // series-next-up-cards). Matches card.id==id (episode/movie) and
-                                // card.series_id==id (all episodes when a whole series is marked played).
+                                // Remove from curated rows (Next Up, Continue Watching, Not
+                                // Watched, series-next-up-cards). Matches card.id==id
+                                // (episode/movie) and card.series_id==id (all episodes when a whole
+                                // series is marked played).
                                 remove_from_dynamic_rows(&w, &id2);
                             }
-                            // Refresh the series Next Up row on any played-state change (mark-played
-                            // OR unplayed) so the new first-unwatched episode appears immediately.
+                            // Refresh the series Next Up row on any played-state change
+                            // (mark-played OR unplayed) so the new first-unwatched episode appears
+                            // immediately.
                             if !sid2.is_empty() {
                                 crate::series::refresh_series_next_up(
                                     sid2.clone(),
@@ -779,7 +682,8 @@ pub(crate) fn wire_context_menu(
                                     rt2,
                                 );
                             }
-                            // Adjust unplayed badge on the parent series card if this is an episode.
+                            // Adjust unplayed badge on the parent series card if this is an
+                            // episode.
                             if !sid2.is_empty() {
                                 let delta = if new_played { -1 } else { 1 };
                                 update_series_unplayed_count(&w, &sid2, delta);
@@ -1037,11 +941,8 @@ fn enqueue_item(vs: &mut VideoState, item: QueueItem, play_next: bool) {
                     *idx += 1;
                 }
             }
-            // Insert the new position right after the CURRENT item's slot in
-            // shuffle_order. Slot 1 (pre-CR10-8) was only correct immediately
-            // after toggling shuffle — once playback advanced to shuffle
-            // position k, anything inserted at slot 1 was behind the cursor
-            // and never played.
+            // Insert right after the CURRENT item's slot in shuffle_order (slot 1 is behind the
+            // cursor once playback has advanced, and would never play).
             if vs.shuffle && !vs.shuffle_order.is_empty() {
                 let cur_pos = vs
                     .shuffle_order
@@ -1116,12 +1017,9 @@ fn queue_from_context_menu(
         return;
     }
 
-    // The open site always sets context-menu-title from the card/track it was
-    // opened on — the state/model scans are only a fallback (album tracks and
-    // dashboard albums are in neither, which used to surface the raw GUID).
-    // MusicAlbum / MusicArtist: expand to their Audio tracks — a raw album or
-    // artist id has no stream, so enqueueing it verbatim produced an unplayable
-    // row (and its GUID as the title). Same class of bug as Series (CR10-7).
+    // The open site sets context-menu-title from the card/track; the state/model scans are a
+    // fallback only (album tracks and dashboard albums are in neither — that showed the raw id).
+    // MusicAlbum / MusicArtist expand to their Audio tracks: their own id has no stream.
     if item_type == "MusicAlbum" || item_type == "MusicArtist" || item_type == "Playlist" {
         let Some(client) = state.lock().unwrap().client.as_ref().map(Arc::clone) else {
             return;
@@ -1228,43 +1126,19 @@ pub(crate) fn wire_queue_callbacks(
 
 // ── Keyboard dispatch ─────────────────────────────────────────────────────────
 
-/// Which row indices exist for the current Discover card's request state —
-/// fixed index scheme, same "some indices can be absent" idiom the Jellyfin
-/// menu already uses for Resume (row 0 only when resumable): 0=View
-/// Details (always), 5=View Request (requested — see below), 1=Request (not
-/// yet requested) OR Edit Request (requested, and mine or admin),
-/// 2=Cancel Request (requested, and admin or (mine and pending)),
-/// 3=Approve/4=Decline (requested and admin). Row 5 sits between 0 and 1 in
-/// the returned Vec (Up/Down visits it right after View Details) even
-/// though its numeric index is highest — index values are pure keyboard-
-/// focus identities matched against `context_menu.slint`'s own `row-index`,
-/// not a visual-order or Up/Down-order constraint, so it can be appended at
-/// the end of the enum-ish numbering (avoiding renumbering 1-4) while still
-/// being traversed second.
+/// Which row indices exist for the current Discover card (gaps allowed, like the Jellyfin
+/// menu's Resume): 0 View Details (always), 5 View Request (requested), 1 Request (not yet
+/// requested) or Edit Request (requested, mine or admin), 2 Cancel Request (requested, and
+/// admin or mine+pending), 3 Approve / 4 Decline (requested, admin). Row 5 comes second in the
+/// Vec (Up/Down order) though its index is highest — indices are focus ids matched against
+/// context_menu.slint's `row-index`, not an order.
 ///
-/// Gating was originally tied to `pending` across the board — wrong, and a
-/// real live-reported bug (2026-07-18: "I don't get the remove request on a
-/// requested item" / "on requested 4k items I only got detail"). Re-checked
-/// against Seerr's actual route source (`server/routes/request.ts`) rather
-/// than re-guessing: `PUT /request/:id` (edit) requires only ownership or
-/// `MANAGE_REQUESTS` — no status check at all; `POST /request/:id/approve|
-/// decline` requires only `MANAGE_REQUESTS` — also no status check; only
-/// `DELETE /request/:id` (cancel) actually restricts a non-admin to
-/// `status == PENDING`. Once a request auto-approves (a very common Seerr
-/// config — and evidently this user's own 4K setup), it leaves Pending
-/// within seconds, so the old blanket `pending` requirement silently hid
-/// Edit/Cancel/Approve/Decline almost immediately after every request,
-/// even for the connected account's own `MANAGE_REQUESTS` admin, who the
-/// server would have allowed to act on it regardless of status.
+/// Gating follows Seerr's server/routes/request.ts: edit needs ownership or MANAGE_REQUESTS,
+/// approve/decline MANAGE_REQUESTS — neither checks status; only cancel limits a non-admin
+/// to PENDING (requests often auto-approve within seconds).
 ///
-/// Row 5 (View Request) is a separate later fix (2026-07-18): a card can be
-/// `requested` AND also (partially) present in the local Jellyfin library
-/// (e.g. a series missing some seasons) — View Details/Request/Edit Request
-/// all redirect to the real Jellyfin item in that case (unchanged, by the
-/// user's own choice — see `open_discover_item_ex`'s doc comment), which
-/// left no way back to Seerr's own Request Detail screen. View Request is
-/// the dedicated escape hatch: shown whenever a request exists, regardless
-/// of local-library presence, and always opens the Seerr side.
+/// View Request always opens Seerr's Request Detail, even when the item is (partly) in the
+/// library and the other rows redirect to the Jellyfin item (see open_discover_item_ex).
 fn existing_discover_menu_rows(g: &AppState) -> Vec<i32> {
     let requested = !g.get_context_menu_request_id().as_str().is_empty();
     let pending = g.get_context_menu_request_pending();
@@ -1285,12 +1159,9 @@ fn existing_discover_menu_rows(g: &AppState) -> Vec<i32> {
         rows.push(4); // Decline
     }
     rows.push(6); // Watchlist (2026-07-18) — always visible
-    // Blocklist (2026-08-06) — eligible whenever the item is untouched or
-    // already blocklisted (mirrors Seerr's own real UI gate exactly: never
-    // shown for Requested/Processing/Partial/Available), and only for an
-    // account with MANAGE_BLOCKLIST specifically — a genuinely separate
-    // permission from `admin`/MANAGE_REQUESTS above, see
-    // `seerr-can-manage-blocklist`'s own doc comment.
+    // Blocklist: only for an untouched or already-blocklisted item (Seerr's own UI rule) and
+    // an account with MANAGE_BLOCKLIST (separate from admin/MANAGE_REQUESTS, see
+    // seerr-can-manage-blocklist).
     let availability = g.get_context_menu_availability();
     let can_blocklist = g.get_seerr_can_manage_blocklist()
         && (availability.as_str() == "" || availability.as_str() == "blocklisted");
@@ -1343,11 +1214,8 @@ fn handle_key_discover_menu(action: &crate::keys::Action, g: &AppState) -> bool 
                 3 => g.invoke_context_discover_approve_request(),
                 4 => g.invoke_context_discover_decline_request(),
                 5 => g.invoke_context_discover_view_request(),
-                // Real pre-existing bug, fixed 2026-08-06: this match had
-                // no arm for row 6 (Watchlist) at all — keyboard Enter did
-                // nothing, only mouse click worked (via context_menu.slint's
-                // own `activated =>` handler). Fixed alongside adding row 7
-                // so it doesn't inherit the same gap.
+                // Keyboard Enter on rows 6/7 (the mouse goes through context_menu.slint's
+                // `activated`).
                 6 => g.invoke_context_discover_toggle_watchlist(),
                 7 => g.invoke_context_discover_toggle_blocklist(),
                 _ => {}
@@ -1358,26 +1226,15 @@ fn handle_key_discover_menu(action: &crate::keys::Action, g: &AppState) -> bool 
     }
 }
 
-/// Fixed row indices, "gaps are fine" idiom (same shape as Discover's own
-/// `existing_discover_menu_rows`): 0=Resume(conditional on resume-pct>0 &&
-/// !played) 1=Play from Start 2=Play Next 3=Add to Queue 4=Mark Played
-/// 5=Favourite 6=View Details 7=Add to Playlist(conditional, music items
-/// only) 8=Watchlist(conditional, resolvable TMDB id + Seerr connected —
-/// 2026-07-19, real gap live-reported: an already-in-library item redirects
-/// to this Jellyfin-flavored menu, which never had a Watchlist row before).
-/// A simple min/max range (the original shape) stopped being correct once a
-/// SECOND independent optional row joined row 7 at the end — row 7 absent
-/// with row 8 present is a genuine interior gap a min/max pair can't skip.
+/// Fixed row indices with gaps (like existing_discover_menu_rows): 0 Resume (resume-pct > 0
+/// && !played), 1 Play from Start, 2 Play Next, 3 Add to Queue, 4 Mark Played, 5 Favourite,
+/// 6 View Details, 7 Add to Playlist (music only), 8 Watchlist (a resolvable TMDB id + Seerr
+/// connected). A list, not a min/max range: 7 can be absent while 8 is present.
 fn existing_jellyfin_menu_rows(g: &AppState) -> Vec<i32> {
     let item_type = g.get_context_menu_item_type();
-    // "Season" gets a narrower menu (Mark Watched/Unwatched, Favourite, View
-    // Details only) — user-approved "Full menu" scope via AskUserQuestion,
-    // 2026-08-12. A season itself isn't playable (no /Videos/{id}/stream,
-    // only its episodes are) and queue/playlist/watchlist concepts don't
-    // apply to a season either — mirrors the matching `if` exclusions on
-    // rows 1/2/3 in context_menu.slint (rows 0/7/8 already exclude a
-    // Season by construction: resume-pct is always 0 for it, and
-    // resolve_tmdb_for_jellyfin_item only resolves Movie/Series).
+    // A Season gets Mark Watched/Unwatched, Favourite and View Details only: it isn't playable
+    // itself, and queue/playlist/watchlist don't apply. Matches the `if` exclusions on rows 1/2/3
+    // in context_menu.slint (rows 0/7/8 exclude a Season by construction).
     if item_type.as_str() == "Season" {
         return vec![4, 5, 6];
     }
@@ -1668,10 +1525,8 @@ pub(crate) fn wire_playlist_picker(
         });
     }
 
-    // ── naming: append/backspace, shared by the on-screen keyboard AND ───────
-    // handle_playlist_picker's own existing physical-typing branches
-    // (keys.rs) — grapheme-cluster-correct backspace via trim_last_grapheme,
-    // matching discover-search-append/-backspace's own shape (2026-08-23).
+    // ── naming: insert/backspace at the caret (text_field::PLAYLIST_NAME), shared by the
+    // on-screen keyboard and handle_playlist_picker's physical typing (keys.rs).
     {
         let ww = window.as_weak();
         AppState::get(window).on_playlist_picker_name_append(move |c| {
