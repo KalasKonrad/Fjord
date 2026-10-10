@@ -137,6 +137,8 @@
 //                              4K/tags/seasons inline (see below); Trailer button fires
 //                              play-trailer() (Watch Trailer — Discover only, see CLAUDE.md's
 //                              Seerr integration section).
+//   trailer_url_allowed         https YouTube only — every trailer URL passes it before yt-dlp/mpv
+//                               (2026-10-09 security review; unit-tested)
 //   trailer_candidates          MovieDetails/TvDetails.relatedVideos -> trailer URLs, best first
 //   start_trailer_check         background yt-dlp check of those candidates → request-detail-
 //                               trailer-state "checking"/"ok"/"none" + -trailer-url (2026-10-04)
@@ -3948,10 +3950,27 @@ fn format_countries(countries: &[fjord_seerr::ProductionCountry]) -> String {
 /// Capped at 4 to bound the check. `url` is already a fully-formed YouTube
 /// watch-page link — see `Video`'s own doc comment in fjord-seerr for why
 /// only `kind`/`url` are modeled at all.
+/// A trailer URL Fjord will hand to yt-dlp or mpv: `https` on YouTube only
+/// (2026-10-09 security review). The URL comes from the server: anything
+/// starting with `-` would be read by yt-dlp as an option (`--exec=…` runs
+/// a command), and other schemes would let mpv open local files or other
+/// protocols.
+pub(crate) fn trailer_url_allowed(url: &str) -> bool {
+    let Ok(u) = url::Url::parse(url) else { return false };
+    u.scheme() == "https"
+        && u.username().is_empty()
+        && u.password().is_none()
+        && matches!(u.host_str(), Some("www.youtube.com" | "youtube.com" | "m.youtube.com" | "youtu.be"))
+}
+
 fn trailer_candidates(videos: &[fjord_seerr::Video]) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     for kind in ["Trailer", "Teaser"] {
         for v in videos.iter().filter(|v| v.kind == kind) {
+            if !trailer_url_allowed(&v.url) {
+                debug!("trailer candidate skipped (not an https YouTube URL): {:?}", v.url);
+                continue;
+            }
             if !out.contains(&v.url) {
                 out.push(v.url.clone());
             }
@@ -4043,12 +4062,16 @@ pub(crate) fn start_trailer_check(
 /// It can't catch a 403 that only happens once the download starts — those
 /// land in mark_trailer_unplayable after a failed play.
 async fn trailer_plays(url: &str, ytdl_format: Option<&str>) -> bool {
+    if !trailer_url_allowed(url) {
+        return false;
+    }
     let mut cmd = tokio::process::Command::new("yt-dlp");
     cmd.args(["--simulate", "--quiet", "--no-warnings", "--no-playlist"]);
     if let Some(f) = ytdl_format {
         cmd.args(["-f", f]);
     }
-    cmd.arg(url).kill_on_drop(true)
+    // `--`: the URL can never be read as an option, whatever it contains.
+    cmd.arg("--").arg(url).kill_on_drop(true)
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::piped());
     let started = std::time::Instant::now();
@@ -7456,5 +7479,33 @@ pub(crate) fn handle_key_request_options(action: &Action, g: &AppState) -> bool 
             }
             _ => true,
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::trailer_url_allowed;
+
+    #[test]
+    fn only_https_youtube_trailers() {
+        for ok in [
+            "https://www.youtube.com/watch?v=GSycMV-_Csw",
+            "https://youtube.com/watch?v=GSycMV-_Csw",
+            "https://m.youtube.com/watch?v=GSycMV-_Csw",
+            "https://youtu.be/GSycMV-_Csw",
+        ] {
+            assert!(trailer_url_allowed(ok), "{ok}");
+        }
+        for bad in [
+            "--exec=touch /tmp/x", "-o /tmp/x", "",
+            "http://www.youtube.com/watch?v=x",          // not https
+            "file:///etc/passwd", "ytdl://x", "av://lavfi:sine",
+            "https://evil.example/watch?v=x",
+            "https://www.youtube.com.evil.example/watch?v=x",
+            "https://user:pw@www.youtube.com/watch?v=x",
+            "https://evil.example@www.youtube.com/watch?v=x",
+        ] {
+            assert!(!trailer_url_allowed(bad), "{bad}");
+        }
     }
 }

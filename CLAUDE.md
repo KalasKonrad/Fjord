@@ -107,7 +107,8 @@ Needs `mpv`/libmpv (`pacman -S mpv`). Optional at runtime: `yt-dlp` (trailers), 
 - Surface errors with `show_toast(ww, msg)` (safe from any thread).
 - **Server data never becomes a file name or program argument unchecked:** ids go through
   `config::safe_cache_name` (32 hex) before any cache path; only bytes passing `poster::is_image` are
-  written as images.
+  written as images. External programs get server-provided strings only after `--` and an allow-list
+  (trailer URLs: `discover::trailer_url_allowed`).
 
 ### Config and sessions
 - Device-wide settings go in `DeviceConfig`, per-person settings in `ProfileSettings`. Access profile settings
