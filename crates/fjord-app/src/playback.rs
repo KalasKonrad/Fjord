@@ -105,7 +105,8 @@
 //                           chapters, stall-recovery, skip/OSD countdowns) — extracted so
 //                           start_playback and play_trailer can't drift out of sync; each caller
 //                           sets its own item_id/playing_series_id/client afterward
-//   play_trailer            Watch Trailer (Discover only) — deliberately NOT start_playback with a
+//   play_trailer            Watch Trailer (Discover only; refuses URLs failing discover::trailer_url_allowed)
+//                           — deliberately NOT start_playback with a
 //   tear_down_player        frees a subsurface player's render context on the subsurface's own GL
 //                           context (video_surface::free_render_ctx) before the Player goes
 //                           (2026-10-04: sets is_trailer; display sync skips trailers unless
@@ -1734,6 +1735,13 @@ pub(crate) fn play_trailer(
     rt_handle:   &tokio::runtime::Handle,
 ) {
     info!("playing trailer: {}", fjord_player::redact_api_key(&url));
+    // Server-provided URL: only https YouTube reaches mpv (2026-10-09
+    // security review; the callers already filter, this is the last gate).
+    if !crate::discover::trailer_url_allowed(&url) {
+        warn!("trailer not played: not an https YouTube URL");
+        crate::show_toast(window_weak.clone(), "Trailer unavailable".into());
+        return;
+    }
 
     {
         let mut vs = video.lock().unwrap();
