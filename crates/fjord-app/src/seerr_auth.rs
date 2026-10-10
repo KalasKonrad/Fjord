@@ -63,8 +63,8 @@ use fjord_seerr::{SeerrAuth, SeerrClient, StatusInfo};
 use slint::{ComponentHandle, Global, Weak};
 use url::Url;
 
-use crate::config::{save_config, FjordState};
-use crate::{show_toast, AppState, MainWindow};
+use crate::config::{FjordState, save_config};
+use crate::{AppState, MainWindow, show_toast};
 
 pub(crate) fn build_seerr_client(c: &crate::config::ProfileSettings) -> Option<Arc<SeerrClient>> {
     if !c.seerr_enabled || c.seerr_url.is_empty() {
@@ -87,9 +87,15 @@ pub(crate) fn build_seerr_client(c: &crate::config::ProfileSettings) -> Option<A
 /// and once at startup if a saved connection already exists — mirrors how
 /// `server-name`/`server-version` are fetched fresh each session rather than
 /// persisted, since it's cheap and this way it can never go stale.
-pub(crate) fn spawn_refresh_seerr_version(base_url: Url, ww: Weak<MainWindow>, rt: &tokio::runtime::Handle) {
+pub(crate) fn spawn_refresh_seerr_version(
+    base_url: Url,
+    ww: Weak<MainWindow>,
+    rt: &tokio::runtime::Handle,
+) {
     rt.spawn(async move {
-        let Ok(status) = SeerrClient::get_status(&base_url).await else { return };
+        let Ok(status) = SeerrClient::get_status(&base_url).await else {
+            return;
+        };
         let _ = slint::invoke_from_event_loop(move || {
             if let Some(w) = ww.upgrade() {
                 AppState::get(&w).set_seerr_version(status.version.as_str().into());
@@ -162,12 +168,14 @@ async fn resolve_seerr_url(url: &str) -> anyhow::Result<(Url, StatusInfo)> {
 pub(crate) fn existing_connect_seerr_zones(g: &AppState) -> Vec<i32> {
     let mut zones = vec![-1, 0, 1];
     match g.get_connect_seerr_method() {
-        0 => zones.extend([2, 3]),       // API key: key-input, submit
-        1 => zones.extend([2, 3, 4]),    // Jellyfin: username, password, submit
+        0 => zones.extend([2, 3]),    // API key: key-input, submit
+        1 => zones.extend([2, 3, 4]), // Jellyfin: username, password, submit
         2 => {
-            if !g.get_connect_seerr_qc_polling() { zones.push(2); } // "Get Code" — nothing while polling
+            if !g.get_connect_seerr_qc_polling() {
+                zones.push(2);
+            } // "Get Code" — nothing while polling
         }
-        3 => zones.extend([2, 3, 4]),    // Local account: email, password, submit
+        3 => zones.extend([2, 3, 4]), // Local account: email, password, submit
         _ => {}
     }
     zones
@@ -188,9 +196,20 @@ pub(crate) fn push_seerr_status(g: &AppState<'_>, c: &crate::config::ProfileSett
         && !c.seerr_url.is_empty()
         && (!c.seerr_api_key.is_empty() || !c.seerr_session_cookie.is_empty());
     g.set_seerr_connected(connected);
-    g.set_seerr_unencrypted(connected && c.seerr_url.trim().to_ascii_lowercase().starts_with("http://"));
+    g.set_seerr_unencrypted(
+        connected
+            && c.seerr_url
+                .trim()
+                .to_ascii_lowercase()
+                .starts_with("http://"),
+    );
     g.set_seerr_connected_label(
-        if connected { connected_label(&c.seerr_auth_method) } else { "Not connected" }.into(),
+        if connected {
+            connected_label(&c.seerr_auth_method)
+        } else {
+            "Not connected"
+        }
+        .into(),
     );
 }
 
@@ -247,14 +266,32 @@ pub(crate) fn clear_connection(state: &Arc<Mutex<FjordState>>, ww: &Weak<MainWin
         // missing from this same reset): a disconnect must clear the 3
         // Slint-side watchlist models too, or they'd show stale content
         // from the just-cleared connection.
-        g.set_discover_watchlist_mixed(crate::items_to_model(&[], &std::collections::HashSet::new()));
-        g.set_discover_watchlist_movies(crate::items_to_model(&[], &std::collections::HashSet::new()));
-        g.set_discover_watchlist_tv(crate::items_to_model(&[], &std::collections::HashSet::new()));
+        g.set_discover_watchlist_mixed(crate::items_to_model(
+            &[],
+            &std::collections::HashSet::new(),
+        ));
+        g.set_discover_watchlist_movies(crate::items_to_model(
+            &[],
+            &std::collections::HashSet::new(),
+        ));
+        g.set_discover_watchlist_tv(crate::items_to_model(
+            &[],
+            &std::collections::HashSet::new(),
+        ));
         // Dashboard Coming Up rows (2026-08-02) — same reasoning, same 3
         // Slint-side models.
-        g.set_discover_coming_up_mixed(crate::items_to_model(&[], &std::collections::HashSet::new()));
-        g.set_discover_coming_up_movies(crate::items_to_model(&[], &std::collections::HashSet::new()));
-        g.set_discover_coming_up_tv(crate::items_to_model(&[], &std::collections::HashSet::new()));
+        g.set_discover_coming_up_mixed(crate::items_to_model(
+            &[],
+            &std::collections::HashSet::new(),
+        ));
+        g.set_discover_coming_up_movies(crate::items_to_model(
+            &[],
+            &std::collections::HashSet::new(),
+        ));
+        g.set_discover_coming_up_tv(crate::items_to_model(
+            &[],
+            &std::collections::HashSet::new(),
+        ));
     }
 }
 
@@ -332,14 +369,32 @@ fn commit_connection(
         // own fetch (above) lands (2026-07-20, same reset-completeness gap
         // this doc already documents having been bitten by once for
         // discover_watchlist_ids/discover_calendar_entries/seerr_discover_region).
-        g.set_discover_watchlist_mixed(crate::items_to_model(&[], &std::collections::HashSet::new()));
-        g.set_discover_watchlist_movies(crate::items_to_model(&[], &std::collections::HashSet::new()));
-        g.set_discover_watchlist_tv(crate::items_to_model(&[], &std::collections::HashSet::new()));
+        g.set_discover_watchlist_mixed(crate::items_to_model(
+            &[],
+            &std::collections::HashSet::new(),
+        ));
+        g.set_discover_watchlist_movies(crate::items_to_model(
+            &[],
+            &std::collections::HashSet::new(),
+        ));
+        g.set_discover_watchlist_tv(crate::items_to_model(
+            &[],
+            &std::collections::HashSet::new(),
+        ));
         // Dashboard Coming Up rows (2026-08-02) — same reasoning, same 3
         // Slint-side models.
-        g.set_discover_coming_up_mixed(crate::items_to_model(&[], &std::collections::HashSet::new()));
-        g.set_discover_coming_up_movies(crate::items_to_model(&[], &std::collections::HashSet::new()));
-        g.set_discover_coming_up_tv(crate::items_to_model(&[], &std::collections::HashSet::new()));
+        g.set_discover_coming_up_mixed(crate::items_to_model(
+            &[],
+            &std::collections::HashSet::new(),
+        ));
+        g.set_discover_coming_up_movies(crate::items_to_model(
+            &[],
+            &std::collections::HashSet::new(),
+        ));
+        g.set_discover_coming_up_tv(crate::items_to_model(
+            &[],
+            &std::collections::HashSet::new(),
+        ));
         g.set_show_connect_seerr(false);
         // ConnectSeerrScreen's LineEdits hold real Slint keyboard focus while
         // typing — closing the screen doesn't return it to the app's own
@@ -457,7 +512,15 @@ pub(crate) fn wire_connect_seerr(
                     match result {
                         Ok(()) => {
                             crate::auth::note_if_http_fallback(&ww2, "Seerr", &url, &base_url);
-                            commit_connection(&state, &ww2, &base_url, "apikey", SeerrAuth::ApiKey(key), version, &rt_inner)
+                            commit_connection(
+                                &state,
+                                &ww2,
+                                &base_url,
+                                "apikey",
+                                SeerrAuth::ApiKey(key),
+                                version,
+                                &rt_inner,
+                            )
                         }
                         Err(e) => set_error(&ww2, &format!("Couldn't verify that key: {e}")),
                     }
@@ -493,7 +556,9 @@ pub(crate) fn wire_connect_seerr(
                     match result {
                         Ok((auth, _user)) => {
                             crate::auth::note_if_http_fallback(&ww2, "Seerr", &url, &base_url);
-                            commit_connection(&state, &ww2, &base_url, "jellyfin", auth, version, &rt_inner)
+                            commit_connection(
+                                &state, &ww2, &base_url, "jellyfin", auth, version, &rt_inner,
+                            )
                         }
                         Err(e) => set_error(&ww2, &format!("Sign-in failed: {e}")),
                     }
@@ -529,7 +594,9 @@ pub(crate) fn wire_connect_seerr(
                     match result {
                         Ok((auth, _user)) => {
                             crate::auth::note_if_http_fallback(&ww2, "Seerr", &url, &base_url);
-                            commit_connection(&state, &ww2, &base_url, "local", auth, version, &rt_inner)
+                            commit_connection(
+                                &state, &ww2, &base_url, "local", auth, version, &rt_inner,
+                            )
                         }
                         Err(e) => set_error(&ww2, &format!("Sign-in failed: {e}")),
                     }
@@ -569,7 +636,9 @@ pub(crate) fn wire_connect_seerr(
                                 g.set_connect_seerr_qc_secret(qc.secret.into());
                                 g.set_connect_seerr_qc_polling(true);
                             }
-                            Err(e) => set_error(&ww2, &format!("Couldn't start Quick Connect: {e}")),
+                            Err(e) => {
+                                set_error(&ww2, &format!("Couldn't start Quick Connect: {e}"))
+                            }
                         }
                     }
                 });
@@ -631,7 +700,10 @@ pub(crate) fn wire_connect_seerr(
                                 if let Some(w) = ww2.upgrade() {
                                     AppState::get(&w).set_connect_seerr_qc_polling(false);
                                 }
-                                set_error(&ww2, &format!("Lost the connection while waiting for approval: {e}"));
+                                set_error(
+                                    &ww2,
+                                    &format!("Lost the connection while waiting for approval: {e}"),
+                                );
                             });
                         }
                         poll_in_flight.store(false, Ordering::SeqCst);
@@ -649,8 +721,18 @@ pub(crate) fn wire_connect_seerr(
                             }
                             match auth_result {
                                 Ok((auth, _user)) => {
-                                    crate::auth::note_if_http_fallback(&ww2, "Seerr", &url, &base_url);
-                                    commit_connection(&state, &ww2, &base_url, "quickconnect", auth, version, &rt_inner)
+                                    crate::auth::note_if_http_fallback(
+                                        &ww2, "Seerr", &url, &base_url,
+                                    );
+                                    commit_connection(
+                                        &state,
+                                        &ww2,
+                                        &base_url,
+                                        "quickconnect",
+                                        auth,
+                                        version,
+                                        &rt_inner,
+                                    )
                                 }
                                 Err(e) => set_error(&ww2, &format!("Quick Connect failed: {e}")),
                             }

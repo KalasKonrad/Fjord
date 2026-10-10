@@ -47,9 +47,9 @@
 use slint::winit_030::winit::raw_window_handle::{
     HasDisplayHandle, HasWindowHandle, RawDisplayHandle, RawWindowHandle,
 };
-use slint::winit_030::{winit, CustomApplicationHandler, EventResult};
-use std::sync::atomic::{AtomicU64, Ordering};
+use slint::winit_030::{CustomApplicationHandler, EventResult, winit};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 /// A fixed start `Instant` plus an `Arc<AtomicU64>` storing milliseconds-
@@ -72,7 +72,10 @@ impl ActivityClock {
     /// `slint::BackendSelector::...select()` and before `MainWindow::new()`
     /// — so it can be cloned into the winit-level handler at select() time.
     pub(crate) fn new() -> Self {
-        Self { start: Instant::now(), millis_since_start: Arc::new(AtomicU64::new(0)) }
+        Self {
+            start: Instant::now(),
+            millis_since_start: Arc::new(AtomicU64::new(0)),
+        }
     }
 
     /// Record "activity happened right now". Called from the winit-level
@@ -118,7 +121,9 @@ impl CustomApplicationHandler for FjordApplicationHandler {
         use winit::event::WindowEvent;
         if matches!(
             event,
-            WindowEvent::CursorMoved { .. } | WindowEvent::MouseInput { .. } | WindowEvent::MouseWheel { .. }
+            WindowEvent::CursorMoved { .. }
+                | WindowEvent::MouseInput { .. }
+                | WindowEvent::MouseWheel { .. }
         ) {
             self.clock.touch();
         }
@@ -132,7 +137,9 @@ impl CustomApplicationHandler for FjordApplicationHandler {
         // this is the first point in the whole app where `winit_window` can
         // ever be `Some`. Fires at most once per process, regardless of how
         // many more window_event calls follow.
-        if !self.hdr_handles_captured && let Some(w) = winit_window {
+        if !self.hdr_handles_captured
+            && let Some(w) = winit_window
+        {
             self.hdr_handles_captured = true;
             if let (Ok(dh), Ok(wh)) = (w.display_handle(), w.window_handle()) {
                 if let (RawDisplayHandle::Wayland(wdh), RawWindowHandle::Wayland(wwh)) =

@@ -13,44 +13,60 @@
 //     delays       sub_delay_inc/dec (z/Z ±100 ms), audio_delay_inc/dec (x/X ±100 ms);
 //                  set delay-osd-text + delay-osd-visible for ~2 s; also update sub/audio-delay-ms (Sync panel)
 // ─────────────────────────────────────────────────────────────────────────────
-use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use slint::{ComponentHandle, Global, Model};
 use tracing::{debug, info};
 
 use crate::AppState;
+use crate::MainWindow;
 use crate::config::FjordState;
 use crate::playback::{VideoState, do_stop_playback, fmt_secs};
-use crate::MainWindow;
 
 // Given the chapter list and current playback position, return the OSD name
 // for the chapter we'll land on after stepping by `delta` (±1).
 // Uses the same logic as mpv: stepping back when >5 s into a chapter first
 // seeks to the current chapter start before going to the previous one.
 fn chapter_osd_name(chapters: &[(f64, String)], pos: f64, delta: i64) -> String {
-    if chapters.is_empty() { return String::new(); }
-    let cur_idx = chapters.iter().enumerate().rev()
+    if chapters.is_empty() {
+        return String::new();
+    }
+    let cur_idx = chapters
+        .iter()
+        .enumerate()
+        .rev()
         .find(|(_, (t, _))| *t <= pos)
         .map(|(i, _)| i);
     let target_idx = match (delta.cmp(&0), cur_idx) {
         (std::cmp::Ordering::Greater, Some(idx)) => {
             let next = idx.saturating_add(delta as usize);
-            if next < chapters.len() { Some(next) } else { None }
+            if next < chapters.len() {
+                Some(next)
+            } else {
+                None
+            }
         }
         (std::cmp::Ordering::Less, Some(idx)) => {
             let cur_start = chapters[idx].0;
-            if pos - cur_start > 5.0 { Some(idx) }
-            else if idx > 0 { Some(idx - 1) }
-            else { None }
+            if pos - cur_start > 5.0 {
+                Some(idx)
+            } else if idx > 0 {
+                Some(idx - 1)
+            } else {
+                None
+            }
         }
         _ => None,
     };
     if let Some(tidx) = target_idx {
         let name = &chapters[tidx].1;
-        if name.is_empty() { format!("Chapter {}", tidx + 1) }
-        else { name.clone() }
+        if name.is_empty() {
+            format!("Chapter {}", tidx + 1)
+        } else {
+            name.clone()
+        }
     } else {
         String::new()
     }
@@ -67,7 +83,7 @@ fn fmt_delay_ms(label: &str, delay_secs: f64) -> slint::SharedString {
 
 fn fmt_seek_delta(secs: f64) -> slint::SharedString {
     let sign = if secs >= 0.0 { "+" } else { "−" };
-    let abs  = secs.abs() as u64;
+    let abs = secs.abs() as u64;
     if abs < 60 {
         format!("{sign}{abs}s").into()
     } else {
@@ -76,17 +92,17 @@ fn fmt_seek_delta(secs: f64) -> slint::SharedString {
 }
 
 pub(crate) fn wire_controls(
-    window:        &MainWindow,
-    video:         Arc<Mutex<VideoState>>,
-    state:         Arc<Mutex<FjordState>>,
+    window: &MainWindow,
+    video: Arc<Mutex<VideoState>>,
+    state: Arc<Mutex<FjordState>>,
     controls_show: Arc<AtomicBool>,
     seek_suppress: Arc<AtomicU32>,
-    rt_handle:     tokio::runtime::Handle,
+    rt_handle: tokio::runtime::Handle,
 ) {
     // ── playback ──────────────────────────────────────────────────────────────
     {
         let video = Arc::clone(&video);
-        let ww    = window.as_weak();
+        let ww = window.as_weak();
         AppState::get(window).on_pause_play_toggle(move || {
             let vs = video.lock().unwrap();
             let now_paused = if let Some(p) = vs.player.as_ref() {
@@ -98,18 +114,23 @@ pub(crate) fn wire_controls(
             };
             drop(vs);
             if let Some(w) = ww.upgrade() {
-                debug!("pause_play_toggle → {}", if now_paused { "paused" } else { "playing" });
+                debug!(
+                    "pause_play_toggle → {}",
+                    if now_paused { "paused" } else { "playing" }
+                );
                 let g = AppState::get(&w);
                 g.set_is_paused(now_paused);
                 g.set_music_bar_paused(now_paused);
                 // Mouse-click resume: clear the minimal pause bar if it was showing.
-                if !now_paused { g.set_pause_bar_visible(false); }
+                if !now_paused {
+                    g.set_pause_bar_visible(false);
+                }
             }
         });
     }
     {
         let video = Arc::clone(&video);
-        let ww    = window.as_weak();
+        let ww = window.as_weak();
         AppState::get(window).on_seek_backward(move || {
             let Some(w) = ww.upgrade() else { return };
             let secs = AppState::get(&w).get_settings_seek_step_secs() as f64;
@@ -121,7 +142,7 @@ pub(crate) fn wire_controls(
     }
     {
         let video = Arc::clone(&video);
-        let ww    = window.as_weak();
+        let ww = window.as_weak();
         AppState::get(window).on_seek_forward(move || {
             let Some(w) = ww.upgrade() else { return };
             let secs = AppState::get(&w).get_settings_seek_step_secs() as f64;
@@ -133,7 +154,7 @@ pub(crate) fn wire_controls(
     }
     {
         let video = Arc::clone(&video);
-        let ww    = window.as_weak();
+        let ww = window.as_weak();
         AppState::get(window).on_seek_backward_long(move || {
             let Some(w) = ww.upgrade() else { return };
             let secs = AppState::get(&w).get_settings_seek_step_long_secs() as f64;
@@ -145,7 +166,7 @@ pub(crate) fn wire_controls(
     }
     {
         let video = Arc::clone(&video);
-        let ww    = window.as_weak();
+        let ww = window.as_weak();
         AppState::get(window).on_seek_forward_long(move || {
             let Some(w) = ww.upgrade() else { return };
             let secs = AppState::get(&w).get_settings_seek_step_long_secs() as f64;
@@ -160,7 +181,7 @@ pub(crate) fn wire_controls(
         // Accumulates into VideoState.seek_pending_secs and resets the debounce counter.
         // The 16ms timer in wire_mpv_timer executes the seek after ~480ms of inactivity.
         let video = Arc::clone(&video);
-        let ww    = window.as_weak();
+        let ww = window.as_weak();
         AppState::get(window).on_seek_acc(move |delta| {
             let delta = delta as f64;
             let mut vs = video.lock().unwrap();
@@ -196,23 +217,21 @@ pub(crate) fn wire_controls(
         });
     }
     {
-        let video  = Arc::clone(&video);
-        let ww     = window.as_weak();
-        let rth    = rt_handle.clone();
-        let state  = Arc::clone(&state);
+        let video = Arc::clone(&video);
+        let ww = window.as_weak();
+        let rth = rt_handle.clone();
+        let state = Arc::clone(&state);
         AppState::get(window).on_stop_playback(move || {
             info!("stop_playback requested");
             do_stop_playback(&video, &ww, &rth, &state);
         });
     }
     {
-        let video     = Arc::clone(&video);
+        let video = Arc::clone(&video);
         // Throttle drag seeks to at most one per 100 ms — rapid seeks can cause
         // libmpv to abort internally. Initialised 200 ms in the past so the very
         // first drag seek always goes through.
-        let last_seek = Arc::new(Mutex::new(
-            Instant::now() - Duration::from_millis(200),
-        ));
+        let last_seek = Arc::new(Mutex::new(Instant::now() - Duration::from_millis(200)));
         AppState::get(window).on_seek_to(move |ratio| {
             let mut last = last_seek.lock().unwrap();
             if last.elapsed() < Duration::from_millis(100) {
@@ -236,7 +255,7 @@ pub(crate) fn wire_controls(
     let seek_was_playing = Arc::new(AtomicBool::new(false));
     {
         let video = Arc::clone(&video);
-        let swp   = Arc::clone(&seek_was_playing);
+        let swp = Arc::clone(&seek_was_playing);
         AppState::get(window).on_seek_drag_started(move || {
             // Query mpv directly so we stay in sync even if mpv self-paused on a
             // cache underrun (CR2-1) — same fix as on_pause_play_toggle (CR-4).
@@ -252,9 +271,9 @@ pub(crate) fn wire_controls(
     }
     {
         let video = Arc::clone(&video);
-        let ww    = window.as_weak();
-        let swp   = Arc::clone(&seek_was_playing);
-        let ss    = Arc::clone(&seek_suppress);
+        let ww = window.as_weak();
+        let swp = Arc::clone(&seek_was_playing);
+        let ss = Arc::clone(&seek_suppress);
         AppState::get(window).on_seek_committed(move |ratio| {
             let mut did_seek = false;
             {
@@ -267,7 +286,10 @@ pub(crate) fn wire_controls(
                     let should_resume = swp.swap(false, Ordering::Relaxed);
                     if dur > 0.0 {
                         let secs = ratio as f64 * dur;
-                        debug!("seek_committed: ratio={:.3} → {:.1}s / {:.1}s", ratio, secs, dur);
+                        debug!(
+                            "seek_committed: ratio={:.3} → {:.1}s / {:.1}s",
+                            ratio, secs, dur
+                        );
                         p.seek_to(secs);
                         did_seek = true;
                     }
@@ -296,9 +318,9 @@ pub(crate) fn wire_controls(
         let ww = window.as_weak();
         AppState::get(window).on_update_seek_hover(move |fraction| {
             let Some(w) = ww.upgrade() else { return };
-            let g     = AppState::get(&w);
+            let g = AppState::get(&w);
             let total = g.get_playback_total_secs() as f64;
-            let secs  = (fraction as f64 * total).max(0.0);
+            let secs = (fraction as f64 * total).max(0.0);
             g.set_seek_hover_time(fmt_secs(secs));
         });
     }
@@ -315,13 +337,17 @@ pub(crate) fn wire_controls(
         // keep re-evaluating (and re-showing an already-dismissed overlay)
         // for the whole fade-out window.
         let video = Arc::clone(&video);
-        let ww    = window.as_weak();
+        let ww = window.as_weak();
         AppState::get(window).on_skip_segment(move || {
             let Some(w) = ww.upgrade() else { return };
             let g = AppState::get(&w);
             let mut vs = video.lock().unwrap();
-            let Some(end) = vs.skip_segment_end else { return };
-            if vs.player.is_none() { return; }
+            let Some(end) = vs.skip_segment_end else {
+                return;
+            };
+            if vs.player.is_none() {
+                return;
+            }
             info!("skip segment: fading to {:.1}s", end);
             crate::playback::arm_skip_fade(&mut vs, &g, end);
             vs.skip_segment_handled = true;
@@ -335,12 +361,12 @@ pub(crate) fn wire_controls(
         // dismiss_skip_timed: user pressed "Don't Skip" in the ask-timed overlay.
         // Mark the segment handled so it won't re-show, and hide the overlay immediately.
         let video = Arc::clone(&video);
-        let ww    = window.as_weak();
+        let ww = window.as_weak();
         AppState::get(window).on_dismiss_skip_timed(move || {
             {
                 let mut vs = video.lock().unwrap();
                 vs.skip_segment_handled = true;
-                vs.skip_timed_shown_at  = None;
+                vs.skip_timed_shown_at = None;
             }
             if let Some(w) = ww.upgrade() {
                 AppState::get(&w).set_show_skip_timed(false);
@@ -369,11 +395,11 @@ pub(crate) fn wire_controls(
     {
         let video = Arc::clone(&video);
         let state = Arc::clone(&state);
-        let ww    = window.as_weak();
+        let ww = window.as_weak();
         AppState::get(window).on_commit_panel_selection(move || {
             let Some(w) = ww.upgrade() else { return };
-            let g      = AppState::get(&w);
-            let panel  = g.get_player_open_panel();
+            let g = AppState::get(&w);
+            let panel = g.get_player_open_panel();
             let cursor = g.get_player_panel_cursor() as usize;
             let vs = video.lock().unwrap();
             if let Some(p) = vs.player.as_ref() {
@@ -382,7 +408,11 @@ pub(crate) fn wire_controls(
                         let id = if cursor == 0 {
                             0i32
                         } else {
-                            AppState::get(&w).get_sub_tracks().row_data(cursor - 1).map(|t| t.id).unwrap_or(0)
+                            AppState::get(&w)
+                                .get_sub_tracks()
+                                .row_data(cursor - 1)
+                                .map(|t| t.id)
+                                .unwrap_or(0)
                         };
                         debug!("commit sub: cursor={} → id={}", cursor, id);
                         p.set_sub_track(id as i64);
@@ -391,30 +421,56 @@ pub(crate) fn wire_controls(
                         // by mpv's own lang code (not the numeric id, which is
                         // only meaningful within this file's own track list).
                         if let Some(sid) = vs.playing_series_id.clone() {
-                            let lang = p.get_tracks().into_iter()
+                            let lang = p
+                                .get_tracks()
+                                .into_iter()
                                 .find(|t| t.track_type == "sub" && t.id == id as i64)
-                                .map(|t| t.lang).filter(|l| !l.is_empty());
+                                .map(|t| t.lang)
+                                .filter(|l| !l.is_empty());
                             if let Some(lang) = lang {
-                                state.lock().unwrap().remembered_tracks.entry(sid).or_default().sub_lang = Some(lang);
+                                state
+                                    .lock()
+                                    .unwrap()
+                                    .remembered_tracks
+                                    .entry(sid)
+                                    .or_default()
+                                    .sub_lang = Some(lang);
                             }
                         }
                     }
                     2 => {
-                        let id = AppState::get(&w).get_audio_tracks().row_data(cursor).map(|t| t.id).unwrap_or(1);
+                        let id = AppState::get(&w)
+                            .get_audio_tracks()
+                            .row_data(cursor)
+                            .map(|t| t.id)
+                            .unwrap_or(1);
                         debug!("commit audio: cursor={} → id={}", cursor, id);
                         p.set_audio_track(id as i64);
                         AppState::get(&w).set_current_audio_id(id);
                         if let Some(sid) = vs.playing_series_id.clone() {
-                            let lang = p.get_tracks().into_iter()
+                            let lang = p
+                                .get_tracks()
+                                .into_iter()
                                 .find(|t| t.track_type == "audio" && t.id == id as i64)
-                                .map(|t| t.lang).filter(|l| !l.is_empty());
+                                .map(|t| t.lang)
+                                .filter(|l| !l.is_empty());
                             if let Some(lang) = lang {
-                                state.lock().unwrap().remembered_tracks.entry(sid).or_default().audio_lang = Some(lang);
+                                state
+                                    .lock()
+                                    .unwrap()
+                                    .remembered_tracks
+                                    .entry(sid)
+                                    .or_default()
+                                    .audio_lang = Some(lang);
                             }
                         }
                     }
                     3 => {
-                        let id = AppState::get(&w).get_video_tracks().row_data(cursor).map(|t| t.id).unwrap_or(1);
+                        let id = AppState::get(&w)
+                            .get_video_tracks()
+                            .row_data(cursor)
+                            .map(|t| t.id)
+                            .unwrap_or(1);
                         debug!("commit video: cursor={} → id={}", cursor, id);
                         p.set_video_track(id as i64);
                         AppState::get(&w).set_current_video_id(id);
@@ -435,25 +491,27 @@ pub(crate) fn wire_controls(
     let volume_gen = Arc::new(AtomicU32::new(0));
     {
         let video = Arc::clone(&video);
-        let ww    = window.as_weak();
-        let rt    = rt_handle.clone();
-        let vgen  = Arc::clone(&volume_gen);
+        let ww = window.as_weak();
+        let rt = rt_handle.clone();
+        let vgen = Arc::clone(&volume_gen);
         AppState::get(window).on_volume_up(move || {
             let Some(w) = ww.upgrade() else { return };
             let g = AppState::get(&w);
             let passthrough = g.get_audio_passthrough_active();
             {
                 let vs = video.lock().unwrap();
-                if vs.player.is_none() { return; }
+                if vs.player.is_none() {
+                    return;
+                }
                 if !passthrough {
                     let vol = vs.player.as_ref().unwrap().adjust_volume(5.0);
                     g.set_volume_level(vol.round() as i32);
                 }
             }
             g.set_show_volume_overlay(true);
-            let generation  = vgen.fetch_add(1, Ordering::Relaxed) + 1;
-            let vg2  = Arc::clone(&vgen);
-            let ww2  = ww.clone();
+            let generation = vgen.fetch_add(1, Ordering::Relaxed) + 1;
+            let vg2 = Arc::clone(&vgen);
+            let ww2 = ww.clone();
             rt.spawn(async move {
                 tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
                 if vg2.load(Ordering::Relaxed) == generation {
@@ -468,25 +526,27 @@ pub(crate) fn wire_controls(
     }
     {
         let video = Arc::clone(&video);
-        let ww    = window.as_weak();
-        let rt    = rt_handle.clone();
-        let vgen  = Arc::clone(&volume_gen);
+        let ww = window.as_weak();
+        let rt = rt_handle.clone();
+        let vgen = Arc::clone(&volume_gen);
         AppState::get(window).on_volume_down(move || {
             let Some(w) = ww.upgrade() else { return };
             let g = AppState::get(&w);
             let passthrough = g.get_audio_passthrough_active();
             {
                 let vs = video.lock().unwrap();
-                if vs.player.is_none() { return; }
+                if vs.player.is_none() {
+                    return;
+                }
                 if !passthrough {
                     let vol = vs.player.as_ref().unwrap().adjust_volume(-5.0);
                     g.set_volume_level(vol.round() as i32);
                 }
             }
             g.set_show_volume_overlay(true);
-            let generation  = vgen.fetch_add(1, Ordering::Relaxed) + 1;
-            let vg2  = Arc::clone(&vgen);
-            let ww2  = ww.clone();
+            let generation = vgen.fetch_add(1, Ordering::Relaxed) + 1;
+            let vg2 = Arc::clone(&vgen);
+            let ww2 = ww.clone();
             rt.spawn(async move {
                 tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
                 if vg2.load(Ordering::Relaxed) == generation {
@@ -502,7 +562,9 @@ pub(crate) fn wire_controls(
     {
         let ww = window.as_weak();
         AppState::get(window).on_show_controls(move || {
-            if let Some(w) = ww.upgrade() { AppState::get(&w).set_controls_visible(true); }
+            if let Some(w) = ww.upgrade() {
+                AppState::get(&w).set_controls_visible(true);
+            }
             // Signal the mpv timer to reset the idle counter on its next tick.
             // Avoids taking video.lock() here — the GL rendering notifier holds
             // that same lock during mpv_render_context_render, and changed mouse-x
@@ -585,7 +647,7 @@ pub(crate) fn wire_controls(
     // ── chapter navigation ────────────────────────────────────────────────────
     {
         let video = Arc::clone(&video);
-        let ww    = window.as_weak();
+        let ww = window.as_weak();
         AppState::get(window).on_chapter_prev(move || {
             let name = {
                 let vs = video.lock().unwrap();
@@ -606,7 +668,7 @@ pub(crate) fn wire_controls(
     }
     {
         let video = Arc::clone(&video);
-        let ww    = window.as_weak();
+        let ww = window.as_weak();
         AppState::get(window).on_chapter_next(move || {
             let name = {
                 let vs = video.lock().unwrap();
@@ -628,7 +690,7 @@ pub(crate) fn wire_controls(
     // ── sub / audio delay ─────────────────────────────────────────────────────
     {
         let video = Arc::clone(&video);
-        let ww    = window.as_weak();
+        let ww = window.as_weak();
         AppState::get(window).on_sub_delay_inc(move || {
             let delay = {
                 let vs = video.lock().unwrap();
@@ -647,7 +709,7 @@ pub(crate) fn wire_controls(
     }
     {
         let video = Arc::clone(&video);
-        let ww    = window.as_weak();
+        let ww = window.as_weak();
         AppState::get(window).on_sub_delay_dec(move || {
             let delay = {
                 let vs = video.lock().unwrap();
@@ -666,7 +728,7 @@ pub(crate) fn wire_controls(
     }
     {
         let video = Arc::clone(&video);
-        let ww    = window.as_weak();
+        let ww = window.as_weak();
         AppState::get(window).on_audio_delay_inc(move || {
             let delay = {
                 let vs = video.lock().unwrap();
@@ -685,7 +747,7 @@ pub(crate) fn wire_controls(
     }
     {
         let video = Arc::clone(&video);
-        let ww    = window.as_weak();
+        let ww = window.as_weak();
         AppState::get(window).on_audio_delay_dec(move || {
             let delay = {
                 let vs = video.lock().unwrap();

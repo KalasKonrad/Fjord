@@ -332,10 +332,16 @@ pub(crate) fn get_supported_modes(screen: &str) -> HashSet<(String, String)> {
         } else if in_section && let Some(rest) = trimmed.strip_prefix("Modes:") {
             for tok in rest.split_whitespace() {
                 // token shape: "N:WxH@HZ[*][!]"
-                let Some((_, after_colon)) = tok.split_once(':') else { continue };
-                let Some((res, hz_raw)) = after_colon.split_once('@') else { continue };
-                let hz: String =
-                    hz_raw.chars().filter(|c| c.is_ascii_digit() || *c == '.').collect();
+                let Some((_, after_colon)) = tok.split_once(':') else {
+                    continue;
+                };
+                let Some((res, hz_raw)) = after_colon.split_once('@') else {
+                    continue;
+                };
+                let hz: String = hz_raw
+                    .chars()
+                    .filter(|c| c.is_ascii_digit() || *c == '.')
+                    .collect();
                 if !res.is_empty() && !hz.is_empty() {
                     modes.insert((res.to_string(), hz));
                 }
@@ -358,11 +364,19 @@ pub(crate) fn get_supported_modes(screen: &str) -> HashSet<(String, String)> {
 /// `list_outputs_with_priority`'s own screen-name pre-fill already follows.
 pub(crate) fn supported_resolutions_and_hz(screen: &str) -> (Vec<String>, Vec<String>) {
     let modes = get_supported_modes(screen);
-    let mut resolutions: Vec<String> =
-        modes.iter().map(|(res, _)| res.clone()).collect::<HashSet<_>>().into_iter().collect();
+    let mut resolutions: Vec<String> = modes
+        .iter()
+        .map(|(res, _)| res.clone())
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .collect();
     resolutions.sort_by_key(|res| std::cmp::Reverse(pixel_count(res)));
-    let mut hz: Vec<String> =
-        modes.iter().map(|(_, hz)| hz.clone()).collect::<HashSet<_>>().into_iter().collect();
+    let mut hz: Vec<String> = modes
+        .iter()
+        .map(|(_, hz)| hz.clone())
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .collect();
     hz.sort_by(|a, b| {
         a.parse::<f64>()
             .unwrap_or(0.0)
@@ -390,11 +404,17 @@ fn pixel_count(res: &str) -> u64 {
 /// one candidate" pre-fill check — deliberately one shell-out serving both
 /// purposes rather than two.
 fn enabled_connected_outputs() -> Vec<(String, u32)> {
-    let Some(output) = kscreen_doctor_o() else { return Vec::new() };
+    let Some(output) = kscreen_doctor_o() else {
+        return Vec::new();
+    };
     let mut candidates = Vec::new();
     let mut current: Option<String> = None;
     let (mut enabled, mut connected, mut priority) = (false, false, u32::MAX);
-    let flush = |current: &mut Option<String>, enabled: bool, connected: bool, priority: u32, out: &mut Vec<(String, u32)>| {
+    let flush = |current: &mut Option<String>,
+                 enabled: bool,
+                 connected: bool,
+                 priority: u32,
+                 out: &mut Vec<(String, u32)>| {
         if let (Some(name), true, true) = (current.take(), enabled, connected) {
             out.push((name, priority));
         }
@@ -537,7 +557,10 @@ fn display_switch_args(
     let on = |b: bool| if b { "enable" } else { "disable" };
     let mut args = Vec::new();
     if let Some((resolution, hz_frac, scale)) = mode {
-        let hz_int = hz_frac.parse::<f64>().map(|f| f.round() as i64).unwrap_or(60);
+        let hz_int = hz_frac
+            .parse::<f64>()
+            .map(|f| f.round() as i64)
+            .unwrap_or(60);
         args.push(format!("output.{screen}.mode.{resolution}@{hz_int}"));
         args.push(format!("output.{screen}.scale.{scale}"));
     }
@@ -548,14 +571,30 @@ fn display_switch_args(
     args
 }
 
-fn apply_display_switch(screen: &str, mode: Option<(&str, &str, &str)>, color: Option<(bool, bool)>) {
+fn apply_display_switch(
+    screen: &str,
+    mode: Option<(&str, &str, &str)>,
+    color: Option<(bool, bool)>,
+) {
     let args = display_switch_args(screen, mode, color);
-    if args.is_empty() { return; }
+    if args.is_empty() {
+        return;
+    }
     let mode_txt = mode.map(|(r, hz, sc)| format!("mode {r}@{hz} (scale {sc})"));
-    let color_txt = color.map(|(h, w)| format!("HDR {} / WCG {}", if h { "on" } else { "off" }, if w { "on" } else { "off" }));
+    let color_txt = color.map(|(h, w)| {
+        format!(
+            "HDR {} / WCG {}",
+            if h { "on" } else { "off" },
+            if w { "on" } else { "off" }
+        )
+    });
     tracing::info!(
         "display_sync: switching {screen} in one step: {}",
-        [mode_txt, color_txt].into_iter().flatten().collect::<Vec<_>>().join(", ")
+        [mode_txt, color_txt]
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>()
+            .join(", ")
     );
     run_kscreen(&args);
 }
@@ -632,8 +671,12 @@ pub(crate) async fn sync_to_source(
         // now after HDR changes too.
         tokio::time::sleep(Duration::from_secs(3)).await;
         let mut s = state.lock().unwrap();
-        if mode_changed { s.display_sync_current_mode = Some((target_res, target_hz)); }
-        if hdr_changed { s.display_sync_current_hdr = Some(want_hdr); }
+        if mode_changed {
+            s.display_sync_current_mode = Some((target_res, target_hz));
+        }
+        if hdr_changed {
+            s.display_sync_current_hdr = Some(want_hdr);
+        }
     }
 }
 
@@ -659,7 +702,11 @@ pub(crate) async fn sync_before_load(
     cfg: DisplaySyncSettings,
 ) {
     let meta = SourceHdrMetadata {
-        gamma: if video_info.is_hdr { "pq".into() } else { "bt.1886".into() },
+        gamma: if video_info.is_hdr {
+            "pq".into()
+        } else {
+            "bt.1886".into()
+        },
         ..Default::default()
     };
     sync_to_source(state, (video_info.width, 0, video_info.fps), meta, cfg).await;
@@ -675,8 +722,8 @@ pub(crate) async fn sync_before_load(
 /// revert either, which was the point of the 2026-09-24 fix.
 fn needs_revert(
     current_mode: Option<&(String, String)>,
-    current_hdr:  Option<bool>,
-    default:      &(String, String),
+    current_hdr: Option<bool>,
+    default: &(String, String),
 ) -> bool {
     current_mode.is_some_and(|m| m != default) || current_hdr == Some(true)
 }
@@ -713,13 +760,29 @@ pub(crate) async fn revert_to_default(state: Arc<Mutex<FjordState>>) {
     }
 
     let scale = if default_res.starts_with("3840") {
-        state.lock().unwrap().config.device.display_sync_scale_4k.clone()
+        state
+            .lock()
+            .unwrap()
+            .config
+            .device
+            .display_sync_scale_4k
+            .clone()
     } else {
-        state.lock().unwrap().config.device.display_sync_scale_1080p.clone()
+        state
+            .lock()
+            .unwrap()
+            .config
+            .device
+            .display_sync_scale_1080p
+            .clone()
     };
     let (screen2, res2, hz2) = (screen.clone(), default_res.clone(), default_hz.clone());
     tokio::task::spawn_blocking(move || {
-        apply_display_switch(&screen2, Some((res2.as_str(), hz2.as_str(), scale.as_str())), Some((false, false)))
+        apply_display_switch(
+            &screen2,
+            Some((res2.as_str(), hz2.as_str(), scale.as_str())),
+            Some((false, false)),
+        )
     })
     .await
     .ok();
@@ -741,7 +804,11 @@ mod tests {
     #[test]
     fn display_switch_is_one_call() {
         assert_eq!(
-            display_switch_args("HDMI-A-2", Some(("3840x2160", "23.976", "2")), Some((true, true))),
+            display_switch_args(
+                "HDMI-A-2",
+                Some(("3840x2160", "23.976", "2")),
+                Some((true, true))
+            ),
             vec![
                 "output.HDMI-A-2.mode.3840x2160@24",
                 "output.HDMI-A-2.scale.2",
@@ -772,7 +839,6 @@ mod tests {
         assert!(needs_revert(None, Some(true), &def));
     }
 
-
     // Real 128-byte EDID base blocks, captured directly from
     // /sys/class/drm/*/edid on the dev machine that verified this whole
     // friendly_output_name feature (2026-09-19) — cross-checked against
@@ -781,30 +847,38 @@ mod tests {
     // identifiers, nothing sensitive, kept as a permanent regression fixture
     // rather than a one-off diagnostic.
     const EDID_PHILIPS_245P_A: [u8; 128] = [
-        0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x41, 0x0c, 0x9e, 0x08, 0x41, 0x33, 0x0f, 0x00,
-        0x1e, 0x15, 0x01, 0x03, 0x80, 0x34, 0x20, 0x78, 0xee, 0x9f, 0xf5, 0xa6, 0x56, 0x4b, 0x9a, 0x25,
-        0x12, 0x50, 0x54, 0xbf, 0xef, 0x80, 0x71, 0x40, 0x81, 0xc0, 0x81, 0x40, 0x95, 0x00, 0x95, 0x0f,
-        0xb3, 0x00, 0x01, 0x01, 0x01, 0x01, 0x28, 0x3c, 0x80, 0xa0, 0x70, 0xb0, 0x23, 0x40, 0x30, 0x20,
-        0x36, 0x00, 0x07, 0x44, 0x21, 0x00, 0x00, 0x1a, 0x00, 0x00, 0x00, 0xff, 0x00, 0x44, 0x4c, 0x34,
-        0x31, 0x31, 0x33, 0x30, 0x39, 0x39, 0x36, 0x31, 0x36, 0x31, 0x00, 0x00, 0x00, 0xfc, 0x00, 0x50,
-        0x68, 0x69, 0x6c, 0x69, 0x70, 0x73, 0x20, 0x32, 0x34, 0x35, 0x50, 0x0a, 0x00, 0x00, 0x00, 0xfd,
-        0x00, 0x30, 0x55, 0x18, 0x5e, 0x11, 0x00, 0x0a, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x00, 0x66,
+        0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x41, 0x0c, 0x9e, 0x08, 0x41, 0x33, 0x0f,
+        0x00, 0x1e, 0x15, 0x01, 0x03, 0x80, 0x34, 0x20, 0x78, 0xee, 0x9f, 0xf5, 0xa6, 0x56, 0x4b,
+        0x9a, 0x25, 0x12, 0x50, 0x54, 0xbf, 0xef, 0x80, 0x71, 0x40, 0x81, 0xc0, 0x81, 0x40, 0x95,
+        0x00, 0x95, 0x0f, 0xb3, 0x00, 0x01, 0x01, 0x01, 0x01, 0x28, 0x3c, 0x80, 0xa0, 0x70, 0xb0,
+        0x23, 0x40, 0x30, 0x20, 0x36, 0x00, 0x07, 0x44, 0x21, 0x00, 0x00, 0x1a, 0x00, 0x00, 0x00,
+        0xff, 0x00, 0x44, 0x4c, 0x34, 0x31, 0x31, 0x33, 0x30, 0x39, 0x39, 0x36, 0x31, 0x36, 0x31,
+        0x00, 0x00, 0x00, 0xfc, 0x00, 0x50, 0x68, 0x69, 0x6c, 0x69, 0x70, 0x73, 0x20, 0x32, 0x34,
+        0x35, 0x50, 0x0a, 0x00, 0x00, 0x00, 0xfd, 0x00, 0x30, 0x55, 0x18, 0x5e, 0x11, 0x00, 0x0a,
+        0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x00, 0x66,
     ];
     const EDID_HP_ZR24W: [u8; 128] = [
-        0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x22, 0xf0, 0x69, 0x28, 0x01, 0x01, 0x01, 0x01,
-        0x0d, 0x15, 0x01, 0x04, 0xa5, 0x36, 0x23, 0x78, 0x2e, 0xfc, 0x81, 0xa4, 0x55, 0x4d, 0x9d, 0x25,
-        0x12, 0x50, 0x54, 0x21, 0x08, 0x00, 0x81, 0x40, 0x81, 0x80, 0x95, 0x00, 0xa9, 0x40, 0xb3, 0x00,
-        0xd1, 0xc0, 0x01, 0x01, 0x01, 0x01, 0x28, 0x3c, 0x80, 0xa0, 0x70, 0xb0, 0x23, 0x40, 0x30, 0x20,
-        0x36, 0x00, 0x22, 0x60, 0x21, 0x00, 0x00, 0x1a, 0x00, 0x00, 0x00, 0xfd, 0x00, 0x3b, 0x3d, 0x18,
-        0x50, 0x11, 0x00, 0x0a, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x00, 0x00, 0x00, 0xfc, 0x00, 0x48,
-        0x50, 0x20, 0x5a, 0x52, 0x32, 0x34, 0x77, 0x0a, 0x20, 0x20, 0x20, 0x20, 0x00, 0x00, 0x00, 0xff,
-        0x00, 0x43, 0x4e, 0x54, 0x31, 0x31, 0x33, 0x31, 0x30, 0x42, 0x46, 0x0a, 0x20, 0x20, 0x00, 0x33,
+        0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x22, 0xf0, 0x69, 0x28, 0x01, 0x01, 0x01,
+        0x01, 0x0d, 0x15, 0x01, 0x04, 0xa5, 0x36, 0x23, 0x78, 0x2e, 0xfc, 0x81, 0xa4, 0x55, 0x4d,
+        0x9d, 0x25, 0x12, 0x50, 0x54, 0x21, 0x08, 0x00, 0x81, 0x40, 0x81, 0x80, 0x95, 0x00, 0xa9,
+        0x40, 0xb3, 0x00, 0xd1, 0xc0, 0x01, 0x01, 0x01, 0x01, 0x28, 0x3c, 0x80, 0xa0, 0x70, 0xb0,
+        0x23, 0x40, 0x30, 0x20, 0x36, 0x00, 0x22, 0x60, 0x21, 0x00, 0x00, 0x1a, 0x00, 0x00, 0x00,
+        0xfd, 0x00, 0x3b, 0x3d, 0x18, 0x50, 0x11, 0x00, 0x0a, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20,
+        0x00, 0x00, 0x00, 0xfc, 0x00, 0x48, 0x50, 0x20, 0x5a, 0x52, 0x32, 0x34, 0x77, 0x0a, 0x20,
+        0x20, 0x20, 0x20, 0x00, 0x00, 0x00, 0xff, 0x00, 0x43, 0x4e, 0x54, 0x31, 0x31, 0x33, 0x31,
+        0x30, 0x42, 0x46, 0x0a, 0x20, 0x20, 0x00, 0x33,
     ];
 
     #[test]
     fn parses_display_product_name_from_real_edid() {
-        assert_eq!(parse_edid_product_name(&EDID_PHILIPS_245P_A), Some("Philips 245P".to_string()));
-        assert_eq!(parse_edid_product_name(&EDID_HP_ZR24W), Some("HP ZR24w".to_string()));
+        assert_eq!(
+            parse_edid_product_name(&EDID_PHILIPS_245P_A),
+            Some("Philips 245P".to_string())
+        );
+        assert_eq!(
+            parse_edid_product_name(&EDID_HP_ZR24W),
+            Some("HP ZR24w".to_string())
+        );
     }
 
     #[test]
@@ -882,10 +956,12 @@ mod tests {
     fn four_k_odd_fps_stays_4k_when_configured() {
         let mut cfg = settings();
         cfg.odd_fps_stay_4k = true;
-        let supported: HashSet<(String, String)> =
-            [(RES_4K.to_string(), "48.00".to_string()), (RES_4K.to_string(), "60.00".to_string())]
-                .into_iter()
-                .collect();
+        let supported: HashSet<(String, String)> = [
+            (RES_4K.to_string(), "48.00".to_string()),
+            (RES_4K.to_string(), "60.00".to_string()),
+        ]
+        .into_iter()
+        .collect();
         assert_eq!(
             compute_target_mode(3840, 48.0, &cfg, &supported),
             (RES_4K.to_string(), "48.00".to_string())
@@ -960,8 +1036,9 @@ mod tests {
     #[test]
     fn fallback_chain_no_mode_at_resolution_uses_default() {
         let cfg = settings();
-        let supported: HashSet<(String, String)> =
-            [("1280x720".to_string(), "60.00".to_string())].into_iter().collect();
+        let supported: HashSet<(String, String)> = [("1280x720".to_string(), "60.00".to_string())]
+            .into_iter()
+            .collect();
         assert_eq!(
             compute_target_mode(3840, 23.976, &cfg, &supported),
             ("1920x1080".to_string(), "59.94".to_string())
@@ -970,7 +1047,10 @@ mod tests {
 
     #[test]
     fn strip_ansi_removes_sgr_codes() {
-        assert_eq!(strip_ansi("\u{1b}[01;32mOutput:\u{1b}[0;0m 1 HDMI-A-2"), "Output: 1 HDMI-A-2");
+        assert_eq!(
+            strip_ansi("\u{1b}[01;32mOutput:\u{1b}[0;0m 1 HDMI-A-2"),
+            "Output: 1 HDMI-A-2"
+        );
         assert_eq!(strip_ansi("plain text, no codes"), "plain text, no codes");
     }
 }

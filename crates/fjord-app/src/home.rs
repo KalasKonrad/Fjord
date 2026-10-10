@@ -55,82 +55,82 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use fjord_api::{models::MediaItem, JellyfinClient};
+use fjord_api::{JellyfinClient, models::MediaItem};
 use serde::{Deserialize, Serialize};
 use tracing::warn;
 
-use slint::{Global, Model, ModelRc};
-use crate::config::{FjordState, xdg_cache_base, poster_cache_dir, backdrop_cache_dir};
 use crate::AppState;
+use crate::config::{FjordState, backdrop_cache_dir, poster_cache_dir, xdg_cache_base};
 use crate::playback::VideoState;
 use crate::{CardItem, MainWindow};
+use slint::{Global, Model, ModelRc};
 
 // Named enum for the 17 dashboard poster-loading sections.
 // The discriminant equals the array index used in spawn_poster_loading.
 #[repr(usize)]
 #[derive(Copy, Clone)]
 pub(crate) enum HomeSection {
-    ContinueWatching         = 0,
-    NextUp                   = 1,
-    RecentlyAdded            = 2,
-    ContinueWatchingMovies   = 3,
-    RecentlyAddedMovies      = 4,
-    NotWatchedMovies         = 5,
-    ContinueWatchingTv       = 6,
-    RecentlyAddedTv          = 7,
-    NotWatchedTv             = 8,
+    ContinueWatching = 0,
+    NextUp = 1,
+    RecentlyAdded = 2,
+    ContinueWatchingMovies = 3,
+    RecentlyAddedMovies = 4,
+    NotWatchedMovies = 5,
+    ContinueWatchingTv = 6,
+    RecentlyAddedTv = 7,
+    NotWatchedTv = 8,
     RecentlyAddedCollections = 9,
-    UnwatchedCollections     = 10,
-    RecentlyAddedAlbums      = 11,
-    RecentlyPlayedAlbums     = 12,
-    FavoriteMovies           = 13,
-    FavoriteSeries           = 14,
-    FavoriteAlbums           = 15,
-    Playlists                = 16,
+    UnwatchedCollections = 10,
+    RecentlyAddedAlbums = 11,
+    RecentlyPlayedAlbums = 12,
+    FavoriteMovies = 13,
+    FavoriteSeries = 14,
+    FavoriteAlbums = 15,
+    Playlists = 16,
 }
 
 impl HomeSection {
     pub(crate) fn empty_array() -> [(HomeSection, Vec<MediaItem>); 17] {
         [
-            (HomeSection::ContinueWatching,         vec![]),
-            (HomeSection::NextUp,                   vec![]),
-            (HomeSection::RecentlyAdded,            vec![]),
-            (HomeSection::ContinueWatchingMovies,   vec![]),
-            (HomeSection::RecentlyAddedMovies,      vec![]),
-            (HomeSection::NotWatchedMovies,         vec![]),
-            (HomeSection::ContinueWatchingTv,       vec![]),
-            (HomeSection::RecentlyAddedTv,          vec![]),
-            (HomeSection::NotWatchedTv,             vec![]),
+            (HomeSection::ContinueWatching, vec![]),
+            (HomeSection::NextUp, vec![]),
+            (HomeSection::RecentlyAdded, vec![]),
+            (HomeSection::ContinueWatchingMovies, vec![]),
+            (HomeSection::RecentlyAddedMovies, vec![]),
+            (HomeSection::NotWatchedMovies, vec![]),
+            (HomeSection::ContinueWatchingTv, vec![]),
+            (HomeSection::RecentlyAddedTv, vec![]),
+            (HomeSection::NotWatchedTv, vec![]),
             (HomeSection::RecentlyAddedCollections, vec![]),
-            (HomeSection::UnwatchedCollections,     vec![]),
-            (HomeSection::RecentlyAddedAlbums,      vec![]),
-            (HomeSection::RecentlyPlayedAlbums,     vec![]),
-            (HomeSection::FavoriteMovies,           vec![]),
-            (HomeSection::FavoriteSeries,           vec![]),
-            (HomeSection::FavoriteAlbums,           vec![]),
-            (HomeSection::Playlists,                vec![]),
+            (HomeSection::UnwatchedCollections, vec![]),
+            (HomeSection::RecentlyAddedAlbums, vec![]),
+            (HomeSection::RecentlyPlayedAlbums, vec![]),
+            (HomeSection::FavoriteMovies, vec![]),
+            (HomeSection::FavoriteSeries, vec![]),
+            (HomeSection::FavoriteAlbums, vec![]),
+            (HomeSection::Playlists, vec![]),
         ]
     }
 }
 
 #[derive(Serialize, Deserialize, Default)]
 pub(crate) struct HomeData {
-    pub continue_watching:          Vec<MediaItem>,
-    pub next_up:                    Vec<MediaItem>,
-    pub recently_added_movies:      Vec<MediaItem>,
-    pub recently_added_tv:          Vec<MediaItem>,
-    pub not_watched_movies:         Vec<MediaItem>,
-    pub not_watched_tv:             Vec<MediaItem>,
+    pub continue_watching: Vec<MediaItem>,
+    pub next_up: Vec<MediaItem>,
+    pub recently_added_movies: Vec<MediaItem>,
+    pub recently_added_tv: Vec<MediaItem>,
+    pub not_watched_movies: Vec<MediaItem>,
+    pub not_watched_tv: Vec<MediaItem>,
     pub recently_added_collections: Vec<MediaItem>,
-    pub unwatched_collections:      Vec<MediaItem>,
-    pub recently_added_albums:      Vec<MediaItem>,
-    pub recently_played_albums:     Vec<MediaItem>,
-    pub favorite_movies:            Vec<MediaItem>,
-    pub favorite_series:            Vec<MediaItem>,
-    pub favorite_albums:            Vec<MediaItem>,
+    pub unwatched_collections: Vec<MediaItem>,
+    pub recently_added_albums: Vec<MediaItem>,
+    pub recently_played_albums: Vec<MediaItem>,
+    pub favorite_movies: Vec<MediaItem>,
+    pub favorite_series: Vec<MediaItem>,
+    pub favorite_albums: Vec<MediaItem>,
     // Added in Phase 57 — default keeps pre-playlist home.json caches loadable.
     #[serde(default)]
-    pub playlists:                  Vec<MediaItem>,
+    pub playlists: Vec<MediaItem>,
 }
 
 // Bonfire Phase 1 (cache namespacing, 2026-08-09): every on-disk cache below
@@ -147,7 +147,12 @@ pub(crate) struct HomeData {
 // None when user_id isn't a valid cache name (config::safe_cache_name) —
 // nothing is then read or written.
 fn profile_cache_dir(user_id: &str) -> Option<PathBuf> {
-    Some(xdg_cache_base().join("fjord").join("profiles").join(crate::config::safe_cache_name(user_id)?))
+    Some(
+        xdg_cache_base()
+            .join("fjord")
+            .join("profiles")
+            .join(crate::config::safe_cache_name(user_id)?),
+    )
 }
 
 fn cache_path(user_id: &str, filename: &str) -> Option<PathBuf> {
@@ -164,7 +169,9 @@ fn save_cache<T: serde::Serialize + ?Sized>(path: Option<PathBuf>, data: &T) {
         warn!("cache: not a valid user id for a cache folder — not saved");
         return;
     };
-    if let Some(parent) = path.parent() { let _ = std::fs::create_dir_all(parent); }
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
     if let Ok(json) = serde_json::to_string(data) {
         let tmp = path.with_extension("json.tmp");
         if std::fs::write(&tmp, &json).is_ok() {
@@ -173,31 +180,73 @@ fn save_cache<T: serde::Serialize + ?Sized>(path: Option<PathBuf>, data: &T) {
     }
 }
 
-pub(crate) fn home_cache_path(user_id: &str) -> Option<PathBuf> { cache_path(user_id, "home.json") }
-pub(crate) fn load_home_cache(user_id: &str)            -> Option<HomeData>     { load_cache(home_cache_path(user_id)) }
-pub(crate) fn save_home_cache(user_id: &str, hd: &HomeData)                     { save_cache(home_cache_path(user_id), hd) }
+pub(crate) fn home_cache_path(user_id: &str) -> Option<PathBuf> {
+    cache_path(user_id, "home.json")
+}
+pub(crate) fn load_home_cache(user_id: &str) -> Option<HomeData> {
+    load_cache(home_cache_path(user_id))
+}
+pub(crate) fn save_home_cache(user_id: &str, hd: &HomeData) {
+    save_cache(home_cache_path(user_id), hd)
+}
 
 // ── Library list caches (movies.json / series.json / collections.json) ───────
 
-fn movies_cache_path(user_id: &str)      -> Option<PathBuf> { cache_path(user_id, "movies.json") }
-fn series_cache_path(user_id: &str)      -> Option<PathBuf> { cache_path(user_id, "series.json") }
-fn collections_cache_path(user_id: &str) -> Option<PathBuf> { cache_path(user_id, "collections.json") }
-fn artists_cache_path(user_id: &str)     -> Option<PathBuf> { cache_path(user_id, "artists.json") }
-fn albums_cache_path(user_id: &str)      -> Option<PathBuf> { cache_path(user_id, "albums.json") }
-fn playlists_cache_path(user_id: &str)   -> Option<PathBuf> { cache_path(user_id, "playlists.json") }
+fn movies_cache_path(user_id: &str) -> Option<PathBuf> {
+    cache_path(user_id, "movies.json")
+}
+fn series_cache_path(user_id: &str) -> Option<PathBuf> {
+    cache_path(user_id, "series.json")
+}
+fn collections_cache_path(user_id: &str) -> Option<PathBuf> {
+    cache_path(user_id, "collections.json")
+}
+fn artists_cache_path(user_id: &str) -> Option<PathBuf> {
+    cache_path(user_id, "artists.json")
+}
+fn albums_cache_path(user_id: &str) -> Option<PathBuf> {
+    cache_path(user_id, "albums.json")
+}
+fn playlists_cache_path(user_id: &str) -> Option<PathBuf> {
+    cache_path(user_id, "playlists.json")
+}
 
-pub(crate) fn load_movies_cache(user_id: &str)                     -> Option<Vec<MediaItem>> { load_cache(movies_cache_path(user_id)) }
-pub(crate) fn save_movies_cache(user_id: &str, items: &[MediaItem])                          { save_cache(movies_cache_path(user_id), items) }
-pub(crate) fn load_series_cache(user_id: &str)                     -> Option<Vec<MediaItem>> { load_cache(series_cache_path(user_id)) }
-pub(crate) fn save_series_cache(user_id: &str, items: &[MediaItem])                          { save_cache(series_cache_path(user_id), items) }
-pub(crate) fn load_collections_cache(user_id: &str)                -> Option<Vec<MediaItem>> { load_cache(collections_cache_path(user_id)) }
-pub(crate) fn save_collections_cache(user_id: &str, items: &[MediaItem])                     { save_cache(collections_cache_path(user_id), items) }
-pub(crate) fn load_artists_cache(user_id: &str)                    -> Option<Vec<MediaItem>> { load_cache(artists_cache_path(user_id)) }
-pub(crate) fn save_artists_cache(user_id: &str, items: &[MediaItem])                         { save_cache(artists_cache_path(user_id), items) }
-pub(crate) fn load_albums_cache(user_id: &str)                     -> Option<Vec<MediaItem>> { load_cache(albums_cache_path(user_id)) }
-pub(crate) fn save_albums_cache(user_id: &str, items: &[MediaItem])                          { save_cache(albums_cache_path(user_id), items) }
-pub(crate) fn load_playlists_cache(user_id: &str)                  -> Option<Vec<MediaItem>> { load_cache(playlists_cache_path(user_id)) }
-pub(crate) fn save_playlists_cache(user_id: &str, items: &[MediaItem])                       { save_cache(playlists_cache_path(user_id), items) }
+pub(crate) fn load_movies_cache(user_id: &str) -> Option<Vec<MediaItem>> {
+    load_cache(movies_cache_path(user_id))
+}
+pub(crate) fn save_movies_cache(user_id: &str, items: &[MediaItem]) {
+    save_cache(movies_cache_path(user_id), items)
+}
+pub(crate) fn load_series_cache(user_id: &str) -> Option<Vec<MediaItem>> {
+    load_cache(series_cache_path(user_id))
+}
+pub(crate) fn save_series_cache(user_id: &str, items: &[MediaItem]) {
+    save_cache(series_cache_path(user_id), items)
+}
+pub(crate) fn load_collections_cache(user_id: &str) -> Option<Vec<MediaItem>> {
+    load_cache(collections_cache_path(user_id))
+}
+pub(crate) fn save_collections_cache(user_id: &str, items: &[MediaItem]) {
+    save_cache(collections_cache_path(user_id), items)
+}
+pub(crate) fn load_artists_cache(user_id: &str) -> Option<Vec<MediaItem>> {
+    load_cache(artists_cache_path(user_id))
+}
+pub(crate) fn save_artists_cache(user_id: &str, items: &[MediaItem]) {
+    save_cache(artists_cache_path(user_id), items)
+}
+pub(crate) fn load_albums_cache(user_id: &str) -> Option<Vec<MediaItem>> {
+    load_cache(albums_cache_path(user_id))
+}
+pub(crate) fn save_albums_cache(user_id: &str, items: &[MediaItem]) {
+    save_cache(albums_cache_path(user_id), items)
+}
+pub(crate) fn load_playlists_cache(user_id: &str) -> Option<Vec<MediaItem>> {
+    load_cache(playlists_cache_path(user_id))
+}
+pub(crate) fn save_playlists_cache(user_id: &str, items: &[MediaItem]) {
+    save_cache(playlists_cache_path(user_id), items)
+}
 
 /// `include_not_watched`: the Not Watched Movies/TV rows are the one real,
 /// evidence-based finding from adding per-branch timing (2026-08-14, "what
@@ -224,44 +273,95 @@ pub(crate) fn save_playlists_cache(user_id: &str, items: &[MediaItem])          
 /// time just to keep one pair of branches inside it. See `auth.rs`'s own
 /// `finish_session_setup` for how the `false` case eventually gets these
 /// two rows anyway, just without blocking login on them.
-pub(crate) async fn fetch_home_data(client: &JellyfinClient, include_not_watched: bool) -> HomeData {
+pub(crate) async fn fetch_home_data(
+    client: &JellyfinClient,
+    include_not_watched: bool,
+) -> HomeData {
     let (cw, nu, ra, ram, rac, uwc, raa, rpa, fam, fas, fal, pls) = tokio::join!(
-        crate::timed("continue_watching",         client.get_continue_watching()),
-        crate::timed("next_up",                   client.get_next_up()),
-        crate::timed("recently_added_tv",         client.get_latest("Episode")),
-        crate::timed("recently_added_movies",     client.get_latest("Movie")),
-        crate::timed("recently_added_collections", client.get_recently_added_collections()),
-        crate::timed("unwatched_collections",      client.get_unwatched_collections()),
-        crate::timed("recently_added_albums",      client.get_latest_music()),
-        crate::timed("recently_played_albums",     client.get_recently_played_albums()),
-        crate::timed("favorite_movies",            client.get_favorites("Movie")),
-        crate::timed("favorite_series",             client.get_favorites("Series")),
-        crate::timed("favorite_albums",             client.get_favorites("MusicAlbum")),
-        crate::timed("playlists",                  client.get_all_playlists()),
+        crate::timed("continue_watching", client.get_continue_watching()),
+        crate::timed("next_up", client.get_next_up()),
+        crate::timed("recently_added_tv", client.get_latest("Episode")),
+        crate::timed("recently_added_movies", client.get_latest("Movie")),
+        crate::timed(
+            "recently_added_collections",
+            client.get_recently_added_collections()
+        ),
+        crate::timed("unwatched_collections", client.get_unwatched_collections()),
+        crate::timed("recently_added_albums", client.get_latest_music()),
+        crate::timed(
+            "recently_played_albums",
+            client.get_recently_played_albums()
+        ),
+        crate::timed("favorite_movies", client.get_favorites("Movie")),
+        crate::timed("favorite_series", client.get_favorites("Series")),
+        crate::timed("favorite_albums", client.get_favorites("MusicAlbum")),
+        crate::timed("playlists", client.get_all_playlists()),
     );
     let (nwm, nwt) = if include_not_watched {
         tokio::join!(
             crate::timed("not_watched_movies", client.get_unwatched(Some("Movie"))),
-            crate::timed("not_watched_tv",     client.get_unwatched(Some("Series"))),
+            crate::timed("not_watched_tv", client.get_unwatched(Some("Series"))),
         )
     } else {
         (Ok(vec![]), Ok(vec![]))
     };
     HomeData {
-        continue_watching:          cw.unwrap_or_else(|e|  { warn!("continue_watching: {:#}", e);          vec![] }),
-        next_up:                    nu.unwrap_or_else(|e|  { warn!("next_up: {:#}", e);                    vec![] }),
-        recently_added_tv:          ra.unwrap_or_else(|e|  { warn!("recently_added_tv: {:#}", e);          vec![] }),
-        recently_added_movies:      ram.unwrap_or_else(|e| { warn!("recently_added_movies: {:#}", e);      vec![] }),
-        not_watched_movies:         nwm.unwrap_or_else(|e| { warn!("not_watched_movies: {:#}", e);         vec![] }),
-        not_watched_tv:             nwt.unwrap_or_else(|e| { warn!("not_watched_tv: {:#}", e);             vec![] }),
-        recently_added_collections: rac.unwrap_or_else(|e| { warn!("recently_added_collections: {:#}", e); vec![] }),
-        unwatched_collections:      uwc.unwrap_or_else(|e| { warn!("unwatched_collections: {:#}", e);      vec![] }),
-        recently_added_albums:      raa.unwrap_or_else(|e| { warn!("recently_added_albums: {:#}", e);      vec![] }),
-        recently_played_albums:     rpa.unwrap_or_else(|e| { warn!("recently_played_albums: {:#}", e);     vec![] }),
-        favorite_movies:            fam.unwrap_or_else(|e| { warn!("favorite_movies: {:#}", e);            vec![] }),
-        favorite_series:            fas.unwrap_or_else(|e| { warn!("favorite_series: {:#}", e);            vec![] }),
-        favorite_albums:            fal.unwrap_or_else(|e| { warn!("favorite_albums: {:#}", e);            vec![] }),
-        playlists:                  pls.unwrap_or_else(|e| { warn!("playlists: {:#}", e);                  vec![] }),
+        continue_watching: cw.unwrap_or_else(|e| {
+            warn!("continue_watching: {:#}", e);
+            vec![]
+        }),
+        next_up: nu.unwrap_or_else(|e| {
+            warn!("next_up: {:#}", e);
+            vec![]
+        }),
+        recently_added_tv: ra.unwrap_or_else(|e| {
+            warn!("recently_added_tv: {:#}", e);
+            vec![]
+        }),
+        recently_added_movies: ram.unwrap_or_else(|e| {
+            warn!("recently_added_movies: {:#}", e);
+            vec![]
+        }),
+        not_watched_movies: nwm.unwrap_or_else(|e| {
+            warn!("not_watched_movies: {:#}", e);
+            vec![]
+        }),
+        not_watched_tv: nwt.unwrap_or_else(|e| {
+            warn!("not_watched_tv: {:#}", e);
+            vec![]
+        }),
+        recently_added_collections: rac.unwrap_or_else(|e| {
+            warn!("recently_added_collections: {:#}", e);
+            vec![]
+        }),
+        unwatched_collections: uwc.unwrap_or_else(|e| {
+            warn!("unwatched_collections: {:#}", e);
+            vec![]
+        }),
+        recently_added_albums: raa.unwrap_or_else(|e| {
+            warn!("recently_added_albums: {:#}", e);
+            vec![]
+        }),
+        recently_played_albums: rpa.unwrap_or_else(|e| {
+            warn!("recently_played_albums: {:#}", e);
+            vec![]
+        }),
+        favorite_movies: fam.unwrap_or_else(|e| {
+            warn!("favorite_movies: {:#}", e);
+            vec![]
+        }),
+        favorite_series: fas.unwrap_or_else(|e| {
+            warn!("favorite_series: {:#}", e);
+            vec![]
+        }),
+        favorite_albums: fal.unwrap_or_else(|e| {
+            warn!("favorite_albums: {:#}", e);
+            vec![]
+        }),
+        playlists: pls.unwrap_or_else(|e| {
+            warn!("playlists: {:#}", e);
+            vec![]
+        }),
     }
 }
 
@@ -269,9 +369,23 @@ pub(crate) async fn fetch_home_data(client: &JellyfinClient, include_not_watched
 /// only genuinely needed here — this is a wholesale fresh build with no
 /// prior CardItem row to carry an existing `on_watchlist` forward from,
 /// unlike `refresh_row_preserving_posters`'s own merge path (2026-07-20).
-pub(crate) fn push_home_data(window: &MainWindow, hd: &HomeData, watchlist: &std::collections::HashSet<String>) {
-    let cw_movies: Vec<_> = hd.continue_watching.iter().filter(|i| i.item_type == "Movie").cloned().collect();
-    let cw_tv:     Vec<_> = hd.continue_watching.iter().filter(|i| i.item_type == "Episode").cloned().collect();
+pub(crate) fn push_home_data(
+    window: &MainWindow,
+    hd: &HomeData,
+    watchlist: &std::collections::HashSet<String>,
+) {
+    let cw_movies: Vec<_> = hd
+        .continue_watching
+        .iter()
+        .filter(|i| i.item_type == "Movie")
+        .cloned()
+        .collect();
+    let cw_tv: Vec<_> = hd
+        .continue_watching
+        .iter()
+        .filter(|i| i.item_type == "Episode")
+        .cloned()
+        .collect();
     let g = AppState::get(window);
     g.set_continue_watching(crate::items_to_model(&hd.continue_watching, watchlist));
     g.set_next_up(crate::items_to_model(&hd.next_up, watchlist));
@@ -282,7 +396,10 @@ pub(crate) fn push_home_data(window: &MainWindow, hd: &HomeData, watchlist: &std
     g.set_continue_watching_tv(crate::items_to_model(&cw_tv, watchlist));
     g.set_recently_added_tv(crate::items_to_model(&hd.recently_added_tv, watchlist));
     g.set_not_watched_tv(crate::items_to_model(&hd.not_watched_tv, watchlist));
-    g.set_recently_added_collections(crate::items_to_model(&hd.recently_added_collections, watchlist));
+    g.set_recently_added_collections(crate::items_to_model(
+        &hd.recently_added_collections,
+        watchlist,
+    ));
     g.set_unwatched_collections(crate::items_to_model(&hd.unwatched_collections, watchlist));
     g.set_recently_added_albums(crate::items_to_model(&hd.recently_added_albums, watchlist));
     g.set_recently_played_albums(crate::items_to_model(&hd.recently_played_albums, watchlist));
@@ -300,30 +417,36 @@ pub(crate) fn push_home_data(window: &MainWindow, hd: &HomeData, watchlist: &std
 // apply — mutate in place when nothing structurally changed, else rebuild — is
 // delegated to apply_cards_preserving_identity (Phase 96) so this function only
 // owns the poster-preserving merge, which is specific to it.
-pub(crate) fn refresh_row_preserving_posters(old: &ModelRc<CardItem>, fresh: &[MediaItem]) -> ModelRc<CardItem> {
+pub(crate) fn refresh_row_preserving_posters(
+    old: &ModelRc<CardItem>,
+    fresh: &[MediaItem],
+) -> ModelRc<CardItem> {
     let old_by_id: HashMap<String, CardItem> = (0..old.row_count())
         .filter_map(|i| old.row_data(i))
         .map(|c| (c.id.to_string(), c))
         .collect();
-    let rows: Vec<CardItem> = fresh.iter().map(|item| {
-        // No FjordState access here (this is a pure merge fn, no state
-        // param) — item_to_card_item's own watchlist lookup always misses,
-        // same as a brand-new card. Carried forward from `old` immediately
-        // below instead, same idiom as the poster preservation right after
-        // it: whatever was already correctly patched onto this row (by
-        // resync_jellyfin_watchlist_stars or a toggle) survives the merge,
-        // real bug fixed 2026-07-20 — see FjordState.jellyfin_watchlist_ids'
-        // own doc comment for why a live patch alone isn't enough.
-        let mut card = crate::item_to_card_item(item, &std::collections::HashSet::new());
-        if let Some(existing) = old_by_id.get(&item.id) {
-            if existing.has_poster {
-                card.poster     = existing.poster.clone();
-                card.has_poster = true;
+    let rows: Vec<CardItem> = fresh
+        .iter()
+        .map(|item| {
+            // No FjordState access here (this is a pure merge fn, no state
+            // param) — item_to_card_item's own watchlist lookup always misses,
+            // same as a brand-new card. Carried forward from `old` immediately
+            // below instead, same idiom as the poster preservation right after
+            // it: whatever was already correctly patched onto this row (by
+            // resync_jellyfin_watchlist_stars or a toggle) survives the merge,
+            // real bug fixed 2026-07-20 — see FjordState.jellyfin_watchlist_ids'
+            // own doc comment for why a live patch alone isn't enough.
+            let mut card = crate::item_to_card_item(item, &std::collections::HashSet::new());
+            if let Some(existing) = old_by_id.get(&item.id) {
+                if existing.has_poster {
+                    card.poster = existing.poster.clone();
+                    card.has_poster = true;
+                }
+                card.on_watchlist = existing.on_watchlist;
             }
-            card.on_watchlist = existing.on_watchlist;
-        }
-        card
-    }).collect();
+            card
+        })
+        .collect();
     crate::apply_cards_preserving_identity(old, rows)
 }
 
@@ -335,49 +458,135 @@ pub(crate) fn refresh_row_preserving_posters(old: &ModelRc<CardItem>, fresh: &[M
 /// push_home_data itself is left untouched for cold-start/login/retry call sites, where
 /// there's no prior on-screen poster state worth preserving anyway.
 pub(crate) fn push_home_data_preserving_posters(window: &MainWindow, hd: &HomeData) {
-    let cw_movies: Vec<_> = hd.continue_watching.iter().filter(|i| i.item_type == "Movie").cloned().collect();
-    let cw_tv:     Vec<_> = hd.continue_watching.iter().filter(|i| i.item_type == "Episode").cloned().collect();
+    let cw_movies: Vec<_> = hd
+        .continue_watching
+        .iter()
+        .filter(|i| i.item_type == "Movie")
+        .cloned()
+        .collect();
+    let cw_tv: Vec<_> = hd
+        .continue_watching
+        .iter()
+        .filter(|i| i.item_type == "Episode")
+        .cloned()
+        .collect();
     let g = AppState::get(window);
-    g.set_continue_watching(refresh_row_preserving_posters(&g.get_continue_watching(), &hd.continue_watching));
-    g.set_next_up(refresh_row_preserving_posters(&g.get_next_up(), &hd.next_up));
-    g.set_recently_added(refresh_row_preserving_posters(&g.get_recently_added(), &hd.recently_added_tv));
-    g.set_continue_watching_movies(refresh_row_preserving_posters(&g.get_continue_watching_movies(), &cw_movies));
-    g.set_recently_added_movies(refresh_row_preserving_posters(&g.get_recently_added_movies(), &hd.recently_added_movies));
-    g.set_not_watched_movies(refresh_row_preserving_posters(&g.get_not_watched_movies(), &hd.not_watched_movies));
-    g.set_continue_watching_tv(refresh_row_preserving_posters(&g.get_continue_watching_tv(), &cw_tv));
-    g.set_recently_added_tv(refresh_row_preserving_posters(&g.get_recently_added_tv(), &hd.recently_added_tv));
-    g.set_not_watched_tv(refresh_row_preserving_posters(&g.get_not_watched_tv(), &hd.not_watched_tv));
-    g.set_recently_added_collections(refresh_row_preserving_posters(&g.get_recently_added_collections(), &hd.recently_added_collections));
-    g.set_unwatched_collections(refresh_row_preserving_posters(&g.get_unwatched_collections(), &hd.unwatched_collections));
-    g.set_recently_added_albums(refresh_row_preserving_posters(&g.get_recently_added_albums(), &hd.recently_added_albums));
-    g.set_recently_played_albums(refresh_row_preserving_posters(&g.get_recently_played_albums(), &hd.recently_played_albums));
-    g.set_favorite_movies(refresh_row_preserving_posters(&g.get_favorite_movies(), &hd.favorite_movies));
-    g.set_favorite_series(refresh_row_preserving_posters(&g.get_favorite_series(), &hd.favorite_series));
-    g.set_favorite_albums(refresh_row_preserving_posters(&g.get_favorite_albums(), &hd.favorite_albums));
-    g.set_music_playlists(refresh_row_preserving_posters(&g.get_music_playlists(), &hd.playlists));
+    g.set_continue_watching(refresh_row_preserving_posters(
+        &g.get_continue_watching(),
+        &hd.continue_watching,
+    ));
+    g.set_next_up(refresh_row_preserving_posters(
+        &g.get_next_up(),
+        &hd.next_up,
+    ));
+    g.set_recently_added(refresh_row_preserving_posters(
+        &g.get_recently_added(),
+        &hd.recently_added_tv,
+    ));
+    g.set_continue_watching_movies(refresh_row_preserving_posters(
+        &g.get_continue_watching_movies(),
+        &cw_movies,
+    ));
+    g.set_recently_added_movies(refresh_row_preserving_posters(
+        &g.get_recently_added_movies(),
+        &hd.recently_added_movies,
+    ));
+    g.set_not_watched_movies(refresh_row_preserving_posters(
+        &g.get_not_watched_movies(),
+        &hd.not_watched_movies,
+    ));
+    g.set_continue_watching_tv(refresh_row_preserving_posters(
+        &g.get_continue_watching_tv(),
+        &cw_tv,
+    ));
+    g.set_recently_added_tv(refresh_row_preserving_posters(
+        &g.get_recently_added_tv(),
+        &hd.recently_added_tv,
+    ));
+    g.set_not_watched_tv(refresh_row_preserving_posters(
+        &g.get_not_watched_tv(),
+        &hd.not_watched_tv,
+    ));
+    g.set_recently_added_collections(refresh_row_preserving_posters(
+        &g.get_recently_added_collections(),
+        &hd.recently_added_collections,
+    ));
+    g.set_unwatched_collections(refresh_row_preserving_posters(
+        &g.get_unwatched_collections(),
+        &hd.unwatched_collections,
+    ));
+    g.set_recently_added_albums(refresh_row_preserving_posters(
+        &g.get_recently_added_albums(),
+        &hd.recently_added_albums,
+    ));
+    g.set_recently_played_albums(refresh_row_preserving_posters(
+        &g.get_recently_played_albums(),
+        &hd.recently_played_albums,
+    ));
+    g.set_favorite_movies(refresh_row_preserving_posters(
+        &g.get_favorite_movies(),
+        &hd.favorite_movies,
+    ));
+    g.set_favorite_series(refresh_row_preserving_posters(
+        &g.get_favorite_series(),
+        &hd.favorite_series,
+    ));
+    g.set_favorite_albums(refresh_row_preserving_posters(
+        &g.get_favorite_albums(),
+        &hd.favorite_albums,
+    ));
+    g.set_music_playlists(refresh_row_preserving_posters(
+        &g.get_music_playlists(),
+        &hd.playlists,
+    ));
 }
 
 pub(crate) fn home_data_sections(hd: &HomeData) -> [(HomeSection, Vec<MediaItem>); 17] {
-    let cw_movies = hd.continue_watching.iter().filter(|i| i.item_type == "Movie").cloned().collect();
-    let cw_tv     = hd.continue_watching.iter().filter(|i| i.item_type == "Episode").cloned().collect();
+    let cw_movies = hd
+        .continue_watching
+        .iter()
+        .filter(|i| i.item_type == "Movie")
+        .cloned()
+        .collect();
+    let cw_tv = hd
+        .continue_watching
+        .iter()
+        .filter(|i| i.item_type == "Episode")
+        .cloned()
+        .collect();
     [
-        (HomeSection::ContinueWatching,         hd.continue_watching.clone()),
-        (HomeSection::NextUp,                   hd.next_up.clone()),
-        (HomeSection::RecentlyAdded,            hd.recently_added_tv.clone()),
-        (HomeSection::ContinueWatchingMovies,   cw_movies),
-        (HomeSection::RecentlyAddedMovies,      hd.recently_added_movies.clone()),
-        (HomeSection::NotWatchedMovies,         hd.not_watched_movies.clone()),
-        (HomeSection::ContinueWatchingTv,       cw_tv),
-        (HomeSection::RecentlyAddedTv,          hd.recently_added_tv.clone()),
-        (HomeSection::NotWatchedTv,             hd.not_watched_tv.clone()),
-        (HomeSection::RecentlyAddedCollections, hd.recently_added_collections.clone()),
-        (HomeSection::UnwatchedCollections,     hd.unwatched_collections.clone()),
-        (HomeSection::RecentlyAddedAlbums,      hd.recently_added_albums.clone()),
-        (HomeSection::RecentlyPlayedAlbums,     hd.recently_played_albums.clone()),
-        (HomeSection::FavoriteMovies,           hd.favorite_movies.clone()),
-        (HomeSection::FavoriteSeries,           hd.favorite_series.clone()),
-        (HomeSection::FavoriteAlbums,           hd.favorite_albums.clone()),
-        (HomeSection::Playlists,                hd.playlists.clone()),
+        (HomeSection::ContinueWatching, hd.continue_watching.clone()),
+        (HomeSection::NextUp, hd.next_up.clone()),
+        (HomeSection::RecentlyAdded, hd.recently_added_tv.clone()),
+        (HomeSection::ContinueWatchingMovies, cw_movies),
+        (
+            HomeSection::RecentlyAddedMovies,
+            hd.recently_added_movies.clone(),
+        ),
+        (HomeSection::NotWatchedMovies, hd.not_watched_movies.clone()),
+        (HomeSection::ContinueWatchingTv, cw_tv),
+        (HomeSection::RecentlyAddedTv, hd.recently_added_tv.clone()),
+        (HomeSection::NotWatchedTv, hd.not_watched_tv.clone()),
+        (
+            HomeSection::RecentlyAddedCollections,
+            hd.recently_added_collections.clone(),
+        ),
+        (
+            HomeSection::UnwatchedCollections,
+            hd.unwatched_collections.clone(),
+        ),
+        (
+            HomeSection::RecentlyAddedAlbums,
+            hd.recently_added_albums.clone(),
+        ),
+        (
+            HomeSection::RecentlyPlayedAlbums,
+            hd.recently_played_albums.clone(),
+        ),
+        (HomeSection::FavoriteMovies, hd.favorite_movies.clone()),
+        (HomeSection::FavoriteSeries, hd.favorite_series.clone()),
+        (HomeSection::FavoriteAlbums, hd.favorite_albums.clone()),
+        (HomeSection::Playlists, hd.playlists.clone()),
     ]
 }
 
@@ -387,9 +596,9 @@ pub(crate) fn home_data_sections(hd: &HomeData) -> [(HomeSection, Vec<MediaItem>
 /// refresh_row_preserving_posters (Phase 96) so rows already showing a poster elsewhere don't flash.
 pub(crate) fn refresh_favorites(
     client: Arc<JellyfinClient>,
-    ww:     slint::Weak<MainWindow>,
-    rt:     tokio::runtime::Handle,
-    state:  Arc<Mutex<FjordState>>,
+    ww: slint::Weak<MainWindow>,
+    rt: tokio::runtime::Handle,
+    state: Arc<Mutex<FjordState>>,
 ) {
     rt.spawn(async move {
         let (fam, fas, fal) = tokio::join!(
@@ -397,21 +606,39 @@ pub(crate) fn refresh_favorites(
             client.get_favorites("Series"),
             client.get_favorites("MusicAlbum"),
         );
-        let fam = fam.unwrap_or_else(|e| { warn!("refresh favorite_movies: {:#}", e); vec![] });
-        let fas = fas.unwrap_or_else(|e| { warn!("refresh favorite_series: {:#}", e); vec![] });
-        let fal = fal.unwrap_or_else(|e| { warn!("refresh favorite_albums: {:#}", e); vec![] });
+        let fam = fam.unwrap_or_else(|e| {
+            warn!("refresh favorite_movies: {:#}", e);
+            vec![]
+        });
+        let fas = fas.unwrap_or_else(|e| {
+            warn!("refresh favorite_series: {:#}", e);
+            vec![]
+        });
+        let fal = fal.unwrap_or_else(|e| {
+            warn!("refresh favorite_albums: {:#}", e);
+            vec![]
+        });
 
         // Push metadata immediately (no posters yet; poster loading fills them in below)
-        let ww2  = ww.clone();
+        let ww2 = ww.clone();
         let fam2 = fam.clone();
         let fas2 = fas.clone();
         let fal2 = fal.clone();
         let _ = slint::invoke_from_event_loop(move || {
             if let Some(w) = ww2.upgrade() {
                 let g = AppState::get(&w);
-                g.set_favorite_movies(refresh_row_preserving_posters(&g.get_favorite_movies(), &fam2));
-                g.set_favorite_series(refresh_row_preserving_posters(&g.get_favorite_series(), &fas2));
-                g.set_favorite_albums(refresh_row_preserving_posters(&g.get_favorite_albums(), &fal2));
+                g.set_favorite_movies(refresh_row_preserving_posters(
+                    &g.get_favorite_movies(),
+                    &fam2,
+                ));
+                g.set_favorite_series(refresh_row_preserving_posters(
+                    &g.get_favorite_series(),
+                    &fas2,
+                ));
+                g.set_favorite_albums(refresh_row_preserving_posters(
+                    &g.get_favorite_albums(),
+                    &fal2,
+                ));
             }
         });
 
@@ -426,113 +653,145 @@ pub(crate) fn refresh_favorites(
 
 pub(crate) fn wire_nw_timer(
     window_weak: slint::Weak<MainWindow>,
-    video:       Arc<Mutex<VideoState>>,
-    state:       Arc<Mutex<FjordState>>,
-    rt_handle:   tokio::runtime::Handle,
+    video: Arc<Mutex<VideoState>>,
+    state: Arc<Mutex<FjordState>>,
+    rt_handle: tokio::runtime::Handle,
 ) -> slint::Timer {
     let timer_nw = slint::Timer::default();
-    timer_nw.start(slint::TimerMode::Repeated, Duration::from_secs(30), move || {
-        if video.lock().unwrap().player.is_some() { return; }
-        let Some(w) = window_weak.upgrade() else { return };
-        let nav = AppState::get(&w).get_active_nav();
-        if nav != 2 && nav != 1 { return; }  // nav=2=Movies, nav=1=TV
+    timer_nw.start(
+        slint::TimerMode::Repeated,
+        Duration::from_secs(30),
+        move || {
+            if video.lock().unwrap().player.is_some() {
+                return;
+            }
+            let Some(w) = window_weak.upgrade() else {
+                return;
+            };
+            let nav = AppState::get(&w).get_active_nav();
+            if nav != 2 && nav != 1 {
+                return;
+            } // nav=2=Movies, nav=1=TV
 
-        let (due_movies, due_tv) = {
-            let s = state.lock().unwrap();
-            (
-                nav == 2 && s.last_nw_mov_refresh.is_none_or(|t| t.elapsed() >= Duration::from_secs(600)),
-                nav == 1 && s.last_nw_tv_refresh.is_none_or(|t| t.elapsed() >= Duration::from_secs(600)),
-            )
-        };
-        if !due_movies && !due_tv { return; }
+            let (due_movies, due_tv) = {
+                let s = state.lock().unwrap();
+                (
+                    nav == 2
+                        && s.last_nw_mov_refresh
+                            .is_none_or(|t| t.elapsed() >= Duration::from_secs(600)),
+                    nav == 1
+                        && s.last_nw_tv_refresh
+                            .is_none_or(|t| t.elapsed() >= Duration::from_secs(600)),
+                )
+            };
+            if !due_movies && !due_tv {
+                return;
+            }
 
-        let client = state.lock().unwrap().client.as_ref().map(Arc::clone);
-        let Some(client) = client else { return };
+            let client = state.lock().unwrap().client.as_ref().map(Arc::clone);
+            let Some(client) = client else { return };
 
-        let ww     = window_weak.clone();
-        let rt2    = rt_handle.clone();
-        let state2 = Arc::clone(&state);
-        rt_handle.spawn(async move {
-            // Stamp the cooldown only after a successful fetch (CR-9):
-            // stamping before means a network error silently resets the 10-min cooldown.
-            if due_movies {
-                match client.get_unwatched(Some("Movie")).await {
-                    Err(e) if crate::is_unauthorized(&e) => {
-                        warn!("get_unwatched (movies) 401 — session expired");
-                        let ww2 = ww.clone();
-                        let _ = slint::invoke_from_event_loop(move || {
-                            if let Some(w) = ww2.upgrade() {
-                                AppState::get(&w).set_show_login(true);
-                                AppState::get(&w).set_status("Session expired — please log in again".into());
-                            }
-                        });
-                        return;
-                    }
-                    Err(e) => {
-                        // 2026-08-28 logging audit — two real bugs, not
-                        // just a missing log. (1) This branch was a bare
-                        // `Err(_) => return` — silently swallowing any
-                        // non-401 error (a transient network blip, a
-                        // server 500) with zero trace, on a timer that
-                        // runs continuously every 30s for the whole
-                        // session; "the Not Watched row hasn't refreshed
-                        // in a while" would have been undiagnosable from
-                        // the log. (2) That bare `return` exits this
-                        // WHOLE async block, not just the movies branch —
-                        // since `if due_tv {...}` runs afterward in the
-                        // SAME block, a movies-fetch failure silently
-                        // skipped the completely independent TV fetch too,
-                        // even when due_tv was also true. Fixed by only
-                        // logging here and letting the function fall
-                        // through — no early return.
-                        warn!("get_unwatched (movies) failed: {e:#}");
-                    }
-                    Ok(items) => {
-                        state2.lock().unwrap().last_nw_mov_refresh = Some(Instant::now());
-                        let ww2    = ww.clone();
-                        let items2 = items.clone();
-                        let watchlist = state2.lock().unwrap().jellyfin_watchlist_ids.clone();
-                        let _ = slint::invoke_from_event_loop(move || {
-                            if let Some(w) = ww2.upgrade() { AppState::get(&w).set_not_watched_movies(crate::items_to_model(&items2, &watchlist)); }
-                        });
-                        let mut sections = HomeSection::empty_array();
-                        sections[HomeSection::NotWatchedMovies as usize].1 = items;
-                        crate::spawn_poster_loading(Arc::clone(&client), sections, ww.clone(), rt2.clone(), Arc::clone(&state2));
+            let ww = window_weak.clone();
+            let rt2 = rt_handle.clone();
+            let state2 = Arc::clone(&state);
+            rt_handle.spawn(async move {
+                // Stamp the cooldown only after a successful fetch (CR-9):
+                // stamping before means a network error silently resets the 10-min cooldown.
+                if due_movies {
+                    match client.get_unwatched(Some("Movie")).await {
+                        Err(e) if crate::is_unauthorized(&e) => {
+                            warn!("get_unwatched (movies) 401 — session expired");
+                            let ww2 = ww.clone();
+                            let _ = slint::invoke_from_event_loop(move || {
+                                if let Some(w) = ww2.upgrade() {
+                                    AppState::get(&w).set_show_login(true);
+                                    AppState::get(&w)
+                                        .set_status("Session expired — please log in again".into());
+                                }
+                            });
+                            return;
+                        }
+                        Err(e) => {
+                            // 2026-08-28 logging audit — two real bugs, not
+                            // just a missing log. (1) This branch was a bare
+                            // `Err(_) => return` — silently swallowing any
+                            // non-401 error (a transient network blip, a
+                            // server 500) with zero trace, on a timer that
+                            // runs continuously every 30s for the whole
+                            // session; "the Not Watched row hasn't refreshed
+                            // in a while" would have been undiagnosable from
+                            // the log. (2) That bare `return` exits this
+                            // WHOLE async block, not just the movies branch —
+                            // since `if due_tv {...}` runs afterward in the
+                            // SAME block, a movies-fetch failure silently
+                            // skipped the completely independent TV fetch too,
+                            // even when due_tv was also true. Fixed by only
+                            // logging here and letting the function fall
+                            // through — no early return.
+                            warn!("get_unwatched (movies) failed: {e:#}");
+                        }
+                        Ok(items) => {
+                            state2.lock().unwrap().last_nw_mov_refresh = Some(Instant::now());
+                            let ww2 = ww.clone();
+                            let items2 = items.clone();
+                            let watchlist = state2.lock().unwrap().jellyfin_watchlist_ids.clone();
+                            let _ = slint::invoke_from_event_loop(move || {
+                                if let Some(w) = ww2.upgrade() {
+                                    AppState::get(&w).set_not_watched_movies(
+                                        crate::items_to_model(&items2, &watchlist),
+                                    );
+                                }
+                            });
+                            let mut sections = HomeSection::empty_array();
+                            sections[HomeSection::NotWatchedMovies as usize].1 = items;
+                            crate::spawn_poster_loading(
+                                Arc::clone(&client),
+                                sections,
+                                ww.clone(),
+                                rt2.clone(),
+                                Arc::clone(&state2),
+                            );
+                        }
                     }
                 }
-            }
-            if due_tv {
-                match client.get_unwatched(Some("Series")).await {
-                    Err(e) if crate::is_unauthorized(&e) => {
-                        warn!("get_unwatched (tv) 401 — session expired");
-                        let ww2 = ww.clone();
-                        let _ = slint::invoke_from_event_loop(move || {
-                            if let Some(w) = ww2.upgrade() {
-                                AppState::get(&w).set_show_login(true);
-                                AppState::get(&w).set_status("Session expired — please log in again".into());
-                            }
-                        });
-                    }
-                    Err(e) => {
-                        // See the identical fix on the movies branch above.
-                        warn!("get_unwatched (tv) failed: {e:#}");
-                    }
-                    Ok(items) => {
-                        state2.lock().unwrap().last_nw_tv_refresh = Some(Instant::now());
-                        let ww2    = ww.clone();
-                        let items2 = items.clone();
-                        let watchlist = state2.lock().unwrap().jellyfin_watchlist_ids.clone();
-                        let _ = slint::invoke_from_event_loop(move || {
-                            if let Some(w) = ww2.upgrade() { AppState::get(&w).set_not_watched_tv(crate::items_to_model(&items2, &watchlist)); }
-                        });
-                        let mut sections = HomeSection::empty_array();
-                        sections[HomeSection::NotWatchedTv as usize].1 = items;
-                        crate::spawn_poster_loading(client, sections, ww, rt2, state2);
+                if due_tv {
+                    match client.get_unwatched(Some("Series")).await {
+                        Err(e) if crate::is_unauthorized(&e) => {
+                            warn!("get_unwatched (tv) 401 — session expired");
+                            let ww2 = ww.clone();
+                            let _ = slint::invoke_from_event_loop(move || {
+                                if let Some(w) = ww2.upgrade() {
+                                    AppState::get(&w).set_show_login(true);
+                                    AppState::get(&w)
+                                        .set_status("Session expired — please log in again".into());
+                                }
+                            });
+                        }
+                        Err(e) => {
+                            // See the identical fix on the movies branch above.
+                            warn!("get_unwatched (tv) failed: {e:#}");
+                        }
+                        Ok(items) => {
+                            state2.lock().unwrap().last_nw_tv_refresh = Some(Instant::now());
+                            let ww2 = ww.clone();
+                            let items2 = items.clone();
+                            let watchlist = state2.lock().unwrap().jellyfin_watchlist_ids.clone();
+                            let _ = slint::invoke_from_event_loop(move || {
+                                if let Some(w) = ww2.upgrade() {
+                                    AppState::get(&w).set_not_watched_tv(crate::items_to_model(
+                                        &items2, &watchlist,
+                                    ));
+                                }
+                            });
+                            let mut sections = HomeSection::empty_array();
+                            sections[HomeSection::NotWatchedTv as usize].1 = items;
+                            crate::spawn_poster_loading(client, sections, ww, rt2, state2);
+                        }
                     }
                 }
-            }
-        });
-    });
+            });
+        },
+    );
     timer_nw
 }
 
@@ -544,21 +803,28 @@ pub(crate) async fn fetch_movie_collections(
     client: &JellyfinClient,
 ) -> HashMap<String, (String, String)> {
     let boxsets = match client.get_all_boxsets().await {
-        Ok(b)  => b,
-        Err(e) => { warn!("get_all_boxsets: {:#}", e); return HashMap::new(); }
+        Ok(b) => b,
+        Err(e) => {
+            warn!("get_all_boxsets: {:#}", e);
+            return HashMap::new();
+        }
     };
 
     let sem = Arc::new(tokio::sync::Semaphore::new(4));
-    let mut tasks: tokio::task::JoinSet<Vec<(String, String, String)>> = tokio::task::JoinSet::new();
+    let mut tasks: tokio::task::JoinSet<Vec<(String, String, String)>> =
+        tokio::task::JoinSet::new();
     for bs in boxsets {
         let client_c = client.clone();
-        let sem_c    = sem.clone();
-        let bs_id    = bs.id.clone();
-        let bs_name  = bs.name.clone();
+        let sem_c = sem.clone();
+        let bs_id = bs.id.clone();
+        let bs_name = bs.name.clone();
         tasks.spawn(async move {
             let _permit = sem_c.acquire_owned().await.ok();
             let items = client_c.get_boxset_items(&bs_id).await.unwrap_or_default();
-            items.into_iter().map(|i| (i.id, bs_id.clone(), bs_name.clone())).collect()
+            items
+                .into_iter()
+                .map(|i| (i.id, bs_id.clone(), bs_name.clone()))
+                .collect()
         });
     }
 
@@ -580,7 +846,11 @@ fn last_cleanup_path() -> std::path::PathBuf {
 }
 
 fn read_last_cleanup() -> Option<u64> {
-    std::fs::read_to_string(last_cleanup_path()).ok()?.trim().parse().ok()
+    std::fs::read_to_string(last_cleanup_path())
+        .ok()?
+        .trim()
+        .parse()
+        .ok()
 }
 
 /// Delete orphaned files from `posters/` and `backdrops/` cache directories.
@@ -594,23 +864,39 @@ fn read_last_cleanup() -> Option<u64> {
 /// persisted screen-cache file even when the library fetch failed) or if
 /// cleanup ran within the last 24 h.
 pub(crate) async fn run_poster_cache_cleanup(
-    movie_ids:      Vec<String>,
-    series_ids:     Vec<String>,
+    movie_ids: Vec<String>,
+    series_ids: Vec<String>,
     collection_ids: Vec<String>,
-    artist_ids:     Vec<String>,
-    album_ids:      Vec<String>,
-    playlist_ids:   Vec<String>,
-    detail_ids:     Vec<String>,
+    artist_ids: Vec<String>,
+    album_ids: Vec<String>,
+    playlist_ids: Vec<String>,
+    detail_ids: Vec<String>,
 ) {
     use std::collections::HashSet;
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    if movie_ids.is_empty() && series_ids.is_empty() && collection_ids.is_empty() && artist_ids.is_empty() && album_ids.is_empty() && playlist_ids.is_empty() { return; }
+    if movie_ids.is_empty()
+        && series_ids.is_empty()
+        && collection_ids.is_empty()
+        && artist_ids.is_empty()
+        && album_ids.is_empty()
+        && playlist_ids.is_empty()
+    {
+        return;
+    }
 
-    let now_secs = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
-    if let Some(last) = read_last_cleanup() && now_secs.saturating_sub(last) < 86_400 { return; }
+    let now_secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    if let Some(last) = read_last_cleanup()
+        && now_secs.saturating_sub(last) < 86_400
+    {
+        return;
+    }
 
-    let known: HashSet<String> = movie_ids.into_iter()
+    let known: HashSet<String> = movie_ids
+        .into_iter()
         .chain(series_ids)
         .chain(collection_ids)
         .chain(artist_ids)
@@ -621,24 +907,30 @@ pub(crate) async fn run_poster_cache_cleanup(
 
     let mut deleted = 0u32;
     for dir in [poster_cache_dir(), backdrop_cache_dir()] {
-        let Ok(mut entries) = tokio::fs::read_dir(&dir).await else { continue };
+        let Ok(mut entries) = tokio::fs::read_dir(&dir).await else {
+            continue;
+        };
         while let Ok(Some(entry)) = entries.next_entry().await {
             let name = entry.file_name();
             let name = name.to_string_lossy();
             // .tag sidecars (artwork revalidation) and .tmp leftovers belong to
             // their base image id — judge them by that id, not the full name.
-            let base = name.strip_suffix(".tag.tmp")
+            let base = name
+                .strip_suffix(".tag.tmp")
                 .or_else(|| name.strip_suffix(".tag"))
                 .or_else(|| name.strip_suffix(".tmp"))
                 .unwrap_or(&name);
-            if !known.contains(base)
-                && tokio::fs::remove_file(entry.path()).await.is_ok() { deleted += 1; }
+            if !known.contains(base) && tokio::fs::remove_file(entry.path()).await.is_ok() {
+                deleted += 1;
+            }
         }
     }
 
     let ts = now_secs.to_string();
-    let p  = last_cleanup_path();
-    if let Some(parent) = p.parent() { let _ = tokio::fs::create_dir_all(parent).await; }
+    let p = last_cleanup_path();
+    if let Some(parent) = p.parent() {
+        let _ = tokio::fs::create_dir_all(parent).await;
+    }
     let _ = tokio::fs::write(&p, ts.as_bytes()).await;
 
     if deleted > 0 {

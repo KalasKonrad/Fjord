@@ -65,8 +65,8 @@
 //                      Request Options modal's Quality toggle can swap between them with no
 //                      re-fetch; ([], []) per tier (not Err) when no default server configured
 // ─────────────────────────────────────────────────────────────────────────────
-use anyhow::{anyhow, Result};
-use percent_encoding::{utf8_percent_encode, NON_ALPHANUMERIC};
+use anyhow::{Result, anyhow};
+use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
 use reqwest::header::{HeaderMap, SET_COOKIE};
 use serde_json::json;
 use url::Url;
@@ -74,8 +74,8 @@ use url::Url;
 use crate::models::{
     BlocklistResponse, Collection, CombinedCredits, DiscoverFilters, Genre, Language, MediaRequest,
     MediaStatus, MovieDetails, PersonDetails, Profile, QuickConnect, QuickConnectStatus, Region,
-    SearchResponse, SeasonsSelector, ServiceServer, ServiceServerDetails, StatusInfo, Tag, TvDetails,
-    User, UserGeneralSettings, WatchProviderDetail, WatchlistResponse,
+    SearchResponse, SeasonsSelector, ServiceServer, ServiceServerDetails, StatusInfo, Tag,
+    TvDetails, User, UserGeneralSettings, WatchProviderDetail, WatchlistResponse,
 };
 
 #[derive(Clone, Debug)]
@@ -125,7 +125,11 @@ fn extract_session_cookie(headers: &HeaderMap) -> Option<String> {
 
 impl SeerrClient {
     pub fn new(base_url: Url, auth: SeerrAuth) -> Result<Self> {
-        Ok(Self { http: new_http()?, base_url, auth })
+        Ok(Self {
+            http: new_http()?,
+            base_url,
+            auth,
+        })
     }
 
     fn auth_header(&self) -> (&'static str, String) {
@@ -147,11 +151,21 @@ impl SeerrClient {
     /// Jellyfin's server-version is shown.
     pub async fn get_status(base_url: &Url) -> Result<StatusInfo> {
         let url = api_url(base_url, "/status")?;
-        Ok(new_http()?.get(url).send().await?.error_for_status()?.json().await?)
+        Ok(new_http()?
+            .get(url)
+            .send()
+            .await?
+            .error_for_status()?
+            .json()
+            .await?)
     }
 
     // ── Auth: Jellyfin username/password ────────────────────────────────────
-    pub async fn sign_in_jellyfin(base_url: &Url, username: &str, password: &str) -> Result<(SeerrAuth, User)> {
+    pub async fn sign_in_jellyfin(
+        base_url: &Url,
+        username: &str,
+        password: &str,
+    ) -> Result<(SeerrAuth, User)> {
         let url = api_url(base_url, "/auth/jellyfin")?;
         let resp = new_http()?
             .post(url)
@@ -166,7 +180,11 @@ impl SeerrClient {
     }
 
     // ── Auth: local Seerr account (email/password) ──────────────────────────
-    pub async fn sign_in_local(base_url: &Url, email: &str, password: &str) -> Result<(SeerrAuth, User)> {
+    pub async fn sign_in_local(
+        base_url: &Url,
+        email: &str,
+        password: &str,
+    ) -> Result<(SeerrAuth, User)> {
         let url = api_url(base_url, "/auth/local")?;
         let resp = new_http()?
             .post(url)
@@ -183,7 +201,13 @@ impl SeerrClient {
     // ── Auth: Jellyfin Quick Connect (passwordless PIN pairing) ─────────────
     pub async fn quick_connect_initiate(base_url: &Url) -> Result<QuickConnect> {
         let url = api_url(base_url, "/auth/jellyfin/quickconnect/initiate")?;
-        Ok(new_http()?.post(url).send().await?.error_for_status()?.json().await?)
+        Ok(new_http()?
+            .post(url)
+            .send()
+            .await?
+            .error_for_status()?
+            .json()
+            .await?)
     }
 
     /// Returns `Ok(false)` while still waiting, `Ok(true)` once approved.
@@ -200,7 +224,10 @@ impl SeerrClient {
         Ok(status.authenticated)
     }
 
-    pub async fn quick_connect_authenticate(base_url: &Url, secret: &str) -> Result<(SeerrAuth, User)> {
+    pub async fn quick_connect_authenticate(
+        base_url: &Url,
+        secret: &str,
+    ) -> Result<(SeerrAuth, User)> {
         let url = api_url(base_url, "/auth/jellyfin/quickconnect/authenticate")?;
         let resp = new_http()?
             .post(url)
@@ -222,7 +249,10 @@ impl SeerrClient {
             return Ok(());
         }
         let url = api_url(&self.base_url, "/auth/logout")?;
-        self.authed(self.http.post(url)).send().await?.error_for_status()?;
+        self.authed(self.http.post(url))
+            .send()
+            .await?
+            .error_for_status()?;
         Ok(())
     }
 
@@ -258,14 +288,23 @@ impl SeerrClient {
     /// fields are appended only when `Some`/non-empty; multi-value fields
     /// (genre/provider ids) are pipe-joined — see `DiscoverFilters`' own
     /// doc comment for why (OR logic, confirmed from Seerr's real source).
-    async fn discover_list(&self, path: &str, page: u32, filters: &DiscoverFilters) -> Result<SearchResponse> {
+    async fn discover_list(
+        &self,
+        path: &str,
+        page: u32,
+        filters: &DiscoverFilters,
+    ) -> Result<SearchResponse> {
         let mut url = api_url(&self.base_url, path)?;
         url.query_pairs_mut().append_pair("page", &page.to_string());
-        if let Some(ids) = &filters.genre_ids && !ids.is_empty() {
+        if let Some(ids) = &filters.genre_ids
+            && !ids.is_empty()
+        {
             let joined = ids.iter().map(i64::to_string).collect::<Vec<_>>().join("|");
             url.query_pairs_mut().append_pair("genre", &joined);
         }
-        if let Some(ids) = &filters.provider_ids && !ids.is_empty() {
+        if let Some(ids) = &filters.provider_ids
+            && !ids.is_empty()
+        {
             let joined = ids.iter().map(i64::to_string).collect::<Vec<_>>().join("|");
             url.query_pairs_mut().append_pair("watchProviders", &joined);
         }
@@ -276,7 +315,8 @@ impl SeerrClient {
             url.query_pairs_mut().append_pair("sortBy", sort);
         }
         if let Some(v) = filters.vote_average_gte {
-            url.query_pairs_mut().append_pair("voteAverageGte", &v.to_string());
+            url.query_pairs_mut()
+                .append_pair("voteAverageGte", &v.to_string());
         }
         if let Some((key, val)) = &filters.date_gte {
             url.query_pairs_mut().append_pair(key, val);
@@ -294,28 +334,45 @@ impl SeerrClient {
     }
 
     pub async fn discover_trending(&self, page: u32) -> Result<SearchResponse> {
-        self.discover_list("/discover/trending", page, &DiscoverFilters::default()).await
+        self.discover_list("/discover/trending", page, &DiscoverFilters::default())
+            .await
     }
     pub async fn discover_movies(&self, page: u32) -> Result<SearchResponse> {
-        self.discover_list("/discover/movies", page, &DiscoverFilters::default()).await
+        self.discover_list("/discover/movies", page, &DiscoverFilters::default())
+            .await
     }
     pub async fn discover_movies_upcoming(&self, page: u32) -> Result<SearchResponse> {
-        self.discover_list("/discover/movies/upcoming", page, &DiscoverFilters::default()).await
+        self.discover_list(
+            "/discover/movies/upcoming",
+            page,
+            &DiscoverFilters::default(),
+        )
+        .await
     }
     pub async fn discover_tv(&self, page: u32) -> Result<SearchResponse> {
-        self.discover_list("/discover/tv", page, &DiscoverFilters::default()).await
+        self.discover_list("/discover/tv", page, &DiscoverFilters::default())
+            .await
     }
     pub async fn discover_tv_upcoming(&self, page: u32) -> Result<SearchResponse> {
-        self.discover_list("/discover/tv/upcoming", page, &DiscoverFilters::default()).await
+        self.discover_list("/discover/tv/upcoming", page, &DiscoverFilters::default())
+            .await
     }
 
     /// Discover filters (2026-07-18) — the only two endpoints that accept
     /// `DiscoverFilters` with genuine content; see that struct's own doc
     /// comment for why `/search` can't take any of this.
-    pub async fn discover_movies_filtered(&self, page: u32, filters: &DiscoverFilters) -> Result<SearchResponse> {
+    pub async fn discover_movies_filtered(
+        &self,
+        page: u32,
+        filters: &DiscoverFilters,
+    ) -> Result<SearchResponse> {
         self.discover_list("/discover/movies", page, filters).await
     }
-    pub async fn discover_tv_filtered(&self, page: u32, filters: &DiscoverFilters) -> Result<SearchResponse> {
+    pub async fn discover_tv_filtered(
+        &self,
+        page: u32,
+        filters: &DiscoverFilters,
+    ) -> Result<SearchResponse> {
         self.discover_list("/discover/tv", page, filters).await
     }
 
@@ -326,26 +383,58 @@ impl SeerrClient {
     /// the Discover Genre filter's chip picker.
     pub async fn get_movie_genres(&self) -> Result<Vec<Genre>> {
         let url = api_url(&self.base_url, "/genres/movie")?;
-        Ok(self.authed(self.http.get(url)).send().await?.error_for_status()?.json().await?)
+        Ok(self
+            .authed(self.http.get(url))
+            .send()
+            .await?
+            .error_for_status()?
+            .json()
+            .await?)
     }
     pub async fn get_tv_genres(&self) -> Result<Vec<Genre>> {
         let url = api_url(&self.base_url, "/genres/tv")?;
-        Ok(self.authed(self.http.get(url)).send().await?.error_for_status()?.json().await?)
+        Ok(self
+            .authed(self.http.get(url))
+            .send()
+            .await?
+            .error_for_status()?
+            .json()
+            .await?)
     }
 
     /// `GET /watchproviders/movies`/`GET /watchproviders/tv` — distinct
     /// from `get_watch_provider_regions` above (that lists REGIONS; these
     /// list the actual streaming services available within one region).
     /// Populates the Discover Provider filter's chip picker.
-    pub async fn get_movie_watch_providers(&self, watch_region: &str) -> Result<Vec<WatchProviderDetail>> {
+    pub async fn get_movie_watch_providers(
+        &self,
+        watch_region: &str,
+    ) -> Result<Vec<WatchProviderDetail>> {
         let mut url = api_url(&self.base_url, "/watchproviders/movies")?;
-        url.query_pairs_mut().append_pair("watchRegion", watch_region);
-        Ok(self.authed(self.http.get(url)).send().await?.error_for_status()?.json().await?)
+        url.query_pairs_mut()
+            .append_pair("watchRegion", watch_region);
+        Ok(self
+            .authed(self.http.get(url))
+            .send()
+            .await?
+            .error_for_status()?
+            .json()
+            .await?)
     }
-    pub async fn get_tv_watch_providers(&self, watch_region: &str) -> Result<Vec<WatchProviderDetail>> {
+    pub async fn get_tv_watch_providers(
+        &self,
+        watch_region: &str,
+    ) -> Result<Vec<WatchProviderDetail>> {
         let mut url = api_url(&self.base_url, "/watchproviders/tv")?;
-        url.query_pairs_mut().append_pair("watchRegion", watch_region);
-        Ok(self.authed(self.http.get(url)).send().await?.error_for_status()?.json().await?)
+        url.query_pairs_mut()
+            .append_pair("watchRegion", watch_region);
+        Ok(self
+            .authed(self.http.get(url))
+            .send()
+            .await?
+            .error_for_status()?
+            .json()
+            .await?)
     }
 
     async fn list_requests(&self, media_type: &str, take: u32) -> Result<Vec<MediaRequest>> {
@@ -360,8 +449,13 @@ impl SeerrClient {
             .append_pair("sort", "added")
             .append_pair("sortDirection", "desc")
             .append_pair("mediaType", media_type);
-        let resp: RequestsResponse =
-            self.authed(self.http.get(url)).send().await?.error_for_status()?.json().await?;
+        let resp: RequestsResponse = self
+            .authed(self.http.get(url))
+            .send()
+            .await?
+            .error_for_status()?
+            .json()
+            .await?;
         Ok(resp.results)
     }
 
@@ -387,18 +481,31 @@ impl SeerrClient {
     /// (shouldn't happen in practice, but the field is `Option`) is kept
     /// rather than dropped — erring toward showing it over silently hiding
     /// a real request.
-    pub async fn requested_not_available(&self, take_per_type: u32) -> Result<(Vec<MediaRequest>, Vec<MediaRequest>)> {
+    pub async fn requested_not_available(
+        &self,
+        take_per_type: u32,
+    ) -> Result<(Vec<MediaRequest>, Vec<MediaRequest>)> {
         let keep = |r: &MediaRequest| {
             if r.status == 3 {
                 return false;
             }
-            let Some(m) = r.media.as_ref() else { return true };
+            let Some(m) = r.media.as_ref() else {
+                return true;
+            };
             let relevant = if r.is4k { m.status4k() } else { m.status() };
-            !matches!(relevant, Some(MediaStatus::Available | MediaStatus::Deleted))
+            !matches!(
+                relevant,
+                Some(MediaStatus::Available | MediaStatus::Deleted)
+            )
         };
-        let (movies, tv) =
-            tokio::try_join!(self.list_requests("movie", take_per_type), self.list_requests("tv", take_per_type))?;
-        Ok((movies.into_iter().filter(keep).collect(), tv.into_iter().filter(keep).collect()))
+        let (movies, tv) = tokio::try_join!(
+            self.list_requests("movie", take_per_type),
+            self.list_requests("tv", take_per_type)
+        )?;
+        Ok((
+            movies.into_iter().filter(keep).collect(),
+            tv.into_iter().filter(keep).collect(),
+        ))
     }
 
     pub async fn get_movie(&self, tmdb_id: i64) -> Result<MovieDetails> {
@@ -442,18 +549,26 @@ impl SeerrClient {
     }
 
     /// Backs the Detail screen's "Recommended" row (2026-07-29).
-    pub async fn get_movie_recommendations(&self, tmdb_id: i64, page: u32) -> Result<SearchResponse> {
-        self.related_list(&format!("/movie/{tmdb_id}/recommendations"), page).await
+    pub async fn get_movie_recommendations(
+        &self,
+        tmdb_id: i64,
+        page: u32,
+    ) -> Result<SearchResponse> {
+        self.related_list(&format!("/movie/{tmdb_id}/recommendations"), page)
+            .await
     }
     pub async fn get_movie_similar(&self, tmdb_id: i64, page: u32) -> Result<SearchResponse> {
-        self.related_list(&format!("/movie/{tmdb_id}/similar"), page).await
+        self.related_list(&format!("/movie/{tmdb_id}/similar"), page)
+            .await
     }
     /// Backs the Series screen's "Recommended" row (2026-07-29).
     pub async fn get_tv_recommendations(&self, tmdb_id: i64, page: u32) -> Result<SearchResponse> {
-        self.related_list(&format!("/tv/{tmdb_id}/recommendations"), page).await
+        self.related_list(&format!("/tv/{tmdb_id}/recommendations"), page)
+            .await
     }
     pub async fn get_tv_similar(&self, tmdb_id: i64, page: u32) -> Result<SearchResponse> {
-        self.related_list(&format!("/tv/{tmdb_id}/similar"), page).await
+        self.related_list(&format!("/tv/{tmdb_id}/similar"), page)
+            .await
     }
 
     /// `GET /collection/{id}` — full TMDB collection membership, backing the
@@ -479,7 +594,10 @@ impl SeerrClient {
     /// cast member with no matching local Jellyfin Person), which is what
     /// `get_person` below now exists for.
     pub async fn get_person_combined_credits(&self, person_id: i64) -> Result<CombinedCredits> {
-        let url = api_url(&self.base_url, &format!("/person/{person_id}/combined_credits"))?;
+        let url = api_url(
+            &self.base_url,
+            &format!("/person/{person_id}/combined_credits"),
+        )?;
         Ok(self
             .authed(self.http.get(url))
             .send()
@@ -557,7 +675,13 @@ impl SeerrClient {
         url.query_pairs_mut()
             .append_pair("take", &take.to_string())
             .append_pair("skip", &skip.to_string());
-        Ok(self.authed(self.http.get(url)).send().await?.error_for_status()?.json().await?)
+        Ok(self
+            .authed(self.http.get(url))
+            .send()
+            .await?
+            .error_for_status()?
+            .json()
+            .await?)
     }
 
     /// `POST /blocklist` — requires `MANAGE_BLOCKLIST` server-side.
@@ -565,9 +689,16 @@ impl SeerrClient {
     /// already resolved via `get_current_user`) — Seerr's real request body
     /// requires it explicitly, it's not inferred from the auth session.
     /// 2026-08-06, Seerr Blocklist support.
-    pub async fn add_blocklist(&self, tmdb_id: i64, media_type: &str, title: &str, user_id: i64) -> Result<()> {
+    pub async fn add_blocklist(
+        &self,
+        tmdb_id: i64,
+        media_type: &str,
+        title: &str,
+        user_id: i64,
+    ) -> Result<()> {
         let url = api_url(&self.base_url, "/blocklist")?;
-        let body = json!({ "tmdbId": tmdb_id, "mediaType": media_type, "title": title, "user": user_id });
+        let body =
+            json!({ "tmdbId": tmdb_id, "mediaType": media_type, "title": title, "user": user_id });
         let resp = self.authed(self.http.post(url)).json(&body).send().await?;
         if !resp.status().is_success() {
             let status = resp.status();
@@ -598,12 +729,17 @@ impl SeerrClient {
     /// TMDB collection membership server-side from the id alone and
     /// blocklists every part. 2026-08-06, Seerr Blocklist support.
     pub async fn add_blocklist_collection(&self, collection_id: i64) -> Result<()> {
-        let url = api_url(&self.base_url, &format!("/blocklist/collection/{collection_id}"))?;
+        let url = api_url(
+            &self.base_url,
+            &format!("/blocklist/collection/{collection_id}"),
+        )?;
         let resp = self.authed(self.http.post(url)).send().await?;
         if !resp.status().is_success() {
             let status = resp.status();
             let body = resp.text().await.unwrap_or_default();
-            return Err(anyhow!("add_blocklist_collection failed: {status} — {body}"));
+            return Err(anyhow!(
+                "add_blocklist_collection failed: {status} — {body}"
+            ));
         }
         Ok(())
     }
@@ -612,12 +748,17 @@ impl SeerrClient {
     /// not wired to a UI action yet (v1 only adds), kept for completeness.
     /// 2026-08-06, Seerr Blocklist support.
     pub async fn remove_blocklist_collection(&self, collection_id: i64) -> Result<()> {
-        let url = api_url(&self.base_url, &format!("/blocklist/collection/{collection_id}"))?;
+        let url = api_url(
+            &self.base_url,
+            &format!("/blocklist/collection/{collection_id}"),
+        )?;
         let resp = self.authed(self.http.delete(url)).send().await?;
         if !resp.status().is_success() {
             let status = resp.status();
             let body = resp.text().await.unwrap_or_default();
-            return Err(anyhow!("remove_blocklist_collection failed: {status} — {body}"));
+            return Err(anyhow!(
+                "remove_blocklist_collection failed: {status} — {body}"
+            ));
         }
         Ok(())
     }
@@ -702,9 +843,16 @@ impl SeerrClient {
     /// what turned a one-field `NOT NULL` mismatch (see the doc comment on
     /// `UserGeneralSettings`) into a multi-round-trip live debugging
     /// session instead of an immediately obvious error.
-    pub async fn update_user_settings(&self, user_id: i64, settings: &UserGeneralSettings) -> Result<()> {
+    pub async fn update_user_settings(
+        &self,
+        user_id: i64,
+        settings: &UserGeneralSettings,
+    ) -> Result<()> {
         let url = api_url(&self.base_url, &format!("/user/{user_id}/settings/main"))?;
-        let resp = self.authed(self.http.post(url).json(settings)).send().await?;
+        let resp = self
+            .authed(self.http.post(url).json(settings))
+            .send()
+            .await?;
         if !resp.status().is_success() {
             let status = resp.status();
             let body = resp.text().await.unwrap_or_default();
@@ -865,7 +1013,13 @@ impl SeerrClient {
 
     async fn service_servers(&self, kind: &str) -> Result<Vec<ServiceServer>> {
         let url = api_url(&self.base_url, &format!("/service/{kind}"))?;
-        Ok(self.authed(self.http.get(url)).send().await?.error_for_status()?.json().await?)
+        Ok(self
+            .authed(self.http.get(url))
+            .send()
+            .await?
+            .error_for_status()?
+            .json()
+            .await?)
     }
 
     /// Three-step cascade, each step only reached if the previous finds
@@ -894,13 +1048,22 @@ impl SeerrClient {
     /// may require elevated permissions on some instances) propagate as
     /// `Err`; callers should treat that as "nothing available" too rather
     /// than blocking the request flow on it.
-    async fn fetch_server_options(&self, kind: &str, server_id: Option<i64>) -> Result<(Vec<Tag>, Vec<Profile>)> {
+    async fn fetch_server_options(
+        &self,
+        kind: &str,
+        server_id: Option<i64>,
+    ) -> Result<(Vec<Tag>, Vec<Profile>)> {
         let Some(server_id) = server_id else {
             return Ok((Vec::new(), Vec::new()));
         };
         let url = api_url(&self.base_url, &format!("/service/{kind}/{server_id}"))?;
-        let details: ServiceServerDetails =
-            self.authed(self.http.get(url)).send().await?.error_for_status()?.json().await?;
+        let details: ServiceServerDetails = self
+            .authed(self.http.get(url))
+            .send()
+            .await?
+            .error_for_status()?
+            .json()
+            .await?;
         Ok((details.tags, details.profiles))
     }
 
@@ -917,7 +1080,11 @@ impl SeerrClient {
         &self,
         media_type: &str,
     ) -> Result<((Vec<Tag>, Vec<Profile>), (Vec<Tag>, Vec<Profile>))> {
-        let kind = if media_type == "movie" { "radarr" } else { "sonarr" };
+        let kind = if media_type == "movie" {
+            "radarr"
+        } else {
+            "sonarr"
+        };
         let servers = self.service_servers(kind).await?;
         let regular_id = Self::pick_default_server(&servers, false);
         let fourk_id = Self::pick_default_server(&servers, true);
@@ -929,13 +1096,19 @@ impl SeerrClient {
         // fjord.log rather than guessed again.
         tracing::debug!(
             "seerr: {kind} servers: {:?} -> regular_id={regular_id:?} fourk_id={fourk_id:?}",
-            servers.iter().map(|s| (s.id, s.is_default, s.is4k)).collect::<Vec<_>>()
+            servers
+                .iter()
+                .map(|s| (s.id, s.is_default, s.is4k))
+                .collect::<Vec<_>>()
         );
         if fourk_id == regular_id {
             let opts = self.fetch_server_options(kind, regular_id).await?;
             Ok((opts.clone(), opts))
         } else {
-            tokio::try_join!(self.fetch_server_options(kind, regular_id), self.fetch_server_options(kind, fourk_id))
+            tokio::try_join!(
+                self.fetch_server_options(kind, regular_id),
+                self.fetch_server_options(kind, fourk_id)
+            )
         }
     }
 

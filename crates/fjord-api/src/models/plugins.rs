@@ -12,8 +12,8 @@ use serde::Deserialize;
 #[derive(Deserialize, Debug, Clone)]
 #[serde(rename_all = "PascalCase")]
 pub struct PluginInfo {
-    pub name:   String,
-    pub id:     String,
+    pub name: String,
+    pub id: String,
     #[serde(default)]
     pub status: String,
 }

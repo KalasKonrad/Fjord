@@ -38,46 +38,57 @@
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
 
-use fjord_api::{models::MediaItem, JellyfinClient};
+use fjord_api::{JellyfinClient, models::MediaItem};
 use slint::{Global, Model, ModelRc, VecModel};
 use tokio::task::JoinSet;
 use tracing::{debug, info, warn};
 
-use crate::config::FjordState;
 use crate::AppState;
+use crate::config::FjordState;
 use crate::detail::{fetch_card_posters, items_to_cards};
-use crate::poster::{fetch_poster_cached, fetch_poster_cached_tagged, fetch_backdrop_cached_tagged, decode_backdrop_buffer, decode_poster_buffer};
-use crate::{CardItem, CastMember, SeasonEntry, MainWindow};
+use crate::poster::{
+    decode_backdrop_buffer, decode_poster_buffer, fetch_backdrop_cached_tagged,
+    fetch_poster_cached, fetch_poster_cached_tagged,
+};
+use crate::{CardItem, CastMember, MainWindow, SeasonEntry};
 
 // ── ep_to_card ────────────────────────────────────────────────────────────────
 
 pub(crate) fn ep_to_card(ep: &MediaItem) -> CardItem {
     // Inside a series screen the show is known — title row is the episode name,
     // subtitle row the Jellyfin-style episode number.
-    let s   = ep.parent_index_number.unwrap_or(0);
-    let e   = ep.index_number.unwrap_or(0);
-    let sub = if s > 0 || e > 0 { format!("S{}:E{}", s, e) } else { String::new() };
+    let s = ep.parent_index_number.unwrap_or(0);
+    let e = ep.index_number.unwrap_or(0);
+    let sub = if s > 0 || e > 0 {
+        format!("S{}:E{}", s, e)
+    } else {
+        String::new()
+    };
     let resume_pct = if let Some(ticks) = ep.run_time_ticks {
         if ticks > 0 {
             (ep.user_data.playback_position_ticks as f32 / ticks as f32).clamp(0.0, 1.0)
-        } else { 0.0 }
-    } else { 0.0 };
+        } else {
+            0.0
+        }
+    } else {
+        0.0
+    };
     let series_id = ep.series_id.clone().unwrap_or_default();
     CardItem {
-        id:             ep.id.as_str().into(),
-        series_id:      series_id.as_str().into(),
-        item_type:      "Episode".into(),
-        title:          ep.name.as_str().into(),
-        subtitle:       sub.as_str().into(),
-        year:           ep.production_year.unwrap_or(0) as i32,
-        has_played:     ep.user_data.played,
-        is_favorite:    ep.user_data.is_favorite,
+        id: ep.id.as_str().into(),
+        series_id: series_id.as_str().into(),
+        item_type: "Episode".into(),
+        title: ep.name.as_str().into(),
+        subtitle: sub.as_str().into(),
+        year: ep.production_year.unwrap_or(0) as i32,
+        has_played: ep.user_data.played,
+        is_favorite: ep.user_data.is_favorite,
         resume_pct,
-        has_poster:     false,
-        poster:         Default::default(),
+        has_poster: false,
+        poster: Default::default(),
         unplayed_count: 0,
-        availability:   "".into(),
-        requested_4k:   false,
+        availability: "".into(),
+        requested_4k: false,
         other_tier_available: false,
         other_tier_requested: false,
         request_id: "".into(),
@@ -90,21 +101,23 @@ pub(crate) fn ep_to_card(ep: &MediaItem) -> CardItem {
 // ── spawn_episode_thumb_loading ───────────────────────────────────────────────
 
 pub(crate) fn spawn_episode_thumb_loading(
-    client:      Arc<JellyfinClient>,
-    episodes:    Vec<MediaItem>,
-    series_id:   String,
+    client: Arc<JellyfinClient>,
+    episodes: Vec<MediaItem>,
+    series_id: String,
     window_weak: slint::Weak<MainWindow>,
-    rt_handle:   tokio::runtime::Handle,
+    rt_handle: tokio::runtime::Handle,
 ) {
-    if episodes.is_empty() { return; }
+    if episodes.is_empty() {
+        return;
+    }
     rt_handle.spawn(async move {
         let sem = Arc::new(tokio::sync::Semaphore::new(6));
         let mut tasks: JoinSet<(usize, Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>)> =
             JoinSet::new();
         for (idx, ep) in episodes.iter().enumerate() {
-            let c2  = Arc::clone(&client);
-            let s2  = Arc::clone(&sem);
-            let id  = ep.id.clone();
+            let c2 = Arc::clone(&client);
+            let s2 = Arc::clone(&sem);
+            let id = ep.id.clone();
             let tag = ep.primary_image_tag().map(str::to_string);
             tasks.spawn(async move {
                 let _permit = s2.acquire_owned().await.ok();
@@ -114,14 +127,16 @@ pub(crate) fn spawn_episode_thumb_loading(
         }
         while let Some(res) = tasks.join_next().await {
             let Ok((idx, Some(buf))) = res else { continue };
-            let ww  = window_weak.clone();
+            let ww = window_weak.clone();
             let sid = series_id.clone();
             let _ = slint::invoke_from_event_loop(move || {
                 let Some(w) = ww.upgrade() else { return };
-                if AppState::get(&w).get_series_id().as_str() != sid { return; }
+                if AppState::get(&w).get_series_id().as_str() != sid {
+                    return;
+                }
                 let model = AppState::get(&w).get_series_episode_cards();
                 if let Some(mut card) = model.row_data(idx) {
-                    card.poster     = slint::Image::from_rgba8(buf);
+                    card.poster = slint::Image::from_rgba8(buf);
                     card.has_poster = true;
                     model.set_row_data(idx, card);
                 }
@@ -133,31 +148,33 @@ pub(crate) fn spawn_episode_thumb_loading(
 // ── SeriesCtx ─────────────────────────────────────────────────────────────────
 
 struct SeriesCtx {
-    id:            String,
-    client:        Arc<JellyfinClient>,
-    ww:            slint::Weak<MainWindow>,
-    rt:            tokio::runtime::Handle,
-    state:         Arc<Mutex<FjordState>>,
+    id: String,
+    client: Arc<JellyfinClient>,
+    ww: slint::Weak<MainWindow>,
+    rt: tokio::runtime::Handle,
+    state: Arc<Mutex<FjordState>>,
     cached_detail: Option<MediaItem>,
     // See detail.rs::DetailCtx.revalidate's doc comment — same pattern,
     // background-only second call fired after a cache-hit already showed
     // the page, patches fields without touching show-series/loading state.
-    revalidate:    bool,
+    revalidate: bool,
 }
 
 impl SeriesCtx {
     fn spawn_main(&self) {
-        let id     = self.id.clone();
+        let id = self.id.clone();
         let client = Arc::clone(&self.client);
-        let ww     = self.ww.clone();
-        let ww_ep  = self.ww.clone();
-        let state  = Arc::clone(&self.state);
-        let rth    = self.rt.clone();
+        let ww = self.ww.clone();
+        let ww_ep = self.ww.clone();
+        let state = Arc::clone(&self.state);
+        let rth = self.rt.clone();
         let cached = self.cached_detail.clone();
         let revalidate = self.revalidate;
         self.rt.spawn(async move {
             let detail_fut = async {
-                if let Some(d) = cached { return Ok(d); }
+                if let Some(d) = cached {
+                    return Ok(d);
+                }
                 client.get_item_detail(&id).await
             };
             let (detail_res, poster_bytes, seasons_res) = tokio::join!(
@@ -171,19 +188,29 @@ impl SeriesCtx {
             // own doc comment (CR11-2). Applies to both the original open and
             // a background revalidate call alike.
             if let Ok(d) = &detail_res {
-                if !crate::session_current(&state, &client) { return; }
-                state.lock().unwrap().item_detail_cache.insert(id.clone(), d.clone());
+                if !crate::session_current(&state, &client) {
+                    return;
+                }
+                state
+                    .lock()
+                    .unwrap()
+                    .item_detail_cache
+                    .insert(id.clone(), d.clone());
             }
             // Ghost series (deleted server-side): clean up and bail before the
             // page shows — otherwise the loading overlay gives way to an empty
             // shell built from error fallbacks (S4).
-            if let Err(e) = &detail_res && crate::is_not_found(e) {
+            if let Err(e) = &detail_res
+                && crate::is_not_found(e)
+            {
                 if !revalidate {
                     let ww_err = ww.clone();
                     let id_err = id.clone();
                     let _ = slint::invoke_from_event_loop(move || {
                         let Some(w) = ww_err.upgrade() else { return };
-                        if AppState::get(&w).get_series_id().as_str() != id_err { return; }
+                        if AppState::get(&w).get_series_id().as_str() != id_err {
+                            return;
+                        }
                         let g = AppState::get(&w);
                         g.set_app_content_loading(false);
                         g.set_series_id("".into());
@@ -193,11 +220,20 @@ impl SeriesCtx {
                 return;
             }
             let backdrop_bytes = match &detail_res {
-                Ok(d) if !d.backdrop_image_tags.is_empty() =>
-                    fetch_backdrop_cached_tagged(&client, &id, d.backdrop_image_tags.first().map(String::as_str)).await,
+                Ok(d) if !d.backdrop_image_tags.is_empty() => {
+                    fetch_backdrop_cached_tagged(
+                        &client,
+                        &id,
+                        d.backdrop_image_tags.first().map(String::as_str),
+                    )
+                    .await
+                }
                 _ => None,
             };
-            let seasons = seasons_res.unwrap_or_else(|e| { warn!("get_seasons {}: {:#}", id, e); vec![] });
+            let seasons = seasons_res.unwrap_or_else(|e| {
+                warn!("get_seasons {}: {:#}", id, e);
+                vec![]
+            });
             debug!("series {} — {} season(s)", id, seasons.len());
 
             // Season list + season-0 episodes: skipped on revalidate for the
@@ -223,23 +259,34 @@ impl SeriesCtx {
             if !revalidate {
                 let mut s = state.lock().unwrap();
                 // Superseded by another open (or the screen was closed) — bail (CR10-20).
-                if s.series_open_id != id { return; }
+                if s.series_open_id != id {
+                    return;
+                }
                 s.series_season_ids = season_ids;
             }
 
             let first_season_id = seasons.first().map(|s| s.id.clone());
             let first_eps = if !revalidate {
                 if let Some(ref fid) = first_season_id {
-                    client.get_season_episodes(&id, fid).await.unwrap_or_else(|e| {
-                        warn!("get_season_episodes {} {}: {:#}", id, fid, e);
-                        vec![]
-                    })
-                } else { vec![] }
-            } else { vec![] };
+                    client
+                        .get_season_episodes(&id, fid)
+                        .await
+                        .unwrap_or_else(|e| {
+                            warn!("get_season_episodes {} {}: {:#}", id, fid, e);
+                            vec![]
+                        })
+                } else {
+                    vec![]
+                }
+            } else {
+                vec![]
+            };
             debug!("series {} season 0 — {} episode(s)", id, first_eps.len());
             if !revalidate {
                 let mut s = state.lock().unwrap();
-                if s.series_open_id != id { return; } // superseded (CR10-20)
+                if s.series_open_id != id {
+                    return;
+                } // superseded (CR10-20)
                 s.series_episode_items = first_eps.clone();
                 if let Some(fid) = first_season_id {
                     s.series_episode_cache.insert(fid, first_eps.clone());
@@ -247,56 +294,125 @@ impl SeriesCtx {
             }
 
             // Build metadata from detail response.
-            let detail_name     = detail_res.as_ref().map(|d| d.name.clone()).ok().unwrap_or_default();
-            let detail_overview = crate::strip_html_to_text(detail_res.as_ref().ok().and_then(|d| d.overview.clone()).unwrap_or_default().trim());
+            let detail_name = detail_res
+                .as_ref()
+                .map(|d| d.name.clone())
+                .ok()
+                .unwrap_or_default();
+            let detail_overview = crate::strip_html_to_text(
+                detail_res
+                    .as_ref()
+                    .ok()
+                    .and_then(|d| d.overview.clone())
+                    .unwrap_or_default()
+                    .trim(),
+            );
 
             // Extended metadata only when detail fetch succeeded.
-            let (meta, genres, rating_label, tagline, studio, is_favorite, series_played, cast_data) = if let Ok(ref d) = detail_res {
+            let (
+                meta,
+                genres,
+                rating_label,
+                tagline,
+                studio,
+                is_favorite,
+                series_played,
+                cast_data,
+            ) = if let Ok(ref d) = detail_res {
                 let mut meta_parts: Vec<String> = vec![];
-                if let Some(y) = d.production_year { meta_parts.push(y.to_string()); }
-                if let Some(ref r) = d.official_rating { meta_parts.push(r.clone()); }
+                if let Some(y) = d.production_year {
+                    meta_parts.push(y.to_string());
+                }
+                if let Some(ref r) = d.official_rating {
+                    meta_parts.push(r.clone());
+                }
                 let season_count = seasons.len();
                 if season_count > 0 {
                     let ep_count = d.recursive_item_count.unwrap_or(0);
-                    let s_label = if season_count == 1 { "Season".to_string() } else { "Seasons".to_string() };
-                    let e_label = if ep_count == 1 { "Episode".to_string() } else { "Episodes".to_string() };
+                    let s_label = if season_count == 1 {
+                        "Season".to_string()
+                    } else {
+                        "Seasons".to_string()
+                    };
+                    let e_label = if ep_count == 1 {
+                        "Episode".to_string()
+                    } else {
+                        "Episodes".to_string()
+                    };
                     if ep_count > 0 {
-                        meta_parts.push(format!("{} {} · {} {}", season_count, s_label, ep_count, e_label));
+                        meta_parts.push(format!(
+                            "{} {} · {} {}",
+                            season_count, s_label, ep_count, e_label
+                        ));
                     } else {
                         meta_parts.push(format!("{} {}", season_count, s_label));
                     }
                 }
                 let meta = meta_parts.join(" · ");
                 let genres = d.genres.join(", ");
-                let rating = d.community_rating.map(|r| format!("★ {:.1}", r)).unwrap_or_default();
-                let tagline    = d.taglines.first().cloned().unwrap_or_default();
-                let studio     = d.studios.first().map(|s| s.name.clone()).unwrap_or_default();
-                let is_fav     = d.user_data.is_favorite;
+                let rating = d
+                    .community_rating
+                    .map(|r| format!("★ {:.1}", r))
+                    .unwrap_or_default();
+                let tagline = d.taglines.first().cloned().unwrap_or_default();
+                let studio = d
+                    .studios
+                    .first()
+                    .map(|s| s.name.clone())
+                    .unwrap_or_default();
+                let is_fav = d.user_data.is_favorite;
                 let has_played = d.user_data.played;
 
                 let mut seen: std::collections::HashSet<String> = Default::default();
                 let mut cast: Vec<(String, String, String)> = vec![];
-                for p in d.people.iter().filter(|p| p.person_type == "Director").take(2) {
+                for p in d
+                    .people
+                    .iter()
+                    .filter(|p| p.person_type == "Director")
+                    .take(2)
+                {
                     if seen.insert(p.id.clone()) {
                         cast.push((p.id.clone(), p.name.clone(), "Director".to_string()));
                     }
                 }
-                for p in d.people.iter().filter(|p| p.person_type == "Writer").take(3) {
+                for p in d
+                    .people
+                    .iter()
+                    .filter(|p| p.person_type == "Writer")
+                    .take(3)
+                {
                     if seen.insert(p.id.clone()) {
                         cast.push((p.id.clone(), p.name.clone(), "Writer".to_string()));
                     }
                 }
-                for p in d.people.iter().filter(|p| p.person_type == "Actor").take(12) {
+                for p in d
+                    .people
+                    .iter()
+                    .filter(|p| p.person_type == "Actor")
+                    .take(12)
+                {
                     if seen.insert(p.id.clone()) {
                         cast.push((p.id.clone(), p.name.clone(), p.role.clone()));
                     }
                 }
-                (meta, genres, rating, tagline, studio, is_fav, has_played, cast)
+                (
+                    meta, genres, rating, tagline, studio, is_fav, has_played, cast,
+                )
             } else {
-                (String::new(), String::new(), String::new(), String::new(), String::new(), false, false, vec![])
+                (
+                    String::new(),
+                    String::new(),
+                    String::new(),
+                    String::new(),
+                    String::new(),
+                    false,
+                    false,
+                    vec![],
+                )
             };
 
-            let person_ids: Vec<(usize, String)> = cast_data.iter()
+            let person_ids: Vec<(usize, String)> = cast_data
+                .iter()
                 .enumerate()
                 .filter(|(_, (pid, _, _))| !pid.is_empty())
                 .map(|(idx, (pid, _, _))| (idx, pid.clone()))
@@ -305,7 +421,8 @@ impl SeriesCtx {
             // played/is-favorite (2026-08-12, season-tab context menu): get_seasons()
             // already requests Fields=UserData,IndexNumber, so this is threading
             // through data already fetched, not a new network call.
-            let season_entries: Vec<SeasonEntry> = seasons.iter()
+            let season_entries: Vec<SeasonEntry> = seasons
+                .iter()
                 .map(|s| SeasonEntry {
                     id: s.id.as_str().into(),
                     name: s.name.as_str().into(),
@@ -319,24 +436,28 @@ impl SeriesCtx {
             // Main data ready — emit 50% progress so the bar shows movement.
             // Skipped on a background revalidate: no loading bar is showing.
             if !revalidate {
-                let ww2  = ww.clone();
+                let ww2 = ww.clone();
                 let id_c = id.clone();
                 let _ = slint::invoke_from_event_loop(move || {
                     let Some(w) = ww2.upgrade() else { return };
-                    if AppState::get(&w).get_series_id().as_str() != id_c { return; }
+                    if AppState::get(&w).get_series_id().as_str() != id_c {
+                        return;
+                    }
                     AppState::get(&w).set_app_loading_progress(0.5);
                 });
             }
 
             // Fetch all cast portraits before showing the page so they never trickle in.
             let sem = Arc::new(tokio::sync::Semaphore::new(6));
-            let mut portrait_tasks: JoinSet<(usize, Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>)> =
-                JoinSet::new();
+            let mut portrait_tasks: JoinSet<(
+                usize,
+                Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>,
+            )> = JoinSet::new();
             for (model_idx, pid) in &person_ids {
-                let c2    = client.clone();
-                let s2    = sem.clone();
+                let c2 = client.clone();
+                let s2 = sem.clone();
                 let pid_c = pid.clone();
-                let midx  = *model_idx;
+                let midx = *model_idx;
                 portrait_tasks.spawn(async move {
                     let _permit = s2.acquire_owned().await.ok();
                     let bytes = fetch_poster_cached(&c2, &pid_c).await;
@@ -358,7 +479,9 @@ impl SeriesCtx {
             let client_guard = client.clone();
             let _ = slint::invoke_from_event_loop(move || {
                 let Some(w) = ww.upgrade() else { return };
-                if AppState::get(&w).get_series_id().as_str() != id_guard { return; }
+                if AppState::get(&w).get_series_id().as_str() != id_guard {
+                    return;
+                }
                 // Session guard (Bonfire Phase 1, step 8 audit, 2026-08-09):
                 // the id check above now catches most of this
                 // (reset_session_state clears series-id on a switch/sign-
@@ -367,10 +490,16 @@ impl SeriesCtx {
                 // or a coincidental same-id reopen under a NEW profile
                 // before this stale fetch resolves, would still slip
                 // through an id check alone.
-                if !crate::session_current(&state, &client_guard) { return; }
+                if !crate::session_current(&state, &client_guard) {
+                    return;
+                }
                 let g = AppState::get(&w);
-                if !detail_name.is_empty()     { g.set_series_title(detail_name.as_str().into()); }
-                if !detail_overview.is_empty() { g.set_series_overview(detail_overview.as_str().into()); }
+                if !detail_name.is_empty() {
+                    g.set_series_title(detail_name.as_str().into());
+                }
+                if !detail_overview.is_empty() {
+                    g.set_series_overview(detail_overview.as_str().into());
+                }
                 g.set_series_meta(meta.as_str().into());
                 g.set_series_genres(genres.as_str().into());
                 g.set_series_rating_label(rating_label.as_str().into());
@@ -389,7 +518,9 @@ impl SeriesCtx {
                     g.set_series_loading(false);
                 }
                 // Build cast with portraits already fetched — no trickle-in.
-                let cast_members: Vec<CastMember> = cast_data.into_iter().zip(portrait_bufs)
+                let cast_members: Vec<CastMember> = cast_data
+                    .into_iter()
+                    .zip(portrait_bufs)
                     .map(|((cid, name, role), buf)| {
                         let (photo, has_photo) = if let Some(b) = buf {
                             (slint::Image::from_rgba8(b), true)
@@ -397,9 +528,9 @@ impl SeriesCtx {
                             (Default::default(), false)
                         };
                         CastMember {
-                            id:        cid.as_str().into(),
-                            name:      name.as_str().into(),
-                            role:      role.as_str().into(),
+                            id: cid.as_str().into(),
+                            name: name.as_str().into(),
+                            role: role.as_str().into(),
                             photo,
                             has_photo,
                         }
@@ -430,27 +561,38 @@ impl SeriesCtx {
     }
 
     fn spawn_next_up(&self) {
-        let id     = self.id.clone();
+        let id = self.id.clone();
         let client = Arc::clone(&self.client);
-        let ww     = self.ww.clone();
+        let ww = self.ww.clone();
         self.rt.spawn(async move {
             let ep = match client.get_next_up_for_series(&id).await {
                 Ok(Some(ep)) => ep,
-                Ok(None)     => return,
-                Err(e)       => { warn!("get_next_up_for_series {}: {:#}", id, e); return; }
+                Ok(None) => return,
+                Err(e) => {
+                    warn!("get_next_up_for_series {}: {:#}", id, e);
+                    return;
+                }
             };
             let thumb_bytes = fetch_poster_cached(&client, &ep.id).await;
-            let ep_id    = ep.id.clone();
+            let ep_id = ep.id.clone();
             let ep_title = ep.name.clone();
-            let ep_sub   = {
+            let ep_sub = {
                 let s = ep.parent_index_number.unwrap_or(0);
                 let e = ep.index_number.unwrap_or(0);
-                if s > 0 || e > 0 { format!("S{}:E{}", s, e) } else { String::new() }
+                if s > 0 || e > 0 {
+                    format!("S{}:E{}", s, e)
+                } else {
+                    String::new()
+                }
             };
             let runtime_secs = ep.run_time_ticks.unwrap_or(0) as f64 / 10_000_000.0;
-            let resume_secs  = ep.user_data.playback_position_ticks as f64 / 10_000_000.0;
-            let remaining    = if resume_secs > 0.0 { runtime_secs - resume_secs } else { runtime_secs };
-            let ends_at      = crate::playback::fmt_ends_at(remaining);
+            let resume_secs = ep.user_data.playback_position_ticks as f64 / 10_000_000.0;
+            let remaining = if resume_secs > 0.0 {
+                runtime_secs - resume_secs
+            } else {
+                runtime_secs
+            };
+            let ends_at = crate::playback::fmt_ends_at(remaining);
             let section_title: slint::SharedString = if ends_at.is_empty() {
                 "Next Up".into()
             } else {
@@ -458,21 +600,28 @@ impl SeriesCtx {
             };
             let resume_pct = if runtime_secs > 0.0 {
                 (resume_secs / runtime_secs).clamp(0.0, 1.0) as f32
-            } else { 0.0 };
-            let has_played  = ep.user_data.played;
+            } else {
+                0.0
+            };
+            let has_played = ep.user_data.played;
             // Decode poster outside the closure (SharedPixelBuffer is Send; Image::from_rgba8 is not).
-            let thumb_buf   = thumb_bytes.as_deref().and_then(decode_poster_buffer);
-            let has_thumb   = thumb_buf.is_some();
+            let thumb_buf = thumb_bytes.as_deref().and_then(decode_poster_buffer);
+            let has_thumb = thumb_buf.is_some();
             let _ = slint::invoke_from_event_loop(move || {
                 let Some(w) = ww.upgrade() else { return };
-                if AppState::get(&w).get_series_id().as_str() != id { return; }
+                if AppState::get(&w).get_series_id().as_str() != id {
+                    return;
+                }
                 let g = AppState::get(&w);
                 g.set_series_has_next_up(true);
                 // Steal focus to Next Up only if user hasn't navigated away from default state.
                 // series_focused_btn >= 0 means user is already on Back/♥/✓ — don't yank focus.
-                if !g.get_series_in_season_row() && !g.get_series_next_up_focused()
-                    && g.get_series_cast_focused() < 0 && g.get_series_similar_focused() < 0
-                    && g.get_series_focused_btn() < 0 {
+                if !g.get_series_in_season_row()
+                    && !g.get_series_next_up_focused()
+                    && g.get_series_cast_focused() < 0
+                    && g.get_series_similar_focused() < 0
+                    && g.get_series_focused_btn() < 0
+                {
                     g.set_series_next_up_focused(true);
                 }
                 g.set_series_next_up_id(ep_id.as_str().into());
@@ -484,20 +633,20 @@ impl SeriesCtx {
                 // triggers Slint's recursion detector during component init — always use a model.
                 let poster = thumb_buf.map(slint::Image::from_rgba8).unwrap_or_default();
                 let card = CardItem {
-                    id:             ep_id.as_str().into(),
-                    series_id:      id.as_str().into(),
-                    item_type:      "Episode".into(),
-                    title:          ep_title.as_str().into(),
-                    subtitle:       ep_sub.as_str().into(),
-                    year:           0,
+                    id: ep_id.as_str().into(),
+                    series_id: id.as_str().into(),
+                    item_type: "Episode".into(),
+                    title: ep_title.as_str().into(),
+                    subtitle: ep_sub.as_str().into(),
+                    year: 0,
                     has_played,
-                    is_favorite:    ep.user_data.is_favorite,
+                    is_favorite: ep.user_data.is_favorite,
                     resume_pct,
-                    has_poster:     has_thumb,
+                    has_poster: has_thumb,
                     poster,
                     unplayed_count: 0,
-                    availability:   "".into(),
-                    requested_4k:   false,
+                    availability: "".into(),
+                    requested_4k: false,
                     other_tier_available: false,
                     other_tier_requested: false,
                     request_id: "".into(),
@@ -509,7 +658,6 @@ impl SeriesCtx {
             });
         });
     }
-
 }
 
 // ── refresh_series_next_up ────────────────────────────────────────────────────
@@ -520,9 +668,9 @@ impl SeriesCtx {
 /// Same logic as SeriesCtx::spawn_next_up but does NOT steal keyboard focus.
 pub(crate) fn refresh_series_next_up(
     series_id: String,
-    client:    Arc<fjord_api::JellyfinClient>,
-    ww:        slint::Weak<MainWindow>,
-    rt:        tokio::runtime::Handle,
+    client: Arc<fjord_api::JellyfinClient>,
+    ww: slint::Weak<MainWindow>,
+    rt: tokio::runtime::Handle,
 ) {
     rt.spawn(async move {
         let ep = match client.get_next_up_for_series(&series_id).await {
@@ -531,61 +679,82 @@ pub(crate) fn refresh_series_next_up(
                 // Series fully watched — clear the row now that we have confirmation.
                 let _ = slint::invoke_from_event_loop(move || {
                     let Some(w) = ww.upgrade() else { return };
-                    if AppState::get(&w).get_series_id().as_str() != series_id { return; }
+                    if AppState::get(&w).get_series_id().as_str() != series_id {
+                        return;
+                    }
                     let g = AppState::get(&w);
                     let was_focused = g.get_series_next_up_focused();
                     g.set_series_has_next_up(false);
                     g.set_series_next_up_focused(false);
-                    g.set_series_next_up_cards(slint::ModelRc::new(slint::VecModel::<CardItem>::default()));
+                    g.set_series_next_up_cards(slint::ModelRc::new(
+                        slint::VecModel::<CardItem>::default(),
+                    ));
                     if was_focused {
                         g.set_series_in_season_row(true);
                     }
                 });
                 return;
             }
-            Err(e) => { warn!("refresh_series_next_up {}: {:#}", series_id, e); return; }
+            Err(e) => {
+                warn!("refresh_series_next_up {}: {:#}", series_id, e);
+                return;
+            }
         };
-        let thumb_bytes  = fetch_poster_cached(&client, &ep.id).await;
-        let ep_id        = ep.id.clone();
-        let ep_title     = ep.name.clone();
-        let ep_sub       = {
+        let thumb_bytes = fetch_poster_cached(&client, &ep.id).await;
+        let ep_id = ep.id.clone();
+        let ep_title = ep.name.clone();
+        let ep_sub = {
             let s = ep.parent_index_number.unwrap_or(0);
             let e = ep.index_number.unwrap_or(0);
-            if s > 0 || e > 0 { format!("S{}:E{}", s, e) } else { String::new() }
+            if s > 0 || e > 0 {
+                format!("S{}:E{}", s, e)
+            } else {
+                String::new()
+            }
         };
         let runtime_secs = ep.run_time_ticks.unwrap_or(0) as f64 / 10_000_000.0;
-        let resume_secs  = ep.user_data.playback_position_ticks as f64 / 10_000_000.0;
-        let remaining    = if resume_secs > 0.0 { runtime_secs - resume_secs } else { runtime_secs };
-        let ends_at      = crate::playback::fmt_ends_at(remaining);
+        let resume_secs = ep.user_data.playback_position_ticks as f64 / 10_000_000.0;
+        let remaining = if resume_secs > 0.0 {
+            runtime_secs - resume_secs
+        } else {
+            runtime_secs
+        };
+        let ends_at = crate::playback::fmt_ends_at(remaining);
         let section_title: slint::SharedString = if ends_at.is_empty() {
             "Next Up".into()
         } else {
             format!("Next Up  ·  Ends {}", ends_at).as_str().into()
         };
-        let resume_pct  = if runtime_secs > 0.0 { (resume_secs / runtime_secs).clamp(0.0, 1.0) as f32 } else { 0.0 };
-        let has_played  = ep.user_data.played;
-        let thumb_buf   = thumb_bytes.as_deref().and_then(decode_poster_buffer);
-        let has_thumb   = thumb_buf.is_some();
+        let resume_pct = if runtime_secs > 0.0 {
+            (resume_secs / runtime_secs).clamp(0.0, 1.0) as f32
+        } else {
+            0.0
+        };
+        let has_played = ep.user_data.played;
+        let thumb_buf = thumb_bytes.as_deref().and_then(decode_poster_buffer);
+        let has_thumb = thumb_buf.is_some();
         let _ = slint::invoke_from_event_loop(move || {
             let Some(w) = ww.upgrade() else { return };
-            if AppState::get(&w).get_series_id().as_str() != series_id { return; }
+            if AppState::get(&w).get_series_id().as_str() != series_id {
+                return;
+            }
             let g = AppState::get(&w);
             let poster = thumb_buf.map(slint::Image::from_rgba8).unwrap_or_default();
             let card = CardItem {
-                id:             ep_id.as_str().into(),
-                series_id:      series_id.as_str().into(),
-                item_type:      "Episode".into(),
-                title:          ep_title.as_str().into(),
-                subtitle:       ep_sub.as_str().into(),
-                year:           0,
+                id: ep_id.as_str().into(),
+                series_id: series_id.as_str().into(),
+                item_type: "Episode".into(),
+                title: ep_title.as_str().into(),
+                subtitle: ep_sub.as_str().into(),
+                year: 0,
                 has_played,
-                is_favorite:    ep.user_data.is_favorite,
+                is_favorite: ep.user_data.is_favorite,
                 resume_pct,
-                has_poster:     has_thumb,
+                has_poster: has_thumb,
                 poster,
                 unplayed_count: 0,
-                availability:   "".into(),
-                requested_4k:   false,
+                availability: "".into(),
+                requested_4k: false,
                 other_tier_available: false,
                 other_tier_requested: false,
                 request_id: "".into(),
@@ -607,46 +776,69 @@ pub(crate) fn refresh_series_next_up(
 
 impl SeriesCtx {
     fn spawn_similar(&self) {
-        let id     = self.id.clone();
+        let id = self.id.clone();
         let client = Arc::clone(&self.client);
-        let ww     = self.ww.clone();
-        let state  = Arc::clone(&self.state);
+        let ww = self.ww.clone();
+        let state = Arc::clone(&self.state);
         let cached = state.lock().unwrap().similar_items_cache.get(&id);
         let is_hit = cached.is_some();
-        let ww2    = self.ww.clone();
+        let ww2 = self.ww.clone();
         self.rt.spawn(async move {
             let similar = match cached {
                 Some(v) => v,
                 None => match client.get_similar_items(&id).await {
-                    Ok(v)  => v,
-                    Err(e) => { warn!("get_similar_items {}: {:#}", id, e); return; }
+                    Ok(v) => v,
+                    Err(e) => {
+                        warn!("get_similar_items {}: {:#}", id, e);
+                        return;
+                    }
                 },
             };
-            state.lock().unwrap().similar_items_cache.insert(id.clone(), similar.clone());
+            state
+                .lock()
+                .unwrap()
+                .similar_items_cache
+                .insert(id.clone(), similar.clone());
             if !similar.is_empty() {
                 let bufs = fetch_card_posters(&client, &similar).await;
                 let id_c = id.clone();
                 let _ = slint::invoke_from_event_loop(move || {
                     let Some(w) = ww.upgrade() else { return };
-                    if AppState::get(&w).get_series_id().as_str() != id_c { return; }
+                    if AppState::get(&w).get_series_id().as_str() != id_c {
+                        return;
+                    }
                     let g = AppState::get(&w);
                     let fresh = items_to_cards(&similar, bufs);
-                    g.set_series_similar(crate::apply_cards_preserving_identity(&g.get_series_similar(), fresh));
+                    g.set_series_similar(crate::apply_cards_preserving_identity(
+                        &g.get_series_similar(),
+                        fresh,
+                    ));
                 });
             }
             // Cache-hit only: shown instantly above; silently revalidate and
             // patch if changed (same staleness gap as detail.rs::spawn_similar).
             if is_hit && let Ok(fresh_similar) = client.get_similar_items(&id).await {
-                if !crate::session_current(&state, &client) { return; }
-                state.lock().unwrap().similar_items_cache.insert(id.clone(), fresh_similar.clone());
+                if !crate::session_current(&state, &client) {
+                    return;
+                }
+                state
+                    .lock()
+                    .unwrap()
+                    .similar_items_cache
+                    .insert(id.clone(), fresh_similar.clone());
                 let bufs = fetch_card_posters(&client, &fresh_similar).await;
                 let id_c = id.clone();
                 let _ = slint::invoke_from_event_loop(move || {
                     let Some(w) = ww2.upgrade() else { return };
-                    if AppState::get(&w).get_series_id().as_str() != id_c { return; }
+                    if AppState::get(&w).get_series_id().as_str() != id_c {
+                        return;
+                    }
                     let g = AppState::get(&w);
                     let fresh = items_to_cards(&fresh_similar, bufs);
-                    g.set_series_similar(crate::apply_cards_preserving_identity(&g.get_series_similar(), fresh));
+                    g.set_series_similar(crate::apply_cards_preserving_identity(
+                        &g.get_series_similar(),
+                        fresh,
+                    ));
                 });
             }
         });
@@ -656,13 +848,15 @@ impl SeriesCtx {
 // ── open_series_screen ────────────────────────────────────────────────────────
 
 pub(crate) fn open_series_screen(
-    id:        String,
-    state:     Arc<Mutex<FjordState>>,
-    ww:        slint::Weak<MainWindow>,
+    id: String,
+    state: Arc<Mutex<FjordState>>,
+    ww: slint::Weak<MainWindow>,
     rt_handle: tokio::runtime::Handle,
 ) {
     let mut s = state.lock().unwrap();
-    let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
+    let Some(client) = s.client.as_ref().map(Arc::clone) else {
+        return;
+    };
     let basic = s.all_series.iter().find(|i| i.id == id).cloned();
     // Screen-open cache (Part 2): only the get_item_detail fetch is cached here —
     // seasons/first-season-episodes are always refetched fresh, since they
@@ -672,7 +866,10 @@ pub(crate) fn open_series_screen(
     // to prevent. Detail alone still skips the slowest single call (full
     // metadata + cast list) in spawn_main's join.
     let cached_detail = s.item_detail_cache.get(&id);
-    debug!("open_series_screen({id}): cache_hit={}", cached_detail.is_some());
+    debug!(
+        "open_series_screen({id}): cache_hit={}",
+        cached_detail.is_some()
+    );
     // Claim the canonical series slot synchronously (CR10-20). spawn_main's
     // async writes are guarded by series_open_id == id, so a slow task for a
     // previously opened series can no longer overwrite the state of the one
@@ -684,7 +881,11 @@ pub(crate) fn open_series_screen(
     s.series_season_generation = 0;
     drop(s);
 
-    info!("open_series: id={} name={:?}", id, basic.as_ref().map(|i| i.name.as_str()));
+    info!(
+        "open_series: id={} name={:?}",
+        id,
+        basic.as_ref().map(|i| i.name.as_str())
+    );
 
     if let Some(w) = ww.upgrade() {
         let g = AppState::get(&w);
@@ -696,7 +897,7 @@ pub(crate) fn open_series_screen(
         g.set_app_loading_progress(0.0);
         g.set_series_id(id.as_str().into());
         g.set_series_loading(true);
-        g.set_series_in_season_row(false);     // default: episode row (Next Up steals focus when it loads)
+        g.set_series_in_season_row(false); // default: episode row (Next Up steals focus when it loads)
         g.set_series_next_up_focused(false);
         g.set_series_season_idx(0);
         g.set_series_focused_ep(0);
@@ -730,7 +931,9 @@ pub(crate) fn open_series_screen(
         g.set_series_next_up_cards(ModelRc::new(VecModel::<CardItem>::default()));
         if let Some(ref item) = basic {
             g.set_series_title(item.name.as_str().into());
-            g.set_series_overview(crate::strip_html_to_text(item.overview.clone().unwrap_or_default().trim()).into());
+            g.set_series_overview(
+                crate::strip_html_to_text(item.overview.clone().unwrap_or_default().trim()).into(),
+            );
             g.set_series_is_favorite(item.user_data.is_favorite);
             g.set_series_has_played(item.user_data.played);
             g.set_series_unplayed_count(item.user_data.unplayed_item_count);
@@ -738,17 +941,54 @@ pub(crate) fn open_series_screen(
     }
 
     let is_detail_cache_hit = cached_detail.is_some();
-    let ctx = SeriesCtx { id: id.clone(), client: client.clone(), ww: ww.clone(), rt: rt_handle.clone(), state: Arc::clone(&state), cached_detail, revalidate: false };
+    let ctx = SeriesCtx {
+        id: id.clone(),
+        client: client.clone(),
+        ww: ww.clone(),
+        rt: rt_handle.clone(),
+        state: Arc::clone(&state),
+        cached_detail,
+        revalidate: false,
+    };
     ctx.spawn_main();
     if is_detail_cache_hit && crate::should_revalidate(&state, &id) {
-        let ctx_revalidate = SeriesCtx { id: id.clone(), client: client.clone(), ww: ww.clone(), rt: rt_handle.clone(), state: Arc::clone(&state), cached_detail: None, revalidate: true };
+        let ctx_revalidate = SeriesCtx {
+            id: id.clone(),
+            client: client.clone(),
+            ww: ww.clone(),
+            rt: rt_handle.clone(),
+            state: Arc::clone(&state),
+            cached_detail: None,
+            revalidate: true,
+        };
         ctx_revalidate.spawn_main();
     }
-    let ctx_nu = SeriesCtx { id: id.clone(), client: client.clone(), ww: ww.clone(), rt: rt_handle.clone(), state: Arc::clone(&state), cached_detail: None, revalidate: false };
+    let ctx_nu = SeriesCtx {
+        id: id.clone(),
+        client: client.clone(),
+        ww: ww.clone(),
+        rt: rt_handle.clone(),
+        state: Arc::clone(&state),
+        cached_detail: None,
+        revalidate: false,
+    };
     ctx_nu.spawn_next_up();
-    let ctx_si = SeriesCtx { id: id.clone(), client: client.clone(), ww: ww.clone(), rt: rt_handle.clone(), state: Arc::clone(&state), cached_detail: None, revalidate: false };
+    let ctx_si = SeriesCtx {
+        id: id.clone(),
+        client: client.clone(),
+        ww: ww.clone(),
+        rt: rt_handle.clone(),
+        state: Arc::clone(&state),
+        cached_detail: None,
+        revalidate: false,
+    };
     ctx_si.spawn_similar();
-    spawn_recommended(id.clone(), Arc::clone(&state), ww.clone(), rt_handle.clone());
+    spawn_recommended(
+        id.clone(),
+        Arc::clone(&state),
+        ww.clone(),
+        rt_handle.clone(),
+    );
     spawn_missing_seasons(id, client, state, ww, rt_handle);
 }
 
@@ -759,12 +999,14 @@ pub(crate) fn open_series_screen(
 /// "More Like This" row). A standalone fn rather than a `SeriesCtx` method
 /// since it doesn't need the Jellyfin client, only Seerr + state.
 fn spawn_recommended(
-    id:    String,
+    id: String,
     state: Arc<Mutex<FjordState>>,
-    ww:    slint::Weak<MainWindow>,
-    rt:    tokio::runtime::Handle,
+    ww: slint::Weak<MainWindow>,
+    rt: tokio::runtime::Handle,
 ) {
-    let Some(seerr) = state.lock().unwrap().seerr_client.clone() else { return };
+    let Some(seerr) = state.lock().unwrap().seerr_client.clone() else {
+        return;
+    };
     rt.spawn(async move {
         let resolved = {
             let s = state.lock().unwrap();
@@ -805,13 +1047,15 @@ fn spawn_recommended(
 /// A standalone fn (not a `SeriesCtx` method) since it needs both the
 /// Jellyfin client (for the local season list) and Seerr.
 fn spawn_missing_seasons(
-    id:     String,
+    id: String,
     client: Arc<JellyfinClient>,
-    state:  Arc<Mutex<FjordState>>,
-    ww:     slint::Weak<MainWindow>,
-    rt:     tokio::runtime::Handle,
+    state: Arc<Mutex<FjordState>>,
+    ww: slint::Weak<MainWindow>,
+    rt: tokio::runtime::Handle,
 ) {
-    let Some(seerr) = state.lock().unwrap().seerr_client.clone() else { return };
+    let Some(seerr) = state.lock().unwrap().seerr_client.clone() else {
+        return;
+    };
     rt.spawn(async move {
         let resolved = {
             let s = state.lock().unwrap();
@@ -821,23 +1065,37 @@ fn spawn_missing_seasons(
             debug!("spawn_missing_seasons({id}): no tmdb id resolved — row will not show");
             return;
         };
-        let Ok(tmdb_id) = tmdb_id_str.parse::<i64>() else { return };
+        let Ok(tmdb_id) = tmdb_id_str.parse::<i64>() else {
+            return;
+        };
 
-        let (local_seasons_res, tv_res) = tokio::join!(client.get_seasons(&id), seerr.get_tv(tmdb_id));
+        let (local_seasons_res, tv_res) =
+            tokio::join!(client.get_seasons(&id), seerr.get_tv(tmdb_id));
         let local_seasons = match local_seasons_res {
-            Ok(v)  => v,
-            Err(e) => { warn!("spawn_missing_seasons get_seasons({id}): {:#}", e); return; }
+            Ok(v) => v,
+            Err(e) => {
+                warn!("spawn_missing_seasons get_seasons({id}): {:#}", e);
+                return;
+            }
         };
         let tv = match tv_res {
-            Ok(v)  => v,
-            Err(e) => { warn!("spawn_missing_seasons get_tv({tmdb_id}): {:#}", e); return; }
+            Ok(v) => v,
+            Err(e) => {
+                warn!("spawn_missing_seasons get_tv({tmdb_id}): {:#}", e);
+                return;
+            }
         };
 
-        let local_numbers: std::collections::HashSet<u32> =
-            local_seasons.iter().filter_map(|s| s.index_number).collect();
+        let local_numbers: std::collections::HashSet<u32> = local_seasons
+            .iter()
+            .filter_map(|s| s.index_number)
+            .collect();
         let my_user_id = state.lock().unwrap().seerr_user_id;
-        let requests: &[fjord_seerr::MediaRequest] =
-            tv.media_info.as_ref().map(|mi| mi.requests.as_slice()).unwrap_or(&[]);
+        let requests: &[fjord_seerr::MediaRequest] = tv
+            .media_info
+            .as_ref()
+            .map(|mi| mi.requests.as_slice())
+            .unwrap_or(&[]);
 
         // (availability_label, request_id, pending, mine) — matches
         // discover::season_request_status's own return shape.
@@ -847,33 +1105,55 @@ fn spawn_missing_seasons(
             .into_iter()
             .filter(|s| s.season_number != 0 && !local_numbers.contains(&s.season_number))
             .map(|s| {
-                let status = crate::discover::season_request_status(requests, s.season_number, my_user_id);
+                let status =
+                    crate::discover::season_request_status(requests, s.season_number, my_user_id);
                 (s, status)
             })
             .collect();
-        debug!("spawn_missing_seasons({id}): tmdb={tmdb_id} -> {} missing season(s)", missing.len());
-        if missing.is_empty() { return; }
+        debug!(
+            "spawn_missing_seasons({id}): tmdb={tmdb_id} -> {} missing season(s)",
+            missing.len()
+        );
+        if missing.is_empty() {
+            return;
+        }
 
         // Bounded-concurrency TMDB poster fetch, same shape as every other
         // Discover-sourced row in this app.
-        let Ok(http) = reqwest::Client::builder().timeout(std::time::Duration::from_secs(30)).build() else { return };
+        let Ok(http) = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .build()
+        else {
+            return;
+        };
         let sem = Arc::new(tokio::sync::Semaphore::new(8));
         let mut set = JoinSet::new();
         for (idx, (season, _)) in missing.iter().enumerate() {
-            let Some(path) = season.poster_path.clone() else { continue };
+            let Some(path) = season.poster_path.clone() else {
+                continue;
+            };
             let http = http.clone();
             let sem = Arc::clone(&sem);
             let cache_key = format!("season-missing-{tmdb_id}-{}", season.season_number);
             set.spawn(async move {
                 let _permit = sem.acquire_owned().await.ok();
-                let bytes = crate::discover::fetch_tmdb_image(&http, crate::discover::TMDB_POSTER_BASE, &path, &cache_key).await?;
+                let bytes = crate::discover::fetch_tmdb_image(
+                    &http,
+                    crate::discover::TMDB_POSTER_BASE,
+                    &path,
+                    &cache_key,
+                )
+                .await?;
                 let buf = decode_poster_buffer(&bytes)?;
                 Some((idx, buf))
             });
         }
-        let mut bufs: Vec<Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>> = vec![None; missing.len()];
+        let mut bufs: Vec<Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>> =
+            vec![None; missing.len()];
         while let Some(res) = set.join_next().await {
-            if let Ok(Some((idx, buf))) = res { bufs[idx] = Some(buf); }
+            if let Ok(Some((idx, buf))) = res {
+                bufs[idx] = Some(buf);
+            }
         }
 
         // Plain Send-safe data only — CardItem (carries a slint::Image field,
@@ -881,7 +1161,16 @@ fn spawn_missing_seasons(
         // the invoke_from_event_loop closure below, same two-phase
         // discipline as every other row added this pass.
         // (season_number, name, subtitle, availability, request_id, pending, mine, poster_buf)
-        type MissingSeasonRow = (u32, String, String, String, String, bool, bool, Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>);
+        type MissingSeasonRow = (
+            u32,
+            String,
+            String,
+            String,
+            String,
+            bool,
+            bool,
+            Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>,
+        );
         // Real bug/UX gap, live-reported 2026-08-12: "in some ongoing series
         // the upcomming season is stated as missing and 0 episodes it shuld
         // state upcomming and the date." A season TMDB already knows the
@@ -896,12 +1185,18 @@ fn spawn_missing_seasons(
             .into_iter()
             .zip(bufs)
             .map(|((season, status), buf)| {
-                let name = if season.name.is_empty() { format!("Season {}", season.season_number) } else { season.name };
+                let name = if season.name.is_empty() {
+                    format!("Season {}", season.season_number)
+                } else {
+                    season.name
+                };
                 let (availability, request_id, request_pending, request_mine) = match status {
                     Some((a, rid, pending, mine)) => (a, rid, pending, mine),
                     None => (String::new(), String::new(), false, false),
                 };
-                let air_date_known = season.air_date.as_deref()
+                let air_date_known = season
+                    .air_date
+                    .as_deref()
                     .and_then(|d| chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d").ok());
                 // Real bug, live-reported 2026-08-17 ("no this is not
                 // working"): the original condition required
@@ -919,17 +1214,28 @@ fn spawn_missing_seasons(
                 // all to check.
                 let is_upcoming = match air_date_known {
                     Some(d) => d >= today,
-                    None    => season.episode_count == 0,
+                    None => season.episode_count == 0,
                 };
                 let subtitle = if is_upcoming {
                     match &season.air_date {
-                        Some(d) if !d.is_empty() => format!("Upcoming · {}", crate::discover::format_date_pretty(d)),
+                        Some(d) if !d.is_empty() => {
+                            format!("Upcoming · {}", crate::discover::format_date_pretty(d))
+                        }
                         _ => "Upcoming".to_string(),
                     }
                 } else {
                     format!("{} episodes", season.episode_count)
                 };
-                (season.season_number, name, subtitle, availability, request_id, request_pending, request_mine, buf)
+                (
+                    season.season_number,
+                    name,
+                    subtitle,
+                    availability,
+                    request_id,
+                    request_pending,
+                    request_mine,
+                    buf,
+                )
             })
             .collect();
 
@@ -937,29 +1243,45 @@ fn spawn_missing_seasons(
         let _ = slint::invoke_from_event_loop(move || {
             let Some(w) = ww.upgrade() else { return };
             let g = AppState::get(&w);
-            if g.get_series_id().as_str() != id_c { return; }
+            if g.get_series_id().as_str() != id_c {
+                return;
+            }
             let cards: Vec<CardItem> = rows
                 .into_iter()
-                .map(|(season_number, name, subtitle, availability, request_id, request_pending, request_mine, buf)| {
-                    let mut card = CardItem {
-                        id:           season_number.to_string().as_str().into(),
-                        item_type:    "MissingSeason".into(),
-                        title:        name.as_str().into(),
-                        subtitle:     subtitle.as_str().into(),
-                        availability: availability.as_str().into(),
-                        request_id:   request_id.as_str().into(),
+                .map(
+                    |(
+                        season_number,
+                        name,
+                        subtitle,
+                        availability,
+                        request_id,
                         request_pending,
                         request_mine,
-                        ..Default::default()
-                    };
-                    if let Some(b) = buf {
-                        card.poster = slint::Image::from_rgba8(b);
-                        card.has_poster = true;
-                    }
-                    card
-                })
+                        buf,
+                    )| {
+                        let mut card = CardItem {
+                            id: season_number.to_string().as_str().into(),
+                            item_type: "MissingSeason".into(),
+                            title: name.as_str().into(),
+                            subtitle: subtitle.as_str().into(),
+                            availability: availability.as_str().into(),
+                            request_id: request_id.as_str().into(),
+                            request_pending,
+                            request_mine,
+                            ..Default::default()
+                        };
+                        if let Some(b) = buf {
+                            card.poster = slint::Image::from_rgba8(b);
+                            card.has_poster = true;
+                        }
+                        card
+                    },
+                )
                 .collect();
-            g.set_series_missing_seasons(crate::apply_cards_preserving_identity(&g.get_series_missing_seasons(), cards));
+            g.set_series_missing_seasons(crate::apply_cards_preserving_identity(
+                &g.get_series_missing_seasons(),
+                cards,
+            ));
         });
     });
 }
@@ -976,26 +1298,36 @@ fn spawn_missing_seasons(
 /// `handle_key`, matching this codebase's established pattern for any
 /// keyboard-triggered action that needs an async network call.
 pub(crate) fn activate_missing_season(
-    g:     &AppState,
-    idx:   usize,
+    g: &AppState,
+    idx: usize,
     state: &Arc<Mutex<FjordState>>,
-    ww:    slint::Weak<MainWindow>,
-    rt:    tokio::runtime::Handle,
+    ww: slint::Weak<MainWindow>,
+    rt: tokio::runtime::Handle,
 ) {
-    let Some(card) = g.get_series_missing_seasons().row_data(idx) else { return };
+    let Some(card) = g.get_series_missing_seasons().row_data(idx) else {
+        return;
+    };
     let series_id = g.get_series_id().to_string();
     let resolved = {
         let s = state.lock().unwrap();
         crate::context_menu::resolve_tmdb_for_jellyfin_item(&s, &series_id, "Series")
     };
-    let Some((tmdb_id_str, _)) = resolved else { return };
+    let Some((tmdb_id_str, _)) = resolved else {
+        return;
+    };
     if card.request_id.is_empty() {
         let all_missing: Vec<u32> = (0..g.get_series_missing_seasons().row_count())
             .filter_map(|i| g.get_series_missing_seasons().row_data(i))
             .filter(|c| c.request_id.is_empty())
             .filter_map(|c| c.id.parse::<u32>().ok())
             .collect();
-        crate::discover::open_series_request_detail(tmdb_id_str, Some(all_missing), Arc::clone(state), ww, rt);
+        crate::discover::open_series_request_detail(
+            tmdb_id_str,
+            Some(all_missing),
+            Arc::clone(state),
+            ww,
+            rt,
+        );
     } else {
         crate::discover::open_series_request_detail(tmdb_id_str, None, Arc::clone(state), ww, rt);
     }
@@ -1021,16 +1353,28 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &crate::AppState) -> b
     if g.get_series_focused_btn() == 0 {
         // Back button: Down → ♥ fav; Right → ♥; Enter → close
         return match action {
-            Action::Down  => { g.set_series_focused_btn(1); true }
-            Action::Right => { g.set_series_focused_btn(1); true }
+            Action::Down => {
+                g.set_series_focused_btn(1);
+                true
+            }
+            Action::Right => {
+                g.set_series_focused_btn(1);
+                true
+            }
             Action::Confirm => {
                 g.set_series_focused_btn(-1);
                 g.invoke_close_series();
                 true
             }
-            Action::Fullscreen => { g.invoke_toggle_fullscreen(); true }
-            Action::Quit       => { g.invoke_quit(); true }
-            _ => false
+            Action::Fullscreen => {
+                g.invoke_toggle_fullscreen();
+                true
+            }
+            Action::Quit => {
+                g.invoke_quit();
+                true
+            }
+            _ => false,
         };
     }
     if g.get_series_focused_btn() >= 1 {
@@ -1038,18 +1382,27 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &crate::AppState) -> b
         return match action {
             Action::Left => {
                 let b = g.get_series_focused_btn();
-                if (1..=2).contains(&b) { g.set_series_focused_btn(b - 1); }
+                if (1..=2).contains(&b) {
+                    g.set_series_focused_btn(b - 1);
+                }
                 true
             }
             Action::Right => {
                 let b = g.get_series_focused_btn();
-                if b < 2 { g.set_series_focused_btn(b + 1); }
+                if b < 2 {
+                    g.set_series_focused_btn(b + 1);
+                }
                 true
             }
             Action::Up => {
                 let b = g.get_series_focused_btn();
-                if b == 3 { g.set_series_focused_btn(1); } // Overview → ♥ fav
-                else      { g.set_series_focused_btn(0); } // ♥/✓ → Back
+                if b == 3 {
+                    g.set_series_focused_btn(1);
+                }
+                // Overview → ♥ fav
+                else {
+                    g.set_series_focused_btn(0);
+                } // ♥/✓ → Back
                 true
             }
             Action::Down => {
@@ -1057,16 +1410,22 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &crate::AppState) -> b
                 if b == 3 {
                     // Overview → content
                     g.set_series_focused_btn(-1);
-                    if g.get_series_has_next_up() { g.set_series_next_up_focused(true); }
-                    else                          { g.set_series_in_season_row(true); }
+                    if g.get_series_has_next_up() {
+                        g.set_series_next_up_focused(true);
+                    } else {
+                        g.set_series_in_season_row(true);
+                    }
                 } else if !g.get_series_overview().is_empty() {
                     // ♥/✓ → Overview first
                     g.set_series_focused_btn(3);
                 } else {
                     // No overview → straight to content
                     g.set_series_focused_btn(-1);
-                    if g.get_series_has_next_up() { g.set_series_next_up_focused(true); }
-                    else                          { g.set_series_in_season_row(true); }
+                    if g.get_series_has_next_up() {
+                        g.set_series_next_up_focused(true);
+                    } else {
+                        g.set_series_in_season_row(true);
+                    }
                 }
                 true
             }
@@ -1079,9 +1438,15 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &crate::AppState) -> b
                 }
                 true
             }
-            Action::Fullscreen => { g.invoke_toggle_fullscreen(); true }
-            Action::Quit       => { g.invoke_quit(); true }
-            _ => false
+            Action::Fullscreen => {
+                g.invoke_toggle_fullscreen();
+                true
+            }
+            Action::Quit => {
+                g.invoke_quit();
+                true
+            }
+            _ => false,
         };
     }
 
@@ -1120,9 +1485,15 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &crate::AppState) -> b
                 );
                 true
             }
-            Action::Fullscreen => { g.invoke_toggle_fullscreen(); true }
-            Action::Quit       => { g.invoke_quit(); true }
-            _ => false
+            Action::Fullscreen => {
+                g.invoke_toggle_fullscreen();
+                true
+            }
+            Action::Quit => {
+                g.invoke_quit();
+                true
+            }
+            _ => false,
         };
     }
 
@@ -1193,24 +1564,32 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &crate::AppState) -> b
                 }
                 true
             }
-            Action::Fullscreen => { g.invoke_toggle_fullscreen(); true }
-            Action::Quit       => { g.invoke_quit(); true }
-            _ => false
+            Action::Fullscreen => {
+                g.invoke_toggle_fullscreen();
+                true
+            }
+            Action::Quit => {
+                g.invoke_quit();
+                true
+            }
+            _ => false,
         };
     }
 
     // Derive which row we're in from the existing state properties.
     let in_missing_seasons = g.get_series_missing_seasons_focused() >= 0;
-    let in_cast            = g.get_series_cast_focused()            >= 0;
-    let in_similar         = g.get_series_similar_focused()         >= 0;
-    let in_recommended     = g.get_series_recommended_focused()     >= 0;
+    let in_cast = g.get_series_cast_focused() >= 0;
+    let in_similar = g.get_series_similar_focused() >= 0;
+    let in_recommended = g.get_series_recommended_focused() >= 0;
 
     // ── Missing Seasons row (Discover-sourced, 2026-07-29) ────────────────────
     if in_missing_seasons {
         return match action {
             Action::Left => {
                 let idx = g.get_series_missing_seasons_focused();
-                if idx > 0 { g.set_series_missing_seasons_focused(idx - 1); }
+                if idx > 0 {
+                    g.set_series_missing_seasons_focused(idx - 1);
+                }
                 true
             }
             Action::Right => {
@@ -1246,9 +1625,15 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &crate::AppState) -> b
                 g.invoke_series_missing_season_activate(idx);
                 true
             }
-            Action::Fullscreen => { g.invoke_toggle_fullscreen(); true }
-            Action::Quit       => { g.invoke_quit(); true }
-            _ => false
+            Action::Fullscreen => {
+                g.invoke_toggle_fullscreen();
+                true
+            }
+            Action::Quit => {
+                g.invoke_quit();
+                true
+            }
+            _ => false,
         };
     }
 
@@ -1257,7 +1642,9 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &crate::AppState) -> b
         return match action {
             Action::Left => {
                 let idx = g.get_series_cast_focused();
-                if idx > 0 { g.set_series_cast_focused(idx - 1); }
+                if idx > 0 {
+                    g.set_series_cast_focused(idx - 1);
+                }
                 true
             }
             Action::Right => {
@@ -1289,14 +1676,22 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &crate::AppState) -> b
             }
             Action::Confirm => {
                 let idx = g.get_series_cast_focused();
-                if idx >= 0 && let Some(c) = g.get_series_cast().row_data(idx as usize) {
+                if idx >= 0
+                    && let Some(c) = g.get_series_cast().row_data(idx as usize)
+                {
                     g.invoke_open_person(c.id, c.name);
                 }
                 true
             }
-            Action::Fullscreen => { g.invoke_toggle_fullscreen(); true }
-            Action::Quit       => { g.invoke_quit(); true }
-            _ => false
+            Action::Fullscreen => {
+                g.invoke_toggle_fullscreen();
+                true
+            }
+            Action::Quit => {
+                g.invoke_quit();
+                true
+            }
+            _ => false,
         };
     }
 
@@ -1305,7 +1700,9 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &crate::AppState) -> b
         return match action {
             Action::Left => {
                 let idx = g.get_series_similar_focused();
-                if idx > 0 { g.set_series_similar_focused(idx - 1); }
+                if idx > 0 {
+                    g.set_series_similar_focused(idx - 1);
+                }
                 true
             }
             Action::Right => {
@@ -1318,7 +1715,7 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &crate::AppState) -> b
             Action::Up => {
                 g.set_series_similar_focused(-1);
                 if g.get_series_cast().row_count() > 0 {
-                    g.set_series_cast_focused(0);  // back up to cast row
+                    g.set_series_cast_focused(0); // back up to cast row
                 } else if g.get_series_missing_seasons().row_count() > 0 {
                     g.set_series_missing_seasons_focused(0);
                 } // else: back to episode row
@@ -1340,9 +1737,15 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &crate::AppState) -> b
                 }
                 true
             }
-            Action::Fullscreen => { g.invoke_toggle_fullscreen(); true }
-            Action::Quit       => { g.invoke_quit(); true }
-            _ => false
+            Action::Fullscreen => {
+                g.invoke_toggle_fullscreen();
+                true
+            }
+            Action::Quit => {
+                g.invoke_quit();
+                true
+            }
+            _ => false,
         };
     }
 
@@ -1351,7 +1754,9 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &crate::AppState) -> b
         return match action {
             Action::Left => {
                 let idx = g.get_series_recommended_focused();
-                if idx > 0 { g.set_series_recommended_focused(idx - 1); }
+                if idx > 0 {
+                    g.set_series_recommended_focused(idx - 1);
+                }
                 true
             }
             Action::Right => {
@@ -1375,7 +1780,11 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &crate::AppState) -> b
             Action::Confirm => {
                 let idx = g.get_series_recommended_focused() as usize;
                 if let Some(card) = g.get_series_recommended().row_data(idx) {
-                    let media_type = if card.item_type == "DiscoverMovie" { "movie" } else { "tv" };
+                    let media_type = if card.item_type == "DiscoverMovie" {
+                        "movie"
+                    } else {
+                        "tv"
+                    };
                     g.invoke_open_discover_item(media_type.into(), card.id);
                 }
                 true
@@ -1387,9 +1796,15 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &crate::AppState) -> b
                 }
                 true
             }
-            Action::Fullscreen => { g.invoke_toggle_fullscreen(); true }
-            Action::Quit       => { g.invoke_quit(); true }
-            _ => false
+            Action::Fullscreen => {
+                g.invoke_toggle_fullscreen();
+                true
+            }
+            Action::Quit => {
+                g.invoke_quit();
+                true
+            }
+            _ => false,
         };
     }
 
@@ -1397,13 +1812,17 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &crate::AppState) -> b
     match action {
         Action::Left => {
             let ep = g.get_series_focused_ep();
-            if ep > 0 { g.set_series_focused_ep(ep - 1); }
+            if ep > 0 {
+                g.set_series_focused_ep(ep - 1);
+            }
             true
         }
         Action::Right => {
-            let ep  = g.get_series_focused_ep();
+            let ep = g.get_series_focused_ep();
             let max = g.get_series_episode_cards().row_count() as i32 - 1;
-            if ep < max { g.set_series_focused_ep(ep + 1); }
+            if ep < max {
+                g.set_series_focused_ep(ep + 1);
+            }
             true
         }
         Action::Up => {
@@ -1429,31 +1848,47 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &crate::AppState) -> b
         }
         Action::Confirm => {
             let cards = g.get_series_episode_cards();
-            if cards.row_count() > 0 && let Some(card) = cards.row_data(g.get_series_focused_ep() as usize) {
+            if cards.row_count() > 0
+                && let Some(card) = cards.row_data(g.get_series_focused_ep() as usize)
+            {
                 g.invoke_play_series_episode(card.id);
             }
             true
         }
         Action::OpenDetail => {
             let cards = g.get_series_episode_cards();
-            if cards.row_count() > 0 && let Some(card) = cards.row_data(g.get_series_focused_ep() as usize) {
+            if cards.row_count() > 0
+                && let Some(card) = cards.row_data(g.get_series_focused_ep() as usize)
+            {
                 g.invoke_open_detail(card.id, "Episode".into());
             }
             true
         }
         Action::OpenContextMenu => {
             let cards = g.get_series_episode_cards();
-            if cards.row_count() > 0 && let Some(card) = cards.row_data(g.get_series_focused_ep() as usize) {
+            if cards.row_count() > 0
+                && let Some(card) = cards.row_data(g.get_series_focused_ep() as usize)
+            {
                 g.set_context_menu_title(card.title.clone());
                 g.invoke_open_context_menu(
-                    card.id, card.has_played, card.is_favorite, card.resume_pct,
-                    card.item_type, card.series_id,
+                    card.id,
+                    card.has_played,
+                    card.is_favorite,
+                    card.resume_pct,
+                    card.item_type,
+                    card.series_id,
                 );
             }
             true
         }
-        Action::Fullscreen => { g.invoke_toggle_fullscreen(); true }
-        Action::Quit       => { g.invoke_quit(); true }
-        _ => false
+        Action::Fullscreen => {
+            g.invoke_toggle_fullscreen();
+            true
+        }
+        Action::Quit => {
+            g.invoke_quit();
+            true
+        }
+        _ => false,
     }
 }

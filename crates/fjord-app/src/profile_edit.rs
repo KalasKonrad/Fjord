@@ -75,12 +75,14 @@ use fjord_api::models::{BonfireProfile, CreateProfileRequest, UpdateProfileReque
 use slint::{ComponentHandle, Model, ModelRc, SharedString, VecModel};
 use tracing::{debug, warn};
 
-use slint::Global;
-use crate::config::{save_config, FjordState};
+use crate::config::{FjordState, save_config};
 use crate::keys::key;
 use crate::{AppState, MainWindow, ProfileTile, ToggleListItem};
+use slint::Global;
 
-fn ss(s: &str) -> SharedString { SharedString::from(s) }
+fn ss(s: &str) -> SharedString {
+    SharedString::from(s)
+}
 
 /// Closes ProfileEditScreen and clears the on-screen keyboard along with
 /// it. Real gap, caught while wiring the keyboard into this screen's 3 text
@@ -108,8 +110,7 @@ const DEFAULT_AVATAR_HEX: &str = "#4a90d9";
 // (needed here so keyboard Enter on the avatar zone can resolve a cursor
 // position to a hex string without round-tripping through Slint).
 const AVATAR_PALETTE_HEX: [&str; 8] = [
-    "#4a90d9", "#d94a6b", "#4ad98e", "#d9a04a",
-    "#9a4ad9", "#4ac9d9", "#d9d94a", "#d96b4a",
+    "#4a90d9", "#d94a6b", "#4ad98e", "#d9a04a", "#9a4ad9", "#4ac9d9", "#d9d94a", "#d96b4a",
 ];
 
 // Same values as profile_edit.slint's two SettingsDropdown `model:` arrays
@@ -117,8 +118,19 @@ const AVATAR_PALETTE_HEX: [&str; 8] = [
 // "Any"/"Never" are the display sentinels for the stored ""/"0" values,
 // matching each dropdown's own `selected(v) => ...` translation in Slint.
 const PARENTAL_RATING_MODEL: [&str; 13] = [
-    "Any", "G", "PG", "PG-13", "R", "NC-17",
-    "TV-Y", "TV-Y7", "TV-G", "TV-PG", "TV-14", "TV-MA", "Not Rated",
+    "Any",
+    "G",
+    "PG",
+    "PG-13",
+    "R",
+    "NC-17",
+    "TV-Y",
+    "TV-Y7",
+    "TV-G",
+    "TV-PG",
+    "TV-14",
+    "TV-MA",
+    "Not Rated",
 ];
 // Live-questioned 2026-08-17 ("thats a bit bad to not know what parental
 // ration a profile is on") — re-verified directly against Bonfire's real
@@ -144,24 +156,40 @@ const LOCKOUT_MODEL: [&str; 6] = ["Never", "5", "15", "30", "60", "120"];
 // picker's PIN_VALS) — VirtualKeyboard's real key order, duplicated here
 // rather than shared since it's a 12-element literal with no natural home
 // in a third file both would import from.
-const PIN_VALS: [&str; 12] = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "backspace", "0", "confirm"];
+const PIN_VALS: [&str; 12] = [
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8",
+    "9",
+    "backspace",
+    "0",
+    "confirm",
+];
 
-fn default_avatar_color() -> slint::Color { slint::Color::from_rgb_u8(0x4a, 0x90, 0xd9) }
+fn default_avatar_color() -> slint::Color {
+    slint::Color::from_rgb_u8(0x4a, 0x90, 0xd9)
+}
 
 fn bonfire_profile_to_tile(p: &BonfireProfile) -> ProfileTile {
     ProfileTile {
-        user_id:        ss(&p.profile_user_id),
-        display_name:   ss(&p.profile_name),
-        avatar_color:   crate::profile::parse_hex_color(&p.avatar_color).unwrap_or_else(default_avatar_color),
+        user_id: ss(&p.profile_user_id),
+        display_name: ss(&p.profile_name),
+        avatar_color: crate::profile::parse_hex_color(&p.avatar_color)
+            .unwrap_or_else(default_avatar_color),
         avatar_initial: ss(&p.avatar_initial),
-        has_pin:        p.has_pin,
-        requires_pin:   p.requires_pin,
-        is_bonfire:     p.is_bonfire,
+        has_pin: p.has_pin,
+        requires_pin: p.requires_pin,
+        is_bonfire: p.is_bonfire,
         // ManageProfilesScreen's own list (this function's only caller)
         // already filters out the calling master's own entry and every
         // `is_master` entry before building tiles — so nothing shown here
         // is ever a group's own root tile in the first place.
-        is_root:        false,
+        is_root: false,
     }
 }
 
@@ -169,14 +197,24 @@ fn bonfire_profile_to_tile(p: &BonfireProfile) -> ProfileTile {
 /// ManageProfilesScreen. Gated on `!Config.active().is_bonfire` — a Bonfire
 /// sub-profile isn't a master, so it shouldn't reach this at all (Settings'
 /// own row is gated the same way; this is the defensive second check).
-pub(crate) fn open_manage_profiles_screen(state: &Arc<Mutex<FjordState>>, window: &MainWindow, rt: &tokio::runtime::Handle) {
+pub(crate) fn open_manage_profiles_screen(
+    state: &Arc<Mutex<FjordState>>,
+    window: &MainWindow,
+    rt: &tokio::runtime::Handle,
+) {
     let g = AppState::get(window);
     let (client, is_master) = {
         let s = state.lock().unwrap();
-        (s.client.clone(), crate::profile::is_true_master(s.config.active()))
+        (
+            s.client.clone(),
+            crate::profile::is_true_master(s.config.active()),
+        )
     };
     if !is_master {
-        crate::show_toast(window.as_weak(), "Only a master account can manage profiles".to_string());
+        crate::show_toast(
+            window.as_weak(),
+            "Only a master account can manage profiles".to_string(),
+        );
         return;
     }
     let Some(client) = client else { return };
@@ -191,7 +229,9 @@ pub(crate) fn open_manage_profiles_screen(state: &Arc<Mutex<FjordState>>, window
     rt.spawn(async move {
         match client.bonfire_list_profiles().await {
             Ok(profiles) => {
-                if !crate::session_current(&state2, &client) { return; }
+                if !crate::session_current(&state2, &client) {
+                    return;
+                }
                 // Real bug, code-review 2026-08-16: Bonfire's own /list
                 // response includes the calling master's own profile
                 // alongside its real sub-profiles — sync_bonfire_subprofiles
@@ -213,7 +253,8 @@ pub(crate) fn open_manage_profiles_screen(state: &Arc<Mutex<FjordState>>, window
                 // to be read here, before the filter runs. 0/absent (a
                 // server that never populated it) falls back to Bonfire's
                 // own documented default of 5, matching the old behavior.
-                let max_sub_profiles = profiles.iter()
+                let max_sub_profiles = profiles
+                    .iter()
                     .find(|p| p.profile_user_id == master_id)
                     .map(|p| p.max_sub_profiles)
                     .filter(|&n| n > 0)
@@ -227,10 +268,12 @@ pub(crate) fn open_manage_profiles_screen(state: &Arc<Mutex<FjordState>>, window
                 // edit/delete attempt against a foreign master's account
                 // regardless, but the UI shouldn't offer a button that can
                 // only ever fail.
-                let profiles: Vec<_> = profiles.into_iter()
+                let profiles: Vec<_> = profiles
+                    .into_iter()
                     .filter(|p| p.profile_user_id != master_id && !p.is_master)
                     .collect();
-                let tiles: Vec<ProfileTile> = profiles.iter().map(bonfire_profile_to_tile).collect();
+                let tiles: Vec<ProfileTile> =
+                    profiles.iter().map(bonfire_profile_to_tile).collect();
                 state2.lock().unwrap().manage_profiles_cache = profiles;
                 let _ = slint::invoke_from_event_loop(move || {
                     if let Some(w) = ww.upgrade() {
@@ -244,7 +287,9 @@ pub(crate) fn open_manage_profiles_screen(state: &Arc<Mutex<FjordState>>, window
                 warn!("bonfire_list_profiles: {e:#}");
                 let msg = format!("Couldn't load profiles: {e:#}");
                 let _ = slint::invoke_from_event_loop(move || {
-                    if let Some(w) = ww.upgrade() { AppState::get(&w).set_manage_profiles_error(ss(&msg)); }
+                    if let Some(w) = ww.upgrade() {
+                        AppState::get(&w).set_manage_profiles_error(ss(&msg));
+                    }
                 });
             }
         }
@@ -259,7 +304,10 @@ pub(crate) fn on_manage_profiles_select(
 ) {
     let existing = {
         let s = state.lock().unwrap();
-        s.manage_profiles_cache.iter().find(|p| p.profile_user_id == user_id.as_str()).cloned()
+        s.manage_profiles_cache
+            .iter()
+            .find(|p| p.profile_user_id == user_id.as_str())
+            .cloned()
     };
     let Some(existing) = existing else {
         AppState::get(window).set_manage_profiles_error(ss("That profile is no longer available"));
@@ -268,7 +316,11 @@ pub(crate) fn on_manage_profiles_select(
     open_profile_edit_screen(state, window, rt, Some(existing), false);
 }
 
-pub(crate) fn on_manage_profiles_add(state: &Arc<Mutex<FjordState>>, window: &MainWindow, rt: &tokio::runtime::Handle) {
+pub(crate) fn on_manage_profiles_add(
+    state: &Arc<Mutex<FjordState>>,
+    window: &MainWindow,
+    rt: &tokio::runtime::Handle,
+) {
     open_profile_edit_screen(state, window, rt, None, false);
 }
 
@@ -288,13 +340,23 @@ pub(crate) fn on_manage_profiles_add(state: &Arc<Mutex<FjordState>>, window: &Ma
 /// Profiles already is. Whether the server actually accepts a
 /// self-targeted `update` call is unverified either way — real "needs a
 /// live test" territory, same as the rest of this crate's Bonfire module.
-pub(crate) fn open_my_profile_edit_screen(state: &Arc<Mutex<FjordState>>, window: &MainWindow, rt: &tokio::runtime::Handle) {
+pub(crate) fn open_my_profile_edit_screen(
+    state: &Arc<Mutex<FjordState>>,
+    window: &MainWindow,
+    rt: &tokio::runtime::Handle,
+) {
     let (client, is_master) = {
         let s = state.lock().unwrap();
-        (s.client.clone(), crate::profile::is_true_master(s.config.active()))
+        (
+            s.client.clone(),
+            crate::profile::is_true_master(s.config.active()),
+        )
     };
     if !is_master {
-        crate::show_toast(window.as_weak(), "Only a master account can edit its own profile here".to_string());
+        crate::show_toast(
+            window.as_weak(),
+            "Only a master account can edit its own profile here".to_string(),
+        );
         return;
     }
     let Some(client) = client else { return };
@@ -304,13 +366,21 @@ pub(crate) fn open_my_profile_edit_screen(state: &Arc<Mutex<FjordState>>, window
     rt.spawn(async move {
         match client.bonfire_list_profiles().await {
             Ok(profiles) => {
-                if !crate::session_current(&state2, &client) { return; }
-                let mine = profiles.into_iter().find(|p| p.profile_user_id == client.user_id);
+                if !crate::session_current(&state2, &client) {
+                    return;
+                }
+                let mine = profiles
+                    .into_iter()
+                    .find(|p| p.profile_user_id == client.user_id);
                 let _ = slint::invoke_from_event_loop(move || {
                     let Some(w) = ww.upgrade() else { return };
                     match mine {
                         Some(p) => open_profile_edit_screen(&state2, &w, &rt2, Some(p), true),
-                        None => crate::show_toast(w.as_weak(), "Couldn't find your own profile — is Bonfire installed on this server?".to_string()),
+                        None => crate::show_toast(
+                            w.as_weak(),
+                            "Couldn't find your own profile — is Bonfire installed on this server?"
+                                .to_string(),
+                        ),
                     }
                 });
             }
@@ -318,7 +388,9 @@ pub(crate) fn open_my_profile_edit_screen(state: &Arc<Mutex<FjordState>>, window
                 warn!("open_my_profile_edit_screen: bonfire_list_profiles: {e:#}");
                 let msg = format!("{e:#}");
                 let _ = slint::invoke_from_event_loop(move || {
-                    if let Some(w) = ww.upgrade() { crate::show_toast(w.as_weak(), msg); }
+                    if let Some(w) = ww.upgrade() {
+                        crate::show_toast(w.as_weak(), msg);
+                    }
                 });
             }
         }
@@ -334,26 +406,35 @@ pub(crate) fn open_my_profile_edit_screen(state: &Arc<Mutex<FjordState>>, window
 /// matching every other screen-open function's own "no flash of stale
 /// data" precedent) before the async libraries/devices fetch runs.
 pub(crate) fn open_profile_edit_screen(
-    state:    &Arc<Mutex<FjordState>>,
-    window:   &MainWindow,
-    rt:       &tokio::runtime::Handle,
+    state: &Arc<Mutex<FjordState>>,
+    window: &MainWindow,
+    rt: &tokio::runtime::Handle,
     existing: Option<BonfireProfile>,
-    is_self:  bool,
+    is_self: bool,
 ) {
     let g = AppState::get(window);
     let is_create = existing.is_none();
     g.set_profile_edit_is_self(is_self);
-    let color_hex = existing.as_ref()
+    let color_hex = existing
+        .as_ref()
         .map(|p| p.avatar_color.clone())
         .filter(|c| !c.is_empty())
         .unwrap_or_else(|| DEFAULT_AVATAR_HEX.to_string());
 
     g.set_show_manage_profiles(false);
     g.set_profile_edit_is_create(is_create);
-    g.set_profile_edit_target_id(ss(existing.as_ref().map(|p| p.profile_user_id.as_str()).unwrap_or("")));
-    g.set_profile_edit_name_initial(ss(existing.as_ref().map(|p| p.profile_name.as_str()).unwrap_or("")));
+    g.set_profile_edit_target_id(ss(existing
+        .as_ref()
+        .map(|p| p.profile_user_id.as_str())
+        .unwrap_or("")));
+    g.set_profile_edit_name_initial(ss(existing
+        .as_ref()
+        .map(|p| p.profile_name.as_str())
+        .unwrap_or("")));
     g.set_profile_edit_avatar_color(ss(&color_hex));
-    g.set_profile_edit_avatar_preview(crate::profile::parse_hex_color(&color_hex).unwrap_or_else(default_avatar_color));
+    g.set_profile_edit_avatar_preview(
+        crate::profile::parse_hex_color(&color_hex).unwrap_or_else(default_avatar_color),
+    );
     g.set_profile_edit_pin_len(0);
     g.set_profile_edit_has_pin(existing.as_ref().map(|p| p.has_pin).unwrap_or(false));
     g.set_profile_edit_master_pin_len(0);
@@ -362,10 +443,24 @@ pub(crate) fn open_profile_edit_screen(
     // reports the CURRENT value (see UNKNOWN_RATING's own doc comment) —
     // start at the honest "Unknown" sentinel instead of a misleading "Any".
     g.set_profile_edit_parental_rating(ss(if is_create { "" } else { UNKNOWN_RATING }));
-    g.set_profile_edit_blocked_tags_initial(ss(&existing.as_ref().map(|p| p.blocked_tags.join(", ")).unwrap_or_default()));
-    g.set_profile_edit_allowed_tags_initial(ss(&existing.as_ref().map(|p| p.allowed_tags.join(", ")).unwrap_or_default()));
-    g.set_profile_edit_lockout_minutes(ss(&existing.as_ref().map(|p| p.lockout_minutes.to_string()).unwrap_or_else(|| "0".to_string())));
-    g.set_profile_edit_lan_bypass(existing.as_ref().map(|p| p.bypass_pin_on_local_network).unwrap_or(false));
+    g.set_profile_edit_blocked_tags_initial(ss(&existing
+        .as_ref()
+        .map(|p| p.blocked_tags.join(", "))
+        .unwrap_or_default()));
+    g.set_profile_edit_allowed_tags_initial(ss(&existing
+        .as_ref()
+        .map(|p| p.allowed_tags.join(", "))
+        .unwrap_or_default()));
+    g.set_profile_edit_lockout_minutes(ss(&existing
+        .as_ref()
+        .map(|p| p.lockout_minutes.to_string())
+        .unwrap_or_else(|| "0".to_string())));
+    g.set_profile_edit_lan_bypass(
+        existing
+            .as_ref()
+            .map(|p| p.bypass_pin_on_local_network)
+            .unwrap_or(false),
+    );
     g.set_profile_edit_saving(false);
     g.set_profile_edit_error(ss(""));
     g.set_profile_edit_libraries(ModelRc::new(VecModel::<ToggleListItem>::default()));
@@ -414,34 +509,64 @@ pub(crate) fn open_profile_edit_screen(
         let s = state.lock().unwrap();
         (
             s.client.clone(),
-            existing.as_ref().map(|p| p.enabled_folders.clone()).unwrap_or_default(),
-            existing.as_ref().map(|p| p.allowed_device_ids.clone()).unwrap_or_default(),
+            existing
+                .as_ref()
+                .map(|p| p.enabled_folders.clone())
+                .unwrap_or_default(),
+            existing
+                .as_ref()
+                .map(|p| p.allowed_device_ids.clone())
+                .unwrap_or_default(),
         )
     };
     let Some(client) = client else { return };
     let ww = window.as_weak();
     let state2 = Arc::clone(state);
     rt.spawn(async move {
-        let (libs_res, devices_res) = tokio::join!(client.bonfire_list_libraries(), client.bonfire_list_devices());
-        if !crate::session_current(&state2, &client) { return; }
+        let (libs_res, devices_res) = tokio::join!(
+            client.bonfire_list_libraries(),
+            client.bonfire_list_devices()
+        );
+        if !crate::session_current(&state2, &client) {
+            return;
+        }
         let libraries: Vec<ToggleListItem> = match libs_res {
-            Ok(libs) => libs.into_iter().map(|l| ToggleListItem {
-                id: ss(&l.id), name: ss(&l.name), subtitle: ss(&l.collection_type),
-                // Create mode: nothing owned yet — default every library
-                // enabled (opt-out), matching Jellyfin's own new-user
-                // default of full library access. Edit mode: pre-select
-                // whatever enabled_folders already lists.
-                selected: if is_create { true } else { enabled_folders.contains(&l.id) },
-            }).collect(),
-            Err(e) => { warn!("bonfire_list_libraries: {e:#}"); vec![] }
+            Ok(libs) => libs
+                .into_iter()
+                .map(|l| ToggleListItem {
+                    id: ss(&l.id),
+                    name: ss(&l.name),
+                    subtitle: ss(&l.collection_type),
+                    // Create mode: nothing owned yet — default every library
+                    // enabled (opt-out), matching Jellyfin's own new-user
+                    // default of full library access. Edit mode: pre-select
+                    // whatever enabled_folders already lists.
+                    selected: if is_create {
+                        true
+                    } else {
+                        enabled_folders.contains(&l.id)
+                    },
+                })
+                .collect(),
+            Err(e) => {
+                warn!("bonfire_list_libraries: {e:#}");
+                vec![]
+            }
         };
         let devices: Vec<ToggleListItem> = match devices_res {
-            Ok(devs) => devs.into_iter().map(|d| ToggleListItem {
-                id: ss(&d.device_id), name: ss(&d.device_name),
-                subtitle: ss(&format!("{} · last seen {}", d.client, d.last_seen)),
-                selected: allowed_device_ids.contains(&d.device_id),
-            }).collect(),
-            Err(e) => { warn!("bonfire_list_devices: {e:#}"); vec![] }
+            Ok(devs) => devs
+                .into_iter()
+                .map(|d| ToggleListItem {
+                    id: ss(&d.device_id),
+                    name: ss(&d.device_name),
+                    subtitle: ss(&format!("{} · last seen {}", d.client, d.last_seen)),
+                    selected: allowed_device_ids.contains(&d.device_id),
+                })
+                .collect(),
+            Err(e) => {
+                warn!("bonfire_list_devices: {e:#}");
+                vec![]
+            }
         };
         let _ = slint::invoke_from_event_loop(move || {
             let Some(w) = ww.upgrade() else { return };
@@ -452,7 +577,11 @@ pub(crate) fn open_profile_edit_screen(
     });
 }
 
-pub(crate) fn on_profile_edit_pin_key(state: &Arc<Mutex<FjordState>>, window: &MainWindow, key: SharedString) {
+pub(crate) fn on_profile_edit_pin_key(
+    state: &Arc<Mutex<FjordState>>,
+    window: &MainWindow,
+    key: SharedString,
+) {
     let g = AppState::get(window);
     match key.as_str() {
         "backspace" => {
@@ -474,7 +603,11 @@ pub(crate) fn on_profile_edit_pin_key(state: &Arc<Mutex<FjordState>>, window: &M
     }
 }
 
-pub(crate) fn on_profile_edit_master_pin_key(state: &Arc<Mutex<FjordState>>, window: &MainWindow, key: SharedString) {
+pub(crate) fn on_profile_edit_master_pin_key(
+    state: &Arc<Mutex<FjordState>>,
+    window: &MainWindow,
+    key: SharedString,
+) {
     let g = AppState::get(window);
     match key.as_str() {
         "backspace" => {
@@ -498,20 +631,26 @@ pub(crate) fn on_profile_edit_master_pin_key(state: &Arc<Mutex<FjordState>>, win
 
 pub(crate) fn on_profile_edit_avatar_color_selected(window: &MainWindow, hex: SharedString) {
     let g = AppState::get(window);
-    g.set_profile_edit_avatar_preview(crate::profile::parse_hex_color(hex.as_str()).unwrap_or_else(default_avatar_color));
+    g.set_profile_edit_avatar_preview(
+        crate::profile::parse_hex_color(hex.as_str()).unwrap_or_else(default_avatar_color),
+    );
     g.set_profile_edit_avatar_color(hex);
 }
 
 pub(crate) fn on_profile_edit_toggle_library(window: &MainWindow, idx: i32) {
     let model = AppState::get(window).get_profile_edit_libraries();
-    let Some(mut item) = model.row_data(idx as usize) else { return };
+    let Some(mut item) = model.row_data(idx as usize) else {
+        return;
+    };
     item.selected = !item.selected;
     model.set_row_data(idx as usize, item);
 }
 
 pub(crate) fn on_profile_edit_toggle_device(window: &MainWindow, idx: i32) {
     let model = AppState::get(window).get_profile_edit_devices();
-    let Some(mut item) = model.row_data(idx as usize) else { return };
+    let Some(mut item) = model.row_data(idx as usize) else {
+        return;
+    };
     item.selected = !item.selected;
     model.set_row_data(idx as usize, item);
 }
@@ -536,7 +675,10 @@ pub(crate) fn on_profile_edit_cancel(state: &Arc<Mutex<FjordState>>, window: &Ma
 }
 
 fn split_tags(csv: &str) -> Vec<String> {
-    csv.split(',').map(|t| t.trim().to_string()).filter(|t| !t.is_empty()).collect()
+    csv.split(',')
+        .map(|t| t.trim().to_string())
+        .filter(|t| !t.is_empty())
+        .collect()
 }
 
 fn selected_ids(model: &ModelRc<ToggleListItem>) -> Vec<String> {
@@ -548,10 +690,10 @@ fn selected_ids(model: &ModelRc<ToggleListItem>) -> Vec<String> {
 }
 
 pub(crate) fn on_profile_edit_save(
-    state:  Arc<Mutex<FjordState>>,
+    state: Arc<Mutex<FjordState>>,
     window: slint::Weak<MainWindow>,
-    rt:     tokio::runtime::Handle,
-    name:   SharedString,
+    rt: tokio::runtime::Handle,
+    name: SharedString,
     blocked_tags_csv: SharedString,
     allowed_tags_csv: SharedString,
 ) {
@@ -562,14 +704,14 @@ pub(crate) fn on_profile_edit_save(
         g.set_profile_edit_error(ss("Name can't be empty"));
         return;
     }
-    let is_create      = g.get_profile_edit_is_create();
-    let is_self        = g.get_profile_edit_is_self();
-    let target_id       = g.get_profile_edit_target_id().to_string();
-    let avatar_color    = g.get_profile_edit_avatar_color().to_string();
+    let is_create = g.get_profile_edit_is_create();
+    let is_self = g.get_profile_edit_is_self();
+    let target_id = g.get_profile_edit_target_id().to_string();
+    let avatar_color = g.get_profile_edit_avatar_color().to_string();
     let parental_rating = g.get_profile_edit_parental_rating().to_string();
     let lockout_minutes: i64 = g.get_profile_edit_lockout_minutes().parse().unwrap_or(0);
-    let lan_bypass       = g.get_profile_edit_lan_bypass();
-    let enabled_folders  = selected_ids(&g.get_profile_edit_libraries());
+    let lan_bypass = g.get_profile_edit_lan_bypass();
+    let enabled_folders = selected_ids(&g.get_profile_edit_libraries());
     let allowed_device_ids = selected_ids(&g.get_profile_edit_devices());
     let blocked_tags = split_tags(&blocked_tags_csv);
     let allowed_tags = split_tags(&allowed_tags_csv);
@@ -578,7 +720,8 @@ pub(crate) fn on_profile_edit_save(
         let s = state.lock().unwrap();
         (
             (!s.profile_edit_pin_buffer.is_empty()).then(|| s.profile_edit_pin_buffer.clone()),
-            (!s.profile_edit_master_pin_buffer.is_empty()).then(|| s.profile_edit_master_pin_buffer.clone()),
+            (!s.profile_edit_master_pin_buffer.is_empty())
+                .then(|| s.profile_edit_master_pin_buffer.clone()),
             s.client.clone(),
         )
     };
@@ -589,16 +732,16 @@ pub(crate) fn on_profile_edit_save(
     // local ProfileSettings update (see that branch's own comment for why
     // this doesn't apply to the ordinary Manage-Profiles-editing-a-sub-
     // profile case, which has no equivalent local record to keep in sync).
-    let pin_was_set          = pin.is_some();
-    let name_for_local       = name.clone();
+    let pin_was_set = pin.is_some();
+    let name_for_local = name.clone();
     let avatar_color_for_local = avatar_color.clone();
 
     g.set_profile_edit_saving(true);
     g.set_profile_edit_error(ss(""));
 
-    let ww       = window.clone();
-    let state2   = Arc::clone(&state);
-    let rt_task  = rt.clone();
+    let ww = window.clone();
+    let state2 = Arc::clone(&state);
+    let rt_task = rt.clone();
     rt.spawn(async move {
         let result: Result<()> = if is_create {
             let req = CreateProfileRequest {
@@ -611,7 +754,8 @@ pub(crate) fn on_profile_edit_save(
                 // should be sent, exactly as if the field were blank —
                 // sending the literal sentinel string would corrupt the
                 // profile's real rating server-side.
-                max_parental_rating: (!parental_rating.is_empty() && parental_rating != UNKNOWN_RATING)
+                max_parental_rating: (!parental_rating.is_empty()
+                    && parental_rating != UNKNOWN_RATING)
                     .then_some(parental_rating),
                 enabled_folders: Some(enabled_folders),
                 blocked_tags: Some(blocked_tags),
@@ -635,7 +779,8 @@ pub(crate) fn on_profile_edit_save(
                 // should be sent, exactly as if the field were blank —
                 // sending the literal sentinel string would corrupt the
                 // profile's real rating server-side.
-                max_parental_rating: (!parental_rating.is_empty() && parental_rating != UNKNOWN_RATING)
+                max_parental_rating: (!parental_rating.is_empty()
+                    && parental_rating != UNKNOWN_RATING)
                     .then_some(parental_rating),
                 enabled_folders: Some(enabled_folders),
                 blocked_tags: Some(blocked_tags),
@@ -675,9 +820,13 @@ pub(crate) fn on_profile_edit_save(
                             let mut s = state2.lock().unwrap();
                             let p = s.config.active_mut();
                             p.display_name = name_for_local.clone();
-                            if !avatar_color_for_local.is_empty() { p.avatar_color = avatar_color_for_local.clone(); }
+                            if !avatar_color_for_local.is_empty() {
+                                p.avatar_color = avatar_color_for_local.clone();
+                            }
                             p.avatar_initial.clear(); // re-derive from the (possibly new) name — see ProfileTile's own fallback
-                            if pin_was_set { p.has_pin = true; } // blank PIN field means "keep the current one," never a removal
+                            if pin_was_set {
+                                p.has_pin = true;
+                            } // blank PIN field means "keep the current one," never a removal
                             p.lockout_minutes = lockout_minutes; // Bonfire Phase 4 — keep the idle-lock timer's own read in sync immediately, not just on the next sync_bonfire_subprofiles
                             s.config.clone()
                         };
@@ -712,7 +861,12 @@ pub(crate) fn on_profile_edit_save(
                         // side effect, since a fresh Add-Profile previously
                         // wouldn't appear in Config.profiles until the next
                         // login/switch either).
-                        crate::profile::sync_bonfire_subprofiles(Arc::clone(&client), Arc::clone(&state2), rt_task.clone(), ww.clone());
+                        crate::profile::sync_bonfire_subprofiles(
+                            Arc::clone(&client),
+                            Arc::clone(&state2),
+                            rt_task.clone(),
+                            ww.clone(),
+                        );
                         // Fresh fetch, not the stale pre-save list — the just-
                         // created/edited profile needs to show up/update.
                         open_manage_profiles_screen(&state2, &w, &rt_task);
@@ -766,9 +920,13 @@ pub(crate) fn on_profile_edit_save(
 /// context_menu.rs/.slint (Phase 163).
 fn existing_profile_edit_zones(g: &AppState) -> Vec<i32> {
     let mut zones = vec![0, 1, 2, 3];
-    if g.get_profile_edit_libraries().row_count() > 0 { zones.push(4); }
+    if g.get_profile_edit_libraries().row_count() > 0 {
+        zones.push(4);
+    }
     zones.extend([5, 6, 7, 8]);
-    if g.get_profile_edit_devices().row_count() > 0 { zones.push(9); }
+    if g.get_profile_edit_devices().row_count() > 0 {
+        zones.push(9);
+    }
     zones.extend([10, 11]);
     zones
 }
@@ -778,13 +936,13 @@ fn existing_profile_edit_zones(g: &AppState) -> Vec<i32> {
 /// never survives (mirrors discover.rs::option_zone_focus_reset).
 fn profile_edit_zone_focus_reset(g: &AppState, zone: i32) {
     match zone {
-        1  => g.set_profile_edit_avatar_cursor(0),
-        2  => g.set_profile_edit_pin_cursor(0),
-        4  => g.set_profile_edit_libraries_cursor(0),
-        9  => g.set_profile_edit_devices_cursor(0),
+        1 => g.set_profile_edit_avatar_cursor(0),
+        2 => g.set_profile_edit_pin_cursor(0),
+        4 => g.set_profile_edit_libraries_cursor(0),
+        9 => g.set_profile_edit_devices_cursor(0),
         10 => g.set_profile_edit_master_pin_cursor(0),
         11 => g.set_profile_edit_button_focused(0),
-        _  => {}
+        _ => {}
     }
 }
 
@@ -799,14 +957,17 @@ fn open_profile_edit_dropdown(dd_key: &str, g: &AppState) {
     let (model, current): (&[&str], String) = match dd_key {
         "rating" => (&PARENTAL_RATING_MODEL, {
             let v = g.get_profile_edit_parental_rating().to_string();
-            if v.is_empty() { "Any".to_string() }
-            else if v == UNKNOWN_RATING {
+            if v.is_empty() {
+                "Any".to_string()
+            } else if v == UNKNOWN_RATING {
                 // Not a real option in PARENTAL_RATING_MODEL — position()
                 // below correctly falls back to cursor 0 ("Any"), just a
                 // reasonable starting point for the browse, not a claim
                 // that's actually the current value.
                 "Unknown".to_string()
-            } else { v }
+            } else {
+                v
+            }
         }),
         "lockout" => (&LOCKOUT_MODEL, {
             let v = g.get_profile_edit_lockout_minutes().to_string();
@@ -817,7 +978,7 @@ fn open_profile_edit_dropdown(dd_key: &str, g: &AppState) {
     let cursor = model.iter().position(|v| *v == current).unwrap_or(0) as i32;
     g.set_profile_edit_dropdown_key(ss(dd_key));
     g.set_profile_edit_dropdown_model(ModelRc::new(VecModel::from(
-        model.iter().map(|v| ss(v)).collect::<Vec<_>>()
+        model.iter().map(|v| ss(v)).collect::<Vec<_>>(),
     )));
     g.set_profile_edit_dropdown_cursor(cursor);
     g.set_profile_edit_dropdown_display(ss(&current));
@@ -830,10 +991,19 @@ fn open_profile_edit_dropdown(dd_key: &str, g: &AppState) {
 /// handler already does in Slint for the mouse path.
 pub(crate) fn apply_profile_edit_dropdown_selection(g: &AppState, cursor: i32) {
     let dd_key = g.get_profile_edit_dropdown_key().to_string();
-    let Some(v) = g.get_profile_edit_dropdown_model().row_data(cursor as usize) else { return };
+    let Some(v) = g
+        .get_profile_edit_dropdown_model()
+        .row_data(cursor as usize)
+    else {
+        return;
+    };
     match dd_key.as_str() {
-        "rating"  => g.set_profile_edit_parental_rating(if v.as_str() == "Any" { ss("") } else { v }),
-        "lockout" => g.set_profile_edit_lockout_minutes(if v.as_str() == "Never" { ss("0") } else { v }),
+        "rating" => {
+            g.set_profile_edit_parental_rating(if v.as_str() == "Any" { ss("") } else { v })
+        }
+        "lockout" => {
+            g.set_profile_edit_lockout_minutes(if v.as_str() == "Never" { ss("0") } else { v })
+        }
         _ => {}
     }
 }
@@ -854,7 +1024,9 @@ pub(crate) fn handle_key_profile_edit(raw_key: &str, g: &AppState) -> bool {
         let cursor = g.get_profile_edit_dropdown_cursor();
         match raw_key {
             key::UP => g.set_profile_edit_dropdown_cursor((cursor - 1).max(0)),
-            key::DOWN => g.set_profile_edit_dropdown_cursor((cursor + 1).min((model_len - 1).max(0))),
+            key::DOWN => {
+                g.set_profile_edit_dropdown_cursor((cursor + 1).min((model_len - 1).max(0)))
+            }
             key::RETURN => {
                 apply_profile_edit_dropdown_selection(g, cursor);
                 g.set_profile_edit_dropdown_open(false);
@@ -870,7 +1042,10 @@ pub(crate) fn handle_key_profile_edit(raw_key: &str, g: &AppState) -> bool {
     let zone_pos = zones.iter().position(|&z| z == zone).unwrap_or(0);
     let prev_zone = || zone_pos.checked_sub(1).and_then(|i| zones.get(i)).copied();
     let next_zone = || zones.get(zone_pos + 1).copied();
-    let goto = |g: &AppState, z: i32| { g.set_profile_edit_zone(z); profile_edit_zone_focus_reset(g, z); };
+    let goto = |g: &AppState, z: i32| {
+        g.set_profile_edit_zone(z);
+        profile_edit_zone_focus_reset(g, z);
+    };
 
     match zone {
         // Zones 0/5/6 — Name / Blocked tags / Allowed tags. Enter opens the
@@ -916,21 +1091,39 @@ pub(crate) fn handle_key_profile_edit(raw_key: &str, g: &AppState) -> bool {
                 g.set_onscreen_keyboard_cursor(g.get_onscreen_keyboard_done_cursor());
                 g.set_show_onscreen_keyboard(true);
             }
-            key::UP     => if let Some(p) = prev_zone() { goto(g, p); },
-            key::DOWN   => if let Some(n) = next_zone() { goto(g, n); },
+            key::UP => {
+                if let Some(p) = prev_zone() {
+                    goto(g, p);
+                }
+            }
+            key::DOWN => {
+                if let Some(n) = next_zone() {
+                    goto(g, n);
+                }
+            }
             _ => {}
         },
         // Zone 1 — avatar color swatch strip.
         1 => {
             let cursor = g.get_profile_edit_avatar_cursor();
             match raw_key {
-                key::LEFT  => g.set_profile_edit_avatar_cursor((cursor - 1).max(0)),
+                key::LEFT => g.set_profile_edit_avatar_cursor((cursor - 1).max(0)),
                 key::RIGHT => g.set_profile_edit_avatar_cursor((cursor + 1).min(7)),
-                key::UP    => if let Some(p) = prev_zone() { goto(g, p); },
-                key::DOWN  => if let Some(n) = next_zone() { goto(g, n); },
-                key::RETURN => if let Some(hex) = AVATAR_PALETTE_HEX.get(cursor as usize) {
-                    g.invoke_profile_edit_avatar_color_selected((*hex).into());
-                },
+                key::UP => {
+                    if let Some(p) = prev_zone() {
+                        goto(g, p);
+                    }
+                }
+                key::DOWN => {
+                    if let Some(n) = next_zone() {
+                        goto(g, n);
+                    }
+                }
+                key::RETURN => {
+                    if let Some(hex) = AVATAR_PALETTE_HEX.get(cursor as usize) {
+                        g.invoke_profile_edit_avatar_color_selected((*hex).into());
+                    }
+                }
                 _ => {}
             }
         }
@@ -947,29 +1140,65 @@ pub(crate) fn handle_key_profile_edit(raw_key: &str, g: &AppState) -> bool {
         // not a behavior change.
         2 | 10 => {
             let is_master = zone == 10;
-            let cursor = if is_master { g.get_profile_edit_master_pin_cursor() } else { g.get_profile_edit_pin_cursor() };
+            let cursor = if is_master {
+                g.get_profile_edit_master_pin_cursor()
+            } else {
+                g.get_profile_edit_pin_cursor()
+            };
             let set_cursor = |g: &AppState, v: i32| {
-                if is_master { g.set_profile_edit_master_pin_cursor(v); } else { g.set_profile_edit_pin_cursor(v); }
+                if is_master {
+                    g.set_profile_edit_master_pin_cursor(v);
+                } else {
+                    g.set_profile_edit_pin_cursor(v);
+                }
             };
             let send_key = |g: &AppState, v: &str| {
-                if is_master { g.invoke_profile_edit_master_pin_key(v.into()); }
-                else { g.invoke_profile_edit_pin_key(v.into()); }
+                if is_master {
+                    g.invoke_profile_edit_master_pin_key(v.into());
+                } else {
+                    g.invoke_profile_edit_pin_key(v.into());
+                }
             };
             match raw_key {
-                key::LEFT  => set_cursor(g, (cursor - 1).max(0)),
+                key::LEFT => set_cursor(g, (cursor - 1).max(0)),
                 key::RIGHT => set_cursor(g, (cursor + 1).min(11)),
-                key::UP    => if cursor < 3 { if let Some(p) = prev_zone() { goto(g, p); } } else { set_cursor(g, cursor - 3); },
-                key::DOWN  => if cursor >= 9 { if let Some(n) = next_zone() { goto(g, n); } } else { set_cursor(g, cursor + 3); },
-                key::RETURN => if let Some(v) = PIN_VALS.get(cursor as usize) {
-                    send_key(g, v);
-                },
+                key::UP => {
+                    if cursor < 3 {
+                        if let Some(p) = prev_zone() {
+                            goto(g, p);
+                        }
+                    } else {
+                        set_cursor(g, cursor - 3);
+                    }
+                }
+                key::DOWN => {
+                    if cursor >= 9 {
+                        if let Some(n) = next_zone() {
+                            goto(g, n);
+                        }
+                    } else {
+                        set_cursor(g, cursor + 3);
+                    }
+                }
+                key::RETURN => {
+                    if let Some(v) = PIN_VALS.get(cursor as usize) {
+                        send_key(g, v);
+                    }
+                }
                 key::BACKSPACE => {
                     set_cursor(g, 9);
                     send_key(g, "backspace");
                 }
-                digit if digit.len() == 1 && digit.chars().next().is_some_and(|c| c.is_ascii_digit()) => {
+                digit
+                    if digit.len() == 1
+                        && digit.chars().next().is_some_and(|c| c.is_ascii_digit()) =>
+                {
                     let d = digit.chars().next().unwrap();
-                    let idx = if d == '0' { 10 } else { d.to_digit(10).unwrap() as i32 - 1 };
+                    let idx = if d == '0' {
+                        10
+                    } else {
+                        d.to_digit(10).unwrap() as i32 - 1
+                    };
                     set_cursor(g, idx);
                     send_key(g, digit);
                 }
@@ -978,41 +1207,84 @@ pub(crate) fn handle_key_profile_edit(raw_key: &str, g: &AppState) -> bool {
         }
         // Zones 3/7 — Max parental rating / Auto-lock dropdowns.
         3 | 7 => match raw_key {
-            key::RETURN => open_profile_edit_dropdown(if zone == 3 { "rating" } else { "lockout" }, g),
-            key::UP     => if let Some(p) = prev_zone() { goto(g, p); },
-            key::DOWN   => if let Some(n) = next_zone() { goto(g, n); },
+            key::RETURN => {
+                open_profile_edit_dropdown(if zone == 3 { "rating" } else { "lockout" }, g)
+            }
+            key::UP => {
+                if let Some(p) = prev_zone() {
+                    goto(g, p);
+                }
+            }
+            key::DOWN => {
+                if let Some(n) = next_zone() {
+                    goto(g, n);
+                }
+            }
             _ => {}
         },
         // Zones 4/9 — Enabled libraries / Allowed devices checklists.
         4 | 9 => {
             let is_devices = zone == 9;
-            let model = if is_devices { g.get_profile_edit_devices() } else { g.get_profile_edit_libraries() };
+            let model = if is_devices {
+                g.get_profile_edit_devices()
+            } else {
+                g.get_profile_edit_libraries()
+            };
             let count = model.row_count() as i32;
-            let cursor = if is_devices { g.get_profile_edit_devices_cursor() } else { g.get_profile_edit_libraries_cursor() };
+            let cursor = if is_devices {
+                g.get_profile_edit_devices_cursor()
+            } else {
+                g.get_profile_edit_libraries_cursor()
+            };
             let set_cursor = |g: &AppState, v: i32| {
-                if is_devices { g.set_profile_edit_devices_cursor(v); } else { g.set_profile_edit_libraries_cursor(v); }
+                if is_devices {
+                    g.set_profile_edit_devices_cursor(v);
+                } else {
+                    g.set_profile_edit_libraries_cursor(v);
+                }
             };
             match raw_key {
-                key::UP => if cursor <= 0 {
-                    if let Some(p) = prev_zone() { goto(g, p); }
-                } else {
-                    set_cursor(g, cursor - 1);
-                },
-                key::DOWN => if cursor >= count - 1 {
-                    if let Some(n) = next_zone() { goto(g, n); }
-                } else {
-                    set_cursor(g, cursor + 1);
-                },
-                key::RETURN => if is_devices { g.invoke_profile_edit_toggle_device(cursor); }
-                    else { g.invoke_profile_edit_toggle_library(cursor); },
+                key::UP => {
+                    if cursor <= 0 {
+                        if let Some(p) = prev_zone() {
+                            goto(g, p);
+                        }
+                    } else {
+                        set_cursor(g, cursor - 1);
+                    }
+                }
+                key::DOWN => {
+                    if cursor >= count - 1 {
+                        if let Some(n) = next_zone() {
+                            goto(g, n);
+                        }
+                    } else {
+                        set_cursor(g, cursor + 1);
+                    }
+                }
+                key::RETURN => {
+                    if is_devices {
+                        g.invoke_profile_edit_toggle_device(cursor);
+                    } else {
+                        g.invoke_profile_edit_toggle_library(cursor);
+                    }
+                }
                 _ => {}
             }
         }
         // Zone 8 — "Skip PIN on this network" (LAN bypass toggle).
         8 => match raw_key {
             key::RETURN => g.set_profile_edit_lan_bypass(!g.get_profile_edit_lan_bypass()),
-            key::UP     => if let Some(p) = prev_zone() { goto(g, p); },
-            key::DOWN   => if let Some(n) = next_zone() { goto(g, n); },
+            key::UP => {
+                if let Some(p) = prev_zone() {
+                    goto(g, p);
+                }
+            }
+            key::DOWN => {
+                if let Some(n) = next_zone() {
+                    goto(g, n);
+                }
+            }
             _ => {}
         },
         // Zone 11 — Delete(conditional)/Cancel/Save button row. Enter's
@@ -1024,9 +1296,13 @@ pub(crate) fn handle_key_profile_edit(raw_key: &str, g: &AppState) -> bool {
             let max_btn = if delete_shown { 2 } else { 1 };
             let focused = g.get_profile_edit_button_focused();
             match raw_key {
-                key::LEFT  => g.set_profile_edit_button_focused((focused - 1).max(0)),
+                key::LEFT => g.set_profile_edit_button_focused((focused - 1).max(0)),
                 key::RIGHT => g.set_profile_edit_button_focused((focused + 1).min(max_btn)),
-                key::UP    => if let Some(p) = prev_zone() { goto(g, p); },
+                key::UP => {
+                    if let Some(p) = prev_zone() {
+                        goto(g, p);
+                    }
+                }
                 _ => {}
             }
         }
@@ -1035,7 +1311,11 @@ pub(crate) fn handle_key_profile_edit(raw_key: &str, g: &AppState) -> bool {
     true
 }
 
-pub(crate) fn on_profile_edit_delete(state: Arc<Mutex<FjordState>>, window: slint::Weak<MainWindow>, rt: tokio::runtime::Handle) {
+pub(crate) fn on_profile_edit_delete(
+    state: Arc<Mutex<FjordState>>,
+    window: slint::Weak<MainWindow>,
+    rt: tokio::runtime::Handle,
+) {
     let Some(w) = window.upgrade() else { return };
     let g = AppState::get(&w);
     // Defensive — the Delete button is already hidden in Slint whenever
@@ -1044,23 +1324,34 @@ pub(crate) fn on_profile_edit_delete(state: Arc<Mutex<FjordState>>, window: slin
     // itself), but every other destructive action in this app pairs its
     // UI gate with a matching Rust-side check rather than trusting the
     // Slint condition alone.
-    if g.get_profile_edit_is_self() { return; }
+    if g.get_profile_edit_is_self() {
+        return;
+    }
     let target_id = g.get_profile_edit_target_id().to_string();
-    if target_id.is_empty() { return; }
+    if target_id.is_empty() {
+        return;
+    }
     let (master_pin, client) = {
         let s = state.lock().unwrap();
-        ((!s.profile_edit_master_pin_buffer.is_empty()).then(|| s.profile_edit_master_pin_buffer.clone()), s.client.clone())
+        (
+            (!s.profile_edit_master_pin_buffer.is_empty())
+                .then(|| s.profile_edit_master_pin_buffer.clone()),
+            s.client.clone(),
+        )
     };
     let Some(client) = client else { return };
 
     g.set_profile_edit_saving(true);
     g.set_profile_edit_error(ss(""));
 
-    let ww      = window.clone();
-    let state2  = Arc::clone(&state);
+    let ww = window.clone();
+    let state2 = Arc::clone(&state);
     let rt_task = rt.clone();
     rt.spawn(async move {
-        match client.bonfire_delete_profile(&target_id, master_pin.as_deref()).await {
+        match client
+            .bonfire_delete_profile(&target_id, master_pin.as_deref())
+            .await
+        {
             Ok(()) => {
                 {
                     let mut s = state2.lock().unwrap();

@@ -23,10 +23,10 @@
 // remove this fallback thinking it's dead code — it's the only thing standing
 // between an upgrade and every existing saved session being silently signed out.
 
-use aes_gcm::aead::{Aead, KeyInit, OsRng};
 use aes_gcm::aead::rand_core::RngCore;
+use aes_gcm::aead::{Aead, KeyInit, OsRng};
 use aes_gcm::{Aes256Gcm, Nonce};
-use base64::{engine::general_purpose::STANDARD, Engine};
+use base64::{Engine, engine::general_purpose::STANDARD};
 use hkdf::Hkdf;
 use sha2::Sha256;
 
@@ -47,7 +47,9 @@ pub(crate) fn encrypt(plaintext: &str, key: &[u8; 32]) -> String {
         return String::new();
     }
     let Ok(cipher) = Aes256Gcm::new_from_slice(key) else {
-        tracing::error!("secrets: invalid key length building cipher — storing empty, not plaintext");
+        tracing::error!(
+            "secrets: invalid key length building cipher — storing empty, not plaintext"
+        );
         return String::new();
     };
     let mut nonce_bytes = [0u8; NONCE_LEN];
@@ -74,7 +76,9 @@ fn try_decrypt(encoded: &str, key: &[u8; 32]) -> Option<String> {
     }
     let (nonce_bytes, ciphertext) = combined.split_at(NONCE_LEN);
     let cipher = Aes256Gcm::new_from_slice(key).ok()?;
-    let plain = cipher.decrypt(Nonce::from_slice(nonce_bytes), ciphertext).ok()?;
+    let plain = cipher
+        .decrypt(Nonce::from_slice(nonce_bytes), ciphertext)
+        .ok()?;
     String::from_utf8(plain).ok()
 }
 

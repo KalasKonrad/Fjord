@@ -18,14 +18,17 @@
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
 
-use fjord_api::{models::MediaItem, JellyfinClient};
+use fjord_api::{JellyfinClient, models::MediaItem};
 use slint::{Global, Model, SharedString};
 
-use crate::config::{poster_cache_path, backdrop_cache_path, FjordState};
+use crate::config::{FjordState, backdrop_cache_path, poster_cache_path};
 use crate::home::HomeSection;
 use crate::{AppState, CardItem, MainWindow};
 
-enum ImageKind { Poster, Backdrop }
+enum ImageKind {
+    Poster,
+    Backdrop,
+}
 
 // Tag-revalidating image cache. `expected_tag` is the server's current image
 // hash (ImageTags.Primary / BackdropImageTags[0]): when it matches the `.tag`
@@ -35,30 +38,31 @@ enum ImageKind { Poster, Backdrop }
 // callers that don't know the tag. A failed re-download falls back to the
 // stale disk copy rather than showing nothing.
 async fn fetch_image_cached(
-    client:       &JellyfinClient,
-    item_id:      &str,
-    kind:         ImageKind,
+    client: &JellyfinClient,
+    item_id: &str,
+    kind: ImageKind,
     expected_tag: Option<&str>,
 ) -> Option<Vec<u8>> {
     let path = match kind {
-        ImageKind::Poster   => poster_cache_path(item_id),
+        ImageKind::Poster => poster_cache_path(item_id),
         ImageKind::Backdrop => backdrop_cache_path(item_id),
     };
     // Not a valid cache name (config::safe_cache_name): fetch, but don't cache.
     let Some(path) = path else {
         let fetched = match kind {
-            ImageKind::Poster   => client.fetch_poster_bytes(item_id).await,
+            ImageKind::Poster => client.fetch_poster_bytes(item_id).await,
             ImageKind::Backdrop => client.fetch_backdrop_bytes(item_id).await,
         };
         return fetched.ok().filter(|b| is_image(b));
     };
     let tag_path = path.with_extension("tag");
-    let cached   = tokio::fs::try_exists(&path).await.unwrap_or(false);
+    let cached = tokio::fs::try_exists(&path).await.unwrap_or(false);
 
     if cached {
         let fresh = match expected_tag {
-            None      => true,
-            Some(tag) => tokio::fs::read_to_string(&tag_path).await
+            None => true,
+            Some(tag) => tokio::fs::read_to_string(&tag_path)
+                .await
                 .is_ok_and(|t| t.trim() == tag),
         };
         if fresh {
@@ -67,7 +71,7 @@ async fn fetch_image_cached(
     }
 
     let fetched = match kind {
-        ImageKind::Poster   => client.fetch_poster_bytes(item_id).await,
+        ImageKind::Poster => client.fetch_poster_bytes(item_id).await,
         ImageKind::Backdrop => client.fetch_backdrop_bytes(item_id).await,
     };
     let bytes = match fetched {
@@ -75,10 +79,12 @@ async fn fetch_image_cached(
         // Network failure, or the server sent something that isn't an
         // image (never written to disk): a stale image beats no image.
         _ if cached => return tokio::fs::read(&path).await.ok(),
-        _           => return None,
+        _ => return None,
     };
 
-    if let Some(parent) = path.parent() { let _ = tokio::fs::create_dir_all(parent).await; }
+    if let Some(parent) = path.parent() {
+        let _ = tokio::fs::create_dir_all(parent).await;
+    }
     // Write to a tmp file then rename atomically so concurrent fetchers for the
     // same id never produce a partial/interleaved cache entry.
     let tmp = path.with_extension("tmp");
@@ -94,7 +100,9 @@ async fn fetch_image_cached(
         }
         // No tag known for this download — drop any stale sidecar so a later
         // tagged fetch can't mistake this image for a specific version.
-        None => { let _ = tokio::fs::remove_file(&tag_path).await; }
+        None => {
+            let _ = tokio::fs::remove_file(&tag_path).await;
+        }
     }
     Some(bytes)
 }
@@ -104,17 +112,24 @@ pub(crate) async fn fetch_poster_cached(client: &JellyfinClient, item_id: &str) 
 }
 
 pub(crate) async fn fetch_poster_cached_tagged(
-    client: &JellyfinClient, item_id: &str, tag: Option<&str>,
+    client: &JellyfinClient,
+    item_id: &str,
+    tag: Option<&str>,
 ) -> Option<Vec<u8>> {
     fetch_image_cached(client, item_id, ImageKind::Poster, tag).await
 }
 
-pub(crate) async fn fetch_backdrop_cached(client: &JellyfinClient, item_id: &str) -> Option<Vec<u8>> {
+pub(crate) async fn fetch_backdrop_cached(
+    client: &JellyfinClient,
+    item_id: &str,
+) -> Option<Vec<u8>> {
     fetch_image_cached(client, item_id, ImageKind::Backdrop, None).await
 }
 
 pub(crate) async fn fetch_backdrop_cached_tagged(
-    client: &JellyfinClient, item_id: &str, tag: Option<&str>,
+    client: &JellyfinClient,
+    item_id: &str,
+    tag: Option<&str>,
 ) -> Option<Vec<u8>> {
     fetch_image_cached(client, item_id, ImageKind::Backdrop, tag).await
 }
@@ -138,18 +153,22 @@ pub(crate) fn is_image(bytes: &[u8]) -> bool {
 /// to the cached file when the tag is unchanged, so this stays cheap for updates too.
 pub(crate) async fn fetch_posters_for_delta(
     client: &Arc<JellyfinClient>,
-    items:  &[MediaItem],
+    items: &[MediaItem],
 ) -> std::collections::HashMap<String, slint::SharedPixelBuffer<slint::Rgba8Pixel>> {
     let sem = Arc::new(tokio::sync::Semaphore::new(8));
-    let mut set: tokio::task::JoinSet<(String, Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>)> =
-        tokio::task::JoinSet::new();
+    let mut set: tokio::task::JoinSet<(
+        String,
+        Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>,
+    )> = tokio::task::JoinSet::new();
     for item in items {
         let client = Arc::clone(client);
-        let sem    = Arc::clone(&sem);
-        let id     = item.id.clone();
-        let tag    = item.primary_image_tag().map(|t| t.to_string());
+        let sem = Arc::clone(&sem);
+        let id = item.id.clone();
+        let tag = item.primary_image_tag().map(|t| t.to_string());
         set.spawn(async move {
-            let Ok(_permit) = sem.acquire_owned().await else { return (id, None) };
+            let Ok(_permit) = sem.acquire_owned().await else {
+                return (id, None);
+            };
             let bytes = fetch_poster_cached_tagged(&client, &id, tag.as_deref()).await;
             (id, bytes.and_then(|b| decode_poster_buffer(&b)))
         });
@@ -157,9 +176,11 @@ pub(crate) async fn fetch_posters_for_delta(
     let mut map = std::collections::HashMap::new();
     while let Some(res) = set.join_next().await {
         match res {
-            Ok((id, Some(buf))) => { map.insert(id, buf); }
-            Ok((_, None))       => {}
-            Err(e)              => tracing::warn!("delta poster task panicked: {e}"),
+            Ok((id, Some(buf))) => {
+                map.insert(id, buf);
+            }
+            Ok((_, None)) => {}
+            Err(e) => tracing::warn!("delta poster task panicked: {e}"),
         }
     }
     map
@@ -172,7 +193,10 @@ pub(crate) async fn fetch_posters_for_delta(
 // every CardItem model row. Cards render at ~300–400 px even on 4K, so
 // keeping originals decoded multiplied memory use ~6-10× for zero visible
 // gain. `thumbnail` preserves aspect and uses the fast path.
-fn decode_scaled(bytes: &[u8], max_dim: u32) -> Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>> {
+fn decode_scaled(
+    bytes: &[u8],
+    max_dim: u32,
+) -> Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>> {
     let img = image::load_from_memory(bytes).ok()?;
     let img = if img.width().max(img.height()) > max_dim {
         img.thumbnail(max_dim, max_dim)
@@ -181,14 +205,14 @@ fn decode_scaled(bytes: &[u8], max_dim: u32) -> Option<slint::SharedPixelBuffer<
     };
     let img = img.into_rgba8();
     let (w, h) = img.dimensions();
-    Some(slint::SharedPixelBuffer::<slint::Rgba8Pixel>::clone_from_slice(
-        img.as_raw(), w, h,
-    ))
+    Some(slint::SharedPixelBuffer::<slint::Rgba8Pixel>::clone_from_slice(img.as_raw(), w, h))
 }
 
 /// Posters, portraits, episode thumbs, album art: longest side capped at 600 px
 /// (a 2:3 poster decodes to 400×600 — crisp on ~300-400 px cards, ~1 MB RGBA).
-pub(crate) fn decode_poster_buffer(bytes: &[u8]) -> Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>> {
+pub(crate) fn decode_poster_buffer(
+    bytes: &[u8],
+) -> Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>> {
     decode_scaled(bytes, 600)
 }
 
@@ -196,39 +220,95 @@ pub(crate) fn decode_poster_buffer(bytes: &[u8]) -> Option<slint::SharedPixelBuf
 /// 4K screen (most server backdrops are 1920-wide anyway). Bounded cost: only
 /// a handful of backdrop properties are alive at once, ≤33 MB each worst case.
 /// 8K screens upscale 2× — same as they do to all 4K content.
-pub(crate) fn decode_backdrop_buffer(bytes: &[u8]) -> Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>> {
+pub(crate) fn decode_backdrop_buffer(
+    bytes: &[u8],
+) -> Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>> {
     decode_scaled(bytes, 3840)
 }
 
-type SectionMeta  = Vec<(String, String, String, String, String, i32, bool, bool, f32, i32)>;
-type SeriesMeta   = Vec<(String, String, String, i32, bool, bool, f32, i32)>;
+type SectionMeta = Vec<(
+    String,
+    String,
+    String,
+    String,
+    String,
+    i32,
+    bool,
+    bool,
+    f32,
+    i32,
+)>;
+type SeriesMeta = Vec<(String, String, String, i32, bool, bool, f32, i32)>;
 // SeriesMeta's fields, Slint-ready (SharedString) plus the decoded poster buffer
 // (None when that item has no poster or decode failed).
-type DecodedSeriesCard = (SharedString, SharedString, SharedString, i32, bool, bool, f32, i32,
-                           Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>);
+type DecodedSeriesCard = (
+    SharedString,
+    SharedString,
+    SharedString,
+    i32,
+    bool,
+    bool,
+    f32,
+    i32,
+    Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>,
+);
 
 /// Decode poster bytes for every item in one section and push the completed
 /// CardItem model to AppState on the UI thread via invoke_from_event_loop.
 /// Called from both the normal completion path (last poster in a section
 /// arrives) and the post-loop flush (task panics left some posters unresolved).
 fn push_decoded_section(
-    sec:        HomeSection,
-    meta:       &SectionMeta,
+    sec: HomeSection,
+    meta: &SectionMeta,
     poster_map: &std::collections::HashMap<String, std::sync::Arc<Vec<u8>>>,
-    ww:         &slint::Weak<MainWindow>,
-    state:      &Arc<Mutex<FjordState>>,
-    client:     &Arc<JellyfinClient>,
+    ww: &slint::Weak<MainWindow>,
+    state: &Arc<Mutex<FjordState>>,
+    client: &Arc<JellyfinClient>,
 ) {
-    type Buf     = slint::SharedPixelBuffer<slint::Rgba8Pixel>;
-    type Decoded = (SharedString, SharedString, SharedString, SharedString, SharedString, i32, bool, bool, f32, i32, Option<Buf>);
-    let decoded: Vec<Decoded> = meta.iter().map(|(item_id, poster_id, item_type, title, subtitle, year, played, is_fav, rpct, upc)| {
-        let buf       = poster_map.get(poster_id).and_then(|b| decode_poster_buffer(b));
-        let series_id = if item_type == "Episode" { SharedString::from(poster_id.as_str()) } else { SharedString::default() };
-        (SharedString::from(item_id.as_str()), series_id, SharedString::from(item_type.as_str()),
-         SharedString::from(title.as_str()), SharedString::from(subtitle.as_str()), *year, *played, *is_fav, *rpct, *upc, buf)
-    }).collect();
-    let ww     = ww.clone();
-    let state  = Arc::clone(state);
+    type Buf = slint::SharedPixelBuffer<slint::Rgba8Pixel>;
+    type Decoded = (
+        SharedString,
+        SharedString,
+        SharedString,
+        SharedString,
+        SharedString,
+        i32,
+        bool,
+        bool,
+        f32,
+        i32,
+        Option<Buf>,
+    );
+    let decoded: Vec<Decoded> = meta
+        .iter()
+        .map(
+            |(item_id, poster_id, item_type, title, subtitle, year, played, is_fav, rpct, upc)| {
+                let buf = poster_map
+                    .get(poster_id)
+                    .and_then(|b| decode_poster_buffer(b));
+                let series_id = if item_type == "Episode" {
+                    SharedString::from(poster_id.as_str())
+                } else {
+                    SharedString::default()
+                };
+                (
+                    SharedString::from(item_id.as_str()),
+                    series_id,
+                    SharedString::from(item_type.as_str()),
+                    SharedString::from(title.as_str()),
+                    SharedString::from(subtitle.as_str()),
+                    *year,
+                    *played,
+                    *is_fav,
+                    *rpct,
+                    *upc,
+                    buf,
+                )
+            },
+        )
+        .collect();
+    let ww = ww.clone();
+    let state = Arc::clone(state);
     let client = Arc::clone(client);
     let _ = slint::invoke_from_event_loop(move || {
         if let Some(w) = ww.upgrade() {
@@ -238,7 +318,9 @@ fn push_decoded_section(
             // guard of any kind before this; a sign-out or profile switch
             // mid-fetch could otherwise land the OUTGOING profile's own
             // dashboard content into the incoming profile's UI.
-            if !crate::session_current(&state, &client) { return; }
+            if !crate::session_current(&state, &client) {
+                return;
+            }
             let old = crate::get_section_model(&w, sec);
             // Prefer whatever poster the row already has over a freshly-decoded one
             // (same reasoning as movies.rs::push_library_cards): a different-but-
@@ -248,28 +330,48 @@ fn push_decoded_section(
                 .filter_map(|i| old.row_data(i))
                 .map(|c| (c.id.to_string(), c))
                 .collect();
-            let items: Vec<CardItem> = decoded.into_iter().map(|(id, series_id, item_type, title, subtitle, year, played, is_fav, rpct, upc, buf)| {
-                let mut h = CardItem::default();
-                let existing_poster = old_by_id.get(id.as_str()).filter(|c| c.has_poster).map(|c| c.poster.clone());
-                h.id             = id;
-                h.series_id      = series_id;
-                h.item_type      = item_type;
-                h.title          = title;
-                h.subtitle       = subtitle;
-                h.year           = year;
-                h.has_played     = played;
-                h.is_favorite    = is_fav;
-                h.resume_pct     = rpct;
-                h.unplayed_count = upc;
-                if let Some(poster) = existing_poster {
-                    h.poster = poster;
-                    h.has_poster = true;
-                } else if let Some(spb) = buf {
-                    h.poster = slint::Image::from_rgba8(spb);
-                    h.has_poster = true;
-                }
-                h
-            }).collect();
+            let items: Vec<CardItem> = decoded
+                .into_iter()
+                .map(
+                    |(
+                        id,
+                        series_id,
+                        item_type,
+                        title,
+                        subtitle,
+                        year,
+                        played,
+                        is_fav,
+                        rpct,
+                        upc,
+                        buf,
+                    )| {
+                        let mut h = CardItem::default();
+                        let existing_poster = old_by_id
+                            .get(id.as_str())
+                            .filter(|c| c.has_poster)
+                            .map(|c| c.poster.clone());
+                        h.id = id;
+                        h.series_id = series_id;
+                        h.item_type = item_type;
+                        h.title = title;
+                        h.subtitle = subtitle;
+                        h.year = year;
+                        h.has_played = played;
+                        h.is_favorite = is_fav;
+                        h.resume_pct = rpct;
+                        h.unplayed_count = upc;
+                        if let Some(poster) = existing_poster {
+                            h.poster = poster;
+                            h.has_poster = true;
+                        } else if let Some(spb) = buf {
+                            h.poster = slint::Image::from_rgba8(spb);
+                            h.has_poster = true;
+                        }
+                        h
+                    },
+                )
+                .collect();
             crate::push_section_model(&w, sec, crate::apply_cards_preserving_identity(&old, items));
         }
     });
@@ -281,20 +383,31 @@ fn push_decoded_section(
 /// the post-loop flush (task panics left some posters unresolved — the
 /// normal push never fires when the last task in the channel panicked).
 fn push_decoded_series(
-    meta:       &SeriesMeta,
+    meta: &SeriesMeta,
     poster_map: &std::collections::HashMap<String, std::sync::Arc<Vec<u8>>>,
-    ww:         &slint::Weak<MainWindow>,
-    state:      &Arc<Mutex<FjordState>>,
-    client:     &Arc<JellyfinClient>,
+    ww: &slint::Weak<MainWindow>,
+    state: &Arc<Mutex<FjordState>>,
+    client: &Arc<JellyfinClient>,
 ) {
-    let decoded: Vec<DecodedSeriesCard> =
-        meta.iter().map(|(cid, title, subtitle, year, played, is_fav, rpct, upc)| {
+    let decoded: Vec<DecodedSeriesCard> = meta
+        .iter()
+        .map(|(cid, title, subtitle, year, played, is_fav, rpct, upc)| {
             let buf = poster_map.get(cid).and_then(|b| decode_poster_buffer(b));
-            (SharedString::from(cid.as_str()), SharedString::from(title.as_str()),
-             SharedString::from(subtitle.as_str()), *year, *played, *is_fav, *rpct, *upc, buf)
-        }).collect();
-    let ww     = ww.clone();
-    let state  = Arc::clone(state);
+            (
+                SharedString::from(cid.as_str()),
+                SharedString::from(title.as_str()),
+                SharedString::from(subtitle.as_str()),
+                *year,
+                *played,
+                *is_fav,
+                *rpct,
+                *upc,
+                buf,
+            )
+        })
+        .collect();
+    let ww = ww.clone();
+    let state = Arc::clone(state);
     let client = Arc::clone(client);
     let _ = slint::invoke_from_event_loop(move || {
         if let Some(w) = ww.upgrade() {
@@ -302,33 +415,43 @@ fn push_decoded_series(
             // same reasoning as push_decoded_section: all-series is
             // genuinely Jellyfin-restricted per-profile content, and this
             // had no staleness guard at all before this.
-            if !crate::session_current(&state, &client) { return; }
+            if !crate::session_current(&state, &client) {
+                return;
+            }
             let old = AppState::get(&w).get_all_series();
             let old_by_id: std::collections::HashMap<String, CardItem> = (0..old.row_count())
                 .filter_map(|i| old.row_data(i))
                 .map(|c| (c.id.to_string(), c))
                 .collect();
-            let items: Vec<CardItem> = decoded.into_iter().map(|(id, title, subtitle, year, played, is_fav, rpct, upc, buf)| {
-                let mut h = CardItem::default();
-                let existing_poster = old_by_id.get(id.as_str()).filter(|c| c.has_poster).map(|c| c.poster.clone());
-                h.id             = id;
-                h.item_type      = "Series".into();
-                h.title          = title;
-                h.subtitle       = subtitle;
-                h.year           = year;
-                h.has_played     = played;
-                h.is_favorite    = is_fav;
-                h.resume_pct     = rpct;
-                h.unplayed_count = upc;
-                if let Some(poster) = existing_poster {
-                    h.poster = poster;
-                    h.has_poster = true;
-                } else if let Some(spb) = buf {
-                    h.poster = slint::Image::from_rgba8(spb);
-                    h.has_poster = true;
-                }
-                h
-            }).collect();
+            let items: Vec<CardItem> = decoded
+                .into_iter()
+                .map(
+                    |(id, title, subtitle, year, played, is_fav, rpct, upc, buf)| {
+                        let mut h = CardItem::default();
+                        let existing_poster = old_by_id
+                            .get(id.as_str())
+                            .filter(|c| c.has_poster)
+                            .map(|c| c.poster.clone());
+                        h.id = id;
+                        h.item_type = "Series".into();
+                        h.title = title;
+                        h.subtitle = subtitle;
+                        h.year = year;
+                        h.has_played = played;
+                        h.is_favorite = is_fav;
+                        h.resume_pct = rpct;
+                        h.unplayed_count = upc;
+                        if let Some(poster) = existing_poster {
+                            h.poster = poster;
+                            h.has_poster = true;
+                        } else if let Some(spb) = buf {
+                            h.poster = slint::Image::from_rgba8(spb);
+                            h.has_poster = true;
+                        }
+                        h
+                    },
+                )
+                .collect();
             AppState::get(&w).set_all_series(crate::apply_cards_preserving_identity(&old, items));
             // TV grid is nav 1 (nav 2 is Movies — the old ==2 guard meant the TV
             // grid never refreshed after posters loaded, and the Movies grid got
@@ -341,11 +464,11 @@ fn push_decoded_series(
 }
 
 pub(crate) fn spawn_poster_loading(
-    client:      Arc<JellyfinClient>,
-    sections:    [(HomeSection, Vec<MediaItem>); 17],
+    client: Arc<JellyfinClient>,
+    sections: [(HomeSection, Vec<MediaItem>); 17],
     window_weak: slint::Weak<MainWindow>,
-    rt_handle:   tokio::runtime::Handle,
-    state:       Arc<Mutex<FjordState>>,
+    rt_handle: tokio::runtime::Handle,
+    state: Arc<Mutex<FjordState>>,
 ) {
     let total_items: usize = sections.iter().map(|(_, items)| items.len()).sum();
     tracing::debug!("spawn_poster_loading: starting, {total_items} item(s) across 17 sections");
@@ -437,11 +560,11 @@ pub(crate) fn spawn_poster_loading(
 }
 
 pub(crate) fn spawn_series_poster_loading(
-    client:      Arc<JellyfinClient>,
-    series:      Vec<MediaItem>,
+    client: Arc<JellyfinClient>,
+    series: Vec<MediaItem>,
     window_weak: slint::Weak<MainWindow>,
-    rt_handle:   tokio::runtime::Handle,
-    state:       Arc<Mutex<FjordState>>,
+    rt_handle: tokio::runtime::Handle,
+    state: Arc<Mutex<FjordState>>,
 ) {
     rt_handle.spawn(async move {
         use std::collections::HashSet;
@@ -451,13 +574,29 @@ pub(crate) fn spawn_series_poster_loading(
         // would cause the first task to empty the set and fire push_decoded_series
         // before the second task's bytes arrive, leaving one card with no poster.
         let mut seen: HashSet<String> = HashSet::new();
-        let meta: SeriesMeta = series.iter()
+        let meta: SeriesMeta = series
+            .iter()
             .filter(|i| seen.insert(i.id.clone()))
-            .map(|i| (i.id.clone(), i.card_title(), i.card_subtitle(), i.production_year.unwrap_or(0) as i32, i.user_data.played, i.user_data.is_favorite, i.resume_pct(), i.user_data.unplayed_item_count))
+            .map(|i| {
+                (
+                    i.id.clone(),
+                    i.card_title(),
+                    i.card_subtitle(),
+                    i.production_year.unwrap_or(0) as i32,
+                    i.user_data.played,
+                    i.user_data.is_favorite,
+                    i.resume_pct(),
+                    i.user_data.unplayed_item_count,
+                )
+            })
             .collect();
-        let mut pending: HashSet<String> = meta.iter().map(|(id, _, _, _, _, _, _, _)| id.clone()).collect();
+        let mut pending: HashSet<String> = meta
+            .iter()
+            .map(|(id, _, _, _, _, _, _, _)| id.clone())
+            .collect();
         // id → primary image tag for artwork revalidation.
-        let tags: std::collections::HashMap<String, String> = series.iter()
+        let tags: std::collections::HashMap<String, String> = series
+            .iter()
             .filter_map(|i| i.primary_image_tag().map(|t| (i.id.clone(), t.to_string())))
             .collect();
 
@@ -466,12 +605,16 @@ pub(crate) fn spawn_series_poster_loading(
             tokio::task::JoinSet::new();
         for (id, _, _, _, _, _, _, _) in &meta {
             let client = Arc::clone(&client);
-            let sem    = Arc::clone(&sem);
-            let id     = id.clone();
-            let tag    = tags.get(&id).cloned();
+            let sem = Arc::clone(&sem);
+            let id = id.clone();
+            let tag = tags.get(&id).cloned();
             fetch_set.spawn(async move {
-                let Ok(_permit) = sem.acquire_owned().await else { return (id, None) };
-                let bytes = fetch_poster_cached_tagged(&client, &id, tag.as_deref()).await.map(SArc::new);
+                let Ok(_permit) = sem.acquire_owned().await else {
+                    return (id, None);
+                };
+                let bytes = fetch_poster_cached_tagged(&client, &id, tag.as_deref())
+                    .await
+                    .map(SArc::new);
                 (id, bytes)
             });
         }
@@ -481,11 +624,18 @@ pub(crate) fn spawn_series_poster_loading(
         while let Some(res) = fetch_set.join_next().await {
             let (id, bytes) = match res {
                 Ok(pair) => pair,
-                Err(e) => { tracing::warn!("series poster task panicked: {e}"); continue; }
+                Err(e) => {
+                    tracing::warn!("series poster task panicked: {e}");
+                    continue;
+                }
             };
-            if let Some(b) = bytes { poster_map.insert(id.clone(), b); }
+            if let Some(b) = bytes {
+                poster_map.insert(id.clone(), b);
+            }
             pending.remove(&id);
-            if !pending.is_empty() { continue; }
+            if !pending.is_empty() {
+                continue;
+            }
             push_decoded_series(&meta, &poster_map, &window_weak, &state, &client);
         }
 
@@ -493,7 +643,10 @@ pub(crate) fn spawn_series_poster_loading(
         // arrives without panicking. If the last task(s) panicked, pending is still
         // non-empty here — push whatever partial results we have.
         if !pending.is_empty() {
-            tracing::warn!("series poster: {} item(s) never resolved — pushing partial results", pending.len());
+            tracing::warn!(
+                "series poster: {} item(s) never resolved — pushing partial results",
+                pending.len()
+            );
             push_decoded_series(&meta, &poster_map, &window_weak, &state, &client);
         }
     });
@@ -510,8 +663,12 @@ mod tests {
             .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
             .unwrap();
         assert!(is_image(&png));
-        assert!(!is_image(b"[Desktop Entry]\nType=Application\nExec=sh -c x\n"));
-        assert!(!is_image(&[0xFF, 0xD8, 0xFF, 0xE0, 0, 0, b'n', b'o', b'p', b'e']));
+        assert!(!is_image(
+            b"[Desktop Entry]\nType=Application\nExec=sh -c x\n"
+        ));
+        assert!(!is_image(&[
+            0xFF, 0xD8, 0xFF, 0xE0, 0, 0, b'n', b'o', b'p', b'e'
+        ]));
         assert!(!is_image(b""));
     }
 }

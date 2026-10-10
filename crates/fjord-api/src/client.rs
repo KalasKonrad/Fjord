@@ -59,7 +59,13 @@ impl JellyfinClient {
         let http = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(30))
             .build()?;
-        Ok(Self { http, server_url, user_id, token, device_id })
+        Ok(Self {
+            http,
+            server_url,
+            user_id,
+            token,
+            device_id,
+        })
     }
 
     // pub(crate), not private — bonfire.rs's own `impl JellyfinClient` block
@@ -69,11 +75,19 @@ impl JellyfinClient {
     /// `SessionManager.Logout(token)`, verified 2026-10-09).
     pub async fn logout(&self) -> Result<()> {
         let url = self.api_url("/Sessions/Logout")?;
-        let resp = self.http.post(url).header("Authorization", self.auth_header()).send().await?;
+        let resp = self
+            .http
+            .post(url)
+            .header("Authorization", self.auth_header())
+            .send()
+            .await?;
         let status = resp.status();
         if !status.is_success() {
             let body = resp.text().await.unwrap_or_default();
-            anyhow::bail!("HTTP {status}: {}", body.chars().take(200).collect::<String>());
+            anyhow::bail!(
+                "HTTP {status}: {}",
+                body.chars().take(200).collect::<String>()
+            );
         }
         Ok(())
     }
@@ -117,18 +131,19 @@ impl JellyfinClient {
         }
 
         let loaded = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(all.len()));
-        let sem    = std::sync::Arc::new(tokio::sync::Semaphore::new(4));
+        let sem = std::sync::Arc::new(tokio::sync::Semaphore::new(4));
         let mut set = tokio::task::JoinSet::new();
         let mut start = PAGE;
         while start < total {
-            let this      = self.clone();
-            let on_p      = on_progress.clone();
-            let loaded    = std::sync::Arc::clone(&loaded);
-            let sem       = std::sync::Arc::clone(&sem);
+            let this = self.clone();
+            let on_p = on_progress.clone();
+            let loaded = std::sync::Arc::clone(&loaded);
+            let sem = std::sync::Arc::clone(&sem);
             set.spawn(async move {
                 let _permit = sem.acquire_owned().await.ok();
                 let page = this.get_items_page(start, PAGE).await?;
-                let n = loaded.fetch_add(page.len(), std::sync::atomic::Ordering::Relaxed) + page.len();
+                let n =
+                    loaded.fetch_add(page.len(), std::sync::atomic::Ordering::Relaxed) + page.len();
                 on_p(n);
                 Ok::<Vec<MediaItem>, anyhow::Error>(page)
             });
@@ -178,7 +193,9 @@ impl JellyfinClient {
     async fn get_all_paged(&self, include_types: &str, fields: &str) -> Result<Vec<MediaItem>> {
         const PAGE: usize = 1000;
 
-        let first = self.get_typed_page_response(0, PAGE, include_types, fields).await?;
+        let first = self
+            .get_typed_page_response(0, PAGE, include_types, fields)
+            .await?;
         let total = first.total_record_count as usize;
         let mut all = first.items;
 
@@ -191,41 +208,62 @@ impl JellyfinClient {
         let mut set = tokio::task::JoinSet::new();
         let mut start = PAGE;
         while start < total {
-            let this  = self.clone();
-            let it    = include_types.to_string();
-            let fi    = fields.to_string();
-            let sem   = std::sync::Arc::clone(&sem);
+            let this = self.clone();
+            let it = include_types.to_string();
+            let fi = fields.to_string();
+            let sem = std::sync::Arc::clone(&sem);
             set.spawn(async move {
                 let _permit = sem.acquire_owned().await.ok();
                 this.get_typed_page(start, PAGE, &it, &fi).await
             });
             start += PAGE;
         }
-        while let Some(res) = set.join_next().await { all.extend(res??); }
+        while let Some(res) = set.join_next().await {
+            all.extend(res??);
+        }
 
         all.sort_by_cached_key(|i| i.name.to_lowercase()); // case-insensitive (CR10-24)
         Ok(all)
     }
 
-    async fn get_typed_page_response(&self, start: usize, limit: usize, include_types: &str, fields: &str) -> Result<ItemsResponse> {
+    async fn get_typed_page_response(
+        &self,
+        start: usize,
+        limit: usize,
+        include_types: &str,
+        fields: &str,
+    ) -> Result<ItemsResponse> {
         let mut url = self.api_url(&format!("/Users/{}/Items", self.user_id))?;
         url.query_pairs_mut()
-            .append_pair("Recursive",        "true")
+            .append_pair("Recursive", "true")
             .append_pair("IncludeItemTypes", include_types)
-            .append_pair("SortBy",           "SortName")
-            .append_pair("SortOrder",        "Ascending")
-            .append_pair("Fields",           fields)
-            .append_pair("StartIndex",       &start.to_string())
-            .append_pair("Limit",            &limit.to_string());
-        Ok(self.http.get(url)
+            .append_pair("SortBy", "SortName")
+            .append_pair("SortOrder", "Ascending")
+            .append_pair("Fields", fields)
+            .append_pair("StartIndex", &start.to_string())
+            .append_pair("Limit", &limit.to_string());
+        Ok(self
+            .http
+            .get(url)
             .header("Authorization", self.auth_header())
-            .send().await?
+            .send()
+            .await?
             .error_for_status()?
-            .json::<ItemsResponse>().await?)
+            .json::<ItemsResponse>()
+            .await?)
     }
 
-    async fn get_typed_page(&self, start: usize, limit: usize, include_types: &str, fields: &str) -> Result<Vec<MediaItem>> {
-        Ok(self.get_typed_page_response(start, limit, include_types, fields).await?.items)
+    async fn get_typed_page(
+        &self,
+        start: usize,
+        limit: usize,
+        include_types: &str,
+        fields: &str,
+    ) -> Result<Vec<MediaItem>> {
+        Ok(self
+            .get_typed_page_response(start, limit, include_types, fields)
+            .await?
+            .items)
     }
 
     /// Download raw poster image bytes for a single item.
@@ -289,7 +327,8 @@ impl JellyfinClient {
 
     /// All series in the library.
     pub async fn get_all_series(&self) -> Result<Vec<MediaItem>> {
-        self.get_all_paged("Series", "Overview,ProductionYear,UserData,ProviderIds").await
+        self.get_all_paged("Series", "Overview,ProductionYear,UserData,ProviderIds")
+            .await
     }
 
     /// All seasons for a series.
@@ -412,7 +451,10 @@ impl JellyfinClient {
             .append_pair("IncludeItemTypes", "Movie,Episode")
             .append_pair("SortBy", "DatePlayed")
             .append_pair("SortOrder", "Descending")
-            .append_pair("Fields", "SeriesId,SeriesName,IndexNumber,ParentIndexNumber,UserData")
+            .append_pair(
+                "Fields",
+                "SeriesId,SeriesName,IndexNumber,ParentIndexNumber,UserData",
+            )
             .append_pair("Limit", "15");
         let resp = self
             .http
@@ -431,7 +473,10 @@ impl JellyfinClient {
         let mut url = self.api_url("/Shows/NextUp")?;
         url.query_pairs_mut()
             .append_pair("UserId", &self.user_id)
-            .append_pair("Fields", "SeriesId,SeriesName,IndexNumber,ParentIndexNumber,UserData")
+            .append_pair(
+                "Fields",
+                "SeriesId,SeriesName,IndexNumber,ParentIndexNumber,UserData",
+            )
             .append_pair("Limit", "15");
         let resp = self
             .http
@@ -465,7 +510,11 @@ impl JellyfinClient {
         }
         if !status.is_success() {
             let body = resp.text().await.unwrap_or_default();
-            warn!("episode timestamps HTTP {}: {}", status, body.chars().take(120).collect::<String>());
+            warn!(
+                "episode timestamps HTTP {}: {}",
+                status,
+                body.chars().take(120).collect::<String>()
+            );
             return Ok(None);
         }
         Ok(Some(resp.json::<EpisodeTimestamps>().await?))
@@ -519,7 +568,14 @@ impl JellyfinClient {
     /// Fetches server name and version from the public endpoint (no auth required).
     pub async fn get_system_info(&self) -> Result<SystemInfo> {
         let url = self.api_url("/System/Info/Public")?;
-        Ok(self.http.get(url).send().await?.error_for_status()?.json().await?)
+        Ok(self
+            .http
+            .get(url)
+            .send()
+            .await?
+            .error_for_status()?
+            .json()
+            .await?)
     }
 
     /// Every installed server plugin (Bonfire Phase 1, 2026-08-09) — feeds
@@ -532,7 +588,12 @@ impl JellyfinClient {
     /// signal, never required for core playback.
     pub async fn get_plugins(&self) -> Result<Vec<PluginInfo>> {
         let url = self.api_url("/Plugins")?;
-        let resp = self.http.get(url).header("Authorization", self.auth_header()).send().await?;
+        let resp = self
+            .http
+            .get(url)
+            .header("Authorization", self.auth_header())
+            .send()
+            .await?;
         if !resp.status().is_success() {
             // /Plugins is admin-only: every non-admin profile (Bonfire
             // sub-profiles included) gets a 403 on each login — expected,
@@ -557,8 +618,15 @@ impl JellyfinClient {
     /// consumed" type in this crate.
     pub async fn get_user_info(&self) -> Result<UserDto> {
         let url = self.api_url(&format!("/Users/{}", self.user_id))?;
-        Ok(self.http.get(url).header("Authorization", self.auth_header())
-            .send().await?.error_for_status()?.json::<UserDto>().await?)
+        Ok(self
+            .http
+            .get(url)
+            .header("Authorization", self.auth_header())
+            .send()
+            .await?
+            .error_for_status()?
+            .json::<UserDto>()
+            .await?)
     }
 
     /// Startup connectivity probe. Uses a shorter timeout than the client
@@ -590,13 +658,21 @@ impl JellyfinClient {
         let mut url = self.api_url(&format!("/Users/{}/Items", self.user_id))?;
         url.query_pairs_mut()
             .append_pair("IncludeItemTypes", "BoxSet")
-            .append_pair("Recursive",        "true")
-            .append_pair("Fields",           "ProductionYear,UserData")
-            .append_pair("SortBy",           "DateCreated")
-            .append_pair("SortOrder",        "Descending")
-            .append_pair("Limit",            "15");
-        Ok(self.http.get(url).header("Authorization", self.auth_header())
-            .send().await?.error_for_status()?.json::<ItemsResponse>().await?.items)
+            .append_pair("Recursive", "true")
+            .append_pair("Fields", "ProductionYear,UserData")
+            .append_pair("SortBy", "DateCreated")
+            .append_pair("SortOrder", "Descending")
+            .append_pair("Limit", "15");
+        Ok(self
+            .http
+            .get(url)
+            .header("Authorization", self.auth_header())
+            .send()
+            .await?
+            .error_for_status()?
+            .json::<ItemsResponse>()
+            .await?
+            .items)
     }
 
     /// Up to 15 unwatched BoxSets in random order.
@@ -604,13 +680,21 @@ impl JellyfinClient {
         let mut url = self.api_url(&format!("/Users/{}/Items", self.user_id))?;
         url.query_pairs_mut()
             .append_pair("IncludeItemTypes", "BoxSet")
-            .append_pair("Recursive",        "true")
-            .append_pair("Fields",           "ProductionYear,UserData")
-            .append_pair("Filters",          "IsUnplayed")
-            .append_pair("SortBy",           "Random")
-            .append_pair("Limit",            "15");
-        Ok(self.http.get(url).header("Authorization", self.auth_header())
-            .send().await?.error_for_status()?.json::<ItemsResponse>().await?.items)
+            .append_pair("Recursive", "true")
+            .append_pair("Fields", "ProductionYear,UserData")
+            .append_pair("Filters", "IsUnplayed")
+            .append_pair("SortBy", "Random")
+            .append_pair("Limit", "15");
+        Ok(self
+            .http
+            .get(url)
+            .header("Authorization", self.auth_header())
+            .send()
+            .await?
+            .error_for_status()?
+            .json::<ItemsResponse>()
+            .await?
+            .items)
     }
 
     /// All BoxSets in the library (Id + Name only — for building the collection membership map).
@@ -621,8 +705,16 @@ impl JellyfinClient {
             .append_pair("Recursive", "true")
             .append_pair("Fields", "Id,Name,ProductionYear,UserData")
             .append_pair("SortBy", "SortName");
-        Ok(self.http.get(url).header("Authorization", self.auth_header())
-            .send().await?.error_for_status()?.json::<ItemsResponse>().await?.items)
+        Ok(self
+            .http
+            .get(url)
+            .header("Authorization", self.auth_header())
+            .send()
+            .await?
+            .error_for_status()?
+            .json::<ItemsResponse>()
+            .await?
+            .items)
     }
 
     /// All items in a BoxSet with metadata for the collection SectionRow.
@@ -633,8 +725,16 @@ impl JellyfinClient {
             .append_pair("Fields", "ProductionYear,UserData,ProviderIds")
             .append_pair("SortBy", "ProductionYear")
             .append_pair("SortOrder", "Ascending");
-        Ok(self.http.get(url).header("Authorization", self.auth_header())
-            .send().await?.error_for_status()?.json::<ItemsResponse>().await?.items)
+        Ok(self
+            .http
+            .get(url)
+            .header("Authorization", self.auth_header())
+            .send()
+            .await?
+            .error_for_status()?
+            .json::<ItemsResponse>()
+            .await?
+            .items)
     }
 
     /// Items by explicit id list, for merging WS-reported LibraryChanged/UserDataChanged ids
@@ -643,7 +743,9 @@ impl JellyfinClient {
     /// Chunked at 200 ids/request (fetched concurrently) as a defensive margin against an
     /// oversized query string during a bulk import/rescan burst — not a documented server limit.
     pub async fn get_items_by_ids(&self, ids: &[String]) -> Result<Vec<MediaItem>> {
-        if ids.is_empty() { return Ok(Vec::new()); }
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
         const CHUNK: usize = 200;
         if ids.len() <= CHUNK {
             return self.get_items_by_ids_page(ids).await;
@@ -652,16 +754,18 @@ impl JellyfinClient {
         let sem = std::sync::Arc::new(tokio::sync::Semaphore::new(4));
         let mut set = tokio::task::JoinSet::new();
         for chunk in ids.chunks(CHUNK) {
-            let this  = self.clone();
+            let this = self.clone();
             let chunk = chunk.to_vec();
-            let sem   = std::sync::Arc::clone(&sem);
+            let sem = std::sync::Arc::clone(&sem);
             set.spawn(async move {
                 let _permit = sem.acquire_owned().await.ok();
                 this.get_items_by_ids_page(&chunk).await
             });
         }
         let mut all = Vec::new();
-        while let Some(res) = set.join_next().await { all.extend(res??); }
+        while let Some(res) = set.join_next().await {
+            all.extend(res??);
+        }
         Ok(all)
     }
 
@@ -676,8 +780,16 @@ impl JellyfinClient {
         url.query_pairs_mut()
             .append_pair("Ids", &ids.join(","))
             .append_pair("Fields", "Overview,ProductionYear,UserData,AlbumArtist,ChildCount,DateCreated,SeasonId,SeriesId,IndexNumber,ParentIndexNumber,ProviderIds");
-        Ok(self.http.get(url).header("Authorization", self.auth_header())
-            .send().await?.error_for_status()?.json::<ItemsResponse>().await?.items)
+        Ok(self
+            .http
+            .get(url)
+            .header("Authorization", self.auth_header())
+            .send()
+            .await?
+            .error_for_status()?
+            .json::<ItemsResponse>()
+            .await?
+            .items)
     }
 
     /// Same batch shape as `get_items_by_ids`, but with the richer Fields list
@@ -687,7 +799,9 @@ impl JellyfinClient {
     /// Used to bulk-refresh the app's screen-open detail cache without one
     /// individual `/Items/{id}` round trip per cached item (Phase 103).
     pub async fn get_items_by_ids_detailed(&self, ids: &[String]) -> Result<Vec<MediaItem>> {
-        if ids.is_empty() { return Ok(Vec::new()); }
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
         const CHUNK: usize = 200;
         if ids.len() <= CHUNK {
             return self.get_items_by_ids_detailed_page(ids).await;
@@ -696,16 +810,18 @@ impl JellyfinClient {
         let sem = std::sync::Arc::new(tokio::sync::Semaphore::new(4));
         let mut set = tokio::task::JoinSet::new();
         for chunk in ids.chunks(CHUNK) {
-            let this  = self.clone();
+            let this = self.clone();
             let chunk = chunk.to_vec();
-            let sem   = std::sync::Arc::clone(&sem);
+            let sem = std::sync::Arc::clone(&sem);
             set.spawn(async move {
                 let _permit = sem.acquire_owned().await.ok();
                 this.get_items_by_ids_detailed_page(&chunk).await
             });
         }
         let mut all = Vec::new();
-        while let Some(res) = set.join_next().await { all.extend(res??); }
+        while let Some(res) = set.join_next().await {
+            all.extend(res??);
+        }
         Ok(all)
     }
 
@@ -713,12 +829,23 @@ impl JellyfinClient {
         let mut url = self.api_url(&format!("/Users/{}/Items", self.user_id))?;
         url.query_pairs_mut()
             .append_pair("Ids", &ids.join(","))
-            .append_pair("Fields", "Overview,RunTimeTicks,SeriesName,SeriesId,SeasonName,SeasonId,\
+            .append_pair(
+                "Fields",
+                "Overview,RunTimeTicks,SeriesName,SeriesId,SeasonName,SeasonId,\
                 IndexNumber,ParentIndexNumber,ProductionYear,UserData,Genres,OfficialRating,\
                 CommunityRating,BackdropImageTags,People,Taglines,Studios,RecursiveItemCount,\
-                AlbumArtist,ChildCount,DateCreated,MediaStreams");
-        Ok(self.http.get(url).header("Authorization", self.auth_header())
-            .send().await?.error_for_status()?.json::<ItemsResponse>().await?.items)
+                AlbumArtist,ChildCount,DateCreated,MediaStreams",
+            );
+        Ok(self
+            .http
+            .get(url)
+            .header("Authorization", self.auth_header())
+            .send()
+            .await?
+            .error_for_status()?
+            .json::<ItemsResponse>()
+            .await?
+            .items)
     }
 
     /// Items similar to the given item (same type). Limit 12, includes production year + user data.
@@ -820,7 +947,10 @@ impl JellyfinClient {
             .append_pair("searchTerm", query)
             .append_pair("Recursive", "true")
             .append_pair("IncludeItemTypes", "Movie,Series,Episode")
-            .append_pair("Fields", "SeriesId,SeriesName,IndexNumber,ParentIndexNumber,UserData")
+            .append_pair(
+                "Fields",
+                "SeriesId,SeriesName,IndexNumber,ParentIndexNumber,UserData",
+            )
             .append_pair("EnableUserData", "true")
             .append_pair("Limit", &limit.to_string());
         Ok(self
@@ -837,41 +967,55 @@ impl JellyfinClient {
 
     /// Mark an item as played: POST /Users/{userId}/PlayedItems/{itemId}
     pub async fn mark_played(&self, item_id: &str) -> Result<()> {
-        let url = self.api_url(&format!(
-            "/Users/{}/PlayedItems/{}", self.user_id, item_id
-        ))?;
-        self.http.post(url).header("Authorization", self.auth_header())
-            .send().await?.error_for_status()?;
+        let url = self.api_url(&format!("/Users/{}/PlayedItems/{}", self.user_id, item_id))?;
+        self.http
+            .post(url)
+            .header("Authorization", self.auth_header())
+            .send()
+            .await?
+            .error_for_status()?;
         Ok(())
     }
 
     /// Mark an item as unplayed: DELETE /Users/{userId}/PlayedItems/{itemId}
     pub async fn mark_unplayed(&self, item_id: &str) -> Result<()> {
-        let url = self.api_url(&format!(
-            "/Users/{}/PlayedItems/{}", self.user_id, item_id
-        ))?;
-        self.http.delete(url).header("Authorization", self.auth_header())
-            .send().await?.error_for_status()?;
+        let url = self.api_url(&format!("/Users/{}/PlayedItems/{}", self.user_id, item_id))?;
+        self.http
+            .delete(url)
+            .header("Authorization", self.auth_header())
+            .send()
+            .await?
+            .error_for_status()?;
         Ok(())
     }
 
     /// Add an item to favourites: POST /Users/{userId}/FavoriteItems/{itemId}
     pub async fn set_favorite(&self, item_id: &str) -> Result<()> {
         let url = self.api_url(&format!(
-            "/Users/{}/FavoriteItems/{}", self.user_id, item_id
+            "/Users/{}/FavoriteItems/{}",
+            self.user_id, item_id
         ))?;
-        self.http.post(url).header("Authorization", self.auth_header())
-            .send().await?.error_for_status()?;
+        self.http
+            .post(url)
+            .header("Authorization", self.auth_header())
+            .send()
+            .await?
+            .error_for_status()?;
         Ok(())
     }
 
     /// Remove an item from favourites: DELETE /Users/{userId}/FavoriteItems/{itemId}
     pub async fn unset_favorite(&self, item_id: &str) -> Result<()> {
         let url = self.api_url(&format!(
-            "/Users/{}/FavoriteItems/{}", self.user_id, item_id
+            "/Users/{}/FavoriteItems/{}",
+            self.user_id, item_id
         ))?;
-        self.http.delete(url).header("Authorization", self.auth_header())
-            .send().await?.error_for_status()?;
+        self.http
+            .delete(url)
+            .header("Authorization", self.auth_header())
+            .send()
+            .await?
+            .error_for_status()?;
         Ok(())
     }
 
@@ -883,7 +1027,10 @@ impl JellyfinClient {
             .append_pair("IsPlayed", "false")
             .append_pair("Recursive", "true")
             .append_pair("IncludeItemTypes", types)
-            .append_pair("Fields", "SeriesId,SeriesName,IndexNumber,ParentIndexNumber,UserData")
+            .append_pair(
+                "Fields",
+                "SeriesId,SeriesName,IndexNumber,ParentIndexNumber,UserData",
+            )
             .append_pair("SortBy", "Random")
             .append_pair("Limit", "15");
         let resp = self
@@ -907,33 +1054,56 @@ impl JellyfinClient {
         let mut url = self.api_url(&format!("/Users/{}/Items", self.user_id))?;
         url.query_pairs_mut()
             .append_pair("IncludeItemTypes", "Audio")
-            .append_pair("Recursive",        "true")
-            .append_pair("Fields",           "AlbumId")
-            .append_pair("Filters",          "IsPlayed")
-            .append_pair("SortBy",           "DatePlayed")
-            .append_pair("SortOrder",        "Descending")
-            .append_pair("Limit",            "60");
-        let tracks = self.http.get(url).header("Authorization", self.auth_header())
-            .send().await?.error_for_status()?.json::<ItemsResponse>().await?.items;
+            .append_pair("Recursive", "true")
+            .append_pair("Fields", "AlbumId")
+            .append_pair("Filters", "IsPlayed")
+            .append_pair("SortBy", "DatePlayed")
+            .append_pair("SortOrder", "Descending")
+            .append_pair("Limit", "60");
+        let tracks = self
+            .http
+            .get(url)
+            .header("Authorization", self.auth_header())
+            .send()
+            .await?
+            .error_for_status()?
+            .json::<ItemsResponse>()
+            .await?
+            .items;
 
         let mut album_ids: Vec<String> = Vec::new();
         for t in &tracks {
-            if let Some(aid) = &t.album_id && !album_ids.contains(aid) {
+            if let Some(aid) = &t.album_id
+                && !album_ids.contains(aid)
+            {
                 album_ids.push(aid.clone());
-                if album_ids.len() >= 15 { break; }
+                if album_ids.len() >= 15 {
+                    break;
+                }
             }
         }
-        if album_ids.is_empty() { return Ok(vec![]); }
+        if album_ids.is_empty() {
+            return Ok(vec![]);
+        }
 
         let mut url = self.api_url(&format!("/Users/{}/Items", self.user_id))?;
         url.query_pairs_mut()
-            .append_pair("Ids",    &album_ids.join(","))
+            .append_pair("Ids", &album_ids.join(","))
             .append_pair("Fields", "ProductionYear,UserData,AlbumArtist");
-        let albums = self.http.get(url).header("Authorization", self.auth_header())
-            .send().await?.error_for_status()?.json::<ItemsResponse>().await?.items;
+        let albums = self
+            .http
+            .get(url)
+            .header("Authorization", self.auth_header())
+            .send()
+            .await?
+            .error_for_status()?
+            .json::<ItemsResponse>()
+            .await?
+            .items;
 
         // The Ids fetch does not preserve order — restore play recency.
-        Ok(album_ids.iter()
+        Ok(album_ids
+            .iter()
             .filter_map(|id| albums.iter().find(|a| &a.id == id).cloned())
             .collect())
     }
@@ -945,19 +1115,37 @@ impl JellyfinClient {
     /// as MusicAlbum items.
     pub async fn get_latest_music(&self) -> Result<Vec<MediaItem>> {
         let views_url = self.api_url(&format!("/Users/{}/Views", self.user_id))?;
-        let views = self.http.get(views_url).header("Authorization", self.auth_header())
-            .send().await?.error_for_status()?.json::<ItemsResponse>().await?.items;
-        let Some(music) = views.iter().find(|v| v.collection_type.as_deref() == Some("music")) else {
+        let views = self
+            .http
+            .get(views_url)
+            .header("Authorization", self.auth_header())
+            .send()
+            .await?
+            .error_for_status()?
+            .json::<ItemsResponse>()
+            .await?
+            .items;
+        let Some(music) = views
+            .iter()
+            .find(|v| v.collection_type.as_deref() == Some("music"))
+        else {
             return Ok(vec![]); // no music library on this server
         };
         let mut url = self.api_url(&format!("/Users/{}/Items/Latest", self.user_id))?;
         url.query_pairs_mut()
-            .append_pair("ParentId",   &music.id)
+            .append_pair("ParentId", &music.id)
             .append_pair("GroupItems", "true")
-            .append_pair("Fields",     "UserData,ProductionYear,AlbumArtist")
-            .append_pair("Limit",      "15");
-        Ok(self.http.get(url).header("Authorization", self.auth_header())
-            .send().await?.error_for_status()?.json::<Vec<MediaItem>>().await?)
+            .append_pair("Fields", "UserData,ProductionYear,AlbumArtist")
+            .append_pair("Limit", "15");
+        Ok(self
+            .http
+            .get(url)
+            .header("Authorization", self.auth_header())
+            .send()
+            .await?
+            .error_for_status()?
+            .json::<Vec<MediaItem>>()
+            .await?)
     }
 
     /// Items marked as favourite for the given item type(s) (e.g. "Movie", "Series", "MusicAlbum").
@@ -972,35 +1160,59 @@ impl JellyfinClient {
             .append_pair("SortBy",           "SortName")
             .append_pair("SortOrder",        "Ascending")
             .append_pair("Limit",            "30");
-        Ok(self.http.get(url).header("Authorization", self.auth_header())
-            .send().await?.error_for_status()?.json::<ItemsResponse>().await?.items)
+        Ok(self
+            .http
+            .get(url)
+            .header("Authorization", self.auth_header())
+            .send()
+            .await?
+            .error_for_status()?
+            .json::<ItemsResponse>()
+            .await?
+            .items)
     }
 
     /// All album artists in the library, sorted by name.
     pub async fn get_album_artists(&self) -> Result<Vec<MediaItem>> {
         let mut url = self.api_url("/Artists/AlbumArtists")?;
         url.query_pairs_mut()
-            .append_pair("userId",    &self.user_id)
+            .append_pair("userId", &self.user_id)
             .append_pair("Recursive", "true")
-            .append_pair("Fields",    "Overview,UserData")
-            .append_pair("SortBy",    "SortName")
+            .append_pair("Fields", "Overview,UserData")
+            .append_pair("SortBy", "SortName")
             .append_pair("SortOrder", "Ascending");
-        Ok(self.http.get(url).header("Authorization", self.auth_header())
-            .send().await?.error_for_status()?.json::<ItemsResponse>().await?.items)
+        Ok(self
+            .http
+            .get(url)
+            .header("Authorization", self.auth_header())
+            .send()
+            .await?
+            .error_for_status()?
+            .json::<ItemsResponse>()
+            .await?
+            .items)
     }
 
     /// All MusicAlbum items for a given artist, sorted by year ascending.
     pub async fn get_artist_albums(&self, artist_id: &str) -> Result<Vec<MediaItem>> {
         let mut url = self.api_url(&format!("/Users/{}/Items", self.user_id))?;
         url.query_pairs_mut()
-            .append_pair("ArtistIds",        artist_id)
+            .append_pair("ArtistIds", artist_id)
             .append_pair("IncludeItemTypes", "MusicAlbum")
-            .append_pair("Recursive",        "true")
-            .append_pair("Fields",           "ProductionYear,UserData,AlbumArtist")
-            .append_pair("SortBy",           "ProductionYear")
-            .append_pair("SortOrder",        "Ascending");
-        Ok(self.http.get(url).header("Authorization", self.auth_header())
-            .send().await?.error_for_status()?.json::<ItemsResponse>().await?.items)
+            .append_pair("Recursive", "true")
+            .append_pair("Fields", "ProductionYear,UserData,AlbumArtist")
+            .append_pair("SortBy", "ProductionYear")
+            .append_pair("SortOrder", "Ascending");
+        Ok(self
+            .http
+            .get(url)
+            .header("Authorization", self.auth_header())
+            .send()
+            .await?
+            .error_for_status()?
+            .json::<ItemsResponse>()
+            .await?
+            .items)
     }
 
     /// All MusicAlbum items in the library, sorted by SortName ascending.
@@ -1008,12 +1220,20 @@ impl JellyfinClient {
         let mut url = self.api_url(&format!("/Users/{}/Items", self.user_id))?;
         url.query_pairs_mut()
             .append_pair("IncludeItemTypes", "MusicAlbum")
-            .append_pair("Recursive",        "true")
-            .append_pair("Fields",           "ProductionYear,UserData,AlbumArtist,Overview")
-            .append_pair("SortBy",           "SortName")
-            .append_pair("SortOrder",        "Ascending");
-        Ok(self.http.get(url).header("Authorization", self.auth_header())
-            .send().await?.error_for_status()?.json::<ItemsResponse>().await?.items)
+            .append_pair("Recursive", "true")
+            .append_pair("Fields", "ProductionYear,UserData,AlbumArtist,Overview")
+            .append_pair("SortBy", "SortName")
+            .append_pair("SortOrder", "Ascending");
+        Ok(self
+            .http
+            .get(url)
+            .header("Authorization", self.auth_header())
+            .send()
+            .await?
+            .error_for_status()?
+            .json::<ItemsResponse>()
+            .await?
+            .items)
     }
 
     /// All Audio tracks in an album, sorted by disc then track number.
@@ -1036,13 +1256,24 @@ impl JellyfinClient {
     pub async fn get_album_tracks(&self, album_id: &str) -> Result<Vec<MediaItem>> {
         let mut url = self.api_url(&format!("/Users/{}/Items", self.user_id))?;
         url.query_pairs_mut()
-            .append_pair("ParentId",         album_id)
+            .append_pair("ParentId", album_id)
             .append_pair("IncludeItemTypes", "Audio")
-            .append_pair("Fields",           "RunTimeTicks,UserData,IndexNumber,ParentIndexNumber,AlbumArtist,Album")
-            .append_pair("SortBy",           "ParentIndexNumber,IndexNumber")
-            .append_pair("SortOrder",        "Ascending");
-        Ok(self.http.get(url).header("Authorization", self.auth_header())
-            .send().await?.error_for_status()?.json::<ItemsResponse>().await?.items)
+            .append_pair(
+                "Fields",
+                "RunTimeTicks,UserData,IndexNumber,ParentIndexNumber,AlbumArtist,Album",
+            )
+            .append_pair("SortBy", "ParentIndexNumber,IndexNumber")
+            .append_pair("SortOrder", "Ascending");
+        Ok(self
+            .http
+            .get(url)
+            .header("Authorization", self.auth_header())
+            .send()
+            .await?
+            .error_for_status()?
+            .json::<ItemsResponse>()
+            .await?
+            .items)
     }
 
     /// All audio playlists, sorted by SortName ascending. Video playlists are
@@ -1052,14 +1283,28 @@ impl JellyfinClient {
         let mut url = self.api_url(&format!("/Users/{}/Items", self.user_id))?;
         url.query_pairs_mut()
             .append_pair("IncludeItemTypes", "Playlist")
-            .append_pair("Recursive",        "true")
-            .append_pair("Fields",           "ProductionYear,UserData,ChildCount")
-            .append_pair("SortBy",           "SortName")
-            .append_pair("SortOrder",        "Ascending");
-        let items = self.http.get(url).header("Authorization", self.auth_header())
-            .send().await?.error_for_status()?.json::<ItemsResponse>().await?.items;
-        Ok(items.into_iter()
-            .filter(|i| i.media_type.as_deref().map(|m| m == "Audio").unwrap_or(true))
+            .append_pair("Recursive", "true")
+            .append_pair("Fields", "ProductionYear,UserData,ChildCount")
+            .append_pair("SortBy", "SortName")
+            .append_pair("SortOrder", "Ascending");
+        let items = self
+            .http
+            .get(url)
+            .header("Authorization", self.auth_header())
+            .send()
+            .await?
+            .error_for_status()?
+            .json::<ItemsResponse>()
+            .await?
+            .items;
+        Ok(items
+            .into_iter()
+            .filter(|i| {
+                i.media_type
+                    .as_deref()
+                    .map(|m| m == "Audio")
+                    .unwrap_or(true)
+            })
             .collect())
     }
 
@@ -1070,8 +1315,16 @@ impl JellyfinClient {
         url.query_pairs_mut()
             .append_pair("UserId", &self.user_id)
             .append_pair("Fields", "RunTimeTicks,UserData,AlbumArtist,Album");
-        Ok(self.http.get(url).header("Authorization", self.auth_header())
-            .send().await?.error_for_status()?.json::<ItemsResponse>().await?.items)
+        Ok(self
+            .http
+            .get(url)
+            .header("Authorization", self.auth_header())
+            .send()
+            .await?
+            .error_for_status()?
+            .json::<ItemsResponse>()
+            .await?
+            .items)
     }
 
     /// Create an audio playlist with the given initial items. Returns the new
@@ -1083,35 +1336,55 @@ impl JellyfinClient {
             id: String,
         }
         let url = self.api_url("/Playlists")?;
-        Ok(self.http.post(url).header("Authorization", self.auth_header())
+        Ok(self
+            .http
+            .post(url)
+            .header("Authorization", self.auth_header())
             .json(&json!({
                 "Name":      name,
                 "Ids":       ids,
                 "UserId":    self.user_id,
                 "MediaType": "Audio",
             }))
-            .send().await?.error_for_status()?
-            .json::<CreateResponse>().await?.id)
+            .send()
+            .await?
+            .error_for_status()?
+            .json::<CreateResponse>()
+            .await?
+            .id)
     }
 
     /// Append items to an existing playlist.
     pub async fn add_to_playlist(&self, playlist_id: &str, ids: &[String]) -> Result<()> {
         let mut url = self.api_url(&format!("/Playlists/{}/Items", playlist_id))?;
         url.query_pairs_mut()
-            .append_pair("Ids",    &ids.join(","))
+            .append_pair("Ids", &ids.join(","))
             .append_pair("UserId", &self.user_id);
-        self.http.post(url).header("Authorization", self.auth_header())
-            .send().await?.error_for_status()?;
+        self.http
+            .post(url)
+            .header("Authorization", self.auth_header())
+            .send()
+            .await?
+            .error_for_status()?;
         Ok(())
     }
 
     /// Remove entries from a playlist. Takes PlaylistItemIds (entry ids), NOT
     /// item ids.
-    pub async fn remove_from_playlist(&self, playlist_id: &str, entry_ids: &[String]) -> Result<()> {
+    pub async fn remove_from_playlist(
+        &self,
+        playlist_id: &str,
+        entry_ids: &[String],
+    ) -> Result<()> {
         let mut url = self.api_url(&format!("/Playlists/{}/Items", playlist_id))?;
-        url.query_pairs_mut().append_pair("EntryIds", &entry_ids.join(","));
-        self.http.delete(url).header("Authorization", self.auth_header())
-            .send().await?.error_for_status()?;
+        url.query_pairs_mut()
+            .append_pair("EntryIds", &entry_ids.join(","));
+        self.http
+            .delete(url)
+            .header("Authorization", self.auth_header())
+            .send()
+            .await?
+            .error_for_status()?;
         Ok(())
     }
 
@@ -1123,19 +1396,27 @@ impl JellyfinClient {
     pub async fn get_lyrics(&self, item_id: &str) -> Result<Option<Vec<(u64, String)>>> {
         #[derive(serde::Deserialize)]
         struct LyricLine {
-            #[serde(rename = "Start")]  start: Option<u64>,
-            #[serde(rename = "Text")]   text:  String,
+            #[serde(rename = "Start")]
+            start: Option<u64>,
+            #[serde(rename = "Text")]
+            text: String,
         }
         #[derive(serde::Deserialize)]
         struct LyricsResponse {
-            #[serde(rename = "Lyrics")] lyrics: Vec<LyricLine>,
+            #[serde(rename = "Lyrics")]
+            lyrics: Vec<LyricLine>,
         }
 
         let url = self.api_url(&format!("/Audio/{}/Lyrics", item_id))?;
-        let resp = self.http.get(url)
+        let resp = self
+            .http
+            .get(url)
             .header("Authorization", self.auth_header())
-            .send().await?;
-        if resp.status() == reqwest::StatusCode::NOT_FOUND { return Ok(None); }
+            .send()
+            .await?;
+        if resp.status() == reqwest::StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
         let data: LyricsResponse = resp.error_for_status()?.json().await?;
         // Jellyfin's Start is in TICKS (100 ns units, the same scale as
         // RunTimeTicks / PlaybackPositionTicks elsewhere in the API) — NOT
@@ -1146,7 +1427,9 @@ impl JellyfinClient {
         // playback position never gets remotely close, so the active-line
         // lookup never matched anything and the highlight/scroll never moved,
         // on every track, regardless of any Slint binding mechanism.
-        let lines = data.lyrics.into_iter()
+        let lines = data
+            .lyrics
+            .into_iter()
             .map(|l| (l.start.unwrap_or(0) / 10_000, l.text))
             .collect();
         Ok(Some(lines))
@@ -1156,7 +1439,11 @@ impl JellyfinClient {
     /// Connect with: `tokio_tungstenite::connect_async(client.ws_url())`.
     pub fn ws_url(&self) -> String {
         let base = self.server_url.as_str().trim_end_matches('/');
-        let scheme = if base.starts_with("https://") { "wss" } else { "ws" };
+        let scheme = if base.starts_with("https://") {
+            "wss"
+        } else {
+            "ws"
+        };
         let host_path = base
             .trim_start_matches("https://")
             .trim_start_matches("http://");

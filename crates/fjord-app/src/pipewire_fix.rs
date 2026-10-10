@@ -29,7 +29,9 @@ fn conf_path() -> std::path::PathBuf {
         .unwrap_or_else(|_| {
             std::path::PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(".config")
         });
-    base.join("wireplumber").join("wireplumber.conf.d").join(CONF_FILENAME)
+    base.join("wireplumber")
+        .join("wireplumber.conf.d")
+        .join(CONF_FILENAME)
 }
 
 /// Returns true if the managed WirePlumber config file is present on disk.
@@ -57,7 +59,9 @@ pub(crate) fn apply_alsa_irq_scheduling(enable: bool) {
     let path = conf_path();
 
     if enable {
-        if let Some(dir) = path.parent() && let Err(e) = std::fs::create_dir_all(dir) {
+        if let Some(dir) = path.parent()
+            && let Err(e) = std::fs::create_dir_all(dir)
+        {
             tracing::warn!("could not create wireplumber config dir: {e}");
             return;
         }

@@ -99,45 +99,45 @@ const ALL_SECTIONS: &[&str] = &[
 
 // ── General section rows ──────────────────────────────────────────────────────
 const GEN_LAUNCH_FULLSCREEN: &str = "general.launch_fullscreen";
-const GEN_VIDEO_BEHIND:      &str = "general.video_behind";
-const GEN_LOG_LEVEL:         &str = "general.log_level";
-const GEN_PREWARM_METADATA:  &str = "general.prewarm_metadata";
-const GEN_PREWARM_IMAGES:    &str = "general.prewarm_images";
+const GEN_VIDEO_BEHIND: &str = "general.video_behind";
+const GEN_LOG_LEVEL: &str = "general.log_level";
+const GEN_PREWARM_METADATA: &str = "general.prewarm_metadata";
+const GEN_PREWARM_IMAGES: &str = "general.prewarm_images";
 
 // ── Profiles section rows (Phase 0 — shell; Phase 1 step 7 adds the
 // launch-policy rows; Phase 2 adds Manage Profiles) ─────────────────────────
-const PROF_LAUNCH_POLICY:    &str = "profiles.launch_policy";
-const PROF_DEFAULT_PROFILE:  &str = "profiles.default_profile"; // virtual — only when launch_policy == "default"
+const PROF_LAUNCH_POLICY: &str = "profiles.launch_policy";
+const PROF_DEFAULT_PROFILE: &str = "profiles.default_profile"; // virtual — only when launch_policy == "default"
 // virtual — only when the active profile is itself a master account; a
 // Bonfire sub-profile can't manage siblings (bonfire_list_profiles' own
 // "all profiles under THIS master account" semantics — see profile_edit.rs).
-const PROF_MANAGE_PROFILES:  &str = "profiles.manage_profiles";
+const PROF_MANAGE_PROFILES: &str = "profiles.manage_profiles";
 // 2026-08-14, the 2-tier account/profile redesign — the identical
 // launch-policy shape one tier up, appended after the existing
 // profile-level rows (not inserted before them) per this codebase's own
 // "append, don't insert" convention for exactly this reason.
 const PROF_ACCOUNT_LAUNCH_POLICY: &str = "profiles.account_launch_policy";
-const PROF_DEFAULT_ACCOUNT:       &str = "profiles.default_account"; // virtual — only when account_launch_policy == "default"
+const PROF_DEFAULT_ACCOUNT: &str = "profiles.default_account"; // virtual — only when account_launch_policy == "default"
 // Always visible, regardless of how many accounts already exist — the
 // picker's own "+ Add Account" tile only shows once there's a 2nd one to
 // switch between; this is the actual way to go from 1 to 2 in the first
 // place.
-const PROF_ADD_ACCOUNT:      &str = "profiles.add_account";
+const PROF_ADD_ACCOUNT: &str = "profiles.add_account";
 // Live-questioned 2026-08-17 ("no why to change this on the accaunt
 // without sinign out and in again") — see app_state.slint's own doc
 // comment on settings-remember-login for the full design. A toggle, not a
 // dropdown: OFF is immediate, ON opens the confirm-password modal instead
 // of flipping directly (handled entirely in profile::on_remember_login_toggle,
 // not the generic toggle-row shape most other bool rows use).
-const PROF_REMEMBER_LOGIN:   &str = "profiles.remember_login";
-const PROF_SIGN_OUT:         &str = "profiles.sign_out";
+const PROF_REMEMBER_LOGIN: &str = "profiles.remember_login";
+const PROF_SIGN_OUT: &str = "profiles.sign_out";
 // Bonfire Phase 5 (cross-household groups, 2026-08-29) — appended at the
 // end of the section, not sandwiched next to Manage Profiles, matching
 // this section's own "append, don't insert" precedent (see
 // PROF_ACCOUNT_LAUNCH_POLICY's comment above). Same gate as Manage
 // Profiles (settings-is-master-profile — now correctly true while
 // impersonating a foreign group account too, see profile.rs::is_true_master).
-const PROF_BONFIRE_GROUP:    &str = "profiles.bonfire_group";
+const PROF_BONFIRE_GROUP: &str = "profiles.bonfire_group";
 // Bonfire Phase 6 (admin actions, 2026-09-04) — gated on
 // jellyfin-is-server-admin, NOT settings-is-master-profile: the
 // mappings/reset-pin/set-limit/audit-log endpoints all authorize against
@@ -145,24 +145,24 @@ const PROF_BONFIRE_GROUP:    &str = "profiles.bonfire_group";
 // plugin controller source — a Bonfire household master with no server
 // admin rights should never see this row, and a genuine server admin who
 // happens to run no Bonfire household of their own still should.
-const PROF_BONFIRE_ADMIN:    &str = "profiles.bonfire_admin";
+const PROF_BONFIRE_ADMIN: &str = "profiles.bonfire_admin";
 
 // ── Video section rows ────────────────────────────────────────────────────────
-const VID_HWDEC:               &str = "video.hwdec";
-const VID_VF:                  &str = "video.vf";
-const VID_DEINTERLACE:         &str = "video.deinterlace";
-const VID_VIDEO_SYNC:          &str = "video.video_sync";
-const VID_INTERPOLATION:       &str = "video.interpolation";
-const VID_TSCALE:              &str = "video.tscale";              // virtual — only when interpolation is on
-const VID_TARGET_COLORSPACE:   &str = "video.target_colorspace";
+const VID_HWDEC: &str = "video.hwdec";
+const VID_VF: &str = "video.vf";
+const VID_DEINTERLACE: &str = "video.deinterlace";
+const VID_VIDEO_SYNC: &str = "video.video_sync";
+const VID_INTERPOLATION: &str = "video.interpolation";
+const VID_TSCALE: &str = "video.tscale"; // virtual — only when interpolation is on
+const VID_TARGET_COLORSPACE: &str = "video.target_colorspace";
 const VID_SEPARATE_VIDEO_SURFACE: &str = "video.separate_video_surface";
 const VID_OWN_BUFFERS: &str = "video.video_own_buffers";
 const VID_DITHER_OFF: &str = "video.video_dither_off"; // test aid, 2026-10-08
-const VID_TONE_MAPPING:        &str = "video.tone_mapping";        // always visible (2026-08-15 — was
-                                                                     // virtual, hidden while HDR passthrough
-                                                                     // was on; see section_row_keys's own
-                                                                     // comment for why that was wrong)
-const VID_OPENGL_EARLY_FLUSH:  &str = "video.opengl_early_flush";
+const VID_TONE_MAPPING: &str = "video.tone_mapping"; // always visible (2026-08-15 — was
+// virtual, hidden while HDR passthrough
+// was on; see section_row_keys's own
+// comment for why that was wrong)
+const VID_OPENGL_EARLY_FLUSH: &str = "video.opengl_early_flush";
 const VID_VIDEO_LATENCY_HACKS: &str = "video.video_latency_hacks"; // virtual — only when video-sync == display-resample
 
 // display_sync (2026-09-18) — native resolution/refresh-rate/HDR/WCG matched
@@ -170,79 +170,79 @@ const VID_VIDEO_LATENCY_HACKS: &str = "video.video_latency_hacks"; // virtual �
 // module doc comment for the full design. Every row below the master toggle
 // is virtual (hidden while the toggle is off) — see section_row_keys' own
 // SECTION_VIDEO arm.
-const VID_DISPLAY_SYNC_ENABLED:           &str = "video.display_sync_enabled";
-const VID_DISPLAY_SYNC_SCREEN:            &str = "video.display_sync_screen"; // dynamic dropdown
-const VID_DISPLAY_SYNC_SYNC_RESOLUTION:   &str = "video.display_sync_sync_resolution";
+const VID_DISPLAY_SYNC_ENABLED: &str = "video.display_sync_enabled";
+const VID_DISPLAY_SYNC_SCREEN: &str = "video.display_sync_screen"; // dynamic dropdown
+const VID_DISPLAY_SYNC_SYNC_RESOLUTION: &str = "video.display_sync_sync_resolution";
 const VID_DISPLAY_SYNC_SYNC_REFRESH_RATE: &str = "video.display_sync_sync_refresh_rate";
 const VID_DISPLAY_SYNC_DEFAULT_RESOLUTION: &str = "video.display_sync_default_resolution";
-const VID_DISPLAY_SYNC_DEFAULT_HZ:        &str = "video.display_sync_default_hz";
-const VID_DISPLAY_SYNC_SCALE_4K:          &str = "video.display_sync_scale_4k";
-const VID_DISPLAY_SYNC_SCALE_1080P:       &str = "video.display_sync_scale_1080p";
+const VID_DISPLAY_SYNC_DEFAULT_HZ: &str = "video.display_sync_default_hz";
+const VID_DISPLAY_SYNC_SCALE_4K: &str = "video.display_sync_scale_4k";
+const VID_DISPLAY_SYNC_SCALE_1080P: &str = "video.display_sync_scale_1080p";
 // Only consulted when VID_DISPLAY_SYNC_SYNC_RESOLUTION is true — see
 // compute_target_mode's own doc comment for why (structurally inapplicable
 // otherwise, not just hidden for tidiness).
-const VID_DISPLAY_SYNC_4K_ODD_FPS_MODE:   &str = "video.display_sync_4k_odd_fps_mode";
-const VID_DISPLAY_SYNC_HDR_MODE:          &str = "video.display_sync_hdr_mode";
-const VID_DISPLAY_SYNC_WCG_MODE:          &str = "video.display_sync_wcg_mode";
-const VID_DISPLAY_SYNC_TRAILERS:          &str = "video.display_sync_trailers";
+const VID_DISPLAY_SYNC_4K_ODD_FPS_MODE: &str = "video.display_sync_4k_odd_fps_mode";
+const VID_DISPLAY_SYNC_HDR_MODE: &str = "video.display_sync_hdr_mode";
+const VID_DISPLAY_SYNC_WCG_MODE: &str = "video.display_sync_wcg_mode";
+const VID_DISPLAY_SYNC_TRAILERS: &str = "video.display_sync_trailers";
 
 // ── Audio section rows ────────────────────────────────────────────────────────
-const AUD_AUDIO_DEVICE:  &str = "audio.device";
-const AUD_CHANNELS:      &str = "audio.channels";
-const AUD_SPDIF:         &str = "audio.spdif";
-const AUD_SPDIF_AC3:     &str = "audio.spdif_ac3";
-const AUD_SPDIF_EAC3:    &str = "audio.spdif_eac3";
-const AUD_SPDIF_DTS:     &str = "audio.spdif_dts";
-const AUD_SPDIF_DTS_HD:  &str = "audio.spdif_dts_hd";
-const AUD_SPDIF_TRUEHD:  &str = "audio.spdif_truehd";
+const AUD_AUDIO_DEVICE: &str = "audio.device";
+const AUD_CHANNELS: &str = "audio.channels";
+const AUD_SPDIF: &str = "audio.spdif";
+const AUD_SPDIF_AC3: &str = "audio.spdif_ac3";
+const AUD_SPDIF_EAC3: &str = "audio.spdif_eac3";
+const AUD_SPDIF_DTS: &str = "audio.spdif_dts";
+const AUD_SPDIF_DTS_HD: &str = "audio.spdif_dts_hd";
+const AUD_SPDIF_TRUEHD: &str = "audio.spdif_truehd";
 const AUD_PASSTHROUGH_DEVICE: &str = "audio.passthrough_device"; // hidden when SPDIF off
-const AUD_ALSA_IRQ:      &str = "audio.alsa_irq"; // virtual — hidden when SPDIF off or non-PipeWire device
+const AUD_ALSA_IRQ: &str = "audio.alsa_irq"; // virtual — hidden when SPDIF off or non-PipeWire device
 const AUD_SKIP_FADE_MUTE: &str = "audio.skip_fade_mute"; // virtual — hidden when SPDIF off
-const AUD_AUDIO_LANG:    &str = "audio.lang";
-const AUD_GAPLESS:       &str = "audio.gapless";
+const AUD_AUDIO_LANG: &str = "audio.lang";
+const AUD_GAPLESS: &str = "audio.gapless";
 const AUD_NOW_PLAYING_AUTO_OPEN: &str = "audio.now_playing_auto_open";
 
 // ── Player (config) section rows ──────────────────────────────────────────────
-const PLY_SUB_ENABLED:     &str = "player.sub_enabled";
-const PLY_SUB_LANG:        &str = "player.sub_lang";
-const PLY_SUB_LANG2:       &str = "player.sub_lang2";
-const PLY_SUB_TYPE:        &str = "player.sub_type";
-const PLY_SUB_SCALE:       &str = "player.sub_scale";
-const PLY_SUB_POS:         &str = "player.sub_pos";
+const PLY_SUB_ENABLED: &str = "player.sub_enabled";
+const PLY_SUB_LANG: &str = "player.sub_lang";
+const PLY_SUB_LANG2: &str = "player.sub_lang2";
+const PLY_SUB_TYPE: &str = "player.sub_type";
+const PLY_SUB_SCALE: &str = "player.sub_scale";
+const PLY_SUB_POS: &str = "player.sub_pos";
 const PLY_SUB_RESPECT_ASS: &str = "player.sub_respect_ass";
-const PLY_SUB_COLOR:       &str = "player.sub_color";      // virtual — only when !sub_respect_ass_styling
-const PLY_SUB_BACKGROUND:  &str = "player.sub_background"; // virtual — only when !sub_respect_ass_styling
-const PLY_CACHE_SECS:      &str = "player.cache_secs";
-const PLY_CACHE_MAX_MB:    &str = "player.cache_max_mb";
-const PLY_INTRO_MODE:      &str = "player.intro_mode";
-const PLY_INTRO_SECS:      &str = "player.intro_secs";      // virtual — only when intro_mode == "ask-timed"
-const PLY_RECAP_MODE:      &str = "player.recap_mode";
-const PLY_RECAP_SECS:      &str = "player.recap_secs";      // virtual
-const PLY_PREVIEW_MODE:    &str = "player.preview_mode";
-const PLY_PREVIEW_SECS:    &str = "player.preview_secs";    // virtual
+const PLY_SUB_COLOR: &str = "player.sub_color"; // virtual — only when !sub_respect_ass_styling
+const PLY_SUB_BACKGROUND: &str = "player.sub_background"; // virtual — only when !sub_respect_ass_styling
+const PLY_CACHE_SECS: &str = "player.cache_secs";
+const PLY_CACHE_MAX_MB: &str = "player.cache_max_mb";
+const PLY_INTRO_MODE: &str = "player.intro_mode";
+const PLY_INTRO_SECS: &str = "player.intro_secs"; // virtual — only when intro_mode == "ask-timed"
+const PLY_RECAP_MODE: &str = "player.recap_mode";
+const PLY_RECAP_SECS: &str = "player.recap_secs"; // virtual
+const PLY_PREVIEW_MODE: &str = "player.preview_mode";
+const PLY_PREVIEW_SECS: &str = "player.preview_secs"; // virtual
 const PLY_COMMERCIAL_MODE: &str = "player.commercial_mode";
 const PLY_COMMERCIAL_SECS: &str = "player.commercial_secs"; // virtual
-const PLY_CREDITS_MODE:    &str = "player.credits_mode";
-const PLY_CREDITS_SECS:    &str = "player.credits_secs";    // virtual — only when credits_mode == "ask"
-const PLY_SEEK_STEP:       &str = "player.seek_step";
-const PLY_SEEK_STEP_LONG:  &str = "player.seek_step_long";
-const PLY_SKIP_FADE_MS:    &str = "player.skip_fade_ms";
+const PLY_CREDITS_MODE: &str = "player.credits_mode";
+const PLY_CREDITS_SECS: &str = "player.credits_secs"; // virtual — only when credits_mode == "ask"
+const PLY_SEEK_STEP: &str = "player.seek_step";
+const PLY_SEEK_STEP_LONG: &str = "player.seek_step_long";
+const PLY_SKIP_FADE_MS: &str = "player.skip_fade_ms";
 
 // ── UI section rows ───────────────────────────────────────────────────────────
-const UI_SCROLL_SPEED:       &str = "ui.scroll_speed";
-const UI_ANIMATION_SPEED:    &str = "ui.animation_speed";
-const UI_FONT_FAMILY:        &str = "ui.font_family";
-const UI_ONSCREEN_KEYBOARD:  &str = "ui.onscreen_keyboard"; // 2026-08-27, default on
+const UI_SCROLL_SPEED: &str = "ui.scroll_speed";
+const UI_ANIMATION_SPEED: &str = "ui.animation_speed";
+const UI_FONT_FAMILY: &str = "ui.font_family";
+const UI_ONSCREEN_KEYBOARD: &str = "ui.onscreen_keyboard"; // 2026-08-27, default on
 
 // ── Integrations section rows ─────────────────────────────────────────────────
-const INT_SEERR_ENABLED:     &str = "integrations.seerr_enabled";
-const INT_SEERR_CONNECT:     &str = "integrations.seerr_connect"; // "Connect Seerr" / "Disconnect"
-const INT_STREAMING_REGION:  &str = "integrations.streaming_region";
-const INT_TRAILER_QUALITY:   &str = "integrations.trailer_quality";
-const INT_DISPLAY_LANGUAGE:  &str = "integrations.display_language";
+const INT_SEERR_ENABLED: &str = "integrations.seerr_enabled";
+const INT_SEERR_CONNECT: &str = "integrations.seerr_connect"; // "Connect Seerr" / "Disconnect"
+const INT_STREAMING_REGION: &str = "integrations.streaming_region";
+const INT_TRAILER_QUALITY: &str = "integrations.trailer_quality";
+const INT_DISPLAY_LANGUAGE: &str = "integrations.display_language";
 const INT_DISCOVER_LANGUAGE: &str = "integrations.discover_language";
-const INT_DISCOVER_REGION:   &str = "integrations.discover_region";
-const INT_MANAGE_BLOCKLIST:  &str = "integrations.manage_blocklist";
+const INT_DISCOVER_REGION: &str = "integrations.discover_region";
+const INT_MANAGE_BLOCKLIST: &str = "integrations.manage_blocklist";
 
 // ── Row existence per section (replaces the old duplicated skip-logic) ────────
 
@@ -340,8 +340,12 @@ fn section_row_keys(section: &str, g: &crate::AppState<'_>) -> Vec<&'static str>
             let mut rows = vec![AUD_AUDIO_DEVICE, AUD_CHANNELS, AUD_SPDIF];
             if g.get_settings_audio_spdif() {
                 rows.extend([
-                    AUD_SPDIF_AC3, AUD_SPDIF_EAC3, AUD_SPDIF_DTS, AUD_SPDIF_DTS_HD,
-                    AUD_SPDIF_TRUEHD, AUD_PASSTHROUGH_DEVICE,
+                    AUD_SPDIF_AC3,
+                    AUD_SPDIF_EAC3,
+                    AUD_SPDIF_DTS,
+                    AUD_SPDIF_DTS_HD,
+                    AUD_SPDIF_TRUEHD,
+                    AUD_PASSTHROUGH_DEVICE,
                 ]);
                 if g.get_settings_device_is_pipewire() {
                     rows.push(AUD_ALSA_IRQ);
@@ -355,8 +359,12 @@ fn section_row_keys(section: &str, g: &crate::AppState<'_>) -> Vec<&'static str>
             let mut rows = vec![PLY_SUB_ENABLED];
             if g.get_settings_sub_enabled() {
                 rows.extend([
-                    PLY_SUB_LANG, PLY_SUB_LANG2, PLY_SUB_TYPE, PLY_SUB_SCALE,
-                    PLY_SUB_POS, PLY_SUB_RESPECT_ASS,
+                    PLY_SUB_LANG,
+                    PLY_SUB_LANG2,
+                    PLY_SUB_TYPE,
+                    PLY_SUB_SCALE,
+                    PLY_SUB_POS,
+                    PLY_SUB_RESPECT_ASS,
                 ]);
                 if !g.get_settings_sub_respect_ass_styling() {
                     rows.extend([PLY_SUB_COLOR, PLY_SUB_BACKGROUND]);
@@ -389,15 +397,23 @@ fn section_row_keys(section: &str, g: &crate::AppState<'_>) -> Vec<&'static str>
             rows.push(PLY_SKIP_FADE_MS);
             rows
         }
-        SECTION_UI => vec![UI_SCROLL_SPEED, UI_ANIMATION_SPEED, UI_FONT_FAMILY, UI_ONSCREEN_KEYBOARD],
+        SECTION_UI => vec![
+            UI_SCROLL_SPEED,
+            UI_ANIMATION_SPEED,
+            UI_FONT_FAMILY,
+            UI_ONSCREEN_KEYBOARD,
+        ],
         SECTION_INTEGRATIONS => {
             let mut rows = vec![INT_SEERR_ENABLED];
             if g.get_settings_seerr_enabled() {
                 rows.push(INT_SEERR_CONNECT);
                 if g.get_seerr_connected() {
                     rows.extend([
-                        INT_STREAMING_REGION, INT_TRAILER_QUALITY, INT_DISPLAY_LANGUAGE,
-                        INT_DISCOVER_LANGUAGE, INT_DISCOVER_REGION,
+                        INT_STREAMING_REGION,
+                        INT_TRAILER_QUALITY,
+                        INT_DISPLAY_LANGUAGE,
+                        INT_DISCOVER_LANGUAGE,
+                        INT_DISCOVER_REGION,
                     ]);
                     if g.get_seerr_can_manage_blocklist() {
                         rows.push(INT_MANAGE_BLOCKLIST);
@@ -445,7 +461,10 @@ pub(crate) fn row_focused(g: &crate::AppState<'_>, key: &str) {
     }
     let rows = section_row_keys(g.get_settings_section().as_str(), g);
     let idx = rows.iter().position(|&k| k == key).unwrap_or(0) as i32;
-    debug!("settings: mouse click on {key} (resolved index={idx} of {} visible rows)", rows.len());
+    debug!(
+        "settings: mouse click on {key} (resolved index={idx} of {} visible rows)",
+        rows.len()
+    );
     set_focused(g, key, idx);
 }
 
@@ -475,7 +494,11 @@ pub(crate) fn dispatch_settings(action: &Action, g: &crate::AppState<'_>) -> Opt
 
     let sf = g.get_settings_focused();
     let ss = g.get_settings_section();
-    debug!("settings: dispatch action={action:?} section={:?} focused={:?}", ss.as_str(), sf.as_str());
+    debug!(
+        "settings: dispatch action={action:?} section={:?} focused={:?}",
+        ss.as_str(),
+        sf.as_str()
+    );
 
     // ── Dropdown popup open: intercept all input for in-popup navigation ──────
     if g.get_settings_dropdown_open() {
@@ -513,13 +536,20 @@ pub(crate) fn dispatch_settings(action: &Action, g: &crate::AppState<'_>) -> Opt
         let rows = section_row_keys(ss.as_str(), g);
         let idx = rows.iter().position(|&k| k == sf.as_str());
         if matches!(action, Action::Up | Action::Down) {
-            debug!("settings: {ss} has {} visible row(s), current idx={idx:?}, rows={rows:?}", rows.len());
+            debug!(
+                "settings: {ss} has {} visible row(s), current idx={idx:?}, rows={rows:?}",
+                rows.len()
+            );
         }
         match action {
             Action::Down => {
                 match idx {
                     Some(i) if i + 1 < rows.len() => set_focused(g, rows[i + 1], (i + 1) as i32),
-                    None => if let Some(&first) = rows.first() { set_focused(g, first, 0); },
+                    None => {
+                        if let Some(&first) = rows.first() {
+                            set_focused(g, first, 0);
+                        }
+                    }
                     _ => {}
                 }
                 Some(true)
@@ -528,7 +558,11 @@ pub(crate) fn dispatch_settings(action: &Action, g: &crate::AppState<'_>) -> Opt
                 match idx {
                     Some(0) => g.set_settings_focused("".into()),
                     Some(i) => set_focused(g, rows[i - 1], (i - 1) as i32),
-                    None => if let Some(&first) = rows.first() { set_focused(g, first, 0); },
+                    None => {
+                        if let Some(&first) = rows.first() {
+                            set_focused(g, first, 0);
+                        }
+                    }
                 }
                 Some(true)
             }
@@ -547,7 +581,9 @@ pub(crate) fn dispatch_settings(action: &Action, g: &crate::AppState<'_>) -> Opt
                 // Self-heal the same way Up/Down already do instead of
                 // acting on a key that's no longer actually on screen.
                 let Some(_) = idx else {
-                    if let Some(&first) = rows.first() { set_focused(g, first, 0); }
+                    if let Some(&first) = rows.first() {
+                        set_focused(g, first, 0);
+                    }
                     return Some(true);
                 };
                 // Dropdown rows: show overlay with cursor on current value.
@@ -561,7 +597,9 @@ pub(crate) fn dispatch_settings(action: &Action, g: &crate::AppState<'_>) -> Opt
             }
             Action::Right => {
                 let Some(_) = idx else {
-                    if let Some(&first) = rows.first() { set_focused(g, first, 0); }
+                    if let Some(&first) = rows.first() {
+                        set_focused(g, first, 0);
+                    }
                     return Some(true);
                 };
                 settings_row_action(sf.as_str(), g);
@@ -571,7 +609,10 @@ pub(crate) fn dispatch_settings(action: &Action, g: &crate::AppState<'_>) -> Opt
         }
     } else if !ss.as_str().is_empty() {
         // ── Left pane: section list navigation ───────────────────────────
-        let idx = ALL_SECTIONS.iter().position(|&s| s == ss.as_str()).unwrap_or(0);
+        let idx = ALL_SECTIONS
+            .iter()
+            .position(|&s| s == ss.as_str())
+            .unwrap_or(0);
         match action {
             Action::Down => {
                 if idx + 1 < ALL_SECTIONS.len() {
@@ -615,32 +656,74 @@ pub(crate) fn dispatch_settings(action: &Action, g: &crate::AppState<'_>) -> Opt
 // ── Dropdown helpers ──────────────────────────────────────────────────────────
 
 const LANG_MODEL: &[&str] = &[
-    "", "English", "German", "French", "Japanese", "Spanish", "Italian",
-    "Portuguese", "Russian", "Korean", "Chinese", "Dutch", "Swedish",
-    "Polish", "Czech", "Arabic", "Turkish", "Finnish", "Danish", "Norwegian",
+    "",
+    "English",
+    "German",
+    "French",
+    "Japanese",
+    "Spanish",
+    "Italian",
+    "Portuguese",
+    "Russian",
+    "Korean",
+    "Chinese",
+    "Dutch",
+    "Swedish",
+    "Polish",
+    "Czech",
+    "Arabic",
+    "Turkish",
+    "Finnish",
+    "Danish",
+    "Norwegian",
 ];
 
 const AUDIO_CHANNELS_MODEL: &[&str] = &[
-    "auto-safe", "auto", "stereo", "5.1", "7.1", "7.1,5.1,stereo",
+    "auto-safe",
+    "auto",
+    "stereo",
+    "5.1",
+    "7.1",
+    "7.1,5.1,stereo",
 ];
 
 const HWDEC_MODEL: &[&str] = &[
-    "auto","vulkan","vulkan-copy","nvdec","nvdec-copy",
-    "vaapi","vaapi-copy","vdpau","vdpau-copy","none",
+    "auto",
+    "vulkan",
+    "vulkan-copy",
+    "nvdec",
+    "nvdec-copy",
+    "vaapi",
+    "vaapi-copy",
+    "vdpau",
+    "vdpau-copy",
+    "none",
 ];
 const VF_MODEL: &[&str] = &[
-    "auto: nv12/p010","auto: yuv420p/yuv420p10le",
-    "format=yuv420p","format=yuv420p10le","format=nv12","format=p010",
+    "auto: nv12/p010",
+    "auto: yuv420p/yuv420p10le",
+    "format=yuv420p",
+    "format=yuv420p10le",
+    "format=nv12",
+    "format=p010",
 ];
-const DEINTERLACE_MODEL: &[&str] = &["no","auto","yes"];
+const DEINTERLACE_MODEL: &[&str] = &["no", "auto", "yes"];
 const VIDEO_SYNC_MODEL: &[&str] = &[
-    "audio","display-resample","display-vdrop","display-adrop","desync",
+    "audio",
+    "display-resample",
+    "display-vdrop",
+    "display-adrop",
+    "desync",
 ];
 const TSCALE_MODEL: &[&str] = &[
-    "oversample","catmull_rom","mitchell","gaussian","bicubic",
+    "oversample",
+    "catmull_rom",
+    "mitchell",
+    "gaussian",
+    "bicubic",
 ];
 const TONE_MAPPING_MODEL: &[&str] = &[
-    "auto","hable","bt.2390","reinhard","mobius","clip","gamma","linear",
+    "auto", "hable", "bt.2390", "reinhard", "mobius", "clip", "gamma", "linear",
 ];
 // display_sync (2026-09-18) — Default resolution/Default refresh rate
 // started as a small, pragmatic static list here (hand-picked common
@@ -657,44 +740,48 @@ const DISPLAY_SYNC_SCALE_MODEL: &[&str] = &["1.0", "1.25", "1.5", "1.75", "2.0"]
 const DISPLAY_SYNC_4K_ODD_FPS_MODEL: &[&str] = &["fallback", "stay_4k"];
 const DISPLAY_SYNC_HDR_MODE_MODEL: &[&str] = &["yes", "no", "always"];
 const DISPLAY_SYNC_WCG_MODE_MODEL: &[&str] = &["auto", "yes", "no"];
-const SUB_TYPE_MODEL:   &[&str] = &["Any","Normal","Forced","Hearing Impaired"];
+const SUB_TYPE_MODEL: &[&str] = &["Any", "Normal", "Forced", "Hearing Impaired"];
 // "0" = mpv's own huge default (effectively unlimited, capped by
 // CACHE_MAX_MB_MODEL below) — displayed as "Unlimited" via display_val.
-const CACHE_SECS_MODEL:    &[&str] = &["0","10","30","60","120","300"];
-const CACHE_SECS_VALUES:   &[i32]  = &[0, 10, 30, 60, 120, 300];
+const CACHE_SECS_MODEL: &[&str] = &["0", "10", "30", "60", "120", "300"];
+const CACHE_SECS_VALUES: &[i32] = &[0, 10, 30, 60, 120, 300];
 // "0" here means a genuinely raised byte ceiling (mpv.rs sets
 // demuxer-max-bytes to a large fixed value, not mpv's own 150 MiB stock
 // default — see its own doc comment), so Cache Duration alone governs —
 // also displayed as "Unlimited" via display_val.
-const CACHE_MAX_MB_MODEL:  &[&str] = &["0","150","300","500","1000","2000"];
-const CACHE_MAX_MB_VALUES: &[i32]  = &[0, 150, 300, 500, 1000, 2000];
-const SKIP_MODE_4_MODEL: &[&str] = &["always-skip","ask","ask-timed","never-skip"];
-const SKIP_MODE_3_MODEL: &[&str] = &["always-skip","ask","never-skip"];
-const SKIP_SECS_MODEL:   &[&str] = &["3","5","8","10","15","20","30"];
-const CREDITS_SECS_MODEL: &[&str] = &["10","15","20","30","45","60"];
-const LOG_LEVEL_MODEL: &[&str] = &["error","warn","info","debug"];
-const LAUNCH_POLICY_MODEL: &[&str] = &["always_ask","remember_last","default"];
-const SUB_SCALE_MODEL: &[&str] = &["50","75","100","125","150","175","200"];
+const CACHE_MAX_MB_MODEL: &[&str] = &["0", "150", "300", "500", "1000", "2000"];
+const CACHE_MAX_MB_VALUES: &[i32] = &[0, 150, 300, 500, 1000, 2000];
+const SKIP_MODE_4_MODEL: &[&str] = &["always-skip", "ask", "ask-timed", "never-skip"];
+const SKIP_MODE_3_MODEL: &[&str] = &["always-skip", "ask", "never-skip"];
+const SKIP_SECS_MODEL: &[&str] = &["3", "5", "8", "10", "15", "20", "30"];
+const CREDITS_SECS_MODEL: &[&str] = &["10", "15", "20", "30", "45", "60"];
+const LOG_LEVEL_MODEL: &[&str] = &["error", "warn", "info", "debug"];
+const LAUNCH_POLICY_MODEL: &[&str] = &["always_ask", "remember_last", "default"];
+const SUB_SCALE_MODEL: &[&str] = &["50", "75", "100", "125", "150", "175", "200"];
 // mpv's real supported range is 0-150 (verified via `man mpv` 0.41.0) — 100 is
 // mpv's own "default bottom" position, not the screen edge; values above 100
 // push subtitles further down still. Text/ASS subs can get clipped above 100
 // (a libass restriction, per the same manual page), which is why the row's
 // subtitle string calls this out rather than silently allowing it.
-const SUB_POS_MODEL:   &[&str] = &["50","60","70","80","90","95","100","110","120","130","140","150"];
+const SUB_POS_MODEL: &[&str] = &[
+    "50", "60", "70", "80", "90", "95", "100", "110", "120", "130", "140", "150",
+];
 // Display names stored directly in Config.sub_color (like LANG_MODEL stores
 // display language names) — translated to an actual mpv hex color at point
 // of use, not here.
 const SUB_COLOR_MODEL: &[&str] = &["", "White", "Yellow", "Cyan", "Green"];
-const SEEK_STEP_MODEL:      &[&str] = &["5","10","15","20","30"];
-const SEEK_STEP_LONG_MODEL: &[&str] = &["15","30","45","60","120"];
+const SEEK_STEP_MODEL: &[&str] = &["5", "10", "15", "20", "30"];
+const SEEK_STEP_LONG_MODEL: &[&str] = &["15", "30", "45", "60", "120"];
 // "0" = instant (today's pre-feature hard cut, display_val below reads it
 // as "Off"); 200 is the shipped default. Both halves of the fade (out and
 // in) use this same duration — see wire_mpv_timer's own doc comment.
-const SKIP_FADE_MS_MODEL: &[&str] = &["0","100","150","200","300","400","500","750","1000"];
+const SKIP_FADE_MS_MODEL: &[&str] = &["0", "100", "150", "200", "300", "400", "500", "750", "1000"];
 // Percentage is a DURATION multiplier, not a rate — bigger % means the
 // transition takes longer, i.e. slower, which is the opposite of what
 // "speed" suggests at a glance (see the row subtitle text in settings.slint).
-const SPEED_PCT_MODEL: &[&str] = &["0","25","50","75","100","150","200","300","400","500"];
+const SPEED_PCT_MODEL: &[&str] = &[
+    "0", "25", "50", "75", "100", "150", "200", "300", "400", "500",
+];
 // Display-ready values stored directly in Config.trailer_quality, same
 // idiom as SUB_COLOR_MODEL above — translated to an mpv ytdl-format string
 // only at point of use (main.rs::trailer_ytdl_format), not here.
@@ -739,51 +826,54 @@ fn display_val<'a>(val: &'a str, key: &str) -> &'a str {
     }
     if key == PROF_LAUNCH_POLICY {
         return match val {
-            "always_ask"    => "Always Ask",
+            "always_ask" => "Always Ask",
             "remember_last" => "Remember Last",
-            "default"       => "Default Profile",
-            _               => val,
+            "default" => "Default Profile",
+            _ => val,
         };
     }
     if key == PROF_ACCOUNT_LAUNCH_POLICY {
         return match val {
-            "always_ask"    => "Always Ask",
+            "always_ask" => "Always Ask",
             "remember_last" => "Remember Last",
-            "default"       => "Default Account",
-            _               => val,
+            "default" => "Default Account",
+            _ => val,
         };
     }
     // Skip mode display names (only for skip mode rows)
-    if matches!(key, PLY_INTRO_MODE | PLY_RECAP_MODE | PLY_PREVIEW_MODE | PLY_COMMERCIAL_MODE | PLY_CREDITS_MODE) {
+    if matches!(
+        key,
+        PLY_INTRO_MODE | PLY_RECAP_MODE | PLY_PREVIEW_MODE | PLY_COMMERCIAL_MODE | PLY_CREDITS_MODE
+    ) {
         return match val {
             "always-skip" => "Always skip",
-            "ask"         => "Ask",
-            "ask-timed"   => "Ask (timed)",
-            "never-skip"  => "Never skip",
-            _             => val,
+            "ask" => "Ask",
+            "ask-timed" => "Ask (timed)",
+            "never-skip" => "Never skip",
+            _ => val,
         };
     }
     if key == VID_DISPLAY_SYNC_4K_ODD_FPS_MODE {
         return match val {
             "fallback" => "Fallback to default resolution",
-            "stay_4k"  => "Stay at 4K",
-            _          => val,
+            "stay_4k" => "Stay at 4K",
+            _ => val,
         };
     }
     if key == VID_DISPLAY_SYNC_HDR_MODE {
         return match val {
-            "yes"    => "Match source",
-            "no"     => "Never",
+            "yes" => "Match source",
+            "no" => "Never",
             "always" => "Always",
-            _        => val,
+            _ => val,
         };
     }
     if key == VID_DISPLAY_SYNC_WCG_MODE {
         return match val {
             "auto" => "Follow HDR",
-            "yes"  => "Always",
-            "no"   => "Never",
-            _      => val,
+            "yes" => "Always",
+            "no" => "Never",
+            _ => val,
         };
     }
     val
@@ -793,29 +883,33 @@ fn display_val<'a>(val: &'a str, key: &str) -> &'a str {
 // action rows AND for the 7 dynamic-dropdown rows (see is_dynamic_dropdown).
 fn dropdown_model(key: &str) -> Option<&'static [&'static str]> {
     match key {
-        GEN_LOG_LEVEL      => Some(LOG_LEVEL_MODEL),
+        GEN_LOG_LEVEL => Some(LOG_LEVEL_MODEL),
         PROF_LAUNCH_POLICY | PROF_ACCOUNT_LAUNCH_POLICY => Some(LAUNCH_POLICY_MODEL),
-        VID_HWDEC          => Some(HWDEC_MODEL),
-        VID_VF             => Some(VF_MODEL),
-        VID_DEINTERLACE    => Some(DEINTERLACE_MODEL),
-        VID_VIDEO_SYNC     => Some(VIDEO_SYNC_MODEL),
-        VID_TSCALE         => Some(TSCALE_MODEL),
-        VID_TONE_MAPPING   => Some(TONE_MAPPING_MODEL),
-        AUD_CHANNELS       => Some(AUDIO_CHANNELS_MODEL),
+        VID_HWDEC => Some(HWDEC_MODEL),
+        VID_VF => Some(VF_MODEL),
+        VID_DEINTERLACE => Some(DEINTERLACE_MODEL),
+        VID_VIDEO_SYNC => Some(VIDEO_SYNC_MODEL),
+        VID_TSCALE => Some(TSCALE_MODEL),
+        VID_TONE_MAPPING => Some(TONE_MAPPING_MODEL),
+        AUD_CHANNELS => Some(AUDIO_CHANNELS_MODEL),
         AUD_AUDIO_LANG | PLY_SUB_LANG | PLY_SUB_LANG2 => Some(LANG_MODEL),
-        PLY_SUB_TYPE       => Some(SUB_TYPE_MODEL),
-        PLY_SUB_SCALE      => Some(SUB_SCALE_MODEL),
-        PLY_SUB_POS        => Some(SUB_POS_MODEL),
-        PLY_SUB_COLOR      => Some(SUB_COLOR_MODEL),
-        PLY_CACHE_SECS     => Some(CACHE_SECS_MODEL),
-        PLY_CACHE_MAX_MB   => Some(CACHE_MAX_MB_MODEL),
-        PLY_INTRO_MODE | PLY_RECAP_MODE | PLY_PREVIEW_MODE | PLY_COMMERCIAL_MODE => Some(SKIP_MODE_4_MODEL),
-        PLY_CREDITS_MODE   => Some(SKIP_MODE_3_MODEL),
-        PLY_INTRO_SECS | PLY_RECAP_SECS | PLY_PREVIEW_SECS | PLY_COMMERCIAL_SECS => Some(SKIP_SECS_MODEL),
-        PLY_CREDITS_SECS   => Some(CREDITS_SECS_MODEL),
-        PLY_SEEK_STEP      => Some(SEEK_STEP_MODEL),
+        PLY_SUB_TYPE => Some(SUB_TYPE_MODEL),
+        PLY_SUB_SCALE => Some(SUB_SCALE_MODEL),
+        PLY_SUB_POS => Some(SUB_POS_MODEL),
+        PLY_SUB_COLOR => Some(SUB_COLOR_MODEL),
+        PLY_CACHE_SECS => Some(CACHE_SECS_MODEL),
+        PLY_CACHE_MAX_MB => Some(CACHE_MAX_MB_MODEL),
+        PLY_INTRO_MODE | PLY_RECAP_MODE | PLY_PREVIEW_MODE | PLY_COMMERCIAL_MODE => {
+            Some(SKIP_MODE_4_MODEL)
+        }
+        PLY_CREDITS_MODE => Some(SKIP_MODE_3_MODEL),
+        PLY_INTRO_SECS | PLY_RECAP_SECS | PLY_PREVIEW_SECS | PLY_COMMERCIAL_SECS => {
+            Some(SKIP_SECS_MODEL)
+        }
+        PLY_CREDITS_SECS => Some(CREDITS_SECS_MODEL),
+        PLY_SEEK_STEP => Some(SEEK_STEP_MODEL),
         PLY_SEEK_STEP_LONG => Some(SEEK_STEP_LONG_MODEL),
-        PLY_SKIP_FADE_MS   => Some(SKIP_FADE_MS_MODEL),
+        PLY_SKIP_FADE_MS => Some(SKIP_FADE_MS_MODEL),
         UI_SCROLL_SPEED | UI_ANIMATION_SPEED => Some(SPEED_PCT_MODEL),
         INT_TRAILER_QUALITY => Some(TRAILER_QUALITY_MODEL),
         VID_DISPLAY_SYNC_SCALE_4K | VID_DISPLAY_SYNC_SCALE_1080P => Some(DISPLAY_SYNC_SCALE_MODEL),
@@ -831,11 +925,20 @@ fn dropdown_model(key: &str) -> Option<&'static [&'static str]> {
 // Seerr's own settings/regions/languages endpoints, or kscreen-doctor)
 // rather than a fixed compile-time list.
 fn is_dynamic_dropdown(key: &str) -> bool {
-    matches!(key,
-        PROF_DEFAULT_PROFILE | PROF_DEFAULT_ACCOUNT
-        | AUD_AUDIO_DEVICE | AUD_PASSTHROUGH_DEVICE | UI_FONT_FAMILY
-        | INT_STREAMING_REGION | INT_DISPLAY_LANGUAGE | INT_DISCOVER_LANGUAGE | INT_DISCOVER_REGION
-        | VID_DISPLAY_SYNC_SCREEN | VID_DISPLAY_SYNC_DEFAULT_RESOLUTION | VID_DISPLAY_SYNC_DEFAULT_HZ
+    matches!(
+        key,
+        PROF_DEFAULT_PROFILE
+            | PROF_DEFAULT_ACCOUNT
+            | AUD_AUDIO_DEVICE
+            | AUD_PASSTHROUGH_DEVICE
+            | UI_FONT_FAMILY
+            | INT_STREAMING_REGION
+            | INT_DISPLAY_LANGUAGE
+            | INT_DISCOVER_LANGUAGE
+            | INT_DISCOVER_REGION
+            | VID_DISPLAY_SYNC_SCREEN
+            | VID_DISPLAY_SYNC_DEFAULT_RESOLUTION
+            | VID_DISPLAY_SYNC_DEFAULT_HZ
     )
 }
 
@@ -845,54 +948,56 @@ fn is_dropdown_row(key: &str) -> bool {
 
 fn current_value_str(key: &str, g: &crate::AppState<'_>) -> String {
     match key {
-        GEN_LOG_LEVEL      => g.get_settings_log_level().to_string(),
+        GEN_LOG_LEVEL => g.get_settings_log_level().to_string(),
         PROF_LAUNCH_POLICY => g.get_settings_launch_policy().to_string(),
         PROF_ACCOUNT_LAUNCH_POLICY => g.get_settings_account_launch_policy().to_string(),
-        VID_HWDEC          => g.get_settings_hwdec().to_string(),
-        VID_VF             => g.get_settings_vf().to_string(),
-        VID_DEINTERLACE    => g.get_settings_deinterlace().to_string(),
-        VID_VIDEO_SYNC     => g.get_settings_video_sync().to_string(),
-        VID_TSCALE         => g.get_settings_tscale().to_string(),
-        VID_TONE_MAPPING   => g.get_settings_tone_mapping().to_string(),
-        AUD_AUDIO_DEVICE       => g.get_settings_audio_device_desc().to_string(),
-        AUD_CHANNELS           => g.get_settings_audio_channels().to_string(),
+        VID_HWDEC => g.get_settings_hwdec().to_string(),
+        VID_VF => g.get_settings_vf().to_string(),
+        VID_DEINTERLACE => g.get_settings_deinterlace().to_string(),
+        VID_VIDEO_SYNC => g.get_settings_video_sync().to_string(),
+        VID_TSCALE => g.get_settings_tscale().to_string(),
+        VID_TONE_MAPPING => g.get_settings_tone_mapping().to_string(),
+        AUD_AUDIO_DEVICE => g.get_settings_audio_device_desc().to_string(),
+        AUD_CHANNELS => g.get_settings_audio_channels().to_string(),
         AUD_PASSTHROUGH_DEVICE => g.get_settings_passthrough_device_desc().to_string(),
-        AUD_AUDIO_LANG     => g.get_settings_audio_lang().to_string(),
-        PLY_SUB_LANG       => g.get_settings_sub_lang().to_string(),
-        PLY_SUB_LANG2      => g.get_settings_sub_lang2().to_string(),
-        PLY_SUB_TYPE       => {
+        AUD_AUDIO_LANG => g.get_settings_audio_lang().to_string(),
+        PLY_SUB_LANG => g.get_settings_sub_lang().to_string(),
+        PLY_SUB_LANG2 => g.get_settings_sub_lang2().to_string(),
+        PLY_SUB_TYPE => {
             let v = g.get_settings_sub_type().to_string();
             if v.is_empty() { "Any".to_string() } else { v }
         }
-        PLY_SUB_SCALE      => g.get_settings_sub_scale_pct().to_string(),
-        PLY_SUB_POS        => g.get_settings_sub_pos_pct().to_string(),
-        PLY_SUB_COLOR      => g.get_settings_sub_color().to_string(),
-        PLY_CACHE_SECS     => g.get_settings_cache_secs().to_string(),
-        PLY_CACHE_MAX_MB   => g.get_settings_cache_max_mb().to_string(),
-        PLY_INTRO_MODE      => g.get_settings_skip_intro_mode().to_string(),
-        PLY_INTRO_SECS      => g.get_settings_skip_intro_secs().to_string(),
-        PLY_RECAP_MODE      => g.get_settings_skip_recap_mode().to_string(),
-        PLY_RECAP_SECS      => g.get_settings_skip_recap_secs().to_string(),
-        PLY_PREVIEW_MODE    => g.get_settings_skip_preview_mode().to_string(),
-        PLY_PREVIEW_SECS    => g.get_settings_skip_preview_secs().to_string(),
+        PLY_SUB_SCALE => g.get_settings_sub_scale_pct().to_string(),
+        PLY_SUB_POS => g.get_settings_sub_pos_pct().to_string(),
+        PLY_SUB_COLOR => g.get_settings_sub_color().to_string(),
+        PLY_CACHE_SECS => g.get_settings_cache_secs().to_string(),
+        PLY_CACHE_MAX_MB => g.get_settings_cache_max_mb().to_string(),
+        PLY_INTRO_MODE => g.get_settings_skip_intro_mode().to_string(),
+        PLY_INTRO_SECS => g.get_settings_skip_intro_secs().to_string(),
+        PLY_RECAP_MODE => g.get_settings_skip_recap_mode().to_string(),
+        PLY_RECAP_SECS => g.get_settings_skip_recap_secs().to_string(),
+        PLY_PREVIEW_MODE => g.get_settings_skip_preview_mode().to_string(),
+        PLY_PREVIEW_SECS => g.get_settings_skip_preview_secs().to_string(),
         PLY_COMMERCIAL_MODE => g.get_settings_skip_commercial_mode().to_string(),
         PLY_COMMERCIAL_SECS => g.get_settings_skip_commercial_secs().to_string(),
-        PLY_CREDITS_MODE    => g.get_settings_skip_credits_mode().to_string(),
-        PLY_CREDITS_SECS    => g.get_settings_skip_credits_secs().to_string(),
-        PLY_SEEK_STEP       => g.get_settings_seek_step_secs().to_string(),
-        PLY_SEEK_STEP_LONG  => g.get_settings_seek_step_long_secs().to_string(),
-        PLY_SKIP_FADE_MS    => g.get_settings_skip_fade_ms().to_string(),
-        UI_SCROLL_SPEED     => g.get_settings_scroll_speed_pct().to_string(),
-        UI_ANIMATION_SPEED  => g.get_settings_animation_speed_pct().to_string(),
-        UI_FONT_FAMILY      => g.get_settings_font_family_desc().to_string(),
+        PLY_CREDITS_MODE => g.get_settings_skip_credits_mode().to_string(),
+        PLY_CREDITS_SECS => g.get_settings_skip_credits_secs().to_string(),
+        PLY_SEEK_STEP => g.get_settings_seek_step_secs().to_string(),
+        PLY_SEEK_STEP_LONG => g.get_settings_seek_step_long_secs().to_string(),
+        PLY_SKIP_FADE_MS => g.get_settings_skip_fade_ms().to_string(),
+        UI_SCROLL_SPEED => g.get_settings_scroll_speed_pct().to_string(),
+        UI_ANIMATION_SPEED => g.get_settings_animation_speed_pct().to_string(),
+        UI_FONT_FAMILY => g.get_settings_font_family_desc().to_string(),
         INT_STREAMING_REGION => g.get_settings_streaming_region_desc().to_string(),
-        INT_TRAILER_QUALITY  => g.get_settings_trailer_quality().to_string(),
-        INT_DISCOVER_REGION  => g.get_settings_discover_region_desc().to_string(),
-        VID_DISPLAY_SYNC_SCALE_4K           => g.get_settings_display_sync_scale_4k().to_string(),
-        VID_DISPLAY_SYNC_SCALE_1080P        => g.get_settings_display_sync_scale_1080p().to_string(),
-        VID_DISPLAY_SYNC_4K_ODD_FPS_MODE    => g.get_settings_display_sync_4k_odd_fps_mode().to_string(),
-        VID_DISPLAY_SYNC_HDR_MODE           => g.get_settings_display_sync_hdr_mode().to_string(),
-        VID_DISPLAY_SYNC_WCG_MODE           => g.get_settings_display_sync_wcg_mode().to_string(),
+        INT_TRAILER_QUALITY => g.get_settings_trailer_quality().to_string(),
+        INT_DISCOVER_REGION => g.get_settings_discover_region_desc().to_string(),
+        VID_DISPLAY_SYNC_SCALE_4K => g.get_settings_display_sync_scale_4k().to_string(),
+        VID_DISPLAY_SYNC_SCALE_1080P => g.get_settings_display_sync_scale_1080p().to_string(),
+        VID_DISPLAY_SYNC_4K_ODD_FPS_MODE => {
+            g.get_settings_display_sync_4k_odd_fps_mode().to_string()
+        }
+        VID_DISPLAY_SYNC_HDR_MODE => g.get_settings_display_sync_hdr_mode().to_string(),
+        VID_DISPLAY_SYNC_WCG_MODE => g.get_settings_display_sync_wcg_mode().to_string(),
         _ => String::new(),
     }
 }
@@ -904,18 +1009,45 @@ pub(crate) fn open_dropdown_popup(key: &str, g: &crate::AppState<'_>) {
     // Dynamic dropdowns: display list + current desc live on AppState
     // properties populated by an async fetch, not a fixed compile-time list.
     let dynamic: Option<(ModelRc<SharedString>, SharedString)> = match key {
-        PROF_DEFAULT_PROFILE   => Some((g.get_settings_default_profile_display(), g.get_settings_default_profile_desc())),
-        PROF_DEFAULT_ACCOUNT   => Some((g.get_settings_default_account_display(), g.get_settings_default_account_desc())),
-        AUD_AUDIO_DEVICE       => Some((g.get_settings_audio_device_display(), g.get_settings_audio_device_desc())),
-        AUD_PASSTHROUGH_DEVICE => Some((g.get_settings_audio_device_display(), g.get_settings_passthrough_device_desc())),
-        UI_FONT_FAMILY         => Some((g.get_settings_font_family_display(), g.get_settings_font_family_desc())),
-        INT_STREAMING_REGION   => Some((g.get_settings_streaming_region_display(), g.get_settings_streaming_region_desc())),
-        INT_DISPLAY_LANGUAGE   => Some((g.get_settings_display_language_display(), g.get_settings_display_language_desc())),
-        INT_DISCOVER_LANGUAGE  => Some((g.get_settings_discover_language_display(), g.get_settings_discover_language_desc())),
+        PROF_DEFAULT_PROFILE => Some((
+            g.get_settings_default_profile_display(),
+            g.get_settings_default_profile_desc(),
+        )),
+        PROF_DEFAULT_ACCOUNT => Some((
+            g.get_settings_default_account_display(),
+            g.get_settings_default_account_desc(),
+        )),
+        AUD_AUDIO_DEVICE => Some((
+            g.get_settings_audio_device_display(),
+            g.get_settings_audio_device_desc(),
+        )),
+        AUD_PASSTHROUGH_DEVICE => Some((
+            g.get_settings_audio_device_display(),
+            g.get_settings_passthrough_device_desc(),
+        )),
+        UI_FONT_FAMILY => Some((
+            g.get_settings_font_family_display(),
+            g.get_settings_font_family_desc(),
+        )),
+        INT_STREAMING_REGION => Some((
+            g.get_settings_streaming_region_display(),
+            g.get_settings_streaming_region_desc(),
+        )),
+        INT_DISPLAY_LANGUAGE => Some((
+            g.get_settings_display_language_display(),
+            g.get_settings_display_language_desc(),
+        )),
+        INT_DISCOVER_LANGUAGE => Some((
+            g.get_settings_discover_language_display(),
+            g.get_settings_discover_language_desc(),
+        )),
         // Discover Region reuses Streaming Region's own already-fetched
         // list — the two settings share one region catalog, just a
         // different desc value for which one's currently set.
-        INT_DISCOVER_REGION    => Some((g.get_settings_streaming_region_display(), g.get_settings_discover_region_desc())),
+        INT_DISCOVER_REGION => Some((
+            g.get_settings_streaming_region_display(),
+            g.get_settings_discover_region_desc(),
+        )),
         // Output's own desc is the annotated display label ("HDMI-A-2
         // (Primary)"), not the raw connector name — a real name<->desc
         // lookup exists for this one (FjordState.display_sync_outputs,
@@ -924,9 +1056,18 @@ pub(crate) fn open_dropdown_popup(key: &str, g: &crate::AppState<'_>) {
         // still the value directly (a plain resolution/Hz string, nothing
         // to annotate) — see display-sync-hz/resolution-selected's own doc
         // comments in app_state.slint.
-        VID_DISPLAY_SYNC_SCREEN => Some((g.get_settings_display_sync_screen_options(), g.get_settings_display_sync_screen_desc())),
-        VID_DISPLAY_SYNC_DEFAULT_RESOLUTION => Some((g.get_settings_display_sync_resolution_options(), g.get_settings_display_sync_default_resolution())),
-        VID_DISPLAY_SYNC_DEFAULT_HZ => Some((g.get_settings_display_sync_hz_options(), g.get_settings_display_sync_default_hz())),
+        VID_DISPLAY_SYNC_SCREEN => Some((
+            g.get_settings_display_sync_screen_options(),
+            g.get_settings_display_sync_screen_desc(),
+        )),
+        VID_DISPLAY_SYNC_DEFAULT_RESOLUTION => Some((
+            g.get_settings_display_sync_resolution_options(),
+            g.get_settings_display_sync_default_resolution(),
+        )),
+        VID_DISPLAY_SYNC_DEFAULT_HZ => Some((
+            g.get_settings_display_sync_hz_options(),
+            g.get_settings_display_sync_default_hz(),
+        )),
         _ => None,
     };
     if let Some((display, current_desc)) = dynamic {
@@ -937,7 +1078,9 @@ pub(crate) fn open_dropdown_popup(key: &str, g: &crate::AppState<'_>) {
             .unwrap_or(0) as i32;
         let items: Vec<SharedString> = (0..n).filter_map(|i| display.row_data(i)).collect();
         let current_display = items.get(cursor as usize).cloned().unwrap_or_default();
-        debug!("settings: open dynamic dropdown {key} ({n} options, cursor={cursor}, current={current_display})");
+        debug!(
+            "settings: open dynamic dropdown {key} ({n} options, cursor={cursor}, current={current_display})"
+        );
         g.set_settings_dropdown_model(ModelRc::new(VecModel::from(items)));
         g.set_settings_dropdown_display(current_display);
         g.set_settings_dropdown_cursor(cursor);
@@ -945,14 +1088,23 @@ pub(crate) fn open_dropdown_popup(key: &str, g: &crate::AppState<'_>) {
         return;
     }
     let Some(model) = dropdown_model(key) else {
-        debug!("settings: open_dropdown_popup({key}) — no model, not a dropdown row (bug if this fires)");
+        debug!(
+            "settings: open_dropdown_popup({key}) — no model, not a dropdown row (bug if this fires)"
+        );
         return;
     };
     let current = current_value_str(key, g);
-    let cursor = model.iter().position(|&v| v == current.as_str()).unwrap_or(0) as i32;
-    let display_items: Vec<SharedString> = model.iter().map(|&v| display_val(v, key).into()).collect();
+    let cursor = model
+        .iter()
+        .position(|&v| v == current.as_str())
+        .unwrap_or(0) as i32;
+    let display_items: Vec<SharedString> =
+        model.iter().map(|&v| display_val(v, key).into()).collect();
     let current_display: SharedString = display_val(current.as_str(), key).into();
-    debug!("settings: open static dropdown {key} ({} options, cursor={cursor}, current={current})", model.len());
+    debug!(
+        "settings: open static dropdown {key} ({} options, cursor={cursor}, current={current})",
+        model.len()
+    );
     g.set_settings_dropdown_model(ModelRc::new(VecModel::from(display_items)));
     g.set_settings_dropdown_display(current_display);
     g.set_settings_dropdown_cursor(cursor);
@@ -964,98 +1116,125 @@ pub(crate) fn apply_dropdown_selection(key: &str, cursor: i32, g: &crate::AppSta
     match key {
         PROF_DEFAULT_PROFILE => {
             let display = g.get_settings_default_profile_display();
-            if let Some(desc) = display.row_data(cursor as usize) { g.invoke_default_profile_selected(desc); }
+            if let Some(desc) = display.row_data(cursor as usize) {
+                g.invoke_default_profile_selected(desc);
+            }
             return;
         }
         PROF_DEFAULT_ACCOUNT => {
             let display = g.get_settings_default_account_display();
-            if let Some(desc) = display.row_data(cursor as usize) { g.invoke_default_account_selected(desc); }
+            if let Some(desc) = display.row_data(cursor as usize) {
+                g.invoke_default_account_selected(desc);
+            }
             return;
         }
         AUD_AUDIO_DEVICE | AUD_PASSTHROUGH_DEVICE => {
             let display = g.get_settings_audio_device_display();
             if let Some(desc) = display.row_data(cursor as usize) {
-                if key == AUD_AUDIO_DEVICE { g.invoke_audio_device_selected(desc); }
-                else { g.invoke_passthrough_device_selected(desc); }
+                if key == AUD_AUDIO_DEVICE {
+                    g.invoke_audio_device_selected(desc);
+                } else {
+                    g.invoke_passthrough_device_selected(desc);
+                }
             }
             return;
         }
         UI_FONT_FAMILY => {
             let display = g.get_settings_font_family_display();
-            if let Some(desc) = display.row_data(cursor as usize) { g.invoke_font_family_selected(desc); }
+            if let Some(desc) = display.row_data(cursor as usize) {
+                g.invoke_font_family_selected(desc);
+            }
             return;
         }
         INT_STREAMING_REGION => {
             let display = g.get_settings_streaming_region_display();
-            if let Some(desc) = display.row_data(cursor as usize) { g.invoke_streaming_region_selected(desc); }
+            if let Some(desc) = display.row_data(cursor as usize) {
+                g.invoke_streaming_region_selected(desc);
+            }
             return;
         }
         INT_DISPLAY_LANGUAGE => {
             let display = g.get_settings_display_language_display();
-            if let Some(desc) = display.row_data(cursor as usize) { g.invoke_display_language_selected(desc); }
+            if let Some(desc) = display.row_data(cursor as usize) {
+                g.invoke_display_language_selected(desc);
+            }
             return;
         }
         INT_DISCOVER_LANGUAGE => {
             let display = g.get_settings_discover_language_display();
-            if let Some(desc) = display.row_data(cursor as usize) { g.invoke_discover_language_selected(desc); }
+            if let Some(desc) = display.row_data(cursor as usize) {
+                g.invoke_discover_language_selected(desc);
+            }
             return;
         }
         INT_DISCOVER_REGION => {
             let display = g.get_settings_streaming_region_display();
-            if let Some(desc) = display.row_data(cursor as usize) { g.invoke_discover_region_selected(desc); }
+            if let Some(desc) = display.row_data(cursor as usize) {
+                g.invoke_discover_region_selected(desc);
+            }
             return;
         }
         VID_DISPLAY_SYNC_SCREEN => {
             let display = g.get_settings_display_sync_screen_options();
-            if let Some(desc) = display.row_data(cursor as usize) { g.invoke_display_sync_screen_selected(desc); }
+            if let Some(desc) = display.row_data(cursor as usize) {
+                g.invoke_display_sync_screen_selected(desc);
+            }
             return;
         }
         VID_DISPLAY_SYNC_DEFAULT_RESOLUTION => {
             let display = g.get_settings_display_sync_resolution_options();
-            if let Some(desc) = display.row_data(cursor as usize) { g.invoke_display_sync_resolution_selected(desc); }
+            if let Some(desc) = display.row_data(cursor as usize) {
+                g.invoke_display_sync_resolution_selected(desc);
+            }
             return;
         }
         VID_DISPLAY_SYNC_DEFAULT_HZ => {
             let display = g.get_settings_display_sync_hz_options();
-            if let Some(desc) = display.row_data(cursor as usize) { g.invoke_display_sync_hz_selected(desc); }
+            if let Some(desc) = display.row_data(cursor as usize) {
+                g.invoke_display_sync_hz_selected(desc);
+            }
             return;
         }
         _ => {}
     }
-    let Some(model) = dropdown_model(key) else { return };
-    let Some(&val) = model.get(cursor as usize) else { return };
+    let Some(model) = dropdown_model(key) else {
+        return;
+    };
+    let Some(&val) = model.get(cursor as usize) else {
+        return;
+    };
     match key {
-        GEN_LOG_LEVEL      => g.set_settings_log_level(val.into()),
+        GEN_LOG_LEVEL => g.set_settings_log_level(val.into()),
         PROF_LAUNCH_POLICY => g.set_settings_launch_policy(val.into()),
         PROF_ACCOUNT_LAUNCH_POLICY => g.set_settings_account_launch_policy(val.into()),
-        VID_HWDEC          => g.set_settings_hwdec(val.into()),
-        VID_VF             => g.set_settings_vf(val.into()),
-        VID_DEINTERLACE    => g.set_settings_deinterlace(val.into()),
-        VID_VIDEO_SYNC     => g.set_settings_video_sync(val.into()),
-        VID_TSCALE         => g.set_settings_tscale(val.into()),
-        VID_TONE_MAPPING   => g.set_settings_tone_mapping(val.into()),
-        AUD_CHANNELS       => g.set_settings_audio_channels(val.into()),
-        AUD_AUDIO_LANG     => g.set_settings_audio_lang(val.into()),
-        PLY_SUB_LANG       => g.set_settings_sub_lang(val.into()),
-        PLY_SUB_LANG2      => g.set_settings_sub_lang2(val.into()),
-        PLY_SUB_TYPE       => g.set_settings_sub_type(if val == "Any" { "".into() } else { val.into() }),
-        PLY_SUB_SCALE      => g.set_settings_sub_scale_pct(val.parse().unwrap_or(100)),
-        PLY_SUB_POS        => g.set_settings_sub_pos_pct(val.parse().unwrap_or(100)),
-        PLY_SUB_COLOR      => g.set_settings_sub_color(val.into()),
-        PLY_CACHE_SECS     => g.set_settings_cache_secs(val.parse().unwrap_or(60)),
-        PLY_CACHE_MAX_MB   => g.set_settings_cache_max_mb(val.parse().unwrap_or(500)),
-        PLY_INTRO_MODE      => g.set_settings_skip_intro_mode(val.into()),
-        PLY_INTRO_SECS      => g.set_settings_skip_intro_secs(val.parse().unwrap_or(8)),
-        PLY_RECAP_MODE      => g.set_settings_skip_recap_mode(val.into()),
-        PLY_RECAP_SECS      => g.set_settings_skip_recap_secs(val.parse().unwrap_or(8)),
-        PLY_PREVIEW_MODE    => g.set_settings_skip_preview_mode(val.into()),
-        PLY_PREVIEW_SECS    => g.set_settings_skip_preview_secs(val.parse().unwrap_or(8)),
+        VID_HWDEC => g.set_settings_hwdec(val.into()),
+        VID_VF => g.set_settings_vf(val.into()),
+        VID_DEINTERLACE => g.set_settings_deinterlace(val.into()),
+        VID_VIDEO_SYNC => g.set_settings_video_sync(val.into()),
+        VID_TSCALE => g.set_settings_tscale(val.into()),
+        VID_TONE_MAPPING => g.set_settings_tone_mapping(val.into()),
+        AUD_CHANNELS => g.set_settings_audio_channels(val.into()),
+        AUD_AUDIO_LANG => g.set_settings_audio_lang(val.into()),
+        PLY_SUB_LANG => g.set_settings_sub_lang(val.into()),
+        PLY_SUB_LANG2 => g.set_settings_sub_lang2(val.into()),
+        PLY_SUB_TYPE => g.set_settings_sub_type(if val == "Any" { "".into() } else { val.into() }),
+        PLY_SUB_SCALE => g.set_settings_sub_scale_pct(val.parse().unwrap_or(100)),
+        PLY_SUB_POS => g.set_settings_sub_pos_pct(val.parse().unwrap_or(100)),
+        PLY_SUB_COLOR => g.set_settings_sub_color(val.into()),
+        PLY_CACHE_SECS => g.set_settings_cache_secs(val.parse().unwrap_or(60)),
+        PLY_CACHE_MAX_MB => g.set_settings_cache_max_mb(val.parse().unwrap_or(500)),
+        PLY_INTRO_MODE => g.set_settings_skip_intro_mode(val.into()),
+        PLY_INTRO_SECS => g.set_settings_skip_intro_secs(val.parse().unwrap_or(8)),
+        PLY_RECAP_MODE => g.set_settings_skip_recap_mode(val.into()),
+        PLY_RECAP_SECS => g.set_settings_skip_recap_secs(val.parse().unwrap_or(8)),
+        PLY_PREVIEW_MODE => g.set_settings_skip_preview_mode(val.into()),
+        PLY_PREVIEW_SECS => g.set_settings_skip_preview_secs(val.parse().unwrap_or(8)),
         PLY_COMMERCIAL_MODE => g.set_settings_skip_commercial_mode(val.into()),
         PLY_COMMERCIAL_SECS => g.set_settings_skip_commercial_secs(val.parse().unwrap_or(8)),
-        PLY_CREDITS_MODE    => g.set_settings_skip_credits_mode(val.into()),
-        PLY_CREDITS_SECS    => g.set_settings_skip_credits_secs(val.parse().unwrap_or(30)),
-        PLY_SEEK_STEP       => g.set_settings_seek_step_secs(val.parse().unwrap_or(10)),
-        PLY_SEEK_STEP_LONG  => g.set_settings_seek_step_long_secs(val.parse().unwrap_or(30)),
+        PLY_CREDITS_MODE => g.set_settings_skip_credits_mode(val.into()),
+        PLY_CREDITS_SECS => g.set_settings_skip_credits_secs(val.parse().unwrap_or(30)),
+        PLY_SEEK_STEP => g.set_settings_seek_step_secs(val.parse().unwrap_or(10)),
+        PLY_SEEK_STEP_LONG => g.set_settings_seek_step_long_secs(val.parse().unwrap_or(30)),
         UI_SCROLL_SPEED => {
             let pct: i32 = val.parse().unwrap_or(100);
             g.set_settings_scroll_speed_pct(pct);
@@ -1086,7 +1265,9 @@ fn settings_row_action(key: &str, g: &crate::AppState<'_>) {
     }
     fn cycle_dynamic(display: ModelRc<SharedString>, current_desc: &str) -> Option<SharedString> {
         let n = display.row_count();
-        if n == 0 { return None; }
+        if n == 0 {
+            return None;
+        }
         let idx = (0..n)
             .find(|&i| display.row_data(i).map(|s| s.to_string()) == Some(current_desc.to_string()))
             .unwrap_or(0);
@@ -1104,27 +1285,39 @@ fn settings_row_action(key: &str, g: &crate::AppState<'_>) {
         }
         GEN_LOG_LEVEL => {
             let v = cycle(g.get_settings_log_level().as_str(), LOG_LEVEL_MODEL);
-            g.set_settings_log_level(v.into()); g.invoke_settings_changed();
+            g.set_settings_log_level(v.into());
+            g.invoke_settings_changed();
         }
         GEN_PREWARM_METADATA => g.invoke_prewarm_metadata(),
-        GEN_PREWARM_IMAGES   => g.invoke_prewarm_images(),
+        GEN_PREWARM_IMAGES => g.invoke_prewarm_images(),
 
         PROF_LAUNCH_POLICY => {
             let v = cycle(g.get_settings_launch_policy().as_str(), LAUNCH_POLICY_MODEL);
-            g.set_settings_launch_policy(v.into()); g.invoke_settings_changed();
+            g.set_settings_launch_policy(v.into());
+            g.invoke_settings_changed();
         }
         PROF_DEFAULT_PROFILE => {
-            if let Some(desc) = cycle_dynamic(g.get_settings_default_profile_display(), g.get_settings_default_profile_desc().as_str()) {
+            if let Some(desc) = cycle_dynamic(
+                g.get_settings_default_profile_display(),
+                g.get_settings_default_profile_desc().as_str(),
+            ) {
                 g.invoke_default_profile_selected(desc);
             }
         }
         PROF_MANAGE_PROFILES => g.invoke_open_manage_profiles(),
         PROF_ACCOUNT_LAUNCH_POLICY => {
-            let v = cycle(g.get_settings_account_launch_policy().as_str(), LAUNCH_POLICY_MODEL);
-            g.set_settings_account_launch_policy(v.into()); g.invoke_settings_changed();
+            let v = cycle(
+                g.get_settings_account_launch_policy().as_str(),
+                LAUNCH_POLICY_MODEL,
+            );
+            g.set_settings_account_launch_policy(v.into());
+            g.invoke_settings_changed();
         }
         PROF_DEFAULT_ACCOUNT => {
-            if let Some(desc) = cycle_dynamic(g.get_settings_default_account_display(), g.get_settings_default_account_desc().as_str()) {
+            if let Some(desc) = cycle_dynamic(
+                g.get_settings_default_account_display(),
+                g.get_settings_default_account_desc().as_str(),
+            ) {
                 g.invoke_default_account_selected(desc);
             }
         }
@@ -1145,19 +1338,23 @@ fn settings_row_action(key: &str, g: &crate::AppState<'_>) {
 
         VID_HWDEC => {
             let v = cycle(g.get_settings_hwdec().as_str(), HWDEC_MODEL);
-            g.set_settings_hwdec(v.into()); g.invoke_settings_changed();
+            g.set_settings_hwdec(v.into());
+            g.invoke_settings_changed();
         }
         VID_VF => {
             let v = cycle(g.get_settings_vf().as_str(), VF_MODEL);
-            g.set_settings_vf(v.into()); g.invoke_settings_changed();
+            g.set_settings_vf(v.into());
+            g.invoke_settings_changed();
         }
         VID_DEINTERLACE => {
             let v = cycle(g.get_settings_deinterlace().as_str(), DEINTERLACE_MODEL);
-            g.set_settings_deinterlace(v.into()); g.invoke_settings_changed();
+            g.set_settings_deinterlace(v.into());
+            g.invoke_settings_changed();
         }
         VID_VIDEO_SYNC => {
             let v = cycle(g.get_settings_video_sync().as_str(), VIDEO_SYNC_MODEL);
-            g.set_settings_video_sync(v.into()); g.invoke_settings_changed();
+            g.set_settings_video_sync(v.into());
+            g.invoke_settings_changed();
         }
         VID_INTERPOLATION => {
             g.set_settings_interpolation(!g.get_settings_interpolation());
@@ -1165,11 +1362,13 @@ fn settings_row_action(key: &str, g: &crate::AppState<'_>) {
         }
         VID_TSCALE => {
             let v = cycle(g.get_settings_tscale().as_str(), TSCALE_MODEL);
-            g.set_settings_tscale(v.into()); g.invoke_settings_changed();
+            g.set_settings_tscale(v.into());
+            g.invoke_settings_changed();
         }
         VID_TONE_MAPPING => {
             let v = cycle(g.get_settings_tone_mapping().as_str(), TONE_MAPPING_MODEL);
-            g.set_settings_tone_mapping(v.into()); g.invoke_settings_changed();
+            g.set_settings_tone_mapping(v.into());
+            g.invoke_settings_changed();
         }
         VID_TARGET_COLORSPACE => {
             g.set_settings_target_colorspace_hint(!g.get_settings_target_colorspace_hint());
@@ -1200,12 +1399,17 @@ fn settings_row_action(key: &str, g: &crate::AppState<'_>) {
             g.invoke_settings_changed();
         }
         VID_DISPLAY_SYNC_SCREEN => {
-            if let Some(desc) = cycle_dynamic(g.get_settings_display_sync_screen_options(), g.get_settings_display_sync_screen_desc().as_str()) {
+            if let Some(desc) = cycle_dynamic(
+                g.get_settings_display_sync_screen_options(),
+                g.get_settings_display_sync_screen_desc().as_str(),
+            ) {
                 g.invoke_display_sync_screen_selected(desc);
             }
         }
         VID_DISPLAY_SYNC_SYNC_RESOLUTION => {
-            g.set_settings_display_sync_sync_resolution(!g.get_settings_display_sync_sync_resolution());
+            g.set_settings_display_sync_sync_resolution(
+                !g.get_settings_display_sync_sync_resolution(),
+            );
             g.invoke_settings_changed();
         }
         VID_DISPLAY_SYNC_TRAILERS => {
@@ -1213,47 +1417,81 @@ fn settings_row_action(key: &str, g: &crate::AppState<'_>) {
             g.invoke_settings_changed();
         }
         VID_DISPLAY_SYNC_SYNC_REFRESH_RATE => {
-            g.set_settings_display_sync_sync_refresh_rate(!g.get_settings_display_sync_sync_refresh_rate());
+            g.set_settings_display_sync_sync_refresh_rate(
+                !g.get_settings_display_sync_sync_refresh_rate(),
+            );
             g.invoke_settings_changed();
         }
         VID_DISPLAY_SYNC_DEFAULT_RESOLUTION => {
-            if let Some(desc) = cycle_dynamic(g.get_settings_display_sync_resolution_options(), g.get_settings_display_sync_default_resolution().as_str()) {
+            if let Some(desc) = cycle_dynamic(
+                g.get_settings_display_sync_resolution_options(),
+                g.get_settings_display_sync_default_resolution().as_str(),
+            ) {
                 g.invoke_display_sync_resolution_selected(desc);
             }
         }
         VID_DISPLAY_SYNC_DEFAULT_HZ => {
-            if let Some(desc) = cycle_dynamic(g.get_settings_display_sync_hz_options(), g.get_settings_display_sync_default_hz().as_str()) {
+            if let Some(desc) = cycle_dynamic(
+                g.get_settings_display_sync_hz_options(),
+                g.get_settings_display_sync_default_hz().as_str(),
+            ) {
                 g.invoke_display_sync_hz_selected(desc);
             }
         }
         VID_DISPLAY_SYNC_SCALE_4K => {
-            let v = cycle(g.get_settings_display_sync_scale_4k().as_str(), DISPLAY_SYNC_SCALE_MODEL);
-            g.set_settings_display_sync_scale_4k(v.into()); g.invoke_settings_changed();
+            let v = cycle(
+                g.get_settings_display_sync_scale_4k().as_str(),
+                DISPLAY_SYNC_SCALE_MODEL,
+            );
+            g.set_settings_display_sync_scale_4k(v.into());
+            g.invoke_settings_changed();
         }
         VID_DISPLAY_SYNC_SCALE_1080P => {
-            let v = cycle(g.get_settings_display_sync_scale_1080p().as_str(), DISPLAY_SYNC_SCALE_MODEL);
-            g.set_settings_display_sync_scale_1080p(v.into()); g.invoke_settings_changed();
+            let v = cycle(
+                g.get_settings_display_sync_scale_1080p().as_str(),
+                DISPLAY_SYNC_SCALE_MODEL,
+            );
+            g.set_settings_display_sync_scale_1080p(v.into());
+            g.invoke_settings_changed();
         }
         VID_DISPLAY_SYNC_4K_ODD_FPS_MODE => {
-            let v = cycle(g.get_settings_display_sync_4k_odd_fps_mode().as_str(), DISPLAY_SYNC_4K_ODD_FPS_MODEL);
-            g.set_settings_display_sync_4k_odd_fps_mode(v.into()); g.invoke_settings_changed();
+            let v = cycle(
+                g.get_settings_display_sync_4k_odd_fps_mode().as_str(),
+                DISPLAY_SYNC_4K_ODD_FPS_MODEL,
+            );
+            g.set_settings_display_sync_4k_odd_fps_mode(v.into());
+            g.invoke_settings_changed();
         }
         VID_DISPLAY_SYNC_HDR_MODE => {
-            let v = cycle(g.get_settings_display_sync_hdr_mode().as_str(), DISPLAY_SYNC_HDR_MODE_MODEL);
-            g.set_settings_display_sync_hdr_mode(v.into()); g.invoke_settings_changed();
+            let v = cycle(
+                g.get_settings_display_sync_hdr_mode().as_str(),
+                DISPLAY_SYNC_HDR_MODE_MODEL,
+            );
+            g.set_settings_display_sync_hdr_mode(v.into());
+            g.invoke_settings_changed();
         }
         VID_DISPLAY_SYNC_WCG_MODE => {
-            let v = cycle(g.get_settings_display_sync_wcg_mode().as_str(), DISPLAY_SYNC_WCG_MODE_MODEL);
-            g.set_settings_display_sync_wcg_mode(v.into()); g.invoke_settings_changed();
+            let v = cycle(
+                g.get_settings_display_sync_wcg_mode().as_str(),
+                DISPLAY_SYNC_WCG_MODE_MODEL,
+            );
+            g.set_settings_display_sync_wcg_mode(v.into());
+            g.invoke_settings_changed();
         }
 
         AUD_AUDIO_DEVICE => {
-            if let Some(desc) = cycle_dynamic(g.get_settings_audio_device_display(), g.get_settings_audio_device_desc().as_str()) {
+            if let Some(desc) = cycle_dynamic(
+                g.get_settings_audio_device_display(),
+                g.get_settings_audio_device_desc().as_str(),
+            ) {
                 g.invoke_audio_device_selected(desc);
             }
         }
         AUD_PASSTHROUGH_DEVICE => {
-            if let Some(desc) = cycle_dynamic(g.get_settings_audio_device_display(), g.get_settings_passthrough_device_desc().as_str()) {
+            if let Some(desc) = cycle_dynamic(
+                g.get_settings_audio_device_display(),
+                g.get_settings_passthrough_device_desc().as_str(),
+            ) {
                 g.invoke_passthrough_device_selected(desc);
             }
         }
@@ -1290,12 +1528,17 @@ fn settings_row_action(key: &str, g: &crate::AppState<'_>) {
             g.invoke_settings_changed();
         }
         AUD_CHANNELS => {
-            let v = cycle(g.get_settings_audio_channels().as_str(), AUDIO_CHANNELS_MODEL);
-            g.set_settings_audio_channels(v.into()); g.invoke_settings_changed();
+            let v = cycle(
+                g.get_settings_audio_channels().as_str(),
+                AUDIO_CHANNELS_MODEL,
+            );
+            g.set_settings_audio_channels(v.into());
+            g.invoke_settings_changed();
         }
         AUD_AUDIO_LANG => {
             let v = cycle(g.get_settings_audio_lang().as_str(), LANG_MODEL);
-            g.set_settings_audio_lang(v.into()); g.invoke_settings_changed();
+            g.set_settings_audio_lang(v.into());
+            g.invoke_settings_changed();
         }
         AUD_GAPLESS => {
             g.set_settings_gapless_audio(!g.get_settings_gapless_audio());
@@ -1316,11 +1559,13 @@ fn settings_row_action(key: &str, g: &crate::AppState<'_>) {
         }
         PLY_SUB_LANG => {
             let v = cycle(g.get_settings_sub_lang().as_str(), LANG_MODEL);
-            g.set_settings_sub_lang(v.into()); g.invoke_settings_changed();
+            g.set_settings_sub_lang(v.into());
+            g.invoke_settings_changed();
         }
         PLY_SUB_LANG2 => {
             let v = cycle(g.get_settings_sub_lang2().as_str(), LANG_MODEL);
-            g.set_settings_sub_lang2(v.into()); g.invoke_settings_changed();
+            g.set_settings_sub_lang2(v.into());
+            g.invoke_settings_changed();
         }
         PLY_SUB_TYPE => {
             let current = g.get_settings_sub_type().to_string();
@@ -1330,12 +1575,20 @@ fn settings_row_action(key: &str, g: &crate::AppState<'_>) {
             g.invoke_settings_changed();
         }
         PLY_SUB_SCALE => {
-            let v = cycle(g.get_settings_sub_scale_pct().to_string().as_str(), SUB_SCALE_MODEL);
-            g.set_settings_sub_scale_pct(v.parse().unwrap_or(100)); g.invoke_settings_changed();
+            let v = cycle(
+                g.get_settings_sub_scale_pct().to_string().as_str(),
+                SUB_SCALE_MODEL,
+            );
+            g.set_settings_sub_scale_pct(v.parse().unwrap_or(100));
+            g.invoke_settings_changed();
         }
         PLY_SUB_POS => {
-            let v = cycle(g.get_settings_sub_pos_pct().to_string().as_str(), SUB_POS_MODEL);
-            g.set_settings_sub_pos_pct(v.parse().unwrap_or(100)); g.invoke_settings_changed();
+            let v = cycle(
+                g.get_settings_sub_pos_pct().to_string().as_str(),
+                SUB_POS_MODEL,
+            );
+            g.set_settings_sub_pos_pct(v.parse().unwrap_or(100));
+            g.invoke_settings_changed();
         }
         PLY_SUB_RESPECT_ASS => {
             g.set_settings_sub_respect_ass_styling(!g.get_settings_sub_respect_ass_styling());
@@ -1344,7 +1597,8 @@ fn settings_row_action(key: &str, g: &crate::AppState<'_>) {
         PLY_SUB_COLOR => {
             let current = g.get_settings_sub_color().to_string();
             let v = cycle(current.as_str(), SUB_COLOR_MODEL);
-            g.set_settings_sub_color(v.into()); g.invoke_settings_changed();
+            g.set_settings_sub_color(v.into());
+            g.invoke_settings_changed();
         }
         PLY_SUB_BACKGROUND => {
             g.set_settings_sub_background(!g.get_settings_sub_background());
@@ -1352,81 +1606,138 @@ fn settings_row_action(key: &str, g: &crate::AppState<'_>) {
         }
         PLY_CACHE_SECS => {
             let next = cycle_i32(g.get_settings_cache_secs(), CACHE_SECS_VALUES);
-            g.set_settings_cache_secs(next); g.invoke_settings_changed();
+            g.set_settings_cache_secs(next);
+            g.invoke_settings_changed();
         }
         PLY_CACHE_MAX_MB => {
             let next = cycle_i32(g.get_settings_cache_max_mb(), CACHE_MAX_MB_VALUES);
-            g.set_settings_cache_max_mb(next); g.invoke_settings_changed();
+            g.set_settings_cache_max_mb(next);
+            g.invoke_settings_changed();
         }
         PLY_INTRO_MODE => {
             let v = cycle(g.get_settings_skip_intro_mode().as_str(), SKIP_MODE_4_MODEL);
-            g.set_settings_skip_intro_mode(v.into()); g.invoke_settings_changed();
+            g.set_settings_skip_intro_mode(v.into());
+            g.invoke_settings_changed();
         }
         PLY_INTRO_SECS => {
-            let v = cycle(g.get_settings_skip_intro_secs().to_string().as_str(), SKIP_SECS_MODEL);
-            g.set_settings_skip_intro_secs(v.parse().unwrap_or(8)); g.invoke_settings_changed();
+            let v = cycle(
+                g.get_settings_skip_intro_secs().to_string().as_str(),
+                SKIP_SECS_MODEL,
+            );
+            g.set_settings_skip_intro_secs(v.parse().unwrap_or(8));
+            g.invoke_settings_changed();
         }
         PLY_RECAP_MODE => {
             let v = cycle(g.get_settings_skip_recap_mode().as_str(), SKIP_MODE_4_MODEL);
-            g.set_settings_skip_recap_mode(v.into()); g.invoke_settings_changed();
+            g.set_settings_skip_recap_mode(v.into());
+            g.invoke_settings_changed();
         }
         PLY_RECAP_SECS => {
-            let v = cycle(g.get_settings_skip_recap_secs().to_string().as_str(), SKIP_SECS_MODEL);
-            g.set_settings_skip_recap_secs(v.parse().unwrap_or(8)); g.invoke_settings_changed();
+            let v = cycle(
+                g.get_settings_skip_recap_secs().to_string().as_str(),
+                SKIP_SECS_MODEL,
+            );
+            g.set_settings_skip_recap_secs(v.parse().unwrap_or(8));
+            g.invoke_settings_changed();
         }
         PLY_PREVIEW_MODE => {
-            let v = cycle(g.get_settings_skip_preview_mode().as_str(), SKIP_MODE_4_MODEL);
-            g.set_settings_skip_preview_mode(v.into()); g.invoke_settings_changed();
+            let v = cycle(
+                g.get_settings_skip_preview_mode().as_str(),
+                SKIP_MODE_4_MODEL,
+            );
+            g.set_settings_skip_preview_mode(v.into());
+            g.invoke_settings_changed();
         }
         PLY_PREVIEW_SECS => {
-            let v = cycle(g.get_settings_skip_preview_secs().to_string().as_str(), SKIP_SECS_MODEL);
-            g.set_settings_skip_preview_secs(v.parse().unwrap_or(8)); g.invoke_settings_changed();
+            let v = cycle(
+                g.get_settings_skip_preview_secs().to_string().as_str(),
+                SKIP_SECS_MODEL,
+            );
+            g.set_settings_skip_preview_secs(v.parse().unwrap_or(8));
+            g.invoke_settings_changed();
         }
         PLY_COMMERCIAL_MODE => {
-            let v = cycle(g.get_settings_skip_commercial_mode().as_str(), SKIP_MODE_4_MODEL);
-            g.set_settings_skip_commercial_mode(v.into()); g.invoke_settings_changed();
+            let v = cycle(
+                g.get_settings_skip_commercial_mode().as_str(),
+                SKIP_MODE_4_MODEL,
+            );
+            g.set_settings_skip_commercial_mode(v.into());
+            g.invoke_settings_changed();
         }
         PLY_COMMERCIAL_SECS => {
-            let v = cycle(g.get_settings_skip_commercial_secs().to_string().as_str(), SKIP_SECS_MODEL);
-            g.set_settings_skip_commercial_secs(v.parse().unwrap_or(8)); g.invoke_settings_changed();
+            let v = cycle(
+                g.get_settings_skip_commercial_secs().to_string().as_str(),
+                SKIP_SECS_MODEL,
+            );
+            g.set_settings_skip_commercial_secs(v.parse().unwrap_or(8));
+            g.invoke_settings_changed();
         }
         PLY_CREDITS_MODE => {
-            let v = cycle(g.get_settings_skip_credits_mode().as_str(), SKIP_MODE_3_MODEL);
-            g.set_settings_skip_credits_mode(v.into()); g.invoke_settings_changed();
+            let v = cycle(
+                g.get_settings_skip_credits_mode().as_str(),
+                SKIP_MODE_3_MODEL,
+            );
+            g.set_settings_skip_credits_mode(v.into());
+            g.invoke_settings_changed();
         }
         PLY_CREDITS_SECS => {
-            let v = cycle(g.get_settings_skip_credits_secs().to_string().as_str(), CREDITS_SECS_MODEL);
-            g.set_settings_skip_credits_secs(v.parse().unwrap_or(30)); g.invoke_settings_changed();
+            let v = cycle(
+                g.get_settings_skip_credits_secs().to_string().as_str(),
+                CREDITS_SECS_MODEL,
+            );
+            g.set_settings_skip_credits_secs(v.parse().unwrap_or(30));
+            g.invoke_settings_changed();
         }
         PLY_SEEK_STEP => {
-            let v = cycle(g.get_settings_seek_step_secs().to_string().as_str(), SEEK_STEP_MODEL);
-            g.set_settings_seek_step_secs(v.parse().unwrap_or(10)); g.invoke_settings_changed();
+            let v = cycle(
+                g.get_settings_seek_step_secs().to_string().as_str(),
+                SEEK_STEP_MODEL,
+            );
+            g.set_settings_seek_step_secs(v.parse().unwrap_or(10));
+            g.invoke_settings_changed();
         }
         PLY_SEEK_STEP_LONG => {
-            let v = cycle(g.get_settings_seek_step_long_secs().to_string().as_str(), SEEK_STEP_LONG_MODEL);
-            g.set_settings_seek_step_long_secs(v.parse().unwrap_or(30)); g.invoke_settings_changed();
+            let v = cycle(
+                g.get_settings_seek_step_long_secs().to_string().as_str(),
+                SEEK_STEP_LONG_MODEL,
+            );
+            g.set_settings_seek_step_long_secs(v.parse().unwrap_or(30));
+            g.invoke_settings_changed();
         }
         PLY_SKIP_FADE_MS => {
-            let v = cycle(g.get_settings_skip_fade_ms().to_string().as_str(), SKIP_FADE_MS_MODEL);
-            g.set_settings_skip_fade_ms(v.parse().unwrap_or(200)); g.invoke_settings_changed();
+            let v = cycle(
+                g.get_settings_skip_fade_ms().to_string().as_str(),
+                SKIP_FADE_MS_MODEL,
+            );
+            g.set_settings_skip_fade_ms(v.parse().unwrap_or(200));
+            g.invoke_settings_changed();
         }
 
         UI_SCROLL_SPEED => {
-            let v = cycle(g.get_settings_scroll_speed_pct().to_string().as_str(), SPEED_PCT_MODEL);
+            let v = cycle(
+                g.get_settings_scroll_speed_pct().to_string().as_str(),
+                SPEED_PCT_MODEL,
+            );
             let pct: i32 = v.parse().unwrap_or(100);
             g.set_settings_scroll_speed_pct(pct);
             g.set_settings_scroll_speed(pct as f32 / 100.0);
             g.invoke_settings_changed();
         }
         UI_ANIMATION_SPEED => {
-            let v = cycle(g.get_settings_animation_speed_pct().to_string().as_str(), SPEED_PCT_MODEL);
+            let v = cycle(
+                g.get_settings_animation_speed_pct().to_string().as_str(),
+                SPEED_PCT_MODEL,
+            );
             let pct: i32 = v.parse().unwrap_or(100);
             g.set_settings_animation_speed_pct(pct);
             g.set_settings_animation_speed(pct as f32 / 100.0);
             g.invoke_settings_changed();
         }
         UI_FONT_FAMILY => {
-            if let Some(desc) = cycle_dynamic(g.get_settings_font_family_display(), g.get_settings_font_family_desc().as_str()) {
+            if let Some(desc) = cycle_dynamic(
+                g.get_settings_font_family_display(),
+                g.get_settings_font_family_desc().as_str(),
+            ) {
                 g.invoke_font_family_selected(desc);
             }
         }
@@ -1447,26 +1758,42 @@ fn settings_row_action(key: &str, g: &crate::AppState<'_>) {
             }
         }
         INT_STREAMING_REGION => {
-            if let Some(desc) = cycle_dynamic(g.get_settings_streaming_region_display(), g.get_settings_streaming_region_desc().as_str()) {
+            if let Some(desc) = cycle_dynamic(
+                g.get_settings_streaming_region_display(),
+                g.get_settings_streaming_region_desc().as_str(),
+            ) {
                 g.invoke_streaming_region_selected(desc);
             }
         }
         INT_TRAILER_QUALITY => {
-            let v = cycle(g.get_settings_trailer_quality().to_string().as_str(), TRAILER_QUALITY_MODEL);
-            g.set_settings_trailer_quality(v.into()); g.invoke_settings_changed();
+            let v = cycle(
+                g.get_settings_trailer_quality().to_string().as_str(),
+                TRAILER_QUALITY_MODEL,
+            );
+            g.set_settings_trailer_quality(v.into());
+            g.invoke_settings_changed();
         }
         INT_DISPLAY_LANGUAGE => {
-            if let Some(desc) = cycle_dynamic(g.get_settings_display_language_display(), g.get_settings_display_language_desc().as_str()) {
+            if let Some(desc) = cycle_dynamic(
+                g.get_settings_display_language_display(),
+                g.get_settings_display_language_desc().as_str(),
+            ) {
                 g.invoke_display_language_selected(desc);
             }
         }
         INT_DISCOVER_LANGUAGE => {
-            if let Some(desc) = cycle_dynamic(g.get_settings_discover_language_display(), g.get_settings_discover_language_desc().as_str()) {
+            if let Some(desc) = cycle_dynamic(
+                g.get_settings_discover_language_display(),
+                g.get_settings_discover_language_desc().as_str(),
+            ) {
                 g.invoke_discover_language_selected(desc);
             }
         }
         INT_DISCOVER_REGION => {
-            if let Some(desc) = cycle_dynamic(g.get_settings_streaming_region_display(), g.get_settings_discover_region_desc().as_str()) {
+            if let Some(desc) = cycle_dynamic(
+                g.get_settings_streaming_region_display(),
+                g.get_settings_discover_region_desc().as_str(),
+            ) {
                 g.invoke_discover_region_selected(desc);
             }
         }

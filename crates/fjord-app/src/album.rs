@@ -41,7 +41,7 @@ use crate::{AppState, MainWindow};
 // key layout). `SEP_H_PX` matches `SectionHeader`'s own fixed 28px height
 // (widgets.slint), which the disc-separator label reuses directly.
 const TRACK_ROW_H_PX: f32 = 48.0;
-const DISC_SEP_H_PX:  f32 = 28.0;
+const DISC_SEP_H_PX: f32 = 28.0;
 
 /// Real bug, live-reported 2026-08-17: multi-disc "Play All" order was
 /// fixed server-side (fjord-api::get_album_tracks now sorts
@@ -60,7 +60,7 @@ const DISC_SEP_H_PX:  f32 = 28.0;
 /// codebase, e.g. home.slint's `library-alpha-offsets[li]`) instead of
 /// iterating the model to sum up preceding separators on every keystroke.
 fn media_items_to_tracks(
-    items:       &[fjord_api::models::MediaItem],
+    items: &[fjord_api::models::MediaItem],
     is_playlist: bool,
 ) -> Vec<crate::TrackItem> {
     // Playlists have no disc concept — Jellyfin Playlist entries are an
@@ -68,8 +68,10 @@ fn media_items_to_tracks(
     // reflects whatever the source track's own album disc was, which is
     // meaningless in playlist order.
     let multi_disc = !is_playlist && {
-        let discs: std::collections::HashSet<u32> =
-            items.iter().map(|m| m.parent_index_number.unwrap_or(1)).collect();
+        let discs: std::collections::HashSet<u32> = items
+            .iter()
+            .map(|m| m.parent_index_number.unwrap_or(1))
+            .collect();
         discs.len() > 1
     };
 
@@ -98,18 +100,26 @@ fn media_items_to_tracks(
             let row_y_px = y;
             y += TRACK_ROW_H_PX;
             crate::TrackItem {
-                id:           m.id.as_str().into(),
-                title:        m.name.as_str().into(),
-                artist:       m.album_artist.as_deref().unwrap_or("").into(),
-                duration:     if duration_secs > 0.0 { fmt_secs(duration_secs) } else { "".into() },
+                id: m.id.as_str().into(),
+                title: m.name.as_str().into(),
+                artist: m.album_artist.as_deref().unwrap_or("").into(),
+                duration: if duration_secs > 0.0 {
+                    fmt_secs(duration_secs)
+                } else {
+                    "".into()
+                },
                 // Playlists show position, not the track's album-side number.
-                track_number: if is_playlist { (i + 1) as i32 } else { m.index_number.unwrap_or(0) as i32 },
-                has_played:   m.user_data.played,
-                is_favorite:  m.user_data.is_favorite,
-                resume_pct:   m.resume_pct(),
-                entry_id:     m.playlist_item_id.as_deref().unwrap_or("").into(),
-                album_id:     m.album_id.as_deref().unwrap_or("").into(),
-                disc_header:  disc_header.into(),
+                track_number: if is_playlist {
+                    (i + 1) as i32
+                } else {
+                    m.index_number.unwrap_or(0) as i32
+                },
+                has_played: m.user_data.played,
+                is_favorite: m.user_data.is_favorite,
+                resume_pct: m.resume_pct(),
+                entry_id: m.playlist_item_id.as_deref().unwrap_or("").into(),
+                album_id: m.album_id.as_deref().unwrap_or("").into(),
+                disc_header: disc_header.into(),
                 row_y_px,
             }
         })
@@ -119,11 +129,11 @@ fn media_items_to_tracks(
 // ── open_album_screen ─────────────────────────────────────────────────────────
 
 pub(crate) fn open_album_screen(
-    id:    String,
+    id: String,
     title: String,
     state: Arc<Mutex<FjordState>>,
-    ww:    slint::Weak<MainWindow>,
-    rt:    tokio::runtime::Handle,
+    ww: slint::Weak<MainWindow>,
+    rt: tokio::runtime::Handle,
 ) {
     open_music_screen(id, title, state, ww, rt, false);
 }
@@ -131,21 +141,21 @@ pub(crate) fn open_album_screen(
 // Playlist detail reuses the AlbumScreen (single source of truth): position
 // numbering, per-row ✕ remove + Delete key, "Playlist" artist line.
 pub(crate) fn open_playlist_screen(
-    id:    String,
+    id: String,
     title: String,
     state: Arc<Mutex<FjordState>>,
-    ww:    slint::Weak<MainWindow>,
-    rt:    tokio::runtime::Handle,
+    ww: slint::Weak<MainWindow>,
+    rt: tokio::runtime::Handle,
 ) {
     open_music_screen(id, title, state, ww, rt, true);
 }
 
 fn open_music_screen(
-    id:          String,
-    title:       String,
-    state:       Arc<Mutex<FjordState>>,
-    ww:          slint::Weak<MainWindow>,
-    rt:          tokio::runtime::Handle,
+    id: String,
+    title: String,
+    state: Arc<Mutex<FjordState>>,
+    ww: slint::Weak<MainWindow>,
+    rt: tokio::runtime::Handle,
     is_playlist: bool,
 ) {
     // Screen-open cache (Part 2): skip the loading spinner when both the track
@@ -153,8 +163,14 @@ fn open_music_screen(
     // disk-cached and fast enough to feel instant.
     let (client, cached_tracks, cached_detail) = {
         let s = state.lock().unwrap();
-        let Some(c) = s.client.as_ref().map(Arc::clone) else { return };
-        (c, s.container_tracks_cache.get(&id), s.item_detail_cache.get(&id))
+        let Some(c) = s.client.as_ref().map(Arc::clone) else {
+            return;
+        };
+        (
+            c,
+            s.container_tracks_cache.get(&id),
+            s.item_detail_cache.get(&id),
+        )
     };
     let is_cache_hit = cached_tracks.is_some() && cached_detail.is_some();
     tracing::debug!("open_music_screen({id}): cache_hit={is_cache_hit}");
@@ -186,34 +202,45 @@ fn open_music_screen(
         -1
     };
 
-    let id2   = id.clone();
-    let ww2   = ww.clone();
-    let id_revalidate    = id.clone();
+    let id2 = id.clone();
+    let ww2 = ww.clone();
+    let id_revalidate = id.clone();
     let state_revalidate = Arc::clone(&state);
-    let ww_revalidate    = ww.clone();
-    let rt_revalidate    = rt.clone();
+    let ww_revalidate = ww.clone();
+    let rt_revalidate = rt.clone();
     let state_task = state;
     rt.spawn(async move {
         let tracks_fut = async {
-            if let Some(v) = cached_tracks { return Ok(v); }
-            if is_playlist { client.get_playlist_items(&id2).await } else { client.get_album_tracks(&id2).await }
+            if let Some(v) = cached_tracks {
+                return Ok(v);
+            }
+            if is_playlist {
+                client.get_playlist_items(&id2).await
+            } else {
+                client.get_album_tracks(&id2).await
+            }
         };
         let detail_fut = async {
-            if let Some(d) = cached_detail { return Ok(d); }
+            if let Some(d) = cached_detail {
+                return Ok(d);
+            }
             client.get_item_detail(&id2).await
         };
-        let (tracks_res, poster_bytes, detail_res) = tokio::join!(
-            tracks_fut,
-            fetch_poster_cached(&client, &id2),
-            detail_fut,
-        );
+        let (tracks_res, poster_bytes, detail_res) =
+            tokio::join!(tracks_fut, fetch_poster_cached(&client, &id2), detail_fut,);
         if let Ok(d) = &detail_res {
-            state_task.lock().unwrap().item_detail_cache.insert(id2.clone(), d.clone());
+            state_task
+                .lock()
+                .unwrap()
+                .item_detail_cache
+                .insert(id2.clone(), d.clone());
         }
 
         // Deleted album: the ParentId track query returns an empty 200 — the
         // ghost is only visible on the detail fetch's 404 (S4).
-        if let Err(e) = &detail_res && crate::is_not_found(e) {
+        if let Err(e) = &detail_res
+            && crate::is_not_found(e)
+        {
             let ww_err = ww2.clone();
             let _ = slint::invoke_from_event_loop(move || {
                 if let Some(w) = ww_err.upgrade() {
@@ -241,15 +268,25 @@ fn open_music_screen(
                     }
                 });
                 let what = if is_playlist { "playlist" } else { "album" };
-                crate::show_toast(ww2, format!("Couldn't load {what} — check your server connection"));
+                crate::show_toast(
+                    ww2,
+                    format!("Couldn't load {what} — check your server connection"),
+                );
                 return;
             }
         };
-        state_task.lock().unwrap().container_tracks_cache.insert(id2.clone(), tracks.clone());
+        state_task
+            .lock()
+            .unwrap()
+            .container_tracks_cache
+            .insert(id2.clone(), tracks.clone());
 
         // Playlists can contain non-audio entries on mixed servers — drop them.
         let tracks: Vec<_> = if is_playlist {
-            tracks.into_iter().filter(|t| t.item_type == "Audio").collect()
+            tracks
+                .into_iter()
+                .filter(|t| t.item_type == "Audio")
+                .collect()
         } else {
             tracks
         };
@@ -258,14 +295,18 @@ fn open_music_screen(
         let _ = slint::invoke_from_event_loop(move || {
             let Some(w) = ww2.upgrade() else { return };
             let g = AppState::get(&w);
-            if g.get_album_open_gen() != generation { return; }
+            if g.get_album_open_gen() != generation {
+                return;
+            }
             // Session guard (Bonfire Phase 1, step 8 audit, 2026-08-09) —
             // the generation counter alone doesn't catch a sign-out/profile-switch
             // that happens after this screen was backed out of but before
             // this fetch resolves, since nothing increments it on either
             // path. See collection.rs's own open_collection_screen for the
             // full reasoning (same fix, same shape).
-            if !crate::session_current(&state_task, &client) { return; }
+            if !crate::session_current(&state_task, &client) {
+                return;
+            }
 
             if let Ok(d) = &detail_res {
                 // Metadata line: year · N tracks · duration (playlists have no year)
@@ -286,14 +327,21 @@ fn open_music_screen(
                     format!("{} · {} tracks · {}", year, n_tracks, fmt_secs(total_secs))
                 };
                 g.set_album_meta(meta.as_str().into());
-                g.set_album_artist(if is_playlist { "Playlist".into() }
-                                   else { d.album_artist.as_deref().unwrap_or("").into() });
-                g.set_album_overview(crate::strip_html_to_text(d.overview.clone().unwrap_or_default().trim()).into());
+                g.set_album_artist(if is_playlist {
+                    "Playlist".into()
+                } else {
+                    d.album_artist.as_deref().unwrap_or("").into()
+                });
+                g.set_album_overview(
+                    crate::strip_html_to_text(d.overview.clone().unwrap_or_default().trim()).into(),
+                );
                 g.set_album_is_favorite(d.user_data.is_favorite);
                 g.set_album_has_played(d.user_data.played);
             }
 
-            if let Some(bytes) = poster_bytes && let Some(spb) = decode_poster_buffer(&bytes) {
+            if let Some(bytes) = poster_bytes
+                && let Some(spb) = decode_poster_buffer(&bytes)
+            {
                 g.set_album_poster(slint::Image::from_rgba8(spb));
                 g.set_album_has_poster(true);
             }
@@ -315,54 +363,94 @@ fn open_music_screen(
     // fallback. This revalidation is what closes that gap for whatever's
     // actually on screen right now.
     if is_cache_hit {
-        spawn_album_revalidate(id_revalidate, generation, state_revalidate, ww_revalidate, rt_revalidate, is_playlist);
+        spawn_album_revalidate(
+            id_revalidate,
+            generation,
+            state_revalidate,
+            ww_revalidate,
+            rt_revalidate,
+            is_playlist,
+        );
     }
 }
 
 fn spawn_album_revalidate(
-    id:          String,
-    generation:         i32,
-    state:       Arc<Mutex<FjordState>>,
-    ww:          slint::Weak<MainWindow>,
-    rt:          tokio::runtime::Handle,
+    id: String,
+    generation: i32,
+    state: Arc<Mutex<FjordState>>,
+    ww: slint::Weak<MainWindow>,
+    rt: tokio::runtime::Handle,
     is_playlist: bool,
 ) {
-    if !crate::should_revalidate(&state, &id) { return; }
-    let Some(client) = state.lock().unwrap().client.as_ref().map(Arc::clone) else { return };
+    if !crate::should_revalidate(&state, &id) {
+        return;
+    }
+    let Some(client) = state.lock().unwrap().client.as_ref().map(Arc::clone) else {
+        return;
+    };
     rt.spawn(async move {
-        let tracks_res = if is_playlist { client.get_playlist_items(&id).await } else { client.get_album_tracks(&id).await };
+        let tracks_res = if is_playlist {
+            client.get_playlist_items(&id).await
+        } else {
+            client.get_album_tracks(&id).await
+        };
         let detail_res = client.get_item_detail(&id).await;
-        let (Ok(tracks), Ok(detail)) = (tracks_res, detail_res) else { return };
+        let (Ok(tracks), Ok(detail)) = (tracks_res, detail_res) else {
+            return;
+        };
         // Sign-out (or a different account signing in on a shared HTPC)
         // mid-fetch must not let this per-user data land in the new session's
         // cache — same guard class as main.rs::session_current's own doc
         // comment (CR11-2).
-        if !crate::session_current(&state, &client) { return; }
+        if !crate::session_current(&state, &client) {
+            return;
+        }
         {
             let mut s = state.lock().unwrap();
             s.container_tracks_cache.insert(id.clone(), tracks.clone());
             s.item_detail_cache.insert(id.clone(), detail.clone());
         }
         let tracks: Vec<_> = if is_playlist {
-            tracks.into_iter().filter(|t| t.item_type == "Audio").collect()
+            tracks
+                .into_iter()
+                .filter(|t| t.item_type == "Audio")
+                .collect()
         } else {
             tracks
         };
         let track_items = media_items_to_tracks(&tracks, is_playlist);
-        let year = if is_playlist { String::new() } else { detail.production_year.map(|y| y.to_string()).unwrap_or_default() };
+        let year = if is_playlist {
+            String::new()
+        } else {
+            detail
+                .production_year
+                .map(|y| y.to_string())
+                .unwrap_or_default()
+        };
         let n_tracks = track_items.len();
-        let total_secs: f64 = tracks.iter().filter_map(|t| t.run_time_ticks).map(|t| (t / 10_000_000) as f64).sum();
+        let total_secs: f64 = tracks
+            .iter()
+            .filter_map(|t| t.run_time_ticks)
+            .map(|t| (t / 10_000_000) as f64)
+            .sum();
         let meta = if year.is_empty() {
             format!("{} tracks · {}", n_tracks, fmt_secs(total_secs))
         } else {
             format!("{} · {} tracks · {}", year, n_tracks, fmt_secs(total_secs))
         };
-        let artist = if is_playlist { "Playlist".to_string() } else { detail.album_artist.clone().unwrap_or_default() };
-        let overview = crate::strip_html_to_text(detail.overview.clone().unwrap_or_default().trim());
+        let artist = if is_playlist {
+            "Playlist".to_string()
+        } else {
+            detail.album_artist.clone().unwrap_or_default()
+        };
+        let overview =
+            crate::strip_html_to_text(detail.overview.clone().unwrap_or_default().trim());
         let _ = slint::invoke_from_event_loop(move || {
             let Some(w) = ww.upgrade() else { return };
             let g = AppState::get(&w);
-            if g.get_album_open_gen() != generation { return; }
+            if g.get_album_open_gen() != generation {
+                return;
+            }
             g.set_album_meta(meta.as_str().into());
             g.set_album_artist(artist.as_str().into());
             g.set_album_overview(overview.as_str().into());
@@ -399,8 +487,18 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
     let btn = g.get_album_btn_focused();
     if btn >= 0 {
         return match action {
-            Action::Left  => { if btn > 0 && btn <= 1 { g.set_album_btn_focused(btn - 1); } true }
-            Action::Right => { if btn < 1             { g.set_album_btn_focused(btn + 1); } true }
+            Action::Left => {
+                if btn > 0 && btn <= 1 {
+                    g.set_album_btn_focused(btn - 1);
+                }
+                true
+            }
+            Action::Right => {
+                if btn < 1 {
+                    g.set_album_btn_focused(btn + 1);
+                }
+                true
+            }
             Action::Confirm => {
                 match btn {
                     0 => g.invoke_play_album_all(),
@@ -437,7 +535,7 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
     }
 
     // ── Track list ─────────────────────────────────────────────────────────────
-    let f   = g.get_album_focused_track();
+    let f = g.get_album_focused_track();
     let len = g.get_album_tracks().row_count() as i32;
 
     match action {
