@@ -26,7 +26,12 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme, BonfireAdminRow, BonfireAuditRow } from "theme.slint";
 import { AppState } from "app_state.slint";
-import { FjordButton, PressPulse, LoadingSpinner, ConfirmDialog } from "widgets.slint";
+import {
+    FjordButton,
+    PressPulse,
+    LoadingSpinner,
+    ConfirmDialog,
+} from "widgets.slint";
 
 component AdminTab inherits Rectangle {
     in property <string> label;
@@ -39,10 +44,19 @@ component AdminTab inherits Rectangle {
     background: active ? Theme.accent : (ta.has-hover ? Theme.surface : transparent);
     border-width: (ta.pressed || pulse.pulsing) ? 3px : (kbd-focused && active ? 2px : 0px);
     border-color: Theme.focus-border;
-    animate border-width, background { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
-    pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: root.active && root.kbd-focused; }
+    animate border-width, background {
+        duration: 90ms * AppState.settings-animation-speed;
+        easing: ease-out-expo;
+    }
+    pulse := PressPulse {
+        trigger: AppState.kb-activate-pulse;
+        active: root.active && root.kbd-focused;
+    }
 
-    ta := TouchArea { clicked => { root.clicked(); } }
+    ta := TouchArea {
+        clicked => { root.clicked(); }
+    }
+
     Text {
         text: root.label;
         color: root.active ? #ffffff : Theme.text;
@@ -68,12 +82,14 @@ export component BonfireAdminScreen inherits Rectangle {
         background: Theme.surface;
 
         FjordButton {
-            x: 16px; y: 16px;
+            x: 16px;
+            y: 16px;
             text: "← Back";
             width: 88px;
             kbd-focused: AppState.bonfire-admin-back-focused;
             clicked => { AppState.show-bonfire-admin = false; }
         }
+
         Text {
             x: (parent.width - self.width) / 2;
             y: 16px;
@@ -108,6 +124,7 @@ export component BonfireAdminScreen inherits Rectangle {
                 // self-corrects it.
                 clicked => { AppState.bonfire-admin-cursor = -1; AppState.bonfire-admin-back-focused = false; AppState.bonfire-admin-tab-selected(0); }
             }
+
             AdminTab {
                 label: "Audit Logs";
                 active: AppState.bonfire-admin-tab == 1;
@@ -116,7 +133,12 @@ export component BonfireAdminScreen inherits Rectangle {
             }
         }
 
-        Rectangle { y: parent.height - 1px; width: parent.width; height: 1px; background: Theme.border; }
+        Rectangle {
+            y: parent.height - 1px;
+            width: parent.width;
+            height: 1px;
+            background: Theme.border;
+        }
     }
 
     // ── Loading / error / empty states ──────────────────────────────────────
@@ -151,26 +173,28 @@ export component BonfireAdminScreen inherits Rectangle {
 
     // ── Mappings tab ─────────────────────────────────────────────────────────
     if AppState.bonfire-admin-tab == 0 && !AppState.bonfire-admin-loading: mappings-container := Rectangle {
-        y:      root.header-h;
+        y: root.header-h;
         height: parent.height - root.header-h;
-        clip:   true;
+        clip: true;
 
         property <length> kb-y: AppState.bonfire-admin-cursor < 0 ? 0px : clamp(
             -(AppState.bonfire-admin-cursor * root.row-h) + self.height / 2 - root.row-h / 2,
             min(0px, self.height - mappings-rows.preferred-height),
-            0px
-        );
+            0px);
         changed kb-y => { mappings-fl.content-y = kb-y; }
 
         mappings-fl := Flickable {
-            width:  parent.width;
+            width: parent.width;
             height: parent.height;
             content-height: max(parent.height, mappings-rows.preferred-height);
-            animate content-y { duration: 150ms * AppState.settings-scroll-speed; easing: ease-out-expo; }
+            animate content-y {
+                duration: 150ms * AppState.settings-scroll-speed;
+                easing: ease-out-expo;
+            }
 
             mappings-rows := VerticalLayout {
                 alignment: start;
-                spacing:   0px;
+                spacing: 0px;
 
                 for row[i] in AppState.bonfire-admin-rows: row-ta := TouchArea {
                     height: root.row-h;
@@ -190,26 +214,33 @@ export component BonfireAdminScreen inherits Rectangle {
                     Rectangle {
                         height: parent.height;
                         background: (AppState.bonfire-admin-cursor == i) ? Theme.surface-overlay
-                                  : row-ta.has-hover ? #ffffff08
-                                  : transparent;
+                            : row-ta.has-hover ? #ffffff08
+                            : transparent;
                         border-width: (row-ta.pressed || row-pulse.pulsing) ? 3px : 0px;
                         border-color: Theme.focus-border;
-                        animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
-                        row-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.bonfire-admin-cursor == i; }
+                        animate border-width {
+                            duration: 90ms * AppState.settings-animation-speed;
+                            easing: ease-out-expo;
+                        }
+                        row-pulse := PressPulse {
+                            trigger: AppState.kb-activate-pulse;
+                            active: AppState.bonfire-admin-cursor == i;
+                        }
 
                         HorizontalLayout {
-                            padding-left:  row.is-master ? 24px : 64px;
+                            padding-left: row.is-master ? 24px : 64px;
                             padding-right: 24px;
-                            spacing:       16px;
-                            alignment:     space-between;
+                            spacing: 16px;
+                            alignment: space-between;
 
                             HorizontalLayout {
-                                spacing:            12px;
-                                alignment:          start;
+                                spacing: 12px;
+                                alignment: start;
                                 horizontal-stretch: 1;
 
                                 Rectangle {
-                                    width:  40px; height: 40px;
+                                    width: 40px;
+                                    height: 40px;
                                     border-radius: self.width / 2;
                                     background: row.avatar-color;
                                     Text {
@@ -218,23 +249,24 @@ export component BonfireAdminScreen inherits Rectangle {
                                         font-size: 16px;
                                         font-weight: 700;
                                         horizontal-alignment: center;
-                                        vertical-alignment:   center;
-                                        width:  parent.width;
+                                        vertical-alignment: center;
+                                        width: parent.width;
                                         height: parent.height;
                                     }
                                 }
 
                                 VerticalLayout {
                                     alignment: center;
-                                    spacing:   2px;
+                                    spacing: 2px;
 
                                     Text {
-                                        text:        row.display-name;
-                                        color:       Theme.text;
-                                        font-size:   14px;
+                                        text: row.display-name;
+                                        color: Theme.text;
+                                        font-size: 14px;
                                         font-weight: 600;
-                                        overflow:    elide;
+                                        overflow: elide;
                                     }
+
                                     HorizontalLayout {
                                         spacing: 8px;
                                         Text {
@@ -242,6 +274,7 @@ export component BonfireAdminScreen inherits Rectangle {
                                             color: Theme.text-subtle;
                                             font-size: 11px;
                                         }
+
                                         if row.requires-pin: Text {
                                             text: "🔒 PIN set";
                                             color: Theme.text-muted;
@@ -252,7 +285,7 @@ export component BonfireAdminScreen inherits Rectangle {
                             }
 
                             HorizontalLayout {
-                                spacing:   16px;
+                                spacing: 16px;
                                 alignment: end;
 
                                 // Hidden entirely when the row has no PIN to
@@ -269,7 +302,8 @@ export component BonfireAdminScreen inherits Rectangle {
                                 // the matching keyboard-side fix (the stored
                                 // column now always lands somewhere real).
                                 if row.requires-pin: reset-ta := TouchArea {
-                                    width: 100px; height: 32px;
+                                    width: 100px;
+                                    height: 32px;
                                     mouse-cursor: MouseCursor.pointer;
                                     clicked => {
                                         AppState.bonfire-admin-cursor = i;
@@ -281,12 +315,13 @@ export component BonfireAdminScreen inherits Rectangle {
                                         AppState.show-bonfire-admin-reset-confirm = true;
                                     }
                                     Rectangle {
-                                        width: parent.width; height: parent.height;
+                                        width: parent.width;
+                                        height: parent.height;
                                         border-radius: Theme.radius;
                                         background: transparent;
                                         border-width: (reset-ta.pressed) ? 3px
-                                                    : (AppState.bonfire-admin-cursor == i && AppState.bonfire-admin-col == 0) ? 2px
-                                                    : 1px;
+                                            : (AppState.bonfire-admin-cursor == i && AppState.bonfire-admin-col == 0) ? 2px
+                                            : 1px;
                                         border-color: (AppState.bonfire-admin-cursor == i && AppState.bonfire-admin-col == 0) ? Theme.focus-border : Theme.border-strong;
                                         Text {
                                             text: "Reset PIN";
@@ -294,8 +329,8 @@ export component BonfireAdminScreen inherits Rectangle {
                                             font-size: 12px;
                                             font-weight: 600;
                                             horizontal-alignment: center;
-                                            vertical-alignment:   center;
-                                            width:  parent.width;
+                                            vertical-alignment: center;
+                                            width: parent.width;
                                             height: parent.height;
                                         }
                                     }
@@ -309,8 +344,10 @@ export component BonfireAdminScreen inherits Rectangle {
                                         font-size: 11px;
                                         vertical-alignment: center;
                                     }
+
                                     limit-ta := TouchArea {
-                                        width: 72px; height: 32px;
+                                        width: 72px;
+                                        height: 32px;
                                         mouse-cursor: MouseCursor.pointer;
                                         clicked => {
                                             AppState.bonfire-admin-cursor = i;
@@ -319,12 +356,13 @@ export component BonfireAdminScreen inherits Rectangle {
                                             AppState.bonfire-admin-cycle-limit(row.profile-user-id);
                                         }
                                         Rectangle {
-                                            width: parent.width; height: parent.height;
+                                            width: parent.width;
+                                            height: parent.height;
                                             border-radius: Theme.radius;
                                             background: Theme.surface-overlay;
                                             border-width: (limit-ta.pressed) ? 3px
-                                                        : (AppState.bonfire-admin-cursor == i && AppState.bonfire-admin-col == 1) ? 2px
-                                                        : 0px;
+                                                : (AppState.bonfire-admin-cursor == i && AppState.bonfire-admin-col == 1) ? 2px
+                                                : 0px;
                                             border-color: Theme.focus-border;
                                             Text {
                                                 // Slint's ternary requires both branches to share
@@ -338,8 +376,8 @@ export component BonfireAdminScreen inherits Rectangle {
                                                 font-size: 12px;
                                                 font-weight: 600;
                                                 horizontal-alignment: center;
-                                                vertical-alignment:   center;
-                                                width:  parent.width;
+                                                vertical-alignment: center;
+                                                width: parent.width;
                                                 height: parent.height;
                                             }
                                         }
@@ -348,7 +386,12 @@ export component BonfireAdminScreen inherits Rectangle {
                             }
                         }
 
-                        Rectangle { y: parent.height - 1px; width: parent.width; height: 1px; background: Theme.border; }
+                        Rectangle {
+                            y: parent.height - 1px;
+                            width: parent.width;
+                            height: 1px;
+                            background: Theme.border;
+                        }
                     }
                 }
             }
@@ -357,44 +400,52 @@ export component BonfireAdminScreen inherits Rectangle {
 
     // ── Audit Logs tab ───────────────────────────────────────────────────────
     if AppState.bonfire-admin-tab == 1 && !AppState.bonfire-admin-loading: audit-container := Rectangle {
-        y:      root.header-h;
+        y: root.header-h;
         height: parent.height - root.header-h;
-        clip:   true;
+        clip: true;
 
         property <length> kb-y: AppState.bonfire-admin-cursor < 0 ? 0px : clamp(
             -(AppState.bonfire-admin-cursor * root.row-h) + self.height / 2 - root.row-h / 2,
             min(0px, self.height - audit-rows.preferred-height),
-            0px
-        );
+            0px);
         changed kb-y => { audit-fl.content-y = kb-y; }
 
         audit-fl := Flickable {
-            width:  parent.width;
+            width: parent.width;
             height: parent.height;
             content-height: max(parent.height, audit-rows.preferred-height);
-            animate content-y { duration: 150ms * AppState.settings-scroll-speed; easing: ease-out-expo; }
+            animate content-y {
+                duration: 150ms * AppState.settings-scroll-speed;
+                easing: ease-out-expo;
+            }
 
             audit-rows := VerticalLayout {
                 alignment: start;
-                spacing:   0px;
+                spacing: 0px;
 
                 for row[i] in AppState.bonfire-admin-audit-rows: Rectangle {
                     height: root.row-h;
                     background: (AppState.bonfire-admin-cursor == i) ? Theme.surface-overlay : transparent;
                     border-width: (audit-pulse.pulsing) ? 3px : 0px;
                     border-color: Theme.focus-border;
-                    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
-                    audit-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.bonfire-admin-cursor == i; }
+                    animate border-width {
+                        duration: 90ms * AppState.settings-animation-speed;
+                        easing: ease-out-expo;
+                    }
+                    audit-pulse := PressPulse {
+                        trigger: AppState.kb-activate-pulse;
+                        active: AppState.bonfire-admin-cursor == i;
+                    }
 
                     HorizontalLayout {
-                        padding-left:  24px;
+                        padding-left: 24px;
                         padding-right: 24px;
-                        spacing:       16px;
-                        alignment:     space-between;
+                        spacing: 16px;
+                        alignment: space-between;
 
                         VerticalLayout {
                             alignment: center;
-                            spacing:   2px;
+                            spacing: 2px;
                             horizontal-stretch: 1;
 
                             Text {
@@ -404,6 +455,7 @@ export component BonfireAdminScreen inherits Rectangle {
                                 font-weight: 600;
                                 overflow: elide;
                             }
+
                             Text {
                                 text: row.device-name + " · " + row.client + " · " + row.ip-address;
                                 color: Theme.text-muted;
@@ -420,7 +472,12 @@ export component BonfireAdminScreen inherits Rectangle {
                         }
                     }
 
-                    Rectangle { y: parent.height - 1px; width: parent.width; height: 1px; background: Theme.border; }
+                    Rectangle {
+                        y: parent.height - 1px;
+                        width: parent.width;
+                        height: 1px;
+                        background: Theme.border;
+                    }
                 }
             }
         }

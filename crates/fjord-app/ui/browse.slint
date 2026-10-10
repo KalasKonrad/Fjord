@@ -12,22 +12,22 @@ export component BrowseScreen inherits Rectangle {
         spacing: 0px;
 
         Rectangle {
-            height:     54px;
+            height: 54px;
             background: Theme.surface;
 
             HorizontalLayout {
-                padding-left:  Theme.sp-sm;
+                padding-left: Theme.sp-sm;
                 padding-right: Theme.sp;
-                spacing:       Theme.sp-sm;
-                alignment:     start;
+                spacing: Theme.sp-sm;
+                alignment: start;
 
                 FjordButton {
-                    text:  "← Back";
+                    text: "← Back";
                     width: 80px;
                     clicked => {
                         AppState.browse-header-focused = false;
                         AppState.current-item = -1;
-                        AppState.show-browse  = false;
+                        AppState.show-browse = false;
                         AppState.browse-search-clear();
                         // Browse All is nav 5 since the Phase 40 renumbering (3 is
                         // Collections now). The stale ==3 check left active-nav at 5
@@ -35,14 +35,18 @@ export component BrowseScreen inherits Rectangle {
                         if AppState.active-nav == 5 { AppState.active-nav = 0; }
                     }
                 }
+
                 Rectangle {
                     horizontal-stretch: 1;
-                    height:             36px;
-                    border-radius:      Theme.radius;
-                    border-width:       search-ta.pressed ? 4px : (AppState.browse-header-focused ? 2px : 1px);
-                    border-color:       AppState.browse-header-focused ? Theme.focus-border : Theme.border;
-                    background:         Theme.bg;
-                    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+                    height: 36px;
+                    border-radius: Theme.radius;
+                    border-width: search-ta.pressed ? 4px : (AppState.browse-header-focused ? 2px : 1px);
+                    border-color: AppState.browse-header-focused ? Theme.focus-border : Theme.border;
+                    background: Theme.bg;
+                    animate border-width {
+                        duration: 90ms * AppState.settings-animation-speed;
+                        easing: ease-out-expo;
+                    }
 
                     search-ta := TouchArea {
                         clicked => {
@@ -52,10 +56,10 @@ export component BrowseScreen inherits Rectangle {
                     }
 
                     HorizontalLayout {
-                        padding-left:  12px;
+                        padding-left: 12px;
                         padding-right: 12px;
-                        spacing:       8px;
-                        alignment:     start;
+                        spacing: 8px;
+                        alignment: start;
 
                         Text {
                             // U+2315 (⌕) was pinned to Noto Sans Symbols 2 on
@@ -66,56 +70,65 @@ export component BrowseScreen inherits Rectangle {
                             // helped and this fell through to system fallback, tofu
                             // on any minimal install. U+1F50D (🔍, the real magnifying-
                             // glass codepoint) genuinely IS in Symbols2's cmap.
-                            text:               "🔍";
-                    font-family:        "Noto Sans Symbols 2";
-                            color:              AppState.browse-header-focused ? Theme.accent : Theme.text-muted;
-                            font-size:          17px;
+                            text: "🔍";
+                            font-family: "Noto Sans Symbols 2";
+                            color: AppState.browse-header-focused ? Theme.accent : Theme.text-muted;
+                            font-size: 17px;
                             vertical-alignment: center;
-                            width:              22px;
+                            width: 22px;
                         }
+
                         Text {
                             text: AppState.browse-header-focused
                                 ? AppState.caret-text(AppState.browse-query, AppState.browse-query-cursor, "▌")
                                 : AppState.browse-query != "" ? AppState.browse-query
                                 : "Search…";
                             color: AppState.browse-query != "" ? Theme.text
-                                 : AppState.browse-header-focused ? Theme.text-muted
-                                 : Theme.text-subtle;
-                            font-size:          14px;
+                                : AppState.browse-header-focused ? Theme.text-muted
+                                : Theme.text-subtle;
+                            font-size: 14px;
                             vertical-alignment: center;
                             horizontal-stretch: 1;
                         }
+
                         if AppState.browse-query != "" && !AppState.browse-header-focused: Text {
-                            text:               "Esc to clear";
-                            color:              Theme.text-subtle;
-                            font-size:          12px;
+                            text: "Esc to clear";
+                            color: Theme.text-subtle;
+                            font-size: 12px;
                             vertical-alignment: center;
                         }
                     }
                 }
             }
-            Rectangle { y: parent.height - 1px; height: 1px; background: Theme.border; }
+
+            Rectangle {
+                y: parent.height - 1px;
+                height: 1px;
+                background: Theme.border;
+            }
         }
 
         list-container := Rectangle {
             horizontal-stretch: 1;
-            vertical-stretch:   1;
+            vertical-stretch: 1;
             property <length> kb-y: AppState.current-item < 0 ? 0px
                 : clamp(
                       -(AppState.current-item * 42px + 21px - self.height / 2),
                       min(0px, self.height - AppState.media-items.length * 42px),
-                      0px
-                  );
+                      0px);
             changed kb-y => { list-flick.content-y = kb-y; }
 
             list-flick := Flickable {
-                interactive:     true;
+                interactive: true;
                 content-height: AppState.media-items.length * 42px;
-                animate content-y { duration: 150ms * AppState.settings-scroll-speed; easing: ease-out-expo; }
+                animate content-y {
+                    duration: 150ms * AppState.settings-scroll-speed;
+                    easing: ease-out-expo;
+                }
 
                 VerticalLayout {
                     for item[i] in AppState.media-items: BrowseItem {
-                        text:     item.text;
+                        text: item.text;
                         // Same bug/fix as LibraryGrid's own card highlight
                         // (2026-08-12) — current-item stays set to whatever
                         // row you were on when Up-from-row-0 moves focus to
@@ -124,38 +137,42 @@ export component BrowseScreen inherits Rectangle {
                         // selected even though the search field is what
                         // actually has focus now.
                         selected: i == AppState.current-item && !AppState.browse-header-focused;
-                        clicked        => { AppState.current-item = i; AppState.browse-header-focused = false; }
-                        activated      => { AppState.play-item(i); }
-                        right-clicked  => { AppState.open-context-menu-browse(i); }
+                        clicked => { AppState.current-item = i; AppState.browse-header-focused = false; }
+                        activated => { AppState.play-item(i); }
+                        right-clicked => { AppState.open-context-menu-browse(i); }
                     }
                 }
             }
         }
 
         Rectangle {
-            height:     50px;
+            height: 50px;
             background: Theme.surface;
 
-            Rectangle { height: 1px; background: Theme.border; }
+            Rectangle {
+                height: 1px;
+                background: Theme.border;
+            }
 
             HorizontalLayout {
-                padding-left:  Theme.sp;
+                padding-left: Theme.sp;
                 padding-right: Theme.sp;
-                padding-top:   Theme.sp-xs;
-                spacing:       Theme.sp;
-                alignment:     space-between;
+                padding-top: Theme.sp-xs;
+                spacing: Theme.sp;
+                alignment: space-between;
 
                 Text {
-                    text:               AppState.status;
-                    color:              Theme.text-muted;
-                    font-size:          13px;
+                    text: AppState.status;
+                    color: Theme.text-muted;
+                    font-size: 13px;
                     vertical-alignment: center;
                     horizontal-stretch: 1;
                 }
+
                 FjordButton {
                     icon-left: "▶";
-                    text:    "Play";
-                    width:   100px;
+                    text: "Play";
+                    width: 100px;
                     enabled: AppState.current-item >= 0;
                     clicked => { AppState.play-item(AppState.current-item); }
                 }

@@ -18,7 +18,12 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
-import { FjordButton, IconCircleButton, StorylineSection, PressPulse } from "widgets.slint";
+import {
+    FjordButton,
+    IconCircleButton,
+    StorylineSection,
+    PressPulse,
+} from "widgets.slint";
 
 export component AlbumScreen inherits Rectangle {
 
@@ -57,45 +62,53 @@ export component AlbumScreen inherits Rectangle {
     property <length> kb-track-y: clamp(
         -focused-track-y() + list-area-h / 2 - track-h / 2,
         min(0px, list-area-h - tracks-content-h),
-        0px
-    );
+        0px);
     changed kb-track-y => { track-fl.content-y = kb-track-y; }
 
     fl := Flickable {
-        width:           parent.width;
-        height:          parent.height;
+        width: parent.width;
+        height: parent.height;
         content-height: album-content.preferred-height;
-        content-width:  self.width;
-        animate content-y { duration: 200ms * AppState.settings-scroll-speed; easing: ease-in-out; }
+        content-width: self.width;
+        animate content-y {
+            duration: 200ms * AppState.settings-scroll-speed;
+            easing: ease-in-out;
+        }
 
         album-content := VerticalLayout {
 
             // ── Top bar: Back button + title ──────────────────────────────────
             Rectangle {
-                height:     54px;
+                height: 54px;
                 background: Theme.surface;
                 HorizontalLayout {
-                    padding-left:  Theme.sp-sm;
+                    padding-left: Theme.sp-sm;
                     padding-right: Theme.sp;
-                    spacing:       Theme.sp-sm;
-                    alignment:     start;
+                    spacing: Theme.sp-sm;
+                    alignment: start;
                     FjordButton {
-                        text:        "← Back";
-                        width:       80px;
+                        text: "← Back";
+                        width: 80px;
                         kbd-focused: AppState.album-back-focused;
                         clicked => { AppState.close-album(); }
                     }
+
                     Text {
-                        text:               AppState.album-title;
-                        color:              Theme.text;
-                        font-size:          17px;
-                        font-weight:        700;
+                        text: AppState.album-title;
+                        color: Theme.text;
+                        font-size: 17px;
+                        font-weight: 700;
                         vertical-alignment: center;
-                        overflow:           elide;
+                        overflow: elide;
                         horizontal-stretch: 1;
                     }
                 }
-                Rectangle { y: parent.height - 1px; height: 1px; background: Theme.border; }
+
+                Rectangle {
+                    y: parent.height - 1px;
+                    height: 1px;
+                    background: Theme.border;
+                }
             }
 
             // ── Header: cover art + metadata + buttons ────────────────────────
@@ -109,72 +122,77 @@ export component AlbumScreen inherits Rectangle {
 
                     // Album cover art (square)
                     Rectangle {
-                        width:         200px;
-                        height:        200px;
+                        width: 200px;
+                        height: 200px;
                         border-radius: Theme.radius;
-                        background:    Theme.surface-overlay;
-                        clip:          true;
+                        background: Theme.surface-overlay;
+                        clip: true;
                         if AppState.album-has-poster: Image {
-                            width:     parent.width;
-                            height:    parent.height;
+                            width: parent.width;
+                            height: parent.height;
                             image-fit: cover;
-                            source:    AppState.album-poster;
+                            source: AppState.album-poster;
                         }
                         if !AppState.album-has-poster: Text {
-                            text:                 "♫";
-                            font-family:          "Noto Sans Symbols 2";
-                            color:                Theme.text-subtle;
-                            font-size:            64px;
-                            vertical-alignment:   center;
+                            text: "♫";
+                            font-family: "Noto Sans Symbols 2";
+                            color: Theme.text-subtle;
+                            font-size: 64px;
+                            vertical-alignment: center;
                             horizontal-alignment: center;
-                            width:                parent.width;
-                            height:               parent.height;
+                            width: parent.width;
+                            height: parent.height;
                         }
                     }
 
                     // Metadata + buttons
                     VerticalLayout {
-                        alignment:          start;
-                        spacing:            8px;
-                        vertical-stretch:   1;
-                        padding-top:        8px;
+                        alignment: start;
+                        spacing: 8px;
+                        vertical-stretch: 1;
+                        padding-top: 8px;
 
                         Text {
-                            text:        AppState.album-title;
-                            color:       Theme.text;
-                            font-size:   22px;
+                            text: AppState.album-title;
+                            color: Theme.text;
+                            font-size: 22px;
                             font-weight: 700;
-                            overflow:    elide;
+                            overflow: elide;
                         }
+
                         Text {
-                            text:      AppState.album-artist;
-                            color:     Theme.accent;
+                            text: AppState.album-artist;
+                            color: Theme.accent;
                             font-size: 15px;
-                            overflow:  elide;
+                            overflow: elide;
                         }
+
                         Text {
-                            text:      AppState.album-meta;
-                            color:     Theme.text-muted;
+                            text: AppState.album-meta;
+                            color: Theme.text-muted;
                             font-size: 13px;
                         }
 
-                        Rectangle { vertical-stretch: 1; }
+                        Rectangle {
+                            vertical-stretch: 1;
+                        }
 
                         // ▶ Play All + ♥ action buttons
                         HorizontalLayout {
                             spacing: 10px;
                             alignment: start;
                             FjordButton {
-                                icon-left:   "▶";
-                                text:        "Play All";
-                                height:      34px;
-                                width:       110px;
+                                icon-left: "▶";
+                                text: "Play All";
+                                height: 34px;
+                                width: 110px;
                                 kbd-focused: AppState.album-btn-focused == 0;
                                 clicked => { AppState.play-album-all(); }
                             }
+
                             IconCircleButton {
-                                icon:        "❤";
-                                active:      AppState.album-is-favorite;
+                                icon: "❤";
+                                active: AppState.album-is-favorite;
                                 kbd-focused: AppState.album-btn-focused == 1;
                                 clicked => { AppState.toggle-album-fav(); }
                             }
@@ -185,7 +203,7 @@ export component AlbumScreen inherits Rectangle {
 
             // ── Overview / bio (collapsible) ──────────────────────────────────
             if AppState.album-overview != "": StorylineSection {
-                text:        AppState.album-overview;
+                text: AppState.album-overview;
                 expanded <=> AppState.album-overview-expanded;
                 kbd-focused: AppState.album-btn-focused == 2;
             }
@@ -200,11 +218,14 @@ export component AlbumScreen inherits Rectangle {
                 height: list-area-h - 1px;
 
                 track-fl := Flickable {
-                    width:           parent.width;
-                    height:          parent.height;
+                    width: parent.width;
+                    height: parent.height;
                     content-height: max(parent.height, tracks-content-h);
-                    content-width:  self.width;
-                    animate content-y { duration: 150ms * AppState.settings-scroll-speed; easing: ease-out-expo; }
+                    content-width: self.width;
+                    animate content-y {
+                        duration: 150ms * AppState.settings-scroll-speed;
+                        easing: ease-out-expo;
+                    }
 
                     // Absolutely positioned via each row's own precomputed
                     // row-y-px (2026-08-17, multi-disc separators) instead of
@@ -213,140 +234,154 @@ export component AlbumScreen inherits Rectangle {
                     // label is involved, so the layout can't compute this
                     // for us; album.rs already did the real math once.
                     for trk[i] in AppState.album-tracks: Rectangle {
-                            property <bool> focused: !AppState.album-back-focused && AppState.album-btn-focused < 0 && i == AppState.album-focused-track;
-                            x:          0px;
-                            y:          trk.row-y-px * 1px;
-                            width:      parent.width;
-                            height:     track-h;
-                            background: focused ? Theme.accent-muted : (ta.has-hover ? Theme.surface : transparent);
-                            border-width:  (ta.pressed || track-pulse.pulsing) ? 3px : 0px;
-                            border-color:  Theme.focus-border;
-                            animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
-                            track-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: focused; }
+                        property <bool> focused: !AppState.album-back-focused && AppState.album-btn-focused < 0 && i == AppState.album-focused-track;
+                        x: 0px;
+                        y: trk.row-y-px * 1px;
+                        width: parent.width;
+                        height: track-h;
+                        background: focused ? Theme.accent-muted : (ta.has-hover ? Theme.surface : transparent);
+                        border-width: (ta.pressed || track-pulse.pulsing) ? 3px : 0px;
+                        border-color: Theme.focus-border;
+                        animate border-width {
+                            duration: 90ms * AppState.settings-animation-speed;
+                            easing: ease-out-expo;
+                        }
+                        track-pulse := PressPulse {
+                            trigger: AppState.kb-activate-pulse;
+                            active: focused;
+                        }
 
-                            ta := TouchArea {
-                                double-clicked => { AppState.play-album-track(trk.id); }
-                                clicked => {
-                                    AppState.album-focused-track = i;
-                                    AppState.album-back-focused  = false;
-                                    AppState.album-btn-focused   = -1;
-                                }
+                        ta := TouchArea {
+                            double-clicked => { AppState.play-album-track(trk.id); }
+                            clicked => {
+                                AppState.album-focused-track = i;
+                                AppState.album-back-focused = false;
+                                AppState.album-btn-focused = -1;
                             }
+                        }
 
-                            // Disc separator — positioned relative to this
+                        // Disc separator — positioned relative to this
                             // row's own (already-correct) y, in the gap
                             // album.rs's own row-y-px math reserved for it.
                             if trk.disc-header != "": Rectangle {
-                                x: 0px; y: -sep-h;
-                                width:      parent.width;
+                            x: 0px;
+                            y: -sep-h;
+                            width: parent.width;
                                 // Deliberately transparent, not a solid fill
                                 // — matches the ambient (unfocused/unhovered)
                                 // track row background right below it, since
                                 // AlbumScreen's own root has no explicit
                                 // background of its own either.
-                                height:     sep-h;
-                                Text {
-                                    x:                  16px;
-                                    text:               trk.disc-header;
-                                    color:              Theme.accent;
-                                    font-size:          11px;
-                                    font-weight:        700;
-                                    vertical-alignment: center;
-                                    height:             parent.height;
-                                }
+                                height: sep-h;
+                            Text {
+                                x: 16px;
+                                text: trk.disc-header;
+                                color: Theme.accent;
+                                font-size: 11px;
+                                font-weight: 700;
+                                vertical-alignment: center;
+                                height: parent.height;
                             }
+                        }
 
-                            // left accent bar (focused indicator)
+                        // left accent bar (focused indicator)
                             if focused: Rectangle {
-                                x: 0; y: 0;
-                                width:      3px;
-                                height:     parent.height;
-                                background: Theme.accent;
-                            }
+                            x: 0;
+                            y: 0;
+                            width: 3px;
+                            height: parent.height;
+                            background: Theme.accent;
+                        }
                             // bottom separator
                             Rectangle {
-                                x: 0; y: parent.height - 1px;
-                                height:     1px;
-                                background: Theme.border;
+                            x: 0;
+                            y: parent.height - 1px;
+                            height: 1px;
+                            background: Theme.border;
+                        }
+
+                        HorizontalLayout {
+                            padding-left: 16px;
+                            padding-right: 20px;
+                            spacing: 14px;
+                            alignment: start;
+
+                            // Track number
+                                Text {
+                                text: trk.track-number > 0 ? trk.track-number : i + 1;
+                                color: trk.has-played ? Theme.accent : Theme.text-muted;
+                                font-size: 13px;
+                                width: 24px;
+                                vertical-alignment: center;
+                                horizontal-alignment: right;
                             }
 
-                            HorizontalLayout {
-                                padding-left:  16px;
-                                padding-right: 20px;
-                                spacing:       14px;
-                                alignment:     start;
-
-                                // Track number
-                                Text {
-                                    text:                 trk.track-number > 0 ? trk.track-number : i + 1;
-                                    color:                trk.has-played ? Theme.accent : Theme.text-muted;
-                                    font-size:            13px;
-                                    width:                24px;
-                                    vertical-alignment:   center;
-                                    horizontal-alignment: right;
-                                }
-
-                                // Title + artist
+                            // Title + artist
                                 VerticalLayout {
-                                    alignment:          center;
-                                    horizontal-stretch: 1;
-                                    spacing:            2px;
-                                    Text {
-                                        text:      trk.title;
-                                        color:     trk.has-played ? Theme.text-muted : Theme.text;
-                                        font-size: 14px;
-                                        overflow:  elide;
-                                    }
-                                    if trk.artist != "" && trk.artist != AppState.album-artist: Text {
-                                        text:      trk.artist;
-                                        color:     Theme.text-subtle;
-                                        font-size: 11px;
-                                        overflow:  elide;
-                                    }
-                                }
-
-                                // Duration
+                                alignment: center;
+                                horizontal-stretch: 1;
+                                spacing: 2px;
                                 Text {
-                                    text:               trk.duration;
-                                    color:              Theme.text-muted;
-                                    font-size:          13px;
-                                    vertical-alignment: center;
-                                    width:              44px;
-                                    horizontal-alignment: right;
+                                    text: trk.title;
+                                    color: trk.has-played ? Theme.text-muted : Theme.text;
+                                    font-size: 14px;
+                                    overflow: elide;
                                 }
 
-                                // Favorite indicator
-                                if trk.is-favorite: Text {
-                                    text:               "♥";
-                                    font-family:        "Adwaita Sans";
-                                    color:              Theme.accent;
-                                    font-size:          12px;
-                                    vertical-alignment: center;
-                                    width:              16px;
-                                }
-
-                                // ✕ remove entry — playlists only
-                                if AppState.album-is-playlist: Rectangle {
-                                    width: 26px;
-                                    border-width:  x-ta.pressed ? 3px : 0px;
-                                    border-color:  Theme.error;
-                                    border-radius: Theme.radius;
-                                    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
-                                    x-ta := TouchArea {
-                                        clicked => { AppState.playlist-remove-entry(i); }
-                                    }
-                                    Text {
-                                        text:                 "✕";
-                                    font-family:          "Noto Sans Symbols 2";
-                                        color:                x-ta.has-hover ? Theme.error : Theme.text-subtle;
-                                        font-size:            13px;
-                                        vertical-alignment:   center;
-                                        horizontal-alignment: center;
-                                        width:                parent.width;
-                                        height:               parent.height;
-                                    }
+                                if trk.artist != "" && trk.artist != AppState.album-artist: Text {
+                                    text: trk.artist;
+                                    color: Theme.text-subtle;
+                                    font-size: 11px;
+                                    overflow: elide;
                                 }
                             }
+
+                            // Duration
+                                Text {
+                                text: trk.duration;
+                                color: Theme.text-muted;
+                                font-size: 13px;
+                                vertical-alignment: center;
+                                width: 44px;
+                                horizontal-alignment: right;
+                            }
+
+                            // Favorite indicator
+                                if trk.is-favorite: Text {
+                                text: "♥";
+                                font-family: "Adwaita Sans";
+                                color: Theme.accent;
+                                font-size: 12px;
+                                vertical-alignment: center;
+                                width: 16px;
+                            }
+
+                            // ✕ remove entry — playlists only
+                                if AppState.album-is-playlist: Rectangle {
+                                width: 26px;
+                                border-width: x-ta.pressed ? 3px : 0px;
+                                border-color: Theme.error;
+                                border-radius: Theme.radius;
+                                animate border-width {
+                                    duration: 90ms * AppState.settings-animation-speed;
+                                    easing: ease-out-expo;
+                                }
+                                x-ta := TouchArea {
+                                    clicked => { AppState.playlist-remove-entry(i); }
+                                }
+
+                                Text {
+                                    text: "✕";
+                                    font-family: "Noto Sans Symbols 2";
+                                    color: x-ta.has-hover ? Theme.error : Theme.text-subtle;
+                                    font-size: 13px;
+                                    vertical-alignment: center;
+                                    horizontal-alignment: center;
+                                    width: parent.width;
+                                    height: parent.height;
+                                }
+                            }
+                        }
                     }
                 }
             }

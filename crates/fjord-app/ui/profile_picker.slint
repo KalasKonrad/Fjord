@@ -66,7 +66,12 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme, ProfileTile, ProfileSection } from "theme.slint";
 import { AppState } from "app_state.slint";
-import { FjordButton, VirtualKeyboard, PressPulse, LoadingSpinner } from "widgets.slint";
+import {
+    FjordButton,
+    VirtualKeyboard,
+    PressPulse,
+    LoadingSpinner,
+} from "widgets.slint";
 
 component ProfileTileCard inherits VerticalLayout {
     in property <ProfileTile> tile;
@@ -78,16 +83,22 @@ component ProfileTileCard inherits VerticalLayout {
     width: 132px;
 
     Rectangle {
-        width:  108px;
+        width: 108px;
         height: 108px;
-        x:      (parent.width - self.width) / 2;
+        x: (parent.width - self.width) / 2;
         border-radius: self.width / 2;
         background: root.is-add-tile ? Theme.surface-overlay : root.tile.avatar-color;
         border-width: (ta.pressed || tile-pulse.pulsing) ? 4px : (root.kbd-focused ? 3px : 0px);
         border-color: Theme.focus-border;
         clip: true;
-        animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
-        tile-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: root.kbd-focused; }
+        animate border-width {
+            duration: 90ms * AppState.settings-animation-speed;
+            easing: ease-out-expo;
+        }
+        tile-pulse := PressPulse {
+            trigger: AppState.kb-activate-pulse;
+            active: root.kbd-focused;
+        }
 
         // Master/root ring — picker visual parity (2026-08-29) with
         // Bonfire's own official "Who's Watching?" UI (a real screenshot
@@ -113,7 +124,8 @@ component ProfileTileCard inherits VerticalLayout {
         // and can both show at once when a keyboard user tabs onto the
         // master's own tile.
         if !root.is-add-tile && root.tile.is-root: Rectangle {
-            x: 3px; y: 3px;
+            x: 3px;
+            y: 3px;
             width: parent.width - 6px;
             height: parent.height - 6px;
             border-radius: self.width / 2;
@@ -122,14 +134,14 @@ component ProfileTileCard inherits VerticalLayout {
         }
 
         Text {
-            text:                 root.is-add-tile ? "+" : root.tile.avatar-initial;
-            color:                Theme.text;
-            font-size:            root.is-add-tile ? 40px : 42px;
-            font-weight:          700;
+            text: root.is-add-tile ? "+" : root.tile.avatar-initial;
+            color: Theme.text;
+            font-size: root.is-add-tile ? 40px : 42px;
+            font-weight: 700;
             horizontal-alignment: center;
-            vertical-alignment:   center;
-            width:                parent.width;
-            height:               parent.height;
+            vertical-alignment: center;
+            width: parent.width;
+            height: parent.height;
         }
 
         // Lock badge — bottom-right, only for a real profile (never the Add
@@ -137,10 +149,10 @@ component ProfileTileCard inherits VerticalLayout {
         // display goes — this badge means "a PIN is set", not "will prompt
         // right now" (bypassPinOnLocalNetwork can make those differ).
         if !root.is-add-tile && root.tile.has-pin: Rectangle {
-            width:  30px;
+            width: 30px;
             height: 30px;
-            x:      parent.width - self.width - 2px;
-            y:      parent.height - self.height - 2px;
+            x: parent.width - self.width - 2px;
+            y: parent.height - self.height - 2px;
             border-radius: self.width / 2;
             background: Theme.surface;
             border-width: 1px;
@@ -161,12 +173,12 @@ component ProfileTileCard inherits VerticalLayout {
     }
 
     Text {
-        text:                 root.is-add-tile ? "Add Account" : root.tile.display-name;
-        color:                root.kbd-focused ? Theme.accent : Theme.text;
-        font-size:            14px;
-        font-weight:          root.kbd-focused ? 700 : 400;
+        text: root.is-add-tile ? "Add Account" : root.tile.display-name;
+        color: root.kbd-focused ? Theme.accent : Theme.text;
+        font-size: 14px;
+        font-weight: root.kbd-focused ? 700 : 400;
         horizontal-alignment: center;
-        overflow:             elide;
+        overflow: elide;
     }
 }
 
@@ -187,20 +199,20 @@ component ProfileSectionRow inherits VerticalLayout {
     spacing: Theme.sp-sm;
 
     if section.header != "": Text {
-        text:                 section.header;
-        color:                Theme.accent;
-        font-size:            13px;
-        font-weight:          700;
-        letter-spacing:       1px;
+        text: section.header;
+        color: Theme.accent;
+        font-size: 13px;
+        font-weight: 700;
+        letter-spacing: 1px;
         horizontal-alignment: center;
     }
 
     HorizontalLayout {
         alignment: center;
-        spacing:   24px;
+        spacing: 24px;
 
         for t[i] in section.tiles: ProfileTileCard {
-            tile:        t;
+            tile: t;
             // !back-focused/!quit-focused exclude the tile ring while a
             // different zone holds focus instead — same "exclude other
             // on-screen zones from the card's own focus ring" convention
@@ -248,16 +260,16 @@ export component ProfilePickerScreen inherits Rectangle {
         // icon/logo even bigger") — still centered independently in
         // [0, main-block.y] below, which doesn't depend on this size at all,
         // so growing it just uses more of that already-empty region.
-        width:  180px;
+        width: 180px;
         height: 180px;
-        x:      (parent.width - self.width) / 2;
-        y:      main-block.y / 2 - self.height / 2;
-        source: AppState.app-logo-idx == 1  ? @image-url("../../../assets/fjord_01.svg") :
-                AppState.app-logo-idx == 2  ? @image-url("../../../assets/fjord_02.svg") :
-                AppState.app-logo-idx == 4  ? @image-url("../../../assets/fjord_04.svg") :
-                AppState.app-logo-idx == 5  ? @image-url("../../../assets/fjord_05.svg") :
-                AppState.app-logo-idx == 9  ? @image-url("../../../assets/fjord_09.svg") :
-                                               @image-url("../../../assets/fjord_10.svg");
+        x: (parent.width - self.width) / 2;
+        y: main-block.y / 2 - self.height / 2;
+        source: AppState.app-logo-idx == 1 ? @image-url("../../../assets/fjord_01.svg") :
+            AppState.app-logo-idx == 2 ? @image-url("../../../assets/fjord_02.svg") :
+            AppState.app-logo-idx == 4 ? @image-url("../../../assets/fjord_04.svg") :
+            AppState.app-logo-idx == 5 ? @image-url("../../../assets/fjord_05.svg") :
+            AppState.app-logo-idx == 9 ? @image-url("../../../assets/fjord_09.svg") :
+            @image-url("../../../assets/fjord_10.svg");
     }
 
     main-block := VerticalLayout {
@@ -306,15 +318,15 @@ export component ProfilePickerScreen inherits Rectangle {
         // on the tiles' own midpoint, title hangs above" intent instead of
         // introducing a different one.
         height: self.preferred-height;
-        y:      parent.height / 2 - watching-text.preferred-height - Theme.sp-xl - sections-column.preferred-height / 2;
-        width:  parent.width;
+        y: parent.height / 2 - watching-text.preferred-height - Theme.sp-xl - sections-column.preferred-height / 2;
+        width: parent.width;
         spacing: Theme.sp-xl;
 
         watching-text := Text {
-            text:                 "Who's watching?";
-            color:                Theme.text;
-            font-size:            32px;
-            font-weight:          700;
+            text: "Who's watching?";
+            color: Theme.text;
+            font-size: 32px;
+            font-weight: 700;
             horizontal-alignment: center;
         }
 
@@ -334,24 +346,24 @@ export component ProfilePickerScreen inherits Rectangle {
             spacing: Theme.sp-lg;
 
             for section[s] in AppState.profile-picker-sections: ProfileSectionRow {
-                section:       section;
+                section: section;
                 section-index: s;
             }
         }
 
         if AppState.profile-picker-error != "": Text {
-            text:                 AppState.profile-picker-error;
-            color:                Theme.error;
-            font-size:            13px;
+            text: AppState.profile-picker-error;
+            color: Theme.error;
+            font-size: 13px;
             horizontal-alignment: center;
         }
     }
 
     FjordButton {
-        text:        "Quit";
-        width:       90px;
-        x:           parent.width  - self.width  - 16px;
-        y:           parent.height - self.height - 16px;
+        text: "Quit";
+        width: 90px;
+        x: parent.width - self.width - 16px;
+        y: parent.height - self.height - 16px;
         // 2026-08-16, same keyboard-reachability fix as "← Back to
         // Accounts" above, prompted directly ("quit it not also reacheble
         // by keybord navigation") — Down from the tile row focuses it, Up
@@ -379,10 +391,10 @@ export component ProfilePickerScreen inherits Rectangle {
     // button" convention in this app (Detail/Season/Collection/Album/
     // Artist).
     if AppState.profile-picker-back-mode == "accounts": FjordButton {
-        text:        "← Back to Accounts";
-        width:       170px;
-        x:           16px;
-        y:           16px;
+        text: "← Back to Accounts";
+        width: 170px;
+        x: 16px;
+        y: 16px;
         kbd-focused: AppState.profile-picker-back-focused;
         clicked => {
             AppState.profile-picker-back-focused = false;
@@ -394,10 +406,10 @@ export component ProfilePickerScreen inherits Rectangle {
         // keeps whatever profile/session was already active, so there's
         // nothing destination-specific to state (same reasoning as
         // login.slint's own "← Back" button, live-reported the same day).
-        text:        "← Back";
-        width:       110px;
-        x:           16px;
-        y:           16px;
+        text: "← Back";
+        width: 110px;
+        x: 16px;
+        y: 16px;
         kbd-focused: AppState.profile-picker-back-focused;
         clicked => {
             AppState.profile-picker-back-focused = false;
@@ -411,7 +423,8 @@ export component ProfilePickerScreen inherits Rectangle {
         background: #00000088;
 
         TouchArea {
-            width: parent.width; height: parent.height;
+            width: parent.width;
+            height: parent.height;
             // No-op click-through-blocker for the backdrop — unlike
             // RequestOptionsOverlay, cancelling out of PIN entry back to the
             // grid is a deliberate Back/Escape action (dispatch_profile_pin_entry
@@ -420,33 +433,37 @@ export component ProfilePickerScreen inherits Rectangle {
         }
 
         Rectangle {
-            x: (parent.width  - self.width)  / 2;
+            x: (parent.width - self.width) / 2;
             y: (parent.height - self.height) / 2;
-            width:         360px;
-            height:        pin-content.preferred-height + 32px;
+            width: 360px;
+            height: pin-content.preferred-height + 32px;
             border-radius: Theme.radius-lg;
-            background:    Theme.surface-raised;
-            border-width:  1px;
-            border-color:  Theme.border-strong;
-            drop-shadow-blur:     20px;
-            drop-shadow-color:    #000000aa;
+            background: Theme.surface-raised;
+            border-width: 1px;
+            border-color: Theme.border-strong;
+            drop-shadow-blur: 20px;
+            drop-shadow-color: #000000aa;
             drop-shadow-offset-y: 6px;
 
-            TouchArea { width: parent.width; height: parent.height; }
+            TouchArea {
+                width: parent.width;
+                height: parent.height;
+            }
 
             pin-content := VerticalLayout {
-                x: 16px; y: 16px;
+                x: 16px;
+                y: 16px;
                 width: parent.width - 32px;
                 spacing: 16px;
                 alignment: center;
 
                 Text {
-                    text:                 "Enter PIN for " + AppState.profile-pin-target-name;
-                    color:                Theme.text;
-                    font-size:            15px;
-                    font-weight:          700;
+                    text: "Enter PIN for " + AppState.profile-pin-target-name;
+                    color: Theme.text;
+                    font-size: 15px;
+                    font-weight: 700;
                     horizontal-alignment: center;
-                    wrap:                 word-wrap;
+                    wrap: word-wrap;
                 }
 
                 // Masked digit dots — up to 8 shown; a PIN longer than that
@@ -456,7 +473,7 @@ export component ProfilePickerScreen inherits Rectangle {
                     alignment: center;
                     spacing: 10px;
                     for d in 8: Rectangle {
-                        width:  14px;
+                        width: 14px;
                         height: 14px;
                         border-radius: 7px;
                         background: d < AppState.profile-pin-len ? Theme.accent : Theme.surface-overlay;
@@ -466,11 +483,11 @@ export component ProfilePickerScreen inherits Rectangle {
                 }
 
                 if AppState.profile-pin-error != "": Text {
-                    text:                 AppState.profile-pin-error;
-                    color:                Theme.error;
-                    font-size:            12px;
+                    text: AppState.profile-pin-error;
+                    color: Theme.error;
+                    font-size: 12px;
                     horizontal-alignment: center;
-                    wrap:                 word-wrap;
+                    wrap: word-wrap;
                 }
 
                 Rectangle {
@@ -529,14 +546,14 @@ export component ProfilePickerScreen inherits Rectangle {
 
         VerticalLayout {
             alignment: center;
-            spacing:   20px;
+            spacing: 20px;
 
             LoadingSpinner { }
 
             Text {
-                text:                 "Signing in…";
-                color:                Theme.text;
-                font-size:            15px;
+                text: "Signing in…";
+                color: Theme.text;
+                font-size: 15px;
                 horizontal-alignment: center;
             }
         }

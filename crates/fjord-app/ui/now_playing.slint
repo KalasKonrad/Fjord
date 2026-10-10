@@ -24,28 +24,35 @@ export component NowPlayingScreen inherits Rectangle {
 
         // ── Top bar: Back button ────────────────────────────────────────────
         Rectangle {
-            height:     54px;
+            height: 54px;
             background: Theme.surface;
             HorizontalLayout {
-                padding-left:  Theme.sp-sm;
+                padding-left: Theme.sp-sm;
                 padding-right: Theme.sp;
-                spacing:       Theme.sp-sm;
-                alignment:     start;
+                spacing: Theme.sp-sm;
+                alignment: start;
                 FjordButton {
-                    text:        "← Back";
-                    width:       80px;
+                    text: "← Back";
+                    width: 80px;
                     kbd-focused: AppState.now-playing-back-focused;
                     clicked => { AppState.show-now-playing = false; }
                 }
+
                 Text {
-                    text:               "Now Playing";
-                    color:              Theme.text;
-                    font-size:          17px;
-                    font-weight:        700;
+                    text: "Now Playing";
+                    color: Theme.text;
+                    font-size: 17px;
+                    font-weight: 700;
                     vertical-alignment: center;
                 }
             }
-            Rectangle { y: parent.height - 1px; height: 1px; width: parent.width; background: Theme.border; }
+
+            Rectangle {
+                y: parent.height - 1px;
+                height: 1px;
+                width: parent.width;
+                background: Theme.border;
+            }
         }
 
         HorizontalLayout {
@@ -60,14 +67,15 @@ export component NowPlayingScreen inherits Rectangle {
                 spacing: 24px;
 
                 art := Rectangle {
-                    width:  380px;
+                    width: 380px;
                     height: 380px;
-                    x:      (parent.width - self.width) / 2;
+                    x: (parent.width - self.width) / 2;
                     border-radius: Theme.radius-lg;
-                    background:    Theme.surface-raised;
+                    background: Theme.surface-raised;
                     clip: true;
                     if AppState.music-bar-has-art: Image {
-                        width: parent.width; height: parent.height;
+                        width: parent.width;
+                        height: parent.height;
                         image-fit: cover;
                         source: AppState.music-bar-art;
                     }
@@ -78,13 +86,14 @@ export component NowPlayingScreen inherits Rectangle {
                         font-size: 96px;
                         horizontal-alignment: center;
                         vertical-alignment: center;
-                        width: parent.width; height: parent.height;
+                        width: parent.width;
+                        height: parent.height;
                     }
                 }
 
                 VerticalLayout {
                     width: 380px;
-                    x:     (parent.width - self.width) / 2;
+                    x: (parent.width - self.width) / 2;
                     spacing: 4px;
                     Text {
                         text: AppState.music-bar-title;
@@ -94,6 +103,7 @@ export component NowPlayingScreen inherits Rectangle {
                         horizontal-alignment: center;
                         overflow: elide;
                     }
+
                     Text {
                         text: AppState.music-bar-artist;
                         color: Theme.text-muted;
@@ -105,7 +115,7 @@ export component NowPlayingScreen inherits Rectangle {
 
                 VerticalLayout {
                     width: 380px;
-                    x:     (parent.width - self.width) / 2;
+                    x: (parent.width - self.width) / 2;
                     spacing: 6px;
                     prog-ta := TouchArea {
                         height: 6px;
@@ -118,66 +128,86 @@ export component NowPlayingScreen inherits Rectangle {
                             background: Theme.border;
                             Rectangle {
                                 x: 0;
-                                width:  parent.width * AppState.music-bar-pos;
+                                width: parent.width * AppState.music-bar-pos;
                                 height: parent.height;
                                 border-radius: 3px;
                                 background: Theme.accent;
                             }
                         }
                     }
+
                     HorizontalLayout {
-                        Text { text: AppState.music-bar-elapsed; color: Theme.text-muted; font-size: 12px; }
-                        Rectangle { horizontal-stretch: 1; }
-                        Text { text: AppState.music-bar-total; color: Theme.text-muted; font-size: 12px; }
+                        Text {
+                            text: AppState.music-bar-elapsed;
+                            color: Theme.text-muted;
+                            font-size: 12px;
+                        }
+
+                        Rectangle {
+                            horizontal-stretch: 1;
+                        }
+
+                        Text {
+                            text: AppState.music-bar-total;
+                            color: Theme.text-muted;
+                            font-size: 12px;
+                        }
                     }
                 }
 
                 HorizontalLayout {
-                    x:       (parent.width - self.width) / 2;
+                    x: (parent.width - self.width) / 2;
                     spacing: 14px;
                     alignment: center;
                     FjordButton {
-                        text:   "Open Album";
-                        width:  130px;
+                        text: "Open Album";
+                        width: 130px;
                         kbd-focused: !AppState.now-playing-back-focused && !AppState.now-playing-in-strip && AppState.now-playing-ctrl-focused == 0;
                         clicked => {
                             AppState.music-bar-open-album();
                             AppState.show-now-playing = false;
                         }
                     }
+
                     IconCircleButton {
                         icon: "⏮";
                         kbd-focused: !AppState.now-playing-back-focused && !AppState.now-playing-in-strip && AppState.now-playing-ctrl-focused == 1;
                         clicked => { AppState.queue-prev-track(); }
                     }
+
                     IconCircleButton {
-                        icon:   AppState.music-bar-paused ? "▶" : "⏸";
+                        icon: AppState.music-bar-paused ? "▶" : "⏸";
                         active: true;
                         kbd-focused: !AppState.now-playing-back-focused && !AppState.now-playing-in-strip && AppState.now-playing-ctrl-focused == 2;
                         clicked => { AppState.music-bar-play-pause(); }
                     }
+
                     IconCircleButton {
                         icon: "⏭";
                         kbd-focused: !AppState.now-playing-back-focused && !AppState.now-playing-in-strip && AppState.now-playing-ctrl-focused == 3;
                         clicked => { AppState.queue-next-track(); }
                     }
+
                     IconCircleButton {
-                        icon:   "⇌";
+                        icon: "⇌";
                         active: AppState.queue-shuffle;
                         kbd-focused: !AppState.now-playing-back-focused && !AppState.now-playing-in-strip && AppState.now-playing-ctrl-focused == 4;
                         clicked => { AppState.toggle-shuffle(); }
                     }
+
                     IconCircleButton {
-                        icon:   AppState.queue-repeat-mode == 2 ? "↺¹" : "↺";
+                        icon: AppState.queue-repeat-mode == 2 ? "↺¹" : "↺";
                         active: AppState.queue-repeat-mode > 0;
                         kbd-focused: !AppState.now-playing-back-focused && !AppState.now-playing-in-strip && AppState.now-playing-ctrl-focused == 5;
                         clicked => { AppState.cycle-repeat(); }
                     }
+
                     IconCircleButton {
                         icon: "🔉";
                         kbd-focused: !AppState.now-playing-back-focused && !AppState.now-playing-in-strip && AppState.now-playing-ctrl-focused == 6;
                         clicked => { AppState.volume-down(); }
                     }
+
                     IconCircleButton {
                         icon: "🔊";
                         kbd-focused: !AppState.now-playing-back-focused && !AppState.now-playing-in-strip && AppState.now-playing-ctrl-focused == 7;
@@ -197,27 +227,31 @@ export component NowPlayingScreen inherits Rectangle {
                     font-size: 14px;
                     horizontal-alignment: center;
                     vertical-alignment: center;
-                    width: parent.width; height: parent.height;
+                    width: parent.width;
+                    height: parent.height;
                 }
 
                 // kb-y + changed-handler (not a direct content-y binding) keeps
                 // native mouse-wheel scroll working alongside the auto-follow.
                 if AppState.lyrics-available: lyr-fl := Flickable {
-                    width: parent.width; height: parent.height;
+                    width: parent.width;
+                    height: parent.height;
                     content-height: max(parent.height, lyr-list.preferred-height);
 
                     property <length> kb-y: clamp(
                         -(AppState.lyrics-active-idx * 76px) + parent.height / 2 - 38px,
                         min(0px, parent.height - lyr-list.preferred-height),
-                        0px
-                    );
+                        0px);
                     changed kb-y => { lyr-fl.content-y = kb-y; }
-                    animate content-y { duration: 450ms * AppState.settings-scroll-speed; easing: ease-in-out; }
+                    animate content-y {
+                        duration: 450ms * AppState.settings-scroll-speed;
+                        easing: ease-in-out;
+                    }
 
                     lyr-list := VerticalLayout {
                         alignment: start;
-                        spacing:   0px;
-                        padding:   32px;
+                        spacing: 0px;
+                        padding: 32px;
 
                         // Text.width bound to parent.width directly here would
                         // self-reference lyr-list's own layout computation
@@ -237,30 +271,34 @@ export component NowPlayingScreen inherits Rectangle {
                         for line[i] in AppState.lyrics-lines: TouchArea {
                             min-height: max(76px, sizer.preferred-height);
                             sizer := Text {
-                                visible:    false;
-                                height:     0px;
-                                text:       line.text;
-                                font-size:  40px;
+                                visible: false;
+                                height: 0px;
+                                text: line.text;
+                                font-size: 40px;
                                 font-weight: 700;
-                                width:      parent.width;
-                                wrap:       word-wrap;
+                                width: parent.width;
+                                wrap: word-wrap;
                             }
+
                             Text {
                                 text: line.text;
                                 color: i == AppState.lyrics-active-idx ? Theme.accent
-                                     : (i == AppState.lyrics-active-idx + 1 || i == AppState.lyrics-active-idx - 1)
-                                       ? Theme.text-muted
-                                     : Theme.text-subtle;
-                                font-size:   i == AppState.lyrics-active-idx ? 40px : 24px;
+                                    : (i == AppState.lyrics-active-idx + 1 || i == AppState.lyrics-active-idx - 1)
+                                    ? Theme.text-muted
+                                    : Theme.text-subtle;
+                                font-size: i == AppState.lyrics-active-idx ? 40px : 24px;
                                 font-weight: i == AppState.lyrics-active-idx ? 700 : 400;
                                 horizontal-alignment: center;
-                                width:       parent.width;
+                                width: parent.width;
                                 // Centre within the (possibly taller, sizer-reserved)
                                 // row manually — see the matching comment in
                                 // widgets.slint's LyricsView.
-                                y:           (parent.height - self.height) / 2;
-                                wrap:        word-wrap;
-                                animate color, font-size { duration: 350ms * AppState.settings-animation-speed; easing: ease-in-out; }
+                                y: (parent.height - self.height) / 2;
+                                wrap: word-wrap;
+                                animate color, font-size {
+                                    duration: 350ms * AppState.settings-animation-speed;
+                                    easing: ease-in-out;
+                                }
                             }
                         }
                     }
@@ -272,7 +310,12 @@ export component NowPlayingScreen inherits Rectangle {
         Rectangle {
             height: strip-h;
             background: Theme.surface;
-            Rectangle { y: 0; height: 1px; width: parent.width; background: Theme.border; }
+            Rectangle {
+                y: 0;
+                height: 1px;
+                width: parent.width;
+                background: Theme.border;
+            }
 
             VerticalLayout {
                 padding: 16px;
@@ -287,16 +330,18 @@ export component NowPlayingScreen inherits Rectangle {
 
                 strip-fl := Flickable {
                     height: strip-h - 16px * 2 - 12px - 8px;
-                    content-width:  max(self.width, strip-row.preferred-width);
+                    content-width: max(self.width, strip-row.preferred-width);
                     content-height: self.height;
 
                     property <length> kb-x: clamp(
                         -(AppState.now-playing-strip-focused * 104px) + parent.width / 2 - 52px,
                         min(0px, parent.width - strip-row.preferred-width),
-                        0px
-                    );
+                        0px);
                     changed kb-x => { strip-fl.content-x = kb-x; }
-                    animate content-x { duration: 150ms * AppState.settings-scroll-speed; easing: ease-out-expo; }
+                    animate content-x {
+                        duration: 150ms * AppState.settings-scroll-speed;
+                        easing: ease-out-expo;
+                    }
 
                     strip-row := HorizontalLayout {
                         spacing: 12px;
@@ -309,22 +354,27 @@ export component NowPlayingScreen inherits Rectangle {
                             VerticalLayout {
                                 spacing: 4px;
                                 Rectangle {
-                                    width:  72px;
+                                    width: 72px;
                                     height: 72px;
-                                    x:      (parent.width - self.width) / 2;
+                                    x: (parent.width - self.width) / 2;
                                     border-radius: Theme.radius;
-                                    background:    Theme.surface-overlay;
-                                    border-width:  (chip-ta.pressed || chip-pulse.pulsing) ? 4px
-                                                   : (!AppState.now-playing-back-focused && AppState.now-playing-in-strip && i == AppState.now-playing-strip-focused ? 2px : 0px);
-                                    border-color:  Theme.focus-border;
+                                    background: Theme.surface-overlay;
+                                    border-width: (chip-ta.pressed || chip-pulse.pulsing) ? 4px
+                                        : (!AppState.now-playing-back-focused && AppState.now-playing-in-strip && i == AppState.now-playing-strip-focused ? 2px : 0px);
+                                    border-color: Theme.focus-border;
                                     clip: true;
-                                    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+                                    animate border-width {
+                                        duration: 90ms * AppState.settings-animation-speed;
+                                        easing: ease-out-expo;
+                                    }
                                     chip-pulse := PressPulse {
                                         trigger: AppState.kb-activate-pulse;
                                         active: !AppState.now-playing-back-focused && AppState.now-playing-in-strip && i == AppState.now-playing-strip-focused;
                                     }
+
                                     if entry.has-poster: Image {
-                                        width: parent.width; height: parent.height;
+                                        width: parent.width;
+                                        height: parent.height;
                                         image-fit: cover;
                                         source: entry.poster;
                                     }
@@ -335,19 +385,21 @@ export component NowPlayingScreen inherits Rectangle {
                                         font-size: 22px;
                                         horizontal-alignment: center;
                                         vertical-alignment: center;
-                                        width: parent.width; height: parent.height;
+                                        width: parent.width;
+                                        height: parent.height;
                                     }
                                 }
+
                                 Text {
                                     text: entry.title;
                                     color: entry.is-current ? Theme.accent : Theme.text;
                                     font-size: 11px;
                                     font-weight: entry.is-current ? 700 : 400;
                                     horizontal-alignment: center;
-                                    vertical-alignment:   center;
-                                    wrap:     word-wrap;
+                                    vertical-alignment: center;
+                                    wrap: word-wrap;
                                     overflow: elide;
-                                    width:  92px;
+                                    width: 92px;
                                     height: 32px;
                                 }
                             }

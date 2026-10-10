@@ -28,12 +28,14 @@ export component BlocklistScreen inherits Rectangle {
         background: Theme.surface;
 
         FjordButton {
-            x: 16px; y: 16px;
+            x: 16px;
+            y: 16px;
             text: "← Back";
             width: 88px;
             kbd-focused: AppState.blocklist-back-focused;
             clicked => { AppState.show-blocklist = false; }
         }
+
         Text {
             x: (parent.width - self.width) / 2;
             y: 0;
@@ -44,7 +46,12 @@ export component BlocklistScreen inherits Rectangle {
             font-weight: 700;
             vertical-alignment: center;
         }
-        Rectangle { y: parent.height - 1px; height: 1px; background: Theme.border; }
+
+        Rectangle {
+            y: parent.height - 1px;
+            height: 1px;
+            background: Theme.border;
+        }
     }
 
     // ── Empty state ──────────────────────────────────────────────────────────
@@ -62,26 +69,28 @@ export component BlocklistScreen inherits Rectangle {
 
     // ── Scrollable list ──────────────────────────────────────────────────────
     list-container := Rectangle {
-        y:      64px;
+        y: 64px;
         height: parent.height - 64px;
-        clip:   true;
+        clip: true;
 
         property <length> kb-y: AppState.blocklist-back-focused ? 0px : clamp(
             -(AppState.blocklist-focused * root.row-h) + self.height / 2 - root.row-h / 2,
             min(0px, self.height - rows.preferred-height),
-            0px
-        );
+            0px);
         changed kb-y => { fl.content-y = kb-y; }
 
         fl := Flickable {
-            width:  parent.width;
+            width: parent.width;
             height: parent.height;
             content-height: max(parent.height, rows.preferred-height);
-            animate content-y { duration: 150ms * AppState.settings-scroll-speed; easing: ease-out-expo; }
+            animate content-y {
+                duration: 150ms * AppState.settings-scroll-speed;
+                easing: ease-out-expo;
+            }
 
             rows := VerticalLayout {
                 alignment: start;
-                spacing:   0px;
+                spacing: 0px;
 
                 for row[i] in AppState.blocklist-items: row-ta := TouchArea {
                     height: root.row-h;
@@ -91,31 +100,38 @@ export component BlocklistScreen inherits Rectangle {
                     Rectangle {
                         height: parent.height;
                         background: (!AppState.blocklist-back-focused && i == AppState.blocklist-focused) ? Theme.surface-overlay
-                                  : row-ta.has-hover ? #ffffff08
-                                  : transparent;
-                        border-width:  (row-ta.pressed || row-pulse.pulsing) ? 3px : 0px;
-                        border-color:  Theme.focus-border;
-                        animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
-                        row-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: !AppState.blocklist-back-focused && i == AppState.blocklist-focused; }
+                            : row-ta.has-hover ? #ffffff08
+                            : transparent;
+                        border-width: (row-ta.pressed || row-pulse.pulsing) ? 3px : 0px;
+                        border-color: Theme.focus-border;
+                        animate border-width {
+                            duration: 90ms * AppState.settings-animation-speed;
+                            easing: ease-out-expo;
+                        }
+                        row-pulse := PressPulse {
+                            trigger: AppState.kb-activate-pulse;
+                            active: !AppState.blocklist-back-focused && i == AppState.blocklist-focused;
+                        }
 
                         HorizontalLayout {
-                            padding-left:  48px;
+                            padding-left: 48px;
                             padding-right: 48px;
-                            spacing:       12px;
-                            alignment:     space-between;
+                            spacing: 12px;
+                            alignment: space-between;
 
                             VerticalLayout {
-                                alignment:          center;
-                                spacing:            2px;
+                                alignment: center;
+                                spacing: 2px;
                                 horizontal-stretch: 1;
 
                                 Text {
-                                    text:       row.title;
-                                    color:      Theme.text;
-                                    font-size:  14px;
+                                    text: row.title;
+                                    color: Theme.text;
+                                    font-size: 14px;
                                     font-weight: 600;
-                                    overflow:   elide;
+                                    overflow: elide;
                                 }
+
                                 HorizontalLayout {
                                     spacing: 8px;
                                     Text {
@@ -123,6 +139,7 @@ export component BlocklistScreen inherits Rectangle {
                                         color: Theme.text-subtle;
                                         font-size: 11px;
                                     }
+
                                     if row.blocklisted-by != "" || row.blocklisted-at != "": Text {
                                         text: {
                                             if row.blocklisted-by != "" && row.blocklisted-at != "" {
@@ -141,7 +158,8 @@ export component BlocklistScreen inherits Rectangle {
                             }
 
                             remove-ta := TouchArea {
-                                width: 32px; height: 32px;
+                                width: 32px;
+                                height: 32px;
                                 mouse-cursor: MouseCursor.pointer;
                                 clicked => {
                                     AppState.blocklist-back-focused = false;
@@ -160,7 +178,12 @@ export component BlocklistScreen inherits Rectangle {
                             }
                         }
 
-                        Rectangle { y: parent.height - 1px; width: parent.width; height: 1px; background: Theme.border; }
+                        Rectangle {
+                            y: parent.height - 1px;
+                            width: parent.width;
+                            height: 1px;
+                            background: Theme.border;
+                        }
                     }
                 }
 

@@ -38,40 +38,46 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme, TrackEntry } from "theme.slint";
 import { AppState } from "app_state.slint";
-import { FjordButton, StatRow, LoadingSpinner, FadeInTrigger, PressPulse, VideoSpot } from "widgets.slint";
+import {
+    FjordButton,
+    StatRow,
+    LoadingSpinner,
+    FadeInTrigger,
+    PressPulse,
+    VideoSpot,
+} from "widgets.slint";
 
 // ── Reusable track-selection panel (Sub / Audio / Video) ─────────────────────
 // Positioned above the controls bar; keyboard scroll via kb-y/changed pattern;
 // mouse-wheel via native Flickable. has-off-row adds an "Off" entry at index 0.
 component TrackPanel inherits Rectangle {
-    in property <string>       title;
+    in property <string> title;
     in property <[TrackEntry]> tracks;
-    in property <int>          current-id: -1;
-    in property <bool>         has-off-row: false;
+    in property <int> current-id: -1;
+    in property <bool> has-off-row: false;
     // Container dimensions passed from the instantiation site (parent.height / parent.width).
     // Needed because Slint blocks `parent` access in component root-level property bindings.
-    in property <length>       container-h;
-    in property <length>       container-w;
+    in property <length> container-h;
+    in property <length> container-w;
     callback track-selected(int);
 
-    height:        min(panel-list.preferred-height + 16px, container-h - 158px - 40px);
-    y:             container-h - 158px - self.height - 8px;
-    x:             container-w - self.width - 16px;
-    width:         min(container-w - 32px, 400px);
-    background:    #0e0e0eee;
+    height: min(panel-list.preferred-height + 16px, container-h - 158px - 40px);
+    y: container-h - 158px - self.height - 8px;
+    x: container-w - self.width - 16px;
+    width: min(container-w - 32px, 400px);
+    background: #0e0e0eee;
     border-radius: Theme.radius-lg;
-    clip:          true;
+    clip: true;
 
     property <length> kb-y: clamp(
         -(AppState.player-panel-cursor * 34px) + self.height / 2 - 17px,
         min(0px, self.height - panel-list.preferred-height),
-        0px
-    );
+        0px);
     changed kb-y => { panel-fl.content-y = kb-y; }
 
     panel-fl := Flickable {
-        height:          parent.height;
-        content-width:  parent.width;
+        height: parent.height;
+        content-width: parent.width;
         content-height: panel-list.preferred-height;
 
         panel-list := VerticalLayout {
@@ -79,39 +85,50 @@ component TrackPanel inherits Rectangle {
             spacing: 2px;
 
             Text {
-                text:        root.title;
-                color:       Theme.accent;
-                font-size:   11px;
+                text: root.title;
+                color: Theme.accent;
+                font-size: 11px;
                 font-weight: 700;
-                height:      24px;
+                height: 24px;
             }
 
             if root.has-off-row: Rectangle {
-                height:        32px;
+                height: 32px;
                 border-radius: Theme.radius;
-                background:    { let hov = off-ta.has-hover;
-                                  AppState.player-panel-cursor == 0 ? Theme.surface-overlay
-                                : root.current-id == 0              ? Theme.accent-muted
-                                : hov                               ? Theme.surface
-                                :                                      transparent };
-                border-width:  (off-ta.pressed || off-pulse.pulsing) ? 3px : 0px;
-                border-color:  Theme.focus-border;
-                animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
-                off-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.player-panel-cursor == 0; }
+                background: {
+                    let hov = off-ta.has-hover;
+                    AppState.player-panel-cursor == 0 ? Theme.surface-overlay
+                        : root.current-id == 0 ? Theme.accent-muted
+                        : hov ? Theme.surface
+                        : transparent
+                };
+                border-width: (off-ta.pressed || off-pulse.pulsing) ? 3px : 0px;
+                border-color: Theme.focus-border;
+                animate border-width {
+                    duration: 90ms * AppState.settings-animation-speed;
+                    easing: ease-out-expo;
+                }
+                off-pulse := PressPulse {
+                    trigger: AppState.kb-activate-pulse;
+                    active: AppState.player-panel-cursor == 0;
+                }
+
                 HorizontalLayout {
-                    padding-left: 10px; padding-right: 10px;
+                    padding-left: 10px;
+                    padding-right: 10px;
                     alignment: center;
                     Text {
-                        text:               "Off";
-                        color:              root.current-id == 0 ? Theme.accent : Theme.text;
-                        font-size:          12px;
+                        text: "Off";
+                        color: root.current-id == 0 ? Theme.accent : Theme.text;
+                        font-size: 12px;
                         vertical-alignment: center;
                     }
                 }
+
                 off-ta := TouchArea {
                     clicked => {
                         root.track-selected(0);
-                        AppState.player-open-panel   = 0;
+                        AppState.player-open-panel = 0;
                         AppState.player-panel-cursor = 0;
                     }
                 }
@@ -119,29 +136,42 @@ component TrackPanel inherits Rectangle {
 
             for t[i] in root.tracks: Rectangle {
                 border-radius: Theme.radius;
-                background:    { let hov = row-ta.has-hover;
-                                  AppState.player-panel-cursor == i + (root.has-off-row ? 1 : 0) ? Theme.surface-overlay
-                                : root.current-id == t.id                                         ? Theme.accent-muted
-                                : hov                                                              ? Theme.surface
-                                :                                                                    transparent };
-                border-width:  (row-ta.pressed || row-pulse.pulsing) ? 3px : 0px;
-                border-color:  Theme.focus-border;
-                animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
-                row-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.player-panel-cursor == i + (root.has-off-row ? 1 : 0); }
+                background: {
+                    let hov = row-ta.has-hover;
+                    AppState.player-panel-cursor == i + (root.has-off-row ? 1 : 0) ? Theme.surface-overlay
+                        : root.current-id == t.id ? Theme.accent-muted
+                        : hov ? Theme.surface
+                        : transparent
+                };
+                border-width: (row-ta.pressed || row-pulse.pulsing) ? 3px : 0px;
+                border-color: Theme.focus-border;
+                animate border-width {
+                    duration: 90ms * AppState.settings-animation-speed;
+                    easing: ease-out-expo;
+                }
+                row-pulse := PressPulse {
+                    trigger: AppState.kb-activate-pulse;
+                    active: AppState.player-panel-cursor == i + (root.has-off-row ? 1 : 0);
+                }
+
                 HorizontalLayout {
-                    padding-top: 6px; padding-bottom: 6px; padding-left: 10px; padding-right: 10px;
+                    padding-top: 6px;
+                    padding-bottom: 6px;
+                    padding-left: 10px;
+                    padding-right: 10px;
                     Text {
-                        text:               t.label;
-                        color:              root.current-id == t.id ? Theme.accent : Theme.text;
-                        font-size:          12px;
-                        wrap:               word-wrap;
+                        text: t.label;
+                        color: root.current-id == t.id ? Theme.accent : Theme.text;
+                        font-size: 12px;
+                        wrap: word-wrap;
                         vertical-alignment: center;
                     }
                 }
+
                 row-ta := TouchArea {
                     clicked => {
                         root.track-selected(t.id);
-                        AppState.player-open-panel   = 0;
+                        AppState.player-open-panel = 0;
                         AppState.player-panel-cursor = 0;
                     }
                 }
@@ -156,38 +186,48 @@ export component PlayerScreen inherits Rectangle {
     background: AppState.video-surface-active ? transparent : #000000;
 
     // ── pause/play flash state ────────────────────────────────────────────────
-    property <float>  flash-opacity: 0.0;
+    property <float> flash-opacity: 0.0;
     property <string> flash-icon:    "▶";
-    property <bool>   _pause-mirror: AppState.is-paused;
+    property <bool> _pause-mirror: AppState.is-paused;
 
-    animate flash-opacity { duration: 600ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+    animate flash-opacity {
+        duration: 600ms * AppState.settings-animation-speed;
+        easing: ease-out-expo;
+    }
 
     flash-timer := Timer {
         interval: 150ms;
-        running:  false;
+        running: false;
         triggered => {
-            root.flash-opacity  = 0.0;
-            self.running        = false;
+            root.flash-opacity = 0.0;
+            self.running = false;
         }
     }
 
     changed _pause-mirror => {
         if AppState.is-playing {
-            root.flash-icon     = AppState.is-paused ? "⏸" : "▶";
-            root.flash-opacity  = 1.0;
+            root.flash-icon = AppState.is-paused ? "⏸" : "▶";
+            root.flash-opacity = 1.0;
             flash-timer.running = true;
         }
     }
 
     // ── video frame ───────────────────────────────────────────────────────────
     Image {
-        source:    AppState.video-frame;
-        width:     parent.width;
-        height:    parent.height;
+        source: AppState.video-frame;
+        width: parent.width;
+        height: parent.height;
         image-fit: contain;
-        visible:   !AppState.video-surface-active;
+        visible: !AppState.video-surface-active;
     }
-    VideoSpot { which: 0; x: 0; y: 0; width: parent.width; height: parent.height; }
+
+    VideoSpot {
+        which: 0;
+        x: 0;
+        y: 0;
+        width: parent.width;
+        height: parent.height;
+    }
 
     // ── skip-segment fade-to-black ────────────────────────────────────────────
     // 2026-08-11, direct request ("make intro skip etc more gradual, it
@@ -202,7 +242,8 @@ export component PlayerScreen inherits Rectangle {
     // so it never blocks clicks to the video/controls beneath it even at
     // full opacity.
     Rectangle {
-        width: parent.width; height: parent.height;
+        width: parent.width;
+        height: parent.height;
         background: black;
         property <float> skip-fade-opacity: AppState.skip-fade-active ? 1.0 : 0.0;
         // Base ms is now Settings-configurable (AppState.settings-skip-fade-ms,
@@ -210,17 +251,20 @@ export component PlayerScreen inherits Rectangle {
         // a setting so i can test") — wire_mpv_timer's own Rust-side wait
         // computation reads the identical two properties, so the two sides
         // can never drift out of sync with each other or with a live change.
-        animate skip-fade-opacity { duration: AppState.settings-skip-fade-ms * 1ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+        animate skip-fade-opacity {
+            duration: AppState.settings-skip-fade-ms * 1ms * AppState.settings-animation-speed;
+            easing: ease-out-expo;
+        }
         opacity: self.skip-fade-opacity;
     }
 
     TouchArea {
-        width:        parent.width;
-        height:       parent.height;
+        width: parent.width;
+        height: parent.height;
         mouse-cursor: AppState.controls-visible ? MouseCursor.default : MouseCursor.none;
-        clicked        => { AppState.pause-play-toggle(); AppState.show-controls(); }
+        clicked => { AppState.pause-play-toggle(); AppState.show-controls(); }
         double-clicked => { AppState.toggle-fullscreen(); }
-        moved          => { AppState.show-controls(); }
+        moved => { AppState.show-controls(); }
         changed mouse-x => { AppState.player-cursor-x = self.mouse-x; AppState.show-controls(); }
         changed mouse-y => { AppState.player-cursor-y = self.mouse-y; AppState.show-controls(); }
     }
@@ -231,33 +275,34 @@ export component PlayerScreen inherits Rectangle {
 
     // ── chapter name OSD (top-left, ~2 s after , / . navigation) ─────────────
     if AppState.chapter-osd-visible: Rectangle {
-        x:             16px;
-        y:             24px;
-        width:         clamp(80px, ch-osd-label.preferred-width + 44px, 360px);
-        height:        36px;
+        x: 16px;
+        y: 24px;
+        width: clamp(80px, ch-osd-label.preferred-width + 44px, 360px);
+        height: 36px;
         border-radius: Theme.radius;
-        background:    #0d0d0dcc;
-        drop-shadow-blur:  10px;
+        background: #0d0d0dcc;
+        drop-shadow-blur: 10px;
         drop-shadow-color: #00000055;
 
         HorizontalLayout {
-            padding-left:  12px;
+            padding-left: 12px;
             padding-right: 14px;
-            spacing:       8px;
-            alignment:     center;
+            spacing: 8px;
+            alignment: center;
             Text {
-                text:               "▸";
-                font-family:        "Noto Sans Symbols 2";
-                color:              Theme.accent;
-                font-size:          11px;
-                font-weight:        700;
+                text: "▸";
+                font-family: "Noto Sans Symbols 2";
+                color: Theme.accent;
+                font-size: 11px;
+                font-weight: 700;
                 vertical-alignment: center;
-                width:              12px;
+                width: 12px;
             }
+
             ch-osd-label := Text {
-                text:               AppState.chapter-osd-text;
-                color:              #ffffff;
-                font-size:          12px;
+                text: AppState.chapter-osd-text;
+                color: #ffffff;
+                font-size: 12px;
                 vertical-alignment: center;
             }
         }
@@ -265,33 +310,34 @@ export component PlayerScreen inherits Rectangle {
 
     // ── sub / audio delay OSD pill ────────────────────────────────────────────
     if AppState.delay-osd-visible: Rectangle {
-        x:             16px;
-        y:             68px;
-        width:         clamp(80px, delay-osd-label.preferred-width + 44px, 360px);
-        height:        36px;
+        x: 16px;
+        y: 68px;
+        width: clamp(80px, delay-osd-label.preferred-width + 44px, 360px);
+        height: 36px;
         border-radius: Theme.radius;
-        background:    #0d0d0dcc;
-        drop-shadow-blur:  10px;
+        background: #0d0d0dcc;
+        drop-shadow-blur: 10px;
         drop-shadow-color: #00000055;
 
         HorizontalLayout {
-            padding-left:  12px;
+            padding-left: 12px;
             padding-right: 14px;
-            spacing:       8px;
-            alignment:     center;
+            spacing: 8px;
+            alignment: center;
             Text {
-                text:               "⏱";
-                font-family:        "Noto Sans Symbols 2";
-                color:              Theme.accent;
-                font-size:          11px;
-                font-weight:        700;
+                text: "⏱";
+                font-family: "Noto Sans Symbols 2";
+                color: Theme.accent;
+                font-size: 11px;
+                font-weight: 700;
                 vertical-alignment: center;
-                width:              12px;
+                width: 12px;
             }
+
             delay-osd-label := Text {
-                text:               AppState.delay-osd-text;
-                color:              #ffffff;
-                font-size:          12px;
+                text: AppState.delay-osd-text;
+                color: #ffffff;
+                font-size: 12px;
                 vertical-alignment: center;
             }
         }
@@ -299,47 +345,61 @@ export component PlayerScreen inherits Rectangle {
 
     // ── skip segment prompt (Intro / Recap / Preview / Commercial) ───────────
     if AppState.show-skip-segment: Rectangle {
-        x:             parent.width - 170px - 16px;
-        y:             parent.height - 158px - 50px;
-        width:         170px;
-        height:        40px;
+        x: parent.width - 170px - 16px;
+        y: parent.height - 158px - 50px;
+        width: 170px;
+        height: 40px;
         border-radius: Theme.radius;
-        border-width:  (skip-ta.pressed || skip-pulse.pulsing) ? 5px : 2px;
-        border-color:  #ffffff55;
-        background:    Theme.accent;
-        drop-shadow-blur:  10px;
+        border-width: (skip-ta.pressed || skip-pulse.pulsing) ? 5px : 2px;
+        border-color: #ffffff55;
+        background: Theme.accent;
+        drop-shadow-blur: 10px;
         drop-shadow-color: #00000055;
         opacity: skip-fade.fade-opacity;
-        animate opacity { duration: 200ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+        animate opacity {
+            duration: 200ms * AppState.settings-animation-speed;
+            easing: ease-out-expo;
+        }
         skip-fade := FadeInTrigger { }
-        animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
-        skip-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: true; }
+
+        animate border-width {
+            duration: 90ms * AppState.settings-animation-speed;
+            easing: ease-out-expo;
+        }
+        skip-pulse := PressPulse {
+            trigger: AppState.kb-activate-pulse;
+            active: true;
+        }
 
         skip-ta := TouchArea {
             clicked => { AppState.skip-segment(); }
         }
+
         Text {
-            text:                 AppState.skip-segment-label;
-            color:                #ffffff;
-            font-size:            14px;
-            font-weight:          700;
+            text: AppState.skip-segment-label;
+            color: #ffffff;
+            font-size: 14px;
+            font-weight: 700;
             horizontal-alignment: center;
-            vertical-alignment:   center;
+            vertical-alignment: center;
         }
     }
 
     // ── skip timed prompt (ask-timed mode: "Skip" + "Don't Skip" + countdown) ─
     if AppState.show-skip-timed: Rectangle {
-        x:             parent.width - timed-inner.preferred-width - 16px;
-        y:             parent.height - 158px - timed-inner.preferred-height - 8px;
-        width:         timed-inner.preferred-width;
-        height:        timed-inner.preferred-height;
+        x: parent.width - timed-inner.preferred-width - 16px;
+        y: parent.height - 158px - timed-inner.preferred-height - 8px;
+        width: timed-inner.preferred-width;
+        height: timed-inner.preferred-height;
         border-radius: Theme.radius-lg;
-        background:    #0d0d0ddd;
-        drop-shadow-blur:  10px;
+        background: #0d0d0ddd;
+        drop-shadow-blur: 10px;
         drop-shadow-color: #00000055;
         opacity: timed-fade.fade-opacity;
-        animate opacity { duration: 200ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+        animate opacity {
+            duration: 200ms * AppState.settings-animation-speed;
+            easing: ease-out-expo;
+        }
         timed-fade := FadeInTrigger { }
 
         timed-inner := VerticalLayout {
@@ -347,21 +407,22 @@ export component PlayerScreen inherits Rectangle {
             spacing: 8px;
 
             Text {
-                text:        AppState.skip-timed-label + "  ·  " + AppState.skip-timed-secs + "s";
-                color:       Theme.accent;
-                font-size:   13px;
+                text: AppState.skip-timed-label + "  ·  " + AppState.skip-timed-secs + "s";
+                color: Theme.accent;
+                font-size: 13px;
                 font-weight: 700;
             }
 
             HorizontalLayout {
                 spacing: 8px;
                 FjordButton {
-                    text:        "Skip";
+                    text: "Skip";
                     kbd-focused: AppState.skip-timed-focused == 0;
                     clicked => { AppState.skip-segment(); }
                 }
+
                 FjordButton {
-                    text:        "Don't Skip";
+                    text: "Don't Skip";
                     kbd-focused: AppState.skip-timed-focused == 1;
                     clicked => { AppState.dismiss-skip-timed(); }
                 }
@@ -371,55 +432,60 @@ export component PlayerScreen inherits Rectangle {
 
     // ── Up Next banner ────────────────────────────────────────────────────────
     if AppState.show-next-ep-banner: Rectangle {
-        x:             parent.width - self.width - 16px;
-        y:             parent.height - 158px - self.height - 16px;
-        width:         300px;
-        height:        banner-inner.preferred-height;
+        x: parent.width - self.width - 16px;
+        y: parent.height - 158px - self.height - 16px;
+        width: 300px;
+        height: banner-inner.preferred-height;
         border-radius: Theme.radius-lg;
-        background:    #0d0d0ddd;
-        drop-shadow-blur:  12px;
+        background: #0d0d0ddd;
+        drop-shadow-blur: 12px;
         drop-shadow-color: #00000066;
         opacity: banner-fade.fade-opacity;
-        animate opacity { duration: 200ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+        animate opacity {
+            duration: 200ms * AppState.settings-animation-speed;
+            easing: ease-out-expo;
+        }
         banner-fade := FadeInTrigger { }
 
         banner-inner := VerticalLayout {
-            padding:   16px;
-            spacing:   10px;
+            padding: 16px;
+            spacing: 10px;
 
             HorizontalLayout {
                 Text {
-                    text:        "Up Next  ·  " + AppState.next-ep-secs + "s";
-                    color:       Theme.accent;
-                    font-size:   11px;
+                    text: "Up Next  ·  " + AppState.next-ep-secs + "s";
+                    color: Theme.accent;
+                    font-size: 11px;
                     font-weight: 700;
                     vertical-alignment: center;
                     horizontal-stretch: 1;
                 }
+
                 if AppState.next-ep-ends-at != "": Text {
-                    text:               "Ends " + AppState.next-ep-ends-at;
-                    color:              #cccccc;
-                    font-size:          11px;
+                    text: "Ends " + AppState.next-ep-ends-at;
+                    color: #cccccc;
+                    font-size: 11px;
                     vertical-alignment: center;
                 }
             }
 
             Text {
-                text:      AppState.next-ep-title;
-                color:     #ffffff;
+                text: AppState.next-ep-title;
+                color: #ffffff;
                 font-size: 13px;
-                overflow:  elide;
+                overflow: elide;
             }
 
             HorizontalLayout {
                 spacing: 8px;
                 FjordButton {
-                    text:        "Play Now";
+                    text: "Play Now";
                     kbd-focused: AppState.next-ep-banner-focused == 0;
                     clicked => { AppState.play-next-ep(); }
                 }
+
                 FjordButton {
-                    text:        "Skip";
+                    text: "Skip";
                     kbd-focused: AppState.next-ep-banner-focused == 1;
                     clicked => { AppState.cancel-auto-advance(); }
                 }
@@ -432,43 +498,46 @@ export component PlayerScreen inherits Rectangle {
     // Shows "Loading…" (no bar) when pct=0 (initial HDD spin-up), "Buffering N%"
     // + fill bar when mpv is actually stalled mid-playback.
     Rectangle {
-        x:             (parent.width - self.width) / 2;
-        y:             (parent.height - self.height) / 2;
-        width:         180px;
-        height:        buf-inner.preferred-height;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        width: 180px;
+        height: buf-inner.preferred-height;
         border-radius: Theme.radius-lg;
-        background:    #0d0d0dcc;
-        drop-shadow-blur:  10px;
+        background: #0d0d0dcc;
+        drop-shadow-blur: 10px;
         drop-shadow-color: #00000055;
 
         property <float> buf-opacity: AppState.buffering-active ? 1.0 : 0.0;
-        animate buf-opacity { duration: 350ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+        animate buf-opacity {
+            duration: 350ms * AppState.settings-animation-speed;
+            easing: ease-out-expo;
+        }
         opacity: self.buf-opacity;
 
         buf-inner := VerticalLayout {
-            padding:   14px;
-            spacing:   8px;
+            padding: 14px;
+            spacing: 8px;
             alignment: center;
 
             if AppState.buffering-pct == 0: LoadingSpinner { }
 
             if AppState.buffering-pct > 0: Text {
-                text:                 "Buffering  " + AppState.buffering-pct + "%";
-                color:                Theme.text;
-                font-size:            13px;
+                text: "Buffering  " + AppState.buffering-pct + "%";
+                color: Theme.text;
+                font-size: 13px;
                 horizontal-alignment: center;
             }
 
             if AppState.buffering-pct > 0: Rectangle {
-                height:        3px;
-                background:    #444444;
+                height: 3px;
+                background: #444444;
                 border-radius: 2px;
                 property <float> fill: AppState.buffering-pct * 0.01;
                 Rectangle {
-                    x:             0;
-                    width:         parent.width * parent.fill;
-                    height:        parent.height;
-                    background:    Theme.accent;
+                    x: 0;
+                    width: parent.width * parent.fill;
+                    height: parent.height;
+                    background: Theme.accent;
                     border-radius: 2px;
                 }
             }
@@ -483,30 +552,33 @@ export component PlayerScreen inherits Rectangle {
     // feedback at all. Driven by playback-stalled (see app_state.slint), set
     // by the same rolling stall-recovery check that attempts a stream reload.
     Rectangle {
-        x:             (parent.width - self.width) / 2;
-        y:             (parent.height - self.height) / 2;
-        width:         220px;
-        height:        stall-inner.preferred-height;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        width: 220px;
+        height: stall-inner.preferred-height;
         border-radius: Theme.radius-lg;
-        background:    #0d0d0dcc;
-        drop-shadow-blur:  10px;
+        background: #0d0d0dcc;
+        drop-shadow-blur: 10px;
         drop-shadow-color: #00000055;
 
         property <float> stall-opacity: AppState.playback-stalled ? 1.0 : 0.0;
-        animate stall-opacity { duration: 350ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+        animate stall-opacity {
+            duration: 350ms * AppState.settings-animation-speed;
+            easing: ease-out-expo;
+        }
         opacity: self.stall-opacity;
 
         stall-inner := VerticalLayout {
-            padding:   14px;
-            spacing:   8px;
+            padding: 14px;
+            spacing: 8px;
             alignment: center;
 
             LoadingSpinner { }
 
             Text {
-                text:                 "Reconnecting…";
-                color:                Theme.text;
-                font-size:            13px;
+                text: "Reconnecting…";
+                color: Theme.text;
+                font-size: 13px;
                 horizontal-alignment: center;
             }
         }
@@ -514,36 +586,37 @@ export component PlayerScreen inherits Rectangle {
 
     // ── controls bar ──────────────────────────────────────────────────────────
     ctrl-bar := Rectangle {
-        y:          parent.height - self.height;
+        y: parent.height - self.height;
         // Collapses to 52 px in mini mode (pause / keyboard seek) — title + buttons hidden.
-        height:     AppState.controls-visible ? 158px : 52px;
+        height: AppState.controls-visible ? 158px : 52px;
         background: @linear-gradient(180deg, #00000000 0%, #000000bb 45%, #000000ee 100%);
         // visible removes children from hit-testing when hidden; opacity alone keeps
         // TouchAreas active (Slint gotcha: opacity:0 ≠ non-interactive).
-        visible:    AppState.controls-visible || AppState.pause-bar-visible || AppState.seek-osd-visible;
-        opacity:    (AppState.controls-visible || AppState.pause-bar-visible || AppState.seek-osd-visible) ? 1.0 : 0.0;
+        visible: AppState.controls-visible || AppState.pause-bar-visible || AppState.seek-osd-visible;
+        opacity: (AppState.controls-visible || AppState.pause-bar-visible || AppState.seek-osd-visible) ? 1.0 : 0.0;
         animate opacity { duration: 300ms * AppState.settings-animation-speed; }
 
         VerticalLayout {
-            padding:   12px;
-            spacing:   9px;
+            padding: 12px;
+            spacing: 9px;
             alignment: center;
 
             // ── Title row (full controls only) ───────────────────────────────
             if AppState.controls-visible: HorizontalLayout {
                 spacing: 12px;
                 Text {
-                    text:                 AppState.playing-title;
-                    color:                #ffffff;
-                    font-size:            13px;
-                    overflow:             elide;
-                    horizontal-stretch:   1;
-                    vertical-alignment:   center;
+                    text: AppState.playing-title;
+                    color: #ffffff;
+                    font-size: 13px;
+                    overflow: elide;
+                    horizontal-stretch: 1;
+                    vertical-alignment: center;
                 }
+
                 if AppState.playback-ends-at != "": Text {
-                    text:               "Ends " + AppState.playback-ends-at;
-                    color:              #cccccc;
-                    font-size:          12px;
+                    text: "Ends " + AppState.playback-ends-at;
+                    color: #cccccc;
+                    font-size: 12px;
                     vertical-alignment: center;
                 }
             }
@@ -554,26 +627,32 @@ export component PlayerScreen inherits Rectangle {
 
                 Text {
                     // During seek accumulation show the target time; otherwise current position.
-                    text:               AppState.seek-osd-visible ? AppState.seek-bar-time : AppState.playback-time;
-                    color:              #cccccc;
-                    font-size:          12px;
-                    width:              54px;
+                    text: AppState.seek-osd-visible ? AppState.seek-bar-time : AppState.playback-time;
+                    color: #cccccc;
+                    font-size: 12px;
+                    width: 54px;
                     vertical-alignment: center;
                 }
 
                 seek-track := Rectangle {
-                    height:             20px;
+                    height: 20px;
                     horizontal-stretch: 1;
 
                     property <length> bar-h:   seek-ta.has-hover || seek-ta.pressed ? 8px : 4px;
                     property <length> thumb-s: seek-ta.has-hover || seek-ta.pressed ? 16px : 12px;
-                    animate bar-h   { duration: 100ms * AppState.settings-animation-speed; easing: ease-out-expo; }
-                    animate thumb-s { duration: 100ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+                    animate bar-h {
+                        duration: 100ms * AppState.settings-animation-speed;
+                        easing: ease-out-expo;
+                    }
+                    animate thumb-s {
+                        duration: 100ms * AppState.settings-animation-speed;
+                        easing: ease-out-expo;
+                    }
 
                     // Visual position during drag — updated every mouse-move; falls
                     // back to playback-pos when not pressed so the thumb tracks mpv.
                     property <float> drag-ratio:  0.0;
-                    property <bool>  is-dragging: false;
+                    property <bool> is-dragging: false;
                     // Use is-dragging (not pressed) so display-pos holds drag-ratio
                     // until the pointer-event(up) handler has run and the Rust seek-committed
                     // callback has already set playback-pos to the new position.
@@ -584,63 +663,63 @@ export component PlayerScreen inherits Rectangle {
 
                     // Visual track bar (expands on hover)
                     Rectangle {
-                        y:             (parent.height - self.height) / 2;
-                        height:        seek-track.bar-h;
-                        background:    #444444;
+                        y: (parent.height - self.height) / 2;
+                        height: seek-track.bar-h;
+                        background: #444444;
                         border-radius: seek-track.bar-h / 2;
 
                         // Buffered layer
                         Rectangle {
-                            x:             0;
-                            width:         AppState.buffered-pos * parent.width;
-                            height:        parent.height;
-                            background:    #666666;
+                            x: 0;
+                            width: AppState.buffered-pos * parent.width;
+                            height: parent.height;
+                            background: #666666;
                             border-radius: seek-track.bar-h / 2;
                         }
                         // Played layer
                         Rectangle {
-                            x:             0;
-                            width:         seek-track.display-pos * parent.width;
-                            height:        parent.height;
-                            background:    Theme.accent;
+                            x: 0;
+                            width: seek-track.display-pos * parent.width;
+                            height: parent.height;
+                            background: Theme.accent;
                             border-radius: seek-track.bar-h / 2;
                         }
                     }
 
                     // Chapter tick marks
                     for mark in AppState.chapter-marks: Rectangle {
-                        x:             mark * seek-track.width - 1px;
-                        y:             (parent.height - self.height) / 2;
-                        width:         2px;
-                        height:        parent.bar-h + 4px;
-                        background:    #ffffff66;
+                        x: mark * seek-track.width - 1px;
+                        y: (parent.height - self.height) / 2;
+                        width: 2px;
+                        height: parent.bar-h + 4px;
+                        background: #ffffff66;
                         border-radius: 1px;
                     }
 
                     // Thumb knob (expands on hover)
                     Rectangle {
-                        x:             seek-track.display-pos * seek-track.width - seek-track.thumb-s / 2;
-                        y:             (parent.height - self.height) / 2;
-                        width:         seek-track.thumb-s;
-                        height:        seek-track.thumb-s;
+                        x: seek-track.display-pos * seek-track.width - seek-track.thumb-s / 2;
+                        y: (parent.height - self.height) / 2;
+                        width: seek-track.thumb-s;
+                        height: seek-track.thumb-s;
                         border-radius: seek-track.thumb-s / 2;
-                        background:    #ffffff;
+                        background: #ffffff;
                     }
 
                     // Hover time tooltip
                     if seek-ta.has-hover && AppState.seek-hover-time != "": Rectangle {
-                        x:             clamp(seek-ta.mouse-x - 26px, 0px, seek-track.width - 52px);
-                        y:             -30px;
-                        width:         52px;
-                        height:        22px;
-                        background:    #0d0d0ddd;
+                        x: clamp(seek-ta.mouse-x - 26px, 0px, seek-track.width - 52px);
+                        y: -30px;
+                        width: 52px;
+                        height: 22px;
+                        background: #0d0d0ddd;
                         border-radius: 4px;
                         Text {
-                            text:                 AppState.seek-hover-time;
-                            color:                #ffffff;
-                            font-size:            11px;
+                            text: AppState.seek-hover-time;
+                            color: #ffffff;
+                            font-size: 11px;
                             horizontal-alignment: center;
-                            vertical-alignment:   center;
+                            vertical-alignment: center;
                         }
                     }
 
@@ -656,7 +735,7 @@ export component PlayerScreen inherits Rectangle {
                                 AppState.seek-drag-started();
                                 AppState.seek-dragging = true;
                             }
-                            seek-track.drag-ratio  = max(0, min(1, seek-ta.mouse-x / seek-track.width));
+                            seek-track.drag-ratio = max(0, min(1, seek-ta.mouse-x / seek-track.width));
                             seek-track.is-dragging = true;
                             AppState.show-controls();
                         }
@@ -678,18 +757,18 @@ export component PlayerScreen inherits Rectangle {
                 }
 
                 Text {
-                    text:                 AppState.playback-total;
-                    color:                #888888;
-                    font-size:            12px;
-                    width:                54px;
+                    text: AppState.playback-total;
+                    color: #888888;
+                    font-size: 12px;
+                    width: 54px;
                     horizontal-alignment: right;
-                    vertical-alignment:   center;
+                    vertical-alignment: center;
                 }
                 // "Ends at" in mini mode (title row is hidden, so show it here instead)
                 if !AppState.controls-visible && AppState.playback-ends-at != "": Text {
-                    text:               "Ends " + AppState.playback-ends-at;
-                    color:              #aaaaaa;
-                    font-size:          12px;
+                    text: "Ends " + AppState.playback-ends-at;
+                    color: #aaaaaa;
+                    font-size: 12px;
                     vertical-alignment: center;
                 }
             }
@@ -700,65 +779,99 @@ export component PlayerScreen inherits Rectangle {
             // alignment works against the full bar width, not content width.
             if AppState.controls-visible: Rectangle {
                 HorizontalLayout {
-                    width:     parent.width;
+                    width: parent.width;
                     alignment: center;
-                    spacing:   8px;
-                    FjordButton { text: "← Back";  width: 76px;  clicked => { AppState.minimize-player(); } }
-                    FjordButton { icon-left: "◀◀"; text: "30s";  width: 80px;  clicked => { AppState.seek-backward-long(); } }
+                    spacing: 8px;
+                    FjordButton {
+                        text: "← Back";
+                        width: 76px;
+                        clicked => { AppState.minimize-player(); }
+                    }
+
+                    FjordButton {
+                        icon-left: "◀◀";
+                        text: "30s";
+                        width: 80px;
+                        clicked => { AppState.seek-backward-long(); }
+                    }
+
                     FjordButton {
                         icon-left: AppState.is-paused ? "▶" : "⏸";
-                        text:  AppState.is-paused ? "Play" : "Pause";
+                        text: AppState.is-paused ? "Play" : "Pause";
                         width: 80px;
                         clicked => { AppState.pause-play-toggle(); }
                     }
-                    FjordButton { text: "30s"; icon-right: "▶▶";  width: 80px;  clicked => { AppState.seek-forward-long(); } }
-                    FjordButton { icon-left: "■"; text: "Stop";   width: 72px;  danger: true; clicked => { AppState.stop-playback(); } }
+
+                    FjordButton {
+                        text: "30s";
+                        icon-right: "▶▶";
+                        width: 80px;
+                        clicked => { AppState.seek-forward-long(); }
+                    }
+
+                    FjordButton {
+                        icon-left: "■";
+                        text: "Stop";
+                        width: 72px;
+                        danger: true;
+                        clicked => { AppState.stop-playback(); }
+                    }
                 }
+
                 HorizontalLayout {
-                    width:     parent.width;
+                    width: parent.width;
                     alignment: end;
-                    spacing:   8px;
+                    spacing: 8px;
                     if AppState.chapter-entries.length > 0: FjordButton {
-                        text: "Ch"; icon-right: "▾";
+                        text: "Ch";
+                        icon-right: "▾";
                         width: 60px;
                         clicked => {
-                            AppState.player-open-panel   = AppState.player-open-panel == 4 ? 0 : 4;
+                            AppState.player-open-panel = AppState.player-open-panel == 4 ? 0 : 4;
                             AppState.player-panel-cursor = AppState.current-chapter.max(0);
                         }
                     }
                     FjordButton {
-                        text: "Sync"; icon-right: "▾";
+                        text: "Sync";
+                        icon-right: "▾";
                         width: 70px;
                         clicked => {
                             AppState.player-open-panel = AppState.player-open-panel == 5 ? 0 : 5;
                         }
                     }
+
                     FjordButton {
-                        text: "Sub"; icon-right: "▾";
+                        text: "Sub";
+                        icon-right: "▾";
                         width: 68px;
                         clicked => {
-                            AppState.player-open-panel   = AppState.player-open-panel == 1 ? 0 : 1;
+                            AppState.player-open-panel = AppState.player-open-panel == 1 ? 0 : 1;
                             AppState.player-panel-cursor = 0;
                         }
                     }
+
                     FjordButton {
-                        text: "Audio"; icon-right: "▾";
+                        text: "Audio";
+                        icon-right: "▾";
                         width: 76px;
                         clicked => {
-                            AppState.player-open-panel   = AppState.player-open-panel == 2 ? 0 : 2;
+                            AppState.player-open-panel = AppState.player-open-panel == 2 ? 0 : 2;
                             AppState.player-panel-cursor = 0;
                         }
                     }
+
                     FjordButton {
-                        text: "Video"; icon-right: "▾";
+                        text: "Video";
+                        icon-right: "▾";
                         width: 76px;
                         clicked => {
-                            AppState.player-open-panel   = AppState.player-open-panel == 3 ? 0 : 3;
+                            AppState.player-open-panel = AppState.player-open-panel == 3 ? 0 : 3;
                             AppState.player-panel-cursor = 0;
                         }
                     }
+
                     FjordButton {
-                        text:  AppState.stats-visible ? "Hide Stats" : "Stats";
+                        text: AppState.stats-visible ? "Hide Stats" : "Stats";
                         width: 82px;
                         clicked => { AppState.toggle-stats(); }
                     }
@@ -771,31 +884,32 @@ export component PlayerScreen inherits Rectangle {
     // Shows accumulated seek amount (e.g. "+30s", "−1:30") in a centered pill
     // while keyboard seek is being accumulated. Hidden once the seek fires.
     if AppState.seek-osd-visible && !AppState.controls-visible: Rectangle {
-        x:             (parent.width  - self.width)  / 2;
-        y:             (parent.height - self.height) / 2;
-        width:         max(delta-txt.preferred-width, target-txt.preferred-width) + 48px;
-        height:        seek-pill-inner.preferred-height;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        width: max(delta-txt.preferred-width, target-txt.preferred-width) + 48px;
+        height: seek-pill-inner.preferred-height;
         border-radius: Theme.radius-lg;
-        background:    #0d0d0dcc;
-        drop-shadow-blur:  12px;
+        background: #0d0d0dcc;
+        drop-shadow-blur: 12px;
         drop-shadow-color: #00000066;
 
         seek-pill-inner := VerticalLayout {
-            padding:   14px;
-            spacing:   4px;
+            padding: 14px;
+            spacing: 4px;
             alignment: center;
 
             delta-txt := Text {
-                text:                 AppState.seek-delta-text;
-                color:                #ffffff;
-                font-size:            22px;
-                font-weight:          700;
+                text: AppState.seek-delta-text;
+                color: #ffffff;
+                font-size: 22px;
+                font-weight: 700;
                 horizontal-alignment: center;
             }
+
             target-txt := Text {
-                text:                 "→  " + AppState.seek-bar-time;
-                color:                #aaaaaa;
-                font-size:            13px;
+                text: "→  " + AppState.seek-bar-time;
+                color: #aaaaaa;
+                font-size: 13px;
                 horizontal-alignment: center;
             }
         }
@@ -803,70 +917,132 @@ export component PlayerScreen inherits Rectangle {
 
     // ── stats overlay ─────────────────────────────────────────────────────────
     if AppState.stats-visible: Rectangle {
-        x:             parent.width - self.width - 16px;
-        y:             16px;
-        width:         420px;
-        height:        stats-inner.preferred-height;
-        background:    #0d0d0dcc;
+        x: parent.width - self.width - 16px;
+        y: 16px;
+        width: 420px;
+        height: stats-inner.preferred-height;
+        background: #0d0d0dcc;
         border-radius: Theme.radius;
 
         stats-inner := VerticalLayout {
-            padding:   16px;
-            spacing:   0px;
+            padding: 16px;
+            spacing: 0px;
 
             Text {
-                text:           "VIDEO";
-                color:          Theme.accent;
-                font-size:      10px;
-                font-weight:    700;
+                text: "VIDEO";
+                color: Theme.accent;
+                font-size: 10px;
+                font-weight: 700;
                 letter-spacing: 1.2px;
-                height:         20px;
+                height: 20px;
             }
-            StatRow { label: "IN";        value: AppState.stat-vid-in;    }
-            StatRow { label: "OUT";       value: AppState.stat-vid-out;   }
+
+            StatRow {
+                label: "IN";
+                value: AppState.stat-vid-in;
+            }
+
+            StatRow {
+                label: "OUT";
+                value: AppState.stat-vid-out;
+            }
             // Split IN/OUT (2026-08-15) — the source file's own mastering colorspace vs.
             // what mpv actually sends to the display after tone-mapping; see app_state.slint's
             // own doc comment on these two properties for why they can genuinely disagree.
             // Labels kept short ("CLR" not "COLOR") — StatRow's label column is a fixed 60px,
             // and "COLOR OUT" risks clipping there, longer than anything else in this panel.
-            StatRow { label: "CLR IN";  value: AppState.stat-color-in;  }
-            StatRow { label: "CLR OUT"; value: AppState.stat-color-out; }
+            StatRow {
+                label: "CLR IN";
+                value: AppState.stat-color-in;
+            }
+
+            StatRow {
+                label: "CLR OUT";
+                value: AppState.stat-color-out;
+            }
             // hdr branch, Stage 3 — Fjord's own Wayland color-management
             // negotiation status, not an mpv property (see app_state.slint's
             // own doc comment on stat-hdr).
-            StatRow { label: "HDR";       value: AppState.stat-hdr;       }
-            StatRow { label: "HWDEC";     value: AppState.stat-hwdec;     }
+            StatRow {
+                label: "HDR";
+                value: AppState.stat-hdr;
+            }
 
-            Rectangle { height: 12px; }
+            StatRow {
+                label: "HWDEC";
+                value: AppState.stat-hwdec;
+            }
+
+            Rectangle {
+                height: 12px;
+            }
 
             Text {
-                text:           "AUDIO";
-                color:          Theme.accent;
-                font-size:      10px;
-                font-weight:    700;
+                text: "AUDIO";
+                color: Theme.accent;
+                font-size: 10px;
+                font-weight: 700;
                 letter-spacing: 1.2px;
-                height:         20px;
+                height: 20px;
             }
-            StatRow { label: "IN";  value: AppState.stat-aud-in;  }
-            StatRow { label: "OUT"; value: AppState.stat-aud-out; }
 
-            Rectangle { height: 12px; }
+            StatRow {
+                label: "IN";
+                value: AppState.stat-aud-in;
+            }
+
+            StatRow {
+                label: "OUT";
+                value: AppState.stat-aud-out;
+            }
+
+            Rectangle {
+                height: 12px;
+            }
 
             Text {
-                text:           "SYNC";
-                color:          Theme.accent;
-                font-size:      10px;
-                font-weight:    700;
+                text: "SYNC";
+                color: Theme.accent;
+                font-size: 10px;
+                font-weight: 700;
                 letter-spacing: 1.2px;
-                height:         20px;
+                height: 20px;
             }
-            StatRow { label: "DISPLAY"; value: AppState.stat-display; }
-            StatRow { label: "VSYNC";   value: AppState.stat-vsync;   }
-            StatRow { label: "A/V";     value: AppState.stat-avsync;  }
-            StatRow { label: "SPEED";   value: AppState.stat-speed;   }
-            StatRow { label: "DROP";    value: AppState.stat-drop;    }
-            StatRow { label: "BITRATE"; value: AppState.stat-bitrate; }
-            StatRow { label: "CACHE";   value: AppState.stat-cache;   }
+
+            StatRow {
+                label: "DISPLAY";
+                value: AppState.stat-display;
+            }
+
+            StatRow {
+                label: "VSYNC";
+                value: AppState.stat-vsync;
+            }
+
+            StatRow {
+                label: "A/V";
+                value: AppState.stat-avsync;
+            }
+
+            StatRow {
+                label: "SPEED";
+                value: AppState.stat-speed;
+            }
+
+            StatRow {
+                label: "DROP";
+                value: AppState.stat-drop;
+            }
+
+            StatRow {
+                label: "BITRATE";
+                value: AppState.stat-bitrate;
+            }
+
+            StatRow {
+                label: "CACHE";
+                value: AppState.stat-cache;
+            }
         }
     }
 
@@ -874,9 +1050,9 @@ export component PlayerScreen inherits Rectangle {
     if AppState.player-open-panel == 1: TrackPanel {
         container-h: parent.height;
         container-w: parent.width;
-        title:       "Subtitles";
-        tracks:      AppState.sub-tracks;
-        current-id:  AppState.current-sub-id;
+        title: "Subtitles";
+        tracks: AppState.sub-tracks;
+        current-id: AppState.current-sub-id;
         has-off-row: true;
         track-selected(id) => {
             AppState.select-sub(id);
@@ -888,8 +1064,8 @@ export component PlayerScreen inherits Rectangle {
     if AppState.player-open-panel == 2: TrackPanel {
         container-h: parent.height;
         container-w: parent.width;
-        title:      "Audio";
-        tracks:     AppState.audio-tracks;
+        title: "Audio";
+        tracks: AppState.audio-tracks;
         current-id: AppState.current-audio-id;
         track-selected(id) => {
             AppState.select-audio(id);
@@ -901,8 +1077,8 @@ export component PlayerScreen inherits Rectangle {
     if AppState.player-open-panel == 3: TrackPanel {
         container-h: parent.height;
         container-w: parent.width;
-        title:      "Video";
-        tracks:     AppState.video-tracks;
+        title: "Video";
+        tracks: AppState.video-tracks;
         current-id: AppState.current-video-id;
         track-selected(id) => {
             AppState.select-video(id);
@@ -914,101 +1090,107 @@ export component PlayerScreen inherits Rectangle {
     if AppState.player-open-panel == 4: TrackPanel {
         container-h: parent.height;
         container-w: parent.width;
-        title:       "Chapters";
-        tracks:      AppState.chapter-entries;
-        current-id:  AppState.current-chapter;
+        title: "Chapters";
+        tracks: AppState.chapter-entries;
+        current-id: AppState.current-chapter;
         track-selected(id) => {
             AppState.chapter-jump(id);
-            AppState.player-open-panel   = 0;
+            AppState.player-open-panel = 0;
             AppState.player-panel-cursor = 0;
         }
     }
 
     // ── sync panel (Sync ▾ button) — sub / audio delay +/- ───────────────────
     if AppState.player-open-panel == 5: Rectangle {
-        y:             parent.height - 158px - self.height - 8px;
-        x:             parent.width  - self.width - 16px;
-        width:         min(parent.width - 32px, 300px);
-        height:        sync-inner.preferred-height;
-        background:    #0e0e0eee;
+        y: parent.height - 158px - self.height - 8px;
+        x: parent.width - self.width - 16px;
+        width: min(parent.width - 32px, 300px);
+        height: sync-inner.preferred-height;
+        background: #0e0e0eee;
         border-radius: Theme.radius-lg;
-        clip:          true;
+        clip: true;
 
         sync-inner := VerticalLayout {
             padding: 12px;
             spacing: 4px;
 
             Text {
-                text:           "SYNC";
-                color:          Theme.accent;
-                font-size:      11px;
-                font-weight:    700;
+                text: "SYNC";
+                color: Theme.accent;
+                font-size: 11px;
+                font-weight: 700;
                 letter-spacing: 1.2px;
-                height:         24px;
+                height: 24px;
             }
 
             // Sub delay row
             HorizontalLayout {
-                height:  36px;
+                height: 36px;
                 spacing: 6px;
                 alignment: center;
                 Text {
-                    text:               "Sub";
-                    color:              Theme.text-subtle;
-                    font-size:          12px;
+                    text: "Sub";
+                    color: Theme.text-subtle;
+                    font-size: 12px;
                     vertical-alignment: center;
-                    width:              34px;
+                    width: 34px;
                 }
+
                 FjordButton {
-                    text:    "−100ms";
-                    width:   72px;
+                    text: "−100ms";
+                    width: 72px;
                     clicked => { AppState.sub-delay-dec(); }
                 }
+
                 Text {
-                    text:                 (AppState.sub-delay-ms >= 0 ? "+" : "") + AppState.sub-delay-ms + " ms";
-                    color:                AppState.sub-delay-ms == 0 ? Theme.text-subtle : Theme.accent;
-                    font-size:            12px;
-                    font-weight:          700;
-                    vertical-alignment:   center;
+                    text: (AppState.sub-delay-ms >= 0 ? "+" : "") + AppState.sub-delay-ms + " ms";
+                    color: AppState.sub-delay-ms == 0 ? Theme.text-subtle : Theme.accent;
+                    font-size: 12px;
+                    font-weight: 700;
+                    vertical-alignment: center;
                     horizontal-alignment: center;
-                    width:                72px;
+                    width: 72px;
                 }
+
                 FjordButton {
-                    text:    "+100ms";
-                    width:   72px;
+                    text: "+100ms";
+                    width: 72px;
                     clicked => { AppState.sub-delay-inc(); }
                 }
             }
 
             // Audio delay row
             HorizontalLayout {
-                height:  36px;
+                height: 36px;
                 spacing: 6px;
                 alignment: center;
                 Text {
-                    text:               "Audio";
-                    color:              Theme.text-subtle;
-                    font-size:          12px;
+                    text: "Audio";
+                    color: Theme.text-subtle;
+                    font-size: 12px;
                     vertical-alignment: center;
-                    width:              34px;
+                    width: 34px;
                 }
+
                 FjordButton {
-                    text:    "−100ms";
-                    width:   72px;
+                    text: "−100ms";
+                    width: 72px;
                     clicked => { AppState.audio-delay-dec(); }
                 }
+
                 Text {
-                    text:                 (AppState.audio-delay-ms >= 0 ? "+" : "") + AppState.audio-delay-ms + " ms";
-                    color:                AppState.audio-delay-ms == 0 ? Theme.text-subtle : Theme.accent;
-                    font-size:            12px;
-                    font-weight:          700;
-                    vertical-alignment:   center;
+                    text: (AppState.audio-delay-ms >= 0 ? "+" : "") + AppState.audio-delay-ms + " ms";
+                    color: AppState.audio-delay-ms == 0 ? Theme.text-subtle : Theme.accent;
+                    font-size: 12px;
+                    font-weight: 700;
+                    vertical-alignment: center;
                     horizontal-alignment: center;
-                    width:                72px;
+                    width: 72px;
                 }
+
                 FjordButton {
-                    text:    "+100ms";
-                    width:   72px;
+                    text: "+100ms";
+                    width: 72px;
                     clicked => { AppState.audio-delay-inc(); }
                 }
             }
@@ -1017,20 +1199,20 @@ export component PlayerScreen inherits Rectangle {
 
     // ── pause/play flash icon ─────────────────────────────────────────────────
     Rectangle {
-        x:             (parent.width - self.width) / 2;
-        y:             (parent.height - self.height) / 2;
-        width:         84px;
-        height:        84px;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        width: 84px;
+        height: 84px;
         border-radius: 42px;
-        background:    #00000088;
-        opacity:       root.flash-opacity;
+        background: #00000088;
+        opacity: root.flash-opacity;
         Text {
-            text:                 root.flash-icon;
-            font-family:          "Noto Sans Symbols 2";
-            font-size:            34px;
-            color:                #ffffff;
+            text: root.flash-icon;
+            font-family: "Noto Sans Symbols 2";
+            font-size: 34px;
+            color: #ffffff;
             horizontal-alignment: center;
-            vertical-alignment:   center;
+            vertical-alignment: center;
         }
     }
 
@@ -1039,11 +1221,11 @@ export component PlayerScreen inherits Rectangle {
     // fires mid-drag the cursor-hider would otherwise steal the mouse-up, calling
     // pause-play-toggle() and preventing seek-committed from firing on seek-ta.
     TouchArea {
-        width:        parent.width;
-        height:       parent.height;
-        enabled:      !AppState.controls-visible && !AppState.pause-bar-visible && !AppState.seek-osd-visible && !seek-track.is-dragging;
+        width: parent.width;
+        height: parent.height;
+        enabled: !AppState.controls-visible && !AppState.pause-bar-visible && !AppState.seek-osd-visible && !seek-track.is-dragging;
         mouse-cursor: MouseCursor.none;
-        clicked         => { AppState.show-controls(); AppState.pause-play-toggle(); }
+        clicked => { AppState.show-controls(); AppState.pause-play-toggle(); }
         changed mouse-x => { AppState.player-cursor-x = self.mouse-x; AppState.show-controls(); }
         changed mouse-y => { AppState.player-cursor-y = self.mouse-y; AppState.show-controls(); }
     }

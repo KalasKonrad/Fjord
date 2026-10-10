@@ -21,10 +21,11 @@ export component ConnectingScreen inherits Rectangle {
         alignment: center;
         spacing: Theme.sp;
         LoadingSpinner { }
+
         Text {
-            text:                 "Connecting to server…";
-            color:                Theme.text-muted;
-            font-size:            14px;
+            text: "Connecting to server…";
+            color: Theme.text-muted;
+            font-size: 14px;
             horizontal-alignment: center;
         }
     }
@@ -34,13 +35,13 @@ export component OfflineScreen inherits Rectangle {
     background: Theme.bg;
 
     card := Rectangle {
-        width:         min(420px, parent.width - 48px);
-        height:        inner.preferred-height;
-        x:             (parent.width  - self.width)  / 2;
-        y:             (parent.height - self.height) / 2 - 24px;
-        background:    Theme.surface;
+        width: min(420px, parent.width - 48px);
+        height: inner.preferred-height;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2 - 24px;
+        background: Theme.surface;
         border-radius: Theme.radius-lg;
-        drop-shadow-blur:  28px;
+        drop-shadow-blur: 28px;
         drop-shadow-color: #00000070;
 
         inner := VerticalLayout {
@@ -48,31 +49,35 @@ export component OfflineScreen inherits Rectangle {
             spacing: Theme.sp;
 
             Text {
-                text:                 "Can't reach server";
-                color:                Theme.text;
-                font-size:            22px;
-                font-weight:          700;
+                text: "Can't reach server";
+                color: Theme.text;
+                font-size: 22px;
+                font-weight: 700;
                 horizontal-alignment: center;
-            }
-            if AppState.status != "": Text {
-                text:                 AppState.status;
-                color:                Theme.text-muted;
-                font-size:            13px;
-                horizontal-alignment: center;
-                wrap:                 word-wrap;
             }
 
-            Rectangle { height: 4px; }
+            if AppState.status != "": Text {
+                text: AppState.status;
+                color: Theme.text-muted;
+                font-size: 13px;
+                horizontal-alignment: center;
+                wrap: word-wrap;
+            }
+
+            Rectangle {
+                height: 4px;
+            }
 
             HorizontalLayout {
                 spacing: Theme.sp-sm;
                 FjordButton {
-                    text:        "Retry";
+                    text: "Retry";
                     kbd-focused: AppState.offline-focused == 0;
                     clicked => { AppState.retry-connection(); }
                 }
+
                 FjordButton {
-                    text:        "Change Server";
+                    text: "Change Server";
                     kbd-focused: AppState.offline-focused == 1;
                     // Confirmation dialog, 2026-08-22 — see show-sign-out-
                     // confirm's own doc comment in app_state.slint.
@@ -81,8 +86,9 @@ export component OfflineScreen inherits Rectangle {
                         AppState.show-sign-out-confirm = true;
                     }
                 }
+
                 FjordButton {
-                    text:        "Quit";
+                    text: "Quit";
                     kbd-focused: AppState.offline-focused == 2;
                     clicked => { AppState.quit(); }
                 }

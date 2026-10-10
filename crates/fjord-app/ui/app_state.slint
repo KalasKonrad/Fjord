@@ -202,7 +202,33 @@
 //   Callbacks — misc      show-controls, cancel-auto-advance, play-next-ep, close-detail/series, close-album, close-artist, refocus
 //   Callbacks — keys      handle-key (main dispatch), keybinding-reset-defaults
 // ─────────────────────────────────────────────────────────────────────────────
-import { Theme, TrackEntry, TrackItem, CastMember, SeasonEntry, CardItem, KeyBindingEntry, QueueEntry, LyricEntry, SeasonItem, TagItem, ProfileItem, StreamingProvider, GenreItem, ProviderItem, BlocklistRow, ProfileTile, ProfileSection, AccountTile, ToggleListItem, BonfireGroupMemberTile, BonfireAdminRow, BonfireAuditRow, OskEdit, VideoRect } from "theme.slint";
+import {
+    Theme,
+    TrackEntry,
+    TrackItem,
+    CastMember,
+    SeasonEntry,
+    CardItem,
+    KeyBindingEntry,
+    QueueEntry,
+    LyricEntry,
+    SeasonItem,
+    TagItem,
+    ProfileItem,
+    StreamingProvider,
+    GenreItem,
+    ProviderItem,
+    BlocklistRow,
+    ProfileTile,
+    ProfileSection,
+    AccountTile,
+    ToggleListItem,
+    BonfireGroupMemberTile,
+    BonfireAdminRow,
+    BonfireAuditRow,
+    OskEdit,
+    VideoRect,
+} from "theme.slint";
 import { StandardListView } from "std-widgets.slint";
 
 export global AppState {
@@ -215,7 +241,7 @@ export global AppState {
     in-out property <bool> show-offline:          false;
     // 0=Retry 1=Change Server 2=Quit — a permanent failure (server decommissioned,
     // wrong saved URL) needs a way out besides retrying forever.
-    in-out property <int>  offline-focused:       0;
+    in-out property <int> offline-focused:       0;
     callback retry-connection();
 
     // ── Profile picker (Bonfire Phase 1, 2026-08-09; sectioned 2026-08-31) ──────
@@ -626,7 +652,7 @@ export global AppState {
     // reused directly, no new modal mechanism invented. Defaults to
     // Cancel focused, matching that same precedent.
     in-out property <bool> show-profile-edit-delete-confirm: false;
-    in-out property <int>  profile-edit-delete-confirm-focused: 0; // 0=Cancel, 1=Delete
+    in-out property <int> profile-edit-delete-confirm-focused: 0; // 0=Cancel, 1=Delete
     callback profile-edit-cancel();
     callback profile-edit-avatar-color-selected(string);
 
@@ -637,19 +663,19 @@ export global AppState {
     in-out property <bool> is-playing:            false;
     in-out property <bool> has-background-player: false;
     in-out property <bool> video-behind-ui:       false;
-    in-out property <bool>  app-content-loading:   false;  // true while fetching detail/series before showing screen
+    in-out property <bool> app-content-loading:   false;  // true while fetching detail/series before showing screen
     in-out property <float> app-loading-progress:  0.0;   // 0.0→1.0 while app-content-loading; drives the progress bar
 
     // ── Toast notification ────────────────────────────────────────────────────
     in-out property <string> toast-message: "";
-    in-out property <bool>   toast-visible:  false;
+    in-out property <bool> toast-visible:  false;
 
     // ── Press animation ────────────────────────────────────────────────────────
     // Bumped once by keys.rs::handle_key() on every Enter press; every mounted
     // widgets.slint::PressPulse instance reacts if its own focus/selection
     // expression is currently true, playing a brief border-flash "press" cue.
     // Mouse press feedback needs no Rust involvement (TouchArea.pressed).
-    in-out property <int>    kb-activate-pulse: 0;
+    in-out property <int> kb-activate-pulse: 0;
     // True only under the same condition keys.rs::active_mode() calls
     // AppMode::Dashboard, plus focused-section < 0 — the one narrow condition
     // under which the sidebar is genuinely the thing holding focus. Used by
@@ -674,13 +700,13 @@ export global AppState {
         !show-context-menu
         && !show-queue-panel
         && !(show-now-playing && is-audio-playing)
-        && !(show-person     && !is-playing)
-        && !(show-detail     && !is-playing)
-        && !(show-season     && !is-playing)
-        && !(show-series     && !is-playing)
-        && !(show-artist     && !is-playing)
+        && !(show-person && !is-playing)
+        && !(show-detail && !is-playing)
+        && !(show-season && !is-playing)
+        && !(show-series && !is-playing)
+        && !(show-artist && !is-playing)
         && !(show-collection && !is-playing)
-        && !(show-album      && !is-playing)
+        && !(show-album && !is-playing)
         && !(show-request-detail && !is-playing)
         && !is-playing
         && !show-library
@@ -714,9 +740,9 @@ export global AppState {
     // use it (ProfileEditScreen, Discover search, Browse search, PlaylistPicker
     // naming, and ConnectSeerr all followed by 2026-08-23). See widgets.slint's
     // QwertyKeyboard for the keyboard widget itself.
-    in-out property <bool>   show-onscreen-keyboard:   false;
+    in-out property <bool> show-onscreen-keyboard:   false;
     in-out property <string> onscreen-keyboard-target: ""; // e.g. "login-server"
-    in-out property <int>    onscreen-keyboard-cursor: 0;  // Rust-owned flat row-major index
+    in-out property <int> onscreen-keyboard-cursor: 0;  // Rust-owned flat row-major index
     // Single source of truth for grid TOPOLOGY only (the 4 row lengths) —
     // never key VALUES, which live only inside QwertyKeyboard itself. Both
     // Slint's own for-loops there and keys.rs's cursor-movement math need
@@ -762,7 +788,7 @@ export global AppState {
     // one Rust function call, so the mirror's own changed handler always
     // reads the already-final payload value.
     in-out property <string> onscreen-keyboard-physical-key: "";
-    in-out property <int>    onscreen-keyboard-physical-key-seq: 0;
+    in-out property <int> onscreen-keyboard-physical-key-seq: 0;
     // Two small, generic Rust string utilities — Slint's own `string` type has
     // no `.length`/`.substring()` (only `.character-count()`/`.to-uppercase()`/
     // `.to-lowercase()`/`.is-empty()`, confirmed against the real Slint 1.16.1
@@ -788,19 +814,19 @@ export global AppState {
     callback text-field-caret(string, int);
 
     // ── Navigation state ──────────────────────────────────────────────────────
-    in-out property <int>    active-nav:         0;
-    in-out property <int>    focused-section:   -1;
-    in-out property <int>    focused-card:       0;
-    in-out property <int>    float-card-focused: -1;  // -1=not focused, 0=Resume, 1=Stop; floating mini-player
-    in     property <string> server-url:       "";
+    in-out property <int> active-nav:         0;
+    in-out property <int> focused-section:   -1;
+    in-out property <int> focused-card:       0;
+    in-out property <int> float-card-focused: -1;  // -1=not focused, 0=Resume, 1=Stop; floating mini-player
+    in property <string> server-url:       "";
     // True for an http:// server (set by crate::set_server_url_ui) — Settings
     // shows "not encrypted" under SERVER (2026-10-09 security review).
-    in     property <bool>   server-unencrypted: false;
+    in property <bool> server-unencrypted: false;
     // Same for the Seerr connection (seerr_auth::push_seerr_status).
-    in     property <bool>   seerr-unencrypted:  false;
-    in     property <string> server-name:      "";
-    in     property <string> server-version:   "";
-    in     property <string> client-version:   "";  // "<semver> (<git build-id>)", set once at startup
+    in property <bool> seerr-unencrypted:  false;
+    in property <string> server-name:      "";
+    in property <string> server-version:   "";
+    in property <string> client-version:   "";  // "<semver> (<git build-id>)", set once at startup
     // Phase 0 (2026-08-07, Bonfire prep): both were `int` (a row-index /
     // section-index) — appending a new section or row anywhere but the very
     // end meant renumbering everything after it by hand, both in settings.rs
@@ -816,45 +842,45 @@ export global AppState {
     // recomputes this alongside settings-focused on every focus change
     // (settings-row-focused callback below), since Slint has no way to ask
     // "what's this key's position in the list Rust would build" reactively.
-    in-out property <int>    settings-focused-visual-index: 0;
-    in-out property <bool>     settings-dropdown-open:   false;  // a dropdown popup is keyboard-open
-    in-out property <int>      settings-dropdown-cursor: -1;     // focused item index inside open popup
+    in-out property <int> settings-focused-visual-index: 0;
+    in-out property <bool> settings-dropdown-open:   false;  // a dropdown popup is keyboard-open
+    in-out property <int> settings-dropdown-cursor: -1;     // focused item index inside open popup
     in-out property <[string]> settings-dropdown-model:  [];     // display strings for the open dropdown
-    in-out property <string>   settings-dropdown-display: "";    // display string of current value (accent highlight)
+    in-out property <string> settings-dropdown-display: "";    // display string of current value (accent highlight)
 
     // ── Library grid state ────────────────────────────────────────────────────
-    in-out property <bool>       library-header-focused:    false;
-    in-out property <int>        library-focused:           0;
+    in-out property <bool> library-header-focused:    false;
+    in-out property <int> library-focused:           0;
     in-out property <[CardItem]> library-display:           [];
-    in-out property <string>     library-query:             "";
-    in-out property <int>        library-query-cursor:      -1; // caret, see text_field.rs (-1 = end)
-    in-out property <int>        library-cols:              6;   // written by MainWindow on resize
+    in-out property <string> library-query:             "";
+    in-out property <int> library-query-cursor:      -1; // caret, see text_field.rs (-1 = end)
+    in-out property <int> library-cols:              6;   // written by MainWindow on resize
     // sort: 0=Name A–Z  1=Name Z–A  2=Year ↓  3=Year ↑  4=Random
-    in-out property <int>        library-sort:              0;
-    in-out property <bool>       library-filter-unwatched:  false;
-    in-out property <bool>       library-filter-favorites:  false;
-    in-out property <bool>       library-sort-focused:      false;
-    in-out property <int>        library-sort-cursor:       0;
-    in-out property <bool>       library-back-focused:      false;
-    in-out property <int>        library-focused-row:       0;     // row that drives vertical scroll; only updated on Up/Down
-    in-out property <bool>       library-scrubber-focused:  false;
-    in-out property <int>        library-scrubber-cursor:   0;
+    in-out property <int> library-sort:              0;
+    in-out property <bool> library-filter-unwatched:  false;
+    in-out property <bool> library-filter-favorites:  false;
+    in-out property <bool> library-sort-focused:      false;
+    in-out property <int> library-sort-cursor:       0;
+    in-out property <bool> library-back-focused:      false;
+    in-out property <int> library-focused-row:       0;     // row that drives vertical scroll; only updated on Up/Down
+    in-out property <bool> library-scrubber-focused:  false;
+    in-out property <int> library-scrubber-cursor:   0;
     // 27 flat item indices (A=0..Z=25, #=26); -1 means no items for that letter
-    in-out property <[int]>      library-alpha-offsets:     [];
+    in-out property <[int]> library-alpha-offsets:     [];
     // false for Collections library (hides Unwatched/Favorites filter toggles)
-    in-out property <bool>       library-has-filters:       true;
+    in-out property <bool> library-has-filters:       true;
     // Music library view: 0=Artists  1=Albums
-    in-out property <int>        library-music-view:        0;
-    in-out property <length>     dash-cw:                140px; // written by MainWindow on resize
-    in-out property <length>     dash-ch:                224px; // written by MainWindow on resize
+    in-out property <int> library-music-view:        0;
+    in-out property <length> dash-cw:                140px; // written by MainWindow on resize
+    in-out property <length> dash-ch:                224px; // written by MainWindow on resize
 
     // ── Browse list state ─────────────────────────────────────────────────────
-    in     property <string>                 status:        "";
-    in     property <[StandardListViewItem]> media-items:   [];
-    in-out property <int>                    current-item:  -1;
-    in-out property <string>                 browse-query:  ""; // tracks keyboard search text
-    in-out property <int>                    browse-query-cursor: -1; // caret, see text_field.rs (-1 = end)
-    in-out property <bool>                   browse-header-focused: false;
+    in property <string> status:        "";
+    in property <[StandardListViewItem]> media-items:   [];
+    in-out property <int> current-item:  -1;
+    in-out property <string> browse-query:  ""; // tracks keyboard search text
+    in-out property <int> browse-query-cursor: -1; // caret, see text_field.rs (-1 = end)
+    in-out property <bool> browse-header-focused: false;
 
     // ── Home / dashboard data rows ────────────────────────────────────────────
     in property <[CardItem]> continue-watching:        [];
@@ -882,26 +908,26 @@ export global AppState {
     in property <[CardItem]> music-playlists:          [];   // Music dashboard "Playlists" row (section 3)
 
     // ── Up Next banner (shown during credits / last 30 s) ────────────────────
-    in-out property <bool>   show-next-ep-banner:    false;
+    in-out property <bool> show-next-ep-banner:    false;
     in-out property <string> next-ep-title:           "";
     in-out property <string> next-ep-ends-at:         "";  // "HH:MM" wall-clock end of next episode
-    in-out property <int>    next-ep-secs:             30;
-    in-out property <int>    next-ep-banner-focused:   0;  // 0=Play Now, 1=Skip
+    in-out property <int> next-ep-secs:             30;
+    in-out property <int> next-ep-banner-focused:   0;  // 0=Play Now, 1=Skip
 
     // ── Volume overlay (transient, ~1.5 s) ───────────────────────────────────
     in-out property <bool> show-volume-overlay:      false;
-    in-out property <int>  volume-level:             100;
+    in-out property <int> volume-level:             100;
     in-out property <bool> audio-passthrough-active: false; // true when iec61937 passthrough detected
 
     // ── Segment skip prompts (Intro Skipper: Intro / Recap / Preview / Commercial) ──
     // ask mode:      single "Skip →" button
-    in-out property <bool>   show-skip-segment:  false;
+    in-out property <bool> show-skip-segment:  false;
     in-out property <string> skip-segment-label: "Skip Intro →";
     // ask-timed mode: two-button overlay ("Skip" + "Don't Skip") with countdown
-    in-out property <bool>   show-skip-timed:    false;
+    in-out property <bool> show-skip-timed:    false;
     in-out property <string> skip-timed-label:   "Skip Intro →";
-    in-out property <int>    skip-timed-secs:    8;
-    in-out property <int>    skip-timed-focused: 0;  // 0=Skip, 1=Don't Skip
+    in-out property <int> skip-timed-secs:    8;
+    in-out property <int> skip-timed-focused: 0;  // 0=Skip, 1=Don't Skip
     callback dismiss-skip-timed;
     // Drives player.slint's fade-to-black around a skip-segment seek
     // (2026-08-11 — "make intro skip etc more gradual, it feels instant and
@@ -910,36 +936,36 @@ export global AppState {
     // the real seek fires; playback.rs's own tick loop clears it back to
     // false once the delayed seek has actually happened. See
     // VideoState.pending_skip_seek's own doc comment for the full sequencing.
-    in-out property <bool>   skip-fade-active:   false;
+    in-out property <bool> skip-fade-active:   false;
 
     // ── Player state ──────────────────────────────────────────────────────────
-    in     property <image>  video-frame;
+    in property <image> video-frame;
     // HDR Stage 5 (2026-10-05) — video on its own Wayland subsurface below
     // the window (video_surface.rs). video-surface-active: set by Rust once
     // the current player's frames are drawn there (cleared on stop) — the
     // window then goes transparent and the four video Images give way to
     // VideoSpots. video-rect-*: where each spot is, reported by VideoSpot.
     // window-bg: the background the subsurface fills around the video.
-    in-out property <bool>      video-surface-active: false;
+    in-out property <bool> video-surface-active: false;
     in-out property <VideoRect> video-rect-player;
     in-out property <VideoRect> video-rect-bg;
     in-out property <VideoRect> video-rect-thumb;
-    out    property <color>     window-bg: Theme.bg;
+    out property <color> window-bg: Theme.bg;
     in-out property <string> playing-artist:        "";   // artist name shown in controls bar for audio tracks
 
     // ── Music player bar ──────────────────────────────────────────────────────
-    in-out property <bool>   is-audio-playing:    false; // music bar active (audio-only playback)
+    in-out property <bool> is-audio-playing:    false; // music bar active (audio-only playback)
     in-out property <string> music-bar-title:     "";
     in-out property <string> music-bar-artist:    "";
     in-out property <string> music-bar-album-id:  "";   // for album art fetch + open-album nav
-    in-out property <image>  music-bar-art;
-    in-out property <bool>   music-bar-has-art:   false;
-    in-out property <float>  music-bar-pos:       0;    // 0–1 playback position
+    in-out property <image> music-bar-art;
+    in-out property <bool> music-bar-has-art:   false;
+    in-out property <float> music-bar-pos:       0;    // 0–1 playback position
     in-out property <string> music-bar-elapsed:   "0:00";
     in-out property <string> music-bar-total:     "0:00";
-    in-out property <bool>   music-bar-paused:    false;
+    in-out property <bool> music-bar-paused:    false;
     // -1=none 0=art/title 1=⏸/▶ 2=⏹ 3=timeline 4=⏮Prev 5=⏭Next 6=⇌Shuffle 7=↺Repeat 8=⋮Queue 9=♪Lyrics
-    in-out property <int>    music-bar-focused:   -1;
+    in-out property <int> music-bar-focused:   -1;
     callback music-bar-play-pause();
     callback music-bar-stop();
     callback music-bar-open-album();
@@ -950,66 +976,66 @@ export global AppState {
     in-out property <bool> show-now-playing:          false;
     in-out property <bool> now-playing-back-focused:   false; // top-left Back button focused
     in-out property <bool> now-playing-in-strip:       false; // false=transport row, true=up-next strip
-    in-out property <int>  now-playing-ctrl-focused:   2;     // 0=Album 1=Prev 2=Play/Pause 3=Next 4=Shuffle 5=Repeat 6=VolDown 7=VolUp
-    in-out property <int>  now-playing-strip-focused:  0;     // index into queue-items
+    in-out property <int> now-playing-ctrl-focused:   2;     // 0=Album 1=Prev 2=Play/Pause 3=Next 4=Shuffle 5=Repeat 6=VolDown 7=VolUp
+    in-out property <int> now-playing-strip-focused:  0;     // index into queue-items
     callback open-now-playing(); // Rust resets focus state then sets show-now-playing=true
     callback play-album-all();
 
-    in-out property <int>    app-logo-idx:         1;    // 1-10, randomised at startup
-    in-out property <bool>   is-paused:            false;
+    in-out property <int> app-logo-idx:         1;    // 1-10, randomised at startup
+    in-out property <bool> is-paused:            false;
     in-out property <string> playing-title:         "";
-    in-out property <bool>   stats-visible:         false;
-    in-out property <float>  playback-pos:           0;
+    in-out property <bool> stats-visible:         false;
+    in-out property <float> playback-pos:           0;
     in-out property <string> playback-time:          "0:00";
     in-out property <string> playback-total:         "0:00";
-    in-out property <float>  playback-total-secs:    0.0;   // total duration in seconds; used by seek-hover time calc
+    in-out property <float> playback-total-secs:    0.0;   // total duration in seconds; used by seek-hover time calc
     in-out property <string> playback-ends-at:       "";
     in-out property <string> seek-hover-time:        "";    // formatted time at hover position on the seek bar
-    in-out property <bool>   buffering-active:       false; // true when mpv is stalled waiting for cache
-    in-out property <int>    buffering-pct:          0;     // cache-buffering-state 0-100
+    in-out property <bool> buffering-active:       false; // true when mpv is stalled waiting for cache
+    in-out property <int> buffering-pct:          0;     // cache-buffering-state 0-100
     // True when the stall-recovery watchdog has detected position not
     // advancing for 5s+ (not paused, not cache-buffering) and is attempting
     // a stream reload — distinct from buffering-active, which only reflects
     // mpv's own paused-for-cache state and never engages during a real
     // network/connection failure (mpv is actively erroring/retrying, not
     // calmly waiting). See CLAUDE.md's Playback resilience section.
-    in-out property <bool>   playback-stalled:       false;
-    in-out property <float>  buffered-pos:           0.0;  // demuxer cache end as fraction 0-1; shown on seek bar
+    in-out property <bool> playback-stalled:       false;
+    in-out property <float> buffered-pos:           0.0;  // demuxer cache end as fraction 0-1; shown on seek bar
     callback update-seek-hover(float);                      // hover fraction 0-1 → Rust formats and sets seek-hover-time
-    in-out property <bool>   controls-visible:       true;
-    in-out property <bool>   pause-bar-visible:      false; // minimal bar shown on keyboard pause; cleared on resume
-    in-out property <bool>   seek-osd-visible:       false; // seek accumulation active; minimal bar uses seek-bar-* values
-    in-out property <float>  seek-bar-pos:           0.0;   // target seek position (0-1); used by minimal bar thumb when seek-osd-visible
+    in-out property <bool> controls-visible:       true;
+    in-out property <bool> pause-bar-visible:      false; // minimal bar shown on keyboard pause; cleared on resume
+    in-out property <bool> seek-osd-visible:       false; // seek accumulation active; minimal bar uses seek-bar-* values
+    in-out property <float> seek-bar-pos:           0.0;   // target seek position (0-1); used by minimal bar thumb when seek-osd-visible
     in-out property <string> seek-bar-time:          "";    // target seek time string; used by minimal bar left-time when seek-osd-visible
     in-out property <string> seek-delta-text:        "";    // formatted seek delta e.g. "+30s" or "-1:30"; shown in centered pill
-    in-out property <bool>   seek-dragging:          false; // true while seek bar button is held; blocks PausePlay
+    in-out property <bool> seek-dragging:          false; // true while seek bar button is held; blocks PausePlay
     in-out property <length> player-cursor-x:        0;   // last cursor position in player coords
     in-out property <length> player-cursor-y:        0;
-    in-out property <int>    player-open-panel:      0;
-    in-out property <int>    player-panel-cursor:    0;
+    in-out property <int> player-open-panel:      0;
+    in-out property <int> player-panel-cursor:    0;
 
     in-out property <[TrackEntry]> sub-tracks;
     in-out property <[TrackEntry]> audio-tracks;
     in-out property <[TrackEntry]> video-tracks;
-    in-out property <int>          current-sub-id:   0;
-    in-out property <int>          current-audio-id: 1;
-    in-out property <int>          current-video-id: 1;
+    in-out property <int> current-sub-id:   0;
+    in-out property <int> current-audio-id: 1;
+    in-out property <int> current-video-id: 1;
 
     // ── Chapter navigation ────────────────────────────────────────────────────
-    in-out property <[float]>      chapter-marks:      [];   // normalised 0-1 seek bar positions for each chapter
-    in-out property <bool>         chapter-osd-visible: false;
-    in-out property <string>       chapter-osd-text:    "";   // "Chapter N" or chapter title; shown for ~2 s
+    in-out property <[float]> chapter-marks:      [];   // normalised 0-1 seek bar positions for each chapter
+    in-out property <bool> chapter-osd-visible: false;
+    in-out property <string> chapter-osd-text:    "";   // "Chapter N" or chapter title; shown for ~2 s
     in-out property <[TrackEntry]> chapter-entries:    [];    // id=index, label="M:SS · Title"; populated when chapters load
-    in-out property <int>          current-chapter:    -1;   // index of active chapter (-1 = none loaded)
+    in-out property <int> current-chapter:    -1;   // index of active chapter (-1 = none loaded)
     callback chapter-prev();
     callback chapter-next();
     callback chapter-jump(int);   // seek to chapter by index; called from Chapters panel click or kbd Enter
 
     // ── Sub / audio delay OSD + Sync panel ───────────────────────────────────
-    in-out property <bool>   delay-osd-visible: false;
+    in-out property <bool> delay-osd-visible: false;
     in-out property <string> delay-osd-text:    "";   // "Sub delay: +200 ms" / "Audio delay: −100 ms"; shown for ~2 s
-    in-out property <int>    sub-delay-ms:      0;    // live sub-delay in ms; shown in Sync panel
-    in-out property <int>    audio-delay-ms:    0;    // live audio-delay in ms; shown in Sync panel
+    in-out property <int> sub-delay-ms:      0;    // live sub-delay in ms; shown in Sync panel
+    in-out property <int> audio-delay-ms:    0;    // live audio-delay in ms; shown in Sync panel
     callback sub-delay-inc();    // z  (+100 ms)
     callback sub-delay-dec();    // Z  (−100 ms)
     callback audio-delay-inc();  // x  (+100 ms)
@@ -1041,201 +1067,201 @@ export global AppState {
     in property <string> stat-cache:    "—";
 
     // ── Detail page state ─────────────────────────────────────────────────────
-    in-out property <string>       detail-id:            "";
-    in-out property <string>       detail-item-type:    "";    // item type cached from fetch (Movie, Episode, etc.)
-    in-out property <float>        detail-resume-secs:   0;    // resume position in seconds (cached from fetch)
-    in-out property <bool>         detail-loading:       false;
-    in-out property <int>          detail-focused-btn:      0;    // 0=Play 1=Resume 2=Series 3=Fav 4=Watched 5=Overview
-    in-out property <bool>         detail-overview-expanded: false;
-    in-out property <string>       detail-title:        "";
-    in-out property <string>       detail-tagline:      "";    // first tagline or ""
-    in-out property <string>       detail-studio:       "";    // first studio name or ""
-    in-out property <string>       detail-series-label: "";
-    in-out property <string>       detail-series-id:    "";    // series ID when detail item is an Episode; "" otherwise
-    in-out property <string>       detail-meta:         "";
-    in-out property <string>       detail-genres:       "";
-    in-out property <string>       detail-overview:     "";
-    in-out property <string>       detail-rating-label: "";
-    in-out property <image>        detail-poster;
-    in-out property <bool>         detail-has-poster:   false;
-    in-out property <image>        detail-backdrop;
-    in-out property <bool>         detail-has-backdrop: false;
-    in-out property <bool>         detail-can-resume:   false;
-    in-out property <string>       detail-resume-label: "";
-    in-out property <string>       detail-ends-at:      "";  // "HH:MM" wall-clock time playback ends; shown below buttons
-    in-out property <bool>         detail-is-favorite:  false;
-    in-out property <bool>         detail-has-played:   false;
-    in-out property <float>        detail-resume-pct:   0.0;
+    in-out property <string> detail-id:            "";
+    in-out property <string> detail-item-type:    "";    // item type cached from fetch (Movie, Episode, etc.)
+    in-out property <float> detail-resume-secs:   0;    // resume position in seconds (cached from fetch)
+    in-out property <bool> detail-loading:       false;
+    in-out property <int> detail-focused-btn:      0;    // 0=Play 1=Resume 2=Series 3=Fav 4=Watched 5=Overview
+    in-out property <bool> detail-overview-expanded: false;
+    in-out property <string> detail-title:        "";
+    in-out property <string> detail-tagline:      "";    // first tagline or ""
+    in-out property <string> detail-studio:       "";    // first studio name or ""
+    in-out property <string> detail-series-label: "";
+    in-out property <string> detail-series-id:    "";    // series ID when detail item is an Episode; "" otherwise
+    in-out property <string> detail-meta:         "";
+    in-out property <string> detail-genres:       "";
+    in-out property <string> detail-overview:     "";
+    in-out property <string> detail-rating-label: "";
+    in-out property <image> detail-poster;
+    in-out property <bool> detail-has-poster:   false;
+    in-out property <image> detail-backdrop;
+    in-out property <bool> detail-has-backdrop: false;
+    in-out property <bool> detail-can-resume:   false;
+    in-out property <string> detail-resume-label: "";
+    in-out property <string> detail-ends-at:      "";  // "HH:MM" wall-clock time playback ends; shown below buttons
+    in-out property <bool> detail-is-favorite:  false;
+    in-out property <bool> detail-has-played:   false;
+    in-out property <float> detail-resume-pct:   0.0;
     in-out property <[CastMember]> detail-cast;
-    in-out property <int>          detail-focused-row:        0;   // 0=buttons 1=cast 2=collection 3=similar
-    in-out property <int>          detail-cast-focused:      -1;   // -1=none; ≥0=focused card in cast row
-    in-out property <[CardItem]>   detail-similar:           [];   // "More Like This" poster row
-    in-out property <int>          detail-similar-focused:   -1;   // focused card in "More Like This" row
+    in-out property <int> detail-focused-row:        0;   // 0=buttons 1=cast 2=collection 3=similar
+    in-out property <int> detail-cast-focused:      -1;   // -1=none; ≥0=focused card in cast row
+    in-out property <[CardItem]> detail-similar:           [];   // "More Like This" poster row
+    in-out property <int> detail-similar-focused:   -1;   // focused card in "More Like This" row
     // "Recommended" row (2026-07-29, Deep Seerr integration) — Discover-sourced,
     // shown below More Like This; see detail.rs::DetailCtx::spawn_recommended.
-    in-out property <[CardItem]>   detail-recommended:          [];
-    in-out property <int>          detail-recommended-focused:  -1;
-    in-out property <string>       detail-collection-title:  "";   // BoxSet name when movie is in a collection
-    in-out property <[CardItem]>   detail-collection:        [];   // "Part of [collection]" poster row
-    in-out property <int>          detail-collection-focused: -1;  // focused card in collection row
-    in-out property <length>       detail-scroll:       0px;
-    in-out property <bool>         playback-from-detail: false;   // set by start_playback when play came from detail page; reset_playback_ui restores detail on stop
-    in-out property <bool>         playback-from-series: false;   // set by on_play_series_episode; reset_playback_ui restores series screen on stop
-    in-out property <bool>         playback-from-season: false;   // set alongside playback-from-series when season detail was also open
+    in-out property <[CardItem]> detail-recommended:          [];
+    in-out property <int> detail-recommended-focused:  -1;
+    in-out property <string> detail-collection-title:  "";   // BoxSet name when movie is in a collection
+    in-out property <[CardItem]> detail-collection:        [];   // "Part of [collection]" poster row
+    in-out property <int> detail-collection-focused: -1;  // focused card in collection row
+    in-out property <length> detail-scroll:       0px;
+    in-out property <bool> playback-from-detail: false;   // set by start_playback when play came from detail page; reset_playback_ui restores detail on stop
+    in-out property <bool> playback-from-series: false;   // set by on_play_series_episode; reset_playback_ui restores series screen on stop
+    in-out property <bool> playback-from-season: false;   // set alongside playback-from-series when season detail was also open
 
     // ── Series drill-down state ───────────────────────────────────────────────
-    in-out property <string>           series-id:                "";
-    in-out property <bool>             series-loading:           true;
-    in-out property <string>           series-title:             "";
-    in-out property <string>           series-overview:          "";
-    in-out property <string>           series-tagline:           "";
-    in-out property <string>           series-studio:            "";
-    in-out property <string>           series-meta:              "";  // "2023 · TV-MA · 3 Seasons · 24 Episodes"
-    in-out property <string>           series-genres:            "";  // "Drama, Crime"
-    in-out property <string>           series-rating-label:      "";  // "★ 8.9"
-    in-out property <bool>             series-is-favorite:       false;
-    in-out property <bool>             series-has-played:        false;
-    in-out property <int>              series-unplayed-count:    0;
-    in-out property <image>            series-poster;
-    in-out property <bool>             series-has-poster:        false;
-    in-out property <image>            series-backdrop;
-    in-out property <bool>             series-has-backdrop:      false;
-    in-out property <[SeasonEntry]>    series-seasons;
-    in-out property <[CardItem]>       series-episode-cards:     [];  // horizontal episode row
-    in-out property <int>              series-season-idx:        0;
-    in-out property <int>              series-focused-ep:        0;
-    in-out property <bool>             series-in-season-row:     false;
+    in-out property <string> series-id:                "";
+    in-out property <bool> series-loading:           true;
+    in-out property <string> series-title:             "";
+    in-out property <string> series-overview:          "";
+    in-out property <string> series-tagline:           "";
+    in-out property <string> series-studio:            "";
+    in-out property <string> series-meta:              "";  // "2023 · TV-MA · 3 Seasons · 24 Episodes"
+    in-out property <string> series-genres:            "";  // "Drama, Crime"
+    in-out property <string> series-rating-label:      "";  // "★ 8.9"
+    in-out property <bool> series-is-favorite:       false;
+    in-out property <bool> series-has-played:        false;
+    in-out property <int> series-unplayed-count:    0;
+    in-out property <image> series-poster;
+    in-out property <bool> series-has-poster:        false;
+    in-out property <image> series-backdrop;
+    in-out property <bool> series-has-backdrop:      false;
+    in-out property <[SeasonEntry]> series-seasons;
+    in-out property <[CardItem]> series-episode-cards:     [];  // horizontal episode row
+    in-out property <int> series-season-idx:        0;
+    in-out property <int> series-focused-ep:        0;
+    in-out property <bool> series-in-season-row:     false;
     // Next Up (single next unwatched episode for this series)
-    in-out property <bool>             series-next-up-focused:   false;  // true when keyboard focus is on the Next Up row
-    in-out property <bool>             series-has-next-up:       false;
-    in-out property <string>           series-next-up-id:            "";
-    in-out property <string>           series-next-up-section-title: "Next Up";  // "Next Up" or "Next Up  ·  Ends HH:MM"
-    in-out property <float>            series-next-up-resume-pct: 0;
-    in-out property <bool>             series-next-up-has-played: false;
-    in-out property <[CardItem]>       series-next-up-cards:     [];
+    in-out property <bool> series-next-up-focused:   false;  // true when keyboard focus is on the Next Up row
+    in-out property <bool> series-has-next-up:       false;
+    in-out property <string> series-next-up-id:            "";
+    in-out property <string> series-next-up-section-title: "Next Up";  // "Next Up" or "Next Up  ·  Ends HH:MM"
+    in-out property <float> series-next-up-resume-pct: 0;
+    in-out property <bool> series-next-up-has-played: false;
+    in-out property <[CardItem]> series-next-up-cards:     [];
     // Cast & Crew
-    in-out property <[CastMember]>     series-cast:              [];
-    in-out property <int>              series-cast-focused:      -1;
+    in-out property <[CastMember]> series-cast:              [];
+    in-out property <int> series-cast-focused:      -1;
     // More Like This
-    in-out property <[CardItem]>       series-similar:           [];
-    in-out property <int>              series-similar-focused:   -1;
+    in-out property <[CardItem]> series-similar:           [];
+    in-out property <int> series-similar-focused:   -1;
     // "Recommended" row (2026-07-29, Deep Seerr integration) — Discover-sourced,
     // shown below More Like This; see series.rs::spawn_recommended.
-    in-out property <[CardItem]>       series-recommended:          [];
-    in-out property <int>              series-recommended-focused:  -1;
+    in-out property <[CardItem]> series-recommended:          [];
+    in-out property <int> series-recommended-focused:  -1;
     // "Missing Seasons" row (2026-07-29, Deep Seerr integration) — placed
     // between Episodes and Cast; see series.rs::spawn_missing_seasons.
-    in-out property <[CardItem]>       series-missing-seasons:          [];
-    in-out property <int>              series-missing-seasons-focused:  -1;
+    in-out property <[CardItem]> series-missing-seasons:          [];
+    in-out property <int> series-missing-seasons-focused:  -1;
     // Fired on Confirm/click for a focused missing-season card — wired in
     // main.rs (needs state/rt, unavailable to keys.rs::handle_key directly).
     callback series-missing-season-activate(int);
     // Header button focus: -1=not focused, 0=Back, 1=♥ fav, 2=✓ Watched, 3=Overview
-    in-out property <int>              series-focused-btn:        -1;
-    in-out property <bool>             series-overview-expanded:  false;
+    in-out property <int> series-focused-btn:        -1;
+    in-out property <bool> series-overview-expanded:  false;
 
     // ── Season detail state ───────────────────────────────────────────────────
-    in-out property <bool>         show-season:         false;
-    in-out property <string>       season-id:           "";
-    in-out property <string>       season-title:        "";
-    in-out property <string>       season-overview:     "";
-    in-out property <string>       season-meta:         "";
-    in-out property <image>        season-poster;
-    in-out property <bool>         season-has-poster:   false;
-    in-out property <image>        season-backdrop;
-    in-out property <bool>         season-has-backdrop: false;
+    in-out property <bool> show-season:         false;
+    in-out property <string> season-id:           "";
+    in-out property <string> season-title:        "";
+    in-out property <string> season-overview:     "";
+    in-out property <string> season-meta:         "";
+    in-out property <image> season-poster;
+    in-out property <bool> season-has-poster:   false;
+    in-out property <image> season-backdrop;
+    in-out property <bool> season-has-backdrop: false;
     in-out property <[CastMember]> season-cast:         [];
-    in-out property <int>          season-cast-focused:    -1;
-    in-out property <int>          season-focused-ep:      0;
+    in-out property <int> season-cast-focused:    -1;
+    in-out property <int> season-focused-ep:      0;
     // header button focus: -1=not focused, 0=Back, 1=♥ fav, 2=✓ watched, 3=Overview
-    in-out property <int>          season-focused-btn:        -1;
-    in-out property <bool>         season-overview-expanded:  false;
-    in-out property <bool>         season-is-favorite:        false;
-    in-out property <bool>         season-has-played:         false;
-    in-out property <bool>         season-loading:         false;
+    in-out property <int> season-focused-btn:        -1;
+    in-out property <bool> season-overview-expanded:  false;
+    in-out property <bool> season-is-favorite:        false;
+    in-out property <bool> season-has-played:         false;
+    in-out property <bool> season-loading:         false;
     callback toggle-season-fav();
     callback toggle-season-played();
 
     // ── Person detail state ───────────────────────────────────────────────────
-    in-out property <bool>       show-person:         false;
-    in-out property <string>     person-id:           "";
-    in-out property <string>     person-name:         "";
-    in-out property <string>     person-bio:          "";
-    in-out property <image>      person-portrait;
-    in-out property <bool>       person-has-portrait: false;
+    in-out property <bool> show-person:         false;
+    in-out property <string> person-id:           "";
+    in-out property <string> person-name:         "";
+    in-out property <string> person-bio:          "";
+    in-out property <image> person-portrait;
+    in-out property <bool> person-has-portrait: false;
     in-out property <[CardItem]> person-filmography:  [];
-    in-out property <int>        person-film-focused: 0;
-    in-out property <bool>       person-in-film-row:  false;
+    in-out property <int> person-film-focused: 0;
+    in-out property <bool> person-in-film-row:  false;
     // "Other Work" row (2026-07-29, Deep Seerr integration) — Discover-sourced,
     // shows this person's work NOT already in the local library; see
     // person.rs::spawn_other_work.
     in-out property <[CardItem]> person-other-work:          [];
-    in-out property <int>        person-other-work-focused:  0;
-    in-out property <bool>       person-in-other-work-row:   false;
+    in-out property <int> person-other-work-focused:  0;
+    in-out property <bool> person-in-other-work-row:   false;
 
     // ── Collection screen state ───────────────────────────────────────────────
-    in-out property <bool>       show-collection:         false;
-    in-out property <string>     collection-id:           "";
-    in-out property <string>     collection-title:        "";
-    in-out property <image>      collection-poster;
-    in-out property <bool>       collection-has-poster:   false;
-    in-out property <image>      collection-backdrop;
-    in-out property <bool>       collection-has-backdrop: false;
+    in-out property <bool> show-collection:         false;
+    in-out property <string> collection-id:           "";
+    in-out property <string> collection-title:        "";
+    in-out property <image> collection-poster;
+    in-out property <bool> collection-has-poster:   false;
+    in-out property <image> collection-backdrop;
+    in-out property <bool> collection-has-backdrop: false;
     in-out property <[CardItem]> collection-items:        [];
-    in-out property <int>        collection-focused:      0;
-    in-out property <bool>       collection-back-focused: false;
-    in-out property <int>        collection-open-gen:     0;    // incremented on every open; stale closures abort
-    in-out property <string>     collection-overview:     "";
-    in-out property <bool>       collection-is-favorite:  false;
-    in-out property <bool>       collection-has-played:   false;
-    in-out property <int>        collection-btn-focused:  -1;   // -1=none, 0=♥, 1=✓, 2=⛔ (2026-08-06, Seerr Blocklist support)
+    in-out property <int> collection-focused:      0;
+    in-out property <bool> collection-back-focused: false;
+    in-out property <int> collection-open-gen:     0;    // incremented on every open; stale closures abort
+    in-out property <string> collection-overview:     "";
+    in-out property <bool> collection-is-favorite:  false;
+    in-out property <bool> collection-has-played:   false;
+    in-out property <int> collection-btn-focused:  -1;   // -1=none, 0=♥, 1=✓, 2=⛔ (2026-08-06, Seerr Blocklist support)
     // "Missing From This Collection" row (2026-07-29, Deep Seerr integration) —
     // Discover-sourced, the first SectionRow on this screen; see
     // collection.rs::spawn_missing_items.
     in-out property <[CardItem]> collection-missing:          [];
-    in-out property <int>        collection-missing-focused:  -1;
+    in-out property <int> collection-missing-focused:  -1;
     // Bulk-blocklist-this-collection confirm dialog (2026-08-06, Seerr
     // Blocklist support) — checked first in collection.rs::handle_key,
     // same "overlay on top of the screen" precedent as skip-segment
     // overlays/the Up Next banner elsewhere in this app.
-    in-out property <bool>       collection-blocklist-confirm-open:     false;
-    in-out property <int>        collection-blocklist-confirm-focused:  0; // 0=Cancel, 1=Confirm
+    in-out property <bool> collection-blocklist-confirm-open:     false;
+    in-out property <int> collection-blocklist-confirm-focused:  0; // 0=Cancel, 1=Confirm
     callback collection-blocklist-confirm();
 
     // ── Album detail state ────────────────────────────────────────────────────
-    in-out property <bool>        show-album:          false;
-    in-out property <string>      album-id:            "";
-    in-out property <string>      album-title:         "";
-    in-out property <string>      album-artist:        "";
-    in-out property <string>      album-meta:          "";   // "2020 · 12 tracks · 45:23"
-    in-out property <string>      album-overview:      "";
-    in-out property <image>       album-poster;
-    in-out property <bool>        album-has-poster:    false;
+    in-out property <bool> show-album:          false;
+    in-out property <string> album-id:            "";
+    in-out property <string> album-title:         "";
+    in-out property <string> album-artist:        "";
+    in-out property <string> album-meta:          "";   // "2020 · 12 tracks · 45:23"
+    in-out property <string> album-overview:      "";
+    in-out property <image> album-poster;
+    in-out property <bool> album-has-poster:    false;
     in-out property <[TrackItem]> album-tracks:        [];
-    in-out property <int>         album-focused-track: 0;
-    in-out property <bool>        album-back-focused:  false;
-    in-out property <bool>        album-is-favorite:   false;
-    in-out property <bool>        album-has-played:    false;
-    in-out property <int>         album-open-gen:      0;   // stale-request guard
-    in-out property <bool>   album-is-playlist:    false; // AlbumScreen shows a playlist: pos numbering, ✕ remove, Delete key
-    in-out property <int>         album-btn-focused:   -1;  // -1=none, 0=♥, 1=✓
-    in-out property <bool>        album-overview-expanded: false;
+    in-out property <int> album-focused-track: 0;
+    in-out property <bool> album-back-focused:  false;
+    in-out property <bool> album-is-favorite:   false;
+    in-out property <bool> album-has-played:    false;
+    in-out property <int> album-open-gen:      0;   // stale-request guard
+    in-out property <bool> album-is-playlist:    false; // AlbumScreen shows a playlist: pos numbering, ✕ remove, Delete key
+    in-out property <int> album-btn-focused:   -1;  // -1=none, 0=♥, 1=✓
+    in-out property <bool> album-overview-expanded: false;
 
     // ── Artist screen state ───────────────────────────────────────────────────
-    in-out property <bool>       show-artist:         false;
-    in-out property <string>     artist-id:           "";
-    in-out property <string>     artist-title:        "";
-    in-out property <string>     artist-overview:     "";
-    in-out property <string>     artist-meta:         "";   // "5 albums"
-    in-out property <image>      artist-portrait;
-    in-out property <bool>       artist-has-portrait: false;
+    in-out property <bool> show-artist:         false;
+    in-out property <string> artist-id:           "";
+    in-out property <string> artist-title:        "";
+    in-out property <string> artist-overview:     "";
+    in-out property <string> artist-meta:         "";   // "5 albums"
+    in-out property <image> artist-portrait;
+    in-out property <bool> artist-has-portrait: false;
     in-out property <[CardItem]> artist-albums:       [];
-    in-out property <int>        artist-focused:      0;
-    in-out property <bool>       artist-back-focused: false;
-    in-out property <int>        artist-open-gen:     0;   // stale-request guard
-    in-out property <bool>       artist-is-favorite:  false;
-    in-out property <int>        artist-btn-focused:  -1;  // -1=none, 0=▶ Play All, 1=♥
-    in-out property <bool>       artist-overview-expanded: false;
+    in-out property <int> artist-focused:      0;
+    in-out property <bool> artist-back-focused: false;
+    in-out property <int> artist-open-gen:     0;   // stale-request guard
+    in-out property <bool> artist-is-favorite:  false;
+    in-out property <int> artist-btn-focused:  -1;  // -1=none, 0=▶ Play All, 1=♥
+    in-out property <bool> artist-overview-expanded: false;
 
     callback toggle-artist-fav;
     callback play-artist-all;
@@ -1244,15 +1270,15 @@ export global AppState {
     // No show-discover flag — this screen is driven by active-nav == 6
     // directly, same pattern as the Home/Movies/TV dashboards, not a
     // separate boolean overlay flag.
-    in-out property <string>     discover-query:          "";
+    in-out property <string> discover-query:          "";
     // Caret in the search field (2026-10-04): grapheme index, drawn via
     // caret-text — see text_field.rs.
-    in-out property <int>        discover-query-cursor:   -1; // -1 = end
-    in-out property <bool>       discover-searching:       false;
+    in-out property <int> discover-query-cursor:   -1; // -1 = end
+    in-out property <bool> discover-searching:       false;
     in-out property <[CardItem]> discover-results:         [];
-    in-out property <int>        discover-focused:         0;
-    in-out property <int>        discover-focused-row:     0;      // scroll anchor, mirrors library-focused-row
-    in-out property <bool>       discover-header-focused:  false;  // search field focused, mirrors browse-header-focused
+    in-out property <int> discover-focused:         0;
+    in-out property <int> discover-focused-row:     0;      // scroll anchor, mirrors library-focused-row
+    in-out property <bool> discover-header-focused:  false;  // search field focused, mirrors browse-header-focused
     callback discover-search-append(string);
     callback discover-search-backspace();
     callback discover-search-delete();   // Delete key: letter after the caret (2026-10-04)
@@ -1327,7 +1353,7 @@ export global AppState {
     in-out property <[CardItem]> discover-watchlist-mixed:  [];
     in-out property <[CardItem]> discover-watchlist-movies: [];
     in-out property <[CardItem]> discover-watchlist-tv:     [];
-    in-out property <int>        discover-landing-card:     0;
+    in-out property <int> discover-landing-card:     0;
 
     // ── Discover filters (2026-07-18) ─────────────────────────────────────────
     // Persisted (Config.discover_filter_*, loaded at startup/on-change saved).
@@ -1362,7 +1388,7 @@ export global AppState {
     // fjord_seerr::DiscoverFilters' own doc comment), each row toggled by
     // index rather than driven by a single desc string. Populated once by
     // discover.rs::ensure_discover_filter_options.
-    in-out property <[GenreItem]>    discover-filter-genres:    [];
+    in-out property <[GenreItem]> discover-filter-genres:    [];
     in-out property <[ProviderItem]> discover-filter-providers: [];
     // Selected-row counts, kept in sync by Rust alongside the models above
     // (0 = "Any") — Slint's expression language has no `.filter()`/count-
@@ -1382,7 +1408,7 @@ export global AppState {
     // search field / grid). discover-filter-bar-focused: which pill (0=Type
     // 1=Genre 2=Sort 3=Rating 4=Year 5=Provider 6=Clear), Left/Right moves.
     in-out property <bool> discover-filter-bar-active:   false;
-    in-out property <int>  discover-filter-bar-focused:  0;
+    in-out property <int> discover-filter-bar-focused:  0;
     // A single unified popup-open flag covers all 6 pills — only one can
     // ever be open at a time, so one string ("" | "type" | "genre" | "sort"
     // | "rating" | "year" | "provider") is simpler than tracking a separate
@@ -1390,7 +1416,7 @@ export global AppState {
     // both popup shapes the same way settings-dropdown-cursor is reused
     // across every Settings dropdown regardless of its own content.
     in-out property <string> discover-popup-open:   "";
-    in-out property <int>    discover-popup-cursor:  0;
+    in-out property <int> discover-popup-cursor:  0;
     // Mouse-click equivalents of keyboard Confirm — reuse the exact same
     // Rust dispatch (`handle_key_discover_filter_bar`/`handle_key_discover_
     // popup`'s own Confirm arm) rather than a second, independently-
@@ -1402,17 +1428,17 @@ export global AppState {
     callback discover-popup-confirm();
 
     // ── Request detail screen state (Seerr movie/TV detail + Request, discover.rs) ──
-    in-out property <bool>          show-request-detail:          false;
-    in-out property <string>        request-detail-media-type:    "";  // "movie" | "tv"
-    in-out property <int>           request-detail-tmdb-id:       0;
-    in-out property <string>        request-detail-title:         "";
-    in-out property <string>        request-detail-meta:          "";  // year · genres
-    in-out property <string>        request-detail-overview:      "";
-    in-out property <bool>          request-detail-overview-expanded: false;
+    in-out property <bool> show-request-detail:          false;
+    in-out property <string> request-detail-media-type:    "";  // "movie" | "tv"
+    in-out property <int> request-detail-tmdb-id:       0;
+    in-out property <string> request-detail-title:         "";
+    in-out property <string> request-detail-meta:          "";  // year · genres
+    in-out property <string> request-detail-overview:      "";
+    in-out property <bool> request-detail-overview-expanded: false;
     // "★ 7.9" (TMDB voteAverage, one decimal) or "" when absent/zero — fed
     // straight into MetaLine.rating-label, same as DetailPage's own
     // Jellyfin-community-rating badge.
-    in-out property <string>        request-detail-rating:        "";
+    in-out property <string> request-detail-rating:        "";
     // ── Metadata panel (Status/dates/language/countries/network/streaming) ──
     // Purely-display, read-only content — no keyboard zone of its own
     // (reached by scrolling the page's existing Flickable, same as MetaLine's
@@ -1422,22 +1448,22 @@ export global AppState {
     // request-detail-status above, which is Seerr's own request/availability
     // state; conflating the two would silently break the Request button's
     // existing "" vs requested/processing/partial/available logic.
-    in-out property <string>        request-detail-production-status: "";
-    in-out property <string>        request-detail-date-label:    "";  // "Release Date" | "First Air Date"
-    in-out property <string>        request-detail-date-value:    "";  // "July 14, 2026"; "" if unknown
-    in-out property <string>        request-detail-next-air-date: "";  // TV only; "" if none/unknown
-    in-out property <string>        request-detail-original-language: "";  // display name, e.g. "English"
+    in-out property <string> request-detail-production-status: "";
+    in-out property <string> request-detail-date-label:    "";  // "Release Date" | "First Air Date"
+    in-out property <string> request-detail-date-value:    "";  // "July 14, 2026"; "" if unknown
+    in-out property <string> request-detail-next-air-date: "";  // TV only; "" if none/unknown
+    in-out property <string> request-detail-original-language: "";  // display name, e.g. "English"
     // Multi-line "🇺🇸 United States\n🇬🇧 United Kingdom" — a plain Text with
     // wrap:word-wrap respects embedded \n as real line breaks (same
     // mechanism StorylineSection relies on), so this doesn't need a
     // separate list model just to stack a handful of country names.
-    in-out property <string>        request-detail-production-countries: "";
-    in-out property <string>        request-detail-network:       "";  // TV only; joined "Apple TV, BBC"
+    in-out property <string> request-detail-production-countries: "";
+    in-out property <string> request-detail-network:       "";  // TV only; joined "Apple TV, BBC"
     in-out property <[StreamingProvider]> request-detail-providers: [];  // flatrate only, resolved region
-    in-out property <image>         request-detail-poster;
-    in-out property <bool>          request-detail-has-poster:    false;
-    in-out property <image>         request-detail-backdrop;
-    in-out property <bool>          request-detail-has-backdrop:  false;
+    in-out property <image> request-detail-poster;
+    in-out property <bool> request-detail-has-poster:    false;
+    in-out property <image> request-detail-backdrop;
+    in-out property <bool> request-detail-has-backdrop:  false;
     // 2K tier's own display status: "" (requestable, counts toward showing
     // the Request button) | "Requested" | "Needs Approval" | "Processing" |
     // "Partially Available" | "Available" | "Declined" — the FINAL display
@@ -1452,8 +1478,8 @@ export global AppState {
     // EITHER is still "" — clicking it opens the same Request Options modal
     // either way; its Quality toggle is what picks which tier you're
     // actually submitting.
-    in-out property <string>        request-detail-status:        "";
-    in-out property <string>        request-detail-status-4k:     "";
+    in-out property <string> request-detail-status:        "";
+    in-out property <string> request-detail-status-4k:     "";
     // Same "" | "requested" | "processing" | "partial" | "available" |
     // "blocklisted" vocabulary as CardItem.availability, base/2K tier only
     // (2026-08-06, Seerr Blocklist support) — deliberately NOT the same
@@ -1461,7 +1487,7 @@ export global AppState {
     // workflow labels ("Needs Approval"/"Declined") that have nothing to
     // do with Blocklist eligibility. This is what the Blocklist button
     // actually gates on.
-    in-out property <string>        request-detail-availability:  "";
+    in-out property <string> request-detail-availability:  "";
     // The MediaRequest the ⋮ More button's context menu (View Request/Edit/
     // Cancel/Approve/Decline — the same one used by the Discover grid's
     // right-click menu) should act on — resolved by discover.rs's
@@ -1469,15 +1495,15 @@ export global AppState {
     // request). "" when neither tier has one — the More button itself is
     // hidden in that case (request_detail.slint), since every one of its
     // rows either doesn't apply or duplicates what's already on the page.
-    in-out property <string>        request-detail-request-id:      "";
-    in-out property <bool>          request-detail-request-pending: false;
-    in-out property <bool>          request-detail-request-mine:    false;
+    in-out property <string> request-detail-request-id:      "";
+    in-out property <bool> request-detail-request-pending: false;
+    in-out property <bool> request-detail-request-mine:    false;
     // Watchlist + Release Calendar (2026-07-18) — from MovieDetails/
     // TvDetails.onUserWatchlist on open, kept in sync by
     // discover_toggle_watchlist's own patch when this exact page is open.
     // Independent of request state — always shown, unlike Request which
     // hides once a status pill replaces it.
-    in-out property <bool>          request-detail-on-watchlist:    false;
+    in-out property <bool> request-detail-on-watchlist:    false;
     callback request-detail-toggle-watchlist();
     // Blocklist (2026-08-06, Seerr Blocklist support) — same toggle shape
     // as Watchlist above, but "adding" is derived from request-detail-
@@ -1490,11 +1516,11 @@ export global AppState {
     // watching a trailer makes sense even for an already-requested/
     // available item, so it's its own sibling in the button row, not nested
     // inside either the Request-button or status-pill branch.
-    in-out property <string>        request-detail-trailer-url:   "";
+    in-out property <string> request-detail-trailer-url:   "";
     // Trailer button state (2026-10-04, discover::start_trailer_check):
     // "" = not loaded yet (hidden) | "checking" (greyed "Checking…") |
     // "ok" (trailer-url set, pressable) | "none" (greyed "No trailer").
-    in-out property <string>        request-detail-trailer-state: "";
+    in-out property <string> request-detail-trailer-state: "";
     // Button row focus — a "gaps are fine" slot index (same idiom as
     // context_menu.rs's Discover row set), not a fixed 0/1 binary: 0=Request
     // (only when at least one tier is still requestable), 1=Trailer (only
@@ -1506,16 +1532,16 @@ export global AppState {
     // `clicked` handler) must keep it in sync — see the mouse/keyboard focus
     // desync bug class documented in CLAUDE.md's Seerr integration section
     // (Phase 142's zone-numbering fix) this mirrors.
-    in-out property <int>           request-detail-btn-focused:   0;
+    in-out property <int> request-detail-btn-focused:   0;
     // Cast + crew (director/writer/top-billed actors), same take(2)/take(3)/
     // take(12) cap as DetailPage's Jellyfin cast. item-selected is a no-op —
     // there's no TMDB-person detail screen to open — but the row stays
     // keyboard-focusable (Left/Right scroll) for consistency.
-    in-out property <[CastMember]>  request-detail-cast:          [];
-    in-out property <int>           request-detail-focused-cast:  -1;
-    in-out property <[SeasonItem]>  request-detail-seasons:       [];  // TV only, empty for movies
-    in-out property <int>           request-detail-focused-season: 0;
-    in-out property <bool>          request-detail-back-focused:  true;
+    in-out property <[CastMember]> request-detail-cast:          [];
+    in-out property <int> request-detail-focused-cast:  -1;
+    in-out property <[SeasonItem]> request-detail-seasons:       [];  // TV only, empty for movies
+    in-out property <int> request-detail-focused-season: 0;
+    in-out property <bool> request-detail-back-focused:  true;
     // Vertical flow below the back button: 0=button row (Request/4K),
     // 1=storyline (collapsible overview, only if overview non-empty),
     // 2=cast row (only if any), 3=tags row (only if any), 4=seasons row
@@ -1524,29 +1550,29 @@ export global AppState {
     // Replaced the earlier two-bool (in-tags/in-seasons) model once a third
     // and fourth optional zone (storyline, cast) made one flag per zone
     // stop scaling.
-    in-out property <int>           request-detail-zone:          0;
-    in-out property <int>           request-detail-open-gen:      0;     // stale-async-response guard
-    in-out property <bool>          request-detail-requesting:    false;
+    in-out property <int> request-detail-zone:          0;
+    in-out property <int> request-detail-open-gen:      0;     // stale-async-response guard
+    in-out property <bool> request-detail-requesting:    false;
     // want-4k maps to POST /request's `is4k` field — the only quality/
     // resolution knob Seerr's API exposes; there's no discrete HDR request
     // flag (that's a Radarr/Sonarr quality-profile concern, configured
     // server-side, not something a request itself specifies). Toggled from
     // the Request Options modal below, not inline on the page.
-    in-out property <bool>          request-detail-want-4k:       false;
+    in-out property <bool> request-detail-want-4k:       false;
     // Radarr (movie) / Sonarr (tv) tags on the default server — best-effort,
     // silently empty if the server has none configured or the fetch fails
     // (some Seerr accounts may not have permission to read /service/*; a tag
     // picker not appearing shouldn't block the request flow either way).
-    in-out property <[TagItem]>     request-detail-tags:          [];
-    in-out property <int>           request-detail-focused-tag:   0;
+    in-out property <[TagItem]> request-detail-tags:          [];
+    in-out property <int> request-detail-focused-tag:   0;
     // Quality profiles on the same default server, same best-effort-empty
     // rules as tags. Radio-select via selected-profile-id (0 = row 0 =
     // synthetic "Default" entry, meaning "don't send profileId at all" —
     // real Radarr/Sonarr profile ids are never 0) rather than a per-row
     // bool, since exactly one (or none) can be chosen, not several.
     in-out property <[ProfileItem]> request-detail-profiles:            [];
-    in-out property <int>           request-detail-focused-profile:     0;
-    in-out property <int>           request-detail-selected-profile-id: 0;
+    in-out property <int> request-detail-focused-profile:     0;
+    in-out property <int> request-detail-selected-profile-id: 0;
     // Tags/profiles/selection for the *other* quality tier — both tiers are
     // fetched up front (SeerrClient::available_request_options_both_tiers)
     // so toggling Quality in the Request Options modal swaps these in
@@ -1554,9 +1580,9 @@ export global AppState {
     // live, which would need its own loading state and risk a race on rapid
     // toggling. Selections (t.selected / this id) travel with whichever set
     // they belong to, so switching tiers and back preserves what was picked.
-    in-out property <[TagItem]>     request-detail-tags-alt:                [];
+    in-out property <[TagItem]> request-detail-tags-alt:                [];
     in-out property <[ProfileItem]> request-detail-profiles-alt:            [];
-    in-out property <int>           request-detail-selected-profile-id-alt: 0;
+    in-out property <int> request-detail-selected-profile-id-alt: 0;
     // Slint click handlers call this instead of setting want-4k directly,
     // so the tier swap above happens for mouse input too, not just keyboard
     // (handle_key_request_options calls the same Rust helper directly).
@@ -1573,7 +1599,7 @@ export global AppState {
     // ── Request Options modal (quality/profile/tags/seasons — opened from
     // the Request button instead of showing all four inline on the page) ──
     callback open-request-options();
-    in-out property <bool>          show-request-options:               false;
+    in-out property <bool> show-request-options:               false;
     // Edit Request mode (Discover context menu, 2026-07-18) — reuses this
     // same modal rather than a second one. When true: the Quality (2K/4K)
     // row is hidden (Seerr's PUT /request/{id} cannot change is4k — see
@@ -1581,26 +1607,26 @@ export global AppState {
     // Confirm calls update_request instead of create_request against
     // request-options-editing-request-id. Reset to false/"" whenever the
     // modal is closed or a fresh (non-edit) Request is opened.
-    in-out property <bool>          request-options-editing:            false;
-    in-out property <string>        request-options-editing-request-id: "";
+    in-out property <bool> request-options-editing:            false;
+    in-out property <string> request-options-editing-request-id: "";
     // 0=Quality row (2K/4K, always), 1=Profile row (if any configured),
     // 2=tags row (if any), 3=seasons row (if any, TV only), 4=confirm row
     // (Cancel/Request, always) — same skip-absent-zones navigation idiom as
     // request-detail-zone, but a separate numbering scheme (owned by
     // existing_option_zones()/handle_key_request_options in discover.rs)
     // since it's a different, independent vertical flow inside the modal.
-    in-out property <int>           request-options-zone:               0;
-    in-out property <int>           request-options-confirm-focused:    1; // 0=Cancel, 1=Request
+    in-out property <int> request-options-zone:               0;
+    in-out property <int> request-options-confirm-focused:    1; // 0=Cancel, 1=Request
 
     // ── Context menu state ────────────────────────────────────────────────────
-    in-out property <bool>   show-context-menu:        false;
+    in-out property <bool> show-context-menu:        false;
     in-out property <string> context-menu-item-id:     "";
     in-out property <string> context-menu-title:       "";   // display name — set by every open site; queue rows use it
     in-out property <string> context-menu-item-type:   "";
     in-out property <string> context-menu-series-id:   "";   // series ID when item is an Episode; "" otherwise
-    in-out property <bool>   context-menu-has-played:  false;
-    in-out property <bool>   context-menu-is-favorite: false;
-    in-out property <float>  context-menu-resume-pct:  0;
+    in-out property <bool> context-menu-has-played:  false;
+    in-out property <bool> context-menu-is-favorite: false;
+    in-out property <float> context-menu-resume-pct:  0;
     // Discover context menu only (2026-07-18) — "" everywhere else, same
     // zero-risk-elsewhere pattern as CardItem's own Discover-only fields.
     // context-menu-item-type starting with "Discover" is what selects the
@@ -1611,12 +1637,12 @@ export global AppState {
     // Blocklist support); context-menu-request-id "" means "not yet requested".
     in-out property <string> context-menu-request-id:      "";
     in-out property <string> context-menu-availability:    "";
-    in-out property <bool>   context-menu-request-pending: false; // this tier's own MediaRequest.status == Pending
-    in-out property <bool>   context-menu-request-mine:    true;  // requested_by == the connected account (true unless a multi-user instance)
+    in-out property <bool> context-menu-request-pending: false; // this tier's own MediaRequest.status == Pending
+    in-out property <bool> context-menu-request-mine:    true;  // requested_by == the connected account (true unless a multi-user instance)
     // Watchlist + Release Calendar (2026-07-18) — CardItem.on-watchlist,
     // copied in by every Discover context-menu open site. Drives the
     // Watchlist row's Add/Remove label — always shown, unlike Request.
-    in-out property <bool>   context-menu-on-watchlist: false;
+    in-out property <bool> context-menu-on-watchlist: false;
     // Jellyfin context-menu Watchlist row (2026-07-19, real gap live-
     // reported — "you cant add anyting from the library to the watchlist":
     // an already-in-library item redirects straight to the real Jellyfin
@@ -1634,12 +1660,12 @@ export global AppState {
     callback context-jf-toggle-watchlist();
 
     // ── Add-to-playlist picker (opened from context-menu row 7, music items) ──
-    in-out property <bool>       show-playlist-picker:   false;
+    in-out property <bool> show-playlist-picker:   false;
     in-out property <[CardItem]> playlist-picker-items:  [];   // existing playlists (id, title, subtitle="N tracks")
-    in-out property <int>        playlist-picker-cursor: 0;    // 0 = "+ New playlist…", 1..N = items[cursor-1]
-    in-out property <bool>       playlist-picker-naming: false; // typing a new playlist name
-    in-out property <string>     playlist-picker-name:   "";
-    in-out property <int>        playlist-picker-name-cursor: -1; // caret, see text_field.rs (-1 = end)
+    in-out property <int> playlist-picker-cursor: 0;    // 0 = "+ New playlist…", 1..N = items[cursor-1]
+    in-out property <bool> playlist-picker-naming: false; // typing a new playlist name
+    in-out property <string> playlist-picker-name:   "";
+    in-out property <int> playlist-picker-name-cursor: -1; // caret, see text_field.rs (-1 = end)
     // On-screen keyboard rollout (2026-08-23) — real callbacks, mirroring
     // discover-search-append/-backspace's shape, rather than the on-screen
     // keyboard mutating playlist-picker-name directly from Slint. Also
@@ -1649,12 +1675,12 @@ export global AppState {
     // implementation instead of two independently-mutating ones.
     callback playlist-picker-name-append(string);
     callback playlist-picker-name-backspace();
-    in-out property <int>    context-menu-focused:     0;   // 0=Resume (if resume-pct>0 && !played) 1=Play from Start 2=Mark Played 3=Favourite 4=View Details
+    in-out property <int> context-menu-focused:     0;   // 0=Resume (if resume-pct>0 && !played) 1=Play from Start 2=Mark Played 3=Favourite 4=View Details
 
     // ── Key binding editor state ──────────────────────────────────────────────
     in-out property <[KeyBindingEntry]> keybinding-normal: [];
     in-out property <[KeyBindingEntry]> keybinding-player: [];
-    in-out property <int>  keybinding-focused:   -1;
+    in-out property <int> keybinding-focused:   -1;
     in-out property <bool> keybinding-rebinding: false;
     // Reset to Defaults confirmation (2026-08-07, live-tested feedback: the
     // button gave no visual indication it was focused/pressed, and reset
@@ -1664,7 +1690,7 @@ export global AppState {
     // for the whole time this is open, whether it was opened by keyboard or
     // mouse — see settings.rs::dispatch_keybinding_nav's own doc comment.
     in-out property <bool> show-keybinding-reset-confirm:      false;
-    in-out property <int>  keybinding-reset-confirm-focused:   0; // 0=Cancel, 1=Confirm — Cancel is the safe default
+    in-out property <int> keybinding-reset-confirm-focused:   0; // 0=Cancel, 1=Confirm — Cancel is the safe default
 
     // Rebind-collision confirmation (2026-08-08) — rebinding a key already
     // used by a DIFFERENT action used to silently steal it with no warning
@@ -1672,44 +1698,44 @@ export global AppState {
     // stashes the pending combo in FjordState.pending_keybind_rebind and
     // shows this instead of applying it; keybinding-collision-confirmed/
     // -cancelled (main.rs) resolve it either way.
-    in-out property <bool>   show-keybinding-collision-confirm:      false;
-    in-out property <int>    keybinding-collision-confirm-focused:   0; // 0=Cancel, 1=Confirm
+    in-out property <bool> show-keybinding-collision-confirm:      false;
+    in-out property <int> keybinding-collision-confirm-focused:   0; // 0=Cancel, 1=Confirm
     in-out property <string> keybinding-collision-message:           "";
     callback keybinding-collision-confirmed();
     callback keybinding-collision-cancelled();
 
     // ── Settings state ────────────────────────────────────────────────────────
-    in-out property <bool>   settings-launch-fullscreen:    false;
-    in-out property <bool>   settings-audio-spdif:          false;
-    in-out property <bool>   settings-spdif-ac3:            true;
-    in-out property <bool>   settings-spdif-eac3:           true;
-    in-out property <bool>   settings-spdif-dts:            true;
-    in-out property <bool>   settings-spdif-dts-hd:         true;
-    in-out property <bool>   settings-spdif-truehd:         true;
+    in-out property <bool> settings-launch-fullscreen:    false;
+    in-out property <bool> settings-audio-spdif:          false;
+    in-out property <bool> settings-spdif-ac3:            true;
+    in-out property <bool> settings-spdif-eac3:           true;
+    in-out property <bool> settings-spdif-dts:            true;
+    in-out property <bool> settings-spdif-dts-hd:         true;
+    in-out property <bool> settings-spdif-truehd:         true;
     in-out property <string> settings-hwdec:                "auto";
     in-out property <string> settings-vf:                   "";
     in-out property <string> settings-video-sync:           "audio";
-    in-out property <bool>   settings-opengl-early-flush:   false;
-    in-out property <bool>   settings-video-latency-hacks:  false;
-    in-out property <bool>   settings-interpolation:        false;
+    in-out property <bool> settings-opengl-early-flush:   false;
+    in-out property <bool> settings-video-latency-hacks:  false;
+    in-out property <bool> settings-interpolation:        false;
     in-out property <string> settings-tscale:               "oversample";
     in-out property <string> settings-tone-mapping:         "auto";
-    in-out property <bool>   settings-target-colorspace-hint: false;
+    in-out property <bool> settings-target-colorspace-hint: false;
     // Settings → Video → HDR → "Separate video surface" (HDR Stage 5,
     // 2026-10-05, default on) — row only shown on Wayland (is-wayland, set
     // by Rust once the window's Wayland handles are known).
-    in-out property <bool>   settings-separate-video-surface: true;
+    in-out property <bool> settings-separate-video-surface: true;
     // … → "Use Fjord's own 10-bit buffers" (2026-10-08, default off, opt-in):
     // the own-buffer path; read once per run when the subsurface is set up.
-    in-out property <bool>   settings-video-own-buffers: false;
+    in-out property <bool> settings-video-own-buffers: false;
     // … → "Turn off dithering (test)" (2026-10-08, default off): mpv
     // dither-depth=no, for comparing 8- and 10-bit output on a gradient.
-    in-out property <bool>   settings-video-dither-off: false;
-    in-out property <bool>   is-wayland: false;
+    in-out property <bool> settings-video-dither-off: false;
+    in-out property <bool> is-wayland: false;
     in-out property <string> settings-deinterlace:          "no";
-    in-out property <int>    settings-cache-secs:           60;
-    in-out property <int>    settings-cache-max-mb:         500;
-    in-out property <bool>   settings-video-behind:         false;
+    in-out property <int> settings-cache-secs:           60;
+    in-out property <int> settings-cache-max-mb:         500;
+    in-out property <bool> settings-video-behind:         false;
     in-out property <string> settings-log-level:            "info"; // applies on next launch, not live
 
     // ── display_sync (2026-09-18) — resolution/refresh-rate/HDR/WCG matched
@@ -1735,8 +1761,8 @@ export global AppState {
     // display_sync::supported_resolutions_and_hz; both are real per-output
     // query results, not the fixed 3-resolution/7-Hz compile-time lists
     // this originally shipped with.
-    in-out property <bool>   settings-display-sync-enabled:            false;
-    in-out property <bool>   settings-display-sync-trailers:           false; // Watch Trailer also switches the display (2026-10-04)
+    in-out property <bool> settings-display-sync-enabled:            false;
+    in-out property <bool> settings-display-sync-trailers:           false; // Watch Trailer also switches the display (2026-10-04)
     in-out property <string> settings-display-sync-screen-name:        "";
     in-out property <string> settings-display-sync-screen-desc:        "";
     in-out property <[string]> settings-display-sync-screen-options:   [];
@@ -1746,8 +1772,8 @@ export global AppState {
     in-out property <string> settings-display-sync-default-hz:         "59.94";
     in-out property <string> settings-display-sync-scale-4k:           "1.0";
     in-out property <string> settings-display-sync-scale-1080p:        "1.0";
-    in-out property <bool>   settings-display-sync-sync-resolution:    true;
-    in-out property <bool>   settings-display-sync-sync-refresh-rate:  true;
+    in-out property <bool> settings-display-sync-sync-resolution:    true;
+    in-out property <bool> settings-display-sync-sync-refresh-rate:  true;
     in-out property <string> settings-display-sync-4k-odd-fps-mode:    "fallback";
     in-out property <string> settings-display-sync-hdr-mode:           "yes";
     in-out property <string> settings-display-sync-wcg-mode:           "auto";
@@ -1764,82 +1790,82 @@ export global AppState {
     callback display-sync-hz-selected(string);
 
     // ── Library prewarm progress (Phase 104) ──────────────────────────────────
-    in-out property <bool>   prewarm-metadata-running: false;
-    in-out property <int>    prewarm-metadata-total:   0;
-    in-out property <int>    prewarm-metadata-done:    0;
+    in-out property <bool> prewarm-metadata-running: false;
+    in-out property <int> prewarm-metadata-total:   0;
+    in-out property <int> prewarm-metadata-done:    0;
     in-out property <string> prewarm-metadata-summary: "";
-    in-out property <bool>   prewarm-image-running:    false;
-    in-out property <int>    prewarm-image-total:      0;
-    in-out property <int>    prewarm-image-done:       0;
+    in-out property <bool> prewarm-image-running:    false;
+    in-out property <int> prewarm-image-total:      0;
+    in-out property <int> prewarm-image-done:       0;
     in-out property <string> prewarm-image-summary:    "";
-    in-out property <bool>   settings-sub-enabled:          true;
+    in-out property <bool> settings-sub-enabled:          true;
     in-out property <string> settings-sub-lang:             "";
     in-out property <string> settings-sub-lang2:            "";
     in-out property <string> settings-sub-type:             "";
-    in-out property <int>    settings-sub-scale-pct:          100;
-    in-out property <int>    settings-sub-pos-pct:            100;
-    in-out property <bool>   settings-sub-respect-ass-styling: true;
+    in-out property <int> settings-sub-scale-pct:          100;
+    in-out property <int> settings-sub-pos-pct:            100;
+    in-out property <bool> settings-sub-respect-ass-styling: true;
     in-out property <string> settings-sub-color:              "";
-    in-out property <bool>   settings-sub-background:         false;
-    in-out property <string>   settings-audio-lang:           "";
-    in-out property <string>   settings-audio-device:          "";
-    in-out property <string>   settings-audio-device-desc:     "";
-    in-out property <string>   settings-audio-channels:        "auto-safe"; // mpv --audio-channels
-    in-out property <bool>     settings-gapless-audio:         true; // preload next track into same mpv instance
-    in-out property <bool>     settings-now-playing-auto-open: true; // pop the fullscreen Now Playing screen after ~30s idle
-    in-out property <string>   settings-passthrough-device:      ""; // video output while SPDIF on ("" = same as audio output)
-    in-out property <string>   settings-passthrough-device-desc: "";
+    in-out property <bool> settings-sub-background:         false;
+    in-out property <string> settings-audio-lang:           "";
+    in-out property <string> settings-audio-device:          "";
+    in-out property <string> settings-audio-device-desc:     "";
+    in-out property <string> settings-audio-channels:        "auto-safe"; // mpv --audio-channels
+    in-out property <bool> settings-gapless-audio:         true; // preload next track into same mpv instance
+    in-out property <bool> settings-now-playing-auto-open: true; // pop the fullscreen Now Playing screen after ~30s idle
+    in-out property <string> settings-passthrough-device:      ""; // video output while SPDIF on ("" = same as audio output)
+    in-out property <string> settings-passthrough-device-desc: "";
     in-out property <[string]> settings-audio-device-display:  [];
-    in-out property <bool>     settings-device-is-pipewire:    true;  // auto = pipewire by default
-    in-out property <bool>     settings-alsa-irq-scheduling:   false;
+    in-out property <bool> settings-device-is-pipewire:    true;  // auto = pipewire by default
+    in-out property <bool> settings-alsa-irq-scheduling:   false;
     // Whether the skip-segment fade mutes audio during SPDIF passthrough
     // (Settings → Audio → Passthrough, 2026-08-11 follow-up) — gates ONLY
     // the passthrough mute; the video fade and the PCM volume ramp stay
     // unconditional regardless of this toggle. See playback.rs's
     // arm_skip_fade and CLAUDE.md's Skip fade section.
-    in-out property <bool>     settings-skip-fade-mute-passthrough: true;
+    in-out property <bool> settings-skip-fade-mute-passthrough: true;
     callback audio-device-selected(string);
     callback passthrough-device-selected(string);
 
     // ── Intro Skipper skip modes ("always-skip"|"ask"|"ask-timed"|"never-skip") ──
     in-out property <string> settings-skip-intro-mode:      "ask";
-    in-out property <int>    settings-skip-intro-secs:       8;
+    in-out property <int> settings-skip-intro-secs:       8;
     in-out property <string> settings-skip-recap-mode:      "ask";
-    in-out property <int>    settings-skip-recap-secs:       8;
+    in-out property <int> settings-skip-recap-secs:       8;
     in-out property <string> settings-skip-preview-mode:    "ask";
-    in-out property <int>    settings-skip-preview-secs:     8;
+    in-out property <int> settings-skip-preview-secs:     8;
     in-out property <string> settings-skip-commercial-mode: "ask";
-    in-out property <int>    settings-skip-commercial-secs:  8;
+    in-out property <int> settings-skip-commercial-secs:  8;
     // Credits mode: "always-skip"|"ask"|"never-skip" (no ask-timed — banner has its own countdown)
     in-out property <string> settings-skip-credits-mode:    "ask";
-    in-out property <int>    settings-skip-credits-secs:    30;
+    in-out property <int> settings-skip-credits-secs:    30;
 
     // ── Player seek step (Settings → Player → Seeking) ───────────────────────
-    in-out property <int>    settings-seek-step-secs:       10;
-    in-out property <int>    settings-seek-step-long-secs:  30;
+    in-out property <int> settings-seek-step-secs:       10;
+    in-out property <int> settings-seek-step-long-secs:  30;
     // Base ms of the skip-segment fade-to-black + audio ramp/mute (2026-08-11),
     // before the settings-animation-speed multiplier — read live by both
     // player.slint's own `skip-fade` animate block and wire_mpv_timer's
     // Rust-side wait/ramp computation, so the two can never drift out of
     // sync with each other or with a live settings change. 0 = instant,
     // same hard cut as before this feature shipped.
-    in-out property <int>    settings-skip-fade-ms:        200;
+    in-out property <int> settings-skip-fade-ms:        200;
 
     // ── UI animation speed (Settings → UI) — ratios (1.0 = 100%, hand-tuned
     // durations unchanged), not raw percentages, so every animate block can
     // multiply its duration directly without a /100 at each of ~119 sites.
-    in-out property <int>    settings-scroll-speed-pct:     100;
-    in-out property <int>    settings-animation-speed-pct:  100;
-    in     property <float>  settings-scroll-speed:         1.0;
-    in     property <float>  settings-animation-speed:      1.0;
+    in-out property <int> settings-scroll-speed-pct:     100;
+    in-out property <int> settings-animation-speed-pct:  100;
+    in property <float> settings-scroll-speed:         1.0;
+    in property <float> settings-animation-speed:      1.0;
 
     // ── Text font (Settings → UI) — same dynamic-dropdown shape as the audio
     // device rows above, fetched via fc-list instead of mpv. settings-font-family
     // is the actual value MainWindow.font-family binds to ("Inter" | "" | any
     // other installed family name); settings-font-family-desc is its human-
     // readable label; settings-font-family-display is the dropdown's list.
-    in-out property <string>   settings-font-family:          "Inter";
-    in-out property <string>   settings-font-family-desc:     "Inter (Fjord default)";
+    in-out property <string> settings-font-family:          "Inter";
+    in-out property <string> settings-font-family-desc:     "Inter (Fjord default)";
     in-out property <[string]> settings-font-family-display:  [];
     callback font-family-selected(string);
 
@@ -1869,8 +1895,8 @@ export global AppState {
     // Seerr-related (seerr-connected goes false, the live seerr_client is
     // torn down, on_settings_changed) without forgetting the saved
     // connection, so re-enabling reconnects instantly with no re-auth.
-    in-out property <bool>   settings-seerr-enabled: false;
-    in-out property <bool>   seerr-connected:        false;
+    in-out property <bool> settings-seerr-enabled: false;
+    in-out property <bool> seerr-connected:        false;
     in-out property <string> seerr-connected-label:  "Not connected";
     // Fetched async (GET /status, unauthenticated) after every successful
     // connect and again at startup if already connected — mirrors how
@@ -1888,7 +1914,7 @@ export global AppState {
     // does. Same ConfirmDialog shape/reuse as every other instance in this
     // app; dialog declared last in settings.slint so it renders on top.
     in-out property <bool> show-seerr-disconnect-confirm: false;
-    in-out property <int>  seerr-disconnect-confirm-focused: 0; // 0=Cancel, 1=Disconnect
+    in-out property <int> seerr-disconnect-confirm-focused: 0; // 0=Cancel, 1=Disconnect
 
     // Streaming Region (Settings → Integrations, only shown when
     // seerr-connected) — same dynamic-dropdown shape as settings-font-
@@ -1901,7 +1927,7 @@ export global AppState {
     // discover.rs::resolve_streaming_region, which reads it fresh (then
     // caches it) rather than trusting a locally persisted copy that could
     // drift from what's actually set on the account.
-    in-out property <string>   settings-streaming-region-desc:    "";
+    in-out property <string> settings-streaming-region-desc:    "";
     in-out property <[string]> settings-streaming-region-display: [];
     callback streaming-region-selected(string);
 
@@ -1915,10 +1941,10 @@ export global AppState {
     // own web UI wording exactly — selecting them writes "" (locale) /
     // "all" (originalLanguage, the literal sentinel Seerr's frontend uses,
     // NOT an empty string — see main.rs's write handlers).
-    in-out property <string>   settings-display-language-desc:     "Default (English)";
+    in-out property <string> settings-display-language-desc:     "Default (English)";
     in-out property <[string]> settings-display-language-display:  [];
     callback display-language-selected(string);
-    in-out property <string>   settings-discover-language-desc:    "Default (All Languages)";
+    in-out property <string> settings-discover-language-desc:    "Default (All Languages)";
     in-out property <[string]> settings-discover-language-display: [];
     callback discover-language-selected(string);
 
@@ -2007,14 +2033,14 @@ export global AppState {
     // list from the tab row visually moved UP the screen to the URL
     // field. See seerr_auth::existing_connect_seerr_zones' own doc comment
     // for the corrected map.
-    in-out property <bool>   show-connect-seerr:       false;
-    in-out property <int>    connect-seerr-zone:       0;
-    in-out property <int>    connect-seerr-method:     0;
+    in-out property <bool> show-connect-seerr:       false;
+    in-out property <int> connect-seerr-zone:       0;
+    in-out property <int> connect-seerr-method:     0;
     in-out property <string> connect-seerr-error:      "";
-    in-out property <bool>   connect-seerr-busy:       false;
+    in-out property <bool> connect-seerr-busy:       false;
     in-out property <string> connect-seerr-qc-code:    "";
     in-out property <string> connect-seerr-qc-secret:  "";
-    in-out property <bool>   connect-seerr-qc-polling: false;
+    in-out property <bool> connect-seerr-qc-polling: false;
     callback connect-seerr-api-key(string, string);              // url, key
     callback connect-seerr-jellyfin(string, string, string);     // url, username, password
     callback connect-seerr-local(string, string, string);        // url, email, password
@@ -2047,42 +2073,42 @@ export global AppState {
     public pure function section-len(s: int) -> int {
         if active-nav == 0 {
             s == 0 ? continue-watching.length :
-            s == 1 ? next-up.length :
-            s == 2 ? recently-added.length :
-            s == 3 ? recently-added-movies.length :
-            s == 4 ? recently-added-albums.length :
-            s == 5 ? discover-watchlist-mixed.length :
-                     discover-coming-up-mixed.length
+                s == 1 ? next-up.length :
+                s == 2 ? recently-added.length :
+                s == 3 ? recently-added-movies.length :
+                s == 4 ? recently-added-albums.length :
+                s == 5 ? discover-watchlist-mixed.length :
+                discover-coming-up-mixed.length
         } else if active-nav == 1 {
             // TV Shows dashboard
             s == 0 ? continue-watching-tv.length :
-            s == 1 ? next-up.length :
-            s == 2 ? recently-added-tv.length :
-            s == 3 ? not-watched-tv.length :
-            s == 4 ? favorite-series.length :
-            s == 5 ? discover-watchlist-tv.length :
-                     discover-coming-up-tv.length
+                s == 1 ? next-up.length :
+                s == 2 ? recently-added-tv.length :
+                s == 3 ? not-watched-tv.length :
+                s == 4 ? favorite-series.length :
+                s == 5 ? discover-watchlist-tv.length :
+                discover-coming-up-tv.length
         } else if active-nav == 2 {
             // Movies dashboard
             s == 0 ? continue-watching-movies.length :
-            s == 1 ? 0 :
-            s == 2 ? recently-added-movies.length :
-            s == 3 ? not-watched-movies.length :
-            s == 4 ? favorite-movies.length :
-            s == 5 ? discover-watchlist-movies.length :
-                     discover-coming-up-movies.length
+                s == 1 ? 0 :
+                s == 2 ? recently-added-movies.length :
+                s == 3 ? not-watched-movies.length :
+                s == 4 ? favorite-movies.length :
+                s == 5 ? discover-watchlist-movies.length :
+                discover-coming-up-movies.length
         } else if active-nav == 3 {
             // Collections dashboard
             s == 0 ? recently-added-collections.length :
-            s == 1 ? unwatched-collections.length :
-                     0
+                s == 1 ? unwatched-collections.length :
+                0
         } else if active-nav == 4 {
             // Music dashboard
             s == 0 ? recently-added-albums.length :
-            s == 1 ? recently-played-albums.length :
-            s == 2 ? favorite-albums.length :
-            s == 3 ? music-playlists.length :
-                     0
+                s == 1 ? recently-played-albums.length :
+                s == 2 ? favorite-albums.length :
+                s == 3 ? music-playlists.length :
+                0
         } else {
             0
         }
@@ -2130,42 +2156,52 @@ export global AppState {
     public pure function section-card-item(s: int, c: int) -> CardItem {
         if active-nav == 0 {
             s == 0 ? continue-watching[c] :
-            s == 1 ? next-up[c] :
-            s == 2 ? recently-added[c] :
-            s == 3 ? recently-added-movies[c] :
-            s == 4 ? recently-added-albums[c] :
-            s == 5 ? discover-watchlist-mixed[c] :
-                     discover-coming-up-mixed[c]
+                s == 1 ? next-up[c] :
+                s == 2 ? recently-added[c] :
+                s == 3 ? recently-added-movies[c] :
+                s == 4 ? recently-added-albums[c] :
+                s == 5 ? discover-watchlist-mixed[c] :
+                discover-coming-up-mixed[c]
         } else if active-nav == 1 {
             // TV Shows
             s == 0 ? continue-watching-tv[c] :
-            s == 1 ? next-up[c] :
-            s == 2 ? recently-added-tv[c] :
-            s == 3 ? not-watched-tv[c] :
-            s == 4 ? favorite-series[c] :
-            s == 5 ? discover-watchlist-tv[c] :
-                     discover-coming-up-tv[c]
+                s == 1 ? next-up[c] :
+                s == 2 ? recently-added-tv[c] :
+                s == 3 ? not-watched-tv[c] :
+                s == 4 ? favorite-series[c] :
+                s == 5 ? discover-watchlist-tv[c] :
+                discover-coming-up-tv[c]
         } else if active-nav == 2 {
             // Movies
             s == 0 ? continue-watching-movies[c] :
-            s == 2 ? recently-added-movies[c] :
-            s == 3 ? not-watched-movies[c] :
-            s == 4 ? favorite-movies[c] :
-            s == 5 ? discover-watchlist-movies[c] :
-                     discover-coming-up-movies[c]
+                s == 2 ? recently-added-movies[c] :
+                s == 3 ? not-watched-movies[c] :
+                s == 4 ? favorite-movies[c] :
+                s == 5 ? discover-watchlist-movies[c] :
+                discover-coming-up-movies[c]
         } else if active-nav == 3 {
             // Collections dashboard
             s == 0 ? recently-added-collections[c] :
-                     unwatched-collections[c]
+                unwatched-collections[c]
         } else if active-nav == 4 {
             // Music dashboard
             s == 0 ? recently-added-albums[c] :
-            s == 1 ? recently-played-albums[c] :
-            s == 2 ? favorite-albums[c] :
-                     music-playlists[c]
+                s == 1 ? recently-played-albums[c] :
+                s == 2 ? favorite-albums[c] :
+                music-playlists[c]
         } else {
-            { id: "", title: "", year: 0, item_type: "", poster: @image-url(""),
-              has_played: false, resume_pct: 0, unplayed_count: 0, is_favorite: false, series_id: "" }
+            {
+                id: "",
+                title: "",
+                year: 0,
+                item_type: "",
+                poster: @image-url(""),
+                has_played: false,
+                resume_pct: 0,
+                unplayed_count: 0,
+                is_favorite: false,
+                series_id: ""
+            }
         }
     }
 
@@ -2241,7 +2277,7 @@ export global AppState {
     // since it has to intercept keys regardless of which of those 3
     // contexts is currently showing underneath it.
     in-out property <bool> show-sign-out-confirm: false;
-    in-out property <int>  sign-out-confirm-focused: 0; // 0=Cancel, 1=Sign Out
+    in-out property <int> sign-out-confirm-focused: 0; // 0=Cancel, 1=Sign Out
     callback prewarm-metadata;
     callback prewarm-images;
     callback nav-selected(int);
@@ -2327,11 +2363,11 @@ export global AppState {
     callback resume-player;
 
     // ── Queue ─────────────────────────────────────────────────────────────────
-    in-out property <int>          queue-count:       0;     // upcoming: playlist tracks after current + queued items (set by push_queue_display)
-    in-out property <int>          queue-repeat-mode: 0;     // 0=Off 1=All 2=One
-    in-out property <bool>         queue-shuffle:     false; // shuffle active
-    in-out property <bool>         show-queue-panel:  false; // queue panel overlay visible
-    in-out property <int>          queue-panel-cursor: 0;    // focused row in queue panel
+    in-out property <int> queue-count:       0;     // upcoming: playlist tracks after current + queued items (set by push_queue_display)
+    in-out property <int> queue-repeat-mode: 0;     // 0=Off 1=All 2=One
+    in-out property <bool> queue-shuffle:     false; // shuffle active
+    in-out property <bool> show-queue-panel:  false; // queue panel overlay visible
+    in-out property <int> queue-panel-cursor: 0;    // focused row in queue panel
     in-out property <[QueueEntry]> queue-items:        [];   // Rust pushes after every mutation
     callback queue-add-item();               // add focused context-menu item to back of queue
     callback queue-play-next-item();         // insert after current in playlist / front of queue
@@ -2351,15 +2387,15 @@ export global AppState {
     // declared last for z-order) and dispatch lives inside
     // keys.rs::handle_key_queue_panel, the panel's own existing dispatcher.
     in-out property <bool> show-queue-clear-confirm: false;
-    in-out property <int>  queue-clear-confirm-focused: 0; // 0=Cancel, 1=Clear All
+    in-out property <int> queue-clear-confirm-focused: 0; // 0=Cancel, 1=Clear All
     callback refresh-queue-display();       // Rust rebuilds queue-items from VideoState
     callback open-queue-panel();            // mouse entry point (music-bar ⋮): refresh + focus grab, mirrors 'q'
 
     // ── Lyrics (Phase 52) ─────────────────────────────────────────────────────
-    in-out property <bool>          show-lyrics:      false; // lyrics overlay visible
-    in-out property <bool>          lyrics-available: false; // server returned lyric data
-    in-out property <[LyricEntry]>  lyrics-lines:     [];   // populated by Rust from get_lyrics
-    in-out property <int>           lyrics-active-idx: -1;  // currently-playing line (-1 = none)
+    in-out property <bool> show-lyrics:      false; // lyrics overlay visible
+    in-out property <bool> lyrics-available: false; // server returned lyric data
+    in-out property <[LyricEntry]> lyrics-lines:     [];   // populated by Rust from get_lyrics
+    in-out property <int> lyrics-active-idx: -1;  // currently-playing line (-1 = none)
     callback toggle-lyrics();                               // 9/♪ button or L key
 
     // ── Callbacks — context menu ──────────────────────────────────────────────
@@ -2392,8 +2428,8 @@ export global AppState {
     // — see context_menu.rs's own doc comment) so this is a GLOBAL dialog
     // (main.slint top level), same shape as show-sign-out-confirm, not
     // owned by either screen.
-    in-out property <bool>   show-cancel-request-confirm: false;
-    in-out property <int>    cancel-request-confirm-focused: 0; // 0=Keep, 1=Cancel Request
+    in-out property <bool> show-cancel-request-confirm: false;
+    in-out property <int> cancel-request-confirm-focused: 0; // 0=Keep, 1=Cancel Request
     in-out property <string> cancel-request-confirm-id: "";     // request id to DELETE on confirm
     callback cancel-request-confirmed();
     callback context-discover-decline-request();         // Decline row — admin only
@@ -2468,7 +2504,7 @@ export global AppState {
     in-out property <bool> show-blocklist: false;
     callback open-blocklist();
     in-out property <[BlocklistRow]> blocklist-items: [];
-    in-out property <int>  blocklist-focused:      0;
+    in-out property <int> blocklist-focused:      0;
     in-out property <bool> blocklist-back-focused: false;
     // True while a load-more page fetch is in flight — guards a double-
     // fetch (mirrors discover-search-loading-more) and drives a small
@@ -2547,7 +2583,7 @@ export global AppState {
     // LineEdit — Bonfire codes are alphanumeric, entered via the shared
     // QwertyKeyboard, not the numeric VirtualKeyboard).
     in-out property <string> bonfire-group-join-code: "";
-    in-out property <int>    bonfire-group-join-code-cursor: -1; // caret, see text_field.rs (-1 = end)
+    in-out property <int> bonfire-group-join-code-cursor: -1; // caret, see text_field.rs (-1 = end)
     callback bonfire-group-join-code-append(string);
     callback bonfire-group-join-code-backspace();
     callback bonfire-group-join-code-submit();
