@@ -147,6 +147,7 @@
 //                     sign-out alongside the other transient Settings UI-flow flags
 //                   Adding a setting: add to Config only — FjordState.config is the copy.
 //                   movies_fetched/artists_fetched/albums_fetched/playlists_fetched: true after first network fetch (guards re-fetch)
+//                   movie_posters_loaded: Movies grid posters loaded for the current list (Discover fetches it without)
 //                   next_ep_pending moved to VideoState — cleared automatically on start_playback
 //   path helpers    xdg_config_base, xdg_cache_base (shared), config_path, poster_cache_dir/path, backdrop_cache_dir/path,
 //                   discover_poster_cache_dir/path (Seerr/TMDB posters — separate dir, no Jellyfin tag-revalidation concept), keybindings_path
@@ -2187,6 +2188,10 @@ pub(crate) struct FjordState {
     pub all_albums: Vec<MediaItem>,
     pub all_playlists: Vec<MediaItem>,
     pub movies_fetched: bool,
+    // The Movies grid's posters were loaded for the current all_movies (reset
+    // with movies_fetched). Discover fetches the list without posters, so the
+    // grid can't rely on movies_fetched alone (2026-10-10).
+    pub movie_posters_loaded: bool,
     pub collections_fetched: bool,
     pub artists_fetched: bool,
     pub albums_fetched: bool,
@@ -2582,6 +2587,7 @@ impl FjordState {
             all_albums: vec![],
             all_playlists: vec![],
             movies_fetched: false,
+            movie_posters_loaded: false,
             collections_fetched: false,
             artists_fetched: false,
             albums_fetched: false,
