@@ -9,6 +9,7 @@
 //   handle_key           keyboard dispatch: Back button / btn row / bio (slot 2) / album grid;
 //                        Up from row 0 → bio (or btn row); btn row → Back / bio / grid;
 //                        Enter on album → open-album; C → context menu
+//   wire_artist            callbacks moved from main() (0.5.0 step 3): artist screen
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
 
@@ -570,5 +571,180 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
             true
         }
         _ => false,
+    }
+}
+
+// ── wire_artist (moved from main(), 0.5.0 step 3) ────────────────────────
+/// Wires artist screen: open_artist, close_artist, toggle_artist_fav, play_artist_all.
+pub(crate) fn wire_artist(
+    window: &crate::MainWindow,
+    state: &std::sync::Arc<std::sync::Mutex<crate::config::FjordState>>,
+    video: &std::sync::Arc<std::sync::Mutex<crate::playback::VideoState>>,
+    rt: &tokio::runtime::Runtime,
+) {
+    // Moved verbatim from main(): names resolve as they did there.
+    use crate::*;
+    let window = slint::ComponentHandle::clone_strong(window);
+    let state = std::sync::Arc::clone(state);
+    let video = std::sync::Arc::clone(video);
+    // ── artist screen ─────────────────────────────────────────────────────────
+    {
+        let state_art = Arc::clone(&state);
+        let ww = window.as_weak();
+        let rt_handle = rt.handle().clone();
+        AppState::get(&window).on_open_artist(move |id, title| {
+            artist::open_artist_screen(
+                id.to_string(),
+                title.to_string(),
+                Arc::clone(&state_art),
+                ww.clone(),
+                rt_handle.clone(),
+            );
+        });
+    }
+    {
+        let ww_art = window.as_weak();
+        AppState::get(&window).on_close_artist(move || {
+            if let Some(w) = ww_art.upgrade() {
+                AppState::get(&w).set_show_artist(false);
+            }
+        });
+    }
+    {
+        let state_taf = Arc::clone(&state);
+        let ww_taf = window.as_weak();
+        // Capture the runtime handle — Handle::current() panics on the Slint
+        // event-loop thread because main() never enters the Tokio runtime.
+        let rt_taf = rt.handle().clone();
+        AppState::get(&window).on_toggle_artist_fav(move || {
+            let Some(w) = ww_taf.upgrade() else { return };
+            let g = AppState::get(&w);
+            let id = g.get_artist_id().to_string();
+            let new_fav = !g.get_artist_is_favorite();
+            g.set_artist_is_favorite(new_fav);
+            let s = state_taf.lock().unwrap();
+            let Some(client) = s.client.as_ref().map(Arc::clone) else {
+                return;
+            };
+            let ww3 = ww_taf.clone();
+            drop(s);
+            let rth = rt_taf.clone();
+            let state_rf = Arc::clone(&state_taf);
+            rt_taf.spawn(async move {
+                let result = if new_fav {
+                    client.set_favorite(&id).await
+                } else {
+                    client.unset_favorite(&id).await
+                };
+                if let Err(e) = result {
+                    warn!("toggle_artist_fav: {e}");
+                    crate::show_toast(ww3, format!("Favourite error: {e}"));
+                    return;
+                }
+                let ww4 = ww3.clone();
+                let id2 = id.clone();
+                let _ = slint::invoke_from_event_loop(move || {
+                    if let Some(w) = ww4.upgrade() {
+                        crate::context_menu::update_card_in_all_models(
+                            &w,
+                            &id2,
+                            None,
+                            Some(new_fav),
+                        );
+                    }
+                });
+                crate::home::refresh_favorites(client, ww3, rth, state_rf);
+            });
+        });
+    }
+    {
+        let state_paa = Arc::clone(&state);
+        let video_paa = Arc::clone(&video);
+        let ww_paa = window.as_weak();
+        let rt_paa = rt.handle().clone();
+        AppState::get(&window).on_play_artist_all(move || {
+            let Some(w) = ww_paa.upgrade() else { return };
+            let g = AppState::get(&w);
+            let albums = g.get_artist_albums();
+            if albums.row_count() == 0 {
+                return;
+            }
+
+            let album_ids: Vec<String> = (0..albums.row_count())
+                .filter_map(|i| albums.row_data(i))
+                .map(|c| c.id.to_string())
+                .collect();
+            let artist = g.get_artist_title().to_string();
+
+            let s = state_paa.lock().unwrap();
+            let Some(client) = s.client.as_ref().map(Arc::clone) else {
+                return;
+            };
+            let mut config = s.player_config();
+            config.start_position_secs = None;
+            drop(s);
+
+            let video2 = Arc::clone(&video_paa);
+            let ww3 = ww_paa.clone();
+            let state3 = Arc::clone(&state_paa);
+
+            rt_paa.spawn(async move {
+                // Fetch tracks for every album in order; track (id, title, album_id)
+                let mut all_tracks: Vec<(String, String, String)> = Vec::new();
+                for album_id in &album_ids {
+                    if let Ok(tracks) = client.get_album_tracks(album_id).await {
+                        for t in tracks {
+                            all_tracks.push((t.id, t.name, album_id.clone()));
+                        }
+                    }
+                }
+                if all_tracks.is_empty() {
+                    return;
+                }
+
+                let (first_id, first_title, first_alb_id) = all_tracks[0].clone();
+                let first_url = client.direct_play_url(&first_id);
+                let rt3 = tokio::runtime::Handle::current();
+
+                let _ = slint::invoke_from_event_loop(move || {
+                    {
+                        let mut vs = video2.lock().unwrap();
+                        // Rebuild the playlist but keep vs.queue — Play All plays
+                        // now; previously queued items follow after (Phase 56).
+                        vs.playlist.clear();
+                        vs.playlist_index = 0;
+                        vs.shuffle_order.clear();
+                        for (id, title, alb_id) in &all_tracks {
+                            vs.playlist.push(crate::playback::QueueItem {
+                                id: id.clone(),
+                                item_type: "Audio".into(),
+                                series_id: None,
+                                title: title.clone(),
+                                audio_meta: Some((artist.clone(), alb_id.clone())),
+                            });
+                        }
+                        crate::playback::rebuild_shuffle_order(&mut vs);
+                        if let Some(w) = ww3.upgrade() {
+                            push_queue_display(&vs, &AppState::get(&w));
+                        }
+                    }
+                    start_playback(
+                        first_url,
+                        first_id,
+                        "Audio",
+                        first_title,
+                        config,
+                        client,
+                        None,
+                        Some((artist, first_alb_id)),
+                        &video2,
+                        &ww3,
+                        &rt3,
+                        &state3,
+                        None,
+                    );
+                });
+            });
+        });
     }
 }

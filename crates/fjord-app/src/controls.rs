@@ -12,6 +12,7 @@
 //                  chapter_jump(idx): seek to vs.chapters[idx].0; also called from commit_panel (panel=4)
 //     delays       sub_delay_inc/dec (z/Z ±100 ms), audio_delay_inc/dec (x/X ±100 ms);
 //                  set delay-osd-text + delay-osd-visible for ~2 s; also update sub/audio-delay-ms (Sync panel)
+//   wire_up_next           callbacks moved from main() (0.5.0 step 3): Up Next banner
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
@@ -773,6 +774,63 @@ pub(crate) fn wire_controls(
             if let Some((t, _)) = vs.chapters.get(idx as usize) {
                 p.seek_to(*t);
             }
+        });
+    }
+}
+
+// ── wire_up_next (moved from main(), 0.5.0 step 3) ───────────────────────
+/// Wires Up Next banner: cancel_auto_advance, play_next_ep.
+pub(crate) fn wire_up_next(
+    window: &crate::MainWindow,
+    state: &std::sync::Arc<std::sync::Mutex<crate::config::FjordState>>,
+    video: &std::sync::Arc<std::sync::Mutex<crate::playback::VideoState>>,
+    rt: &tokio::runtime::Runtime,
+) {
+    // Moved verbatim from main(): names resolve as they did there.
+    use crate::*;
+    let window = slint::ComponentHandle::clone_strong(window);
+    let state = std::sync::Arc::clone(state);
+    let video = std::sync::Arc::clone(video);
+    // ── Up Next banner: cancel (Skip button) ─────────────────────────────────
+    {
+        let video_ca = Arc::clone(&video);
+        let ww_ca = window.as_weak();
+        AppState::get(&window).on_cancel_auto_advance(move || {
+            video_ca.lock().unwrap().next_ep_pending = None;
+            if let Some(w) = ww_ca.upgrade() {
+                AppState::get(&w).set_show_next_ep_banner(false);
+            }
+        });
+    }
+
+    // ── Up Next banner: play now (Play Now button) ────────────────────────────
+    {
+        let state_pn = Arc::clone(&state);
+        let video_pn = Arc::clone(&video);
+        let ww_pn = window.as_weak();
+        let rt_pn = rt.handle().clone();
+        AppState::get(&window).on_play_next_ep(move || {
+            let next = video_pn.lock().unwrap().next_ep_pending.take();
+            let Some(next) = next else {
+                return;
+            };
+            let config = state_pn.lock().unwrap().player_config();
+            let cli = state_pn.lock().unwrap().client.as_ref().map(Arc::clone);
+            let Some(cli) = cli else {
+                return;
+            };
+            let url = cli.direct_play_url(&next.id);
+            let title = next.display_name();
+            let ep_id = next.id.clone();
+            let series_id = next.series_id.clone();
+            let video_info = next.video_stream_info();
+            if let Some(w) = ww_pn.upgrade() {
+                AppState::get(&w).set_show_next_ep_banner(false);
+            }
+            start_playback(
+                url, ep_id, "Episode", title, config, cli, series_id, None, &video_pn, &ww_pn,
+                &rt_pn, &state_pn, video_info,
+            );
         });
     }
 }
