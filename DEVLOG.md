@@ -15133,3 +15133,692 @@ Above `if AppState.show-profile-edit-delete-confirm: ConfirmDialog {`:
 //                      which only models 2 states.
 // ─────────────────────────────────────────────────────────────────────────────
 ```
+
+#### `crates/fjord-app/ui/main.slint`
+
+Above `property <bool> _browse-vis: AppState.show-browse;`:
+```
+// Browse All's list is a plain `for` over AppState.media-items (~800 items
+// on a real library, no virtualization) — as an ordinary AppShell content
+// slot it used to be torn down and rebuilt in full on every single sidebar
+// move through nav==5, including a fraction-of-a-second pass-through while
+// holding an arrow key. Live-reported HTPC hitch, 2026-07-31. Pulled out
+// of AppShell's shared horizontal-stretch:1 layout (below) into this
+// permanently-mounted sibling instead: `browse-ever-shown` latches true
+// the first time show-browse ever goes true and never resets, so the
+// ~800 elements are constructed exactly once per session — every
+// subsequent open/close after that is a plain `visible` toggle (which,
+// per this codebase's own documented gotcha, also correctly removes it
+// from hit-testing when false), not a rebuild.
+// Local mirror triggers the changed callback (same idiom as _toast-vis
+// below) — Slint's `changed` only observes a property declared on this
+// component, not a dotted path straight into an imported global.
+```
+
+Above `property <bool> _library-vis: !AppState.show-browse && AppState.show-library &&`:
+```
+// LibraryGrid — same class of issue, same fix, 2026-07-31 follow-up.
+// `home.slint`'s grid is a plain `for row: for col: MediaCard {...}` over
+// the full AppState.library-display (up to ~600 real items on a real
+// library), and MediaCard is markedly heavier per-instance than
+// BrowseItem (a poster Image, up to 4 conditional badges, a progress
+// bar). It used to be 4 separate AppShell content slots (nav 1/2/3/4),
+// each an ordinary mount/unmount. All 4 already read the exact same
+// shared AppState.library-display/library-cols regardless of which nav
+// opened them — the only thing that varied was a static title string —
+// so this consolidates into ONE permanently-mounted sibling rather than
+// 4, unlike Browse All which only ever needed one to begin with.
+```
+
+Above `property <bool> _layer2-shown: AppState.video-behind-ui && AppState.has-background-player && !AppSta`:
+```
+// DiscoverScreen — same class of issue, 2026-07-31 follow-up (deferred
+// from the original Browse/LibraryGrid pass, then requested explicitly).
+// discover.slint's search/filtered-browse grid (AppState.discover-results)
+// grows unboundedly via accumulating pagination (maybe_autofill_grid has
+// no upper cap) and shares the identical AppShell content-slot mount-
+// churn shape — torn down and reconstructed on every sidebar pass through
+// nav==6. In practice this holds dozens of items, not Browse's ~800 or
+// LibraryGrid's ~600, but the fix is the same low-risk mechanical pattern
+// either way: confirmed no init => block or other component-lifecycle-
+// dependent local state in DiscoverScreen before relying on that (its
+// internal kb-y/kb-x/content-h properties are all either AppState-driven
+// or safely read root's own size, unaffected by hosting context).
+// The on-screen keyboard's own caret for LineEdit targets starts at the
+// end of the field every time the keyboard opens (2026-10-05, ◀ ▶ keys —
+// see AppState.onscreen-keyboard-edit). One tracker here instead of a
+// reset at each of the ~20 places that open the keyboard.
+// HDR Stage 5 (2026-10-05): with the window transparent over the video
+// subsurface, whatever an opaque video used to cover would show through
+// instead — the fullscreen player, and layer 2 below (video behind an
+// open Detail/Series/… screen). Those hide AppShell + the three
+// permanently-mounted screens instead of covering them.
+```
+
+Above `gate40 := FadeGate {`:
+```
+// Account tier (2026-08-14) — same shape as gate35, sits above it: a
+// profile-tier switch (via account-picker-select) explicitly hides
+// show-account-picker before opening ProfilePickerScreen, so the two
+// never race to both be true at once.
+```
+
+Above `property <int> shown-nav: AppState.active-nav;`:
+```
+// Dashboard tab switch — sequential fade-out-then-switch-then-fade-in,
+// 2026-08-21. The 6 content-slot screens below each carry
+// `horizontal-stretch: 1` in AppShell's one shared HorizontalLayout
+// slot (see this file's own screen-change-fade doc comment above),
+// which assumes exactly one is mounted at any instant — a true
+// simultaneous crossfade (FadeGate) was tried here once (2026-07-13)
+// and broke every dashboard switch for the whole fade-out window, both
+// screens mounted at once, the layout splitting/squeezing space
+// between them instead of giving it all to one. Reverted that day to
+// instant-unmount + fade-in-only (FadeInTrigger) — but that trade is
+// itself an asymmetric transition (a hard cut, then a fade), which
+// real UX research (NN/g's animation-duration guidance, Material/HIG's
+// convergence on ~200-250ms for navigational moves) calls out
+// directly: a hard cut into a fade reads as jarring regardless of how
+// the fade-in itself is tuned — live-reported the same way here
+// ("mabey you culd take a look at the ux/ui... slow down the
+// page/screen switches"). The standard fix for exactly this
+// constraint (can't truly overlap two elements sharing one layout
+// slot) is sequential, not simultaneous: fade the outgoing screen out
+// FIRST, swap while it's invisible, then fade the incoming one in —
+// never having two mounted at once, so the 2026-07-13 layout bug
+// can't recur.
+//
+// `shown-nav` is a deliberately-lagging mirror of `active-nav` — the 6
+// conditions below key off `shown-nav`, not `active-nav` directly, so
+// the OLD screen keeps rendering (now fading toward 0) for one short
+// beat after the real nav has already moved on. `nav-fade` drives
+// opacity for whichever of the 6 is currently mounted, in EITHER
+// direction — replaces the 6 individual FadeInTrigger instances this
+// block used to carry, since a single shared property now owns both
+// halves of the transition instead of only the entrance half.
+//
+// Fade-out is deliberately shorter than fade-in (100ms vs 200ms base,
+// matching "ease-out to emphasize exit, ease-in to emphasize entry"
+// from the same research) — keeps the added latency on a tab switch
+// small while still avoiding a hard cut. Rapid re-navigation (holding
+// an arrow key through several sidebar tabs) is handled for free by
+// Slint's own dirty-checked `Timer.running` (setting it `true` while
+// already running is a no-op, confirmed against this exact behavior
+// elsewhere in this codebase — see PressPulse's own history): a
+// fadeout timer already in flight is NOT restarted by a second nav
+// change landing before it fires, so a held key settles on whichever
+// tab is active when the ORIGINAL 100ms elapses, not each intermediate
+// one, and animate's own mid-flight retargeting means an interrupted
+// fade never jumps, just smoothly redirects toward the new target.
+```
+
+Above `nav-fadein-kick := Timer {`:
+```
+// Same "bump opacity a frame after mounting" trick FadeInTrigger/
+// FadeGate's own kick-timers already use, needed so the newly-mounted
+// screen's `animate opacity` below has a real 0→1 transition to
+// interpolate rather than an already-settled value. Guarded on
+// `active-nav == shown-nav` (still matching what this exact kick was
+// scheduled for) to close a narrow, rare race: a second nav change
+// landing inside this timer's own 16ms window — after the FIRST
+// transition's fadeout already fired and re-armed this kick, but
+// before this kick itself has run — would otherwise force nav-fade
+// back to 1 right as the SECOND transition is trying to fade back out
+// to 0, a one-frame glitch; the guard makes it a no-op instead,
+// leaving the second transition's own fadeout timer to finish the job.
+```
+
+Above `gate33 := FadeGate {`:
+```
+// Calendar screen (2026-07-18, Watchlist + Release Calendar) — opened
+// from Discover's "Coming Up" row sentinel card. Same !is-playing guard
+// every overlay-style screen needs (RequestOptionsOverlay was the one
+// that shipped without it and had to be live-patched this session).
+```
+
+Above `gate34 := FadeGate {`:
+```
+// Manage Blocklist screen (2026-08-06, Seerr Blocklist support) —
+// opened from Settings -> Integrations -> Manage Blocklist. Same
+// !is-playing guard every overlay-style screen needs.
+// Bonfire Phase 4 review, 2026-08-29: was missing the
+// !show-profile-picker/!show-account-picker exclusion every sibling
+// overlay already has — a mid-session idle-lock (or any other forced
+// jump to the picker) left this screen painted on top of the
+// now-open PIN pad instead of the picker actually being visible. See
+// reset_session_state's own matching fix in main.rs.
+```
+
+Above `gate21 := FadeGate {`:
+```
+// PersonScreen — real bug, live-reported 2026-08-17 ("cant open a
+// person detail from discover"): this used to be declared right after
+// DetailPage/SeriesScreen/etc. (the 6 screens person.rs's own NATIVE
+// open_person_screen is reachable from), which correctly covered all
+// of them since Person was always the LAST z-order sibling — none of
+// those 6 ever clear their own show-X flag when opening Person, they
+// rely entirely on this ordering to visually cover them. RequestDetail
+// Screen/RequestOptionsOverlay/CalendarScreen/BlocklistScreen were all
+// added later, AFTER Person's old position — so the same "just rely on
+// z-order" assumption silently broke the moment Discover-context
+// person-opening (open_person_from_discover, 2026-08-13) needed to
+// cover RequestDetailScreen specifically: show-person correctly became
+// true (confirmed live via fjord.log — the data fetch completes fine),
+// but show-request-detail was never cleared, and RequestDetailScreen
+// — declared textually after Person at the time — painted on top,
+// completely hiding the just-opened PersonScreen with no visible
+// change at all. Fixed by moving Person to the END of this whole
+// overlay block instead of threading a show-request-detail clear
+// through every one of open_person_from_discover's 3 call paths —
+// restores the original "Person always covers everything else"
+// invariant for every current AND future sibling overlay, matching
+// how the other 6 screens already behave for free.
+```
+
+Above `gate38 := FadeGate {`:
+```
+// Sidebar profile quick-menu (2026-08-14) — only reachable via the
+// sidebar, which is itself unreachable during fullscreen playback, but
+// !is-playing is added anyway matching this file's own established rule
+// for every free-floating overlay (RequestOptionsOverlay shipped once
+// without it and needed a live patch after getting stuck on top of video).
+```
+
+Above `gate36 := FadeGate {`:
+```
+// Manage Profiles / Profile Edit (Bonfire Phase 2, 2026-08-09) — reached
+// from Settings → Profiles, same free-floating overlay shape as
+// ConnectSeerrScreen above. !is-playing guard from the start (this
+// whole class of overlay has shipped without it once before and needed
+// a live patch — see RequestOptionsOverlay's own history in CLAUDE.md).
+```
+
+Above `gate44 := FadeGate {`:
+```
+// Bonfire Group (Phase 5, cross-household groups, 2026-08-29) — reached
+// from Settings → Profiles, same free-floating overlay shape as
+// ManageProfilesScreen above, !is-playing guard from the start (see
+// gate36's own comment for the RequestOptionsOverlay history this
+// guards against).
+```
+
+Above `gate42 := FadeGate {`:
+```
+// Sign Out confirm dialog, 2026-08-22 — see show-sign-out-confirm's own
+// doc comment in app_state.slint. Global (this dialog is reachable from
+// 3 genuinely different contexts — Settings' Profiles row, the sidebar
+// quick-menu, OfflineScreen's Change Server button — none of which own
+// it individually), so it lives here rather than inside any one
+// screen's own component, same shape as RememberLoginConfirmOverlay
+// right above. Keyboard is handled by keys.rs's own pre-active_mode()
+// raw-key tier, not here — ConfirmDialog itself is keyboard-dumb.
+```
+
+Above `gate43 := FadeGate {`:
+```
+// Cancel-Seerr-request confirm dialog, 2026-08-22 — see show-cancel-
+// request-confirm's own doc comment in app_state.slint. Global for the
+// same reason as the Sign Out dialog above: reachable from 2 screens
+// (the Discover grid's own context menu, and RequestDetailScreen's ⋮
+// More menu, which reuses that exact overlay). The actual DELETE
+// /request call happens in discover.rs's on_cancel_request_confirmed,
+// not here.
+```
+
+#### `crates/fjord-app/ui/main.slint` — file header (TOC)
+```
+// ── fjord-app · main.slint ───────────────────────────────────────────────────
+//   MainWindow    window root: sync-layout, auto-advance banner, FocusScope
+//   keyboard handler  single AppState.handle-key() callback → Rust keys.rs
+//   idle-activity tracker  (Bonfire Phase 4, 2026-08-29) always-mounted, lowest-z-order
+//                 full-window TouchArea, declared before everything else — best-effort mouse
+//                 activity for profile.rs::wire_idle_lock_timer's idle clock (only receives
+//                 `moved` for screen regions nothing else currently covers); gate34/gate24
+//                 (Blocklist/PlaylistPicker) also gained the !show-profile-picker/
+//                 !show-account-picker exclusion every sibling overlay already had
+//   bar layout    bottom of window: MusicPlayerBar (72px, is-audio-playing) stacked above
+//                 MiniPlayerBar (108/56px, has-background-player && !is-playing);
+//   HDR Stage 5 (2026-10-05): background transparent while AppState.video-surface-active;
+//                 layer 1 gets a VideoSpot (its Image hidden); layer 2 isn't mounted then;
+//                 _video-covers-content hides AppShell + Browse/Library/Discover under the
+//                 fullscreen player and layer 2's area instead of covering them
+//                 total-bar-h = music-bar-h + bar-h; content fills y=0 height=parent.height-total-bar-h
+//   screen slots  ConnectingScreen / OfflineScreen (startup connectivity gate, checked
+//                 before show-login) / AccountPickerScreen (gate40, 2026-08-14, 2-tier
+//                 account/profile redesign — sits above ProfilePickerScreen, shown with
+//                 2+ known accounts) / ProfilePickerScreen (gate35, Bonfire Phase 1,
+//                 account-scoped) / LoginScreen, AppShell + HomeScreen / DashboardScreen /
+//                 MusicDashboard / CollectionsDashboard /
+//                 nav: 0=Home, 1=TV Shows, 2=Movies, 3=Collections, 4=Music, 5=Browse All, 6=Discover
+//                 (Discover hidden unless settings-seerr-enabled)
+//   BrowseScreen  NOT an AppShell content slot (2026-07-31) — permanently-mounted sibling right
+//                 after AppShell, `visible: show-browse` toggles it, `browse-ever-shown` latches
+//                 the one-time mount; its ~800-element list would otherwise be torn down/rebuilt
+//                 on every sidebar pass through nav==5, a real HTPC hitch — see CLAUDE.md
+//   LibraryGrid   also NOT an AppShell content slot (2026-07-31) — ONE permanently-mounted sibling
+//                 shared across nav=1,2,3,4 (with show-library), `library-ever-shown` latches the
+//                 one-time mount, `grid-title` computed from active-nav replaces the 4 old static
+//                 per-nav literals; same reasoning as BrowseScreen, its MediaCard grid is heavier
+//                 per-element and up to ~600 items — see CLAUDE.md
+//   DiscoverScreen  also NOT an AppShell content slot (2026-07-31) — permanently-mounted sibling,
+//                 `discover-ever-shown` latches the one-time mount; deferred from the original
+//                 Browse/LibraryGrid pass (smaller item counts in practice), converted when asked
+//                 directly whether the deferral still stood — see CLAUDE.md
+//   overlay z-order (bottom→top)  SeriesScreen, SeasonScreen, ArtistScreen, CollectionScreen, AlbumScreen,
+//   _osk-open           resets AppState.onscreen-keyboard-caret to the end whenever the on-screen
+//                       keyboard opens (2026-10-05)
+//                                  DetailPage, RequestDetailScreen (Seerr), RequestOptionsOverlay (Seerr,
+//                                  4K/tags/seasons modal opened from RequestDetailScreen's Request button),
+//                                  CalendarScreen (Seerr, 2026-07-18, opened from Discover's "Coming Up"
+//                                  row sentinel — see calendar.slint), BlocklistScreen (Seerr, 2026-08-06,
+//                                  Manage Blocklist — opened from Settings, see blocklist.slint),
+//                                  PersonScreen, ContextMenu;
+//                                  ConnectSeerrScreen (Seerr) layers above PlaylistPicker, below nothing else
+//   video-behind-UI layer  above AppShell, only when overlay screen is open
+//   loading overlay   semi-transparent #000000c0 + LoadingSpinner while app-content-loading
+//   toast overlay     bottom-center error pill; auto-dismissed after 4 s by toast-timer
+//   PersonScreen overlay (above Detail/Season/Series/Artist/Collection/Album; below ContextMenu)
+//   QueuePanel overlay (above ContextMenu, shown when AppState.show-queue-panel)
+//   LyricsView overlay (above QueuePanel, shown when show-lyrics && is-audio-playing && !show-now-playing —
+//                       suppressed during Now Playing, which already embeds its own lyrics panel, CR11-8)
+//   NowPlayingScreen fullscreen music view (below ContextMenu/QueuePanel/LyricsView, shown when show-now-playing && is-audio-playing)
+//   ContextMenu overlay (shown when AppState.show-context-menu)
+//   screen-change fade  two different mechanisms, split by whether the site is inside a
+//                       shared Layout or free-floating:
+//                       - FadeGate (widgets.slint), fade BOTH in and out — every free-floating
+//                         direct child of MainWindow with no enclosing Layout
+//                         (ConnectingScreen/OfflineScreen/LoginScreen, all 7 overlay
+//                         screens series/season/artist/collection/album/detail/person, now
+//                         playing, context menu, playlist picker, queue panel, lyrics,
+//                         volume overlay, toast, the Up Next banner, plus Seerr's
+//                         ConnectSeerrScreen, RequestDetailScreen, and RequestOptionsOverlay
+//                         (same dim-backdrop-plus-centered-box shape as PlaylistPicker)):
+//                         `gateN := FadeGate {
+//                         show: <condition>; }` declared as an always-present sibling, gating
+//                         `if gateN.mounted: X { opacity: gateN.fade-opacity; animate opacity
+//                         {...} }` — FadeGate keeps `mounted` true for one fade-out's worth of
+//                         time after `show` goes false, so Back/switching-away plays a real
+//                         fade instead of Slint's `if` destroying the element the instant the
+//                         condition flips.
+//                       - FadeInTrigger (widgets.slint), fade IN ONLY — BrowseScreen,
+//                         LibraryGrid, and DiscoverScreen's own one-time mount fade (they moved
+//                         out to permanently-mounted siblings 2026-07-31, see browse-ever-shown/
+//                         library-ever-shown/discover-ever-shown below; every open after the
+//                         first is a plain `visible` toggle with no fade at all, entrance-only
+//                         is all a one-time mount ever needs), plus player.slint's 3
+//                         skip-segment overlays.
+//                       - The AppShell `@children` sites (HomeScreen, 2×DashboardScreen,
+//                         CollectionsDashboard, MusicDashboard, SettingsScreen) use neither —
+//                         see the dedicated shown-nav/nav-fade block right before AppShell's own
+//                         instantiation below for why and how. Short version: AppShell `inherits
+//                         HorizontalLayout` (layout.slint) and each of these gets
+//                         `horizontal-stretch: 1` in that same content slot, which assumes
+//                         exactly one is mounted at a time — a true FadeGate-style simultaneous
+//                         crossfade was tried here once (2026-07-13) and broke every dashboard
+//                         switch (both screens mounted during the fade-out, the layout
+//                         squeezing space between them instead of giving it all to one),
+//                         reverted same day to instant-unmount + entrance-only fade — which
+//                         itself reads as a flash regardless of duration (real UX research: a
+//                         hard cut into a fade is jarring no matter how the fade is tuned, live-
+//                         reported here the same way, 2026-08-21). Fixed properly by making the
+//                         switch itself sequential rather than instant — fade the outgoing
+//                         screen out FIRST, swap while invisible, then fade the incoming one in
+//                         — never two mounted at once, so the 2026-07-13 bug can't recur.
+//                       All of the above scale with settings-animation-speed.
+//                       PlayerScreen and the two docked bars (MiniPlayerBar/
+//                       MusicPlayerBar) are deliberately excluded — video start latency is
+//                       too perception-sensitive, and the bars share total-bar-h with the
+//                       content area's height so fading their opacity alone (without also
+//                       delaying the resulting layout shift) would look like a gap
+//   bundled fonts   NotoSansSymbols2-Regular.ttf + NotoSansMath-Regular.ttf (Apache-2.0,
+//                   assets/fonts/) imported here purely for their compile-time side effect —
+//                   Slint registers every `import "*.ttf"` found anywhere in the project as a
+//                   glyph-coverage fallback for the whole app, no font-family binding needed
+//                   anywhere else. Added because many of the Unicode symbol glyphs used
+//                   throughout the UI (⏮⏭⋮🔉🔊 and others) aren't covered by every system's
+//                   default font stack — confirmed live on the HTPC, which was missing them
+//                   while the dev machine's fuller desktop font set happened to cover them,
+//                   exactly the kind of system-dependent inconsistency this eliminates.
+//                   Inter-Regular/Bold.ttf (OFL-1.1) + AdwaitaSans-Regular.ttf (OFL-1.1) are
+//                   bundled the same way: Inter is Fjord's own designed-around default body
+//                   font (`MainWindow.font-family`, Settings → UI → Text font can override it
+//                   with any font installed on the host); Adwaita Sans supplies ♥/✓ specifically
+//                   (IconCircleButton, widgets.slint) — hard-pinned regardless of which text
+//                   font is active, since several candidate fonts turned out to have their own
+//                   competing glyphs for common icons (confirmed via a live font-comparison
+//                   pass), which would otherwise make icon appearance depend on font choice.
+// ─────────────────────────────────────────────────────────────────────────────
+```
+
+#### `crates/fjord-app/ui/login.slint`
+
+Above `init => {`:
+```
+// Real gap, live-reported 2026-08-14 ("login screen dont have keybord
+// nav"): nothing ever grabbed native keyboard focus into the first
+// field when this screen appeared, so typing/Tab did nothing at all
+// until the user first clicked into a field with the mouse.
+//
+// Real bug, live-reported 2026-08-17: "when trying to connect to the
+// accaunt you are focused on the server not the password so you first
+// need to navigate to the password to fill it in" — a RequireLogin
+// re-prompt (server + username both already known/pre-filled, only the
+// password genuinely needs retyping) still unconditionally focused
+// Server first, forcing an unnecessary Tab through two already-correct
+// fields. Focus now lands on whichever field the user actually needs
+// to type into.
+//
+// Real regression, live-reported 2026-08-21 alongside the D-pad zone
+// work — "the login don thave keybord/dpad nav it only works after
+// you pressd tab or a text box with the mouse." Root cause: this
+// screen's own doc comment above claimed it was "plain instant mount/
+// unmount, not FadeGate" — checked against the real main.slint and
+// that's simply wrong; `gate3` genuinely IS a FadeGate. That matters
+// because `show-login` defaults to `true` before any config/auth-check
+// has run (the exact same fact this doc's own FadeGate-kick-timer bug
+// write-up already establishes for the Login/Connecting flash), so on
+// a real cold start this screen's `init` — and the `.focus()` call it
+// used to make directly — runs DURING MainWindow::new(), well before
+// `window.run()` ever starts pumping the event loop. But main.rs's own
+// startup sequence calls `window.invoke_grab_keyboard_focus()`
+// (grabbing the GLOBAL `fs` FocusScope, not this screen's own field)
+// as the literal last synchronous line before `window.run()` — a LATER
+// plain Rust call in the same program order, so it always overrides
+// whatever this screen's own `init` set moments earlier. The result:
+// `fs`, not the LineEdit, holds real focus the instant the event loop
+// starts — `keys.rs`'s own `show_login` tier only handles zones 3/4
+// and returns `false` for 0-2 (expecting the LineEdit to already own
+// the key), so arrow keys/typing hit neither and silently do nothing,
+// until Tab or a mouse click gives a field REAL focus for the first
+// time. Fixed the same way this codebase already fixed the identical
+// "must run after window.run(), not during element construction"
+// class of problem for FadeGate itself: a one-shot Timer, which
+// Slint's own event loop cannot fire until it's actually running,
+// defers the real focus grab to the guaranteed-live first tick —
+// strictly after ANY synchronous pre-window.run() call, including
+// main.rs's own late grab, regardless of exactly when `init` itself
+// happened to run.
+```
+
+Above `AppState.show-onscreen-keyboard = false;`:
+```
+// On-screen keyboard resets (Bonfire Phase 3) — mirrors
+// reset_session_state's own identical 3 resets in main.rs; needed
+// here too since a cold start runs before that function is ever
+// called (it's scoped to sign-out/profile-switch, not first launch).
+```
+
+Above `server-field-wrap := FieldFocusWrap {`:
+```
+// Zone 0 — bordered wrapper (LineEdit exposes no settable border
+// of its own), same shape as ProfileEditScreen's own
+// name-field-wrap; shown ONLY while the on-screen keyboard is
+// open, since native LineEdit focus (and its own built-in
+// highlight) is what shows this the rest of the time. Extracted
+// into the shared FieldFocusWrap component 2026-08-22 (code
+// review) — this and its 2 siblings below used to duplicate an
+// identical ~15-line border block by hand.
+```
+
+Above `x: 2px;`:
+```
+// A bare host/IP (no scheme) works now too — do_login tries
+// https then http automatically, live-reported 2026-08-14.
+// Still shown with a scheme in the example since a raw IP:port
+// is the one case (a local server with no real TLS cert) where
+// typing http:// explicitly saves the wasted first attempt.
+```
+
+Above `if AppState.show-onscreen-keyboard {`:
+```
+// Real bug, code-review-confirmed 2026-08-22:
+// onscreen-keyboard-target was only ever set at
+// the moment the keyboard opened — clicking a
+// DIFFERENT field with the mouse while it's
+// still open moved the visible focus ring here
+// via login-zone above, but left the keyboard
+// silently typing into whichever field it was
+// originally opened from. Resyncing here too
+// means the ring and the actual typing
+// destination can never disagree, regardless of
+// how focus got here (D-pad zone hop or click).
+```
+
+Above `if event.text == "\u{F700}" && AppState.login-append-mode {`:
+```
+// Up hands off to zone 5 (Back) when it exists — real
+// gap, live-reported 2026-08-21 ("the back button is
+// down from connect witch feels wrong as it is top left
+// so it shuld be up from the server right?"): Back sits
+// top-left, visually ABOVE this field, so reaching it by
+// going all the way DOWN past Connect (this screen's
+// original design) was backwards. Same hand-off shape
+// pass-input's own Down already uses for zone 3 — leaves
+// native LineEdit focus entirely, AppState.refocus()
+// re-grabs the global dispatch FocusScope so keys.rs's
+// zone tier starts seeing keys again. No-op with no
+// append mode (nothing above Server to reach), matching
+// this field's own prior behavior in that case.
+```
+
+Above `if event.text == "\u{000a}" {`:
+```
+// On-screen keyboard (Bonfire Phase 3) — Enter opens
+// it (2026-08-23; was Right — see this file's own
+// header doc comment for the reasoning that changed
+// and why Password specifically needed its own
+// accepted handler removed to make this safe there).
+```
+
+Above `changed has-focus => {`:
+```
+// No `accepted =>` handler here (removed 2026-08-23) —
+// physical Enter now opens the on-screen keyboard on
+// this field too, same as Server/Username, per direct
+// feedback ("if they press enter on a textfield they
+// want to enter it to type"). key-pressed's own Enter
+// branch below intercepts and returns accept BEFORE
+// Slint's native LineEdit machinery would ever fire
+// `accepted`, so a handler here would be permanently
+// unreachable dead code, not just redundant — submitting
+// now happens via the Connect button (zone 4, already
+// reachable via Down once the keyboard is closed).
+```
+
+Above `if event.text == "\u{000a}" {`:
+```
+// On-screen keyboard (Bonfire Phase 3) — Enter opens
+// it, same as the other 2 fields (2026-08-23; this
+// field used to be the one exception, using Right
+// instead, specifically because its own now-removed
+// `accepted` handler submitted the form on physical
+// Enter — see this LineEdit's own header comment
+// above for why removing that handler is what makes
+// this safe).
+```
+
+Above `height: 36px;`:
+```
+// Real bug, live-reported 2026-08-19/21 (screenshots) —
+// a padding-only fix (4px→12px) on this HorizontalLayout
+// never resolved it, matching the identical shape and fix
+// ProfileEditScreen's "Skip PIN on this network" row
+// needed: dropped the HorizontalLayout for explicit x/y
+// positioning of both children, the pattern that row's
+// own real fix converged on. This row never had that
+// row's OTHER bug (no explicit `width: parent.width`
+// override here to begin with — it was already sized the
+// same auto-stretched way its LineEdit/FjordButton
+// siblings are), so the HorizontalLayout itself was the
+// one thing left unproven; converting removes any
+// remaining risk from trusting its own padding/stretch
+// computation rather than reading this row's own width
+// directly.
+```
+
+Above `text: "← Back";`:
+```
+// Real bug, live-reported 2026-08-18: the label used to name the
+// actual destination ("← Back to Profiles" when opened from the
+// account picker) — but on_cancel_add_account's own real behavior
+// for that source is to reopen the ACCOUNT picker, not the
+// profile-tier one, so the label was flatly wrong. Per the user's
+// own suggestion: don't name a destination at all, just say
+// "Back" — the button always does exactly one thing (undo this
+// Add Account attempt, return to wherever it was opened from),
+// so there's nothing destination-specific worth stating, and no
+// way for wording to drift out of sync with behavior again.
+```
+
+Above `function dispatch-onscreen-key(k: string) {`:
+```
+// On-screen alphanumeric keyboard (Bonfire Phase 3, 2026-08-22) —
+// positioned below the card, not overlapping it, so the field being
+// typed into stays visible the whole time. Dispatches by the generic
+// onscreen-keyboard-target id set by whichever field opened it — this
+// per-field else-if chain is the one deliberate piece of screen-specific
+// glue this design keeps; a future ConnectSeerr/Discover/etc. screen
+// would write its own small version of this exact function against its
+// own fields/target-id strings, without touching this one. Extracted
+// into a named function 2026-08-23 (was inline on QwertyKeyboard's own
+// key-pressed) so a genuine physical keystroke (see the
+// _physical-key-mirror tracker below) can share the exact same
+// dispatch — "i want it to still work to type on the keybord even if
+// its open," live feedback the same day.
+```
+
+Above `let r = AppState.onscreen-keyboard-edit(pass-input.text, AppState.onscreen-keyboard-caret, k);`:
+```
+// Masking is automatic — a pure function of the current
+// .text value regardless of how it was set (verified
+// directly against Slint's own core TextInput source).
+// At the keyboard's own caret (◀ ▶ move it, 2026-10-05).
+```
+
+Above `property <int> _physical-key-mirror: AppState.onscreen-keyboard-physical-key-seq;`:
+```
+// Physical-keyboard passthrough (2026-08-23) — keys.rs forwards any
+// ordinary printable key (or Backspace) it sees while the on-screen
+// keyboard is open via AppState.onscreen-keyboard-physical-key/-seq;
+// this mirrors the counter (changed can only observe a property on
+// THIS component, not a dotted global path — the same limitation
+// _pulse-mirror/_activate-mirror already work around elsewhere) and
+// funnels the payload through the exact same dispatch-onscreen-key a
+// mouse click or on-screen D-pad Enter already uses, so a real
+// keyboard, the mouse, and the on-screen grid can never disagree about
+// what a given key means.
+```
+
+Above `property <int> _pulse-mirror: AppState.kb-activate-pulse;`:
+```
+// Zone 4's own D-pad Enter (keys.rs's zone 3/4 tier) bumps the shared
+// kb-activate-pulse counter rather than calling do-login directly —
+// Rust can't read live LineEdit.text to build that call itself. Same
+// "changed on the shared pulse counter, guarded by this screen's own
+// show flag + zone" idiom as ProfileEditScreen's own _pulse-mirror.
+```
+
+#### `crates/fjord-app/ui/login.slint` — file header (TOC)
+```
+// ── fjord-app · login.slint ──────────────────────────────────────────────────
+//   LoginScreen  server URL + username + password fields; submits via AppState.do-login
+//                (4th bool arg is login-append-mode, 5th is login-remember — see
+//                app_state.slint); a "Remember this login" toggle (2026-08-14, the
+//                account/profile redesign — persisted onto the resulting profile's
+//                remember_login) defaults checked, matching today's existing implicit
+//                behavior; small Quit button bottom-right corner (Ctrl+Q also works,
+//                keys.rs); a floating "← Back"/"Cancel" corner button shows whenever
+//                login-append-mode is set (label depends on login-append-source — see
+//                that property's own doc comment) — cancel-add-account() closes
+//                LoginScreen and returns to wherever it came from without touching any
+//                already-signed-in profile. server-input.text/user-input.text bind to
+//                login-server-prefill/login-username-prefill (2026-08-14/2026-08-15, the
+//                RequireLogin StartupGate outcome pre-fills a known account's own server
+//                address AND username — only the password genuinely needs re-entry).
+//                init => grabs native focus into server-input (or pass-input, on a
+//                RequireLogin re-prompt where the first two are already known) so
+//                typing works immediately.
+//
+//   Full D-pad keyboard navigation, 2026-08-19 — live pushback ("why?") on a prior
+//   claim that "no D-pad path to the Remember-toggle/Connect button" was an accepted
+//   scope boundary; the exact zone-based pattern already proven this session for
+//   ProfileEditScreen (see app_state.slint's login-zone doc comment for the full
+//   design) is reused here now that the marginal cost is low. 5 zones: 0=server
+//   1=username 2=password (native LineEdit focus, Tab already cycles these 3) then
+//   3=Remember toggle 4=Connect button (no native focus — reached via each field's
+//   own key-pressed hook calling AppState.refocus() + setting login-zone, and
+//   returned-to via the _zone-mirror tracker below calling the right field's own
+//   .focus() — Rust can't call a named Slint element's method directly).
+//
+//   Zones 5=Back/Cancel (append mode only) and 6=Quit (always), 2026-08-21 — real
+//   gap, live-reported ("back and quit is not reachable with keybord/dpad"): the
+//   prior design deliberately left these un-zoned on the theory that Escape/Ctrl+Q
+//   already reached them from any zone, matching ProfileEditScreen's own precedent
+//   for not zoning its header ✕. That reasoning didn't survive contact with this
+//   app's own established convention elsewhere (ProfilePickerScreen/
+//   AccountPickerScreen's own Back/Quit buttons both needed the identical fix once
+//   already, 2026-08-16/21) — a raw shortcut existing isn't the same as the button
+//   itself being D-pad-focusable + Enter-activatable, which every other equivalent
+//   button in this app provides.
+//
+//   Back and Quit are two INDEPENDENT entry points off opposite ends of the chain,
+//   not chained through each other — corrected the same day from a first version
+//   that reached Back via Down-from-Connect ("the back button is down from connect
+//   witch feels wrong as it is top left so it shuld be up from the server right?"):
+//   Back sits top-left, visually ABOVE every field, so it hangs off Up from Server
+//   (zone 0's own key-pressed hook, since native LineEdit focus never reaches this
+//   tier's own match at all) with zone 5's own Down returning to Server. Quit sits
+//   bottom-right and keeps its original Down-from-Connect reachability, matching
+//   its actual on-screen position. Quit-focused Escape/Backspace un-focuses rather
+//   than quitting (matches the picker screens' own "a terminal action shouldn't
+//   fire as an Escape side effect" convention) — only reachable in practice when
+//   NOT in append mode, since append mode's existing
+//   unconditional Escape handler (below) already intercepts the key first,
+//   consistent with how Escape already behaves at every other zone on this screen.
+//
+//   On-screen alphanumeric keyboard (Bonfire Phase 3, 2026-08-22) — the first
+//   (2026-10-05: keys edit at the keyboard's own caret via AppState.onscreen-keyboard-edit; ◀ ▶ move it)
+//   screen wired up to app_state.slint's generic show-onscreen-keyboard mechanism
+//   (see its own doc comment there for the full design; widgets.slint's
+//   QwertyKeyboard is the actual keyboard widget). Each field gets a focus-ring
+//   wrapper shown ONLY while the keyboard is open, since AppState.refocus()
+//   (needed so keys.rs's own dispatch tier — a sibling, not ancestor, of this
+//   screen — starts seeing the keyboard's own Up/Down/Left/Right/Enter) moves
+//   real native LineEdit focus away, which would otherwise leave the field
+//   being typed into looking completely unfocused with no visual cue at all —
+//   the same gap ProfileEditScreen already had to solve once for its own text
+//   zones, just there it's permanent (a LineEdit has no kbd-focused prop of
+//   its own) rather than keyboard-open-only.
+//
+//   On-screen keyboard turned off in Settings (2026-10-10): Enter moves Server →
+//   Username → Password and presses Connect in Password (AppState.open-onscreen-keyboard
+//   returns false); before, it opened an undrawn keyboard that took focus away.
+//
+//   Trigger key: Enter, not Right (changed 2026-08-23, live feedback — "if
+//   they press enter on a textfield they want to enter it to type"). The
+//   first version used Right specifically because pass-input's own native
+//   `accepted => do-login(...)` handler fired on physical Enter (submitting
+//   the form), and Slint delivers key-pressed BEFORE accepted — returning
+//   `accept` for Enter there would have silently suppressed submission
+//   entirely. Resolved by REMOVING that `accepted` handler outright once
+//   Enter became the universal open-trigger across all 3 fields: submitting
+//   is no longer reachable via physical Enter in the password field at all,
+//   only via the Connect button (zone 4, already reachable via Down once the
+//   on-screen keyboard is closed) — a deliberate trade-off the user chose
+//   directly, not a compromise landed on by default.
+//
+//   Physical-keyboard passthrough (2026-08-23, same feedback message — "i
+//   want it to still work to type on the keybord even if its open"):
+//   keys.rs's own on-screen-keyboard gate forwards any ordinary printable
+//   character (or Backspace) it sees while the keyboard is open through
+//   AppState.onscreen-keyboard-physical-key/-seq; the _physical-key-mirror
+//   tracker below funnels it through the exact same dispatch-onscreen-key
+//   function a mouse click or the on-screen grid's own Enter already use, so
+//   a real keyboard, the mouse, and the D-pad grid can never disagree about
+//   what a given key means. Only the 4 arrow keys are claimed exclusively by
+//   the on-screen grid's own cursor while it's open — everything else
+//   (letters, digits, symbols, Space, Backspace) still lands in whichever
+//   field onscreen-keyboard-target currently points at, exactly as if a
+//   physical keyboard user had never opened the overlay at all.
+// ─────────────────────────────────────────────────────────────────────────────
+```

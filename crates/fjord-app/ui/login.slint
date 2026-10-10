@@ -1,103 +1,24 @@
 // ── fjord-app · login.slint ──────────────────────────────────────────────────
-//   LoginScreen  server URL + username + password fields; submits via AppState.do-login
-//                (4th bool arg is login-append-mode, 5th is login-remember — see
-//                app_state.slint); a "Remember this login" toggle (2026-08-14, the
-//                account/profile redesign — persisted onto the resulting profile's
-//                remember_login) defaults checked, matching today's existing implicit
-//                behavior; small Quit button bottom-right corner (Ctrl+Q also works,
-//                keys.rs); a floating "← Back"/"Cancel" corner button shows whenever
-//                login-append-mode is set (label depends on login-append-source — see
-//                that property's own doc comment) — cancel-add-account() closes
-//                LoginScreen and returns to wherever it came from without touching any
-//                already-signed-in profile. server-input.text/user-input.text bind to
-//                login-server-prefill/login-username-prefill (2026-08-14/2026-08-15, the
-//                RequireLogin StartupGate outcome pre-fills a known account's own server
-//                address AND username — only the password genuinely needs re-entry).
-//                init => grabs native focus into server-input (or pass-input, on a
-//                RequireLogin re-prompt where the first two are already known) so
-//                typing works immediately.
-//
-//   Full D-pad keyboard navigation, 2026-08-19 — live pushback ("why?") on a prior
-//   claim that "no D-pad path to the Remember-toggle/Connect button" was an accepted
-//   scope boundary; the exact zone-based pattern already proven this session for
-//   ProfileEditScreen (see app_state.slint's login-zone doc comment for the full
-//   design) is reused here now that the marginal cost is low. 5 zones: 0=server
-//   1=username 2=password (native LineEdit focus, Tab already cycles these 3) then
-//   3=Remember toggle 4=Connect button (no native focus — reached via each field's
-//   own key-pressed hook calling AppState.refocus() + setting login-zone, and
-//   returned-to via the _zone-mirror tracker below calling the right field's own
-//   .focus() — Rust can't call a named Slint element's method directly).
-//
-//   Zones 5=Back/Cancel (append mode only) and 6=Quit (always), 2026-08-21 — real
-//   gap, live-reported ("back and quit is not reachable with keybord/dpad"): the
-//   prior design deliberately left these un-zoned on the theory that Escape/Ctrl+Q
-//   already reached them from any zone, matching ProfileEditScreen's own precedent
-//   for not zoning its header ✕. That reasoning didn't survive contact with this
-//   app's own established convention elsewhere (ProfilePickerScreen/
-//   AccountPickerScreen's own Back/Quit buttons both needed the identical fix once
-//   already, 2026-08-16/21) — a raw shortcut existing isn't the same as the button
-//   itself being D-pad-focusable + Enter-activatable, which every other equivalent
-//   button in this app provides.
-//
-//   Back and Quit are two INDEPENDENT entry points off opposite ends of the chain,
-//   not chained through each other — corrected the same day from a first version
-//   that reached Back via Down-from-Connect ("the back button is down from connect
-//   witch feels wrong as it is top left so it shuld be up from the server right?"):
-//   Back sits top-left, visually ABOVE every field, so it hangs off Up from Server
-//   (zone 0's own key-pressed hook, since native LineEdit focus never reaches this
-//   tier's own match at all) with zone 5's own Down returning to Server. Quit sits
-//   bottom-right and keeps its original Down-from-Connect reachability, matching
-//   its actual on-screen position. Quit-focused Escape/Backspace un-focuses rather
-//   than quitting (matches the picker screens' own "a terminal action shouldn't
-//   fire as an Escape side effect" convention) — only reachable in practice when
-//   NOT in append mode, since append mode's existing
-//   unconditional Escape handler (below) already intercepts the key first,
-//   consistent with how Escape already behaves at every other zone on this screen.
-//
-//   On-screen alphanumeric keyboard (Bonfire Phase 3, 2026-08-22) — the first
-//   (2026-10-05: keys edit at the keyboard's own caret via AppState.onscreen-keyboard-edit; ◀ ▶ move it)
-//   screen wired up to app_state.slint's generic show-onscreen-keyboard mechanism
-//   (see its own doc comment there for the full design; widgets.slint's
-//   QwertyKeyboard is the actual keyboard widget). Each field gets a focus-ring
-//   wrapper shown ONLY while the keyboard is open, since AppState.refocus()
-//   (needed so keys.rs's own dispatch tier — a sibling, not ancestor, of this
-//   screen — starts seeing the keyboard's own Up/Down/Left/Right/Enter) moves
-//   real native LineEdit focus away, which would otherwise leave the field
-//   being typed into looking completely unfocused with no visual cue at all —
-//   the same gap ProfileEditScreen already had to solve once for its own text
-//   zones, just there it's permanent (a LineEdit has no kbd-focused prop of
-//   its own) rather than keyboard-open-only.
-//
-//   On-screen keyboard turned off in Settings (2026-10-10): Enter moves Server →
-//   Username → Password and presses Connect in Password (AppState.open-onscreen-keyboard
-//   returns false); before, it opened an undrawn keyboard that took focus away.
-//
-//   Trigger key: Enter, not Right (changed 2026-08-23, live feedback — "if
-//   they press enter on a textfield they want to enter it to type"). The
-//   first version used Right specifically because pass-input's own native
-//   `accepted => do-login(...)` handler fired on physical Enter (submitting
-//   the form), and Slint delivers key-pressed BEFORE accepted — returning
-//   `accept` for Enter there would have silently suppressed submission
-//   entirely. Resolved by REMOVING that `accepted` handler outright once
-//   Enter became the universal open-trigger across all 3 fields: submitting
-//   is no longer reachable via physical Enter in the password field at all,
-//   only via the Connect button (zone 4, already reachable via Down once the
-//   on-screen keyboard is closed) — a deliberate trade-off the user chose
-//   directly, not a compromise landed on by default.
-//
-//   Physical-keyboard passthrough (2026-08-23, same feedback message — "i
-//   want it to still work to type on the keybord even if its open"):
-//   keys.rs's own on-screen-keyboard gate forwards any ordinary printable
-//   character (or Backspace) it sees while the keyboard is open through
-//   AppState.onscreen-keyboard-physical-key/-seq; the _physical-key-mirror
-//   tracker below funnels it through the exact same dispatch-onscreen-key
-//   function a mouse click or the on-screen grid's own Enter already use, so
-//   a real keyboard, the mouse, and the D-pad grid can never disagree about
-//   what a given key means. Only the 4 arrow keys are claimed exclusively by
-//   the on-screen grid's own cursor while it's open — everything else
-//   (letters, digits, symbols, Space, Backspace) still lands in whichever
-//   field onscreen-keyboard-target currently points at, exactly as if a
-//   physical keyboard user had never opened the overlay at all.
+//   LoginScreen  server + username + password → AppState.do-login(…, login-append-mode,
+//                login-remember); "Remember this login" toggle (default on, stored on the
+//                profile); Quit bottom-right (Ctrl+Q too); "← Back" top-left in append mode
+//                (Add Account — cancel-add-account() returns to where it was opened from).
+//                Server/username bind to login-server-prefill/-username-prefill (a known
+//                account re-login only needs the password); init focuses the first field that
+//                needs typing (deferred one tick, after main.rs's own focus grab).
+//   D-pad zones  (login-zone, see app_state.slint) 0 server, 1 username, 2 password (native
+//                LineEdit focus; Tab cycles them), 3 Remember, 4 Connect, 5 Back (append mode,
+//                Up from Server), 6 Quit (Down from Connect). Fields hand keys back to `fs` with
+//                AppState.refocus(); _zone-mirror gives a field real focus again (Rust can't call
+//                .focus()). Escape/Backspace on Quit un-focuses rather than quitting.
+//   Enter in a field  opens the on-screen keyboard (QwertyKeyboard, below the card). With the
+//                keyboard off in Settings (open-onscreen-keyboard returns false): Server →
+//                Username → Password, and Enter in Password presses Connect.
+//   On-screen keyboard  a focus-ring wrapper (FieldFocusWrap) shows the target field while it's
+//                open (refocus() took native focus away); keys edit at the keyboard's caret
+//                (onscreen-keyboard-edit, ◀ ▶ move it); dispatch-onscreen-key routes by
+//                onscreen-keyboard-target. Physical keys still type while it's open
+//                (_physical-key-mirror → the same dispatch); only the arrows drive the grid.
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
@@ -112,59 +33,19 @@ import { LineEdit } from "std-widgets.slint";
 export component LoginScreen inherits Rectangle {
     background: Theme.bg;
 
-    // Real gap, live-reported 2026-08-14 ("login screen dont have keybord
-    // nav"): nothing ever grabbed native keyboard focus into the first
-    // field when this screen appeared, so typing/Tab did nothing at all
-    // until the user first clicked into a field with the mouse.
-    //
-    // Real bug, live-reported 2026-08-17: "when trying to connect to the
-    // accaunt you are focused on the server not the password so you first
-    // need to navigate to the password to fill it in" — a RequireLogin
-    // re-prompt (server + username both already known/pre-filled, only the
-    // password genuinely needs retyping) still unconditionally focused
-    // Server first, forcing an unnecessary Tab through two already-correct
-    // fields. Focus now lands on whichever field the user actually needs
-    // to type into.
-    //
-    // Real regression, live-reported 2026-08-21 alongside the D-pad zone
-    // work — "the login don thave keybord/dpad nav it only works after
-    // you pressd tab or a text box with the mouse." Root cause: this
-    // screen's own doc comment above claimed it was "plain instant mount/
-    // unmount, not FadeGate" — checked against the real main.slint and
-    // that's simply wrong; `gate3` genuinely IS a FadeGate. That matters
-    // because `show-login` defaults to `true` before any config/auth-check
-    // has run (the exact same fact this doc's own FadeGate-kick-timer bug
-    // write-up already establishes for the Login/Connecting flash), so on
-    // a real cold start this screen's `init` — and the `.focus()` call it
-    // used to make directly — runs DURING MainWindow::new(), well before
-    // `window.run()` ever starts pumping the event loop. But main.rs's own
-    // startup sequence calls `window.invoke_grab_keyboard_focus()`
-    // (grabbing the GLOBAL `fs` FocusScope, not this screen's own field)
-    // as the literal last synchronous line before `window.run()` — a LATER
-    // plain Rust call in the same program order, so it always overrides
-    // whatever this screen's own `init` set moments earlier. The result:
-    // `fs`, not the LineEdit, holds real focus the instant the event loop
-    // starts — `keys.rs`'s own `show_login` tier only handles zones 3/4
-    // and returns `false` for 0-2 (expecting the LineEdit to already own
-    // the key), so arrow keys/typing hit neither and silently do nothing,
-    // until Tab or a mouse click gives a field REAL focus for the first
-    // time. Fixed the same way this codebase already fixed the identical
-    // "must run after window.run(), not during element construction"
-    // class of problem for FadeGate itself: a one-shot Timer, which
-    // Slint's own event loop cannot fire until it's actually running,
-    // defers the real focus grab to the guaranteed-live first tick —
-    // strictly after ANY synchronous pre-window.run() call, including
-    // main.rs's own late grab, regardless of exactly when `init` itself
-    // happened to run.
+    // Put real focus into the field the user needs: Password when server and username are
+    // prefilled (a re-login), else Server. Deferred to a one-shot Timer: gate3 is a FadeGate and
+    // show-login defaults to true, so on a cold start this init runs inside MainWindow::new() —
+    // and main.rs's later invoke_grab_keyboard_focus() (the global `fs`) would override a
+    // direct .focus(); keys.rs's show_login tier leaves zones 0–2 to the LineEdit, so keys went
+    // nowhere. The timer fires only once the event loop runs, after that grab.
     init => {
         AppState.login-zone = 0;
         if AppState.login-server-prefill != "" && AppState.login-username-prefill != "" {
             AppState.login-zone = 2;
         }
-        // On-screen keyboard resets (Bonfire Phase 3) — mirrors
-        // reset_session_state's own identical 3 resets in main.rs; needed
-        // here too since a cold start runs before that function is ever
-        // called (it's scoped to sign-out/profile-switch, not first launch).
+        // On-screen keyboard resets, as in reset_session_state (session.rs) — a cold start never
+        // runs that function.
         AppState.show-onscreen-keyboard = false;
         AppState.onscreen-keyboard-target = "";
         AppState.onscreen-keyboard-cursor = 0;
@@ -219,22 +100,14 @@ export component LoginScreen inherits Rectangle {
                 height: 6px;
             }
 
-            // Zone 0 — bordered wrapper (LineEdit exposes no settable border
-            // of its own), same shape as ProfileEditScreen's own
-            // name-field-wrap; shown ONLY while the on-screen keyboard is
-            // open, since native LineEdit focus (and its own built-in
-            // highlight) is what shows this the rest of the time. Extracted
-            // into the shared FieldFocusWrap component 2026-08-22 (code
-            // review) — this and its 2 siblings below used to duplicate an
-            // identical ~15-line border block by hand.
+            // Zone 0 — a bordered wrapper (LineEdit has no border of its own), shown only while the
+            // on-screen keyboard is open; otherwise native LineEdit focus shows itself. Shared
+            // FieldFocusWrap, like its 2 siblings below.
             server-field-wrap := FieldFocusWrap {
                 focused: AppState.show-onscreen-keyboard && AppState.login-zone == 0;
                 server-input := LineEdit {
-                    // A bare host/IP (no scheme) works now too — do_login tries
-                    // https then http automatically, live-reported 2026-08-14.
-                    // Still shown with a scheme in the example since a raw IP:port
-                    // is the one case (a local server with no real TLS cert) where
-                    // typing http:// explicitly saves the wasted first attempt.
+                    // A bare host/IP works (https, then http — see auth.rs); the example keeps a scheme because
+                    // typing http:// for a local IP:port saves the failed https attempt.
                     x: 2px;
                     y: 2px;
                     width: parent.width - 4px;
@@ -244,17 +117,8 @@ export component LoginScreen inherits Rectangle {
                     changed has-focus => {
                         if self.has-focus {
                             AppState.login-zone = 0;
-                            // Real bug, code-review-confirmed 2026-08-22:
-                            // onscreen-keyboard-target was only ever set at
-                            // the moment the keyboard opened — clicking a
-                            // DIFFERENT field with the mouse while it's
-                            // still open moved the visible focus ring here
-                            // via login-zone above, but left the keyboard
-                            // silently typing into whichever field it was
-                            // originally opened from. Resyncing here too
-                            // means the ring and the actual typing
-                            // destination can never disagree, regardless of
-                            // how focus got here (D-pad zone hop or click).
+                            // Retarget the open keyboard to this field, so a mouse click on another field moves the
+                            // typing along with the focus ring.
                             if AppState.show-onscreen-keyboard {
                                 AppState.onscreen-keyboard-target = "login-server";
                                 AppState.onscreen-keyboard-cursor = 0;
@@ -273,29 +137,15 @@ export component LoginScreen inherits Rectangle {
                             user-input.focus();
                             return accept;
                         }
-                        // Up hands off to zone 5 (Back) when it exists — real
-                        // gap, live-reported 2026-08-21 ("the back button is
-                        // down from connect witch feels wrong as it is top left
-                        // so it shuld be up from the server right?"): Back sits
-                        // top-left, visually ABOVE this field, so reaching it by
-                        // going all the way DOWN past Connect (this screen's
-                        // original design) was backwards. Same hand-off shape
-                        // pass-input's own Down already uses for zone 3 — leaves
-                        // native LineEdit focus entirely, AppState.refocus()
-                        // re-grabs the global dispatch FocusScope so keys.rs's
-                        // zone tier starts seeing keys again. No-op with no
-                        // append mode (nothing above Server to reach), matching
-                        // this field's own prior behavior in that case.
+                        // Up → zone 5 (Back, top-left above this field) in append mode; leaves native focus like
+                        // pass-input's Down (AppState.refocus() hands keys back to `fs`). Nothing above Server
+                        // otherwise.
                         if event.text == "\u{F700}" && AppState.login-append-mode {
                             AppState.login-zone = 5;
                             AppState.refocus();
                             return accept;
                         }
-                        // On-screen keyboard (Bonfire Phase 3) — Enter opens
-                        // it (2026-08-23; was Right — see this file's own
-                        // header doc comment for the reasoning that changed
-                        // and why Password specifically needed its own
-                        // accepted handler removed to make this safe there).
+                        // Enter opens the on-screen keyboard (see the header for the keyboard-off behaviour).
                         if event.text == "\u{000a}" {
                             // On-screen keyboard off in Settings: Enter moves on to Username.
                             if !AppState.open-onscreen-keyboard("login-server") {
@@ -361,17 +211,8 @@ export component LoginScreen inherits Rectangle {
                     height: parent.height - 4px;
                     placeholder-text: "Password";
                     input-type: password;
-                    // No `accepted =>` handler here (removed 2026-08-23) —
-                    // physical Enter now opens the on-screen keyboard on
-                    // this field too, same as Server/Username, per direct
-                    // feedback ("if they press enter on a textfield they
-                    // want to enter it to type"). key-pressed's own Enter
-                    // branch below intercepts and returns accept BEFORE
-                    // Slint's native LineEdit machinery would ever fire
-                    // `accepted`, so a handler here would be permanently
-                    // unreachable dead code, not just redundant — submitting
-                    // now happens via the Connect button (zone 4, already
-                    // reachable via Down once the keyboard is closed).
+                    // No `accepted =>`: the Enter branch in key-pressed below returns accept first, so it would
+                    // never fire. Enter opens the on-screen keyboard, or with it off presses Connect.
                     changed has-focus => {
                         if self.has-focus {
                             AppState.login-zone = 2;
@@ -402,14 +243,7 @@ export component LoginScreen inherits Rectangle {
                             AppState.refocus();
                             return accept;
                         }
-                        // On-screen keyboard (Bonfire Phase 3) — Enter opens
-                        // it, same as the other 2 fields (2026-08-23; this
-                        // field used to be the one exception, using Right
-                        // instead, specifically because its own now-removed
-                        // `accepted` handler submitted the form on physical
-                        // Enter — see this LineEdit's own header comment
-                        // above for why removing that handler is what makes
-                        // this safe).
+                        // Enter opens the on-screen keyboard like the other two fields.
                         if event.text == "\u{000a}" {
                             // On-screen keyboard off in Settings: Enter presses Connect.
                             if !AppState.open-onscreen-keyboard("login-password") {
@@ -423,21 +257,8 @@ export component LoginScreen inherits Rectangle {
             }
 
             remember-row := Rectangle {
-                // Real bug, live-reported 2026-08-19/21 (screenshots) —
-                // a padding-only fix (4px→12px) on this HorizontalLayout
-                // never resolved it, matching the identical shape and fix
-                // ProfileEditScreen's "Skip PIN on this network" row
-                // needed: dropped the HorizontalLayout for explicit x/y
-                // positioning of both children, the pattern that row's
-                // own real fix converged on. This row never had that
-                // row's OTHER bug (no explicit `width: parent.width`
-                // override here to begin with — it was already sized the
-                // same auto-stretched way its LineEdit/FjordButton
-                // siblings are), so the HorizontalLayout itself was the
-                // one thing left unproven; converting removes any
-                // remaining risk from trusting its own padding/stretch
-                // computation rather than reading this row's own width
-                // directly.
+                // Explicit x/y for both children instead of a HorizontalLayout (padding tweaks never
+                // aligned it) — the same fix as ProfileEditScreen's "Skip PIN on this network" row.
                 height: 36px;
                 border-radius: Theme.radius;
                 border-width: AppState.login-zone == 3 ? 2px : 0px;
@@ -499,16 +320,8 @@ export component LoginScreen inherits Rectangle {
     }
 
     if AppState.login-append-mode: FjordButton {
-        // Real bug, live-reported 2026-08-18: the label used to name the
-        // actual destination ("← Back to Profiles" when opened from the
-        // account picker) — but on_cancel_add_account's own real behavior
-        // for that source is to reopen the ACCOUNT picker, not the
-        // profile-tier one, so the label was flatly wrong. Per the user's
-        // own suggestion: don't name a destination at all, just say
-        // "Back" — the button always does exactly one thing (undo this
-        // Add Account attempt, return to wherever it was opened from),
-        // so there's nothing destination-specific worth stating, and no
-        // way for wording to drift out of sync with behavior again.
+        // Just "Back": it always undoes this Add Account attempt and returns to wherever it was
+        // opened from, so naming a destination could only drift out of date.
         text: "← Back";
         width: 110px;
         x: 16px;
@@ -521,19 +334,10 @@ export component LoginScreen inherits Rectangle {
         }
     }
 
-    // On-screen alphanumeric keyboard (Bonfire Phase 3, 2026-08-22) —
-    // positioned below the card, not overlapping it, so the field being
-    // typed into stays visible the whole time. Dispatches by the generic
-    // onscreen-keyboard-target id set by whichever field opened it — this
-    // per-field else-if chain is the one deliberate piece of screen-specific
-    // glue this design keeps; a future ConnectSeerr/Discover/etc. screen
-    // would write its own small version of this exact function against its
-    // own fields/target-id strings, without touching this one. Extracted
-    // into a named function 2026-08-23 (was inline on QwertyKeyboard's own
-    // key-pressed) so a genuine physical keystroke (see the
-    // _physical-key-mirror tracker below) can share the exact same
-    // dispatch — "i want it to still work to type on the keybord even if
-    // its open," live feedback the same day.
+    // On-screen alphanumeric keyboard, positioned below the card so the field stays visible.
+    // Dispatches on onscreen-keyboard-target; this per-field chain is the screen-specific glue
+    // (other screens have their own). A named function so physical keystrokes
+    // (_physical-key-mirror below) share it.
     function dispatch-onscreen-key(k: string) {
         if k == "done" {
             AppState.show-onscreen-keyboard = false;
@@ -550,10 +354,7 @@ export component LoginScreen inherits Rectangle {
             AppState.onscreen-keyboard-caret = r.caret;
             user-input.set-selection-offsets(r.byte, r.byte);
         } else if AppState.onscreen-keyboard-target == "login-password" {
-            // Masking is automatic — a pure function of the current
-            // .text value regardless of how it was set (verified
-            // directly against Slint's own core TextInput source).
-            // At the keyboard's own caret (◀ ▶ move it, 2026-10-05).
+            // Masking follows .text however it was set. Edits at the keyboard's caret (◀ ▶ move it).
             let r = AppState.onscreen-keyboard-edit(pass-input.text, AppState.onscreen-keyboard-caret, k);
             pass-input.text = r.text;
             AppState.onscreen-keyboard-caret = r.caret;
@@ -582,16 +383,10 @@ export component LoginScreen inherits Rectangle {
         }
     }
 
-    // Physical-keyboard passthrough (2026-08-23) — keys.rs forwards any
-    // ordinary printable key (or Backspace) it sees while the on-screen
-    // keyboard is open via AppState.onscreen-keyboard-physical-key/-seq;
-    // this mirrors the counter (changed can only observe a property on
-    // THIS component, not a dotted global path — the same limitation
-    // _pulse-mirror/_activate-mirror already work around elsewhere) and
-    // funnels the payload through the exact same dispatch-onscreen-key a
-    // mouse click or on-screen D-pad Enter already uses, so a real
-    // keyboard, the mouse, and the on-screen grid can never disagree about
-    // what a given key means.
+    // Physical-keyboard passthrough: keys.rs forwards printable keys and Backspace while the
+    // keyboard is open (onscreen-keyboard-physical-key/-seq); mirrored here (`changed` only sees
+    // this component's properties) into the same dispatch-onscreen-key the mouse and the grid
+    // use.
     property <int> _physical-key-mirror: AppState.onscreen-keyboard-physical-key-seq;
     changed _physical-key-mirror => {
         if AppState.show-onscreen-keyboard {
@@ -611,11 +406,8 @@ export component LoginScreen inherits Rectangle {
         else if _zone-mirror == 2 { pass-input.focus(); }
     }
 
-    // Zone 4's own D-pad Enter (keys.rs's zone 3/4 tier) bumps the shared
-    // kb-activate-pulse counter rather than calling do-login directly —
-    // Rust can't read live LineEdit.text to build that call itself. Same
-    // "changed on the shared pulse counter, guarded by this screen's own
-    // show flag + zone" idiom as ProfileEditScreen's own _pulse-mirror.
+    // Zone 4's D-pad Enter (keys.rs) bumps kb-activate-pulse instead of calling do-login —
+    // Rust can't read the live LineEdit.text. Same idiom as ProfileEditScreen's _pulse-mirror.
     property <int> _pulse-mirror: AppState.kb-activate-pulse;
     changed _pulse-mirror => {
         if AppState.show-login && AppState.login-zone == 4 {
