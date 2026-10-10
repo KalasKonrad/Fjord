@@ -51,7 +51,15 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme, ToggleListItem } from "theme.slint";
 import { AppState } from "app_state.slint";
-import { FjordButton, VirtualKeyboard, QwertyKeyboard, SettingsDropdown, ToggleSwitch, PressPulse, ConfirmDialog } from "widgets.slint";
+import {
+    FjordButton,
+    VirtualKeyboard,
+    QwertyKeyboard,
+    SettingsDropdown,
+    ToggleSwitch,
+    PressPulse,
+    ConfirmDialog,
+} from "widgets.slint";
 import { LineEdit } from "std-widgets.slint";
 
 component ToggleRow inherits Rectangle {
@@ -68,10 +76,18 @@ component ToggleRow inherits Rectangle {
     background: ta.has-hover ? Theme.surface-overlay : transparent;
     border-width: (ta.pressed || pulse.pulsing) ? 3px : (root.kbd-focused ? 2px : 0px);
     border-color: Theme.focus-border;
-    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
-    pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: root.kbd-focused; }
+    animate border-width {
+        duration: 90ms * AppState.settings-animation-speed;
+        easing: ease-out-expo;
+    }
+    pulse := PressPulse {
+        trigger: AppState.kb-activate-pulse;
+        active: root.kbd-focused;
+    }
 
-    ta := TouchArea { clicked => { root.toggled(); } }
+    ta := TouchArea {
+        clicked => { root.toggled(); }
+    }
 
     HorizontalLayout {
         padding-left: 8px;
@@ -79,7 +95,8 @@ component ToggleRow inherits Rectangle {
         spacing: 10px;
 
         Rectangle {
-            width: 20px; height: 20px;
+            width: 20px;
+            height: 20px;
             y: (parent.height - self.height) / 2;
             border-radius: 4px;
             background: root.item.selected ? Theme.accent : transparent;
@@ -106,6 +123,7 @@ component ToggleRow inherits Rectangle {
                 font-size: 13px;
                 overflow: elide;
             }
+
             if root.item.subtitle != "": Text {
                 text: root.item.subtitle;
                 color: Theme.text-muted;
@@ -136,12 +154,24 @@ export component ProfileEditScreen inherits Rectangle {
     // this app (settings.rs's dropdown models, profile_edit.rs's own
     // AVATAR_PALETTE_HEX/PIN_VALS/PARENTAL_RATING_MODEL/LOCKOUT_MODEL).
     property <[color]> avatar-palette-colors: [
-        #4a90d9, #d94a6b, #4ad98e, #d9a04a,
-        #9a4ad9, #4ac9d9, #d9d94a, #d96b4a,
+        #4a90d9,
+        #d94a6b,
+        #4ad98e,
+        #d9a04a,
+        #9a4ad9,
+        #4ac9d9,
+        #d9d94a,
+        #d96b4a,
     ];
     property <[string]> avatar-palette-hex: [
-        "#4a90d9", "#d94a6b", "#4ad98e", "#d9a04a",
-        "#9a4ad9", "#4ac9d9", "#d9d94a", "#d96b4a",
+        "#4a90d9",
+        "#d94a6b",
+        "#4ad98e",
+        "#d9a04a",
+        "#9a4ad9",
+        "#4ac9d9",
+        "#d9d94a",
+        "#d96b4a",
     ];
     // Delete only shows for an existing sub-profile, never create mode or
     // self-edit — hoisted here (was a local `property` mistakenly declared
@@ -156,8 +186,8 @@ export component ProfileEditScreen inherits Rectangle {
     // -master-pin-cursor, matching every other zone's mouse-sync discipline.
     pure function pin-key-index(k: string) -> int {
         k == "1" ? 0 : k == "2" ? 1 : k == "3" ? 2 : k == "4" ? 3 : k == "5" ? 4
-        : k == "6" ? 5 : k == "7" ? 6 : k == "8" ? 7 : k == "9" ? 8
-        : k == "backspace" ? 9 : k == "0" ? 10 : 11
+            : k == "6" ? 5 : k == "7" ? 6 : k == "8" ? 7 : k == "9" ? 8
+            : k == "backspace" ? 9 : k == "0" ? 10 : 11
     }
 
     // Direct-element-.y reads for the whole-screen auto-scroll — same
@@ -175,19 +205,19 @@ export component ProfileEditScreen inherits Rectangle {
     // regardless of this function's accuracy, only auto-scroll timing can
     // be off.
     pure function zone-el-y(zone: int) -> length {
-        zone == 0  ? name-field-wrap.y :
-        zone == 1  ? avatar-row.y :
-        zone == 2  ? pin-pad-wrap.y :
-        zone == 3  ? rating-dd-wrap.y :
-        zone == 4  ? rating-dd-wrap.y + 80px :
-        zone == 5  ? blocked-tags-wrap.y :
-        zone == 6  ? allowed-tags-wrap.y :
-        zone == 7  ? lockout-dd-wrap.y :
-        zone == 8  ? lan-bypass-row.y :
-        zone == 9  ? lan-bypass-row.y + 60px :
-        zone == 10 ? master-pin-pad-wrap.y :
-        zone == 11 ? button-row.y :
-        0px
+        zone == 0 ? name-field-wrap.y :
+            zone == 1 ? avatar-row.y :
+            zone == 2 ? pin-pad-wrap.y :
+            zone == 3 ? rating-dd-wrap.y :
+            zone == 4 ? rating-dd-wrap.y + 80px :
+            zone == 5 ? blocked-tags-wrap.y :
+            zone == 6 ? allowed-tags-wrap.y :
+            zone == 7 ? lockout-dd-wrap.y :
+            zone == 8 ? lan-bypass-row.y :
+            zone == 9 ? lan-bypass-row.y + 60px :
+            zone == 10 ? master-pin-pad-wrap.y :
+            zone == 11 ? button-row.y :
+            0px
     }
 
     close-ta := TouchArea {
@@ -195,21 +225,23 @@ export component ProfileEditScreen inherits Rectangle {
     }
 
     card := Rectangle {
-        width:  min(560px, parent.width - 48px);
+        width: min(560px, parent.width - 48px);
         height: min(inner.preferred-height, parent.height - 48px);
-        x:      (parent.width  - self.width)  / 2;
-        y:      (parent.height - self.height) / 2;
-        background:    Theme.surface;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        background: Theme.surface;
         border-radius: Theme.radius-lg;
-        drop-shadow-blur:  28px;
+        drop-shadow-blur: 28px;
         drop-shadow-color: #00000070;
         clip: true;
 
-        card-ta := TouchArea {}
+        card-ta := TouchArea { }
 
         fl := Flickable {
-            x: 0; y: 0;
-            width: parent.width; height: parent.height;
+            x: 0;
+            y: 0;
+            width: parent.width;
+            height: parent.height;
             content-width: self.width;
             content-height: inner.preferred-height;
             // Live-reported 2026-08-17: "no animation in the scrol so its
@@ -218,7 +250,10 @@ export component ProfileEditScreen inherits Rectangle {
             // all `200ms * settings-scroll-speed, ease-in-out`); this one
             // was the one screen missing it, a real inconsistency, not a
             // deliberate choice — matching the established convention.
-            animate content-y { duration: 200ms * AppState.settings-scroll-speed; easing: ease-in-out; }
+            animate content-y {
+                duration: 200ms * AppState.settings-scroll-speed;
+                easing: ease-in-out;
+            }
 
             // Never a direct content-y binding — that blocks native
             // mouse-wheel scroll (documented Flickable gotcha). `kb-y`'s
@@ -227,8 +262,7 @@ export component ProfileEditScreen inherits Rectangle {
             property <length> kb-y: clamp(
                 -(zone-el-y(AppState.profile-edit-zone) - 80px),
                 min(0px, self.height - inner.preferred-height),
-                0px
-            );
+                0px);
             changed kb-y => { fl.content-y = kb-y; }
 
             inner := VerticalLayout {
@@ -244,6 +278,7 @@ export component ProfileEditScreen inherits Rectangle {
                         font-size: 20px;
                         font-weight: 700;
                     }
+
                     FjordButton {
                         text: "✕";
                         width: 32px;
@@ -252,7 +287,9 @@ export component ProfileEditScreen inherits Rectangle {
                     }
                 }
 
-                FieldLabel { text: "Name"; }
+                FieldLabel {
+                    text: "Name";
+                }
                 // Zone 0 — a bordered wrapper since LineEdit exposes no
                 // settable border of its own; the LineEdit itself is given
                 // explicit geometry since a plain Rectangle isn't a Layout.
@@ -261,9 +298,13 @@ export component ProfileEditScreen inherits Rectangle {
                     border-radius: Theme.radius;
                     border-width: AppState.profile-edit-zone == 0 ? (AppState.show-onscreen-keyboard ? 2px : (AppState.profile-edit-text-editing ? 3px : 2px)) : 0px;
                     border-color: Theme.focus-border;
-                    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+                    animate border-width {
+                        duration: 90ms * AppState.settings-animation-speed;
+                        easing: ease-out-expo;
+                    }
                     name-field := LineEdit {
-                        x: 2px; y: 2px;
+                        x: 2px;
+                        y: 2px;
                         width: parent.width - 4px;
                         height: 40px;
                         placeholder-text: "Profile name";
@@ -339,13 +380,17 @@ export component ProfileEditScreen inherits Rectangle {
                     }
                 }
 
-                FieldLabel { text: "Avatar color"; }
+                FieldLabel {
+                    text: "Avatar color";
+                }
+
                 avatar-row := HorizontalLayout {
                     spacing: 10px;
                     alignment: start;
 
                     Rectangle {
-                        width: 40px; height: 40px;
+                        width: 40px;
+                        height: 40px;
                         border-radius: 20px;
                         background: AppState.profile-edit-avatar-preview;
                         border-width: 2px;
@@ -353,7 +398,8 @@ export component ProfileEditScreen inherits Rectangle {
                     }
 
                     for c[i] in avatar-palette-colors: Rectangle {
-                        width: 32px; height: 32px;
+                        width: 32px;
+                        height: 32px;
                         y: 4px;
                         border-radius: 16px;
                         background: c;
@@ -370,14 +416,18 @@ export component ProfileEditScreen inherits Rectangle {
                     }
                 }
 
-                FieldLabel { text: AppState.profile-edit-is-create ? "PIN (optional)" : "PIN — leave blank to keep the current one"; }
+                FieldLabel {
+                    text: AppState.profile-edit-is-create ? "PIN (optional)" : "PIN — leave blank to keep the current one";
+                }
+
                 HorizontalLayout {
                     spacing: 10px;
                     alignment: start;
                     HorizontalLayout {
                         spacing: 8px;
                         for d in 8: Rectangle {
-                            width: 12px; height: 12px;
+                            width: 12px;
+                            height: 12px;
                             y: 14px;
                             border-radius: 6px;
                             background: d < AppState.profile-edit-pin-len ? Theme.accent : Theme.surface-overlay;
@@ -385,6 +435,7 @@ export component ProfileEditScreen inherits Rectangle {
                             border-color: Theme.border-strong;
                         }
                     }
+
                     if !AppState.profile-edit-is-create && AppState.profile-edit-has-pin: Text {
                         text: "(a PIN is currently set)";
                         color: Theme.text-subtle;
@@ -392,6 +443,7 @@ export component ProfileEditScreen inherits Rectangle {
                         vertical-alignment: center;
                     }
                 }
+
                 pin-pad-wrap := Rectangle {
                     height: pin-pad.preferred-height;
                     pin-pad := VirtualKeyboard {
@@ -404,7 +456,9 @@ export component ProfileEditScreen inherits Rectangle {
                     }
                 }
 
-                FieldLabel { text: "Max parental rating"; }
+                FieldLabel {
+                    text: "Max parental rating";
+                }
                 // Real gap, live-questioned 2026-08-17 ("thats a bit bad to
                 // not know what parental ration a profile is on") —
                 // re-confirmed against Bonfire's own real API docs that no
@@ -435,18 +489,36 @@ export component ProfileEditScreen inherits Rectangle {
                 // rating-dd's (which is now relative to IT, not the
                 // screen — a real, easy-to-miss coordinate-space trap).
                 rating-dd-wrap := Rectangle {
-                    width:  rating-dd.width + 4px;
+                    width: rating-dd.width + 4px;
                     height: rating-dd.height + 4px;
                     border-radius: Theme.radius;
                     border-width: AppState.profile-edit-zone == 3 ? 2px : 0px;
                     border-color: Theme.focus-border;
-                    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+                    animate border-width {
+                        duration: 90ms * AppState.settings-animation-speed;
+                        easing: ease-out-expo;
+                    }
                     rating-dd := SettingsDropdown {
-                        x: 2px; y: 2px;
-                        model: ["Any", "G", "PG", "PG-13", "R", "NC-17", "TV-Y", "TV-Y7", "TV-G", "TV-PG", "TV-14", "TV-MA", "Not Rated"];
+                        x: 2px;
+                        y: 2px;
+                        model: [
+                            "Any",
+                            "G",
+                            "PG",
+                            "PG-13",
+                            "R",
+                            "NC-17",
+                            "TV-Y",
+                            "TV-Y7",
+                            "TV-G",
+                            "TV-PG",
+                            "TV-14",
+                            "TV-MA",
+                            "Not Rated"
+                        ];
                         current-value: AppState.profile-edit-parental-rating == "" ? "Any"
-                                     : AppState.profile-edit-parental-rating == "__unknown__" ? "Unknown"
-                                     : AppState.profile-edit-parental-rating;
+                            : AppState.profile-edit-parental-rating == "__unknown__" ? "Unknown"
+                            : AppState.profile-edit-parental-rating;
                         selected(v) => {
                             AppState.profile-edit-zone = 3;
                             AppState.profile-edit-parental-rating = v == "Any" ? "" : v;
@@ -456,7 +528,10 @@ export component ProfileEditScreen inherits Rectangle {
 
                 if AppState.profile-edit-libraries.length > 0: VerticalLayout {
                     spacing: 4px;
-                    FieldLabel { text: "Enabled libraries"; }
+                    FieldLabel {
+                        text: "Enabled libraries";
+                    }
+
                     for lib[i] in AppState.profile-edit-libraries: ToggleRow {
                         item: lib;
                         kbd-focused: AppState.profile-edit-zone == 4 && AppState.profile-edit-libraries-cursor == i;
@@ -468,15 +543,22 @@ export component ProfileEditScreen inherits Rectangle {
                     }
                 }
 
-                FieldLabel { text: "Blocked tags (comma-separated)"; }
+                FieldLabel {
+                    text: "Blocked tags (comma-separated)";
+                }
+
                 blocked-tags-wrap := Rectangle {
                     height: 44px;
                     border-radius: Theme.radius;
                     border-width: AppState.profile-edit-zone == 5 ? (AppState.show-onscreen-keyboard ? 2px : (AppState.profile-edit-text-editing ? 3px : 2px)) : 0px;
                     border-color: Theme.focus-border;
-                    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+                    animate border-width {
+                        duration: 90ms * AppState.settings-animation-speed;
+                        easing: ease-out-expo;
+                    }
                     blocked-tags-field := LineEdit {
-                        x: 2px; y: 2px;
+                        x: 2px;
+                        y: 2px;
                         width: parent.width - 4px;
                         height: 40px;
                         placeholder-text: "e.g. violence, gore";
@@ -542,15 +624,22 @@ export component ProfileEditScreen inherits Rectangle {
                     }
                 }
 
-                FieldLabel { text: "Allowed tags (comma-separated, overrides blocked)"; }
+                FieldLabel {
+                    text: "Allowed tags (comma-separated, overrides blocked)";
+                }
+
                 allowed-tags-wrap := Rectangle {
                     height: 44px;
                     border-radius: Theme.radius;
                     border-width: AppState.profile-edit-zone == 6 ? (AppState.show-onscreen-keyboard ? 2px : (AppState.profile-edit-text-editing ? 3px : 2px)) : 0px;
                     border-color: Theme.focus-border;
-                    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+                    animate border-width {
+                        duration: 90ms * AppState.settings-animation-speed;
+                        easing: ease-out-expo;
+                    }
                     allowed-tags-field := LineEdit {
-                        x: 2px; y: 2px;
+                        x: 2px;
+                        y: 2px;
                         width: parent.width - 4px;
                         height: 40px;
                         placeholder-text: "e.g. kids";
@@ -609,17 +698,23 @@ export component ProfileEditScreen inherits Rectangle {
                     }
                 }
 
-                FieldLabel { text: "Auto-lock after inactivity"; }
+                FieldLabel {
+                    text: "Auto-lock after inactivity";
+                }
                 // Same fix as rating-dd-wrap above — see its own comment.
                 lockout-dd-wrap := Rectangle {
-                    width:  lockout-dd.width + 4px;
+                    width: lockout-dd.width + 4px;
                     height: lockout-dd.height + 4px;
                     border-radius: Theme.radius;
                     border-width: AppState.profile-edit-zone == 7 ? 2px : 0px;
                     border-color: Theme.focus-border;
-                    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+                    animate border-width {
+                        duration: 90ms * AppState.settings-animation-speed;
+                        easing: ease-out-expo;
+                    }
                     lockout-dd := SettingsDropdown {
-                        x: 2px; y: 2px;
+                        x: 2px;
+                        y: 2px;
                         model: ["Never", "5", "15", "30", "60", "120"];
                         current-value: AppState.profile-edit-lockout-minutes == "0" ? "Never" : AppState.profile-edit-lockout-minutes;
                         selected(v) => {
@@ -657,15 +752,19 @@ export component ProfileEditScreen inherits Rectangle {
                     border-radius: Theme.radius;
                     border-width: AppState.profile-edit-zone == 8 ? 2px : 0px;
                     border-color: Theme.focus-border;
-                    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+                    animate border-width {
+                        duration: 90ms * AppState.settings-animation-speed;
+                        easing: ease-out-expo;
+                    }
                     Text {
-                        x:                  12px;
-                        y:                  (parent.height - self.height) / 2;
-                        text:               "Skip PIN on this network";
-                        color:              Theme.text;
-                        font-size:          13px;
+                        x: 12px;
+                        y: (parent.height - self.height) / 2;
+                        text: "Skip PIN on this network";
+                        color: Theme.text;
+                        font-size: 13px;
                         vertical-alignment: center;
                     }
+
                     ToggleSwitch {
                         x: parent.width - self.width - 12px;
                         y: (parent.height - self.height) / 2;
@@ -679,7 +778,10 @@ export component ProfileEditScreen inherits Rectangle {
 
                 if AppState.profile-edit-devices.length > 0: VerticalLayout {
                     spacing: 4px;
-                    FieldLabel { text: "Allowed devices (none checked = all devices)"; }
+                    FieldLabel {
+                        text: "Allowed devices (none checked = all devices)";
+                    }
+
                     for dev[i] in AppState.profile-edit-devices: ToggleRow {
                         item: dev;
                         kbd-focused: AppState.profile-edit-zone == 9 && AppState.profile-edit-devices-cursor == i;
@@ -691,13 +793,20 @@ export component ProfileEditScreen inherits Rectangle {
                     }
                 }
 
-                Rectangle { height: 1px; background: Theme.border; }
+                Rectangle {
+                    height: 1px;
+                    background: Theme.border;
+                }
 
-                FieldLabel { text: "Your own account PIN (only needed if your account has one set)"; }
+                FieldLabel {
+                    text: "Your own account PIN (only needed if your account has one set)";
+                }
+
                 HorizontalLayout {
                     spacing: 8px;
                     for d in 8: Rectangle {
-                        width: 12px; height: 12px;
+                        width: 12px;
+                        height: 12px;
                         y: 14px;
                         border-radius: 6px;
                         background: d < AppState.profile-edit-master-pin-len ? Theme.accent : Theme.surface-overlay;
@@ -705,6 +814,7 @@ export component ProfileEditScreen inherits Rectangle {
                         border-color: Theme.border-strong;
                     }
                 }
+
                 master-pin-pad-wrap := Rectangle {
                     height: master-pin-pad.preferred-height;
                     master-pin-pad := VirtualKeyboard {
@@ -760,6 +870,7 @@ export component ProfileEditScreen inherits Rectangle {
                             AppState.profile-edit-cancel();
                         }
                     }
+
                     FjordButton {
                         text: AppState.profile-edit-saving ? "Saving…" : "Save";
                         width: 90px;
@@ -938,19 +1049,19 @@ export component ProfileEditScreen inherits Rectangle {
     // definition. Always in tree (visible: not if:) so ddvl.preferred-width
     // is readable for sizing, same reasoning Settings' own version notes.
     Rectangle {
-        visible:       AppState.profile-edit-dropdown-open;
-        z:             20;
-        width:         min(320px, card.width - 40px);
-        height:        min(ddvl.preferred-height + 8px, 280px);
-        x:             (parent.width - self.width) / 2;
-        y:             (parent.height - self.height) / 2;
-        background:    Theme.surface-raised;
+        visible: AppState.profile-edit-dropdown-open;
+        z: 20;
+        width: min(320px, card.width - 40px);
+        height: min(ddvl.preferred-height + 8px, 280px);
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        background: Theme.surface-raised;
         border-radius: 8px;
-        border-width:  1px;
-        border-color:  Theme.border;
-        drop-shadow-blur:  12px;
+        border-width: 1px;
+        border-color: Theme.border;
+        drop-shadow-blur: 12px;
         drop-shadow-color: #00000080;
-        clip:          true;
+        clip: true;
 
         ddfl := Flickable {
             content-height: ddvl.preferred-height;
@@ -960,16 +1071,16 @@ export component ProfileEditScreen inherits Rectangle {
                         min(0px, self.height - ddvl.preferred-height), 0px)
                 : 0px;
             changed dd-scroll => { ddfl.content-y = dd-scroll; }
-            init    => { ddfl.content-y = dd-scroll; }
+            init => { ddfl.content-y = dd-scroll; }
 
             ddvl := VerticalLayout {
                 padding: 4px;
                 for opt[i] in AppState.profile-edit-dropdown-model: Rectangle {
-                    height:          32px;
-                    border-radius:   4px;
-                    background:      i == AppState.profile-edit-dropdown-cursor
-                                     ? Theme.accent-muted
-                                     : (dd-item-ta.has-hover ? Theme.surface-overlay : transparent);
+                    height: 32px;
+                    border-radius: 4px;
+                    background: i == AppState.profile-edit-dropdown-cursor
+                        ? Theme.accent-muted
+                        : (dd-item-ta.has-hover ? Theme.surface-overlay : transparent);
                     // Real bug, live-reported 2026-08-17: "they pop up but
                     // you dont get a hilight when you are on them" —
                     // accent-muted is only 25% alpha (theme.slint), which
@@ -980,20 +1091,28 @@ export component ProfileEditScreen inherits Rectangle {
                     // for the cursor row, bumping to 3px on an actual press
                     // — same "existing ring bumps up on press" convention
                     // every other keyboard-focus site in this app uses.
-                    border-width:  (dd-item-ta.pressed || dd-pulse.pulsing) ? 3px
-                                   : (i == AppState.profile-edit-dropdown-cursor ? 2px : 0px);
-                    border-color:  Theme.focus-border;
-                    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
-                    dd-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: i == AppState.profile-edit-dropdown-cursor; }
-                    dd-txt := Text {
-                        x:                  12px;
-                        text:               opt;
-                        color:              opt == AppState.profile-edit-dropdown-display ? Theme.accent : Theme.text;
-                        font-size:          13px;
-                        font-weight:        opt == AppState.profile-edit-dropdown-display ? 600 : 400;
-                        vertical-alignment: center;
-                        overflow:           elide;
+                    border-width: (dd-item-ta.pressed || dd-pulse.pulsing) ? 3px
+                        : (i == AppState.profile-edit-dropdown-cursor ? 2px : 0px);
+                    border-color: Theme.focus-border;
+                    animate border-width {
+                        duration: 90ms * AppState.settings-animation-speed;
+                        easing: ease-out-expo;
                     }
+                    dd-pulse := PressPulse {
+                        trigger: AppState.kb-activate-pulse;
+                        active: i == AppState.profile-edit-dropdown-cursor;
+                    }
+
+                    dd-txt := Text {
+                        x: 12px;
+                        text: opt;
+                        color: opt == AppState.profile-edit-dropdown-display ? Theme.accent : Theme.text;
+                        font-size: 13px;
+                        font-weight: opt == AppState.profile-edit-dropdown-display ? 600 : 400;
+                        vertical-alignment: center;
+                        overflow: elide;
+                    }
+
                     dd-item-ta := TouchArea {
                         clicked => {
                             AppState.profile-edit-dropdown-cursor = i;
@@ -1029,10 +1148,10 @@ export component ProfileEditScreen inherits Rectangle {
     // (not profile-edit-name-initial, which is only the pre-fill) so the
     // message reflects whatever the user actually has typed right now.
     if AppState.show-profile-edit-delete-confirm: ConfirmDialog {
-        title:         "Delete Profile?";
-        message:       "Delete " + name-field.text + "? This can't be undone.";
+        title: "Delete Profile?";
+        message: "Delete " + name-field.text + "? This can't be undone.";
         confirm-label: "Delete";
-        focused:       AppState.profile-edit-delete-confirm-focused;
+        focused: AppState.profile-edit-delete-confirm-focused;
         confirmed => {
             AppState.profile-edit-delete();
             AppState.show-profile-edit-delete-confirm = false;

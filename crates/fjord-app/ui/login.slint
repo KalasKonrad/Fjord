@@ -97,7 +97,12 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
-import { FjordButton, ToggleSwitch, QwertyKeyboard, FieldFocusWrap } from "widgets.slint";
+import {
+    FjordButton,
+    ToggleSwitch,
+    QwertyKeyboard,
+    FieldFocusWrap,
+} from "widgets.slint";
 import { LineEdit } from "std-widgets.slint";
 
 export component LoginScreen inherits Rectangle {
@@ -163,7 +168,7 @@ export component LoginScreen inherits Rectangle {
     }
     focus-kick-timer := Timer {
         interval: 16ms;
-        running:  false;
+        running: false;
         triggered => {
             focus-kick-timer.running = false;
             if AppState.login-zone == 2 {
@@ -175,13 +180,13 @@ export component LoginScreen inherits Rectangle {
     }
 
     card := Rectangle {
-        width:         min(420px, parent.width - 48px);
-        height:        inner.preferred-height;
-        x:             (parent.width  - self.width)  / 2;
-        y:             (parent.height - self.height) / 2 - 24px;
-        background:    Theme.surface;
+        width: min(420px, parent.width - 48px);
+        height: inner.preferred-height;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2 - 24px;
+        background: Theme.surface;
         border-radius: Theme.radius-lg;
-        drop-shadow-blur:  28px;
+        drop-shadow-blur: 28px;
         drop-shadow-color: #00000070;
 
         inner := VerticalLayout {
@@ -191,21 +196,24 @@ export component LoginScreen inherits Rectangle {
             VerticalLayout {
                 spacing: 4px;
                 Text {
-                    text:                 "FJORD";
-                    color:                Theme.accent;
-                    font-size:            38px;
-                    font-weight:          700;
+                    text: "FJORD";
+                    color: Theme.accent;
+                    font-size: 38px;
+                    font-weight: 700;
                     horizontal-alignment: center;
                 }
+
                 Text {
-                    text:                 "Jellyfin media player";
-                    color:                Theme.text-muted;
-                    font-size:            13px;
+                    text: "Jellyfin media player";
+                    color: Theme.text-muted;
+                    font-size: 13px;
                     horizontal-alignment: center;
                 }
             }
 
-            Rectangle { height: 6px; }
+            Rectangle {
+                height: 6px;
+            }
 
             // Zone 0 — bordered wrapper (LineEdit exposes no settable border
             // of its own), same shape as ProfileEditScreen's own
@@ -223,7 +231,8 @@ export component LoginScreen inherits Rectangle {
                     // Still shown with a scheme in the example since a raw IP:port
                     // is the one case (a local server with no real TLS cert) where
                     // typing http:// explicitly saves the wasted first attempt.
-                    x: 2px; y: 2px;
+                    x: 2px;
+                    y: 2px;
                     width: parent.width - 4px;
                     height: parent.height - 4px;
                     placeholder-text: "Server (e.g. jellyfin.example.com or 192.168.1.10:8096)";
@@ -294,10 +303,12 @@ export component LoginScreen inherits Rectangle {
                     }
                 }
             }
+
             user-field-wrap := FieldFocusWrap {
                 focused: AppState.show-onscreen-keyboard && AppState.login-zone == 1;
                 user-input := LineEdit {
-                    x: 2px; y: 2px;
+                    x: 2px;
+                    y: 2px;
                     width: parent.width - 4px;
                     height: parent.height - 4px;
                     placeholder-text: "Username";
@@ -336,14 +347,16 @@ export component LoginScreen inherits Rectangle {
                     }
                 }
             }
+
             pass-field-wrap := FieldFocusWrap {
                 focused: AppState.show-onscreen-keyboard && AppState.login-zone == 2;
                 pass-input := LineEdit {
-                    x: 2px; y: 2px;
+                    x: 2px;
+                    y: 2px;
                     width: parent.width - 4px;
                     height: parent.height - 4px;
                     placeholder-text: "Password";
-                    input-type:       password;
+                    input-type: password;
                     // No `accepted =>` handler here (removed 2026-08-23) —
                     // physical Enter now opens the on-screen keyboard on
                     // this field too, same as Server/Username, per direct
@@ -425,15 +438,19 @@ export component LoginScreen inherits Rectangle {
                 border-radius: Theme.radius;
                 border-width: AppState.login-zone == 3 ? 2px : 0px;
                 border-color: Theme.focus-border;
-                animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+                animate border-width {
+                    duration: 90ms * AppState.settings-animation-speed;
+                    easing: ease-out-expo;
+                }
                 Text {
-                    x:                  12px;
-                    y:                  (parent.height - self.height) / 2;
-                    text:               "Remember this login";
-                    color:              Theme.text-muted;
-                    font-size:          13px;
+                    x: 12px;
+                    y: (parent.height - self.height) / 2;
+                    text: "Remember this login";
+                    color: Theme.text-muted;
+                    font-size: 13px;
                     vertical-alignment: center;
                 }
+
                 ToggleSwitch {
                     x: parent.width - self.width - 12px;
                     y: (parent.height - self.height) / 2;
@@ -455,20 +472,20 @@ export component LoginScreen inherits Rectangle {
             }
 
             if AppState.status != "": Text {
-                text:                 AppState.status;
-                color:                Theme.text-muted;
-                font-size:            13px;
+                text: AppState.status;
+                color: Theme.text-muted;
+                font-size: 13px;
                 horizontal-alignment: center;
-                wrap:                 word-wrap;
+                wrap: word-wrap;
             }
         }
     }
 
     FjordButton {
-        text:   "Quit";
-        width:  90px;
-        x:      parent.width  - self.width  - 16px;
-        y:      parent.height - self.height - 16px;
+        text: "Quit";
+        width: 90px;
+        x: parent.width - self.width - 16px;
+        y: parent.height - self.height - 16px;
         // Zone 6, 2026-08-21 — see this file's own header doc comment.
         kbd-focused: AppState.login-zone == 6;
         clicked => {
@@ -488,10 +505,10 @@ export component LoginScreen inherits Rectangle {
         // Add Account attempt, return to wherever it was opened from),
         // so there's nothing destination-specific worth stating, and no
         // way for wording to drift out of sync with behavior again.
-        text:   "← Back";
-        width:  110px;
-        x:      16px;
-        y:      16px;
+        text: "← Back";
+        width: 110px;
+        x: 16px;
+        y: 16px;
         // Zone 5, 2026-08-21 — see this file's own header doc comment.
         kbd-focused: AppState.login-zone == 5;
         clicked => {

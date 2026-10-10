@@ -39,33 +39,39 @@ component ManageProfileTile inherits VerticalLayout {
     width: 120px;
 
     Rectangle {
-        width:  96px;
+        width: 96px;
         height: 96px;
-        x:      (parent.width - self.width) / 2;
+        x: (parent.width - self.width) / 2;
         border-radius: self.width / 2;
         background: root.is-add-tile ? Theme.surface-overlay : root.tile.avatar-color;
         border-width: (ta.pressed || tile-pulse.pulsing) ? 4px : (root.kbd-focused ? 3px : 0px);
         border-color: Theme.focus-border;
         clip: true;
-        animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
-        tile-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: root.kbd-focused; }
+        animate border-width {
+            duration: 90ms * AppState.settings-animation-speed;
+            easing: ease-out-expo;
+        }
+        tile-pulse := PressPulse {
+            trigger: AppState.kb-activate-pulse;
+            active: root.kbd-focused;
+        }
 
         Text {
-            text:                 root.is-add-tile ? "+" : root.tile.avatar-initial;
-            color:                Theme.text;
-            font-size:            root.is-add-tile ? 36px : 38px;
-            font-weight:          700;
+            text: root.is-add-tile ? "+" : root.tile.avatar-initial;
+            color: Theme.text;
+            font-size: root.is-add-tile ? 36px : 38px;
+            font-weight: 700;
             horizontal-alignment: center;
-            vertical-alignment:   center;
-            width:                parent.width;
-            height:               parent.height;
+            vertical-alignment: center;
+            width: parent.width;
+            height: parent.height;
         }
 
         if !root.is-add-tile && root.tile.has-pin: Rectangle {
-            width:  26px;
+            width: 26px;
             height: 26px;
-            x:      parent.width - self.width - 2px;
-            y:      parent.height - self.height - 2px;
+            x: parent.width - self.width - 2px;
+            y: parent.height - self.height - 2px;
             border-radius: self.width / 2;
             background: Theme.surface;
             border-width: 1px;
@@ -86,12 +92,12 @@ component ManageProfileTile inherits VerticalLayout {
     }
 
     Text {
-        text:                 root.is-add-tile ? "Add Profile" : root.tile.display-name;
-        color:                root.kbd-focused ? Theme.accent : Theme.text;
-        font-size:            13px;
-        font-weight:          root.kbd-focused ? 700 : 400;
+        text: root.is-add-tile ? "Add Profile" : root.tile.display-name;
+        color: root.kbd-focused ? Theme.accent : Theme.text;
+        font-size: 13px;
+        font-weight: root.kbd-focused ? 700 : 400;
         horizontal-alignment: center;
-        overflow:             elide;
+        overflow: elide;
     }
 }
 
@@ -113,16 +119,16 @@ export component ManageProfilesScreen inherits Rectangle {
         // correctly derives from inner.preferred-height (below) — width
         // gets the identical treatment, same established
         // read-a-child-Layout's-preferred-size pattern.
-        width:         min(inner.preferred-width, parent.width - 48px);
-        height:        inner.preferred-height;
-        x:             (parent.width  - self.width)  / 2;
-        y:             (parent.height - self.height) / 2;
-        background:    Theme.surface;
+        width: min(inner.preferred-width, parent.width - 48px);
+        height: inner.preferred-height;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        background: Theme.surface;
         border-radius: Theme.radius-lg;
-        drop-shadow-blur:  28px;
+        drop-shadow-blur: 28px;
         drop-shadow-color: #00000070;
 
-        card-ta := TouchArea {}
+        card-ta := TouchArea { }
 
         inner := VerticalLayout {
             padding: Theme.sp-xl;
@@ -136,6 +142,7 @@ export component ManageProfilesScreen inherits Rectangle {
                     font-size: 20px;
                     font-weight: 700;
                 }
+
                 FjordButton {
                     text: "✕";
                     width: 32px;
@@ -165,7 +172,7 @@ export component ManageProfilesScreen inherits Rectangle {
                 spacing: 20px;
 
                 for t[i] in AppState.manage-profiles-list: ManageProfileTile {
-                    tile:        t;
+                    tile: t;
                     // !close-focused excludes the tile ring while the ✕
                     // button holds focus instead — same convention as
                     // profile_picker.slint/account_picker.slint's own

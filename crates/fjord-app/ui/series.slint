@@ -19,40 +19,51 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme, SeasonEntry, CardItem } from "theme.slint";
 import { AppState } from "app_state.slint";
-import { FjordButton, IconCircleButton, MetaLine, CastRow, PosterBlock, StorylineSection, PressPulse } from "widgets.slint";
+import {
+    FjordButton,
+    IconCircleButton,
+    MetaLine,
+    CastRow,
+    PosterBlock,
+    StorylineSection,
+    PressPulse,
+} from "widgets.slint";
 import { SectionRow } from "home.slint";
 
 export component SeriesScreen inherits Rectangle {
     background: Theme.bg;
 
     fl := Flickable {
-        width:           parent.width;
-        height:          parent.height;
+        width: parent.width;
+        height: parent.height;
         content-height: content.preferred-height;
         // Explicit content-width prevents Slint from computing it as
         // max(self.width, content.min-width), which would create a binding loop
         // when any child inside content sets an explicit width (e.g. StorylineSection text).
-        content-width:  self.width;
-        animate content-y { duration: 200ms * AppState.settings-scroll-speed; easing: ease-in-out; }
+        content-width: self.width;
+        animate content-y {
+            duration: 200ms * AppState.settings-scroll-speed;
+            easing: ease-in-out;
+        }
 
         // Keyboard scroll — positions anchored by 0-height sibling Rectangles in
         // the VerticalLayout.  Mouse-wheel still works natively because content-y
         // is NOT bound to an expression; only changed kb-y assigns it.
         property <length> kb-y:
             AppState.series-recommended-focused >= 0 ?
-                clamp(root.height / 2 - recommended-anchor.y, min(0px, root.height - content.preferred-height), 0px) :
+            clamp(root.height / 2 - recommended-anchor.y, min(0px, root.height - content.preferred-height), 0px) :
             AppState.series-similar-focused >= 0 ?
-                clamp(root.height / 2 - similar-anchor.y, min(0px, root.height - content.preferred-height), 0px) :
+            clamp(root.height / 2 - similar-anchor.y, min(0px, root.height - content.preferred-height), 0px) :
             AppState.series-cast-focused >= 0 ?
-                clamp(root.height / 2 - cast-anchor.y, min(0px, root.height - content.preferred-height), 0px) :
+            clamp(root.height / 2 - cast-anchor.y, min(0px, root.height - content.preferred-height), 0px) :
             AppState.series-missing-seasons-focused >= 0 ?
-                clamp(root.height / 2 - missing-seasons-anchor.y, min(0px, root.height - content.preferred-height), 0px) :
+            clamp(root.height / 2 - missing-seasons-anchor.y, min(0px, root.height - content.preferred-height), 0px) :
             AppState.series-focused-btn >= 0 ?
-                0px :  // header buttons: scroll to top
+            0px :  // header buttons: scroll to top
             !AppState.series-in-season-row && !AppState.series-next-up-focused ?
-                clamp(root.height / 3 - ep-anchor.y, min(0px, root.height - content.preferred-height), 0px) :
+            clamp(root.height / 3 - ep-anchor.y, min(0px, root.height - content.preferred-height), 0px) :
             AppState.series-in-season-row ?
-                clamp(root.height / 2 - seasons-anchor.y, min(0px, root.height - content.preferred-height), 0px) :
+            clamp(root.height / 2 - seasons-anchor.y, min(0px, root.height - content.preferred-height), 0px) :
             // series-next-up-focused: show near top
             clamp(root.height / 3 - next-up-anchor.y, min(0px, root.height - content.preferred-height), 0px);
 
@@ -66,120 +77,128 @@ export component SeriesScreen inherits Rectangle {
 
                 // Backdrop image — fills this Rectangle; height driven by inner layout
                 if AppState.series-has-backdrop: Image {
-                    x: 0; y: 0;
-                    width:     parent.width;
-                    height:    parent.height;
+                    x: 0;
+                    y: 0;
+                    width: parent.width;
+                    height: parent.height;
                     image-fit: cover;
-                    source:    AppState.series-backdrop;
+                    source: AppState.series-backdrop;
                 }
                 // Overlay — darkens backdrop so text remains readable
                 if AppState.series-has-backdrop: Rectangle {
-                    x: 0; y: 0;
-                    width:      parent.width;
-                    height:     parent.height;
+                    x: 0;
+                    y: 0;
+                    width: parent.width;
+                    height: parent.height;
                     background: @linear-gradient(180deg, #00000080 0%, #000000cc 100%);
                 }
 
                 VerticalLayout {
-                HorizontalLayout {
-                    padding-left:   48px;
-                    padding-right:  48px;
-                    padding-top:    68px;
-                    padding-bottom: 20px;
-                    spacing:        28px;
-                    alignment:      start;
+                    HorizontalLayout {
+                        padding-left: 48px;
+                        padding-right: 48px;
+                        padding-top: 68px;
+                        padding-bottom: 20px;
+                        spacing: 28px;
+                        alignment: start;
 
-                    if AppState.series-has-poster: PosterBlock {
-                        source:         AppState.series-poster;
-                        has-image:      true;
-                        has-played:     AppState.series-has-played;
-                        unplayed-count: AppState.series-unplayed-count;
-                        width:          130px;
-                        height:         195px;
-                    }
-
-                    VerticalLayout {
-                        spacing:            8px;
-                        alignment:          start;
-                        horizontal-stretch: 1;
-
-                        Text {
-                            text:        AppState.series-title;
-                            color:       Theme.text;
-                            font-size:   28px;
-                            font-weight: 700;
-                            wrap:        no-wrap;
-                            overflow:    elide;
+                        if AppState.series-has-poster: PosterBlock {
+                            source: AppState.series-poster;
+                            has-image: true;
+                            has-played: AppState.series-has-played;
+                            unplayed-count: AppState.series-unplayed-count;
+                            width: 130px;
+                            height: 195px;
                         }
 
-                        if AppState.series-tagline != "": Text {
-                            text:        AppState.series-tagline;
-                            color:       AppState.series-has-backdrop ? #ffffff : Theme.text-muted;
-                            font-size:   15px;
-                            font-italic: true;
-                            wrap:        word-wrap;
-                        }
-
-                        if AppState.series-meta != "": MetaLine {
-                            meta:         AppState.series-meta;
-                            rating-label: AppState.series-rating-label;
-                        }
-
-                        if AppState.series-genres != "": Text {
-                            text:      AppState.series-genres;
-                            color:     AppState.series-has-backdrop ? #ffffff : Theme.text-muted;
-                            font-size: 13px;
-                            wrap:      word-wrap;
-                        }
-
-                        if AppState.series-studio != "": Text {
-                            text:      AppState.series-studio;
-                            color:     AppState.series-has-backdrop ? #ffffff : Theme.text-muted;
-                            font-size: 13px;
-                        }
-
-
-                        HorizontalLayout {
-                            spacing:   12px;
+                        VerticalLayout {
+                            spacing: 8px;
                             alignment: start;
+                            horizontal-stretch: 1;
+
+                            Text {
+                                text: AppState.series-title;
+                                color: Theme.text;
+                                font-size: 28px;
+                                font-weight: 700;
+                                wrap: no-wrap;
+                                overflow: elide;
+                            }
+
+                            if AppState.series-tagline != "": Text {
+                                text: AppState.series-tagline;
+                                color: AppState.series-has-backdrop ? #ffffff : Theme.text-muted;
+                                font-size: 15px;
+                                font-italic: true;
+                                wrap: word-wrap;
+                            }
+
+                            if AppState.series-meta != "": MetaLine {
+                                meta: AppState.series-meta;
+                                rating-label: AppState.series-rating-label;
+                            }
+
+                            if AppState.series-genres != "": Text {
+                                text: AppState.series-genres;
+                                color: AppState.series-has-backdrop ? #ffffff : Theme.text-muted;
+                                font-size: 13px;
+                                wrap: word-wrap;
+                            }
+
+                            if AppState.series-studio != "": Text {
+                                text: AppState.series-studio;
+                                color: AppState.series-has-backdrop ? #ffffff : Theme.text-muted;
+                                font-size: 13px;
+                            }
+
+                            HorizontalLayout {
+                                spacing: 12px;
+                                alignment: start;
                             // ♥ favourite — gray when not fav, accent when fav
                             IconCircleButton {
-                                icon:        "❤";
-                                active:      AppState.series-is-favorite;
-                                kbd-focused: AppState.series-focused-btn == 1;
-                                clicked => { AppState.toggle-series-fav(); }
-                            }
+                                    icon: "❤";
+                                    active: AppState.series-is-favorite;
+                                    kbd-focused: AppState.series-focused-btn == 1;
+                                    clicked => { AppState.toggle-series-fav(); }
+                                }
                             // ✓ watched — gray when not watched, accent when watched
                             IconCircleButton {
-                                icon:        "✓";
-                                active:      AppState.series-has-played;
-                                kbd-focused: AppState.series-focused-btn == 2;
-                                clicked => { AppState.toggle-series-played(); }
+                                    icon: "✓";
+                                    active: AppState.series-has-played;
+                                    kbd-focused: AppState.series-focused-btn == 2;
+                                    clicked => { AppState.toggle-series-played(); }
+                                }
                             }
                         }
                     }
-                }
-                if AppState.series-overview != "": StorylineSection {
-                    text:        AppState.series-overview;
-                    expanded <=> AppState.series-overview-expanded;
-                    kbd-focused: AppState.series-focused-btn == 3;
-                }
+
+                    if AppState.series-overview != "": StorylineSection {
+                        text: AppState.series-overview;
+                        expanded <=> AppState.series-overview-expanded;
+                        kbd-focused: AppState.series-focused-btn == 3;
+                    }
                 }
             }
 
             // ── Next Up anchor (scroll target) ────────────────────────────────
-            next-up-anchor := Rectangle { height: 0px; }
+            next-up-anchor := Rectangle {
+                height: 0px;
+            }
 
             // ── Next Up ───────────────────────────────────────────────────────
             if AppState.series-has-next-up: VerticalLayout {
-                padding-left:  48px;
+                padding-left: 48px;
                 padding-right: 48px;
-                Rectangle { height: 1px; background: Theme.border; }
+                Rectangle {
+                    height: 1px;
+                    background: Theme.border;
+                }
+
                 SectionRow {
-                    section-title:   AppState.series-next-up-section-title;
-                    items:           AppState.series-next-up-cards;
+                    section-title: AppState.series-next-up-section-title;
+                    items: AppState.series-next-up-cards;
                     section-focused: AppState.series-next-up-focused;
-                    focused-card:    0;
+                    focused-card: 0;
                     item-play(id, _) => { AppState.play-series-episode(id); }
                     item-context(id, played, fav, rpct, itype, sid) => {
                         AppState.open-context-menu(id, played, fav, rpct, itype, sid);
@@ -188,11 +207,13 @@ export component SeriesScreen inherits Rectangle {
             }
 
             // ── Season tabs anchor (scroll target) ────────────────────────────
-            seasons-anchor := Rectangle { height: 0px; }
+            seasons-anchor := Rectangle {
+                height: 0px;
+            }
 
             // ── Season tabs ───────────────────────────────────────────────────
             if AppState.series-seasons.length > 0: Rectangle {
-                height:     44px;
+                height: 44px;
                 background: AppState.series-in-season-row ? Theme.surface-raised : #00000000;
 
                 // kb-x lives on the outer Rectangle (not on season-fl) to avoid the Slint
@@ -213,51 +234,60 @@ export component SeriesScreen inherits Rectangle {
                 property <length> kb-x: clamp(
                     root.width / 2 - 98px - AppState.series-season-idx * 108px,
                     min(0px, root.width - season-tabs.preferred-width - 48px),
-                    0px
-                );
+                    0px);
                 changed kb-x => { season-fl.content-x = kb-x; }
 
-                Rectangle { y: parent.height - 2px; height: 2px; background: AppState.series-in-season-row ? Theme.accent : Theme.border; }
+                Rectangle {
+                    y: parent.height - 2px;
+                    height: 2px;
+                    background: AppState.series-in-season-row ? Theme.accent : Theme.border;
+                }
 
                 season-fl := Flickable {
-                    width:          parent.width;
+                    width: parent.width;
                     content-width: season-tabs.preferred-width + 48px;
-                    animate content-x { duration: 150ms * AppState.settings-scroll-speed; easing: ease-out-expo; }
+                    animate content-x {
+                        duration: 150ms * AppState.settings-scroll-speed;
+                        easing: ease-out-expo;
+                    }
 
                     season-tabs := HorizontalLayout {
-                        padding-left:  48px;
+                        padding-left: 48px;
                         padding-right: 48px;
-                        spacing:       8px;
-                        alignment:     start;
+                        spacing: 8px;
+                        alignment: start;
 
                         for s[i] in AppState.series-seasons: Rectangle {
-                            width:         max(80px, lbl.preferred-width + 24px);
-                            height:        32px;
-                            y:             6px;
+                            width: max(80px, lbl.preferred-width + 24px);
+                            height: 32px;
+                            y: 6px;
                             border-radius: Theme.radius;
-                            background:    i == AppState.series-season-idx ? Theme.accent : Theme.surface;
-                            border-width:  (season-ta.pressed || season-pulse.pulsing) ? 3px : 0px;
-                            border-color:  Theme.text;
-                            animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+                            background: i == AppState.series-season-idx ? Theme.accent : Theme.surface;
+                            border-width: (season-ta.pressed || season-pulse.pulsing) ? 3px : 0px;
+                            border-color: Theme.text;
+                            animate border-width {
+                                duration: 90ms * AppState.settings-animation-speed;
+                                easing: ease-out-expo;
+                            }
                             season-pulse := PressPulse {
                                 trigger: AppState.kb-activate-pulse;
                                 active: AppState.series-in-season-row && i == AppState.series-season-idx;
                             }
 
                             lbl := Text {
-                                text:                 s.name;
-                                color:                i == AppState.series-season-idx ? #ffffff : Theme.text-muted;
-                                font-size:            13px;
-                                font-weight:          i == AppState.series-season-idx ? 700 : 400;
+                                text: s.name;
+                                color: i == AppState.series-season-idx ? #ffffff : Theme.text-muted;
+                                font-size: 13px;
+                                font-weight: i == AppState.series-season-idx ? 700 : 400;
                                 horizontal-alignment: center;
-                                vertical-alignment:   center;
+                                vertical-alignment: center;
                             }
 
                             season-ta := TouchArea {
                                 clicked => {
-                                    AppState.series-season-idx    = i;
+                                    AppState.series-season-idx = i;
                                     AppState.series-select-season(i);
-                                    AppState.series-focused-ep    = 0;
+                                    AppState.series-focused-ep = 0;
                                     AppState.series-in-season-row = false;
                                 }
                                 double-clicked => {
@@ -275,9 +305,9 @@ export component SeriesScreen inherits Rectangle {
                                 // actually just right-clicked, not stale state.
                                 pointer-event(e) => {
                                     if e.button == PointerEventButton.right && e.kind == PointerEventKind.up {
-                                        AppState.series-season-idx    = i;
+                                        AppState.series-season-idx = i;
                                         AppState.series-in-season-row = true;
-                                        AppState.context-menu-title   = s.name;
+                                        AppState.context-menu-title = s.name;
                                         AppState.open-context-menu(s.id, s.played, s.is-favorite, 0.0, "Season", AppState.series-id);
                                     }
                                 }
@@ -288,35 +318,37 @@ export component SeriesScreen inherits Rectangle {
             }
 
             // ── Episode anchor (scroll target) ────────────────────────────────
-            ep-anchor := Rectangle { height: 0px; }
+            ep-anchor := Rectangle {
+                height: 0px;
+            }
 
             // ── Loading indicator ─────────────────────────────────────────────
             if AppState.series-loading && AppState.series-episode-cards.length == 0: Rectangle {
                 height: 60px;
                 Text {
-                    text:                 "Loading episodes…";
-                    color:                Theme.text-muted;
-                    font-size:            14px;
+                    text: "Loading episodes…";
+                    color: Theme.text-muted;
+                    font-size: 14px;
                     horizontal-alignment: center;
-                    vertical-alignment:   center;
+                    vertical-alignment: center;
                 }
             }
 
             // ── Episode horizontal row ────────────────────────────────────────
             if AppState.series-episode-cards.length > 0: VerticalLayout {
-                padding-left:  48px;
+                padding-left: 48px;
                 padding-right: 48px;
                 SectionRow {
-                    section-title:   "Episodes";
-                    items:           AppState.series-episode-cards;
+                    section-title: "Episodes";
+                    items: AppState.series-episode-cards;
                     section-focused: !AppState.series-in-season-row
-                                     && !AppState.series-next-up-focused
-                                     && AppState.series-cast-focused < 0
-                                     && AppState.series-similar-focused < 0
-                                     && AppState.series-recommended-focused < 0
-                                     && AppState.series-missing-seasons-focused < 0
-                                     && AppState.series-focused-btn < 0;
-                    focused-card:    AppState.series-focused-ep;
+                        && !AppState.series-next-up-focused
+                        && AppState.series-cast-focused < 0
+                        && AppState.series-similar-focused < 0
+                        && AppState.series-recommended-focused < 0
+                        && AppState.series-missing-seasons-focused < 0
+                        && AppState.series-focused-btn < 0;
+                    focused-card: AppState.series-focused-ep;
                     item-play(id, _) => { AppState.play-series-episode(id); }
                     item-context(id, played, fav, rpct, itype, sid) => {
                         AppState.open-context-menu(id, played, fav, rpct, itype, sid);
@@ -325,42 +357,58 @@ export component SeriesScreen inherits Rectangle {
             }
 
             // ── Missing Seasons anchor (scroll target) ─────────────────────────
-            missing-seasons-anchor := Rectangle { height: 0px; }
+            missing-seasons-anchor := Rectangle {
+                height: 0px;
+            }
 
             // ── Missing Seasons (Discover-sourced, 2026-07-29) ─────────────────
             if AppState.series-missing-seasons.length > 0: VerticalLayout {
-                padding-left:   48px;
-                padding-right:  48px;
+                padding-left: 48px;
+                padding-right: 48px;
                 padding-bottom: 24px;
 
-                Rectangle { height: 1px; background: Theme.border; }
-                Rectangle { height: 12px; }
+                Rectangle {
+                    height: 1px;
+                    background: Theme.border;
+                }
+
+                Rectangle {
+                    height: 12px;
+                }
 
                 SectionRow {
-                    section-title:   "Missing Seasons";
-                    items:           AppState.series-missing-seasons;
+                    section-title: "Missing Seasons";
+                    items: AppState.series-missing-seasons;
                     section-focused: AppState.series-missing-seasons-focused >= 0;
-                    focused-card:    AppState.series-missing-seasons-focused;
+                    focused-card: AppState.series-missing-seasons-focused;
                     card-focused(idx) => { AppState.series-missing-seasons-focused = idx; }
                     item-play(_, _) => { AppState.series-missing-season-activate(AppState.series-missing-seasons-focused); }
                 }
             }
 
             // ── Cast anchor (scroll target) ───────────────────────────────────
-            cast-anchor := Rectangle { height: 0px; }
+            cast-anchor := Rectangle {
+                height: 0px;
+            }
 
             // ── Cast & Crew ───────────────────────────────────────────────────
             if AppState.series-cast.length > 0: VerticalLayout {
-                padding-left:   48px;
-                padding-right:  48px;
-                padding-top:    4px;
+                padding-left: 48px;
+                padding-right: 48px;
+                padding-top: 4px;
                 padding-bottom: 24px;
 
-                Rectangle { height: 1px; background: Theme.border; }
-                Rectangle { height: 12px; }
+                Rectangle {
+                    height: 1px;
+                    background: Theme.border;
+                }
+
+                Rectangle {
+                    height: 12px;
+                }
 
                 CastRow {
-                    cast:        AppState.series-cast;
+                    cast: AppState.series-cast;
                     focused-idx: AppState.series-cast-focused;
                     item-selected(idx) => {
                         AppState.open-person(AppState.series-cast[idx].id, AppState.series-cast[idx].name);
@@ -369,21 +417,26 @@ export component SeriesScreen inherits Rectangle {
             }
 
             // ── Similar anchor (scroll target) ────────────────────────────────
-            similar-anchor := Rectangle { height: 0px; }
+            similar-anchor := Rectangle {
+                height: 0px;
+            }
 
             // ── More Like This ────────────────────────────────────────────────
             if AppState.series-similar.length > 0: VerticalLayout {
-                padding-left:   48px;
-                padding-right:  48px;
+                padding-left: 48px;
+                padding-right: 48px;
                 padding-bottom: 40px;
 
-                Rectangle { height: 1px; background: Theme.border; }
+                Rectangle {
+                    height: 1px;
+                    background: Theme.border;
+                }
 
                 SectionRow {
-                    section-title:   "More Like This";
-                    items:           AppState.series-similar;
+                    section-title: "More Like This";
+                    items: AppState.series-similar;
                     section-focused: AppState.series-similar-focused >= 0;
-                    focused-card:    AppState.series-similar-focused;
+                    focused-card: AppState.series-similar-focused;
                     item-play(id, itype) => { AppState.open-detail(id, itype); }
                     item-context(id, played, fav, rpct, itype, sid) => {
                         AppState.open-context-menu(id, played, fav, rpct, itype, sid);
@@ -392,21 +445,26 @@ export component SeriesScreen inherits Rectangle {
             }
 
             // ── Recommended anchor (scroll target) ────────────────────────────
-            recommended-anchor := Rectangle { height: 0px; }
+            recommended-anchor := Rectangle {
+                height: 0px;
+            }
 
             // ── Recommended (Discover-sourced, 2026-07-29) ─────────────────────
             if AppState.series-recommended.length > 0: VerticalLayout {
-                padding-left:   48px;
-                padding-right:  48px;
+                padding-left: 48px;
+                padding-right: 48px;
                 padding-bottom: 40px;
 
-                Rectangle { height: 1px; background: Theme.border; }
+                Rectangle {
+                    height: 1px;
+                    background: Theme.border;
+                }
 
                 SectionRow {
-                    section-title:   "Recommended";
-                    items:           AppState.series-recommended;
+                    section-title: "Recommended";
+                    items: AppState.series-recommended;
                     section-focused: AppState.series-recommended-focused >= 0;
-                    focused-card:    AppState.series-recommended-focused;
+                    focused-card: AppState.series-recommended-focused;
                     item-play(id, it) => { AppState.open-discover-item(it == "DiscoverMovie" ? "movie" : "tv", id); }
                     item-context-full(itm) => { AppState.open-context-menu-discover(itm); }
                 }
@@ -415,10 +473,10 @@ export component SeriesScreen inherits Rectangle {
     }
 
     FjordButton {
-        x:           16px;
-        y:           16px;
-        text:        "← Back";
-        width:       88px;
+        x: 16px;
+        y: 16px;
+        text: "← Back";
+        width: 88px;
         kbd-focused: AppState.series-focused-btn == 0;
         clicked => { AppState.close-series(); }
     }
