@@ -1,26 +1,17 @@
 // ── fjord-app · keys/text_input.rs ───────────────────────────────────────────
-//   onscreen_keyboard_move_row  proportional column mapping across QwertyKeyboard's irregular
-//                      [10,9,9,5] row widths for Up/Down (Bonfire Phase 3, on-screen alphanumeric
-//                      keyboard, 2026-08-22, rolled out to every text-entry surface as of
-//                      2026-08-23 — see app_state.slint's own show-onscreen-keyboard doc
-//                      comment for the full design)
 //   open_onscreen_keyboard  the one Rust way to open the on-screen keyboard; false (nothing
 //                      changed) when Settings → UI has it off — the caller then does its own Enter
-//                      action (2026-10-10)
+//                      action. Slint twin: AppState.open-onscreen-keyboard
+//   onscreen_keyboard_move_row  Up/Down across QwertyKeyboard's centered rows of different
+//                      lengths: nearest key by on-screen position
 //   handle_library_search / handle_browse_search  raw-key pre-dispatch for the drawn search fields
-//   handle_playlist_picker  Add-to-playlist picker (raw keys — naming mode needs text input)
-//   handle_discover_search  raw-key pre-dispatch for Discover's search field (typing/backspace/
-//                           2026-10-04: Left/Right/Home/End move the caret, Delete deletes after it
-//                      escape), mirrors handle_browse_search — bypasses the Action/KeyMap lookup;
-//                      Up and Down both unconditionally enter the filter bar (Down fixed
-//                      2026-07-18 — previously skipped straight into content, asymmetric
-//                      with Up); Enter opens the on-screen keyboard (2026-08-23, full rollout —
-//                      was "jump straight to the top search result," a deliberate trade-off the
-//                      user chose directly; Down still reaches the grid via the filter bar);
-//                      Left on an empty query still exits to the sidebar (fs=-1), same
-//                      destination Escape targets — real bug fixed 2026-07-18: this function had
-//                      no Up handler at all (unlike handle_library_search), so Escape was the
-//                      ONLY way out of an empty/cleared search field
+//                      (typing, caret keys, Enter opens the on-screen keyboard)
+//   handle_discover_search  same for Discover's search field (bypasses the Action/KeyMap
+//                      lookup): typing/Backspace, caret keys (Left/Right/Home/End, Delete);
+//                      Up/Down enter the filter bar; Enter opens the on-screen keyboard; Left on
+//                      an empty query → sidebar (like Escape)
+//   handle_playlist_picker  Add-to-playlist picker (raw keys — naming mode needs text input; the
+//                      first Enter opens naming + the on-screen keyboard, Right creates)
 // ─────────────────────────────────────────────────────────────────────────────
 use super::*;
 
@@ -40,34 +31,14 @@ pub(crate) fn open_onscreen_keyboard(g: &crate::AppState, target: &str) -> bool 
 }
 
 // ── On-screen alphanumeric keyboard: cursor math ─────────────────────────────
-// Nearest-column mapping across QwertyKeyboard's irregular row widths
-// (10/9/9/3) — Up/Down land on whichever key sits geometrically closest,
-// left-to-right, to the current one. No-op at the top/bottom row (returns
-// the cursor unchanged) rather than handing off past the grid edge the way
-// the numeric VirtualKeyboard's own PIN entry does, since row 3 already
-// contains its own in-grid Done key — there's nothing left to hand off to
-// below it, and nothing above row 0.
+// Up/Down land on the key geometrically closest to the current one across QwertyKeyboard's
+// irregular row widths (onscreen-keyboard-row-lens). A no-op at the top/bottom row (the
+// bottom row has its own Done key; nothing to hand off to).
 //
-// Real bug, live-reported 2026-08-23 ("if you mov up from the abc you
-// always land on z" / "if you move down and is raigt abowe the abc you get
-// to the middelbutton isted"): the original formula mapped a column by
-// FRACTIONAL POSITION (col / (row_len-1)), which assumes every row spans
-// the same left-to-right width — wrong, since QwertyKeyboard's own per-row
-// HorizontalLayout uses `alignment: center` (widgets.slint), so a shorter
-// row is horizontally CENTERED under the widest one, not left-aligned to
-// it. Solving for "same on-screen pixel position" instead of "same
-// fraction" is what the user actually wants (and matches how every real
-// text editor moves a cursor vertically — preserving x-position, not a
-// proportional fraction of line length).
-//
-// Derivation: each row's own left offset in the shared coordinate space is
-// `(max_row_len - row_len) * half-cell-pitch` (half of the pixel gap
-// between it and the widest row, exactly what centering means); a cell's
-// on-screen center is `offset + col * cell-pitch + cell-pitch/2`. Setting
-// center(row, col) == center(new_row, col') and solving for col' — the
-// pitch and half-pitch terms cancel cleanly regardless of the actual pixel
-// size of a key, leaving a closed form with no pixel constants in it at
-// all: `col' = col + (row_lens[new_row] - row_lens[row]) / 2`.
+// Rows are centered (`alignment: center`, widgets.slint), not left-aligned, so a row's left
+// offset is `(max_len - len) * half_pitch` and a key's center is `offset + col * pitch +
+// pitch/2`. Equal centers solve to `col' = col + (row_lens[new_row] - row_lens[row]) / 2` —
+// no pixel constants. (Mapping by fractional position landed on the wrong keys.)
 pub(crate) fn onscreen_keyboard_move_row(row_lens: &[i32], cursor: i32, dir: i32) -> i32 {
     let starts: Vec<i32> = row_lens
         .iter()
@@ -112,15 +83,8 @@ pub(crate) fn handle_library_search(key: &str, ctrl: bool, window: &crate::MainW
             g.set_library_focused_row(0);
             true
         }
-        // On-screen keyboard, 2026-08-25 — missed in the original rollout
-        // (real gap, live-reported: "why dont library serche spawn the
-        // keybord on enter?"); this field is a hand-drawn Text+caret, same
-        // shape as Discover/Browse's own search fields, so this is a direct
-        // extension of that exact pattern. Was merged with Down above
-        // ("move into the grid") — splitting them apart costs nothing,
-        // since Down alone still does the identical job Enter used to. No
-        // AppState.refocus() call needed — this field never held native
-        // Slint focus to release.
+        // Enter opens the on-screen keyboard (Down moves into the grid). The field is a hand-drawn
+        // Text, so there's no native focus to release.
         k if k == key::RETURN => {
             open_onscreen_keyboard(&g, "library-search");
             true
@@ -172,11 +136,8 @@ pub(crate) fn handle_browse_search(key: &str, ctrl: bool, window: &crate::MainWi
             }
             true
         }
-        // On-screen keyboard, 2026-08-23 — was merged with Down above
-        // (both did the same "move into the list" thing); splitting them
-        // apart costs nothing, since Down alone still does the identical
-        // job Enter used to. No AppState.refocus() call needed — this
-        // field never held native Slint focus to release.
+        // Enter opens the on-screen keyboard (Down moves into the list); hand-drawn field, no
+        // refocus needed.
         k if k == key::RETURN => {
             open_onscreen_keyboard(&g, "browse-search");
             true
@@ -214,25 +175,15 @@ pub(crate) fn handle_discover_search(key: &str, ctrl: bool, window: &crate::Main
             g.set_focused_section(-1);
             true
         }
-        // Down enters the filter bar, not the content grid directly — real
-        // bug fixed 2026-07-18: this was asymmetric with Up (which already
-        // enters the filter bar) and with the filter bar's own Down (which
-        // goes to content), since the filter bar sits between the search
-        // field and content in real visual layout order. (Enter used to
-        // jump straight to the top result — see the RETURN arm below,
-        // repurposed 2026-08-23 to open the on-screen keyboard instead.)
+        // Down enters the filter bar, which sits between the search field and the content (Up
+        // enters it too).
         k if k == key::DOWN => {
             g.set_discover_header_focused(false);
             g.set_discover_filter_bar_active(true);
             true
         }
-        // On-screen keyboard, 2026-08-23 (full rollout beyond Login) —
-        // replaces the old "jump straight to the top result" behavior
-        // (a deliberate, user-confirmed trade-off: Down still reaches the
-        // grid via the filter bar, one extra step, not a dead end). No
-        // AppState.refocus() call needed — this field never held native
-        // Slint focus to release in the first place (it's a hand-drawn
-        // Text, not a LineEdit).
+        // Enter opens the on-screen keyboard (it used to jump to the top result; Down still reaches
+        // the grid through the filter bar). Hand-drawn field, no refocus needed.
         k if k == key::RETURN => {
             open_onscreen_keyboard(&g, "discover-search");
             true
@@ -243,47 +194,22 @@ pub(crate) fn handle_discover_search(key: &str, ctrl: bool, window: &crate::Main
             }
             true
         }
-        // Up now always enters the filter bar (2026-07-18, Discover
-        // filters) — previously a no-op for a non-empty query (silently
-        // swallowed by the is_navigation_key catch-all below, since unlike
-        // handle_library_search this function had no explicit Up arm at
-        // all) since there was nothing above the search field to focus.
-        // Deliberately unconditional (not gated on query emptiness like
-        // Left below) — the filter bar is always visible regardless of
-        // query state, matching Library grid's own always-visible sort bar.
+        // Up always enters the filter bar (always visible, like the Library grid's sort bar).
         k if k == key::UP => {
             g.set_discover_header_focused(false);
             g.set_discover_filter_bar_active(true);
             true
         }
-        // Real bug, user-reported 2026-07-18: with an empty query (either
-        // never typed anything, or typed then backspaced all the way back
-        // to empty — same state either way, see this function's own
-        // investigation notes), Escape was the ONLY way out — Up/Left were
-        // both silently swallowed by the is_navigation_key catch-all below,
-        // since (unlike handle_library_search, which has an explicit Up
-        // arm) this function never had one. (There's no separate raw
-        // "Back" key at this layer — Backspace and Escape both map to
-        // Action::Back elsewhere via the KeyMap, and Backspace is already
-        // claimed above for character deletion.) Go straight to the
-        // sidebar (fs=-1), same destination Escape now also targets,
-        // rather than landing in the zero-result-grid limbo state that
-        // Up-from-the-grid enters this field FROM (discover.rs's own
-        // `count == 0` branch) — that limbo state has nothing useful to
-        // show when the query is empty, so bouncing through it first would
-        // just trade one extra keypress for another. Left keeps this
-        // query-emptiness gating (unlike Up above) — a non-empty query's
-        // Left is unrelated to this fix and stays swallowed by
-        // is_navigation_key, unchanged.
+        // Left on an empty query goes straight to the sidebar (fs = -1, like Escape) — not into the
+        // empty-grid state Up-from-the-grid comes from. With text, Left moves the caret (below).
+        // (Backspace is taken for deleting, so there's no Back key at this layer.)
         k if k == key::LEFT && g.get_discover_query().is_empty() => {
             g.set_discover_header_focused(false);
             g.set_focused_section(-1);
             true
         }
-        // Caret keys with text in the field (2026-10-04, live-reported:
-        // fixing one letter meant deleting everything after it). Left at the
-        // very start stays put — leaving the field mid-edit would be easy to
-        // hit by accident; Escape/Up/Down still leave it.
+        // Caret keys with text in the field. Left at the very start stays put (too easy to leave
+        // mid-edit by accident); Escape/Up/Down still leave.
         k if caret_key(&crate::text_field::DISCOVER_SEARCH, k, &g) => true,
         k if k == key::DELETE => {
             g.invoke_discover_search_delete();
@@ -314,11 +240,8 @@ pub(crate) fn handle_playlist_picker(key: &str, ctrl: bool, window: &crate::Main
                 g.set_playlist_picker_naming(false);
                 true
             }
-            // On-screen keyboard, 2026-08-23 — Enter now opens it (was
-            // "create the playlist directly," the closest analog to
-            // Login's own password-submit conflict). Right takes over
-            // create, since Done should keep meaning "just close the
-            // keyboard" everywhere, consistent with every other screen.
+            // Enter opens the on-screen keyboard; Right creates the playlist (Done always just
+            // closes the keyboard).
             k if k == key::RETURN => {
                 open_onscreen_keyboard(&g, "playlist-picker-name");
                 true
@@ -376,14 +299,8 @@ pub(crate) fn handle_playlist_picker(key: &str, ctrl: bool, window: &crate::Main
         k if k == key::RETURN => {
             let c = g.get_playlist_picker_cursor();
             if c == 0 {
-                // Real gap, live-reported 2026-08-25 ("Needs to presses to
-                // get the of enter to open the virtual keybord on add new
-                // playlist") — same shape as ProfileEditScreen's identical
-                // 2-Enter friction: entering naming mode and opening the
-                // on-screen keyboard used to be two separate presses (this
-                // one, then a second Enter caught by the naming-mode match
-                // arm above). Collapsed into one — naming mode and the
-                // keyboard now open together on the very first Enter.
+                // Naming mode and the on-screen keyboard open together on the first Enter (no
+                // second press).
                 g.set_playlist_picker_name("".into());
                 g.set_playlist_picker_naming(true);
                 open_onscreen_keyboard(&g, "playlist-picker-name");
