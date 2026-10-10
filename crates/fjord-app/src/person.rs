@@ -30,6 +30,7 @@
 //   resolve_local_person  best-effort TMDB person id -> local Jellyfin Person id (name search +
 //                       ProviderIds cross-check, single-candidate fallback), cached in
 //                       local_person_by_tmdb_cache
+//   wire_person            callbacks moved from main() (0.5.0 step 3): person screen
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
 
@@ -827,5 +828,55 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
             true
         }
         _ => false,
+    }
+}
+
+// ── wire_person (moved from main(), 0.5.0 step 3) ────────────────────────
+/// Wires person screen: open_person, open_discover_person, close_person.
+pub(crate) fn wire_person(
+    window: &crate::MainWindow,
+    state: &std::sync::Arc<std::sync::Mutex<crate::config::FjordState>>,
+    rt: &tokio::runtime::Runtime,
+) {
+    // Moved verbatim from main(): names resolve as they did there.
+    use crate::*;
+    let window = slint::ComponentHandle::clone_strong(window);
+    let state = std::sync::Arc::clone(state);
+    // ── person screen ─────────────────────────────────────────────────────────
+    {
+        let state2 = Arc::clone(&state);
+        let ww2 = window.as_weak();
+        let rt2 = rt.handle().clone();
+        AppState::get(&window).on_open_person(move |id, name| {
+            person::open_person_screen(
+                id.to_string(),
+                name.to_string(),
+                Arc::clone(&state2),
+                ww2.clone(),
+                rt2.clone(),
+            );
+        });
+    }
+    {
+        let state2 = Arc::clone(&state);
+        let ww2 = window.as_weak();
+        let rt2 = rt.handle().clone();
+        AppState::get(&window).on_open_discover_person(move |tmdb_id, name| {
+            person::open_person_from_discover(
+                tmdb_id.to_string(),
+                name.to_string(),
+                Arc::clone(&state2),
+                ww2.clone(),
+                rt2.clone(),
+            );
+        });
+    }
+    {
+        let ww2 = window.as_weak();
+        AppState::get(&window).on_close_person(move || {
+            if let Some(w) = ww2.upgrade() {
+                AppState::get(&w).set_show_person(false);
+            }
+        });
     }
 }

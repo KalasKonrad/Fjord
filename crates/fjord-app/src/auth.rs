@@ -31,6 +31,8 @@
 //             file was previously never reloaded on a switch at all, only on plain
 //             auto-login, so the periodic save timer could silently overwrite a real
 //             persisted file with the empty set reset_session_state had just cleared).
+//   wire_login             callbacks moved from main() (0.5.0 step 3): the login screen
+//   wire_sign_out          callbacks moved from main() (0.5.0 step 3): Sign Out
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
 
@@ -809,6 +811,202 @@ fn spawn_not_watched_rows(
             g.set_not_watched_tv(items_to_model(&not_watched_tv, &watchlist));
         });
     });
+}
+
+// ── wire_login (moved from main(), 0.5.0 step 3) ─────────────────────────
+/// Wires the login screen: do_login.
+pub(crate) fn wire_login(
+    window: &crate::MainWindow,
+    state: &std::sync::Arc<std::sync::Mutex<crate::config::FjordState>>,
+    rt: &tokio::runtime::Runtime,
+) {
+    // Moved verbatim from main(): names resolve as they did there.
+    use crate::*;
+    let window = slint::ComponentHandle::clone_strong(window);
+    let state = std::sync::Arc::clone(state);
+    // ── login ─────────────────────────────────────────────────────────────────
+    {
+        let state = Arc::clone(&state);
+        let window_weak = window.as_weak();
+        let rt_handle = rt.handle().clone();
+        AppState::get(&window).on_do_login(move |server, user, pass, append, remember| {
+            auth::do_login(
+                server.to_string(),
+                user.to_string(),
+                pass.to_string(),
+                auth::LoginOptions { append, remember },
+                Arc::clone(&state),
+                window_weak.clone(),
+                rt_handle.clone(),
+            );
+        });
+    }
+}
+
+// ── wire_sign_out (moved from main(), 0.5.0 step 3) ──────────────────────
+/// Wires Sign Out: sign_out.
+pub(crate) fn wire_sign_out(
+    window: &crate::MainWindow,
+    state: &std::sync::Arc<std::sync::Mutex<crate::config::FjordState>>,
+    video: &std::sync::Arc<std::sync::Mutex<crate::playback::VideoState>>,
+    rt: &tokio::runtime::Runtime,
+) {
+    // Moved verbatim from main(): names resolve as they did there.
+    use crate::*;
+    let window = slint::ComponentHandle::clone_strong(window);
+    let state = std::sync::Arc::clone(state);
+    let video = std::sync::Arc::clone(video);
+    // ── sign-out ──────────────────────────────────────────────────────────────
+    {
+        let state = Arc::clone(&state);
+        let video_so = Arc::clone(&video);
+        let window_weak = window.as_weak();
+        let rth_so = rt.handle().clone();
+        AppState::get(&window).on_sign_out(move || {
+            reset_session_state(&video_so, &window_weak, &rth_so, &state);
+
+            let mut s = state.lock().unwrap();
+            // Clear only the session — deleting config.json wholesale (pre-CR10-12)
+            // also wiped device_id, so the next login generated a fresh DeviceId and
+            // Jellyfin invalidated the other machine's token (the exact scenario the
+            // per-install DeviceId exists to prevent). Settings survive sign-out too.
+            //
+            // Removes the signed-out profile's own Config.profiles entry ENTIRELY,
+            // along with every Bonfire sub-profile it owns (2026-08-15, real bug
+            // live-reported two ways that turned out to share one root cause —
+            // see CLAUDE.md's "Sign-out left orphaned Bonfire sub-profiles" section):
+            // the old code blanked user_id/token/etc. IN PLACE, leaving the entry
+            // itself present with an empty user_id — group_into_accounts filters
+            // any entry with an empty user_id out of grouping entirely (correctly,
+            // on its own terms), which silently dropped the real "root" member from
+            // that account's group while every sub-profile stayed grouped under the
+            // now-orphaned master_user_id key; build_account_tile then fell back to
+            // group.profiles.first() for the account's own display identity, which
+            // was now just whichever sub-profile sorted first — reading as "a
+            // profile moved to become the account." Separately, switch_to_profile's
+            // own master lookup (`profiles.iter().find(|p| p.user_id ==
+            // target.master_user_id)`) could no longer find anything at all once
+            // the master's user_id was blanked, failing every sub-profile switch
+            // with "the master account for this profile isn't signed in on this
+            // device" — visible directly in a live fjord.log. Resolved via
+            // AskUserQuestion (remove entirely vs. keep-but-locked); user picked
+            // remove — sync_bonfire_subprofiles re-adds them automatically on the
+            // next login as this same master, so nothing is lost long-term.
+            let signed_out_user_id = s.config.active().user_id.clone();
+            let forgotten = |p: &crate::config::ProfileSettings| {
+                // Bonfire Phase 5: `synced_via` also has to be checked, not
+                // just `master_user_id` — a group account (a foreign
+                // master's own account, discovered via the signed-out
+                // account's OWN group membership) has an intentionally
+                // EMPTY `master_user_id` (see that field's own doc comment),
+                // so the original `master_user_id` check alone would leave
+                // it orphaned in `Config.profiles` forever after sign-out,
+                // with no local account left that could ever re-authenticate
+                // a switch into it (switch_to_profile resolves via
+                // `synced_via`, which would now point at nothing).
+                p.user_id == signed_out_user_id
+                    || p.master_user_id == signed_out_user_id
+                    || p.synced_via == signed_out_user_id
+            };
+            // Every login forgotten here also ends on the server, in the
+            // background after the save (2026-10-09 security review: their
+            // tokens used to stay valid indefinitely).
+            let device_id = s.config.device.device_id.clone();
+            let to_log_out: Vec<(String, String, String)> = s
+                .config
+                .profiles
+                .iter()
+                .filter(|p| {
+                    !signed_out_user_id.is_empty()
+                        && forgotten(p)
+                        && !p.token.is_empty()
+                        && !p.server_url.is_empty()
+                })
+                .map(|p| (p.server_url.clone(), p.user_id.clone(), p.token.clone()))
+                .collect();
+            s.config.profiles.retain(|p| !forgotten(p));
+            if s.config.profiles.is_empty() {
+                // Config.profiles is never empty — a genuine, enforced invariant
+                // (see Config::active()/active_mut()'s own doc comments) — signing
+                // out of the only known profile needs a fresh blank entry to keep
+                // that invariant true, not leave the Vec empty.
+                s.config
+                    .profiles
+                    .push(crate::config::ProfileSettings::default());
+            }
+            s.config.active_profile_id.clear();
+            let cfg_to_save = s.config.clone();
+            // Real UX gap, code-review 2026-08-16 ("Sign Out always shows a
+            // blank Login screen even when another account with a valid
+            // stored token is still known") — resolved via AskUserQuestion:
+            // land on the account picker instead of plain Login whenever
+            // ANY account remains after removing the signed-out one (and
+            // its Bonfire sub-profiles) — pick the remaining one directly
+            // (no password needed if its token's still valid), or use its
+            // own "+ Add Account" tile — rather than stranding the user on
+            // Login with no way back to it short of a restart. Computed
+            // from cfg_to_save (post-retain, post-default-push), so the
+            // just-pushed blank entry (the "signed out of the only known
+            // account" case) correctly counts as zero real accounts and
+            // falls through to plain Login below.
+            //
+            // Threshold loosened from "2+ remain" to "1+ remain," 2026-08-17
+            // — live-questioned directly ("i had 2 accaunts but shuld ju
+            // not just get to the acaunt picker then so you can chose the
+            // remaining accaunt or add a new?"). The remaining account here
+            // is a DIFFERENT one from whichever was just signed out of, so
+            // showing it (plus Add Account) is strictly more useful than a
+            // bare Login form even when only one is left — unlike the
+            // ordinary cold-start gate (should_show_picker_at_startup),
+            // which deliberately still skips straight through for the
+            // single-account steady-state case (that one's "1 account" is
+            // the SAME account every normal launch, not a leftover from
+            // just having removed a different one).
+            let any_accounts_remain =
+                !profile::group_into_accounts(&cfg_to_save.profiles).is_empty();
+            drop(s);
+            save_config(&cfg_to_save);
+            for (server_url, user_id, token) in to_log_out {
+                let device_id = device_id.clone();
+                rth_so.spawn(async move {
+                    let client = url::Url::parse(&server_url)
+                        .map_err(anyhow::Error::from)
+                        .and_then(|url| {
+                            JellyfinClient::new(url, user_id.clone(), token, device_id)
+                        });
+                    match client {
+                        Ok(c) => match c.logout().await {
+                            Ok(()) => info!("sign-out: ended the server session of {user_id}"),
+                            Err(e) => warn!(
+                                "sign-out: couldn't end the server session of {user_id}: {e:#}"
+                            ),
+                        },
+                        Err(e) => warn!("sign-out: no client for {user_id}: {e:#}"),
+                    }
+                });
+            }
+            if let Some(w) = window_weak.upgrade() {
+                let g = AppState::get(&w);
+                g.set_show_connecting(false);
+                g.set_show_offline(false);
+                g.set_active_nav(0);
+                set_server_url_ui(&g, "");
+                g.set_server_name(ss(""));
+                g.set_server_version(ss(""));
+                g.set_settings_section(ss(""));
+                g.set_settings_focused(ss(""));
+                if any_accounts_remain {
+                    profile::open_account_picker(&state, &w, false);
+                } else {
+                    // Fresh Login, not a RequireLogin re-prompt for an
+                    // already-known account — always defaults checked,
+                    // same reasoning as the Add-Account entry points.
+                    g.set_login_remember(true);
+                    g.set_show_login(true);
+                }
+            }
+        });
+    }
 }
 
 #[cfg(test)]

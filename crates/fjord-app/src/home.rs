@@ -49,6 +49,7 @@
 //   run_poster_cache_cleanup  delete orphaned files from posters/ + backdrops/ (24 h guard;
 //                   known-ID set = six flat library lists + detail_ids, which carries
 //                   item_detail_cache keys + credited person ids so cast portraits survive)
+//   wire_item_play         callbacks moved from main() (0.5.0 step 3): play from home / library rows
 // ─────────────────────────────────────────────────────────────────────────────
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -935,5 +936,192 @@ pub(crate) async fn run_poster_cache_cleanup(
 
     if deleted > 0 {
         tracing::info!("poster cache cleanup: deleted {deleted} orphaned file(s)");
+    }
+}
+
+// ── wire_item_play (moved from main(), 0.5.0 step 3) ─────────────────────
+/// Wires play from home / library rows: item_play.
+pub(crate) fn wire_item_play(
+    window: &crate::MainWindow,
+    state: &std::sync::Arc<std::sync::Mutex<crate::config::FjordState>>,
+    video: &std::sync::Arc<std::sync::Mutex<crate::playback::VideoState>>,
+    rt: &tokio::runtime::Runtime,
+) {
+    // Moved verbatim from main(): names resolve as they did there.
+    use crate::*;
+    let window = slint::ComponentHandle::clone_strong(window);
+    let state = std::sync::Arc::clone(state);
+    let video = std::sync::Arc::clone(video);
+    // ── play from home / library rows ─────────────────────────────────────────
+    {
+        let state = Arc::clone(&state);
+        let video3 = Arc::clone(&video);
+        let window_weak = window.as_weak();
+        let rt_handle = rt.handle().clone();
+
+        AppState::get(&window).on_item_play(move |item_id| {
+            let item_id = item_id.to_string();
+            let s = state.lock().unwrap();
+            let Some(client) = s.client.as_ref().map(Arc::clone) else {
+                return;
+            };
+
+            // BoxSet (collection) — open collection screen instead of playing.
+            // all_collections is only populated when the library grid is first opened; fall
+            // back to the always-present dashboard models when it hasn't been opened yet.
+            let boxset_info = s
+                .all_collections
+                .iter()
+                .find(|i| i.id == item_id)
+                .map(|bs| (bs.id.clone(), bs.name.clone()))
+                .or_else(|| {
+                    let w = window_weak.upgrade()?;
+                    let g = AppState::get(&w);
+                    let find_boxset = |model: ModelRc<CardItem>| -> Option<(String, String)> {
+                        for idx in 0..model.row_count() {
+                            if let Some(c) = model.row_data(idx)
+                                && c.id.as_str() == item_id
+                                && c.item_type.as_str() == "BoxSet"
+                            {
+                                return Some((c.id.to_string(), c.title.to_string()));
+                            }
+                        }
+                        None
+                    };
+                    find_boxset(g.get_recently_added_collections())
+                        .or_else(|| find_boxset(g.get_unwatched_collections()))
+                });
+            if let Some((bs_id, bs_name)) = boxset_info {
+                let ww2 = window_weak.clone();
+                let state2 = state.clone();
+                let rt_handle2 = rt_handle.clone();
+                drop(s);
+                collection::open_collection_screen(bs_id, bs_name, state2, ww2, rt_handle2);
+                return;
+            }
+
+            if s.all_series.iter().any(|i| i.id == item_id) {
+                let state2 = state.clone();
+                let ww2 = window_weak.clone();
+                let rt_handle2 = rt_handle.clone();
+                let video4 = Arc::clone(&video3);
+                drop(s);
+                rt_handle.spawn(async move {
+                    let next = client.get_next_up_for_series(&item_id).await.ok().flatten();
+                    if let Some(next) = next {
+                        let mut config = state2.lock().unwrap().player_config();
+                        config.start_position_secs = next.resume_position_secs();
+                        let cli2 = state2.lock().unwrap().client.as_ref().map(Arc::clone);
+                        let Some(cli2) = cli2 else {
+                            let _ = slint::invoke_from_event_loop(move || {
+                                open_series_screen(item_id, state2, ww2, rt_handle2);
+                            });
+                            return;
+                        };
+                        let url = cli2.direct_play_url(&next.id);
+                        let title = next.display_name();
+                        let ep_id = next.id.clone();
+                        let series_id = next.series_id.clone();
+                        let video_info = next.video_stream_info();
+                        let _ = slint::invoke_from_event_loop(move || {
+                            start_playback(
+                                url,
+                                ep_id,
+                                "Episode",
+                                title,
+                                config,
+                                cli2,
+                                series_id,
+                                None,
+                                &video4,
+                                &ww2,
+                                &rt_handle2,
+                                &state2,
+                                video_info,
+                            );
+                        });
+                    } else {
+                        let _ = slint::invoke_from_event_loop(move || {
+                            open_series_screen(item_id, state2, ww2, rt_handle2);
+                        });
+                    }
+                });
+                return;
+            }
+
+            let mut config = s.player_config();
+            let state_album = Arc::clone(&state);
+            let state_purge = Arc::clone(&state);
+            let state_play = Arc::clone(&state);
+            drop(s);
+            let play_url = client.direct_play_url(&item_id);
+            let video3b = Arc::clone(&video3);
+            let ww3 = window_weak.clone();
+            let rth3 = rt_handle.clone();
+            rt_handle.spawn(async move {
+                let detail = match client.get_item_detail(&item_id).await {
+                    Ok(d) => Some(d),
+                    Err(e) if crate::is_not_found(&e) => {
+                        // Ghost card: the item is gone server-side — clean up
+                        // instead of handing mpv a dead stream URL (S4).
+                        purge_deleted_item(&state_purge, &ww3, &item_id);
+                        return;
+                    }
+                    Err(e) => {
+                        warn!("item_play get_item_detail({item_id}): {e:#}");
+                        None
+                    }
+                };
+                let item_type = detail
+                    .as_ref()
+                    .map(|i| i.item_type.clone())
+                    .unwrap_or_default();
+                let series_id = detail.as_ref().and_then(|i| i.series_id.clone());
+                let title = detail
+                    .as_ref()
+                    .map(|i| i.display_name())
+                    .unwrap_or_else(|| item_id.clone());
+                let video_info = detail.as_ref().and_then(|i| i.video_stream_info());
+                config.start_position_secs = detail.and_then(|i| i.resume_position_secs());
+
+                if item_type == "MusicAlbum" {
+                    let _ = slint::invoke_from_event_loop(move || {
+                        album::open_album_screen(item_id, title, state_album, ww3, rth3);
+                    });
+                    return;
+                }
+                if item_type == "Playlist" {
+                    let _ = slint::invoke_from_event_loop(move || {
+                        album::open_playlist_screen(item_id, title, state_album, ww3, rth3);
+                    });
+                    return;
+                }
+                if item_type == "MusicArtist" {
+                    // Same class of bug as albums: an artist id has no stream.
+                    let _ = slint::invoke_from_event_loop(move || {
+                        artist::open_artist_screen(item_id, title, state_album, ww3, rth3);
+                    });
+                    return;
+                }
+
+                let _ = slint::invoke_from_event_loop(move || {
+                    start_playback(
+                        play_url,
+                        item_id,
+                        &item_type,
+                        title,
+                        config,
+                        client,
+                        series_id,
+                        None,
+                        &video3b,
+                        &ww3,
+                        &rth3,
+                        &state_play,
+                        video_info,
+                    );
+                });
+            });
+        });
     }
 }

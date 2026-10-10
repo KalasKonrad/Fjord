@@ -16,6 +16,7 @@
 //   handle_key             Up/Down navigate rows; Up at row 0 focuses Back; Confirm/DeleteItem
 //                          remove the focused row; Back closes; Down past the last row triggers
 //                          load-more
+//   wire_blocklist         callbacks moved from main() (0.5.0 step 3): Manage Blocklist screen
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
 
@@ -294,5 +295,43 @@ pub(crate) fn handle_key(action: &Action, g: &AppState) -> bool {
             true
         }
         _ => true, // swallow all other keys while this screen is open
+    }
+}
+
+// ── wire_blocklist (moved from main(), 0.5.0 step 3) ─────────────────────
+/// Wires Manage Blocklist screen: open_blocklist, blocklist_load_more, blocklist_remove_item.
+pub(crate) fn wire_blocklist(
+    window: &crate::MainWindow,
+    state: &std::sync::Arc<std::sync::Mutex<crate::config::FjordState>>,
+    rt: &tokio::runtime::Runtime,
+) {
+    // Moved verbatim from main(): names resolve as they did there.
+    use crate::*;
+    let window = slint::ComponentHandle::clone_strong(window);
+    let state = std::sync::Arc::clone(state);
+    // ── Manage Blocklist screen (2026-08-06, Seerr Blocklist support) ────────
+    {
+        let state2 = Arc::clone(&state);
+        let ww2 = window.as_weak();
+        let rt2 = rt.handle().clone();
+        AppState::get(&window).on_open_blocklist(move || {
+            blocklist::open_blocklist_screen(Arc::clone(&state2), ww2.clone(), rt2.clone());
+        });
+    }
+    {
+        let state2 = Arc::clone(&state);
+        let ww2 = window.as_weak();
+        let rt2 = rt.handle().clone();
+        AppState::get(&window).on_blocklist_load_more(move || {
+            blocklist::load_more_blocklist(Arc::clone(&state2), ww2.clone(), rt2.clone());
+        });
+    }
+    {
+        let state2 = Arc::clone(&state);
+        let ww2 = window.as_weak();
+        let rt2 = rt.handle().clone();
+        AppState::get(&window).on_blocklist_remove_item(move |index| {
+            blocklist::remove_blocklist_row(Arc::clone(&state2), ww2.clone(), rt2.clone(), index);
+        });
     }
 }

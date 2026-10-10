@@ -13,6 +13,7 @@
 //                           cached" cost accounting) for whatever's currently in
 //                           item_detail_cache — independent of whether metadata prewarm
 //                           has run; same progress/cost-logging pattern
+//   wire_prewarm           callbacks moved from main() (0.5.0 step 3): library prewarm
 // ─────────────────────────────────────────────────────────────────────────────
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
@@ -453,4 +454,38 @@ pub(crate) fn spawn_image_prewarm(
         s.prewarm_image_running = false;
         s.prewarm_image_summary = summary;
     });
+}
+
+// ── wire_prewarm (moved from main(), 0.5.0 step 3) ───────────────────────
+/// Wires library prewarm: prewarm_metadata, prewarm_images.
+pub(crate) fn wire_prewarm(
+    window: &crate::MainWindow,
+    state: &std::sync::Arc<std::sync::Mutex<crate::config::FjordState>>,
+    rt: &tokio::runtime::Runtime,
+) {
+    // Moved verbatim from main(): names resolve as they did there.
+    use crate::*;
+    let window = slint::ComponentHandle::clone_strong(window);
+    let state = std::sync::Arc::clone(state);
+    // ── library prewarm (Phase 104) ──────────────────────────────────────────
+    {
+        let state = Arc::clone(&state);
+        let rt_handle = rt.handle().clone();
+        AppState::get(&window).on_prewarm_metadata(move || {
+            let Some(client) = state.lock().unwrap().client.as_ref().map(Arc::clone) else {
+                return;
+            };
+            prewarm::spawn_metadata_prewarm(client, Arc::clone(&state), rt_handle.clone());
+        });
+    }
+    {
+        let state = Arc::clone(&state);
+        let rt_handle = rt.handle().clone();
+        AppState::get(&window).on_prewarm_images(move || {
+            let Some(client) = state.lock().unwrap().client.as_ref().map(Arc::clone) else {
+                return;
+            };
+            prewarm::spawn_image_prewarm(client, Arc::clone(&state), rt_handle.clone());
+        });
+    }
 }

@@ -6,6 +6,7 @@
 //                               trailer-state "checking"/"ok"/"none" + -trailer-url (2026-10-04)
 //   mark_trailer_unplayable     a trailer that failed to play → remembered, re-check the rest
 //                              (prefers Trailer, falls back to Teaser, else None)
+//   wire_trailers          callbacks moved from main() (0.5.0 step 3): yt-dlp detection (once) + Watch Trailer
 // ─────────────────────────────────────────────────────────────────────────────
 use super::*;
 
@@ -223,6 +224,71 @@ pub(crate) fn mark_trailer_unplayable(
     let g = AppState::get(&w);
     if g.get_show_request_detail() && candidates.contains(&url) {
         start_trailer_check(state, ww, rt, g.get_request_detail_open_gen(), candidates);
+    }
+}
+
+// ── wire_trailers (moved from main(), 0.5.0 step 3) ──────────────────────
+/// Wires yt-dlp detection (once) + Watch Trailer: play_trailer.
+pub(crate) fn wire_trailers(
+    window: &crate::MainWindow,
+    state: &std::sync::Arc<std::sync::Mutex<crate::config::FjordState>>,
+    video: &std::sync::Arc<std::sync::Mutex<crate::playback::VideoState>>,
+    rt: &tokio::runtime::Runtime,
+) {
+    // Moved verbatim from main(): names resolve as they did there.
+    use crate::*;
+    let window = slint::ComponentHandle::clone_strong(window);
+    let state = std::sync::Arc::clone(state);
+    let video = std::sync::Arc::clone(video);
+    // ── yt-dlp detection: fetch once at startup ────────────────────────────────
+    // Gates the Watch Trailer button's visibility (request-detail-trailer-url
+    // alone isn't enough to guarantee playback will actually work — see
+    // CLAUDE.md's Seerr integration section). A pure local-machine fact, not
+    // tied to Seerr connection state like Streaming Region/Trailer Quality
+    // above, so no gating on seerr_enabled/seerr_connected here.
+    {
+        let state_yt = Arc::clone(&state);
+        let ww_yt = window.as_weak();
+        rt.spawn(async move {
+            let available = tokio::task::spawn_blocking(detect_yt_dlp)
+                .await
+                .unwrap_or(false);
+            state_yt.lock().unwrap().yt_dlp_available = available;
+            let _ = slint::invoke_from_event_loop(move || {
+                if let Some(w) = ww_yt.upgrade() {
+                    AppState::get(&w).set_yt_dlp_available(available);
+                }
+            });
+        });
+    }
+
+    // ── Watch Trailer (Discover / RequestDetailScreen only) ───────────────────
+    // Registered here, not inside discover::wire_discover — that function
+    // never receives `video` (VideoState), and every other module that needs
+    // to start playback gets it the same way: `video` created once in main()
+    // and cloned locally right before the specific callback that needs it,
+    // not threaded as a parameter into other modules' wire_X functions.
+    {
+        let state_pt = Arc::clone(&state);
+        let video_pt = Arc::clone(&video);
+        let ww_pt = window.as_weak();
+        let rt_pt = rt.handle().clone();
+        AppState::get(&window).on_play_trailer(move || {
+            let Some(w) = ww_pt.upgrade() else { return };
+            let g = AppState::get(&w);
+            let url = g.get_request_detail_trailer_url().to_string();
+            if url.is_empty() {
+                return;
+            }
+            let title = format!("Trailer — {}", g.get_request_detail_title());
+            let (mut config, quality) = {
+                let s = state_pt.lock().unwrap();
+                (s.player_config(), s.config.active().trailer_quality.clone())
+            };
+            config.ytdl_format = trailer_ytdl_format(&quality);
+            config.start_position_secs = None; // no resume concept for a trailer
+            playback::play_trailer(url, title, config, &video_pt, &ww_pt, &rt_pt);
+        });
     }
 }
 

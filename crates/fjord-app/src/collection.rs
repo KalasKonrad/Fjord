@@ -32,6 +32,8 @@
 //                           than acting directly, checked first in this function since it's an
 //                           overlay on top of the screen); Down from grid's last row enters
 //                           the Missing Items row (2026-07-29) if non-empty; Back → close
+//   wire_collection        callbacks moved from main() (0.5.0 step 3): open the collection screen
+//   wire_collection_toggles callbacks moved from main() (0.5.0 step 3): collection favourite / played / blocklist confirm
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
 
@@ -786,5 +788,158 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
             true
         }
         _ => false,
+    }
+}
+
+// ── wire_collection (moved from main(), 0.5.0 step 3) ────────────────────
+/// Wires open the collection screen: open_collection.
+pub(crate) fn wire_collection(
+    window: &crate::MainWindow,
+    state: &std::sync::Arc<std::sync::Mutex<crate::config::FjordState>>,
+    rt: &tokio::runtime::Runtime,
+) {
+    // Moved verbatim from main(): names resolve as they did there.
+    use crate::*;
+    let window = slint::ComponentHandle::clone_strong(window);
+    let state = std::sync::Arc::clone(state);
+    // ── collection screen ─────────────────────────────────────────────────────
+    {
+        let state_col = Arc::clone(&state);
+        let ww = window.as_weak();
+        let rt_handle = rt.handle().clone();
+        AppState::get(&window).on_open_collection(move |id, title| {
+            collection::open_collection_screen(
+                id.to_string(),
+                title.to_string(),
+                Arc::clone(&state_col),
+                ww.clone(),
+                rt_handle.clone(),
+            );
+        });
+    }
+}
+
+// ── wire_collection_toggles (moved from main(), 0.5.0 step 3) ────────────
+/// Wires collection favourite / played / blocklist confirm: toggle_collection_fav, toggle_collection_played, collection_blocklist_confirm.
+pub(crate) fn wire_collection_toggles(
+    window: &crate::MainWindow,
+    state: &std::sync::Arc<std::sync::Mutex<crate::config::FjordState>>,
+    rt: &tokio::runtime::Runtime,
+) {
+    // Moved verbatim from main(): names resolve as they did there.
+    use crate::*;
+    let window = slint::ComponentHandle::clone_strong(window);
+    let state = std::sync::Arc::clone(state);
+    {
+        let state2 = Arc::clone(&state);
+        let ww2 = window.as_weak();
+        let rt2 = rt.handle().clone();
+        AppState::get(&window).on_toggle_collection_fav(move || {
+            let Some(w) = ww2.upgrade() else { return };
+            let id = AppState::get(&w).get_collection_id().to_string();
+            let cur_fav = AppState::get(&w).get_collection_is_favorite();
+            let s = state2.lock().unwrap();
+            let Some(client) = s.client.as_ref().map(Arc::clone) else {
+                return;
+            };
+            drop(s);
+            let ww3 = ww2.clone();
+            let state3 = Arc::clone(&state2);
+            rt2.spawn(async move {
+                let result = if cur_fav {
+                    client.unset_favorite(&id).await
+                } else {
+                    client.set_favorite(&id).await
+                };
+                if let Err(e) = result {
+                    warn!("toggle-collection-fav: {e}");
+                    crate::show_toast(ww3.clone(), format!("Favourite error: {e}"));
+                    return;
+                }
+                let new_fav = !cur_fav;
+                state3
+                    .lock()
+                    .unwrap()
+                    .update_item_user_state(&id, None, Some(new_fav));
+                let _ = slint::invoke_from_event_loop(move || {
+                    if let Some(w) = ww3.upgrade() {
+                        if AppState::get(&w).get_collection_id().as_str() == id {
+                            AppState::get(&w).set_collection_is_favorite(new_fav);
+                        }
+                        context_menu::update_card_in_all_models(&w, &id, None, Some(new_fav));
+                    }
+                });
+            });
+        });
+    }
+    {
+        let state2 = Arc::clone(&state);
+        let ww2 = window.as_weak();
+        let rt2 = rt.handle().clone();
+        AppState::get(&window).on_toggle_collection_played(move || {
+            let Some(w) = ww2.upgrade() else { return };
+            let id = AppState::get(&w).get_collection_id().to_string();
+            let cur_play = AppState::get(&w).get_collection_has_played();
+            let s = state2.lock().unwrap();
+            let Some(client) = s.client.as_ref().map(Arc::clone) else {
+                return;
+            };
+            drop(s);
+            let ww3 = ww2.clone();
+            let state3 = Arc::clone(&state2);
+            rt2.spawn(async move {
+                let result = if cur_play {
+                    client.mark_unplayed(&id).await
+                } else {
+                    client.mark_played(&id).await
+                };
+                if let Err(e) = result {
+                    warn!("toggle-collection-played: {e}");
+                    return;
+                }
+                let new_play = !cur_play;
+                state3
+                    .lock()
+                    .unwrap()
+                    .update_item_user_state(&id, Some(new_play), None);
+                let _ = slint::invoke_from_event_loop(move || {
+                    if let Some(w) = ww3.upgrade() {
+                        if AppState::get(&w).get_collection_id().as_str() == id {
+                            AppState::get(&w).set_collection_has_played(new_play);
+                            // Bulk-update all child cards — marking a BoxSet played/unplayed
+                            // implies the same state for every item in the grid.
+                            let model = AppState::get(&w).get_collection_items();
+                            for i in 0..model.row_count() {
+                                if let Some(mut c) = model.row_data(i) {
+                                    c.has_played = new_play;
+                                    model.set_row_data(i, c);
+                                }
+                            }
+                        }
+                        context_menu::update_card_in_all_models(&w, &id, Some(new_play), None);
+                    }
+                });
+            });
+        });
+    }
+    // Collection bulk blocklist (2026-08-06, Seerr Blocklist support) —
+    // the confirm dialog's own Confirm button, not the ⛔ button itself
+    // (which just opens the dialog, a pure Slint-side state flip with no
+    // Rust callback needed).
+    {
+        let state2 = Arc::clone(&state);
+        let ww2 = window.as_weak();
+        let rt2 = rt.handle().clone();
+        AppState::get(&window).on_collection_blocklist_confirm(move || {
+            let Some(w) = ww2.upgrade() else { return };
+            let id = AppState::get(&w).get_collection_id().to_string();
+            AppState::get(&w).set_collection_blocklist_confirm_open(false);
+            collection::resolve_and_blocklist_collection(
+                id,
+                Arc::clone(&state2),
+                ww2.clone(),
+                rt2.clone(),
+            );
+        });
     }
 }

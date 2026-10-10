@@ -36,6 +36,7 @@
 //                           the same sentinel every other "Up from row 0" zone in this app
 //                           uses), then Up/Down/Left/Right/Confirm within the active tab's
 //                           own flat row list
+//   wire_bonfire_admin     callbacks moved from main() (0.5.0 step 3): BonfireAdminScreen
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
 
@@ -561,5 +562,71 @@ pub(crate) fn handle_key(action: &Action, g: &AppState) -> bool {
             true
         }
         _ => true, // swallow all other keys while this screen is open (Audit Logs tab: read-only, no action)
+    }
+}
+
+// ── wire_bonfire_admin (moved from main(), 0.5.0 step 3) ─────────────────
+/// Wires BonfireAdminScreen: open_bonfire_admin, bonfire_admin_tab_selected, bonfire_admin_reset_pin, bonfire_admin_set_limit, bonfire_admin_cycle_limit.
+pub(crate) fn wire_bonfire_admin(
+    window: &crate::MainWindow,
+    state: &std::sync::Arc<std::sync::Mutex<crate::config::FjordState>>,
+    rt: &tokio::runtime::Runtime,
+) {
+    // Moved verbatim from main(): names resolve as they did there.
+    use crate::*;
+    let window = slint::ComponentHandle::clone_strong(window);
+    let state = std::sync::Arc::clone(state);
+    // ── Bonfire Admin (Phase 6, admin actions, 2026-09-04) ──────────────────────
+    {
+        let state = Arc::clone(&state);
+        let window_weak = window.as_weak();
+        let rt_handle = rt.handle().clone();
+        AppState::get(&window).on_open_bonfire_admin(move || {
+            if let Some(w) = window_weak.upgrade() {
+                bonfire_admin::open_bonfire_admin_screen(&state, &w, &rt_handle);
+            }
+        });
+    }
+    {
+        let state = Arc::clone(&state);
+        let window_weak = window.as_weak();
+        let rt_handle = rt.handle().clone();
+        AppState::get(&window).on_bonfire_admin_tab_selected(move |new_tab| {
+            if let Some(w) = window_weak.upgrade() {
+                bonfire_admin::on_bonfire_admin_tab_selected(&state, &w, &rt_handle, new_tab);
+            }
+        });
+    }
+    {
+        let state = Arc::clone(&state);
+        let window_weak = window.as_weak();
+        let rt_handle = rt.handle().clone();
+        AppState::get(&window).on_bonfire_admin_reset_pin(move |profile_id| {
+            if let Some(w) = window_weak.upgrade() {
+                bonfire_admin::on_bonfire_admin_reset_pin(&state, &w, &rt_handle, profile_id);
+            }
+        });
+    }
+    {
+        let state = Arc::clone(&state);
+        let window_weak = window.as_weak();
+        let rt_handle = rt.handle().clone();
+        AppState::get(&window).on_bonfire_admin_set_limit(move |user_id, new_value| {
+            if let Some(w) = window_weak.upgrade() {
+                bonfire_admin::on_bonfire_admin_set_limit(
+                    &state, &w, &rt_handle, user_id, new_value,
+                );
+            }
+        });
+    }
+    {
+        let state = Arc::clone(&state);
+        let window_weak = window.as_weak();
+        let rt_handle = rt.handle().clone();
+        AppState::get(&window).on_bonfire_admin_cycle_limit(move |user_id| {
+            if let Some(w) = window_weak.upgrade() {
+                bonfire_admin::on_bonfire_admin_cycle_limit(&state, &w, &rt_handle, user_id);
+            }
+        });
     }
 }

@@ -151,6 +151,8 @@
 //                       the D-pad zone list live (differs by owner/member/neither state, "gaps
 //                       are fine" idiom, not a fixed enum) — see its own doc comment for the
 //                       exact per-state numbering keys.rs's dispatch mirrors.
+//   wire_pickers           callbacks moved from main() (0.5.0 step 3): profile/account pickers, remember-login, PIN pad, sidebar profile menu
+//   wire_bonfire_group     callbacks moved from main() (0.5.0 step 3): BonfireGroupScreen
 // ─────────────────────────────────────────────────────────────────────────────
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -2932,6 +2934,275 @@ pub(crate) fn on_remember_login_confirm_cancel(window: &MainWindow) {
     g.set_remember_login_confirm_error(ss(""));
     g.set_remember_login_confirm_loading(false);
     window.invoke_grab_keyboard_focus();
+}
+
+// ── wire_pickers (moved from main(), 0.5.0 step 3) ───────────────────────
+/// Wires profile/account pickers, remember-login, PIN pad, sidebar profile menu: profile_picker_select, cancel_add_account, account_picker_select, account_picker_add_account, settings_add_account, settings_remember_login_toggle, remember_login_confirm, remember_login_confirm_cancel, profile_picker_back_to_accounts, profile_picker_cancel, profile_pin_key, open_sidebar_profile_menu, sidebar_profile_menu_action.
+pub(crate) fn wire_pickers(
+    window: &crate::MainWindow,
+    state: &std::sync::Arc<std::sync::Mutex<crate::config::FjordState>>,
+    video: &std::sync::Arc<std::sync::Mutex<crate::playback::VideoState>>,
+    rt: &tokio::runtime::Runtime,
+) {
+    // Moved verbatim from main(): names resolve as they did there.
+    use crate::*;
+    let window = slint::ComponentHandle::clone_strong(window);
+    let state = std::sync::Arc::clone(state);
+    let video = std::sync::Arc::clone(video);
+    // ── profile picker (Bonfire Phase 1, step 6, 2026-08-09) ────────────────────
+    {
+        let state = Arc::clone(&state);
+        let video = Arc::clone(&video);
+        let window_weak = window.as_weak();
+        let rt_handle = rt.handle().clone();
+        AppState::get(&window).on_profile_picker_select(move |user_id| {
+            if let Some(w) = window_weak.upgrade() {
+                profile::on_profile_picker_select(&state, &video, &w, &rt_handle, user_id);
+            }
+        });
+    }
+    {
+        let state = Arc::clone(&state);
+        let window_weak = window.as_weak();
+        AppState::get(&window).on_cancel_add_account(move || {
+            if let Some(w) = window_weak.upgrade() {
+                profile::on_cancel_add_account(&state, &w);
+            }
+        });
+    }
+
+    // ── account picker (2026-08-14, the 2-tier account/profile redesign) ───────
+    {
+        let state = Arc::clone(&state);
+        let video = Arc::clone(&video);
+        let window_weak = window.as_weak();
+        let rt_handle = rt.handle().clone();
+        AppState::get(&window).on_account_picker_select(move |root_id| {
+            if let Some(w) = window_weak.upgrade() {
+                profile::on_account_picker_select(&state, &video, &w, &rt_handle, root_id);
+            }
+        });
+    }
+    {
+        let window_weak = window.as_weak();
+        AppState::get(&window).on_account_picker_add_account(move || {
+            if let Some(w) = window_weak.upgrade() {
+                profile::on_account_picker_add_account(&w);
+            }
+        });
+    }
+    {
+        let window_weak = window.as_weak();
+        AppState::get(&window).on_settings_add_account(move || {
+            if let Some(w) = window_weak.upgrade() {
+                profile::on_settings_add_account(&w);
+            }
+        });
+    }
+    // "Remember this login" toggle + its confirm-password modal
+    // (2026-08-17) — see app_state.slint's own settings-remember-login doc
+    // comment for the full design.
+    {
+        let state = Arc::clone(&state);
+        let window_weak = window.as_weak();
+        AppState::get(&window).on_settings_remember_login_toggle(move || {
+            if let Some(w) = window_weak.upgrade() {
+                profile::on_remember_login_toggle(&state, &w);
+            }
+        });
+    }
+    {
+        let state = Arc::clone(&state);
+        let window_weak = window.as_weak();
+        let rt_handle = rt.handle().clone();
+        AppState::get(&window).on_remember_login_confirm(move |password| {
+            if let Some(w) = window_weak.upgrade() {
+                profile::on_remember_login_confirm(&state, &w, &rt_handle, password);
+            }
+        });
+    }
+    {
+        let window_weak = window.as_weak();
+        AppState::get(&window).on_remember_login_confirm_cancel(move || {
+            if let Some(w) = window_weak.upgrade() {
+                profile::on_remember_login_confirm_cancel(&w);
+            }
+        });
+    }
+    {
+        let state = Arc::clone(&state);
+        let window_weak = window.as_weak();
+        AppState::get(&window).on_profile_picker_back_to_accounts(move || {
+            if let Some(w) = window_weak.upgrade() {
+                profile::open_account_picker(
+                    &state,
+                    &w,
+                    AppState::get(&w).get_profile_picker_cancelable(),
+                );
+            }
+        });
+    }
+    // Real bug, live-reported 2026-08-19 — see profile-picker-back-mode's
+    // own doc comment in app_state.slint. Closes the picker without
+    // switching, keeping the current live session/profile exactly as it
+    // was — the sidebar's own "Switch Profile" action needs this, since it
+    // never went through the account tier at all.
+    {
+        let window_weak = window.as_weak();
+        AppState::get(&window).on_profile_picker_cancel(move || {
+            if let Some(w) = window_weak.upgrade() {
+                AppState::get(&w).set_show_profile_picker(false);
+                w.invoke_grab_keyboard_focus();
+            }
+        });
+    }
+    {
+        let state = Arc::clone(&state);
+        let video = Arc::clone(&video);
+        let window_weak = window.as_weak();
+        let rt_handle = rt.handle().clone();
+        AppState::get(&window).on_profile_pin_key(move |key| {
+            if let Some(w) = window_weak.upgrade() {
+                profile::on_profile_pin_key(&state, &video, &w, &rt_handle, key);
+            }
+        });
+    }
+    // ── sidebar profile row + quick-menu (2026-08-14) ───────────────────────────
+    {
+        let state = Arc::clone(&state);
+        let window_weak = window.as_weak();
+        AppState::get(&window).on_open_sidebar_profile_menu(move || {
+            if let Some(w) = window_weak.upgrade() {
+                profile::on_open_sidebar_profile_menu(&state, &w);
+            }
+        });
+    }
+    {
+        let state = Arc::clone(&state);
+        let window_weak = window.as_weak();
+        let rt_handle = rt.handle().clone();
+        AppState::get(&window).on_sidebar_profile_menu_action(move |idx| {
+            if let Some(w) = window_weak.upgrade() {
+                profile::on_sidebar_profile_menu_action(idx, &state, &w, &rt_handle);
+            }
+        });
+    }
+}
+
+// ── wire_bonfire_group (moved from main(), 0.5.0 step 3) ─────────────────
+/// Wires BonfireGroupScreen: open_bonfire_group, bonfire_group_generate, bonfire_group_join_code_submit, bonfire_group_join_code_append, bonfire_group_join_code_backspace, bonfire_group_kick, bonfire_group_leave, bonfire_group_delete, bonfire_group_settings_changed.
+pub(crate) fn wire_bonfire_group(
+    window: &crate::MainWindow,
+    state: &std::sync::Arc<std::sync::Mutex<crate::config::FjordState>>,
+    rt: &tokio::runtime::Runtime,
+) {
+    // Moved verbatim from main(): names resolve as they did there.
+    use crate::*;
+    let window = slint::ComponentHandle::clone_strong(window);
+    let state = std::sync::Arc::clone(state);
+    // ── Bonfire Group (Phase 5, cross-household groups, 2026-08-29) ────────────
+    {
+        let state = Arc::clone(&state);
+        let window_weak = window.as_weak();
+        let rt_handle = rt.handle().clone();
+        AppState::get(&window).on_open_bonfire_group(move || {
+            if let Some(w) = window_weak.upgrade() {
+                profile::open_bonfire_group_screen(&state, &w, &rt_handle);
+            }
+        });
+    }
+    {
+        let state = Arc::clone(&state);
+        let window_weak = window.as_weak();
+        let rt_handle = rt.handle().clone();
+        AppState::get(&window).on_bonfire_group_generate(move || {
+            if let Some(w) = window_weak.upgrade() {
+                profile::on_bonfire_group_generate(&state, &w, &rt_handle);
+            }
+        });
+    }
+    {
+        let state = Arc::clone(&state);
+        let window_weak = window.as_weak();
+        let rt_handle = rt.handle().clone();
+        AppState::get(&window).on_bonfire_group_join_code_submit(move || {
+            if let Some(w) = window_weak.upgrade() {
+                profile::on_bonfire_group_join_submit(&state, &w, &rt_handle);
+            }
+        });
+    }
+    {
+        let window_weak = window.as_weak();
+        AppState::get(&window).on_bonfire_group_join_code_append(move |ch| {
+            // Debug logging, 2026-08-29 — added while investigating a live
+            // "can't write the join code" report; this callback previously
+            // had no trace at all, so there was no way to tell from a log
+            // whether typing ever reached it (mouse-clicked on-screen keys,
+            // physical-keyboard passthrough, or neither).
+            debug!("bonfire_group: join-code append {ch:?}");
+            if let Some(w) = window_weak.upgrade() {
+                text_field::JOIN_CODE.insert(&AppState::get(&w), ch.as_str());
+            }
+        });
+    }
+    {
+        let window_weak = window.as_weak();
+        AppState::get(&window).on_bonfire_group_join_code_backspace(move || {
+            debug!("bonfire_group: join-code backspace");
+            if let Some(w) = window_weak.upgrade() {
+                text_field::JOIN_CODE.backspace(&AppState::get(&w));
+            }
+        });
+    }
+    {
+        let state = Arc::clone(&state);
+        let window_weak = window.as_weak();
+        let rt_handle = rt.handle().clone();
+        AppState::get(&window).on_bonfire_group_kick(move |member_id| {
+            if let Some(w) = window_weak.upgrade() {
+                profile::on_bonfire_group_kick(&state, &w, &rt_handle, member_id);
+            }
+        });
+    }
+    {
+        let state = Arc::clone(&state);
+        let window_weak = window.as_weak();
+        let rt_handle = rt.handle().clone();
+        AppState::get(&window).on_bonfire_group_leave(move || {
+            if let Some(w) = window_weak.upgrade() {
+                profile::on_bonfire_group_leave(&state, &w, &rt_handle);
+            }
+        });
+    }
+    {
+        let state = Arc::clone(&state);
+        let window_weak = window.as_weak();
+        let rt_handle = rt.handle().clone();
+        AppState::get(&window).on_bonfire_group_delete(move || {
+            if let Some(w) = window_weak.upgrade() {
+                profile::on_bonfire_group_delete(&state, &w, &rt_handle);
+            }
+        });
+    }
+    {
+        let state = Arc::clone(&state);
+        let window_weak = window.as_weak();
+        let rt_handle = rt.handle().clone();
+        AppState::get(&window).on_bonfire_group_settings_changed(
+            move |hide_my, hide_others, allow_lan_bypass| {
+                if let Some(w) = window_weak.upgrade() {
+                    profile::on_bonfire_group_settings_changed(
+                        &state,
+                        &w,
+                        &rt_handle,
+                        hide_my,
+                        hide_others,
+                        allow_lan_bypass,
+                    );
+                }
+            },
+        );
+    }
 }
 
 #[cfg(test)]
