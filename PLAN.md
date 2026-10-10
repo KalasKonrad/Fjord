@@ -15,6 +15,7 @@ Version history: [CHANGELOG.md](CHANGELOG.md) (git tags `v0.1.0`–`v0.4.2`). Im
 **Check an item off only once it has been clicked through on real hardware** — a clean build/clippy/test says nothing about whether it works. Add a line here the moment something ships "not live-tested". Ticked items are removed at the next cleanup; their story lives in `DEVLOG.md`.
 
 ### Security fixes (0.5.0 step 0)
+- [ ] **S4 — live sync over HTTPS (2026-10-10).** Proven against a public `wss://` echo server; with the own (http://) server nothing changes: `ws: connected` as before. Only testable for real against an https:// Jellyfin.
 - [ ] **S3 — Sign Out ends the server session (2026-10-10).** Sign Out → log `sign-out: ended the server session of <id>` for the account (and each linked sub-profile that had a token); the session disappears from Jellyfin's Dashboard → Devices. Signing in again works as before.
 - [ ] **S2 — trailer links (2026-10-10).** Discover trailers still show "▶ Trailer" and play (log `trailer check: … plays`); nothing is skipped as `not an https YouTube URL` for normal titles.
 - [ ] **S1 — cache paths (2026-10-10).** Posters, backdrops and dashboard rows still load and stay cached (start Fjord twice: the second start shows posters instantly; `~/.cache/fjord/posters/` keeps growing with 32-hex names). Discover posters too.
