@@ -20,7 +20,13 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
-import { FjordButton, MediaCard, PosterBlock, IconCircleButton, ConfirmDialog } from "widgets.slint";
+import {
+    FjordButton,
+    MediaCard,
+    PosterBlock,
+    IconCircleButton,
+    ConfirmDialog,
+} from "widgets.slint";
 import { SectionRow } from "home.slint";
 
 export component CollectionScreen inherits Rectangle {
@@ -33,12 +39,11 @@ export component CollectionScreen inherits Rectangle {
 
     property <length> kb-y:
         AppState.collection-missing-focused >= 0 ?
-            clamp(root.height / 2 - missing-anchor.y, min(0px, root.height - coll-content.preferred-height), 0px) :
+        clamp(root.height / 2 - missing-anchor.y, min(0px, root.height - coll-content.preferred-height), 0px) :
         clamp(
             -(AppState.collection-focused / AppState.library-cols) * (card-h + gap) + fl-container.height / 2 - card-h / 2,
             min(0px, fl-container.height - grid-content-height),
-            0px
-        );
+            0px);
     // Missing-row case scrolls the OUTER page Flickable (fl) — the new row
     // sits below fl-container entirely, outside coll-fl's own scope; the
     // pre-existing grid case is untouched, still targeting coll-fl exactly
@@ -52,11 +57,14 @@ export component CollectionScreen inherits Rectangle {
     }
 
     fl := Flickable {
-        width:           parent.width;
-        height:          parent.height;
+        width: parent.width;
+        height: parent.height;
         content-height: coll-content.preferred-height;
-        content-width:  self.width;
-        animate content-y { duration: 200ms * AppState.settings-scroll-speed; easing: ease-in-out; }
+        content-width: self.width;
+        animate content-y {
+            duration: 200ms * AppState.settings-scroll-speed;
+            easing: ease-in-out;
+        }
 
         coll-content := VerticalLayout {
 
@@ -65,30 +73,32 @@ export component CollectionScreen inherits Rectangle {
                 background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg;
 
                 if AppState.collection-has-backdrop: Image {
-                    x: 0; y: 0;
-                    width:     parent.width;
-                    height:    parent.height;
+                    x: 0;
+                    y: 0;
+                    width: parent.width;
+                    height: parent.height;
                     image-fit: cover;
-                    source:    AppState.collection-backdrop;
+                    source: AppState.collection-backdrop;
                 }
                 if AppState.collection-has-backdrop: Rectangle {
-                    x: 0; y: 0;
-                    width:      parent.width;
-                    height:     parent.height;
+                    x: 0;
+                    y: 0;
+                    width: parent.width;
+                    height: parent.height;
                     background: @linear-gradient(180deg, #00000080 0%, #000000cc 100%);
                 }
 
                 VerticalLayout {
                     HorizontalLayout {
-                        padding-left:   48px;
-                        padding-right:  48px;
-                        padding-top:    68px;
+                        padding-left: 48px;
+                        padding-right: 48px;
+                        padding-top: 68px;
                         padding-bottom: 24px;
-                        spacing:        32px;
-                        alignment:      start;
+                        spacing: 32px;
+                        alignment: start;
 
                         if AppState.collection-has-poster: PosterBlock {
-                            source:    AppState.collection-poster;
+                            source: AppState.collection-poster;
                             has-image: true;
                         }
 
@@ -118,30 +128,31 @@ export component CollectionScreen inherits Rectangle {
                             width: root.width - 48px - 48px - 160px - 32px;
 
                             VerticalLayout {
-                                x: 0; y: 0;
-                                width:     parent.width;
-                                spacing:   12px;
+                                x: 0;
+                                y: 0;
+                                width: parent.width;
+                                spacing: 12px;
                                 alignment: start;
 
                                 Text {
-                                    text:        AppState.collection-title;
-                                    color:       Theme.text;
-                                    font-size:   28px;
+                                    text: AppState.collection-title;
+                                    color: Theme.text;
+                                    font-size: 28px;
                                     font-weight: 700;
-                                    wrap:        word-wrap;
+                                    wrap: word-wrap;
                                 }
 
                                 if AppState.collection-items.length > 0: Text {
-                                    text:      AppState.collection-items.length + " items";
-                                    color:     AppState.collection-has-backdrop ? #cccccc : Theme.text-muted;
+                                    text: AppState.collection-items.length + " items";
+                                    color: AppState.collection-has-backdrop ? #cccccc : Theme.text-muted;
                                     font-size: 14px;
                                 }
 
                                 if AppState.collection-overview != "": Text {
-                                    text:      AppState.collection-overview;
-                                    color:     AppState.collection-has-backdrop ? #cccccc : Theme.text-muted;
+                                    text: AppState.collection-overview;
+                                    color: AppState.collection-has-backdrop ? #cccccc : Theme.text-muted;
                                     font-size: 13px;
-                                    wrap:      word-wrap;
+                                    wrap: word-wrap;
                                     max-width: 620px;
                                 }
                             }
@@ -149,17 +160,18 @@ export component CollectionScreen inherits Rectangle {
                             HorizontalLayout {
                                 x: 0;
                                 y: parent.height - 38px;
-                                spacing:   10px;
+                                spacing: 10px;
                                 alignment: start;
                                 IconCircleButton {
-                                    icon:        "❤";
-                                    active:      AppState.collection-is-favorite;
+                                    icon: "❤";
+                                    active: AppState.collection-is-favorite;
                                     kbd-focused: AppState.collection-btn-focused == 0;
                                     clicked => { AppState.toggle-collection-fav(); }
                                 }
+
                                 IconCircleButton {
-                                    icon:        "✓";
-                                    active:      AppState.collection-has-played;
+                                    icon: "✓";
+                                    active: AppState.collection-has-played;
                                     kbd-focused: AppState.collection-btn-focused == 1;
                                     clicked => { AppState.toggle-collection-played(); }
                                 }
@@ -173,7 +185,7 @@ export component CollectionScreen inherits Rectangle {
                                 // blocklists every part of the franchise,
                                 // globally, at once.
                                 if AppState.seerr-can-manage-blocklist: IconCircleButton {
-                                    icon:        "⛔";
+                                    icon: "⛔";
                                     kbd-focused: AppState.collection-btn-focused == 2;
                                     clicked => {
                                         AppState.collection-btn-focused = 2;
@@ -187,17 +199,23 @@ export component CollectionScreen inherits Rectangle {
                 }
             }
 
-            Rectangle { height: 1px; background: Theme.border; }
+            Rectangle {
+                height: 1px;
+                background: Theme.border;
+            }
 
             // ── Member grid ───────────────────────────────────────────────────
             fl-container := Rectangle {
-                height:             grid-content-height;
+                height: grid-content-height;
                 horizontal-stretch: 1;
 
                 coll-fl := Flickable {
-                    content-width:  fl-container.width;
+                    content-width: fl-container.width;
                     content-height: max(fl-container.height, grid-content-height);
-                    animate content-y { duration: 150ms * AppState.settings-scroll-speed; easing: ease-out-expo; }
+                    animate content-y {
+                        duration: 150ms * AppState.settings-scroll-speed;
+                        easing: ease-out-expo;
+                    }
 
                     VerticalLayout {
                         padding: gap;
@@ -205,20 +223,20 @@ export component CollectionScreen inherits Rectangle {
 
                         for row-idx in (AppState.collection-items.length + AppState.library-cols - 1) / AppState.library-cols: HorizontalLayout {
                             alignment: start;
-                            spacing:   gap;
-                            height:    card-h;
+                            spacing: gap;
+                            height: card-h;
 
                             for col-idx in AppState.library-cols: MediaCard {
                                 property <int> idx: row-idx * AppState.library-cols + col-idx;
                                 visible: idx < AppState.collection-items.length;
-                                item:    AppState.collection-items[idx];
-                                width:   card-w;
+                                item: AppState.collection-items[idx];
+                                width: card-w;
                                 focused: idx == AppState.collection-focused && !AppState.collection-back-focused
-                                          && AppState.collection-btn-focused < 0 && AppState.collection-missing-focused < 0;
+                                    && AppState.collection-btn-focused < 0 && AppState.collection-missing-focused < 0;
                                 clicked => {
-                                    AppState.collection-focused     = idx;
+                                    AppState.collection-focused = idx;
                                     AppState.collection-back-focused = false;
-                                    AppState.collection-btn-focused  = -1;
+                                    AppState.collection-btn-focused = -1;
                                     AppState.collection-missing-focused = -1;
                                     let c = AppState.collection-items[idx];
                                     AppState.open-detail(c.id, c.item-type);
@@ -234,25 +252,35 @@ export component CollectionScreen inherits Rectangle {
                 }
             }
 
-            Rectangle { height: gap; }
+            Rectangle {
+                height: gap;
+            }
 
             // ── Missing-anchor (scroll target) ─────────────────────────────────
-            missing-anchor := Rectangle { height: 0px; }
+            missing-anchor := Rectangle {
+                height: 0px;
+            }
 
             // ── Missing From This Collection (Discover-sourced, 2026-07-29) ────
             if AppState.collection-missing.length > 0: VerticalLayout {
-                padding-left:   48px;
-                padding-right:  48px;
+                padding-left: 48px;
+                padding-right: 48px;
                 padding-bottom: 40px;
 
-                Rectangle { height: 1px; background: Theme.border; }
-                Rectangle { height: 12px; }
+                Rectangle {
+                    height: 1px;
+                    background: Theme.border;
+                }
+
+                Rectangle {
+                    height: 12px;
+                }
 
                 SectionRow {
-                    section-title:   "Missing From This Collection";
-                    items:           AppState.collection-missing;
+                    section-title: "Missing From This Collection";
+                    items: AppState.collection-missing;
                     section-focused: AppState.collection-missing-focused >= 0;
-                    focused-card:    AppState.collection-missing-focused;
+                    focused-card: AppState.collection-missing-focused;
                     item-play(id, it) => { AppState.open-discover-item(it == "DiscoverMovie" ? "movie" : "tv", id); }
                     item-context-full(itm) => { AppState.open-context-menu-discover(itm); }
                 }
@@ -262,10 +290,10 @@ export component CollectionScreen inherits Rectangle {
 
     // Floating Back button — same position as detail.slint, overlaid on the backdrop
     FjordButton {
-        x:           16px;
-        y:           16px;
-        text:        "← Back";
-        width:       88px;
+        x: 16px;
+        y: 16px;
+        text: "← Back";
+        width: 88px;
         kbd-focused: AppState.collection-back-focused;
         clicked => { AppState.show-collection = false; }
     }
@@ -274,10 +302,10 @@ export component CollectionScreen inherits Rectangle {
     // declared last so it renders on top of everything else on this screen,
     // same z-order convention as every other overlay-on-a-screen in this app.
     if AppState.collection-blocklist-confirm-open: ConfirmDialog {
-        title:         "Blocklist Collection?";
-        message:       "This blocklists every movie in this collection on your Seerr server, preventing anyone from requesting them.";
+        title: "Blocklist Collection?";
+        message: "This blocklists every movie in this collection on your Seerr server, preventing anyone from requesting them.";
         confirm-label: "Blocklist";
-        focused:       AppState.collection-blocklist-confirm-focused;
+        focused: AppState.collection-blocklist-confirm-focused;
         confirmed => { AppState.collection-blocklist-confirm(); }
         cancelled => { AppState.collection-blocklist-confirm-open = false; }
     }

@@ -27,7 +27,14 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme, CastMember } from "theme.slint";
 import { AppState } from "app_state.slint";
-import { FjordButton, IconCircleButton, PosterBlock, MetaLine, CastRow, StorylineSection } from "widgets.slint";
+import {
+    FjordButton,
+    IconCircleButton,
+    PosterBlock,
+    MetaLine,
+    CastRow,
+    StorylineSection,
+} from "widgets.slint";
 import { SectionRow } from "home.slint";
 
 export component DetailPage inherits Rectangle {
@@ -37,11 +44,14 @@ export component DetailPage inherits Rectangle {
     changed kb-y => { detail-fl.content-y = kb-y; }
 
     detail-fl := Flickable {
-        width:           parent.width;
-        height:          parent.height;
+        width: parent.width;
+        height: parent.height;
         content-height: detail-content.preferred-height;
-        content-width:  self.width;
-        animate content-y { duration: 200ms * AppState.settings-scroll-speed; easing: ease-in-out; }
+        content-width: self.width;
+        animate content-y {
+            duration: 200ms * AppState.settings-scroll-speed;
+            easing: ease-in-out;
+        }
 
         detail-content := VerticalLayout {
 
@@ -51,41 +61,43 @@ export component DetailPage inherits Rectangle {
 
                 // Backdrop image — fills this Rectangle; height driven by inner layout
                 if AppState.detail-has-backdrop: Image {
-                    x: 0; y: 0;
-                    width:     parent.width;
-                    height:    parent.height;
+                    x: 0;
+                    y: 0;
+                    width: parent.width;
+                    height: parent.height;
                     image-fit: cover;
-                    source:    AppState.detail-backdrop;
+                    source: AppState.detail-backdrop;
                 }
                 // Overlay — darkens backdrop so text remains readable
                 if AppState.detail-has-backdrop: Rectangle {
-                    x: 0; y: 0;
-                    width:      parent.width;
-                    height:     parent.height;
+                    x: 0;
+                    y: 0;
+                    width: parent.width;
+                    height: parent.height;
                     background: @linear-gradient(180deg, #00000080 0%, #000000cc 100%);
                 }
 
                 VerticalLayout {
-                HorizontalLayout {
-                    padding-left:   48px;
-                    padding-right:  48px;
-                    padding-top:    68px;
-                    padding-bottom: 24px;
-                    spacing:        32px;
-                    alignment:      start;
-
-                    if AppState.detail-has-poster: PosterBlock {
-                        source:         AppState.detail-poster;
-                        has-image:      true;
-                        has-played:     AppState.detail-has-played;
-                        resume-pct:     AppState.detail-resume-pct;
-                    }
-
-                    VerticalLayout {
-                        spacing:   8px;
+                    HorizontalLayout {
+                        padding-left: 48px;
+                        padding-right: 48px;
+                        padding-top: 68px;
+                        padding-bottom: 24px;
+                        spacing: 32px;
                         alignment: start;
 
-                        // Real bug, live-reported 2026-07-18: the earlier
+                        if AppState.detail-has-poster: PosterBlock {
+                            source: AppState.detail-poster;
+                            has-image: true;
+                            has-played: AppState.detail-has-played;
+                            resume-pct: AppState.detail-resume-pct;
+                        }
+
+                        VerticalLayout {
+                            spacing: 8px;
+                            alignment: start;
+
+                            // Real bug, live-reported 2026-07-18: the earlier
                         // height:240px + vertical-stretch:1 spacer version
                         // of this fix didn't reliably land the button row
                         // at a fixed position — the flex/stretch math
@@ -107,7 +119,7 @@ export component DetailPage inherits Rectangle {
                         // the button row's position WAS still derived from
                         // the text stack's height via the spacer.
                         Rectangle {
-                            height: 240px;
+                                height: 240px;
                             // Real bug, live-reported 2026-07-18 (three
                             // rounds, each confirmed against the actual
                             // running app, not guessed): a plain Rectangle
@@ -144,129 +156,138 @@ export component DetailPage inherits Rectangle {
                             // 32px spacing between them.
                             width: root.width - 48px - 48px - 160px - 32px;
 
-                            VerticalLayout {
-                                x: 0; y: 0;
-                                width:     parent.width;
-                                spacing:   8px;
-                                alignment: start;
+                                VerticalLayout {
+                                    x: 0;
+                                    y: 0;
+                                    width: parent.width;
+                                    spacing: 8px;
+                                    alignment: start;
 
-                                Text {
-                                    text:        AppState.detail-title;
-                                    color:       Theme.text;
-                                    font-size:   28px;
-                                    font-weight: 700;
-                                    wrap:        word-wrap;
-                                }
+                                    Text {
+                                        text: AppState.detail-title;
+                                        color: Theme.text;
+                                        font-size: 28px;
+                                        font-weight: 700;
+                                        wrap: word-wrap;
+                                    }
 
-                                if AppState.detail-tagline != "": Text {
-                                    text:        AppState.detail-tagline;
-                                    color:       AppState.detail-has-backdrop ? #ffffff : Theme.text-muted;
-                                    font-size:   15px;
-                                    font-italic: true;
-                                    wrap:        word-wrap;
-                                }
+                                    if AppState.detail-tagline != "": Text {
+                                        text: AppState.detail-tagline;
+                                        color: AppState.detail-has-backdrop ? #ffffff : Theme.text-muted;
+                                        font-size: 15px;
+                                        font-italic: true;
+                                        wrap: word-wrap;
+                                    }
 
-                                if AppState.detail-series-label != "": Text {
-                                    text:      AppState.detail-series-label;
-                                    color:     Theme.accent;
-                                    font-size: 14px;
-                                }
+                                    if AppState.detail-series-label != "": Text {
+                                        text: AppState.detail-series-label;
+                                        color: Theme.accent;
+                                        font-size: 14px;
+                                    }
 
-                                MetaLine {
-                                    meta:         AppState.detail-meta;
-                                    rating-label: AppState.detail-rating-label;
-                                }
+                                    MetaLine {
+                                        meta: AppState.detail-meta;
+                                        rating-label: AppState.detail-rating-label;
+                                    }
 
-                                if AppState.detail-genres != "": Text {
-                                    text:      AppState.detail-genres;
-                                    color:     AppState.detail-has-backdrop ? #ffffff : Theme.text-muted;
-                                    font-size: 13px;
-                                }
+                                    if AppState.detail-genres != "": Text {
+                                        text: AppState.detail-genres;
+                                        color: AppState.detail-has-backdrop ? #ffffff : Theme.text-muted;
+                                        font-size: 13px;
+                                    }
 
-                                if AppState.detail-studio != "": Text {
-                                    text:      AppState.detail-studio;
-                                    color:     AppState.detail-has-backdrop ? #ffffff : Theme.text-muted;
-                                    font-size: 13px;
-                                }
-                            }
-
-                            HorizontalLayout {
-                                x: 0;
-                                y: parent.height - 38px;
-                                spacing:   12px;
-                                alignment: start;
-                                FjordButton {
-                                    icon-left:   "▶";
-                                    text:        "Play";
-                                    width:       110px;
-                                    kbd-focused: AppState.detail-focused-btn == 0 && AppState.detail-cast-focused < 0;
-                                    clicked => { AppState.play-detail(); }
-                                }
-                                if AppState.detail-can-resume: FjordButton {
-                                    text:        "⏩  " + AppState.detail-resume-label;
-                                    kbd-focused: AppState.detail-focused-btn == 1 && AppState.detail-cast-focused < 0;
-                                    clicked => { AppState.resume-detail(); }
-                                }
-                                if AppState.detail-series-id != "": FjordButton {
-                                    text:        "Series →";
-                                    width:       100px;
-                                    kbd-focused: AppState.detail-focused-btn == 2 && AppState.detail-cast-focused < 0;
-                                    clicked => {
-                                        AppState.detail-scroll      = 0px;
-                                        AppState.detail-focused-btn = 0;
-                                        AppState.close-detail();
-                                        AppState.open-series(AppState.detail-series-id);
+                                    if AppState.detail-studio != "": Text {
+                                        text: AppState.detail-studio;
+                                        color: AppState.detail-has-backdrop ? #ffffff : Theme.text-muted;
+                                        font-size: 13px;
                                     }
                                 }
+
+                                HorizontalLayout {
+                                    x: 0;
+                                    y: parent.height - 38px;
+                                    spacing: 12px;
+                                    alignment: start;
+                                    FjordButton {
+                                        icon-left: "▶";
+                                        text: "Play";
+                                        width: 110px;
+                                        kbd-focused: AppState.detail-focused-btn == 0 && AppState.detail-cast-focused < 0;
+                                        clicked => { AppState.play-detail(); }
+                                    }
+
+                                    if AppState.detail-can-resume: FjordButton {
+                                        text: "⏩  " + AppState.detail-resume-label;
+                                        kbd-focused: AppState.detail-focused-btn == 1 && AppState.detail-cast-focused < 0;
+                                        clicked => { AppState.resume-detail(); }
+                                    }
+                                    if AppState.detail-series-id != "": FjordButton {
+                                        text: "Series →";
+                                        width: 100px;
+                                        kbd-focused: AppState.detail-focused-btn == 2 && AppState.detail-cast-focused < 0;
+                                        clicked => {
+                                            AppState.detail-scroll = 0px;
+                                            AppState.detail-focused-btn = 0;
+                                            AppState.close-detail();
+                                            AppState.open-series(AppState.detail-series-id);
+                                        }
+                                    }
                                 // ♥ favourite — gray when not fav, accent when fav
                                 IconCircleButton {
-                                    icon:        "❤";
-                                    active:      AppState.detail-is-favorite;
-                                    kbd-focused: AppState.detail-focused-btn == 3 && AppState.detail-cast-focused < 0;
-                                    clicked => { AppState.toggle-detail-fav(); }
-                                }
+                                        icon: "❤";
+                                        active: AppState.detail-is-favorite;
+                                        kbd-focused: AppState.detail-focused-btn == 3 && AppState.detail-cast-focused < 0;
+                                        clicked => { AppState.toggle-detail-fav(); }
+                                    }
                                 // ✓ watched — gray when not watched, accent when watched
                                 IconCircleButton {
-                                    icon:        "✓";
-                                    active:      AppState.detail-has-played;
-                                    kbd-focused: AppState.detail-focused-btn == 4 && AppState.detail-cast-focused < 0;
-                                    clicked => { AppState.toggle-detail-played(); }
+                                        icon: "✓";
+                                        active: AppState.detail-has-played;
+                                        kbd-focused: AppState.detail-focused-btn == 4 && AppState.detail-cast-focused < 0;
+                                        clicked => { AppState.toggle-detail-played(); }
+                                    }
                                 }
                             }
-                        }
 
-                        // Ends HH:MM — shown below the action buttons,
+                            // Ends HH:MM — shown below the action buttons,
                         // centered under the Play button specifically
                         // (110px, matching Play's own explicit width above)
                         // rather than left-aligned with the whole column —
                         // user feedback, 2026-07-18.
                         if AppState.detail-ends-at != "": Text {
-                            text:                 "Ends " + AppState.detail-ends-at;
-                            color:                AppState.detail-has-backdrop ? #eeeeee : Theme.text-muted;
-                            font-size:            13px;
-                            width:                110px;
-                            horizontal-alignment: center;
+                                text: "Ends " + AppState.detail-ends-at;
+                                color: AppState.detail-has-backdrop ? #eeeeee : Theme.text-muted;
+                                font-size: 13px;
+                                width: 110px;
+                                horizontal-alignment: center;
+                            }
                         }
                     }
-                }
-                if AppState.detail-overview != "": StorylineSection {
-                    text:        AppState.detail-overview;
-                    expanded <=> AppState.detail-overview-expanded;
-                    kbd-focused: AppState.detail-focused-btn == 5 && AppState.detail-focused-row == 0;
-                }
+
+                    if AppState.detail-overview != "": StorylineSection {
+                        text: AppState.detail-overview;
+                        expanded <=> AppState.detail-overview-expanded;
+                        kbd-focused: AppState.detail-focused-btn == 5 && AppState.detail-focused-row == 0;
+                    }
                 }
             }
 
             if AppState.detail-cast.length > 0: VerticalLayout {
-                padding-left:   48px;
-                padding-right:  48px;
+                padding-left: 48px;
+                padding-right: 48px;
                 padding-bottom: 24px;
 
-                Rectangle { height: 1px; background: Theme.border; }
-                Rectangle { height: 12px; }
+                Rectangle {
+                    height: 1px;
+                    background: Theme.border;
+                }
+
+                Rectangle {
+                    height: 12px;
+                }
 
                 CastRow {
-                    cast:        AppState.detail-cast;
+                    cast: AppState.detail-cast;
                     focused-idx: AppState.detail-cast-focused;
                     item-selected(idx) => {
                         AppState.open-person(AppState.detail-cast[idx].id, AppState.detail-cast[idx].name);
@@ -275,17 +296,20 @@ export component DetailPage inherits Rectangle {
             }
 
             if AppState.detail-collection.length > 0: VerticalLayout {
-                padding-left:   48px;
-                padding-right:  48px;
+                padding-left: 48px;
+                padding-right: 48px;
                 padding-bottom: 40px;
 
-                Rectangle { height: 1px; background: Theme.border; }
+                Rectangle {
+                    height: 1px;
+                    background: Theme.border;
+                }
 
                 SectionRow {
-                    section-title:   AppState.detail-collection-title;
-                    items:           AppState.detail-collection;
+                    section-title: AppState.detail-collection-title;
+                    items: AppState.detail-collection;
                     section-focused: AppState.detail-focused-row == 2;
-                    focused-card:    AppState.detail-collection-focused;
+                    focused-card: AppState.detail-collection-focused;
                     item-play(id, itype) => { AppState.open-detail(id, itype); }
                     item-context(id, played, fav, rpct, itype, sid) => {
                         AppState.open-context-menu(id, played, fav, rpct, itype, sid);
@@ -294,17 +318,20 @@ export component DetailPage inherits Rectangle {
             }
 
             if AppState.detail-similar.length > 0: VerticalLayout {
-                padding-left:   48px;
-                padding-right:  48px;
+                padding-left: 48px;
+                padding-right: 48px;
                 padding-bottom: 40px;
 
-                Rectangle { height: 1px; background: Theme.border; }
+                Rectangle {
+                    height: 1px;
+                    background: Theme.border;
+                }
 
                 SectionRow {
-                    section-title:   "More Like This";
-                    items:           AppState.detail-similar;
+                    section-title: "More Like This";
+                    items: AppState.detail-similar;
                     section-focused: AppState.detail-focused-row == 3;
-                    focused-card:    AppState.detail-similar-focused;
+                    focused-card: AppState.detail-similar-focused;
                     item-play(id, itype) => { AppState.open-detail(id, itype); }
                     item-context(id, played, fav, rpct, itype, sid) => {
                         AppState.open-context-menu(id, played, fav, rpct, itype, sid);
@@ -313,17 +340,20 @@ export component DetailPage inherits Rectangle {
             }
 
             if AppState.detail-recommended.length > 0: VerticalLayout {
-                padding-left:   48px;
-                padding-right:  48px;
+                padding-left: 48px;
+                padding-right: 48px;
                 padding-bottom: 40px;
 
-                Rectangle { height: 1px; background: Theme.border; }
+                Rectangle {
+                    height: 1px;
+                    background: Theme.border;
+                }
 
                 SectionRow {
-                    section-title:   "Recommended";
-                    items:           AppState.detail-recommended;
+                    section-title: "Recommended";
+                    items: AppState.detail-recommended;
                     section-focused: AppState.detail-focused-row == 4;
-                    focused-card:    AppState.detail-recommended-focused;
+                    focused-card: AppState.detail-recommended-focused;
                     item-play(id, it) => { AppState.open-discover-item(it == "DiscoverMovie" ? "movie" : "tv", id); }
                     item-context-full(itm) => { AppState.open-context-menu-discover(itm); }
                 }
@@ -332,18 +362,18 @@ export component DetailPage inherits Rectangle {
     }
 
     FjordButton {
-        x:           16px;
-        y:           16px;
-        text:        "← Back";
-        width:       88px;
+        x: 16px;
+        y: 16px;
+        text: "← Back";
+        width: 88px;
         kbd-focused: AppState.detail-focused-btn == -1 && AppState.detail-cast-focused < 0;
         clicked => {
-            AppState.detail-scroll              = 0px;
-            AppState.detail-focused-btn         = 0;
-            AppState.detail-focused-row         = 0;
-            AppState.detail-cast-focused        = -1;
-            AppState.detail-collection-focused  = -1;
-            AppState.detail-similar-focused     = -1;
+            AppState.detail-scroll = 0px;
+            AppState.detail-focused-btn = 0;
+            AppState.detail-focused-row = 0;
+            AppState.detail-cast-focused = -1;
+            AppState.detail-collection-focused = -1;
+            AppState.detail-similar-focused = -1;
             AppState.detail-recommended-focused = -1;
             if AppState.has-background-player {
                 AppState.playback-from-detail = false;

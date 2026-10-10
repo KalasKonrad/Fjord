@@ -53,7 +53,7 @@ component DiscoverMenuRow inherits Rectangle {
     in property <string> icon-text;
     in property <string> icon-font-family: ""; // "" = system default (matches ASCII/ℹ rows below)
     in property <string> label;
-    in property <int>    row-index;
+    in property <int> row-index;
     callback activated();
 
     height: 44px;
@@ -61,23 +61,37 @@ component DiscoverMenuRow inherits Rectangle {
     background: AppState.context-menu-focused == row-index ? Theme.accent-muted : transparent;
     border-width: (ta.pressed || pulse.pulsing) ? 3px : 0px;
     border-color: Theme.focus-border;
-    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
-    pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.context-menu-focused == row-index; }
+    animate border-width {
+        duration: 90ms * AppState.settings-animation-speed;
+        easing: ease-out-expo;
+    }
+    pulse := PressPulse {
+        trigger: AppState.kb-activate-pulse;
+        active: AppState.context-menu-focused == row-index;
+    }
+
     HorizontalLayout {
-        padding-left: 12px; padding-right: 12px; spacing: 10px;
+        padding-left: 12px;
+        padding-right: 12px;
+        spacing: 10px;
         alignment: start;
         Text {
-            text:        root.icon-text;
+            text: root.icon-text;
             font-family: root.icon-font-family;
-            color:       AppState.context-menu-focused == row-index ? Theme.accent : Theme.text-muted;
-            font-size:   14px; vertical-alignment: center; width: 18px;
+            color: AppState.context-menu-focused == row-index ? Theme.accent : Theme.text-muted;
+            font-size: 14px;
+            vertical-alignment: center;
+            width: 18px;
         }
+
         Text {
-            text:      root.label;
-            color:     AppState.context-menu-focused == row-index ? Theme.text : Theme.text-muted;
-            font-size: 14px; vertical-alignment: center;
+            text: root.label;
+            color: AppState.context-menu-focused == row-index ? Theme.text : Theme.text-muted;
+            font-size: 14px;
+            vertical-alignment: center;
         }
     }
+
     ta := TouchArea {
         clicked => { root.activated(); }
         pointer-event(e) => {
@@ -93,280 +107,383 @@ export component ContextMenu inherits Rectangle {
 
     // Close on backdrop click
     TouchArea {
-        width: parent.width; height: parent.height;
+        width: parent.width;
+        height: parent.height;
         clicked => { AppState.show-context-menu = false; }
     }
 
     // Menu box — centred
     Rectangle {
-        x: (parent.width  - self.width)  / 2;
+        x: (parent.width - self.width) / 2;
         y: (parent.height - self.height) / 2;
-        width:         240px;
-        height:        menu-layout.preferred-height + 16px;
+        width: 240px;
+        height: menu-layout.preferred-height + 16px;
         border-radius: Theme.radius-lg;
-        background:    Theme.surface-raised;
-        border-width:  1px;
-        border-color:  Theme.border-strong;
-        drop-shadow-blur:     20px;
-        drop-shadow-color:    #000000aa;
+        background: Theme.surface-raised;
+        border-width: 1px;
+        border-color: Theme.border-strong;
+        drop-shadow-blur: 20px;
+        drop-shadow-color: #000000aa;
         drop-shadow-offset-y: 6px;
 
         // Stop backdrop click from propagating through the box
-        TouchArea { width: parent.width; height: parent.height; }
+        TouchArea {
+            width: parent.width;
+            height: parent.height;
+        }
 
         menu-layout := VerticalLayout {
-            x: 0; y: 8px;
+            x: 0;
+            y: 8px;
             width: parent.width;
             spacing: 2px;
-            padding-left:  8px;
+            padding-left: 8px;
             padding-right: 8px;
 
             if !root.is-discover-item: VerticalLayout {
-            spacing: 2px;
+                spacing: 2px;
             // Row 0 — Resume (only when there is a saved position)
             if AppState.context-menu-resume-pct > 0 && !AppState.context-menu-has-played: Rectangle {
-                height: 44px;
-                border-radius: Theme.radius;
-                background: AppState.context-menu-focused == 0 ? Theme.accent-muted : transparent;
-                border-width:  (ta0.pressed || pulse0.pulsing) ? 3px : 0px;
-                border-color:  Theme.focus-border;
-                animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
-                pulse0 := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.context-menu-focused == 0; }
-                HorizontalLayout {
-                    padding-left: 12px; padding-right: 12px; spacing: 10px;
-                    alignment: start;
-                    Text {
-                        text: "⏵";
-                        font-family: "Noto Sans Symbols 2";
-                        color: AppState.context-menu-focused == 0 ? Theme.accent : Theme.text-muted;
-                        font-size: 14px; vertical-alignment: center; width: 18px;
+                    height: 44px;
+                    border-radius: Theme.radius;
+                    background: AppState.context-menu-focused == 0 ? Theme.accent-muted : transparent;
+                    border-width: (ta0.pressed || pulse0.pulsing) ? 3px : 0px;
+                    border-color: Theme.focus-border;
+                    animate border-width {
+                        duration: 90ms * AppState.settings-animation-speed;
+                        easing: ease-out-expo;
                     }
-                    Text {
-                        text: "Resume";
-                        color: AppState.context-menu-focused == 0 ? Theme.text : Theme.text-muted;
-                        font-size: 14px; vertical-alignment: center;
+                    pulse0 := PressPulse {
+                        trigger: AppState.kb-activate-pulse;
+                        active: AppState.context-menu-focused == 0;
                     }
-                }
-                ta0 := TouchArea {
-                    clicked => {
-                        AppState.item-play(AppState.context-menu-item-id);
-                        AppState.show-context-menu = false;
-                    }
-                    pointer-event(e) => {
-                        if e.kind == PointerEventKind.move { AppState.context-menu-focused = 0; }
-                    }
-                }
-            }
 
-            // Row 1 — Play from Start (not applicable to a Season — no
+                    HorizontalLayout {
+                        padding-left: 12px;
+                        padding-right: 12px;
+                        spacing: 10px;
+                        alignment: start;
+                        Text {
+                            text: "⏵";
+                            font-family: "Noto Sans Symbols 2";
+                            color: AppState.context-menu-focused == 0 ? Theme.accent : Theme.text-muted;
+                            font-size: 14px;
+                            vertical-alignment: center;
+                            width: 18px;
+                        }
+
+                        Text {
+                            text: "Resume";
+                            color: AppState.context-menu-focused == 0 ? Theme.text : Theme.text-muted;
+                            font-size: 14px;
+                            vertical-alignment: center;
+                        }
+                    }
+
+                    ta0 := TouchArea {
+                        clicked => {
+                            AppState.item-play(AppState.context-menu-item-id);
+                            AppState.show-context-menu = false;
+                        }
+                        pointer-event(e) => {
+                            if e.kind == PointerEventKind.move { AppState.context-menu-focused = 0; }
+                        }
+                    }
+                }
+
+                // Row 1 — Play from Start (not applicable to a Season — no
             // /Videos/{id}/stream for a season, only its episodes; gated
             // out 2026-08-12 alongside rows 2/3, matching the Rust-side
             // existing_jellyfin_menu_rows exclusion — see its own comment)
             if AppState.context-menu-item-type != "Season": Rectangle {
-                height: 44px;
-                border-radius: Theme.radius;
-                background: AppState.context-menu-focused == 1 ? Theme.accent-muted : transparent;
-                border-width:  (ta1.pressed || pulse1.pulsing) ? 3px : 0px;
-                border-color:  Theme.focus-border;
-                animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
-                pulse1 := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.context-menu-focused == 1; }
-                HorizontalLayout {
-                    padding-left: 12px; padding-right: 12px; spacing: 10px;
-                    alignment: start;
-                    Text {
-                        text: "▶";
-                        font-family: "Noto Sans Symbols 2";
-                        color: AppState.context-menu-focused == 1 ? Theme.accent : Theme.text-muted;
-                        font-size: 12px; vertical-alignment: center; width: 18px;
+                    height: 44px;
+                    border-radius: Theme.radius;
+                    background: AppState.context-menu-focused == 1 ? Theme.accent-muted : transparent;
+                    border-width: (ta1.pressed || pulse1.pulsing) ? 3px : 0px;
+                    border-color: Theme.focus-border;
+                    animate border-width {
+                        duration: 90ms * AppState.settings-animation-speed;
+                        easing: ease-out-expo;
                     }
-                    Text {
-                        text: "Play from Start";
-                        color: AppState.context-menu-focused == 1 ? Theme.text : Theme.text-muted;
-                        font-size: 14px; vertical-alignment: center;
+                    pulse1 := PressPulse {
+                        trigger: AppState.kb-activate-pulse;
+                        active: AppState.context-menu-focused == 1;
                     }
-                }
-                ta1 := TouchArea {
-                    clicked => {
-                        AppState.context-play-from-start(AppState.context-menu-item-id);
-                        AppState.show-context-menu = false;
-                    }
-                    pointer-event(e) => {
-                        if e.kind == PointerEventKind.move { AppState.context-menu-focused = 1; }
-                    }
-                }
-            }
 
-            // Row 2 — Play Next (insert at front of queue; not applicable to
+                    HorizontalLayout {
+                        padding-left: 12px;
+                        padding-right: 12px;
+                        spacing: 10px;
+                        alignment: start;
+                        Text {
+                            text: "▶";
+                            font-family: "Noto Sans Symbols 2";
+                            color: AppState.context-menu-focused == 1 ? Theme.accent : Theme.text-muted;
+                            font-size: 12px;
+                            vertical-alignment: center;
+                            width: 18px;
+                        }
+
+                        Text {
+                            text: "Play from Start";
+                            color: AppState.context-menu-focused == 1 ? Theme.text : Theme.text-muted;
+                            font-size: 14px;
+                            vertical-alignment: center;
+                        }
+                    }
+
+                    ta1 := TouchArea {
+                        clicked => {
+                            AppState.context-play-from-start(AppState.context-menu-item-id);
+                            AppState.show-context-menu = false;
+                        }
+                        pointer-event(e) => {
+                            if e.kind == PointerEventKind.move { AppState.context-menu-focused = 1; }
+                        }
+                    }
+                }
+
+                // Row 2 — Play Next (insert at front of queue; not applicable to
             // a Season, see row 1's comment)
             if AppState.context-menu-item-type != "Season": Rectangle {
-                height: 44px;
-                border-radius: Theme.radius;
-                background: AppState.context-menu-focused == 2 ? Theme.accent-muted : transparent;
-                border-width:  (ta2.pressed || pulse2.pulsing) ? 3px : 0px;
-                border-color:  Theme.focus-border;
-                animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
-                pulse2 := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.context-menu-focused == 2; }
-                HorizontalLayout {
-                    padding-left: 12px; padding-right: 12px; spacing: 10px;
-                    alignment: start;
-                    Text {
-                        text: "⏭";
-                        font-family: "Noto Sans Symbols 2";
-                        color: AppState.context-menu-focused == 2 ? Theme.accent : Theme.text-muted;
-                        font-size: 14px; vertical-alignment: center; width: 18px;
+                    height: 44px;
+                    border-radius: Theme.radius;
+                    background: AppState.context-menu-focused == 2 ? Theme.accent-muted : transparent;
+                    border-width: (ta2.pressed || pulse2.pulsing) ? 3px : 0px;
+                    border-color: Theme.focus-border;
+                    animate border-width {
+                        duration: 90ms * AppState.settings-animation-speed;
+                        easing: ease-out-expo;
                     }
-                    Text {
-                        text: "Play Next";
-                        color: AppState.context-menu-focused == 2 ? Theme.text : Theme.text-muted;
-                        font-size: 14px; vertical-alignment: center;
+                    pulse2 := PressPulse {
+                        trigger: AppState.kb-activate-pulse;
+                        active: AppState.context-menu-focused == 2;
                     }
-                }
-                ta2 := TouchArea {
-                    clicked => {
-                        AppState.queue-play-next-item();
-                        AppState.show-context-menu = false;
-                    }
-                    pointer-event(e) => {
-                        if e.kind == PointerEventKind.move { AppState.context-menu-focused = 2; }
-                    }
-                }
-            }
 
-            // Row 3 — Add to Queue (append to back; not applicable to a
+                    HorizontalLayout {
+                        padding-left: 12px;
+                        padding-right: 12px;
+                        spacing: 10px;
+                        alignment: start;
+                        Text {
+                            text: "⏭";
+                            font-family: "Noto Sans Symbols 2";
+                            color: AppState.context-menu-focused == 2 ? Theme.accent : Theme.text-muted;
+                            font-size: 14px;
+                            vertical-alignment: center;
+                            width: 18px;
+                        }
+
+                        Text {
+                            text: "Play Next";
+                            color: AppState.context-menu-focused == 2 ? Theme.text : Theme.text-muted;
+                            font-size: 14px;
+                            vertical-alignment: center;
+                        }
+                    }
+
+                    ta2 := TouchArea {
+                        clicked => {
+                            AppState.queue-play-next-item();
+                            AppState.show-context-menu = false;
+                        }
+                        pointer-event(e) => {
+                            if e.kind == PointerEventKind.move { AppState.context-menu-focused = 2; }
+                        }
+                    }
+                }
+
+                // Row 3 — Add to Queue (append to back; not applicable to a
             // Season, see row 1's comment)
             if AppState.context-menu-item-type != "Season": Rectangle {
-                height: 44px;
-                border-radius: Theme.radius;
-                background: AppState.context-menu-focused == 3 ? Theme.accent-muted : transparent;
-                border-width:  (ta3.pressed || pulse3.pulsing) ? 3px : 0px;
-                border-color:  Theme.focus-border;
-                animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
-                pulse3 := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.context-menu-focused == 3; }
-                HorizontalLayout {
-                    padding-left: 12px; padding-right: 12px; spacing: 10px;
-                    alignment: start;
-                    Text {
-                        text: "+";
-                        color: AppState.context-menu-focused == 3 ? Theme.accent : Theme.text-muted;
-                        font-size: 14px; vertical-alignment: center; width: 18px;
+                    height: 44px;
+                    border-radius: Theme.radius;
+                    background: AppState.context-menu-focused == 3 ? Theme.accent-muted : transparent;
+                    border-width: (ta3.pressed || pulse3.pulsing) ? 3px : 0px;
+                    border-color: Theme.focus-border;
+                    animate border-width {
+                        duration: 90ms * AppState.settings-animation-speed;
+                        easing: ease-out-expo;
                     }
-                    Text {
-                        text: "Add to Queue";
-                        color: AppState.context-menu-focused == 3 ? Theme.text : Theme.text-muted;
-                        font-size: 14px; vertical-alignment: center;
+                    pulse3 := PressPulse {
+                        trigger: AppState.kb-activate-pulse;
+                        active: AppState.context-menu-focused == 3;
                     }
-                }
-                ta3 := TouchArea {
-                    clicked => {
-                        AppState.queue-add-item();
-                        AppState.show-context-menu = false;
-                    }
-                    pointer-event(e) => {
-                        if e.kind == PointerEventKind.move { AppState.context-menu-focused = 3; }
-                    }
-                }
-            }
 
-            // Row 4 — Mark Played / Unplayed
+                    HorizontalLayout {
+                        padding-left: 12px;
+                        padding-right: 12px;
+                        spacing: 10px;
+                        alignment: start;
+                        Text {
+                            text: "+";
+                            color: AppState.context-menu-focused == 3 ? Theme.accent : Theme.text-muted;
+                            font-size: 14px;
+                            vertical-alignment: center;
+                            width: 18px;
+                        }
+
+                        Text {
+                            text: "Add to Queue";
+                            color: AppState.context-menu-focused == 3 ? Theme.text : Theme.text-muted;
+                            font-size: 14px;
+                            vertical-alignment: center;
+                        }
+                    }
+
+                    ta3 := TouchArea {
+                        clicked => {
+                            AppState.queue-add-item();
+                            AppState.show-context-menu = false;
+                        }
+                        pointer-event(e) => {
+                            if e.kind == PointerEventKind.move { AppState.context-menu-focused = 3; }
+                        }
+                    }
+                }
+
+                // Row 4 — Mark Played / Unplayed
             Rectangle {
-                height: 44px;
-                border-radius: Theme.radius;
-                background: AppState.context-menu-focused == 4 ? Theme.accent-muted : transparent;
-                border-width:  (ta4.pressed || pulse4.pulsing) ? 3px : 0px;
-                border-color:  Theme.focus-border;
-                animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
-                pulse4 := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.context-menu-focused == 4; }
-                HorizontalLayout {
-                    padding-left: 12px; padding-right: 12px; spacing: 10px;
-                    alignment: start;
-                    Text {
-                        text: AppState.context-menu-has-played ? "✓" : "○";
+                    height: 44px;
+                    border-radius: Theme.radius;
+                    background: AppState.context-menu-focused == 4 ? Theme.accent-muted : transparent;
+                    border-width: (ta4.pressed || pulse4.pulsing) ? 3px : 0px;
+                    border-color: Theme.focus-border;
+                    animate border-width {
+                        duration: 90ms * AppState.settings-animation-speed;
+                        easing: ease-out-expo;
+                    }
+                    pulse4 := PressPulse {
+                        trigger: AppState.kb-activate-pulse;
+                        active: AppState.context-menu-focused == 4;
+                    }
+
+                    HorizontalLayout {
+                        padding-left: 12px;
+                        padding-right: 12px;
+                        spacing: 10px;
+                        alignment: start;
+                        Text {
+                            text: AppState.context-menu-has-played ? "✓" : "○";
                         // ✓ is hard-pinned to Adwaita Sans (matches IconCircleButton's own ✓/♥
                         // rule); ○ isn't one of the two pinned glyphs, so it uses the ordinary
                         // Noto Sans Symbols2 fallback.
                         font-family: AppState.context-menu-has-played ? "Adwaita Sans" : "Noto Sans Symbols 2";
-                        color: AppState.context-menu-focused == 4 ? Theme.accent : Theme.text-muted;
-                        font-size: 14px; vertical-alignment: center; width: 18px;
-                    }
-                    Text {
-                        text: AppState.context-menu-has-played ? "Mark as Unplayed" : "Mark as Played";
-                        color: AppState.context-menu-focused == 4 ? Theme.text : Theme.text-muted;
-                        font-size: 14px; vertical-alignment: center;
-                    }
-                }
-                ta4 := TouchArea {
-                    clicked => {
-                        AppState.context-mark-played(AppState.context-menu-item-id, AppState.context-menu-has-played);
-                        AppState.show-context-menu = false;
-                    }
-                    pointer-event(e) => {
-                        if e.kind == PointerEventKind.move { AppState.context-menu-focused = 4; }
-                    }
-                }
-            }
+                            color: AppState.context-menu-focused == 4 ? Theme.accent : Theme.text-muted;
+                            font-size: 14px;
+                            vertical-alignment: center;
+                            width: 18px;
+                        }
 
-            // Row 5 — Favourite / Unfavourite
+                        Text {
+                            text: AppState.context-menu-has-played ? "Mark as Unplayed" : "Mark as Played";
+                            color: AppState.context-menu-focused == 4 ? Theme.text : Theme.text-muted;
+                            font-size: 14px;
+                            vertical-alignment: center;
+                        }
+                    }
+
+                    ta4 := TouchArea {
+                        clicked => {
+                            AppState.context-mark-played(AppState.context-menu-item-id, AppState.context-menu-has-played);
+                            AppState.show-context-menu = false;
+                        }
+                        pointer-event(e) => {
+                            if e.kind == PointerEventKind.move { AppState.context-menu-focused = 4; }
+                        }
+                    }
+                }
+
+                // Row 5 — Favourite / Unfavourite
             Rectangle {
-                height: 44px;
-                border-radius: Theme.radius;
-                background: AppState.context-menu-focused == 5 ? Theme.accent-muted : transparent;
-                border-width:  (ta5.pressed || pulse5.pulsing) ? 3px : 0px;
-                border-color:  Theme.focus-border;
-                animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
-                pulse5 := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.context-menu-focused == 5; }
-                HorizontalLayout {
-                    padding-left: 12px; padding-right: 12px; spacing: 10px;
-                    alignment: start;
-                    Text {
-                        text: AppState.context-menu-is-favorite ? "♥" : "♡";
+                    height: 44px;
+                    border-radius: Theme.radius;
+                    background: AppState.context-menu-focused == 5 ? Theme.accent-muted : transparent;
+                    border-width: (ta5.pressed || pulse5.pulsing) ? 3px : 0px;
+                    border-color: Theme.focus-border;
+                    animate border-width {
+                        duration: 90ms * AppState.settings-animation-speed;
+                        easing: ease-out-expo;
+                    }
+                    pulse5 := PressPulse {
+                        trigger: AppState.kb-activate-pulse;
+                        active: AppState.context-menu-focused == 5;
+                    }
+
+                    HorizontalLayout {
+                        padding-left: 12px;
+                        padding-right: 12px;
+                        spacing: 10px;
+                        alignment: start;
+                        Text {
+                            text: AppState.context-menu-is-favorite ? "♥" : "♡";
                         // ♥ is hard-pinned to Adwaita Sans; ♡ isn't one of the two pinned
                         // glyphs, so it uses the ordinary Noto Sans Symbols2 fallback.
                         font-family: AppState.context-menu-is-favorite ? "Adwaita Sans" : "Noto Sans Symbols 2";
-                        color: AppState.context-menu-focused == 5 ? Theme.accent : Theme.text-muted;
-                        font-size: 14px; vertical-alignment: center; width: 18px;
-                    }
-                    Text {
-                        text: AppState.context-menu-is-favorite ? "Remove from Favourites" : "Add to Favourites";
-                        color: AppState.context-menu-focused == 5 ? Theme.text : Theme.text-muted;
-                        font-size: 14px; vertical-alignment: center;
-                    }
-                }
-                ta5 := TouchArea {
-                    clicked => {
-                        AppState.context-toggle-fav(AppState.context-menu-item-id, AppState.context-menu-is-favorite);
-                        AppState.show-context-menu = false;
-                    }
-                    pointer-event(e) => {
-                        if e.kind == PointerEventKind.move { AppState.context-menu-focused = 5; }
-                    }
-                }
-            }
+                            color: AppState.context-menu-focused == 5 ? Theme.accent : Theme.text-muted;
+                            font-size: 14px;
+                            vertical-alignment: center;
+                            width: 18px;
+                        }
 
-            // Row 6 — View Details
-            Rectangle {
-                height: 44px;
-                border-radius: Theme.radius;
-                background: AppState.context-menu-focused == 6 ? Theme.accent-muted : transparent;
-                border-width:  (ta6.pressed || pulse6.pulsing) ? 3px : 0px;
-                border-color:  Theme.focus-border;
-                animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
-                pulse6 := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.context-menu-focused == 6; }
-                HorizontalLayout {
-                    padding-left: 12px; padding-right: 12px; spacing: 10px;
-                    alignment: start;
-                    Text {
-                        text: "ℹ";
-                        color: AppState.context-menu-focused == 6 ? Theme.accent : Theme.text-muted;
-                        font-size: 14px; vertical-alignment: center; width: 18px;
+                        Text {
+                            text: AppState.context-menu-is-favorite ? "Remove from Favourites" : "Add to Favourites";
+                            color: AppState.context-menu-focused == 5 ? Theme.text : Theme.text-muted;
+                            font-size: 14px;
+                            vertical-alignment: center;
+                        }
                     }
-                    Text {
-                        text: "View Details";
-                        color: AppState.context-menu-focused == 6 ? Theme.text : Theme.text-muted;
-                        font-size: 14px; vertical-alignment: center;
+
+                    ta5 := TouchArea {
+                        clicked => {
+                            AppState.context-toggle-fav(AppState.context-menu-item-id, AppState.context-menu-is-favorite);
+                            AppState.show-context-menu = false;
+                        }
+                        pointer-event(e) => {
+                            if e.kind == PointerEventKind.move { AppState.context-menu-focused = 5; }
+                        }
                     }
                 }
-                ta6 := TouchArea {
-                    clicked => {
+
+                // Row 6 — View Details
+            Rectangle {
+                    height: 44px;
+                    border-radius: Theme.radius;
+                    background: AppState.context-menu-focused == 6 ? Theme.accent-muted : transparent;
+                    border-width: (ta6.pressed || pulse6.pulsing) ? 3px : 0px;
+                    border-color: Theme.focus-border;
+                    animate border-width {
+                        duration: 90ms * AppState.settings-animation-speed;
+                        easing: ease-out-expo;
+                    }
+                    pulse6 := PressPulse {
+                        trigger: AppState.kb-activate-pulse;
+                        active: AppState.context-menu-focused == 6;
+                    }
+
+                    HorizontalLayout {
+                        padding-left: 12px;
+                        padding-right: 12px;
+                        spacing: 10px;
+                        alignment: start;
+                        Text {
+                            text: "ℹ";
+                            color: AppState.context-menu-focused == 6 ? Theme.accent : Theme.text-muted;
+                            font-size: 14px;
+                            vertical-alignment: center;
+                            width: 18px;
+                        }
+
+                        Text {
+                            text: "View Details";
+                            color: AppState.context-menu-focused == 6 ? Theme.text : Theme.text-muted;
+                            font-size: 14px;
+                            vertical-alignment: center;
+                        }
+                    }
+
+                    ta6 := TouchArea {
+                        clicked => {
                         // "Season" is a genuinely separate screen/callback
                         // (season.rs::open_season_screen, keyed by
                         // season-id + series-id — DetailPage has no concept
@@ -375,54 +492,68 @@ export component ContextMenu inherits Rectangle {
                         // other item type uses. Added 2026-08-12 for the
                         // season-tab context menu's View Details row.
                         if AppState.context-menu-item-type == "Season" {
-                            AppState.open-season-detail(AppState.context-menu-item-id, AppState.context-menu-series-id);
-                        } else {
-                            AppState.open-detail(AppState.context-menu-item-id, AppState.context-menu-item-type);
+                                AppState.open-season-detail(AppState.context-menu-item-id, AppState.context-menu-series-id);
+                            } else {
+                                AppState.open-detail(AppState.context-menu-item-id, AppState.context-menu-item-type);
+                            }
+                            AppState.show-context-menu = false;
                         }
-                        AppState.show-context-menu = false;
-                    }
-                    pointer-event(e) => {
-                        if e.kind == PointerEventKind.move { AppState.context-menu-focused = 6; }
+                        pointer-event(e) => {
+                            if e.kind == PointerEventKind.move { AppState.context-menu-focused = 6; }
+                        }
                     }
                 }
-            }
 
-            // Row 7 — Add to Playlist (music items only)
+                // Row 7 — Add to Playlist (music items only)
             if AppState.context-menu-item-type == "Audio" || AppState.context-menu-item-type == "MusicAlbum": Rectangle {
-                height: 44px;
-                border-radius: Theme.radius;
-                background: AppState.context-menu-focused == 7 ? Theme.accent-muted : transparent;
-                border-width:  (ta7.pressed || pulse7.pulsing) ? 3px : 0px;
-                border-color:  Theme.focus-border;
-                animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
-                pulse7 := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.context-menu-focused == 7; }
-                HorizontalLayout {
-                    padding-left: 12px; padding-right: 12px; spacing: 10px;
-                    alignment: start;
-                    Text {
-                        text: "≡";
-                        font-family: "Noto Sans Symbols 2";
-                        color: AppState.context-menu-focused == 7 ? Theme.accent : Theme.text-muted;
-                        font-size: 14px; vertical-alignment: center; width: 18px;
+                    height: 44px;
+                    border-radius: Theme.radius;
+                    background: AppState.context-menu-focused == 7 ? Theme.accent-muted : transparent;
+                    border-width: (ta7.pressed || pulse7.pulsing) ? 3px : 0px;
+                    border-color: Theme.focus-border;
+                    animate border-width {
+                        duration: 90ms * AppState.settings-animation-speed;
+                        easing: ease-out-expo;
                     }
-                    Text {
-                        text: "Add to Playlist";
-                        color: AppState.context-menu-focused == 7 ? Theme.text : Theme.text-muted;
-                        font-size: 14px; vertical-alignment: center;
+                    pulse7 := PressPulse {
+                        trigger: AppState.kb-activate-pulse;
+                        active: AppState.context-menu-focused == 7;
                     }
-                }
-                ta7 := TouchArea {
-                    clicked => {
-                        AppState.open-playlist-picker();
-                        AppState.show-context-menu = false;
-                    }
-                    pointer-event(e) => {
-                        if e.kind == PointerEventKind.move { AppState.context-menu-focused = 7; }
-                    }
-                }
-            }
 
-            // Row 8 — Watchlist (2026-07-19, real gap live-reported: "you
+                    HorizontalLayout {
+                        padding-left: 12px;
+                        padding-right: 12px;
+                        spacing: 10px;
+                        alignment: start;
+                        Text {
+                            text: "≡";
+                            font-family: "Noto Sans Symbols 2";
+                            color: AppState.context-menu-focused == 7 ? Theme.accent : Theme.text-muted;
+                            font-size: 14px;
+                            vertical-alignment: center;
+                            width: 18px;
+                        }
+
+                        Text {
+                            text: "Add to Playlist";
+                            color: AppState.context-menu-focused == 7 ? Theme.text : Theme.text-muted;
+                            font-size: 14px;
+                            vertical-alignment: center;
+                        }
+                    }
+
+                    ta7 := TouchArea {
+                        clicked => {
+                            AppState.open-playlist-picker();
+                            AppState.show-context-menu = false;
+                        }
+                        pointer-event(e) => {
+                            if e.kind == PointerEventKind.move { AppState.context-menu-focused = 7; }
+                        }
+                    }
+                }
+
+                // Row 8 — Watchlist (2026-07-19, real gap live-reported: "you
             // cant add anyting from the library to the watchlist" — an
             // already-in-library item redirects straight to THIS Jellyfin-
             // flavored menu, which never had a Watchlist row at all before).
@@ -438,38 +569,52 @@ export component ContextMenu inherits Rectangle {
             // family above (see its own header comment) — there is no
             // shared source of truth between the two files.
             if AppState.context-menu-jf-tmdb-id != "" && AppState.seerr-connected: Rectangle {
-                height: 44px;
-                border-radius: Theme.radius;
-                background: AppState.context-menu-focused == 8 ? Theme.accent-muted : transparent;
-                border-width:  (ta8.pressed || pulse8.pulsing) ? 3px : 0px;
-                border-color:  Theme.focus-border;
-                animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
-                pulse8 := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.context-menu-focused == 8; }
-                HorizontalLayout {
-                    padding-left: 12px; padding-right: 12px; spacing: 10px;
-                    alignment: start;
-                    Text {
-                        text: AppState.context-menu-on-watchlist ? "★" : "☆";
-                        color: AppState.context-menu-focused == 8 ? Theme.accent : Theme.text-muted;
-                        font-size: 14px; vertical-alignment: center; width: 18px;
+                    height: 44px;
+                    border-radius: Theme.radius;
+                    background: AppState.context-menu-focused == 8 ? Theme.accent-muted : transparent;
+                    border-width: (ta8.pressed || pulse8.pulsing) ? 3px : 0px;
+                    border-color: Theme.focus-border;
+                    animate border-width {
+                        duration: 90ms * AppState.settings-animation-speed;
+                        easing: ease-out-expo;
                     }
-                    Text {
-                        text: AppState.context-menu-on-watchlist ? "Remove from Watchlist" : "Add to Watchlist";
-                        color: AppState.context-menu-focused == 8 ? Theme.text : Theme.text-muted;
-                        font-size: 14px; vertical-alignment: center;
+                    pulse8 := PressPulse {
+                        trigger: AppState.kb-activate-pulse;
+                        active: AppState.context-menu-focused == 8;
+                    }
+
+                    HorizontalLayout {
+                        padding-left: 12px;
+                        padding-right: 12px;
+                        spacing: 10px;
+                        alignment: start;
+                        Text {
+                            text: AppState.context-menu-on-watchlist ? "★" : "☆";
+                            color: AppState.context-menu-focused == 8 ? Theme.accent : Theme.text-muted;
+                            font-size: 14px;
+                            vertical-alignment: center;
+                            width: 18px;
+                        }
+
+                        Text {
+                            text: AppState.context-menu-on-watchlist ? "Remove from Watchlist" : "Add to Watchlist";
+                            color: AppState.context-menu-focused == 8 ? Theme.text : Theme.text-muted;
+                            font-size: 14px;
+                            vertical-alignment: center;
+                        }
+                    }
+
+                    ta8 := TouchArea {
+                        clicked => {
+                            AppState.context-menu-focused = 8;
+                            AppState.context-jf-toggle-watchlist();
+                            AppState.show-context-menu = false;
+                        }
+                        pointer-event(e) => {
+                            if e.kind == PointerEventKind.move { AppState.context-menu-focused = 8; }
+                        }
                     }
                 }
-                ta8 := TouchArea {
-                    clicked => {
-                        AppState.context-menu-focused = 8;
-                        AppState.context-jf-toggle-watchlist();
-                        AppState.show-context-menu = false;
-                    }
-                    pointer-event(e) => {
-                        if e.kind == PointerEventKind.move { AppState.context-menu-focused = 8; }
-                    }
-                }
-            }
             } // end !is-discover-item
 
             // ── Discover row family (2026-07-18) — see this file's own
@@ -557,14 +702,14 @@ export component ContextMenu inherits Rectangle {
                 // of truth between the two files, see that function's own
                 // warning.
                 if AppState.seerr-can-manage-blocklist
-                        && (AppState.context-menu-availability == "" || AppState.context-menu-availability == "blocklisted"):
+                    && (AppState.context-menu-availability == "" || AppState.context-menu-availability == "blocklisted"):
                     DiscoverMenuRow {
-                        row-index: 7;
-                        icon-text: AppState.context-menu-availability == "blocklisted" ? "✕" : "⛔";
-                        icon-font-family: "Noto Sans Symbols 2";
-                        label: AppState.context-menu-availability == "blocklisted" ? "Remove from Blocklist" : "Add to Blocklist";
-                        activated => { AppState.context-discover-toggle-blocklist(); }
-                    }
+                    row-index: 7;
+                    icon-text: AppState.context-menu-availability == "blocklisted" ? "✕" : "⛔";
+                    icon-font-family: "Noto Sans Symbols 2";
+                    label: AppState.context-menu-availability == "blocklisted" ? "Remove from Blocklist" : "Add to Blocklist";
+                    activated => { AppState.context-discover-toggle-blocklist(); }
+                }
             }
         }
     }
@@ -586,7 +731,8 @@ export component PlaylistPicker inherits Rectangle {
     // coincidentally-mounted OTHER screen's own keyboard interaction is
     // never stomped on.
     TouchArea {
-        width: parent.width; height: parent.height;
+        width: parent.width;
+        height: parent.height;
         clicked => {
             AppState.show-playlist-picker = false;
             if AppState.onscreen-keyboard-target == "playlist-picker-name" {
@@ -596,16 +742,16 @@ export component PlaylistPicker inherits Rectangle {
     }
 
     dialog := Rectangle {
-        x: (parent.width  - self.width)  / 2;
+        x: (parent.width - self.width) / 2;
         y: (parent.height - self.height) / 2;
-        width:         320px;
-        height:        head-h + new-h + 1px + list-h + 16px;
+        width: 320px;
+        height: head-h + new-h + 1px + list-h + 16px;
         border-radius: Theme.radius-lg;
-        background:    Theme.surface-raised;
-        border-width:  1px;
-        border-color:  Theme.border-strong;
-        drop-shadow-blur:     20px;
-        drop-shadow-color:    #000000aa;
+        background: Theme.surface-raised;
+        border-width: 1px;
+        border-color: Theme.border-strong;
+        drop-shadow-blur: 20px;
+        drop-shadow-color: #000000aa;
         drop-shadow-offset-y: 6px;
 
         property <length> head-h: 30px;
@@ -620,58 +766,80 @@ export component PlaylistPicker inherits Rectangle {
         changed kb-y => { fl.content-y = self.kb-y; }
 
         // Stop backdrop click from propagating through the box
-        TouchArea { width: parent.width; height: parent.height; }
+        TouchArea {
+            width: parent.width;
+            height: parent.height;
+        }
 
         VerticalLayout {
-            x: 0; y: 8px;
+            x: 0;
+            y: 8px;
             width: parent.width;
-            padding-left:  8px;
+            padding-left: 8px;
             padding-right: 8px;
 
             Text {
-                text:               "ADD TO PLAYLIST";
-                color:              Theme.text-muted;
-                font-size:          11px;
-                height:             head-h;
+                text: "ADD TO PLAYLIST";
+                color: Theme.text-muted;
+                font-size: 11px;
+                height: head-h;
                 vertical-alignment: center;
                 horizontal-alignment: center;
             }
 
             // Row 0 — + New playlist… / name input
             Rectangle {
-                height:        new-h;
+                height: new-h;
                 border-radius: Theme.radius;
-                background:    AppState.playlist-picker-cursor == 0 ? Theme.accent-muted : (new-ta.has-hover ? Theme.surface : transparent);
-                border-width:  (new-ta.pressed || new-pulse.pulsing) ? 3px : 0px;
-                border-color:  Theme.focus-border;
-                animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
-                new-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.playlist-picker-cursor == 0; }
+                background: AppState.playlist-picker-cursor == 0 ? Theme.accent-muted : (new-ta.has-hover ? Theme.surface : transparent);
+                border-width: (new-ta.pressed || new-pulse.pulsing) ? 3px : 0px;
+                border-color: Theme.focus-border;
+                animate border-width {
+                    duration: 90ms * AppState.settings-animation-speed;
+                    easing: ease-out-expo;
+                }
+                new-pulse := PressPulse {
+                    trigger: AppState.kb-activate-pulse;
+                    active: AppState.playlist-picker-cursor == 0;
+                }
+
                 if !AppState.playlist-picker-naming: HorizontalLayout {
-                    padding-left: 12px; padding-right: 12px; spacing: 10px;
+                    padding-left: 12px;
+                    padding-right: 12px;
+                    spacing: 10px;
                     alignment: start;
                     Text {
                         text: "+";
                         color: AppState.playlist-picker-cursor == 0 ? Theme.accent : Theme.text-muted;
-                        font-size: 14px; vertical-alignment: center; width: 18px;
+                        font-size: 14px;
+                        vertical-alignment: center;
+                        width: 18px;
                     }
+
                     Text {
                         text: "New playlist…";
                         color: AppState.playlist-picker-cursor == 0 ? Theme.text : Theme.text-muted;
-                        font-size: 14px; vertical-alignment: center;
+                        font-size: 14px;
+                        vertical-alignment: center;
                     }
                 }
                 if AppState.playlist-picker-naming: HorizontalLayout {
-                    padding-left: 12px; padding-right: 12px; spacing: 8px;
+                    padding-left: 12px;
+                    padding-right: 12px;
+                    spacing: 8px;
                     alignment: start;
                     Text {
                         text: "Name:";
                         color: Theme.text-muted;
-                        font-size: 13px; vertical-alignment: center;
+                        font-size: 13px;
+                        vertical-alignment: center;
                     }
+
                     Text {
                         text: AppState.caret-text(AppState.playlist-picker-name, AppState.playlist-picker-name-cursor, "|");
                         color: Theme.text;
-                        font-size: 14px; vertical-alignment: center;
+                        font-size: 14px;
+                        vertical-alignment: center;
                         overflow: elide;
                     }
                 }
@@ -679,47 +847,60 @@ export component PlaylistPicker inherits Rectangle {
                     clicked => {
                         AppState.playlist-picker-cursor = 0;
                         if !AppState.playlist-picker-naming {
-                            AppState.playlist-picker-name   = "";
+                            AppState.playlist-picker-name = "";
                             AppState.playlist-picker-naming = true;
                         }
                     }
                 }
             }
 
-            Rectangle { height: 1px; background: Theme.border; }
+            Rectangle {
+                height: 1px;
+                background: Theme.border;
+            }
 
             fl := Flickable {
-                height:          list-h;
+                height: list-h;
                 content-height: AppState.playlist-picker-items.length * row-h;
                 VerticalLayout {
                     alignment: start;
                     for p[i] in AppState.playlist-picker-items: Rectangle {
-                        height:        row-h;
+                        height: row-h;
                         border-radius: Theme.radius;
-                        background:    AppState.playlist-picker-cursor == i + 1 ? Theme.accent-muted : (p-ta.has-hover ? Theme.surface : transparent);
-                        border-width:  (p-ta.pressed || p-pulse.pulsing) ? 3px : 0px;
-                        border-color:  Theme.focus-border;
-                        animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
-                        p-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.playlist-picker-cursor == i + 1; }
+                        background: AppState.playlist-picker-cursor == i + 1 ? Theme.accent-muted : (p-ta.has-hover ? Theme.surface : transparent);
+                        border-width: (p-ta.pressed || p-pulse.pulsing) ? 3px : 0px;
+                        border-color: Theme.focus-border;
+                        animate border-width {
+                            duration: 90ms * AppState.settings-animation-speed;
+                            easing: ease-out-expo;
+                        }
+                        p-pulse := PressPulse {
+                            trigger: AppState.kb-activate-pulse;
+                            active: AppState.playlist-picker-cursor == i + 1;
+                        }
+
                         p-ta := TouchArea {
                             clicked => { AppState.playlist-picker-select(i); }
                         }
+
                         HorizontalLayout {
-                            padding-left: 12px; padding-right: 12px;
+                            padding-left: 12px;
+                            padding-right: 12px;
                             VerticalLayout {
                                 alignment: center;
-                                spacing:   2px;
+                                spacing: 2px;
                                 Text {
-                                    text:      p.title;
-                                    color:     AppState.playlist-picker-cursor == i + 1 ? Theme.text : Theme.text-muted;
+                                    text: p.title;
+                                    color: AppState.playlist-picker-cursor == i + 1 ? Theme.text : Theme.text-muted;
                                     font-size: 14px;
-                                    overflow:  elide;
+                                    overflow: elide;
                                 }
+
                                 if p.subtitle != "": Text {
-                                    text:      p.subtitle;
-                                    color:     Theme.text-subtle;
+                                    text: p.subtitle;
+                                    color: Theme.text-subtle;
                                     font-size: 11px;
-                                    overflow:  elide;
+                                    overflow: elide;
                                 }
                             }
                         }

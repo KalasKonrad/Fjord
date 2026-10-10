@@ -78,36 +78,48 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
-import { MediaCard, LoadingSpinner, PressPulse, QwertyKeyboard } from "widgets.slint";
+import {
+    MediaCard,
+    LoadingSpinner,
+    PressPulse,
+    QwertyKeyboard,
+} from "widgets.slint";
 import { SectionRow } from "home.slint";
 
 component FilterPill inherits Rectangle {
     in property <string> text;
-    in property <bool>   active;
-    in property <int>    idx;
+    in property <bool> active;
+    in property <int> idx;
 
-    height:        28px;
-    width:         max(50px, txt.preferred-width + 20px);
+    height: 28px;
+    width: max(50px, txt.preferred-width + 20px);
     border-radius: self.height / 2;
-    background:    root.active ? Theme.accent-muted : (ta.has-hover ? Theme.surface-overlay : Theme.surface-raised);
-    border-width:  (ta.pressed || pulse.pulsing) ? 3px : (root.active ? 2px : 1px);
-    border-color:  root.active ? Theme.focus-border : Theme.border;
-    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
-    pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: root.active; }
+    background: root.active ? Theme.accent-muted : (ta.has-hover ? Theme.surface-overlay : Theme.surface-raised);
+    border-width: (ta.pressed || pulse.pulsing) ? 3px : (root.active ? 2px : 1px);
+    border-color: root.active ? Theme.focus-border : Theme.border;
+    animate border-width {
+        duration: 90ms * AppState.settings-animation-speed;
+        easing: ease-out-expo;
+    }
+    pulse := PressPulse {
+        trigger: AppState.kb-activate-pulse;
+        active: root.active;
+    }
 
     txt := Text {
-        text:                 root.text;
-        color:                root.active ? Theme.text : Theme.text-muted;
-        font-size:            12px;
+        text: root.text;
+        color: root.active ? Theme.text : Theme.text-muted;
+        font-size: 12px;
         horizontal-alignment: center;
-        vertical-alignment:   center;
-        width:                parent.width;
+        vertical-alignment: center;
+        width: parent.width;
     }
+
     ta := TouchArea {
         clicked => {
-            AppState.discover-header-focused      = false;
-            AppState.discover-filter-bar-active   = true;
-            AppState.discover-filter-bar-focused  = root.idx;
+            AppState.discover-header-focused = false;
+            AppState.discover-filter-bar-active = true;
+            AppState.discover-filter-bar-focused = root.idx;
             AppState.discover-filter-bar-confirm();
         }
     }
@@ -120,21 +132,22 @@ component FilterPill inherits Rectangle {
 // no keyboard path of its own — see this file's own header comment.
 component PopupOption inherits Rectangle {
     in property <string> text;
-    in property <bool>   option-focused;
-    in property <int>    idx;
+    in property <bool> option-focused;
+    in property <int> idx;
 
-    height:        32px;
+    height: 32px;
     border-radius: 4px;
-    background:    root.option-focused ? Theme.accent-muted : (ta.has-hover ? Theme.surface-overlay : transparent);
+    background: root.option-focused ? Theme.accent-muted : (ta.has-hover ? Theme.surface-overlay : transparent);
 
     Text {
-        x:                  10px;
-        text:               root.text;
-        color:              root.option-focused ? Theme.accent : Theme.text;
-        font-weight:        root.option-focused ? 600 : 400;
-        font-size:          13px;
+        x: 10px;
+        text: root.text;
+        color: root.option-focused ? Theme.accent : Theme.text;
+        font-weight: root.option-focused ? 600 : 400;
+        font-size: 13px;
         vertical-alignment: center;
     }
+
     ta := TouchArea {
         clicked => {
             AppState.discover-popup-cursor = root.idx;
@@ -149,28 +162,32 @@ component PopupOption inherits Rectangle {
 // in this app relies on).
 component FilterChip inherits Rectangle {
     in property <string> text;
-    in property <bool>   selected;
-    in property <bool>   chip-focused;
-    in property <int>    idx;
+    in property <bool> selected;
+    in property <bool> chip-focused;
+    in property <int> idx;
 
-    width:         110px;
-    height:        36px;
+    width: 110px;
+    height: 36px;
     border-radius: self.height / 2;
-    background:    root.selected ? Theme.accent : Theme.surface-overlay;
-    border-width:  root.chip-focused ? 2px : 1px;
-    border-color:  root.chip-focused ? Theme.focus-border : Theme.border;
-    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
+    background: root.selected ? Theme.accent : Theme.surface-overlay;
+    border-width: root.chip-focused ? 2px : 1px;
+    border-color: root.chip-focused ? Theme.focus-border : Theme.border;
+    animate border-width {
+        duration: 90ms * AppState.settings-animation-speed;
+        easing: ease-out-expo;
+    }
 
     Text {
-        x:                    6px;
-        text:                 root.text;
-        color:                root.selected ? #ffffff : Theme.text-muted;
-        font-size:            12px;
+        x: 6px;
+        text: root.text;
+        color: root.selected ? #ffffff : Theme.text-muted;
+        font-size: 12px;
         horizontal-alignment: center;
-        vertical-alignment:   center;
-        width:                parent.width - 12px;
-        overflow:             elide;
+        vertical-alignment: center;
+        width: parent.width - 12px;
+        overflow: elide;
     }
+
     ta := TouchArea {
         clicked => {
             AppState.discover-popup-cursor = root.idx;
@@ -201,14 +218,14 @@ export component DiscoverScreen inherits Rectangle {
     // empty states) is showing.
     property <length> content-h: root.height - 146px;
     property <bool> has-landing-rows:
-        AppState.discover-trending.length        > 0
-        || AppState.discover-popular-movies.length  > 0
-        || AppState.discover-popular-tv.length      > 0
+        AppState.discover-trending.length > 0
+        || AppState.discover-popular-movies.length > 0
+        || AppState.discover-popular-tv.length > 0
         || AppState.discover-upcoming-movies.length > 0
-        || AppState.discover-upcoming-tv.length     > 0
-        || AppState.discover-requested.length       > 0
+        || AppState.discover-upcoming-tv.length > 0
+        || AppState.discover-requested.length > 0
         || AppState.discover-new-in-theaters.length > 0
-        || AppState.discover-coming-up.length       > 0
+        || AppState.discover-coming-up.length > 0
         || AppState.discover-watchlist-mixed.length > 0;
 
     background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg;
@@ -217,45 +234,53 @@ export component DiscoverScreen inherits Rectangle {
         spacing: 0px;
 
         Rectangle {
-            height:     54px;
+            height: 54px;
             background: Theme.surface;
             HorizontalLayout {
-                padding-left:  Theme.sp-sm;
+                padding-left: Theme.sp-sm;
                 padding-right: Theme.sp;
-                spacing:       Theme.sp-sm;
-                alignment:     start;
+                spacing: Theme.sp-sm;
+                alignment: start;
                 Text {
-                    text:               "Discover";
-                    color:              Theme.text;
-                    font-size:          18px;
-                    font-weight:        700;
+                    text: "Discover";
+                    color: Theme.text;
+                    font-size: 18px;
+                    font-weight: 700;
                     vertical-alignment: center;
                 }
+
                 if AppState.discover-query != "": Text {
-                    text:               "\{AppState.discover-results.length} results";
-                    color:              Theme.accent;
-                    font-size:          13px;
+                    text: "\{AppState.discover-results.length} results";
+                    color: Theme.accent;
+                    font-size: 13px;
                     vertical-alignment: center;
                 }
-                if AppState.discover-searching: LoadingSpinner { width: 60px; }
+                if AppState.discover-searching: LoadingSpinner {
+                    width: 60px;
+                }
             }
-            Rectangle { y: parent.height - 1px; height: 1px; background: Theme.border; }
+
+            Rectangle {
+                y: parent.height - 1px;
+                height: 1px;
+                background: Theme.border;
+            }
         }
 
         // ── Search field (mirrors LibraryGrid's — hand-drawn cursor, no native LineEdit) ──
         Rectangle {
-            height:     52px;
+            height: 52px;
             background: Theme.surface;
 
             Rectangle {
-                x:             Theme.sp;
-                y:             8px;
-                width:         parent.width - Theme.sp * 2;
-                height:        36px;
+                x: Theme.sp;
+                y: 8px;
+                width: parent.width - Theme.sp * 2;
+                height: 36px;
                 border-radius: Theme.radius;
-                border-width:  AppState.discover-header-focused ? 2px : 1px;
-                border-color:  AppState.discover-header-focused ? Theme.focus-border : Theme.border;
-                background:    Theme.bg;
+                border-width: AppState.discover-header-focused ? 2px : 1px;
+                border-color: AppState.discover-header-focused ? Theme.focus-border : Theme.border;
+                background: Theme.bg;
 
                 TouchArea {
                     clicked => {
@@ -266,85 +291,97 @@ export component DiscoverScreen inherits Rectangle {
                 }
 
                 HorizontalLayout {
-                    padding-left:  12px;
+                    padding-left: 12px;
                     padding-right: 12px;
-                    spacing:       8px;
-                    alignment:     start;
+                    spacing: 8px;
+                    alignment: start;
 
                     Text {
                         // See browse.slint's identical fix for the full story —
                         // U+2315 was never actually in Noto Sans Symbols 2's cmap
                         // despite being pinned to it; U+1F50D (🔍) genuinely is.
-                        text:               "🔍";
-                        font-family:        "Noto Sans Symbols 2";
-                        color:              AppState.discover-header-focused ? Theme.accent : Theme.text-muted;
-                        font-size:          17px;
+                        text: "🔍";
+                        font-family: "Noto Sans Symbols 2";
+                        color: AppState.discover-header-focused ? Theme.accent : Theme.text-muted;
+                        font-size: 17px;
                         vertical-alignment: center;
-                        width:              22px;
+                        width: 22px;
                     }
+
                     Text {
                         text: AppState.discover-header-focused
                             ? AppState.caret-text(AppState.discover-query, AppState.discover-query-cursor, "▌")
                             : AppState.discover-query != "" ? AppState.discover-query
                             : "Search for movies and TV shows not in your library…";
                         color: AppState.discover-query != "" ? Theme.text
-                             : AppState.discover-header-focused ? Theme.text-muted
-                             : Theme.text-subtle;
-                        font-size:          14px;
+                            : AppState.discover-header-focused ? Theme.text-muted
+                            : Theme.text-subtle;
+                        font-size: 14px;
                         vertical-alignment: center;
                         horizontal-stretch: 1;
                     }
+
                     if AppState.discover-query != "" && !AppState.discover-header-focused: Text {
-                        text:               "Esc to clear";
-                        color:              Theme.text-subtle;
-                        font-size:          12px;
+                        text: "Esc to clear";
+                        color: Theme.text-subtle;
+                        font-size: 12px;
                         vertical-alignment: center;
                     }
                 }
             }
-            Rectangle { y: parent.height - 1px; height: 1px; background: Theme.border; }
+
+            Rectangle {
+                y: parent.height - 1px;
+                height: 1px;
+                background: Theme.border;
+            }
         }
 
         // ── Filter bar (2026-07-18) — always visible, matches Library grid's ──
         // own always-visible sort bar. Pill order 0-6 matches
         // discover-filter-bar-focused's own doc comment in app_state.slint.
         Rectangle {
-            height:     40px;
+            height: 40px;
             background: Theme.surface;
             HorizontalLayout {
-                padding-left:  Theme.sp-sm;
+                padding-left: Theme.sp-sm;
                 padding-right: Theme.sp-sm;
-                spacing:       8px;
-                alignment:     start;
+                spacing: 8px;
+                alignment: start;
                 FilterPill {
-                    idx:    0;
-                    text:   "Type: " + AppState.discover-filter-type-desc;
+                    idx: 0;
+                    text: "Type: " + AppState.discover-filter-type-desc;
                     active: AppState.discover-filter-bar-active && AppState.discover-filter-bar-focused == 0;
                 }
+
                 FilterPill {
-                    idx:  1;
+                    idx: 1;
                     text: "Genre: " + (AppState.discover-filter-genre-count == 0 ? "Any"
                         : AppState.discover-filter-genre-count == 1 ? "1 selected"
                         : "\{AppState.discover-filter-genre-count} selected");
                     active: AppState.discover-filter-bar-active && AppState.discover-filter-bar-focused == 1;
                 }
+
                 FilterPill {
-                    idx:    2;
-                    text:   "Sort: " + AppState.discover-filter-sort-desc;
+                    idx: 2;
+                    text: "Sort: " + AppState.discover-filter-sort-desc;
                     active: AppState.discover-filter-bar-active && AppState.discover-filter-bar-focused == 2;
                 }
+
                 FilterPill {
-                    idx:    3;
-                    text:   "Rating: " + AppState.discover-filter-rating-desc;
+                    idx: 3;
+                    text: "Rating: " + AppState.discover-filter-rating-desc;
                     active: AppState.discover-filter-bar-active && AppState.discover-filter-bar-focused == 3;
                 }
+
                 FilterPill {
-                    idx:    4;
-                    text:   "Year: " + AppState.discover-filter-year-desc;
+                    idx: 4;
+                    text: "Year: " + AppState.discover-filter-year-desc;
                     active: AppState.discover-filter-bar-active && AppState.discover-filter-bar-focused == 4;
                 }
+
                 FilterPill {
-                    idx:  5;
+                    idx: 5;
                     text: "Provider: " + (AppState.discover-filter-provider-count == 0 ? "Any"
                         : AppState.discover-filter-provider-count == 1 ? "1 selected"
                         : "\{AppState.discover-filter-provider-count} selected");
@@ -356,13 +393,19 @@ export component DiscoverScreen inherits Rectangle {
                     opacity: AppState.discover-query == "" ? 1.0 : 0.5;
                     active: AppState.discover-filter-bar-active && AppState.discover-filter-bar-focused == 5;
                 }
+
                 FilterPill {
-                    idx:    6;
-                    text:   "✕ Clear";
+                    idx: 6;
+                    text: "✕ Clear";
                     active: AppState.discover-filter-bar-active && AppState.discover-filter-bar-focused == 6;
                 }
             }
-            Rectangle { y: parent.height - 1px; height: 1px; background: Theme.border; }
+
+            Rectangle {
+                y: parent.height - 1px;
+                height: 1px;
+                background: Theme.border;
+            }
         }
 
         // Real gap, user-reported 2026-07-18: this state (no query, no
@@ -378,20 +421,22 @@ export component DiscoverScreen inherits Rectangle {
         if AppState.discover-query == "" && !AppState.discover-filters-active && !has-landing-rows: Rectangle {
             vertical-stretch: 1;
             VerticalLayout {
-                y:         parent.height / 3 - 20px;
-                width:     parent.width;
+                y: parent.height / 3 - 20px;
+                width: parent.width;
                 alignment: start;
-                spacing:   12px;
-                if AppState.seerr-connected: LoadingSpinner { height: 20px; }
+                spacing: 12px;
+                if AppState.seerr-connected: LoadingSpinner {
+                    height: 20px;
+                }
                 Text {
-                    text:                 AppState.seerr-connected
+                    text: AppState.seerr-connected
                         ? "Loading Seerr's trending picks…"
                         : "Type to search, or connect Seerr in Settings to see Trending, Popular, and Upcoming rows here.";
-                    color:                Theme.text-muted;
-                    font-size:            14px;
+                    color: Theme.text-muted;
+                    font-size: 14px;
                     horizontal-alignment: center;
-                    width:                parent.width;
-                    wrap:                 word-wrap;
+                    width: parent.width;
+                    wrap: word-wrap;
                 }
             }
         }
@@ -403,7 +448,7 @@ export component DiscoverScreen inherits Rectangle {
         // models themselves are left untouched underneath, so clearing all
         // filters brings this same content straight back.
         if AppState.discover-query == "" && !AppState.discover-filters-active && has-landing-rows: landing-container := Rectangle {
-            vertical-stretch:   1;
+            vertical-stretch: 1;
             horizontal-stretch: 1;
 
             // Real bug, live-reported 2026-07-19 ("keybord navigation still go
@@ -419,19 +464,19 @@ export component DiscoverScreen inherits Rectangle {
             // past it into nothing."
             pure function row-y(s: int) -> length {
                 Theme.sp-lg
-                + (AppState.discover-trending.length        > 0 && s > 0 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
-                + (AppState.discover-popular-movies.length   > 0 && s > 1 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
-                + (AppState.discover-popular-tv.length       > 0 && s > 2 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
-                + (AppState.discover-upcoming-movies.length  > 0 && s > 3 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
-                + (AppState.discover-upcoming-tv.length      > 0 && s > 4 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
-                + (AppState.discover-requested.length        > 0 && s > 5 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
-                + (AppState.discover-new-in-theaters.length  > 0 && s > 6 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
+                    + (AppState.discover-trending.length > 0 && s > 0 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
+                    + (AppState.discover-popular-movies.length > 0 && s > 1 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
+                    + (AppState.discover-popular-tv.length > 0 && s > 2 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
+                    + (AppState.discover-upcoming-movies.length > 0 && s > 3 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
+                    + (AppState.discover-upcoming-tv.length > 0 && s > 4 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
+                    + (AppState.discover-requested.length > 0 && s > 5 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
+                    + (AppState.discover-new-in-theaters.length > 0 && s > 6 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
                 // Row 8 (Watchlist, 2026-07-20) needs to know row 7's
                 // (Coming Up) height to scroll past it — this term was
                 // missing until Watchlist was added, the same "never
                 // extended when the next row was added" gap already found
                 // and fixed once for rows 5/6/7 above.
-                + (AppState.discover-coming-up.length        > 0 && s > 7 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
+                + (AppState.discover-coming-up.length > 0 && s > 7 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
             }
 
             // root.content-h, not self/own height — see the doc comment on
@@ -441,25 +486,27 @@ export component DiscoverScreen inherits Rectangle {
                 : clamp(
                       root.content-h / 2 - row-y(AppState.focused-section) - (AppState.dash-ch + 56px) / 2,
                       min(0px, root.content-h - landing-content.preferred-height),
-                      0px
-                  );
+                      0px);
             changed kb-y => { landing-fl.content-y = kb-y; }
 
             landing-fl := Flickable {
-                width:            parent.width;
-                height:           parent.height;
-                content-width:   self.width;
-                content-height:  landing-content.preferred-height;
-                animate content-y { duration: 200ms * AppState.settings-scroll-speed; easing: ease-in-out; }
+                width: parent.width;
+                height: parent.height;
+                content-width: self.width;
+                content-height: landing-content.preferred-height;
+                animate content-y {
+                    duration: 200ms * AppState.settings-scroll-speed;
+                    easing: ease-in-out;
+                }
 
                 landing-content := VerticalLayout {
                     if AppState.discover-trending.length > 0: SectionRow {
-                        section-title:   "Trending";
-                        items:           AppState.discover-trending;
+                        section-title: "Trending";
+                        items: AppState.discover-trending;
                         section-focused: AppState.focused-section == 0;
-                        focused-card:    AppState.discover-landing-card;
-                        card-w:          AppState.dash-cw;
-                        card-h:          AppState.dash-ch;
+                        focused-card: AppState.discover-landing-card;
+                        card-w: AppState.dash-cw;
+                        card-h: AppState.dash-ch;
                         card-focused(idx) => {
                             AppState.focused-section = 0;
                             AppState.discover-landing-card = idx;
@@ -471,12 +518,12 @@ export component DiscoverScreen inherits Rectangle {
                         item-context-full(itm) => { AppState.open-context-menu-discover(itm); }
                     }
                     if AppState.discover-popular-movies.length > 0: SectionRow {
-                        section-title:   "Popular Movies";
-                        items:           AppState.discover-popular-movies;
+                        section-title: "Popular Movies";
+                        items: AppState.discover-popular-movies;
                         section-focused: AppState.focused-section == 1;
-                        focused-card:    AppState.discover-landing-card;
-                        card-w:          AppState.dash-cw;
-                        card-h:          AppState.dash-ch;
+                        focused-card: AppState.discover-landing-card;
+                        card-w: AppState.dash-cw;
+                        card-h: AppState.dash-ch;
                         card-focused(idx) => {
                             AppState.focused-section = 1;
                             AppState.discover-landing-card = idx;
@@ -488,12 +535,12 @@ export component DiscoverScreen inherits Rectangle {
                         item-context-full(itm) => { AppState.open-context-menu-discover(itm); }
                     }
                     if AppState.discover-popular-tv.length > 0: SectionRow {
-                        section-title:   "Popular TV Shows";
-                        items:           AppState.discover-popular-tv;
+                        section-title: "Popular TV Shows";
+                        items: AppState.discover-popular-tv;
                         section-focused: AppState.focused-section == 2;
-                        focused-card:    AppState.discover-landing-card;
-                        card-w:          AppState.dash-cw;
-                        card-h:          AppState.dash-ch;
+                        focused-card: AppState.discover-landing-card;
+                        card-w: AppState.dash-cw;
+                        card-h: AppState.dash-ch;
                         card-focused(idx) => {
                             AppState.focused-section = 2;
                             AppState.discover-landing-card = idx;
@@ -505,12 +552,12 @@ export component DiscoverScreen inherits Rectangle {
                         item-context-full(itm) => { AppState.open-context-menu-discover(itm); }
                     }
                     if AppState.discover-upcoming-movies.length > 0: SectionRow {
-                        section-title:   "Upcoming Movies";
-                        items:           AppState.discover-upcoming-movies;
+                        section-title: "Upcoming Movies";
+                        items: AppState.discover-upcoming-movies;
                         section-focused: AppState.focused-section == 3;
-                        focused-card:    AppState.discover-landing-card;
-                        card-w:          AppState.dash-cw;
-                        card-h:          AppState.dash-ch;
+                        focused-card: AppState.discover-landing-card;
+                        card-w: AppState.dash-cw;
+                        card-h: AppState.dash-ch;
                         card-focused(idx) => {
                             AppState.focused-section = 3;
                             AppState.discover-landing-card = idx;
@@ -522,12 +569,12 @@ export component DiscoverScreen inherits Rectangle {
                         item-context-full(itm) => { AppState.open-context-menu-discover(itm); }
                     }
                     if AppState.discover-upcoming-tv.length > 0: SectionRow {
-                        section-title:   "Upcoming TV Shows";
-                        items:           AppState.discover-upcoming-tv;
+                        section-title: "Upcoming TV Shows";
+                        items: AppState.discover-upcoming-tv;
                         section-focused: AppState.focused-section == 4;
-                        focused-card:    AppState.discover-landing-card;
-                        card-w:          AppState.dash-cw;
-                        card-h:          AppState.dash-ch;
+                        focused-card: AppState.discover-landing-card;
+                        card-w: AppState.dash-cw;
+                        card-h: AppState.dash-ch;
                         card-focused(idx) => {
                             AppState.focused-section = 4;
                             AppState.discover-landing-card = idx;
@@ -539,12 +586,12 @@ export component DiscoverScreen inherits Rectangle {
                         item-context-full(itm) => { AppState.open-context-menu-discover(itm); }
                     }
                     if AppState.discover-requested.length > 0: SectionRow {
-                        section-title:   "Requested";
-                        items:           AppState.discover-requested;
+                        section-title: "Requested";
+                        items: AppState.discover-requested;
                         section-focused: AppState.focused-section == 5;
-                        focused-card:    AppState.discover-landing-card;
-                        card-w:          AppState.dash-cw;
-                        card-h:          AppState.dash-ch;
+                        focused-card: AppState.discover-landing-card;
+                        card-w: AppState.dash-cw;
+                        card-h: AppState.dash-ch;
                         card-focused(idx) => {
                             AppState.focused-section = 5;
                             AppState.discover-landing-card = idx;
@@ -558,12 +605,12 @@ export component DiscoverScreen inherits Rectangle {
                     // "New in Theaters" (2026-07-18) — an approximation, see
                     // AppState.discover-new-in-theaters' own doc comment.
                     if AppState.discover-new-in-theaters.length > 0: SectionRow {
-                        section-title:   "New in Theaters";
-                        items:           AppState.discover-new-in-theaters;
+                        section-title: "New in Theaters";
+                        items: AppState.discover-new-in-theaters;
                         section-focused: AppState.focused-section == 6;
-                        focused-card:    AppState.discover-landing-card;
-                        card-w:          AppState.dash-cw;
-                        card-h:          AppState.dash-ch;
+                        focused-card: AppState.discover-landing-card;
+                        card-w: AppState.dash-cw;
+                        card-h: AppState.dash-ch;
                         card-focused(idx) => {
                             AppState.focused-section = 6;
                             AppState.discover-landing-card = idx;
@@ -581,12 +628,12 @@ export component DiscoverScreen inherits Rectangle {
                     // (discover.rs) — see that function's own comment for why
                     // this needs one, unlike every other row.
                     if AppState.discover-coming-up.length > 0: SectionRow {
-                        section-title:   "Coming Up";
-                        items:           AppState.discover-coming-up;
+                        section-title: "Coming Up";
+                        items: AppState.discover-coming-up;
                         section-focused: AppState.focused-section == 7;
-                        focused-card:    AppState.discover-landing-card;
-                        card-w:          AppState.dash-cw;
-                        card-h:          AppState.dash-ch;
+                        focused-card: AppState.discover-landing-card;
+                        card-w: AppState.dash-cw;
+                        card-h: AppState.dash-ch;
                         card-focused(idx) => {
                             AppState.focused-section = 7;
                             AppState.discover-landing-card = idx;
@@ -615,12 +662,12 @@ export component DiscoverScreen inherits Rectangle {
                     // Up). Deliberately NOT deduped against Coming Up or
                     // any other row — see discover.rs's own comment on this.
                     if AppState.discover-watchlist-mixed.length > 0: SectionRow {
-                        section-title:   "Watchlist";
-                        items:           AppState.discover-watchlist-mixed;
+                        section-title: "Watchlist";
+                        items: AppState.discover-watchlist-mixed;
                         section-focused: AppState.focused-section == 8;
-                        focused-card:    AppState.discover-landing-card;
-                        card-w:          AppState.dash-cw;
-                        card-h:          AppState.dash-ch;
+                        focused-card: AppState.discover-landing-card;
+                        card-w: AppState.dash-cw;
+                        card-h: AppState.dash-ch;
                         card-focused(idx) => {
                             AppState.focused-section = 8;
                             AppState.discover-landing-card = idx;
@@ -646,16 +693,16 @@ export component DiscoverScreen inherits Rectangle {
                 text: AppState.discover-query != ""
                     ? "No results for \"\{AppState.discover-query}\"."
                     : "No results match the current filters.";
-                color:                Theme.text-muted;
-                font-size:            14px;
+                color: Theme.text-muted;
+                font-size: 14px;
                 horizontal-alignment: center;
-                y:                    parent.height / 3;
-                width:                parent.width;
+                y: parent.height / 3;
+                width: parent.width;
             }
         }
 
         if AppState.discover-results.length > 0: fl-container := Rectangle {
-            vertical-stretch:   1;
+            vertical-stretch: 1;
             horizontal-stretch: 1;
             // root.height (content-h), not self.height — see the doc comment
             // on content-h up top for why this container being conditionally
@@ -663,14 +710,16 @@ export component DiscoverScreen inherits Rectangle {
             property <length> kb-y: clamp(
                 -AppState.discover-focused-row * (card-h + gap) + root.content-h / 2 - card-h / 2,
                 min(0px, root.content-h - root.grid-content-height),
-                0px
-            );
+                0px);
             changed kb-y => { fl.content-y = kb-y; }
 
             fl := Flickable {
-                content-width:  fl-container.width;
+                content-width: fl-container.width;
                 content-height: max(fl-container.height, root.grid-content-height);
-                animate content-y { duration: 150ms * AppState.settings-scroll-speed; easing: ease-out-expo; }
+                animate content-y {
+                    duration: 150ms * AppState.settings-scroll-speed;
+                    easing: ease-out-expo;
+                }
 
                 VerticalLayout {
                     padding: gap;
@@ -678,18 +727,18 @@ export component DiscoverScreen inherits Rectangle {
 
                     for row-idx in (AppState.discover-results.length + AppState.library-cols - 1) / AppState.library-cols: HorizontalLayout {
                         alignment: start;
-                        spacing:   gap;
-                        height:    card-h;
+                        spacing: gap;
+                        height: card-h;
 
                         for col-idx in AppState.library-cols: MediaCard {
                             property <int> idx: row-idx * AppState.library-cols + col-idx;
                             visible: idx < AppState.discover-results.length;
-                            item:    AppState.discover-results[idx];
-                            width:   card-w;
+                            item: AppState.discover-results[idx];
+                            width: card-w;
                             focused: AppState.focused-section == 0 && !AppState.discover-header-focused && idx == AppState.discover-focused;
                             clicked => {
-                                AppState.focused-section      = 0;
-                                AppState.discover-focused     = idx;
+                                AppState.focused-section = 0;
+                                AppState.discover-focused = idx;
                                 AppState.discover-focused-row = row-idx;
                                 AppState.discover-header-focused = false;
                                 AppState.discover-filter-bar-active = false;
@@ -698,8 +747,8 @@ export component DiscoverScreen inherits Rectangle {
                                 AppState.open-discover-item(c.item-type == "DiscoverMovie" ? "movie" : "tv", c.id);
                             }
                             right-clicked => {
-                                AppState.focused-section      = 0;
-                                AppState.discover-focused     = idx;
+                                AppState.focused-section = 0;
+                                AppState.discover-focused = idx;
                                 AppState.discover-focused-row = row-idx;
                                 AppState.discover-header-focused = false;
                                 AppState.discover-filter-bar-active = false;
@@ -721,50 +770,62 @@ export component DiscoverScreen inherits Rectangle {
     // gotcha class entirely rather than needing a root.width-style
     // workaround, since this box never needs to be responsive.
     if AppState.discover-popup-open != "": Rectangle {
-        x: 0; y: 0;
-        width: root.width; height: root.height;
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.height;
         background: #00000088;
-        TouchArea { clicked => { AppState.discover-popup-open = ""; } }
+        TouchArea {
+            clicked => { AppState.discover-popup-open = ""; }
+        }
 
         Rectangle {
             property <bool> is-chip-popup: AppState.discover-popup-open == "genre" || AppState.discover-popup-open == "provider";
-            width:  self.is-chip-popup ? 340px : 220px;
+            width: self.is-chip-popup ? 340px : 220px;
             height: self.is-chip-popup ? 76px : 190px;
             x: (parent.width - self.width) / 2;
             y: (parent.height - self.height) / 2;
-            border-radius:     Theme.radius-lg;
-            background:        Theme.surface-raised;
-            border-width:      1px;
-            border-color:      Theme.border-strong;
-            drop-shadow-blur:  20px;
+            border-radius: Theme.radius-lg;
+            background: Theme.surface-raised;
+            border-width: 1px;
+            border-color: Theme.border-strong;
+            drop-shadow-blur: 20px;
             drop-shadow-color: #000000aa;
             clip: true;
 
             // Swallows clicks so they don't fall through to the backdrop's close-on-click.
-            TouchArea {}
+            TouchArea { }
 
             if AppState.discover-popup-open == "type": VerticalLayout {
                 padding: 8px;
                 for opt[i] in ["All", "Movies", "TV"]: PopupOption {
-                    text: opt; option-focused: i == AppState.discover-popup-cursor; idx: i;
+                    text: opt;
+                    option-focused: i == AppState.discover-popup-cursor;
+                    idx: i;
                 }
             }
             if AppState.discover-popup-open == "sort": VerticalLayout {
                 padding: 8px;
                 for opt[i] in ["Popularity", "Rating", "Newest", "Oldest"]: PopupOption {
-                    text: opt; option-focused: i == AppState.discover-popup-cursor; idx: i;
+                    text: opt;
+                    option-focused: i == AppState.discover-popup-cursor;
+                    idx: i;
                 }
             }
             if AppState.discover-popup-open == "rating": VerticalLayout {
                 padding: 8px;
                 for opt[i] in ["Any", "6+", "7+", "8+"]: PopupOption {
-                    text: opt; option-focused: i == AppState.discover-popup-cursor; idx: i;
+                    text: opt;
+                    option-focused: i == AppState.discover-popup-cursor;
+                    idx: i;
                 }
             }
             if AppState.discover-popup-open == "year": VerticalLayout {
                 padding: 8px;
                 for opt[i] in ["Any", "2000+", "2010+", "2015+", "2020+"]: PopupOption {
-                    text: opt; option-focused: i == AppState.discover-popup-cursor; idx: i;
+                    text: opt;
+                    option-focused: i == AppState.discover-popup-cursor;
+                    idx: i;
                 }
             }
 
@@ -775,41 +836,51 @@ export component DiscoverScreen inherits Rectangle {
             // documented "Recursion detected" trap this file's header
             // comment already flags).
             if AppState.discover-popup-open == "genre": Rectangle {
-                x: 20px; y: 20px;
-                width: 300px; height: 36px;
+                x: 20px;
+                y: 20px;
+                width: 300px;
+                height: 36px;
                 property <length> kb-x: clamp(
                     -(AppState.discover-popup-cursor * 118px) + 150px - 55px,
                     min(0px, 300px - genre-hbox.preferred-width),
-                    0px
-                );
+                    0px);
                 changed kb-x => { genre-fl.content-x = kb-x; }
                 genre-fl := Flickable {
-                    width: parent.width; height: parent.height;
+                    width: parent.width;
+                    height: parent.height;
                     content-width: genre-hbox.preferred-width;
                     genre-hbox := HorizontalLayout {
                         spacing: 8px;
                         for g[i] in AppState.discover-filter-genres: FilterChip {
-                            text: g.name; selected: g.selected; chip-focused: i == AppState.discover-popup-cursor; idx: i;
+                            text: g.name;
+                            selected: g.selected;
+                            chip-focused: i == AppState.discover-popup-cursor;
+                            idx: i;
                         }
                     }
                 }
             }
             if AppState.discover-popup-open == "provider": Rectangle {
-                x: 20px; y: 20px;
-                width: 300px; height: 36px;
+                x: 20px;
+                y: 20px;
+                width: 300px;
+                height: 36px;
                 property <length> kb-x: clamp(
                     -(AppState.discover-popup-cursor * 118px) + 150px - 55px,
                     min(0px, 300px - provider-hbox.preferred-width),
-                    0px
-                );
+                    0px);
                 changed kb-x => { provider-fl.content-x = kb-x; }
                 provider-fl := Flickable {
-                    width: parent.width; height: parent.height;
+                    width: parent.width;
+                    height: parent.height;
                     content-width: provider-hbox.preferred-width;
                     provider-hbox := HorizontalLayout {
                         spacing: 8px;
                         for p[i] in AppState.discover-filter-providers: FilterChip {
-                            text: p.name; selected: p.selected; chip-focused: i == AppState.discover-popup-cursor; idx: i;
+                            text: p.name;
+                            selected: p.selected;
+                            chip-focused: i == AppState.discover-popup-cursor;
+                            idx: i;
                         }
                     }
                 }

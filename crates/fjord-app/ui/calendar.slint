@@ -58,8 +58,14 @@ component CalendarDayCell inherits Rectangle {
     background: root.kbd-focused ? Theme.accent-muted : (ta.has-hover && root.day > 0 ? Theme.surface-overlay : transparent);
     border-width: (ta.pressed || pulse.pulsing) ? 3px : (root.kbd-focused ? 2px : 0px);
     border-color: Theme.focus-border;
-    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
-    pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: root.kbd-focused; }
+    animate border-width {
+        duration: 90ms * AppState.settings-animation-speed;
+        easing: ease-out-expo;
+    }
+    pulse := PressPulse {
+        trigger: AppState.kb-activate-pulse;
+        active: root.kbd-focused;
+    }
 
     if root.day > 0: VerticalLayout {
         padding: 6px;
@@ -93,8 +99,18 @@ export component CalendarScreen inherits Rectangle {
     background: Theme.bg;
 
     property <[string]> month-names: [
-        "January", "February", "March", "April", "May", "June",
-        "July", "August", "September", "October", "November", "December"
+        "January",
+        "February",
+        "March",
+        "April",
+        "May",
+        "June",
+        "July",
+        "August",
+        "September",
+        "October",
+        "November",
+        "December"
     ];
     // Ceiling division (n+6)/7 via integer division — how many full weeks
     // (rows) the grid needs for leading blanks + real days.
@@ -106,7 +122,8 @@ export component CalendarScreen inherits Rectangle {
         height: 64px;
 
         FjordButton {
-            x: 16px; y: 16px;
+            x: 16px;
+            y: 16px;
             text: "← Back";
             width: 88px;
             kbd-focused: AppState.calendar-cursor-row < 0 && AppState.calendar-cursor-col == 0;
@@ -152,6 +169,7 @@ export component CalendarScreen inherits Rectangle {
                     AppState.calendar-prev-month();
                 }
             }
+
             Text {
                 text: root.month-names[AppState.calendar-month - 1] + " " + AppState.calendar-year;
                 font-size: 20px;
@@ -161,6 +179,7 @@ export component CalendarScreen inherits Rectangle {
                 vertical-alignment: center;
                 horizontal-alignment: center;
             }
+
             FjordButton {
                 text: "▶";
                 width: 44px;
@@ -214,9 +233,11 @@ export component CalendarScreen inherits Rectangle {
     if AppState.show-calendar-day-popup: Rectangle {
         background: #00000088;
         TouchArea {
-            width: parent.width; height: parent.height;
+            width: parent.width;
+            height: parent.height;
             clicked => { AppState.show-calendar-day-popup = false; }
         }
+
         Rectangle {
             x: (parent.width - self.width) / 2;
             y: (parent.height - self.height) / 2;
@@ -230,10 +251,14 @@ export component CalendarScreen inherits Rectangle {
             drop-shadow-color: #000000aa;
             drop-shadow-offset-y: 6px;
 
-            TouchArea { width: parent.width; height: parent.height; }
+            TouchArea {
+                width: parent.width;
+                height: parent.height;
+            }
 
             popup-content := VerticalLayout {
-                x: 16px; y: 16px;
+                x: 16px;
+                y: 16px;
                 width: parent.width - 32px;
                 spacing: 6px;
                 for entry[idx] in AppState.calendar-day-popup-entries: Rectangle {
@@ -242,8 +267,15 @@ export component CalendarScreen inherits Rectangle {
                     background: AppState.calendar-day-popup-cursor == idx ? Theme.accent-muted : (pta.has-hover ? Theme.surface-overlay : transparent);
                     border-width: (pta.pressed || ppulse.pulsing) ? 3px : (AppState.calendar-day-popup-cursor == idx ? 2px : 0px);
                     border-color: Theme.focus-border;
-                    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
-                    ppulse := PressPulse { trigger: AppState.kb-activate-pulse; active: AppState.calendar-day-popup-cursor == idx; }
+                    animate border-width {
+                        duration: 90ms * AppState.settings-animation-speed;
+                        easing: ease-out-expo;
+                    }
+                    ppulse := PressPulse {
+                        trigger: AppState.kb-activate-pulse;
+                        active: AppState.calendar-day-popup-cursor == idx;
+                    }
+
                     VerticalLayout {
                         padding-left: 12px;
                         padding-right: 12px;
@@ -255,6 +287,7 @@ export component CalendarScreen inherits Rectangle {
                             font-weight: 600;
                             overflow: elide;
                         }
+
                         Text {
                             text: entry.subtitle;
                             color: Theme.text-muted;
@@ -262,6 +295,7 @@ export component CalendarScreen inherits Rectangle {
                             overflow: elide;
                         }
                     }
+
                     pta := TouchArea {
                         clicked => { AppState.calendar-day-popup-entry-selected(idx); }
                     }

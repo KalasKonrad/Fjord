@@ -29,16 +29,22 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme, CardItem } from "theme.slint";
 import { AppState } from "app_state.slint";
-import { FjordButton, MediaCard, LoadingSpinner, PressPulse, QwertyKeyboard } from "widgets.slint";
+import {
+    FjordButton,
+    MediaCard,
+    LoadingSpinner,
+    PressPulse,
+    QwertyKeyboard,
+} from "widgets.slint";
 
 // ── Horizontal-scroll content row with title ──────────────────────────────────
 export component SectionRow inherits Rectangle {
-    in property <string>     section-title;
+    in property <string> section-title;
     in property <[CardItem]> items;
-    in property <bool>       section-focused: false;
-    in property <int>        focused-card: 0;
-    in property <length>     card-w: 140px;
-    in property <length>     card-h: 224px;
+    in property <bool> section-focused: false;
+    in property <int> focused-card: 0;
+    in property <length> card-w: 140px;
+    in property <length> card-h: 224px;
     callback item-play(/* id */ string, /* item_type */ string);
     callback item-context(string, bool, bool, float, string, string); // id, played, fav, resume-pct, item-type, series-id
     // Additive (2026-07-18) — fires alongside item-context above on every
@@ -61,13 +67,13 @@ export component SectionRow inherits Rectangle {
     height: card-h + 56px;
 
     VerticalLayout {
-        padding:    Theme.sp;
-        spacing:    Theme.sp-sm;
+        padding: Theme.sp;
+        spacing: Theme.sp-sm;
 
         Text {
-            text:        section-title;
-            color:       Theme.text;
-            font-size:   16px;
+            text: section-title;
+            color: Theme.text;
+            font-size: 16px;
             font-weight: 700;
         }
 
@@ -76,28 +82,30 @@ export component SectionRow inherits Rectangle {
         // creates a dependency cycle → "Recursion detected" panic (Slint gotcha).
         // Reading fl.width from a parent element is safe (no self-reference).
         property <length> kb-x: focused-card <= 0 ? 0px
-                  : clamp(
+            : clamp(
                         -(focused-card * (root.card-w + 10px) + root.card-w / 2 - fl.width / 2),
                         min(0px, fl.width - hbox.preferred-width - Theme.sp),
-                        0px
-                    );
+                        0px);
         changed kb-x => { fl.content-x = kb-x; }
 
         fl := Flickable {
-            height:         card-h;
+            height: card-h;
             content-width: hbox.preferred-width + Theme.sp;
-            animate content-x { duration: 150ms * AppState.settings-scroll-speed; easing: ease-out-expo; }
+            animate content-x {
+                duration: 150ms * AppState.settings-scroll-speed;
+                easing: ease-out-expo;
+            }
 
             hbox := HorizontalLayout {
-                spacing:   10px;
+                spacing: 10px;
                 alignment: start;
 
                 for itm[i] in items: MediaCard {
-                    width:   root.card-w;
-                    height:  root.card-h;
-                    item:    itm;
+                    width: root.card-w;
+                    height: root.card-h;
+                    item: itm;
                     focused: root.section-focused && i == root.focused-card;
-                    clicked       => { root.card-focused(i); root.item-play(itm.id, itm.item-type); }
+                    clicked => { root.card-focused(i); root.item-play(itm.id, itm.item-type); }
                     right-clicked => {
                         root.card-focused(i);
                         AppState.context-menu-title = itm.title;
@@ -128,52 +136,59 @@ export component LibraryGrid inherits Rectangle {
 
         // ── Top bar ───────────────────────────────────────────────────────────
         Rectangle {
-            height:     54px;
+            height: 54px;
             background: Theme.surface;
             HorizontalLayout {
-                padding-left:  Theme.sp-sm;
+                padding-left: Theme.sp-sm;
                 padding-right: Theme.sp;
-                spacing:       Theme.sp-sm;
-                alignment:     start;
+                spacing: Theme.sp-sm;
+                alignment: start;
                 FjordButton {
-                    text:        "← Back";
-                    width:       80px;
+                    text: "← Back";
+                    width: 80px;
                     kbd-focused: AppState.library-back-focused;
                     clicked => {
-                        AppState.show-library           = false;
+                        AppState.show-library = false;
                         AppState.library-header-focused = false;
-                        AppState.library-sort-focused   = false;
-                        AppState.library-back-focused   = false;
+                        AppState.library-sort-focused = false;
+                        AppState.library-back-focused = false;
                         AppState.library-search-clear();
                     }
                 }
+
                 Text {
-                    text:               grid-title;
-                    color:              Theme.text;
-                    font-size:          18px;
-                    font-weight:        700;
+                    text: grid-title;
+                    color: Theme.text;
+                    font-size: 18px;
+                    font-weight: 700;
                     vertical-alignment: center;
                 }
+
                 Text {
-                    text:               AppState.library-query != "" ? "\{AppState.library-display.length} results" : "\{AppState.library-display.length} items";
-                    color:              AppState.library-query != "" ? Theme.accent : Theme.text-muted;
-                    font-size:          13px;
+                    text: AppState.library-query != "" ? "\{AppState.library-display.length} results" : "\{AppState.library-display.length} items";
+                    color: AppState.library-query != "" ? Theme.accent : Theme.text-muted;
+                    font-size: 13px;
                     vertical-alignment: center;
                 }
             }
-            Rectangle { y: parent.height - 1px; height: 1px; background: Theme.border; }
+
+            Rectangle {
+                y: parent.height - 1px;
+                height: 1px;
+                background: Theme.border;
+            }
         }
 
         // ── Sort bar: 5 sort pills + Unwatched/Favorites filters; Tab to focus ─
         Rectangle {
-            height:     40px;
+            height: 40px;
             background: Theme.surface;
 
             HorizontalLayout {
-                padding-left:  Theme.sp-sm;
+                padding-left: Theme.sp-sm;
                 padding-right: Theme.sp-sm;
-                spacing:       6px;
-                alignment:     start;
+                spacing: 6px;
+                alignment: start;
 
                 // Music: view pills (Artists/Albums/Playlists) at LEFT of sort pills (cursor 0-2)
                 if AppState.active-nav == 4: HorizontalLayout {
@@ -183,123 +198,163 @@ export component LibraryGrid inherits Rectangle {
                         property <bool> v-active:  AppState.library-music-view == vi;
                         property <bool> v-focused: { let hf = AppState.library-sort-focused; let sc = AppState.library-sort-cursor; hf && sc == vi };
                         property <string> v-lbl:   vi == 0 ? "Artists" : vi == 1 ? "Albums" : "Playlists";
-                        width:         v-t.preferred-width + 18px;
-                        height:        26px;
-                        y:             (parent.height - self.height) / 2;
+                        width: v-t.preferred-width + 18px;
+                        height: 26px;
+                        y: (parent.height - self.height) / 2;
                         border-radius: Theme.radius;
-                        background:    v-active ? Theme.accent : (v-focused ? Theme.surface-overlay : transparent);
-                        border-width:  (v-ta.pressed || v-pulse.pulsing) ? 3px : ((v-focused || (!v-active)) ? 1px : 0px);
-                        border-color:  v-focused ? Theme.text : Theme.border-strong;
-                        animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
-                        v-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: v-focused; }
-                        v-t := Text {
-                            text:                 v-lbl;
-                            color:                v-active ? Theme.bg : (v-focused ? Theme.text : Theme.text-muted);
-                            font-size:            12px;
-                            vertical-alignment:   center;
-                            horizontal-alignment: center;
-                            x:                    9px;
-                            width:                parent.width - 18px;
+                        background: v-active ? Theme.accent : (v-focused ? Theme.surface-overlay : transparent);
+                        border-width: (v-ta.pressed || v-pulse.pulsing) ? 3px : ((v-focused || (!v-active)) ? 1px : 0px);
+                        border-color: v-focused ? Theme.text : Theme.border-strong;
+                        animate border-width {
+                            duration: 90ms * AppState.settings-animation-speed;
+                            easing: ease-out-expo;
                         }
-                        v-ta := TouchArea { clicked => { AppState.library-music-view-changed(vi); } }
+                        v-pulse := PressPulse {
+                            trigger: AppState.kb-activate-pulse;
+                            active: v-focused;
+                        }
+
+                        v-t := Text {
+                            text: v-lbl;
+                            color: v-active ? Theme.bg : (v-focused ? Theme.text : Theme.text-muted);
+                            font-size: 12px;
+                            vertical-alignment: center;
+                            horizontal-alignment: center;
+                            x: 9px;
+                            width: parent.width - 18px;
+                        }
+
+                        v-ta := TouchArea {
+                            clicked => { AppState.library-music-view-changed(vi); }
+                        }
                     }
                 }
 
-                if AppState.active-nav == 4: Rectangle { width: 8px; }
+                if AppState.active-nav == 4: Rectangle {
+                    width: 8px;
+                }
 
                 Text {
-                    text:               "Sort:";
-                    color:              Theme.text-muted;
-                    font-size:          11px;
+                    text: "Sort:";
+                    color: Theme.text-muted;
+                    font-size: 11px;
                     vertical-alignment: center;
-                    width:              30px;
+                    width: 30px;
                 }
 
                 // Sort pills — for Music (nav=4) these are at cursor offset 3 (so cursor = si + 3)
                 for si in 5: Rectangle {
-                    property <bool>   pill-active:  AppState.library-sort == si;
-                    property <bool>   pill-focused: {
-                        let hf  = AppState.library-sort-focused;
-                        let sc  = AppState.library-sort-cursor;
+                    property <bool> pill-active:  AppState.library-sort == si;
+                    property <bool> pill-focused: {
+                        let hf = AppState.library-sort-focused;
+                        let sc = AppState.library-sort-cursor;
                         let off = AppState.active-nav == 4 ? 3 : 0;
                         hf && sc == si + off
                     };
                     property <string> pill-lbl:     si == 0 ? "A→Z" : si == 1 ? "Z→A" : si == 2 ? "Year ↓" : si == 3 ? "Year ↑" : "Shuffle";
-                    width:         pill-t.preferred-width + 18px;
-                    height:        26px;
-                    y:             (parent.height - self.height) / 2;
+                    width: pill-t.preferred-width + 18px;
+                    height: 26px;
+                    y: (parent.height - self.height) / 2;
                     border-radius: Theme.radius;
-                    background:    pill-active ? Theme.accent : (pill-focused ? Theme.surface-overlay : transparent);
-                    border-width:  (sort-ta.pressed || sort-pulse.pulsing) ? 4px : (pill-focused ? 2px : 0px);
-                    border-color:  pill-active ? Theme.text : Theme.focus-border;
-                    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
-                    sort-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: pill-focused; }
-                    pill-t := Text {
-                        text:                 pill-lbl;
-                        color:                pill-active ? Theme.bg : (pill-focused ? Theme.text : Theme.text-muted);
-                        font-size:            12px;
-                        vertical-alignment:   center;
-                        horizontal-alignment: center;
-                        x:                    9px;
-                        width:                parent.width - 18px;
+                    background: pill-active ? Theme.accent : (pill-focused ? Theme.surface-overlay : transparent);
+                    border-width: (sort-ta.pressed || sort-pulse.pulsing) ? 4px : (pill-focused ? 2px : 0px);
+                    border-color: pill-active ? Theme.text : Theme.focus-border;
+                    animate border-width {
+                        duration: 90ms * AppState.settings-animation-speed;
+                        easing: ease-out-expo;
                     }
+                    sort-pulse := PressPulse {
+                        trigger: AppState.kb-activate-pulse;
+                        active: pill-focused;
+                    }
+
+                    pill-t := Text {
+                        text: pill-lbl;
+                        color: pill-active ? Theme.bg : (pill-focused ? Theme.text : Theme.text-muted);
+                        font-size: 12px;
+                        vertical-alignment: center;
+                        horizontal-alignment: center;
+                        x: 9px;
+                        width: parent.width - 18px;
+                    }
+
                     sort-ta := TouchArea {
                         clicked => { AppState.library-sort-apply(si, AppState.library-filter-unwatched, AppState.library-filter-favorites); }
                     }
                 }
 
                 // Music: Favorites filter at cursor 8 (right of sort pills)
-                if AppState.active-nav == 4: Rectangle { width: 8px; }
+                if AppState.active-nav == 4: Rectangle {
+                    width: 8px;
+                }
                 if AppState.active-nav == 4: Rectangle {
                     property <bool> mf-active:  AppState.library-filter-favorites;
                     property <bool> mf-focused: { let hf = AppState.library-sort-focused; let sc = AppState.library-sort-cursor; hf && sc == 8 };
-                    width:         mf-t.preferred-width + 18px;
-                    height:        26px;
-                    y:             (parent.height - self.height) / 2;
+                    width: mf-t.preferred-width + 18px;
+                    height: 26px;
+                    y: (parent.height - self.height) / 2;
                     border-radius: Theme.radius;
-                    background:    mf-active ? Theme.accent : (mf-focused ? Theme.surface-overlay : transparent);
-                    border-width:  (mf-ta.pressed || mf-pulse.pulsing) ? 4px : (mf-focused ? 2px : 0px);
-                    border-color:  mf-active ? Theme.text : Theme.focus-border;
-                    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
-                    mf-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: mf-focused; }
-                    mf-t := Text {
-                        text:                 "Favorites";
-                        color:                mf-active ? Theme.bg : (mf-focused ? Theme.text : Theme.text-muted);
-                        font-size:            12px;
-                        vertical-alignment:   center;
-                        horizontal-alignment: center;
-                        x:                    9px;
-                        width:                parent.width - 18px;
+                    background: mf-active ? Theme.accent : (mf-focused ? Theme.surface-overlay : transparent);
+                    border-width: (mf-ta.pressed || mf-pulse.pulsing) ? 4px : (mf-focused ? 2px : 0px);
+                    border-color: mf-active ? Theme.text : Theme.focus-border;
+                    animate border-width {
+                        duration: 90ms * AppState.settings-animation-speed;
+                        easing: ease-out-expo;
                     }
+                    mf-pulse := PressPulse {
+                        trigger: AppState.kb-activate-pulse;
+                        active: mf-focused;
+                    }
+
+                    mf-t := Text {
+                        text: "Favorites";
+                        color: mf-active ? Theme.bg : (mf-focused ? Theme.text : Theme.text-muted);
+                        font-size: 12px;
+                        vertical-alignment: center;
+                        horizontal-alignment: center;
+                        x: 9px;
+                        width: parent.width - 18px;
+                    }
+
                     mf-ta := TouchArea {
                         clicked => { AppState.library-sort-apply(AppState.library-sort, AppState.library-filter-unwatched, !AppState.library-filter-favorites); }
                     }
                 }
 
                 // Non-Music: Unwatched / Favorites filters (cursor 5, 6)
-                if AppState.library-has-filters: Rectangle { width: 8px; }
+                if AppState.library-has-filters: Rectangle {
+                    width: 8px;
+                }
 
                 if AppState.library-has-filters: Rectangle {
                     property <bool> fw-active:  AppState.library-filter-unwatched;
                     property <bool> fw-focused: { let hf = AppState.library-sort-focused; let sc = AppState.library-sort-cursor; hf && sc == 5 };
-                    width:         fw-t.preferred-width + 18px;
-                    height:        26px;
-                    y:             (parent.height - self.height) / 2;
+                    width: fw-t.preferred-width + 18px;
+                    height: 26px;
+                    y: (parent.height - self.height) / 2;
                     border-radius: Theme.radius;
-                    background:    fw-active ? Theme.accent : (fw-focused ? Theme.surface-overlay : transparent);
-                    border-width:  (fw-ta.pressed || fw-pulse.pulsing) ? 4px : (fw-focused ? 2px : 0px);
-                    border-color:  fw-active ? Theme.text : Theme.focus-border;
-                    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
-                    fw-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: fw-focused; }
-                    fw-t := Text {
-                        text:                 "Unwatched";
-                        color:                fw-active ? Theme.bg : (fw-focused ? Theme.text : Theme.text-muted);
-                        font-size:            12px;
-                        vertical-alignment:   center;
-                        horizontal-alignment: center;
-                        x:                    9px;
-                        width:                parent.width - 18px;
+                    background: fw-active ? Theme.accent : (fw-focused ? Theme.surface-overlay : transparent);
+                    border-width: (fw-ta.pressed || fw-pulse.pulsing) ? 4px : (fw-focused ? 2px : 0px);
+                    border-color: fw-active ? Theme.text : Theme.focus-border;
+                    animate border-width {
+                        duration: 90ms * AppState.settings-animation-speed;
+                        easing: ease-out-expo;
                     }
+                    fw-pulse := PressPulse {
+                        trigger: AppState.kb-activate-pulse;
+                        active: fw-focused;
+                    }
+
+                    fw-t := Text {
+                        text: "Unwatched";
+                        color: fw-active ? Theme.bg : (fw-focused ? Theme.text : Theme.text-muted);
+                        font-size: 12px;
+                        vertical-alignment: center;
+                        horizontal-alignment: center;
+                        x: 9px;
+                        width: parent.width - 18px;
+                    }
+
                     fw-ta := TouchArea {
                         clicked => { AppState.library-sort-apply(AppState.library-sort, !AppState.library-filter-unwatched, AppState.library-filter-favorites); }
                     }
@@ -308,120 +363,145 @@ export component LibraryGrid inherits Rectangle {
                 if AppState.library-has-filters: Rectangle {
                     property <bool> ff-active:  AppState.library-filter-favorites;
                     property <bool> ff-focused: { let hf = AppState.library-sort-focused; let sc = AppState.library-sort-cursor; hf && sc == 6 };
-                    width:         ff-t.preferred-width + 18px;
-                    height:        26px;
-                    y:             (parent.height - self.height) / 2;
+                    width: ff-t.preferred-width + 18px;
+                    height: 26px;
+                    y: (parent.height - self.height) / 2;
                     border-radius: Theme.radius;
-                    background:    ff-active ? Theme.accent : (ff-focused ? Theme.surface-overlay : transparent);
-                    border-width:  (ff-ta.pressed || ff-pulse.pulsing) ? 4px : (ff-focused ? 2px : 0px);
-                    border-color:  ff-active ? Theme.text : Theme.focus-border;
-                    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
-                    ff-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: ff-focused; }
-                    ff-t := Text {
-                        text:                 "Favorites";
-                        color:                ff-active ? Theme.bg : (ff-focused ? Theme.text : Theme.text-muted);
-                        font-size:            12px;
-                        vertical-alignment:   center;
-                        horizontal-alignment: center;
-                        x:                    9px;
-                        width:                parent.width - 18px;
+                    background: ff-active ? Theme.accent : (ff-focused ? Theme.surface-overlay : transparent);
+                    border-width: (ff-ta.pressed || ff-pulse.pulsing) ? 4px : (ff-focused ? 2px : 0px);
+                    border-color: ff-active ? Theme.text : Theme.focus-border;
+                    animate border-width {
+                        duration: 90ms * AppState.settings-animation-speed;
+                        easing: ease-out-expo;
                     }
+                    ff-pulse := PressPulse {
+                        trigger: AppState.kb-activate-pulse;
+                        active: ff-focused;
+                    }
+
+                    ff-t := Text {
+                        text: "Favorites";
+                        color: ff-active ? Theme.bg : (ff-focused ? Theme.text : Theme.text-muted);
+                        font-size: 12px;
+                        vertical-alignment: center;
+                        horizontal-alignment: center;
+                        x: 9px;
+                        width: parent.width - 18px;
+                    }
+
                     ff-ta := TouchArea {
                         clicked => { AppState.library-sort-apply(AppState.library-sort, AppState.library-filter-unwatched, !AppState.library-filter-favorites); }
                     }
                 }
 
-                Rectangle { horizontal-stretch: 1; }
+                Rectangle {
+                    horizontal-stretch: 1;
+                }
+
                 Text {
-                    text:               AppState.library-sort-focused ? "← → navigate  ↵ apply  Esc" : "Tab to sort";
-                    color:              AppState.library-sort-focused ? Theme.accent : Theme.text-subtle;
-                    font-size:          11px;
+                    text: AppState.library-sort-focused ? "← → navigate  ↵ apply  Esc" : "Tab to sort";
+                    color: AppState.library-sort-focused ? Theme.accent : Theme.text-subtle;
+                    font-size: 11px;
                     vertical-alignment: center;
                 }
             }
-            Rectangle { y: parent.height - 1px; height: 1px; background: Theme.border; }
+
+            Rectangle {
+                y: parent.height - 1px;
+                height: 1px;
+                background: Theme.border;
+            }
         }
 
         // ── Search field ──────────────────────────────────────────────────────
         Rectangle {
-            height:     52px;
+            height: 52px;
             background: Theme.surface;
 
             Rectangle {
-                x:             Theme.sp;
-                y:             8px;
-                width:         parent.width - Theme.sp * 2;
-                height:        36px;
+                x: Theme.sp;
+                y: 8px;
+                width: parent.width - Theme.sp * 2;
+                height: 36px;
                 border-radius: Theme.radius;
-                border-width:  AppState.library-header-focused ? 2px : 1px;
-                border-color:  AppState.library-header-focused ? Theme.focus-border : Theme.border;
-                background:    Theme.bg;
+                border-width: AppState.library-header-focused ? 2px : 1px;
+                border-color: AppState.library-header-focused ? Theme.focus-border : Theme.border;
+                background: Theme.bg;
 
                 // Mouse path into search — the browse bar had this, the library
                 // field didn't (search was keyboard-only for mouse users).
                 TouchArea {
                     clicked => {
-                        AppState.library-header-focused   = true;
-                        AppState.library-sort-focused     = false;
-                        AppState.library-back-focused     = false;
+                        AppState.library-header-focused = true;
+                        AppState.library-sort-focused = false;
+                        AppState.library-back-focused = false;
                         AppState.library-scrubber-focused = false;
                     }
                 }
 
                 HorizontalLayout {
-                    padding-left:  12px;
+                    padding-left: 12px;
                     padding-right: 12px;
-                    spacing:       8px;
-                    alignment:     start;
+                    spacing: 8px;
+                    alignment: start;
 
                     Text {
                         // See browse.slint's identical fix for the full story —
                         // U+2315 was never actually in Noto Sans Symbols 2's cmap
                         // despite being pinned to it; U+1F50D (🔍) genuinely is.
-                        text:               "🔍";
-                font-family:        "Noto Sans Symbols 2";
-                        color:              AppState.library-header-focused ? Theme.accent : Theme.text-muted;
-                        font-size:          17px;
+                        text: "🔍";
+                        font-family: "Noto Sans Symbols 2";
+                        color: AppState.library-header-focused ? Theme.accent : Theme.text-muted;
+                        font-size: 17px;
                         vertical-alignment: center;
-                        width:              22px;
+                        width: 22px;
                     }
+
                     Text {
                         text: AppState.library-header-focused
                             ? AppState.caret-text(AppState.library-query, AppState.library-query-cursor, "▌")
                             : AppState.library-query != "" ? AppState.library-query
                             : "Search…";
                         color: AppState.library-query != "" ? Theme.text
-                             : AppState.library-header-focused ? Theme.text-muted
-                             : Theme.text-subtle;
-                        font-size:          14px;
+                            : AppState.library-header-focused ? Theme.text-muted
+                            : Theme.text-subtle;
+                        font-size: 14px;
                         vertical-alignment: center;
                         horizontal-stretch: 1;
                     }
+
                     if AppState.library-query != "" && !AppState.library-header-focused: Text {
-                        text:               "Esc to clear";
-                        color:              Theme.text-subtle;
-                        font-size:          12px;
+                        text: "Esc to clear";
+                        color: Theme.text-subtle;
+                        font-size: 12px;
                         vertical-alignment: center;
                     }
                 }
             }
-            Rectangle { y: parent.height - 1px; height: 1px; background: Theme.border; }
+
+            Rectangle {
+                y: parent.height - 1px;
+                height: 1px;
+                background: Theme.border;
+            }
         }
 
         fl-container := Rectangle {
-            vertical-stretch:   1;
+            vertical-stretch: 1;
             horizontal-stretch: 1;
             property <length> kb-y: clamp(
                 -AppState.library-focused-row * (card-h + gap) + self.height / 2 - card-h / 2,
                 min(0px, self.height - root.grid-content-height),
-                0px
-            );
+                0px);
             changed kb-y => { fl.content-y = kb-y; }
 
             fl := Flickable {
-                content-width:  fl-container.width;
+                content-width: fl-container.width;
                 content-height: max(fl-container.height, root.grid-content-height);
-                animate content-y { duration: 150ms * AppState.settings-scroll-speed; easing: ease-out-expo; }
+                animate content-y {
+                    duration: 150ms * AppState.settings-scroll-speed;
+                    easing: ease-out-expo;
+                }
                 changed content-y => {
                     if AppState.library-sort == 0 && AppState.library-query == "" {
                         AppState.library-grid-scrolled(round(-self.content-y / (card-h + gap)) * AppState.library-cols);
@@ -434,14 +514,14 @@ export component LibraryGrid inherits Rectangle {
 
                     for row-idx in (AppState.library-display.length + AppState.library-cols - 1) / AppState.library-cols: HorizontalLayout {
                         alignment: start;
-                        spacing:   gap;
-                        height:    card-h;
+                        spacing: gap;
+                        height: card-h;
 
                         for col-idx in AppState.library-cols: MediaCard {
                             property <int> idx: row-idx * AppState.library-cols + col-idx;
                             visible: idx < AppState.library-display.length;
-                            item:    AppState.library-display[idx];
-                            width:   card-w;
+                            item: AppState.library-display[idx];
+                            width: card-w;
                             // Real bug, live-reported 2026-08-12: "the
                             // higlight for a item stays when you move to
                             // search and filter and sort on libray
@@ -465,7 +545,7 @@ export component LibraryGrid inherits Rectangle {
                             clicked => {
                                 // Sync keyboard focus to the clicked card so Back
                                 // returns the cursor to where the user actually was.
-                                AppState.library-focused     = idx;
+                                AppState.library-focused = idx;
                                 AppState.library-focused-row = row-idx;
                                 let c = AppState.library-display[idx];
                                 // Real bug, live-reported 2026-07-30: this always called
@@ -491,36 +571,72 @@ export component LibraryGrid inherits Rectangle {
             // Alphabet scrubber — right-edge strip; visible only when sorted by Name A-Z with no query.
             // Clicking/pressing a letter jumps the grid to the first item starting with that letter.
             if AppState.library-sort == 0 && AppState.library-query == "": Rectangle {
-                x:          parent.width - 22px;
-                width:      22px;
-                height:     parent.height;
+                x: parent.width - 22px;
+                width: 22px;
+                height: parent.height;
                 background: transparent;
 
                 VerticalLayout {
                     alignment: center;
-                    spacing:   0px;
+                    spacing: 0px;
 
-                    for ltr[li] in ["#","A","B","C","D","E","F","G","H","I","J","K","L","M","N","O","P","Q","R","S","T","U","V","W","X","Y","Z"]: Rectangle {
+                    for ltr[li] in [
+                        "#",
+                        "A",
+                        "B",
+                        "C",
+                        "D",
+                        "E",
+                        "F",
+                        "G",
+                        "H",
+                        "I",
+                        "J",
+                        "K",
+                        "L",
+                        "M",
+                        "N",
+                        "O",
+                        "P",
+                        "Q",
+                        "R",
+                        "S",
+                        "T",
+                        "U",
+                        "V",
+                        "W",
+                        "X",
+                        "Y",
+                        "Z"
+                    ]: Rectangle {
                         property <bool> has-items:  AppState.library-alpha-offsets[li] >= 0;
                         property <bool> kb-focused: AppState.library-scrubber-focused && AppState.library-scrubber-cursor == li;
                         property <bool> tracking:   AppState.library-scrubber-cursor == li;
-                        width:          22px;
-                        height:         16px;
-                        border-radius:  3px;
-                        background:     tracking ? Theme.accent-muted : transparent;
-                        border-width:   (ltr-ta.pressed || ltr-pulse.pulsing) ? 2.5px : 0px;
-                        border-color:   Theme.focus-border;
-                        animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
-                        ltr-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: kb-focused; }
-                        Text {
-                            text:                 ltr;
-                            color:                tracking ? Theme.accent : (has-items ? Theme.text-muted : Theme.text-subtle);
-                            font-size:            10px;
-                            font-weight:          tracking ? 700 : 400;
-                            vertical-alignment:   center;
-                            horizontal-alignment: center;
-                            width:                parent.width;
+                        width: 22px;
+                        height: 16px;
+                        border-radius: 3px;
+                        background: tracking ? Theme.accent-muted : transparent;
+                        border-width: (ltr-ta.pressed || ltr-pulse.pulsing) ? 2.5px : 0px;
+                        border-color: Theme.focus-border;
+                        animate border-width {
+                            duration: 90ms * AppState.settings-animation-speed;
+                            easing: ease-out-expo;
                         }
+                        ltr-pulse := PressPulse {
+                            trigger: AppState.kb-activate-pulse;
+                            active: kb-focused;
+                        }
+
+                        Text {
+                            text: ltr;
+                            color: tracking ? Theme.accent : (has-items ? Theme.text-muted : Theme.text-subtle);
+                            font-size: 10px;
+                            font-weight: tracking ? 700 : 400;
+                            vertical-alignment: center;
+                            horizontal-alignment: center;
+                            width: parent.width;
+                        }
+
                         ltr-ta := TouchArea {
                             mouse-cursor: has-items ? MouseCursor.pointer : MouseCursor.default;
                             clicked => { if has-items { AppState.library-jump-to-letter(li); } }
@@ -592,11 +708,11 @@ export component HomeScreen inherits Rectangle {
 
     pure function section-y(s: int) -> length {
         Theme.sp-lg
-        + (continue-watching.length     > 0 && s > 0 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
-        + (next-up.length               > 0 && s > 1 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
-        + (recently-added.length        > 0 && s > 2 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
-        + (recently-added-movies.length > 0 && s > 3 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
-        + (recently-added-albums.length > 0 && s > 4 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
+            + (continue-watching.length > 0 && s > 0 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
+            + (next-up.length > 0 && s > 1 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
+            + (recently-added.length > 0 && s > 2 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
+            + (recently-added-movies.length > 0 && s > 3 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
+            + (recently-added-albums.length > 0 && s > 4 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
         // Missing term for row 5 (Watchlist) added alongside row 6 (Coming
         // Up, below) — until now Watchlist was always the LAST row, so
         // section-y never needed to account for ITS OWN height (nothing
@@ -604,100 +720,107 @@ export component HomeScreen inherits Rectangle {
         // newly-added row after it" gap CLAUDE.md documents once already
         // for the Discover screen's own row-y — caught here before
         // shipping rather than after.
-        + (watchlist.length             > 0 && s > 5 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
+        + (watchlist.length > 0 && s > 5 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
     }
 
     VerticalLayout {
         spacing: 0px;
 
         Rectangle {
-            height:     54px;
+            height: 54px;
             background: Theme.surface;
 
             HorizontalLayout {
-                padding-left:  Theme.sp-lg;
+                padding-left: Theme.sp-lg;
                 padding-right: Theme.sp;
-                alignment:     start;
+                alignment: start;
 
                 Text {
-                    text:               "Home";
-                    color:              Theme.text;
-                    font-size:          18px;
-                    font-weight:        700;
+                    text: "Home";
+                    color: Theme.text;
+                    font-size: 18px;
+                    font-weight: 700;
                     vertical-alignment: center;
                 }
             }
-            Rectangle { y: parent.height - 1px; height: 1px; background: Theme.border; }
+
+            Rectangle {
+                y: parent.height - 1px;
+                height: 1px;
+                background: Theme.border;
+            }
         }
 
         home-fl-container := Rectangle {
-            vertical-stretch:   1;
+            vertical-stretch: 1;
             horizontal-stretch: 1;
             property <length> kb-y: AppState.focused-section < 0 ? 0px
                 : clamp(
                       self.height / 2 - section-y(AppState.focused-section) - (AppState.dash-ch + 56px) / 2,
                       min(0px, self.height - rows.preferred-height),
-                      0px
-                  );
+                      0px);
             changed kb-y => { fl.content-y = kb-y; }
 
             fl := Flickable {
-                content-width:  home-fl-container.width;
+                content-width: home-fl-container.width;
                 content-height: max(home-fl-container.height, rows.preferred-height);
-                animate content-y { duration: 150ms * AppState.settings-scroll-speed; easing: ease-out-expo; }
+                animate content-y {
+                    duration: 150ms * AppState.settings-scroll-speed;
+                    easing: ease-out-expo;
+                }
 
                 rows := VerticalLayout {
                     padding: Theme.sp-lg;
                     spacing: Theme.sp-lg;
 
                     if continue-watching.length > 0: SectionRow {
-                        section-title:   "Continue Watching";
-                        items:           continue-watching;
+                        section-title: "Continue Watching";
+                        items: continue-watching;
                         section-focused: AppState.focused-section == 0;
-                        focused-card:    AppState.focused-card;
-                        card-w:          AppState.dash-cw;
-                        card-h:          AppState.dash-ch;
-                        item-play(id, _)          => { AppState.item-play(id); }
+                        focused-card: AppState.focused-card;
+                        card-w: AppState.dash-cw;
+                        card-h: AppState.dash-ch;
+                        item-play(id, _) => { AppState.item-play(id); }
                         item-context(id, hp, fav, rp, it, sid) => { AppState.open-context-menu(id, hp, fav, rp, it, sid); }
                     }
                     if next-up.length > 0: SectionRow {
-                        section-title:   "Next Up";
-                        items:           next-up;
+                        section-title: "Next Up";
+                        items: next-up;
                         section-focused: AppState.focused-section == 1;
-                        focused-card:    AppState.focused-card;
-                        card-w:          AppState.dash-cw;
-                        card-h:          AppState.dash-ch;
-                        item-play(id, _)          => { AppState.item-play(id); }
+                        focused-card: AppState.focused-card;
+                        card-w: AppState.dash-cw;
+                        card-h: AppState.dash-ch;
+                        item-play(id, _) => { AppState.item-play(id); }
                         item-context(id, hp, fav, rp, it, sid) => { AppState.open-context-menu(id, hp, fav, rp, it, sid); }
                     }
                     if recently-added.length > 0: SectionRow {
-                        section-title:   "Recently Added Shows";
-                        items:           recently-added;
+                        section-title: "Recently Added Shows";
+                        items: recently-added;
                         section-focused: AppState.focused-section == 2;
-                        focused-card:    AppState.focused-card;
-                        card-w:          AppState.dash-cw;
-                        card-h:          AppState.dash-ch;
-                        item-play(id, _)          => { AppState.item-play(id); }
+                        focused-card: AppState.focused-card;
+                        card-w: AppState.dash-cw;
+                        card-h: AppState.dash-ch;
+                        item-play(id, _) => { AppState.item-play(id); }
                         item-context(id, hp, fav, rp, it, sid) => { AppState.open-context-menu(id, hp, fav, rp, it, sid); }
                     }
                     if recently-added-movies.length > 0: SectionRow {
-                        section-title:   "Recently Added Movies";
-                        items:           recently-added-movies;
+                        section-title: "Recently Added Movies";
+                        items: recently-added-movies;
                         section-focused: AppState.focused-section == 3;
-                        focused-card:    AppState.focused-card;
-                        card-w:          AppState.dash-cw;
-                        card-h:          AppState.dash-ch;
-                        item-play(id, _)          => { AppState.item-play(id); }
+                        focused-card: AppState.focused-card;
+                        card-w: AppState.dash-cw;
+                        card-h: AppState.dash-ch;
+                        item-play(id, _) => { AppState.item-play(id); }
                         item-context(id, hp, fav, rp, it, sid) => { AppState.open-context-menu(id, hp, fav, rp, it, sid); }
                     }
                     if recently-added-albums.length > 0: SectionRow {
-                        section-title:   "Recently Added Music";
-                        items:           recently-added-albums;
+                        section-title: "Recently Added Music";
+                        items: recently-added-albums;
                         section-focused: AppState.focused-section == 4;
-                        focused-card:    AppState.focused-card;
-                        card-w:          AppState.dash-cw;
-                        card-h:          AppState.dash-ch;
-                        item-play(id, _)          => { AppState.item-play(id); }
+                        focused-card: AppState.focused-card;
+                        card-w: AppState.dash-cw;
+                        card-h: AppState.dash-ch;
+                        item-play(id, _) => { AppState.item-play(id); }
                         item-context(id, hp, fav, rp, it, sid) => { AppState.open-context-menu(id, hp, fav, rp, it, sid); }
                     }
                     // Watchlist row (2026-07-20) — Discover/TMDB-sourced
@@ -713,12 +836,12 @@ export component HomeScreen inherits Rectangle {
                     // rows, so gating the spinner on it too would keep an
                     // otherwise-ready Home page spinning on Seerr alone.
                     if watchlist.length > 0: SectionRow {
-                        section-title:   "Watchlist";
-                        items:           watchlist;
+                        section-title: "Watchlist";
+                        items: watchlist;
                         section-focused: AppState.focused-section == 5;
-                        focused-card:    AppState.focused-card;
-                        card-w:          AppState.dash-cw;
-                        card-h:          AppState.dash-ch;
+                        focused-card: AppState.focused-card;
+                        card-w: AppState.dash-cw;
+                        card-h: AppState.dash-ch;
                         item-play(id, it) => { AppState.open-discover-item(it == "DiscoverMovie" ? "movie" : "tv", id); }
                         item-context-full(itm) => { AppState.open-context-menu-discover(itm); }
                     }
@@ -728,12 +851,12 @@ export component HomeScreen inherits Rectangle {
                     // comment); also excluded from the LoadingSpinner
                     // condition below for the same reason.
                     if coming-up.length > 0: SectionRow {
-                        section-title:   "Coming Up";
-                        items:           coming-up;
+                        section-title: "Coming Up";
+                        items: coming-up;
                         section-focused: AppState.focused-section == 6;
-                        focused-card:    AppState.focused-card;
-                        card-w:          AppState.dash-cw;
-                        card-h:          AppState.dash-ch;
+                        focused-card: AppState.focused-card;
+                        card-w: AppState.dash-cw;
+                        card-h: AppState.dash-ch;
                         item-play(id, it) => { AppState.open-discover-item(it == "DiscoverMovie" ? "movie" : "tv", id); }
                         item-context-full(itm) => { AppState.open-context-menu-discover(itm); }
                     }
@@ -748,7 +871,7 @@ export component HomeScreen inherits Rectangle {
 
 // ── Dashboard screen — movies or TV shows (rows + browse button) ─────────────
 export component DashboardScreen inherits Rectangle {
-    in property <string>     screen-title: "Dashboard";
+    in property <string> screen-title: "Dashboard";
     in property <[CardItem]> continue-watching;
     in property <[CardItem]> next-up;
     in property <[CardItem]> recently-added;
@@ -770,108 +893,115 @@ export component DashboardScreen inherits Rectangle {
 
     pure function section-y(s: int) -> length {
         Theme.sp-lg
-        + (continue-watching.length > 0 && s > 0 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
-        + (next-up.length           > 0 && s > 1 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
-        + (recently-added.length    > 0 && s > 2 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
-        + (not-watched.length       > 0 && s > 3 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
-        + (favorites.length         > 0 && s > 4 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
+            + (continue-watching.length > 0 && s > 0 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
+            + (next-up.length > 0 && s > 1 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
+            + (recently-added.length > 0 && s > 2 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
+            + (not-watched.length > 0 && s > 3 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
+            + (favorites.length > 0 && s > 4 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
         // Missing term for row 5 (Watchlist) added alongside row 6 (Coming
         // Up, below) — see HomeScreen's own section-y for why this was
         // safe to omit until now.
-        + (watchlist.length         > 0 && s > 5 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
+        + (watchlist.length > 0 && s > 5 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
     }
 
     VerticalLayout {
         spacing: 0px;
 
         Rectangle {
-            height:     54px;
+            height: 54px;
             background: Theme.surface;
 
             HorizontalLayout {
-                padding-left:  Theme.sp-lg;
+                padding-left: Theme.sp-lg;
                 padding-right: Theme.sp;
-                alignment:     start;
+                alignment: start;
 
                 Text {
-                    text:               screen-title;
-                    color:              Theme.text;
-                    font-size:          18px;
-                    font-weight:        700;
+                    text: screen-title;
+                    color: Theme.text;
+                    font-size: 18px;
+                    font-weight: 700;
                     vertical-alignment: center;
                 }
             }
-            Rectangle { y: parent.height - 1px; height: 1px; background: Theme.border; }
+
+            Rectangle {
+                y: parent.height - 1px;
+                height: 1px;
+                background: Theme.border;
+            }
         }
 
         dash-fl-container := Rectangle {
-            vertical-stretch:   1;
+            vertical-stretch: 1;
             horizontal-stretch: 1;
             property <length> kb-y: AppState.focused-section < 0 ? 0px
                 : clamp(
                       self.height / 2 - section-y(AppState.focused-section) - (AppState.dash-ch + 56px) / 2,
                       min(0px, self.height - rows.preferred-height),
-                      0px
-                  );
+                      0px);
             changed kb-y => { fl.content-y = kb-y; }
 
             fl := Flickable {
-                content-width:  dash-fl-container.width;
+                content-width: dash-fl-container.width;
                 content-height: max(dash-fl-container.height, rows.preferred-height);
-                animate content-y { duration: 150ms * AppState.settings-scroll-speed; easing: ease-out-expo; }
+                animate content-y {
+                    duration: 150ms * AppState.settings-scroll-speed;
+                    easing: ease-out-expo;
+                }
 
                 rows := VerticalLayout {
                     padding: Theme.sp-lg;
                     spacing: Theme.sp-lg;
 
                     if continue-watching.length > 0: SectionRow {
-                        section-title:   "Continue Watching";
-                        items:           continue-watching;
+                        section-title: "Continue Watching";
+                        items: continue-watching;
                         section-focused: AppState.focused-section == 0;
-                        focused-card:    AppState.focused-card;
-                        card-w:          AppState.dash-cw;
-                        card-h:          AppState.dash-ch;
-                        item-play(id, _)          => { AppState.item-play(id); }
+                        focused-card: AppState.focused-card;
+                        card-w: AppState.dash-cw;
+                        card-h: AppState.dash-ch;
+                        item-play(id, _) => { AppState.item-play(id); }
                         item-context(id, hp, fav, rp, it, sid) => { AppState.open-context-menu(id, hp, fav, rp, it, sid); }
                     }
                     if next-up.length > 0: SectionRow {
-                        section-title:   "Next Up";
-                        items:           next-up;
+                        section-title: "Next Up";
+                        items: next-up;
                         section-focused: AppState.focused-section == 1;
-                        focused-card:    AppState.focused-card;
-                        card-w:          AppState.dash-cw;
-                        card-h:          AppState.dash-ch;
-                        item-play(id, _)          => { AppState.item-play(id); }
+                        focused-card: AppState.focused-card;
+                        card-w: AppState.dash-cw;
+                        card-h: AppState.dash-ch;
+                        item-play(id, _) => { AppState.item-play(id); }
                         item-context(id, hp, fav, rp, it, sid) => { AppState.open-context-menu(id, hp, fav, rp, it, sid); }
                     }
                     if recently-added.length > 0: SectionRow {
-                        section-title:   "Recently Added";
-                        items:           recently-added;
+                        section-title: "Recently Added";
+                        items: recently-added;
                         section-focused: AppState.focused-section == 2;
-                        focused-card:    AppState.focused-card;
-                        card-w:          AppState.dash-cw;
-                        card-h:          AppState.dash-ch;
-                        item-play(id, _)          => { AppState.item-play(id); }
+                        focused-card: AppState.focused-card;
+                        card-w: AppState.dash-cw;
+                        card-h: AppState.dash-ch;
+                        item-play(id, _) => { AppState.item-play(id); }
                         item-context(id, hp, fav, rp, it, sid) => { AppState.open-context-menu(id, hp, fav, rp, it, sid); }
                     }
                     if not-watched.length > 0: SectionRow {
-                        section-title:   "Not Watched";
-                        items:           not-watched;
+                        section-title: "Not Watched";
+                        items: not-watched;
                         section-focused: AppState.focused-section == 3;
-                        focused-card:    AppState.focused-card;
-                        card-w:          AppState.dash-cw;
-                        card-h:          AppState.dash-ch;
-                        item-play(id, _)          => { AppState.item-play(id); }
+                        focused-card: AppState.focused-card;
+                        card-w: AppState.dash-cw;
+                        card-h: AppState.dash-ch;
+                        item-play(id, _) => { AppState.item-play(id); }
                         item-context(id, hp, fav, rp, it, sid) => { AppState.open-context-menu(id, hp, fav, rp, it, sid); }
                     }
                     if favorites.length > 0: SectionRow {
-                        section-title:   "Favorites";
-                        items:           favorites;
+                        section-title: "Favorites";
+                        items: favorites;
                         section-focused: AppState.focused-section == 4;
-                        focused-card:    AppState.focused-card;
-                        card-w:          AppState.dash-cw;
-                        card-h:          AppState.dash-ch;
-                        item-play(id, _)          => { AppState.item-play(id); }
+                        focused-card: AppState.focused-card;
+                        card-w: AppState.dash-cw;
+                        card-h: AppState.dash-ch;
+                        item-play(id, _) => { AppState.item-play(id); }
                         item-context(id, hp, fav, rp, it, sid) => { AppState.open-context-menu(id, hp, fav, rp, it, sid); }
                     }
                     // Watchlist row (2026-07-20) — Discover/TMDB-sourced,
@@ -882,12 +1012,12 @@ export component DashboardScreen inherits Rectangle {
                     // this row). Not part of the LoadingSpinner condition
                     // below, same reasoning as HomeScreen.
                     if watchlist.length > 0: SectionRow {
-                        section-title:   "Watchlist";
-                        items:           watchlist;
+                        section-title: "Watchlist";
+                        items: watchlist;
                         section-focused: AppState.focused-section == 5;
-                        focused-card:    AppState.focused-card;
-                        card-w:          AppState.dash-cw;
-                        card-h:          AppState.dash-ch;
+                        focused-card: AppState.focused-card;
+                        card-w: AppState.dash-cw;
+                        card-h: AppState.dash-ch;
                         item-play(id, it) => { AppState.open-discover-item(it == "DiscoverMovie" ? "movie" : "tv", id); }
                         item-context-full(itm) => { AppState.open-context-menu-discover(itm); }
                     }
@@ -896,12 +1026,12 @@ export component DashboardScreen inherits Rectangle {
                     // this dashboard's own media type via which AppState
                     // property main.slint binds coming-up to.
                     if coming-up.length > 0: SectionRow {
-                        section-title:   "Coming Up";
-                        items:           coming-up;
+                        section-title: "Coming Up";
+                        items: coming-up;
                         section-focused: AppState.focused-section == 6;
-                        focused-card:    AppState.focused-card;
-                        card-w:          AppState.dash-cw;
-                        card-h:          AppState.dash-ch;
+                        focused-card: AppState.focused-card;
+                        card-w: AppState.dash-cw;
+                        card-h: AppState.dash-ch;
                         item-play(id, it) => { AppState.open-discover-item(it == "DiscoverMovie" ? "movie" : "tv", id); }
                         item-context-full(itm) => { AppState.open-context-menu-discover(itm); }
                     }
@@ -926,90 +1056,97 @@ export component MusicDashboard inherits Rectangle {
 
     pure function section-y(s: int) -> length {
         Theme.sp-lg
-        + (recently-added.length  > 0 && s > 0 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
-        + (recently-played.length > 0 && s > 1 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
-        + (favorites.length       > 0 && s > 2 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
+            + (recently-added.length > 0 && s > 0 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
+            + (recently-played.length > 0 && s > 1 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
+            + (favorites.length > 0 && s > 2 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
     }
 
     VerticalLayout {
         spacing: 0px;
 
         Rectangle {
-            height:     54px;
+            height: 54px;
             background: Theme.surface;
             HorizontalLayout {
-                padding-left:  Theme.sp-lg;
+                padding-left: Theme.sp-lg;
                 padding-right: Theme.sp;
-                alignment:     start;
+                alignment: start;
                 Text {
-                    text:               "Music";
-                    color:              Theme.text;
-                    font-size:          18px;
-                    font-weight:        700;
+                    text: "Music";
+                    color: Theme.text;
+                    font-size: 18px;
+                    font-weight: 700;
                     vertical-alignment: center;
                 }
             }
-            Rectangle { y: parent.height - 1px; height: 1px; background: Theme.border; }
+
+            Rectangle {
+                y: parent.height - 1px;
+                height: 1px;
+                background: Theme.border;
+            }
         }
 
         mus-fl-container := Rectangle {
-            vertical-stretch:   1;
+            vertical-stretch: 1;
             horizontal-stretch: 1;
             property <length> kb-y: AppState.focused-section < 0 ? 0px
                 : clamp(
                       root.height / 2 - section-y(AppState.focused-section) - (AppState.dash-ch + 56px) / 2,
                       min(0px, root.height - mus-rows.preferred-height),
-                      0px
-                  );
+                      0px);
             changed kb-y => { mus-fl.content-y = kb-y; }
 
             mus-fl := Flickable {
-                content-width:  mus-fl-container.width;
+                content-width: mus-fl-container.width;
                 content-height: max(mus-fl-container.height, mus-rows.preferred-height);
-                animate content-y { duration: 150ms * AppState.settings-scroll-speed; easing: ease-out-expo; }
+                animate content-y {
+                    duration: 150ms * AppState.settings-scroll-speed;
+                    easing: ease-out-expo;
+                }
 
                 mus-rows := VerticalLayout {
                     padding: Theme.sp-lg;
                     spacing: Theme.sp-lg;
 
                     if recently-added.length > 0: SectionRow {
-                        section-title:   "Recently Added";
-                        items:           recently-added;
+                        section-title: "Recently Added";
+                        items: recently-added;
                         section-focused: AppState.focused-section == 0;
-                        focused-card:    AppState.focused-card;
-                        card-w:          AppState.dash-cw;
-                        card-h:          AppState.dash-ch;
-                        item-play(id, _)                       => { AppState.item-play(id); }
+                        focused-card: AppState.focused-card;
+                        card-w: AppState.dash-cw;
+                        card-h: AppState.dash-ch;
+                        item-play(id, _) => { AppState.item-play(id); }
                         item-context(id, hp, fav, rp, it, sid) => { AppState.open-context-menu(id, hp, fav, rp, it, sid); }
                     }
                     if recently-played.length > 0: SectionRow {
-                        section-title:   "Recently Played";
-                        items:           recently-played;
+                        section-title: "Recently Played";
+                        items: recently-played;
                         section-focused: AppState.focused-section == 1;
-                        focused-card:    AppState.focused-card;
-                        card-w:          AppState.dash-cw;
-                        card-h:          AppState.dash-ch;
-                        item-play(id, _)                       => { AppState.item-play(id); }
+                        focused-card: AppState.focused-card;
+                        card-w: AppState.dash-cw;
+                        card-h: AppState.dash-ch;
+                        item-play(id, _) => { AppState.item-play(id); }
                         item-context(id, hp, fav, rp, it, sid) => { AppState.open-context-menu(id, hp, fav, rp, it, sid); }
                     }
                     if favorites.length > 0: SectionRow {
-                        section-title:   "Favorite Albums";
-                        items:           favorites;
+                        section-title: "Favorite Albums";
+                        items: favorites;
                         section-focused: AppState.focused-section == 2;
-                        focused-card:    AppState.focused-card;
-                        card-w:          AppState.dash-cw;
-                        card-h:          AppState.dash-ch;
-                        item-play(id, _)                       => { AppState.item-play(id); }
+                        focused-card: AppState.focused-card;
+                        card-w: AppState.dash-cw;
+                        card-h: AppState.dash-ch;
+                        item-play(id, _) => { AppState.item-play(id); }
                         item-context(id, hp, fav, rp, it, sid) => { AppState.open-context-menu(id, hp, fav, rp, it, sid); }
                     }
                     if playlists.length > 0: SectionRow {
-                        section-title:   "Playlists";
-                        items:           playlists;
+                        section-title: "Playlists";
+                        items: playlists;
                         section-focused: AppState.focused-section == 3;
-                        focused-card:    AppState.focused-card;
-                        card-w:          AppState.dash-cw;
-                        card-h:          AppState.dash-ch;
-                        item-play(id, _)                       => { AppState.item-play(id); }
+                        focused-card: AppState.focused-card;
+                        card-w: AppState.dash-cw;
+                        card-h: AppState.dash-ch;
+                        item-play(id, _) => { AppState.item-play(id); }
                         item-context(id, hp, fav, rp, it, sid) => { AppState.open-context-menu(id, hp, fav, rp, it, sid); }
                     }
                     if recently-added.length == 0 && recently-played.length == 0 && favorites.length == 0 && playlists.length == 0: LoadingSpinner {
@@ -1031,70 +1168,77 @@ export component CollectionsDashboard inherits Rectangle {
 
     pure function section-y(s: int) -> length {
         Theme.sp-lg
-        + (recently-added.length > 0 && s > 0 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
-        + (unwatched.length      > 0 && s > 1 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
+            + (recently-added.length > 0 && s > 0 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
+            + (unwatched.length > 0 && s > 1 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
     }
 
     VerticalLayout {
         spacing: 0px;
 
         Rectangle {
-            height:     54px;
+            height: 54px;
             background: Theme.surface;
             HorizontalLayout {
-                padding-left:  Theme.sp-lg;
+                padding-left: Theme.sp-lg;
                 padding-right: Theme.sp;
-                alignment:     start;
+                alignment: start;
                 Text {
-                    text:               "Collections";
-                    color:              Theme.text;
-                    font-size:          18px;
-                    font-weight:        700;
+                    text: "Collections";
+                    color: Theme.text;
+                    font-size: 18px;
+                    font-weight: 700;
                     vertical-alignment: center;
                 }
             }
-            Rectangle { y: parent.height - 1px; height: 1px; background: Theme.border; }
+
+            Rectangle {
+                y: parent.height - 1px;
+                height: 1px;
+                background: Theme.border;
+            }
         }
 
         coll-fl-container := Rectangle {
-            vertical-stretch:   1;
+            vertical-stretch: 1;
             horizontal-stretch: 1;
             property <length> kb-y: AppState.focused-section < 0 ? 0px
                 : clamp(
                       root.height / 2 - section-y(AppState.focused-section) - (AppState.dash-ch + 56px) / 2,
                       min(0px, root.height - coll-rows.preferred-height),
-                      0px
-                  );
+                      0px);
             changed kb-y => { coll-fl.content-y = kb-y; }
 
             coll-fl := Flickable {
-                content-width:  coll-fl-container.width;
+                content-width: coll-fl-container.width;
                 content-height: max(coll-fl-container.height, coll-rows.preferred-height);
-                animate content-y { duration: 150ms * AppState.settings-scroll-speed; easing: ease-out-expo; }
+                animate content-y {
+                    duration: 150ms * AppState.settings-scroll-speed;
+                    easing: ease-out-expo;
+                }
 
                 coll-rows := VerticalLayout {
                     padding: Theme.sp-lg;
                     spacing: Theme.sp-lg;
 
                     if recently-added.length > 0: SectionRow {
-                        section-title:   "Recently Added";
-                        items:           recently-added;
+                        section-title: "Recently Added";
+                        items: recently-added;
                         section-focused: AppState.focused-section == 0;
-                        focused-card:    AppState.focused-card;
-                        card-w:          AppState.dash-cw;
-                        card-h:          AppState.dash-ch;
-                        item-play(id, _)                             => { AppState.item-play(id); }
-                        item-context(id, hp, fav, rp, it, sid)       => { AppState.open-context-menu(id, hp, fav, rp, it, sid); }
+                        focused-card: AppState.focused-card;
+                        card-w: AppState.dash-cw;
+                        card-h: AppState.dash-ch;
+                        item-play(id, _) => { AppState.item-play(id); }
+                        item-context(id, hp, fav, rp, it, sid) => { AppState.open-context-menu(id, hp, fav, rp, it, sid); }
                     }
                     if unwatched.length > 0: SectionRow {
-                        section-title:   "Unwatched";
-                        items:           unwatched;
+                        section-title: "Unwatched";
+                        items: unwatched;
                         section-focused: AppState.focused-section == 1;
-                        focused-card:    AppState.focused-card;
-                        card-w:          AppState.dash-cw;
-                        card-h:          AppState.dash-ch;
-                        item-play(id, _)                             => { AppState.item-play(id); }
-                        item-context(id, hp, fav, rp, it, sid)       => { AppState.open-context-menu(id, hp, fav, rp, it, sid); }
+                        focused-card: AppState.focused-card;
+                        card-w: AppState.dash-cw;
+                        card-h: AppState.dash-ch;
+                        item-play(id, _) => { AppState.item-play(id); }
+                        item-context(id, hp, fav, rp, it, sid) => { AppState.open-context-menu(id, hp, fav, rp, it, sid); }
                     }
                     if recently-added.length == 0 && unwatched.length == 0: LoadingSpinner {
                         height: 120px;

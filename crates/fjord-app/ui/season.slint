@@ -13,26 +13,34 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme, CardItem } from "theme.slint";
 import { AppState } from "app_state.slint";
-import { FjordButton, IconCircleButton, CastRow, StorylineSection } from "widgets.slint";
+import {
+    FjordButton,
+    IconCircleButton,
+    CastRow,
+    StorylineSection,
+} from "widgets.slint";
 import { SectionRow } from "home.slint";
 
 export component SeasonScreen inherits Rectangle {
     background: Theme.bg;
 
     fl := Flickable {
-        width:           parent.width;
-        height:          parent.height;
+        width: parent.width;
+        height: parent.height;
         content-height: content.preferred-height;
-        content-width:  self.width;
-        animate content-y { duration: 200ms * AppState.settings-scroll-speed; easing: ease-in-out; }
+        content-width: self.width;
+        animate content-y {
+            duration: 200ms * AppState.settings-scroll-speed;
+            easing: ease-in-out;
+        }
 
         // Keyboard scroll — cast-anchor tracks cast section Y; when in episodes
         // (cast-focused < 0) scroll to ep-anchor.  Mouse-wheel still works
         // natively because content-y is NOT bound to an expression.
         property <length> kb-y:
             AppState.season-cast-focused >= 0 ?
-                clamp(root.height / 2 - cast-anchor.y, min(0px, root.height - content.preferred-height), 0px) :
-                clamp(root.height / 3 - ep-anchor.y,   min(0px, root.height - content.preferred-height), 0px);
+            clamp(root.height / 2 - cast-anchor.y, min(0px, root.height - content.preferred-height), 0px) :
+            clamp(root.height / 3 - ep-anchor.y,   min(0px, root.height - content.preferred-height), 0px);
         changed kb-y => { self.content-y = kb-y; }
 
         content := VerticalLayout {
@@ -42,42 +50,44 @@ export component SeasonScreen inherits Rectangle {
                 background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg;
 
                 if AppState.season-has-backdrop: Image {
-                    x: 0; y: 0;
-                    width:     parent.width;
-                    height:    parent.height;
+                    x: 0;
+                    y: 0;
+                    width: parent.width;
+                    height: parent.height;
                     image-fit: cover;
-                    source:    AppState.season-backdrop;
+                    source: AppState.season-backdrop;
                 }
                 if AppState.season-has-backdrop: Rectangle {
-                    x: 0; y: 0;
-                    width:      parent.width;
-                    height:     parent.height;
+                    x: 0;
+                    y: 0;
+                    width: parent.width;
+                    height: parent.height;
                     background: @linear-gradient(180deg, #00000080 0%, #000000cc 100%);
                 }
 
                 VerticalLayout {
-                HorizontalLayout {
-                    padding-left:   48px;
-                    padding-right:  48px;
-                    padding-top:    68px;
-                    padding-bottom: 20px;
-                    spacing:        28px;
-                    alignment:      start;
+                    HorizontalLayout {
+                        padding-left: 48px;
+                        padding-right: 48px;
+                        padding-top: 68px;
+                        padding-bottom: 20px;
+                        spacing: 28px;
+                        alignment: start;
 
-                    if AppState.season-has-poster: Rectangle {
-                        width:         130px;
-                        height:        195px;
-                        border-radius: Theme.radius;
-                        clip:          true;
-                        Image {
-                            source:    AppState.season-poster;
-                            width:     parent.width;
-                            height:    parent.height;
-                            image-fit: cover;
+                        if AppState.season-has-poster: Rectangle {
+                            width: 130px;
+                            height: 195px;
+                            border-radius: Theme.radius;
+                            clip: true;
+                            Image {
+                                source: AppState.season-poster;
+                                width: parent.width;
+                                height: parent.height;
+                                image-fit: cover;
+                            }
                         }
-                    }
 
-                    // Deterministic fixed-position fix (2026-07-18, replaces
+                        // Deterministic fixed-position fix (2026-07-18, replaces
                     // an earlier height:195px+spacer version that didn't
                     // reliably hold up live — see detail.slint's identical
                     // fix for the full "why"). Plain Rectangle fixed at
@@ -90,7 +100,7 @@ export component SeasonScreen inherits Rectangle {
                     // widgets.slint) — neither child's position depends on
                     // the other's size.
                     Rectangle {
-                        height: 195px;
+                            height: 195px;
                         // Explicit computed width off root.width — see
                         // detail.slint's identical fix for the full three-
                         // attempt "why" (horizontal-stretch:1 confirmed live
@@ -108,81 +118,86 @@ export component SeasonScreen inherits Rectangle {
                         // Detail/Collection/RequestDetail use).
                         width: root.width - 48px - 48px - 130px - 28px;
 
-                        VerticalLayout {
-                            x: 0; y: 0;
-                            width:     parent.width;
-                            spacing:   8px;
-                            alignment: start;
+                            VerticalLayout {
+                                x: 0;
+                                y: 0;
+                                width: parent.width;
+                                spacing: 8px;
+                                alignment: start;
 
-                            Text {
-                                text:        AppState.season-title;
-                                color:       Theme.text;
-                                font-size:   28px;
-                                font-weight: 700;
-                                wrap:        no-wrap;
-                                overflow:    elide;
+                                Text {
+                                    text: AppState.season-title;
+                                    color: Theme.text;
+                                    font-size: 28px;
+                                    font-weight: 700;
+                                    wrap: no-wrap;
+                                    overflow: elide;
+                                }
+
+                                if AppState.season-meta != "": Text {
+                                    text: AppState.season-meta;
+                                    color: AppState.season-has-backdrop ? #ffffff : Theme.text-muted;
+                                    font-size: 13px;
+                                }
                             }
 
-                            if AppState.season-meta != "": Text {
-                                text:      AppState.season-meta;
-                                color:     AppState.season-has-backdrop ? #ffffff : Theme.text-muted;
-                                font-size: 13px;
-                            }
-                        }
+                            HorizontalLayout {
+                                x: 0;
+                                y: parent.height - 38px;
+                                spacing: 12px;
+                                alignment: start;
+                                IconCircleButton {
+                                    icon: "❤";
+                                    active: AppState.season-is-favorite;
+                                    kbd-focused: AppState.season-focused-btn == 1;
+                                    clicked => { AppState.toggle-season-fav(); }
+                                }
 
-                        HorizontalLayout {
-                            x: 0;
-                            y: parent.height - 38px;
-                            spacing:   12px;
-                            alignment: start;
-                            IconCircleButton {
-                                icon:        "❤";
-                                active:      AppState.season-is-favorite;
-                                kbd-focused: AppState.season-focused-btn == 1;
-                                clicked => { AppState.toggle-season-fav(); }
-                            }
-                            IconCircleButton {
-                                icon:        "✓";
-                                active:      AppState.season-has-played;
-                                kbd-focused: AppState.season-focused-btn == 2;
-                                clicked => { AppState.toggle-season-played(); }
+                                IconCircleButton {
+                                    icon: "✓";
+                                    active: AppState.season-has-played;
+                                    kbd-focused: AppState.season-focused-btn == 2;
+                                    clicked => { AppState.toggle-season-played(); }
+                                }
                             }
                         }
                     }
-                }
-                if AppState.season-overview != "": StorylineSection {
-                    text:        AppState.season-overview;
-                    expanded <=> AppState.season-overview-expanded;
-                    kbd-focused: AppState.season-focused-btn == 3;
-                }
+
+                    if AppState.season-overview != "": StorylineSection {
+                        text: AppState.season-overview;
+                        expanded <=> AppState.season-overview-expanded;
+                        kbd-focused: AppState.season-focused-btn == 3;
+                    }
                 }
             }
 
             // ── Episode anchor (scroll target) ────────────────────────────────
-            ep-anchor := Rectangle { height: 0px; }
+            ep-anchor := Rectangle {
+                height: 0px;
+            }
 
             // ── Loading ───────────────────────────────────────────────────────
             if AppState.season-loading && AppState.series-episode-cards.length == 0: Rectangle {
                 height: 60px;
                 Text {
-                    text:                 "Loading episodes…";
-                    color:                Theme.text-muted;
-                    font-size:            14px;
+                    text: "Loading episodes…";
+                    color: Theme.text-muted;
+                    font-size: 14px;
                     horizontal-alignment: center;
-                    vertical-alignment:   center;
+                    vertical-alignment: center;
                 }
             }
 
             // ── Episode row (reuses series-episode-cards) ─────────────────────
             if AppState.series-episode-cards.length > 0: VerticalLayout {
-                padding-left:  48px;
+                padding-left: 48px;
                 padding-right: 48px;
                 SectionRow {
-                    section-title:   "Episodes";
-                    items:           AppState.series-episode-cards;
+                    section-title: "Episodes";
+                    items: AppState.series-episode-cards;
                     section-focused: AppState.season-cast-focused < 0
-                                     && AppState.season-focused-btn < 0;
-                    focused-card:    AppState.season-focused-ep;
+                        && AppState.season-focused-btn < 0;
+                    focused-card: AppState.season-focused-ep;
                     item-play(id, _) => { AppState.play-series-episode(id); }
                     item-context(id, played, fav, rpct, itype, sid) => {
                         AppState.open-context-menu(id, played, fav, rpct, itype, sid);
@@ -191,20 +206,28 @@ export component SeasonScreen inherits Rectangle {
             }
 
             // ── Cast anchor (scroll target) ───────────────────────────────────
-            cast-anchor := Rectangle { height: 0px; }
+            cast-anchor := Rectangle {
+                height: 0px;
+            }
 
             // ── Cast & Crew ───────────────────────────────────────────────────
             if AppState.season-cast.length > 0: VerticalLayout {
-                padding-left:   48px;
-                padding-right:  48px;
-                padding-top:    4px;
+                padding-left: 48px;
+                padding-right: 48px;
+                padding-top: 4px;
                 padding-bottom: 40px;
 
-                Rectangle { height: 1px; background: Theme.border; }
-                Rectangle { height: 12px; }
+                Rectangle {
+                    height: 1px;
+                    background: Theme.border;
+                }
+
+                Rectangle {
+                    height: 12px;
+                }
 
                 CastRow {
-                    cast:        AppState.season-cast;
+                    cast: AppState.season-cast;
                     focused-idx: AppState.season-cast-focused;
                     item-selected(idx) => {
                         AppState.open-person(AppState.season-cast[idx].id, AppState.season-cast[idx].name);
@@ -215,10 +238,10 @@ export component SeasonScreen inherits Rectangle {
     }
 
     FjordButton {
-        x:           16px;
-        y:           16px;
-        text:        "← Back";
-        width:       88px;
+        x: 16px;
+        y: 16px;
+        text: "← Back";
+        width: 88px;
         kbd-focused: AppState.season-focused-btn == 0;
         clicked => { AppState.close-season-detail(); }
     }

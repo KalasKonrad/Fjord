@@ -110,28 +110,28 @@ export struct VideoRect {
 // 2026-10-05): new text, caret (grapheme index), caret as a UTF-8 byte offset
 // for LineEdit.set-selection-offsets.
 export struct OskEdit {
-    text:  string,
+    text: string,
     caret: int,
-    byte:  int,
+    byte: int,
 }
 
 export struct TrackEntry {
-    id:    int,
+    id: int,
     label: string,
 }
 
 // One row in an album or playlist tracklist.
 export struct TrackItem {
-    id:           string,
-    title:        string,
-    artist:       string,
-    duration:     string,   // "3:45"
+    id: string,
+    title: string,
+    artist: string,
+    duration: string,   // "3:45"
     track-number: int,
-    has-played:   bool,
-    is-favorite:  bool,
-    resume-pct:   float,
-    entry-id:     string,   // PlaylistItemId — set for playlist rows, "" for album rows
-    album-id:     string,   // owning album id — music-bar art for playlist rows
+    has-played: bool,
+    is-favorite: bool,
+    resume-pct: float,
+    entry-id: string,   // PlaylistItemId — set for playlist rows, "" for album rows
+    album-id: string,   // owning album id — music-bar art for playlist rows
     // Multi-disc album support (2026-08-17, live-reported follow-up to the
     // track-order fix: "add a Disc seperator... now it just hop fron the
     // last track to firs with no explenation"). Both computed once in Rust
@@ -141,16 +141,16 @@ export struct TrackItem {
     // however many separators precede the focused row — always "" / the
     // plain i*track-h stride for playlists, which have no disc concept.
     disc-header: string,   // "" = no separator above this row; else "Disc N" to show
-    row-y-px:    float,    // precomputed absolute Y (px) for this row, already
+    row-y-px: float,    // precomputed absolute Y (px) for this row, already
                             // accounting for every disc-header's own extra height
 }
 
 // A cast member shown on the detail page.
 export struct CastMember {
-    id:        string,
-    name:      string,
-    role:      string,
-    photo:     image,
+    id: string,
+    name: string,
+    role: string,
+    photo: image,
     has-photo: bool,
 }
 
@@ -162,31 +162,31 @@ export struct CastMember {
 // menu (Mark Watched/Unwatched, Favourite, View Details) pre-populated
 // with the season's real current state.
 export struct SeasonEntry {
-    id:         string,
-    name:       string,
-    played:     bool,
+    id: string,
+    name: string,
+    played: bool,
     is-favorite: bool,
 }
 
 // One row in the key-binding editor (action display name + current key label).
 export struct KeyBindingEntry {
     action: string,
-    key:    string,
+    key: string,
 }
 
 // Passed from Rust for every poster card on any screen.
 export struct CardItem {
-    id:             string,
-    series-id:      string,   // series ID for Episode cards; empty for movies/series
-    item-type:      string,
-    title:          string,
-    subtitle:       string,   // second card row: "S1:E3 - Title" / "2019 - Present" / artist / year
-    year:           int,      // numeric year kept for library sorting
-    has-played:     bool,
-    is-favorite:    bool,
-    resume-pct:     float,
-    has-poster:     bool,
-    poster:         image,
+    id: string,
+    series-id: string,   // series ID for Episode cards; empty for movies/series
+    item-type: string,
+    title: string,
+    subtitle: string,   // second card row: "S1:E3 - Title" / "2019 - Present" / artist / year
+    year: int,      // numeric year kept for library sorting
+    has-played: bool,
+    is-favorite: bool,
+    resume-pct: float,
+    has-poster: bool,
+    poster: image,
     unplayed-count: int,
     // Discover (Seerr) results only — "" on every Jellyfin-sourced card
     // (every existing construction site leaves this at its Default::default()
@@ -198,7 +198,7 @@ export struct CardItem {
     // needed, since Blocklisted is just another value of this same
     // mutually-exclusive status field (unlike on-watchlist below, a
     // genuinely independent boolean axis).
-    availability:   string,
+    availability: string,
     // Discover "Requested" row only (2026-07-18) — false/false on every
     // other card by construction, same zero-risk-elsewhere reasoning as
     // `availability` above. `requested-4k` tags the main availability pill
@@ -219,9 +219,9 @@ export struct CardItem {
     // that actual state exist). `other-tier-available` wins when both
     // would apply (better news); `other-tier-requested` only applies once
     // its own tier's request is still active and unfulfilled.
-    requested-4k:          bool,
-    other-tier-available:  bool,
-    other-tier-requested:  bool,
+    requested-4k: bool,
+    other-tier-available: bool,
+    other-tier-requested: bool,
     // Discover "Requested" row only (2026-07-18) — the underlying Seerr
     // MediaRequest's own id (NOT the tmdb id, which stays in `id` above and
     // is load-bearing for open-discover-item). "" on every other card,
@@ -240,7 +240,7 @@ export struct CardItem {
     // shows for a Requested-row card — see context_menu.slint's own doc
     // comment for the exact matrix.
     request-pending: bool,
-    request-mine:    bool,
+    request-mine: bool,
     // Discover (Seerr) cards only (2026-07-18, Watchlist + Release
     // Calendar) — false on every Jellyfin-sourced card, same zero-risk-
     // elsewhere pattern as availability/request-* above. Drives the
@@ -252,18 +252,18 @@ export struct CardItem {
 // Discover (Seerr) request-detail screen only — one row per TV season.
 export struct SeasonItem {
     season-number: int,
-    name:          string,
+    name: string,
     episode-count: int,
-    selected:      bool,
-    poster:        image,
-    has-poster:    bool,
+    selected: bool,
+    poster: image,
+    has-poster: bool,
 }
 
 // Discover (Seerr) request-detail screen only — one row per available
 // Radarr/Sonarr tag on the default server (empty list when none configured).
 export struct TagItem {
-    id:       int,
-    label:    string,
+    id: int,
+    label: string,
     selected: bool,
 }
 
@@ -272,7 +272,7 @@ export struct TagItem {
 // one bool per row like TagItem's multi-select. Row 0 is always a synthetic
 // "Default" entry (id: 0) prepended in Rust, not fetched from the server.
 export struct ProfileItem {
-    id:   int,
+    id: int,
     name: string,
 }
 
@@ -286,8 +286,8 @@ export struct ProfileItem {
 // sentinel" convention ProfileItem's own id:0 "Default" row already uses.
 export struct GenreItem {
     movie-id: int,
-    tv-id:    int,
-    name:     string,
+    tv-id: int,
+    name: string,
     selected: bool,
 }
 
@@ -296,8 +296,8 @@ export struct GenreItem {
 // (from get_movie_watch_providers/get_tv_watch_providers), not
 // per-media-type, so there's only one id to track, not two.
 export struct ProviderItem {
-    id:       int,
-    name:     string,
+    id: int,
+    name: string,
     selected: bool,
 }
 
@@ -306,27 +306,27 @@ export struct ProviderItem {
 // (Seerr's own streamingRegion setting, see discover.rs's
 // resolve_streaming_region). TMDB logo, small icon-sized fetch.
 export struct StreamingProvider {
-    id:        int,
-    name:      string,
-    logo:      image,
-    has-logo:  bool,
+    id: int,
+    name: string,
+    logo: image,
+    has-logo: bool,
 }
 
 export struct QueueEntry {
-    id:         string,
-    index:      int,       // UNDERLYING position for queue-jump/-remove (playlist idx;
+    id: string,
+    index: int,       // UNDERLYING position for queue-jump/-remove (playlist idx;
                            // playlist.len()+i for queued rows; -1 = synthetic now-playing row)
-    title:      string,
-    artist:     string,    // album artist or series name; empty for video
+    title: string,
+    artist: string,    // album artist or series name; empty for video
     is-current: bool,      // true when this is the currently playing item
-    is-queued:  bool,      // true for context-menu queue rows (play after the playlist)
-    poster-id:  string,    // ID used for poster fetch (album_art_id for audio, item id for video)
+    is-queued: bool,      // true for context-menu queue rows (play after the playlist)
+    poster-id: string,    // ID used for poster fetch (album_art_id for audio, item id for video)
     has-poster: bool,
-    poster:     image,
+    poster: image,
 }
 
 export struct LyricEntry {
-    text:     string,
+    text: string,
     start-ms: int,   // milliseconds from track start; 0 means no timestamp info
 }
 
@@ -340,9 +340,9 @@ export struct LyricEntry {
 // data itself is blank (a blocklisted-by-tag entry, no user; or a legacy
 // row with no createdAt).
 export struct BlocklistRow {
-    tmdb-id:        int,
-    media-type:     string,   // "movie" | "tv"
-    title:          string,
+    tmdb-id: int,
+    media-type: string,   // "movie" | "tv"
+    title: string,
     blocklisted-by: string,
     blocklisted-at: string,
 }
@@ -351,24 +351,24 @@ export struct BlocklistRow {
 // Named ProfileTile, not ProfileItem — that name is already taken by the
 // unrelated Radarr/Sonarr quality-profile picker in RequestOptionsOverlay.
 export struct ProfileTile {
-    user-id:       string,
-    display-name:  string,
+    user-id: string,
+    display-name: string,
     // Real color type, not the raw hex string Bonfire's own avatarColor field
     // is — Slint's expression language has no string-to-color parse, so
     // Rust parses the hex (or picks a deterministic fallback for a plain,
     // non-Bonfire account) when building this struct.
-    avatar-color:  color,
+    avatar-color: color,
     avatar-initial: string,
-    has-pin:       bool,    // display-only — "a PIN is set" (lock icon); NOT the same as
+    has-pin: bool,    // display-only — "a PIN is set" (lock icon); NOT the same as
                              // requires-pin, per Bonfire's own documented distinction
                              // (bypassPinOnLocalNetwork can make requires-pin false even
                              // when has-pin is true)
-    requires-pin:  bool,    // whether to actually prompt for a PIN right now
-    is-bonfire:    bool,    // true = a Bonfire sub-profile of the currently-active master
+    requires-pin: bool,    // whether to actually prompt for a PIN right now
+    is-bonfire: bool,    // true = a Bonfire sub-profile of the currently-active master
                              // (switches via bonfire_switch_profile, no password ever again);
                              // false = an independently-remembered plain account (switches via
                              // its own stored token, or a password prompt if that's gone stale)
-    is-root:       bool,    // is this tile its OWN section's root/master profile (drives the
+    is-root: bool,    // is this tile its OWN section's root/master profile (drives the
                              // permanent master-ring on ProfileTileCard) — deliberately NOT
                              // `!is-bonfire`, which is wrong for a "pure" Bonfire group account
                              // that was never independently logged into (its own is-bonfire is
@@ -397,11 +397,11 @@ export struct ProfileSection {
 // sub-profiles is still exactly one account tile here, sized-in by
 // profile-count for the "N profiles" subtitle.
 export struct AccountTile {
-    root-id:       string,
-    display-name:  string,
-    avatar-color:  color,
+    root-id: string,
+    display-name: string,
+    avatar-color: color,
     avatar-initial: string,
-    server-url:    string,
+    server-url: string,
     profile-count: int,     // 1 = a standalone account, no profile tier to descend into;
                              // 2+ = picking this tile opens the profile-tier picker instead
     // Bonfire Phase 5 (cross-household groups, 2026-08-29) — true when this
@@ -424,7 +424,7 @@ export struct AccountTile {
 // Bonfire Phase 5 — one row in the "Bonfire Group" screen's owner-only
 // member list (BonfireGroupStatus.ownedMembers). Kick targets user-id.
 export struct BonfireGroupMemberTile {
-    user-id:  string,
+    user-id: string,
     username: string,
 }
 
@@ -435,8 +435,8 @@ export struct BonfireGroupMemberTile {
 // device's "client · last seen" line, empty string when there's nothing to
 // show (matches TagItem's own multi-select-via-per-row-bool convention).
 export struct ToggleListItem {
-    id:       string,
-    name:     string,
+    id: string,
+    name: string,
     subtitle: string,
     selected: bool,
 }
@@ -451,28 +451,28 @@ export struct ToggleListItem {
 // master-user-id at construction time (the wire response returns two
 // separate lists, not pre-interleaved).
 export struct BonfireAdminRow {
-    is-master:       bool,   // false = a sub-profile, indented under its own master
+    is-master: bool,   // false = a sub-profile, indented under its own master
     profile-user-id: string,
-    display-name:    string,
+    display-name: string,
     // Color+initial only, no real avatar photo — matches every other
     // profile-tile-rendering surface in this app (Account/Profile Picker,
     // Manage Profiles), none of which render a real image either;
     // bonfire_profile_image_url (fjord-api) has zero consumers anywhere
     // in this codebase today, confirmed before deciding this, not assumed.
-    avatar-color:    color,
-    avatar-initial:  string,
-    requires-pin:    bool,
-    max-profiles:    int,    // -1 = "using the server's own default" (None on the wire);
+    avatar-color: color,
+    avatar-initial: string,
+    requires-pin: bool,
+    max-profiles: int,    // -1 = "using the server's own default" (None on the wire);
                                // meaningless (always -1) on a sub-profile row
 }
 
 // One row in the "Bonfire Admin" screen's Audit Logs tab — read-only,
 // no per-row action, matching the real plugin's own admin dashboard.
 export struct BonfireAuditRow {
-    timestamp:       string,
+    timestamp: string,
     master-username: string,
     target-username: string,
-    device-name:     string,
-    client:          string,
-    ip-address:      string,
+    device-name: string,
+    client: string,
+    ip-address: string,
 }

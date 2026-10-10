@@ -49,7 +49,13 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme, BonfireGroupMemberTile } from "theme.slint";
 import { AppState } from "app_state.slint";
-import { FjordButton, PressPulse, ConfirmDialog, ToggleSwitch, QwertyKeyboard } from "widgets.slint";
+import {
+    FjordButton,
+    PressPulse,
+    ConfirmDialog,
+    ToggleSwitch,
+    QwertyKeyboard,
+} from "widgets.slint";
 
 component GroupToggleRow inherits Rectangle {
     in property <string> label;
@@ -61,8 +67,14 @@ component GroupToggleRow inherits Rectangle {
     border-radius: Theme.radius;
     border-width: (row-pulse.pulsing) ? 3px : (root.kbd-focused ? 2px : 0px);
     border-color: Theme.focus-border;
-    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
-    row-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: root.kbd-focused; }
+    animate border-width {
+        duration: 90ms * AppState.settings-animation-speed;
+        easing: ease-out-expo;
+    }
+    row-pulse := PressPulse {
+        trigger: AppState.kb-activate-pulse;
+        active: root.kbd-focused;
+    }
 
     // Real bug, live-reported 2026-08-29: the label and ToggleSwitch never
     // lined up. Same shape (and same fix) as ProfileEditScreen's own
@@ -73,19 +85,21 @@ component GroupToggleRow inherits Rectangle {
     // rather than an ambiguous Layout cross-axis default. Explicit y
     // positioning for each child sidesteps that entirely.
     Text {
-        x:                  12px;
-        y:                  (parent.height - self.height) / 2;
-        text:               root.label;
-        color:              Theme.text;
-        font-size:          13px;
+        x: 12px;
+        y: (parent.height - self.height) / 2;
+        text: root.label;
+        color: Theme.text;
+        font-size: 13px;
         vertical-alignment: center;
     }
+
     ToggleSwitch {
         x: parent.width - self.width - 12px;
         y: (parent.height - self.height) / 2;
         checked: root.value;
         toggled => { root.toggled(); }
     }
+
     TouchArea {
         clicked => { root.toggled(); }
     }
@@ -100,8 +114,14 @@ component GroupMemberRow inherits Rectangle {
     border-radius: Theme.radius;
     border-width: (row-pulse.pulsing) ? 3px : (root.kbd-focused ? 2px : 0px);
     border-color: Theme.focus-border;
-    animate border-width { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
-    row-pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: root.kbd-focused; }
+    animate border-width {
+        duration: 90ms * AppState.settings-animation-speed;
+        easing: ease-out-expo;
+    }
+    row-pulse := PressPulse {
+        trigger: AppState.kb-activate-pulse;
+        active: root.kbd-focused;
+    }
 
     HorizontalLayout {
         padding-left: 12px;
@@ -113,6 +133,7 @@ component GroupMemberRow inherits Rectangle {
             font-size: 13px;
             vertical-alignment: center;
         }
+
         FjordButton {
             text: "Kick";
             danger: true;
@@ -131,21 +152,23 @@ export component BonfireGroupScreen inherits Rectangle {
     }
 
     card := Rectangle {
-        width:  min(inner.preferred-width, parent.width - 48px);
+        width: min(inner.preferred-width, parent.width - 48px);
         height: min(inner.preferred-height, parent.height - 48px);
-        x: (parent.width  - self.width)  / 2;
+        x: (parent.width - self.width) / 2;
         y: (parent.height - self.height) / 2;
         background: Theme.surface;
         border-radius: Theme.radius-lg;
         clip: true;
-        drop-shadow-blur:  28px;
+        drop-shadow-blur: 28px;
         drop-shadow-color: #00000070;
 
-        TouchArea {}
+        TouchArea { }
 
         Flickable {
-            x: 0; y: 0;
-            width: parent.width; height: parent.height;
+            x: 0;
+            y: 0;
+            width: parent.width;
+            height: parent.height;
             content-width: self.width;
             content-height: inner.preferred-height;
 
@@ -162,6 +185,7 @@ export component BonfireGroupScreen inherits Rectangle {
                         font-size: 20px;
                         font-weight: 700;
                     }
+
                     FjordButton {
                         text: "✕";
                         width: 32px;
@@ -209,6 +233,7 @@ export component BonfireGroupScreen inherits Rectangle {
                             font-weight: 700;
                             letter-spacing: 1px;
                         }
+
                         if !AppState.bonfire-group-is-owner: VerticalLayout {
                             spacing: Theme.sp-sm;
                             Text {
@@ -217,6 +242,7 @@ export component BonfireGroupScreen inherits Rectangle {
                                 font-size: 12px;
                                 wrap: word-wrap;
                             }
+
                             FjordButton {
                                 text: "Generate Join Code";
                                 kbd-focused: AppState.bonfire-group-zone == 0;
@@ -233,6 +259,7 @@ export component BonfireGroupScreen inherits Rectangle {
                                 color: Theme.text-muted;
                                 font-size: 12px;
                             }
+
                             Text {
                                 text: AppState.bonfire-group-owned-code;
                                 color: Theme.accent;
@@ -241,12 +268,14 @@ export component BonfireGroupScreen inherits Rectangle {
                                 letter-spacing: 4px;
                                 horizontal-alignment: center;
                             }
+
                             Text {
                                 text: "Share this 6-character code with someone else's Jellyfin master account.";
                                 color: Theme.text-subtle;
                                 font-size: 11px;
                                 wrap: word-wrap;
                             }
+
                             for m[i] in AppState.bonfire-group-owned-members: GroupMemberRow {
                                 member: m;
                                 kbd-focused: AppState.bonfire-group-zone == i + 1;
@@ -277,7 +306,10 @@ export component BonfireGroupScreen inherits Rectangle {
                         }
                     }
 
-                    Rectangle { height: 1px; background: Theme.border; }
+                    Rectangle {
+                        height: 1px;
+                        background: Theme.border;
+                    }
 
                     // ── Join section ─────────────────────────────────────
                     VerticalLayout {
@@ -289,6 +321,7 @@ export component BonfireGroupScreen inherits Rectangle {
                             font-weight: 700;
                             letter-spacing: 1px;
                         }
+
                         if !AppState.bonfire-group-is-member: VerticalLayout {
                             spacing: Theme.sp-sm;
                             Rectangle {
@@ -308,6 +341,7 @@ export component BonfireGroupScreen inherits Rectangle {
                                     width: parent.width;
                                     height: parent.height;
                                 }
+
                                 TouchArea {
                                     clicked => {
                                         AppState.bonfire-group-zone = join-base;
@@ -318,6 +352,7 @@ export component BonfireGroupScreen inherits Rectangle {
                                     }
                                 }
                             }
+
                             FjordButton {
                                 text: "Join";
                                 kbd-focused: AppState.bonfire-group-zone == join-base + 1;
@@ -335,6 +370,7 @@ export component BonfireGroupScreen inherits Rectangle {
                                 font-size: 14px;
                                 wrap: word-wrap;
                             }
+
                             FjordButton {
                                 text: "Leave Group";
                                 danger: true;
@@ -348,7 +384,10 @@ export component BonfireGroupScreen inherits Rectangle {
                         }
                     }
 
-                    Rectangle { height: 1px; background: Theme.border; }
+                    Rectangle {
+                        height: 1px;
+                        background: Theme.border;
+                    }
 
                     // ── Shared toggles — one copy, applies regardless of
                     // hosting/membership state (the underlying API call,
@@ -365,6 +404,7 @@ export component BonfireGroupScreen inherits Rectangle {
                                 AppState.bonfire-group-settings-changed(!AppState.bonfire-group-hide-my-sub-profiles, AppState.bonfire-group-hide-others-sub-profiles, AppState.bonfire-group-allow-lan-bypass);
                             }
                         }
+
                         GroupToggleRow {
                             label: "Hide their sub-profiles from me";
                             value: AppState.bonfire-group-hide-others-sub-profiles;
@@ -374,6 +414,7 @@ export component BonfireGroupScreen inherits Rectangle {
                                 AppState.bonfire-group-settings-changed(AppState.bonfire-group-hide-my-sub-profiles, !AppState.bonfire-group-hide-others-sub-profiles, AppState.bonfire-group-allow-lan-bypass);
                             }
                         }
+
                         GroupToggleRow {
                             label: "Allow LAN switch without PIN";
                             value: AppState.bonfire-group-allow-lan-bypass;
@@ -388,6 +429,7 @@ export component BonfireGroupScreen inherits Rectangle {
                                 }
                             }
                         }
+
                         Text {
                             text: "Bonfire group members can switch into this account from your local network without entering a PIN when this is on."
                                 + (AppState.bonfire-group-is-administrator ? " This account is a Jellyfin administrator — anyone who does this gets full server and user management access." : "");

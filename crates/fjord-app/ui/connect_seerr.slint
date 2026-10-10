@@ -133,13 +133,18 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
-import { FjordButton, FieldFocusWrap, QwertyKeyboard, PressPulse } from "widgets.slint";
+import {
+    FjordButton,
+    FieldFocusWrap,
+    QwertyKeyboard,
+    PressPulse,
+} from "widgets.slint";
 import { LineEdit } from "std-widgets.slint";
 
 component MethodTab inherits Rectangle {
     in property <string> label;
-    in property <bool>   active;
-    in property <bool>   kbd-focused;
+    in property <bool> active;
+    in property <bool> kbd-focused;
     callback clicked;
 
     height: 34px;
@@ -168,10 +173,19 @@ component MethodTab inherits Rectangle {
     // position.
     border-width: (ta.pressed || pulse.pulsing) ? 3px : (kbd-focused && active ? 2px : 0px);
     border-color: Theme.focus-border;
-    animate border-width, background { duration: 90ms * AppState.settings-animation-speed; easing: ease-out-expo; }
-    pulse := PressPulse { trigger: AppState.kb-activate-pulse; active: root.active && root.kbd-focused; }
+    animate border-width, background {
+        duration: 90ms * AppState.settings-animation-speed;
+        easing: ease-out-expo;
+    }
+    pulse := PressPulse {
+        trigger: AppState.kb-activate-pulse;
+        active: root.active && root.kbd-focused;
+    }
 
-    ta := TouchArea { clicked => { root.clicked(); } }
+    ta := TouchArea {
+        clicked => { root.clicked(); }
+    }
+
     Text {
         text: label;
         // Was Theme.bg (#0d0d0d, near-black) — live-reported the same day:
@@ -281,18 +295,18 @@ export component ConnectSeerrScreen inherits Rectangle {
     }
 
     card := Rectangle {
-        width:         min(460px, parent.width - 48px);
-        height:        inner.preferred-height;
-        x:             (parent.width  - self.width)  / 2;
-        y:             (parent.height - self.height) / 2;
-        background:    Theme.surface;
+        width: min(460px, parent.width - 48px);
+        height: inner.preferred-height;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        background: Theme.surface;
         border-radius: Theme.radius-lg;
-        drop-shadow-blur:  28px;
+        drop-shadow-blur: 28px;
         drop-shadow-color: #00000070;
 
         // Swallow clicks so the backdrop TouchArea above doesn't close the
         // card when interacting with it.
-        card-ta := TouchArea {}
+        card-ta := TouchArea { }
 
         inner := VerticalLayout {
             padding: Theme.sp-xl;
@@ -306,6 +320,7 @@ export component ConnectSeerrScreen inherits Rectangle {
                     font-size: 20px;
                     font-weight: 700;
                 }
+
                 FjordButton {
                     text: "✕";
                     width: 32px;
@@ -322,7 +337,8 @@ export component ConnectSeerrScreen inherits Rectangle {
             url-field-wrap := FieldFocusWrap {
                 focused: AppState.show-onscreen-keyboard && AppState.connect-seerr-zone == 0;
                 url-input := LineEdit {
-                    x: 2px; y: 2px;
+                    x: 2px;
+                    y: 2px;
                     width: parent.width - 4px;
                     height: parent.height - 4px;
                     placeholder-text: "Seerr URL  (e.g. seerr.example.com or 192.168.1.10:5055)";
@@ -387,28 +403,37 @@ export component ConnectSeerrScreen inherits Rectangle {
             HorizontalLayout {
                 spacing: 6px;
                 MethodTab {
-                    label: "API Key"; active: AppState.connect-seerr-method == 0;
+                    label: "API Key";
+                    active: AppState.connect-seerr-method == 0;
                     kbd-focused: AppState.connect-seerr-zone == 1;
                     clicked => { AppState.connect-seerr-zone = 1; AppState.connect-seerr-method = 0; AppState.connect-seerr-error = ""; root.close-keyboard-if-orphaned(); }
                 }
+
                 MethodTab {
-                    label: "Jellyfin"; active: AppState.connect-seerr-method == 1;
+                    label: "Jellyfin";
+                    active: AppState.connect-seerr-method == 1;
                     kbd-focused: AppState.connect-seerr-zone == 1;
                     clicked => { AppState.connect-seerr-zone = 1; AppState.connect-seerr-method = 1; AppState.connect-seerr-error = ""; root.close-keyboard-if-orphaned(); }
                 }
+
                 MethodTab {
-                    label: "Quick Connect"; active: AppState.connect-seerr-method == 2;
+                    label: "Quick Connect";
+                    active: AppState.connect-seerr-method == 2;
                     kbd-focused: AppState.connect-seerr-zone == 1;
                     clicked => { AppState.connect-seerr-zone = 1; AppState.connect-seerr-method = 2; AppState.connect-seerr-error = ""; root.close-keyboard-if-orphaned(); }
                 }
+
                 MethodTab {
-                    label: "Local Account"; active: AppState.connect-seerr-method == 3;
+                    label: "Local Account";
+                    active: AppState.connect-seerr-method == 3;
                     kbd-focused: AppState.connect-seerr-zone == 1;
                     clicked => { AppState.connect-seerr-zone = 1; AppState.connect-seerr-method = 3; AppState.connect-seerr-error = ""; root.close-keyboard-if-orphaned(); }
                 }
             }
 
-            Rectangle { height: 2px; }
+            Rectangle {
+                height: 2px;
+            }
 
             // ── Method 0: static API key ─────────────────────────────────
             if AppState.connect-seerr-method == 0: VerticalLayout {
@@ -419,10 +444,12 @@ export component ConnectSeerrScreen inherits Rectangle {
                     font-size: 12px;
                     wrap: word-wrap;
                 }
+
                 key-field-wrap := FieldFocusWrap {
                     focused: AppState.show-onscreen-keyboard && AppState.connect-seerr-zone == 2;
                     key-input := LineEdit {
-                        x: 2px; y: 2px;
+                        x: 2px;
+                        y: 2px;
                         width: parent.width - 4px;
                         height: parent.height - 4px;
                         placeholder-text: "API key";
@@ -464,6 +491,7 @@ export component ConnectSeerrScreen inherits Rectangle {
                         }
                     }
                 }
+
                 FjordButton {
                     text: AppState.connect-seerr-busy ? "Connecting…" : "Save";
                     enabled: !AppState.connect-seerr-busy;
@@ -521,7 +549,8 @@ export component ConnectSeerrScreen inherits Rectangle {
                 jf-user-wrap := FieldFocusWrap {
                     focused: AppState.show-onscreen-keyboard && AppState.connect-seerr-zone == 2;
                     jf-user := LineEdit {
-                        x: 2px; y: 2px;
+                        x: 2px;
+                        y: 2px;
                         width: parent.width - 4px;
                         height: parent.height - 4px;
                         placeholder-text: "Jellyfin username";
@@ -559,10 +588,12 @@ export component ConnectSeerrScreen inherits Rectangle {
                         }
                     }
                 }
+
                 jf-pass-wrap := FieldFocusWrap {
                     focused: AppState.show-onscreen-keyboard && AppState.connect-seerr-zone == 3;
                     jf-pass := LineEdit {
-                        x: 2px; y: 2px;
+                        x: 2px;
+                        y: 2px;
                         width: parent.width - 4px;
                         height: parent.height - 4px;
                         placeholder-text: "Jellyfin password";
@@ -604,6 +635,7 @@ export component ConnectSeerrScreen inherits Rectangle {
                         }
                     }
                 }
+
                 FjordButton {
                     text: AppState.connect-seerr-busy ? "Signing in…" : "Sign In";
                     enabled: !AppState.connect-seerr-busy;
@@ -666,6 +698,7 @@ export component ConnectSeerrScreen inherits Rectangle {
                         font-size: 12px;
                         wrap: word-wrap;
                     }
+
                     FjordButton {
                         text: AppState.connect-seerr-busy ? "Requesting code…" : "Get Code";
                         enabled: !AppState.connect-seerr-busy;
@@ -687,6 +720,7 @@ export component ConnectSeerrScreen inherits Rectangle {
                         letter-spacing: 6px;
                         horizontal-alignment: center;
                     }
+
                     Text {
                         text: "Enter this code in Jellyfin's Quick Connect settings — waiting for approval…";
                         color: Theme.text-muted;
@@ -694,6 +728,7 @@ export component ConnectSeerrScreen inherits Rectangle {
                         horizontal-alignment: center;
                         wrap: word-wrap;
                     }
+
                     qc-poll-timer := Timer {
                         interval: 2000ms;
                         running: AppState.connect-seerr-qc-polling;
@@ -714,7 +749,8 @@ export component ConnectSeerrScreen inherits Rectangle {
                 local-email-wrap := FieldFocusWrap {
                     focused: AppState.show-onscreen-keyboard && AppState.connect-seerr-zone == 2;
                     local-email := LineEdit {
-                        x: 2px; y: 2px;
+                        x: 2px;
+                        y: 2px;
                         width: parent.width - 4px;
                         height: parent.height - 4px;
                         placeholder-text: "Email";
@@ -752,10 +788,12 @@ export component ConnectSeerrScreen inherits Rectangle {
                         }
                     }
                 }
+
                 local-pass-wrap := FieldFocusWrap {
                     focused: AppState.show-onscreen-keyboard && AppState.connect-seerr-zone == 3;
                     local-pass := LineEdit {
-                        x: 2px; y: 2px;
+                        x: 2px;
+                        y: 2px;
                         width: parent.width - 4px;
                         height: parent.height - 4px;
                         placeholder-text: "Password";
@@ -797,6 +835,7 @@ export component ConnectSeerrScreen inherits Rectangle {
                         }
                     }
                 }
+
                 FjordButton {
                     text: AppState.connect-seerr-busy ? "Signing in…" : "Sign In";
                     enabled: !AppState.connect-seerr-busy;
@@ -933,8 +972,8 @@ export component ConnectSeerrScreen inherits Rectangle {
         // rapid Enter landing in that gap re-read !qc-polling as still
         // false and fired a second concurrent quickconnect-start.
         if AppState.show-connect-seerr && AppState.connect-seerr-method == 2
-                && AppState.connect-seerr-zone == 2 && !AppState.connect-seerr-qc-polling
-                && !AppState.connect-seerr-busy {
+            && AppState.connect-seerr-zone == 2 && !AppState.connect-seerr-qc-polling
+            && !AppState.connect-seerr-busy {
             AppState.connect-seerr-quickconnect-start(url-input.text);
         }
     }
