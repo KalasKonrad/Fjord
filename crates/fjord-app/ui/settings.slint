@@ -1,95 +1,41 @@
 // ── fjord-app · settings.slint ───────────────────────────────────────────────
-//   SettingsScreen   two-pane layout: left section list, right scrollable content
-//     Left pane      "General" / "Profiles" / "Video" / "Audio" / "Player" / "Key Bindings" /
-//                    "UI" / "Integrations" — a parallel (key, label) array pair (sect-keys/
-//                    sect-labels below), keyed on AppState.settings-section (a string, Phase 0
-//                    2026-08-07 — was an int position; see settings.rs's own module doc comment
-//                    for the full "why" — a section can now be inserted anywhere in the array
-//                    without renumbering anything that follows it); below the section list, a
-//                    vertical-stretch:1 spacer pins a SERVER/CLIENT/SEERR info block to the
-//                    bottom of the pane — SEERR only rendered when AppState.seerr-connected;
-//                    "Not encrypted (http://)" under SERVER/SEERR for plain-HTTP connections
-//     Right pane     Flickable; shows section content based on settings-section (string key)
-//       General      launch-in-fullscreen, video-behind, log-level, prewarm-metadata,
-//                    prewarm-images — Sign Out moved to the new Profiles section below
-//       Profiles     sign-out (Phase 0 shell — Phase 1 adds Bonfire profile switching/
-//                    launch-policy rows here; see the Bonfire integration plan); bonfire_group
-//                    (Phase 5, 2026-08-29, appended at the end — same settings-is-master-profile
-//                    gate as manage_profiles) opens BonfireGroupScreen (bonfire_group.slint)
-//       Video        hwdec, vf, deinterlace, video-sync, interpolation, tscale (virtual —
-//                    only while interpolation is on), target-colorspace, tone-mapping
-//                    + separate-video-surface (HDR Stage 5, Wayland only — is-wayland)
-//                    + video-own-buffers (indented under it while it's on, 2026-10-08)
-//                    + video-dither-off ("Turn off dithering (test)", always, 2026-10-08)
-//                    (always visible as of 2026-08-15 — was virtual, hidden while HDR
-//                    passthrough was on; wrong, since it's also the fallback curve mpv
-//                    uses when target-colorspace-hint-strict rejects the passthrough hint),
-//                    opengl-early-flush, video-latency-hacks (virtual — only while
-//                    video-sync == display-resample); display_sync_enabled (2026-09-18 —
-//                    native resolution/refresh-rate/HDR/WCG matching to source via
-//                    kscreen-doctor, see display_sync.rs) + 10 virtual sub-rows shown only
-//                    (+ "Sync display for trailers", 2026-10-04, default off)
-//                    while it's on: screen (dynamic dropdown), sync_resolution/
-//                    sync_refresh_rate (toggles), default_resolution/default_hz (both
-//                    dynamic dropdowns too as of the same day — real per-output modes via
-//                    display_sync::supported_resolutions_and_hz, not a fixed compile-time
-//                    list; refetched whenever screen changes), scale_4k/scale_1080p,
-//                    4k_odd_fps_mode (virtual — only while sync_resolution is on),
-//                    hdr_mode, wcg_mode
-//       Audio        audio-device, audio-channels, SPDIF, AC3, EAC3, DTS, DTS-HD, TrueHD,
-//                    passthrough-device (hidden when SPDIF off), alsa-irq-scheduling (virtual,
-//                    hidden when SPDIF off or non-PipeWire device), skip-fade-mute (virtual,
-//                    hidden when SPDIF off — 2026-08-11, gates only the skip-fade's own
-//                    passthrough mute, not the video fade or the PCM ramp), audio-lang,
-//                    gapless-audio, now-playing-auto-open
-//       Player       sub-enabled, sub-lang/-lang2/-type/-scale/-pos/-respect-ass-styling
-//                    (all hidden while sub-enabled is off), sub-color/sub-background (virtual —
-//                    only while sub-enabled and !respect-ass-styling), cache-secs/cache-max-mb;
-//                    INTRO SKIPPER: intro/recap/preview/commercial mode + *-secs (virtual,
-//                    only while that mode == ask-timed); CREDITS: credits-mode + credits-secs
-//                    (virtual, only while credits-mode == ask); SEEKING: seek-step,
-//                    seek-step-long, skip-fade-ms (2026-08-11, base ms of the skip-segment
-//                    fade-to-black + audio ramp/mute — 0 = today's original instant cut) —
-//                    all three appended at the end, always visible
-//       Key Bindings keybinding-focused 0..N rows, Reset button — unchanged by Phase 0 (a
-//                    different, inherently positional data shape — see settings.rs)
-//       UI           scroll-speed, animation-speed (percentage multipliers driving ~119
-//                    animate blocks + LoadingSpinner's cycle Timer across all other .slint
-//                    files, see settings-scroll-speed/settings-animation-speed in
-//                    app_state.slint), text-font (dynamic dropdown — fc-list at startup)
-//       Integrations seerr-enabled (toggle — gates the Discover sidebar tab AND every row
-//                    below it), seerr-connect (bespoke Rectangle like Sign Out —
-//                    "Connect Seerr"/"Disconnect"; only rendered while seerr-enabled),
-//                    streaming-region/trailer-quality/display-language/discover-language/
-//                    discover-region (dynamic or static dropdowns, only rendered while
-//                    connected), manage-blocklist (bespoke Rectangle, gated on connected AND
-//                    seerr-can-manage-blocklist)
-//   Row identity     every SettingsRow/bespoke-action-row takes a stable string `key` (Phase 0)
-//                    matching the constant of the same name in settings.rs's module doc comment
-//                    — NOT a positional row-index/section pair anymore. Mouse click on a row's
-//                    background routes through AppState.settings-row-focused(key) so
-//                    settings-focused-visual-index (used for scroll-to-view) stays correct;
-//                    SettingsDropdown's own inline mouse popup is a separate, pre-existing,
-//                    self-contained mechanism (Slint's native PopupWindow) untouched by any of
-//                    this — only the KEYBOARD-driven overlay at the bottom of this file goes
-//                    through settings.rs's open_dropdown_popup/apply_dropdown_selection.
-//   Row highlight    handled by SettingsRow component (TouchArea lower z, children higher z)
-//   Scroll           content-y tracks settings-focused-visual-index (≈64px/row for
-//                    Video/Audio/Player/Integrations, ≈48px for General/Profiles/UI — see kb-y);
-//                    keybinding scroll ≈base + index*44px. content-y is only ever assigned
-//                    imperatively from a changed-tracker (native mouse-wheel needs content-y
-//                    NOT to be a live binding) — since kb-y's own clamp() means different focus
-//                    positions near a list's edges can share the identical computed value,
-//                    `changed kb-y` alone can silently miss a real transition; two local mirror
-//                    properties (_kb-fi-mirror/_kb-sf-mirror, tracking the raw keybinding-focused/
-//                    settings-focused navigation state instead of the derived+clamped value)
-//                    back it up so the reassignment can't be skipped (2026-08-08). The Reset row
-//                    itself is NOT covered by kb-y/kb-row-y at all (both explicitly exclude it,
-//                    `keybinding-focused < kb-total`) — after 3 estimate-based attempts still left
-//                    it cut off, its own scroll target is computed directly from reset-btn's real
-//                    resolved y/height (see the Key Bindings section body, near reset-btn) instead
-//                    of being approximated from an ancestor's preferred-height.
-//   kb-row-y(i)      approximate: i*44px + 22px  (used for scroll only; never used for Reset itself)
+//   SettingsScreen   two panes: section list (left), scrollable section content (right)
+//     Left pane      sections from the parallel sect-keys/sect-labels arrays, keyed on
+//                    AppState.settings-section (a string); a SERVER/CLIENT/SEERR info block
+//                    pinned to the bottom ("Not encrypted (http://)" for plain-HTTP connections)
+//     Right pane     Flickable; one `if` block per section (virtual rows are `if`-gated):
+//       General      launch fullscreen, video behind UI, log level, prewarm metadata/images
+//       Profiles     launch policy (+ default profile), Manage Profiles (master account),
+//                    account launch policy (+ default account), Add Account, remember login,
+//                    Sign Out, Bonfire Group (master account), Bonfire Admin (server admin)
+//       Video        hwdec, vf (NVDEC only), deinterlace, video-sync, interpolation (+ tscale),
+//                    target colorspace, separate video surface (+ own 10-bit buffers; Wayland),
+//                    dithering off, tone mapping (+ per-curve description), early flush,
+//                    latency hacks (display-resample), display sync (+ screen, resolution/
+//                    refresh sync, default resolution/Hz, 4K/1080p scaling, 4K odd-fps mode,
+//                    HDR/WCG modes, trailers)
+//       Audio        device, channels, SPDIF (+ AC3/EAC3/DTS/DTS-HD/TrueHD, passthrough device,
+//                    ALSA IRQ scheduling on PipeWire, skip-fade mute), audio language,
+//                    gapless, Now Playing auto-open
+//       Player       subtitles (+ languages, type, scale, position, ASS styling, color,
+//                    background), cache secs/MB, intro/recap/preview/commercial modes (+ secs
+//                    for ask-timed), credits mode (+ secs), seek steps, skip-fade ms
+//       Key Bindings rebind rows (keybinding-focused 0..N, positional) + Reset to Defaults
+//       UI           scroll speed, animation speed, text font, on-screen keyboard
+//       Integrations Seerr enabled, Connect/Disconnect, then (connected) streaming region,
+//                    trailer quality, display/discover language, discover region, Manage
+//                    Blocklist (seerr-can-manage-blocklist)
+//     Dialogs        Key Bindings reset + rebind-collision confirms, Disconnect Seerr confirm
+//   Row identity     every row has a stable string `key` = the constant in settings.rs (keep the
+//                    two lists in sync); a mouse click goes through AppState.settings-row-focused
+//                    so settings-focused-visual-index (scroll) stays right. A SettingsDropdown's
+//                    mouse popup is its own PopupWindow; the keyboard dropdown overlay goes through
+//                    settings.rs's open_dropdown_popup/apply_dropdown_selection.
+//   Scroll           kb-y from settings-focused-visual-index or kb-row-y(i) (approximate, for
+//                    scroll only), assigned from changed trackers (content-y must not be bound);
+//                    _kb-fi-mirror/_kb-sf-mirror catch steps where the clamped kb-y doesn't
+//                    change. Reset to Defaults scrolls from reset-btn's real geometry, and
+//                    kb-content-h-override corrects the Key Bindings content height.
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
@@ -106,39 +52,12 @@ import {
 export component SettingsScreen inherits Rectangle {
     background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg;
 
-    // Approximate — used for scroll-into-view only, not exact pixel
-    // positioning (same "used for scroll only" framing this doc already
-    // established for this function). Fixed 2026-08-08: this used to be a
-    // bare `i * 44px`, which only held when every row was a uniform 44px
-    // starting right at the top of the content — true before the "Enter
-    // rebinds..." hint text was added above the row list, and never true
-    // at all for rows after the "PLAYER" SectionHeader or for the Reset
-    // button (index == keybinding-normal.length + keybinding-player.length,
-    // past every real row), which is exactly why Reset never scrolled into
-    // view (fixed separately, see reset-btn below — pinned to its own real
-    // resolved geometry instead of an estimate).
-    //
-    // Code review, 2026-08-08: re-examined whether the two `28px`
-    // SectionHeader terms and the row stride (`i * 44px`) are themselves
-    // estimates too. They're not — `SectionHeader` (widgets.slint) has an
-    // explicit fixed `height: 28px`, and each row Rectangle below has an
-    // explicit fixed `height: 44px`, so both are exact, not approximations.
-    // The ONE genuinely-approximate term is the hint `Text`'s own height —
-    // it's `wrap: word-wrap` with no fixed height, so its real rendered
-    // height depends on the pane's actual width (window size) and can
-    // exceed a narrow estimate on a narrow window. Reading it directly
-    // (the same technique reset-btn below uses) isn't available to this
-    // function specifically: `kb-row-y` is a `pure function` on
-    // `SettingsScreen`'s own root, called from `kb-y` regardless of which
-    // section is active, but the hint `Text` only exists inside the
-    // `if settings-section == "keybindings":` block — referencing it from
-    // here would be exactly the dangling-reference hazard documented in
-    // CLAUDE.md's Slint gotchas (an element inside a conditional isn't a
-    // valid reference from outside that conditional's own scope), unlike
-    // reset-btn's own tracker, which lives INSIDE that same block. Widened
-    // the constant instead — kb-y's own clamp caps any overshoot at the
-    // true bottom of the content either way, so erring generous remains
-    // the safe direction; erring short is what caused the original bug.
+    // Approximate y of Key Bindings row i — for scroll-into-view only. The header and row
+    // heights are exact (SectionHeader 28px, rows 44px); the hint text is word-wrapped, so its
+    // height depends on the window width and can't be read from here (it lives inside the
+    // keybindings `if` block — a dangling reference from this root function). Its estimate is
+    // deliberately generous: kb-y's clamp caps an overshoot, an undershoot hid rows. The Reset
+    // button (index past every row) has its own exact target — see reset-btn below.
     pure function kb-row-y(i: int) -> length {
         let n: int = AppState.keybinding-normal.length;
         76px                            // hint text (generous, up to ~4 wrapped lines) + its spacer
@@ -221,15 +140,8 @@ export component SettingsScreen inherits Rectangle {
                         clicked => {
                             AppState.settings-section = sect-keys[i];
                             AppState.settings-focused = "";
-                            // Code review, 2026-08-08: this never reset
-                            // keybinding-focused, so a section switch while
-                            // it was still >= 0 (from earlier keyboard/mouse
-                            // navigation into Key Bindings) left EVERY
-                            // subsequent keypress routed to the invisible
-                            // keybinding dispatcher (keys.rs checks
-                            // keybinding-focused before settings-section) —
-                            // Enter could silently arm rebind-capture on
-                            // whatever action that stale index pointed at.
+                            // Leave Key Bindings focus: keys.rs checks keybinding-focused before settings-section, so
+                            // a stale index kept routing keys to the invisible rebind dispatcher.
                             AppState.keybinding-focused = -1;
                             AppState.keybinding-rebinding = false;
                             AppState.refocus();
@@ -350,59 +262,22 @@ export component SettingsScreen inherits Rectangle {
         // ── Right pane ────────────────────────────────────────────────────────
         right-pane := Rectangle {
             horizontal-stretch: 1;
-            // `kb-content-h-override`, code review follow-up (2026-08-08,
-            // 5th live report — "still only see the top of the reset to
-            // default"): attempt 4 (reset-btn's own real y/height) computed
-            // a mathematically-correct scroll target, re-derived by hand —
-            // but STILL undershot in practice, which only makes sense if
-            // Flickable re-clamps a programmatic `content-y` assignment
-            // against its own `content-height` binding (`right-fl`'s
-            // `content-height: right-pane.right-vp-h;`), same as it
-            // already clamps drag/wheel input — meaning the real bug was
-            // never the TARGET value, it was `right-vp-h` itself
-            // (ultimately `right-inner.preferred-height`) under-reporting
-            // the true content height by roughly the button's own size,
-            // silently truncating even a provably-correct target back down.
-            // `right-pane` can't read `reset-btn` directly (dangling
-            // reference risk whenever another section is showing — same
-            // reasoning as reset-btn's own tracker below) — so the Key
-            // Bindings section itself pushes its own real measured height
-            // UP into this property whenever keybinding-focused changes
-            // (see `changed _reset-fi-mirror` below), and `right-vp-h`
-            // takes whichever of the estimate or the real measurement is
-            // larger, gated to only apply while that section is actually
-            // showing so a stale measurement can't inflate scroll space in
-            // every OTHER section after Key Bindings has been visited once.
+            // kb-content-h-override: right-inner.preferred-height under-reports the Key Bindings
+            // content by about the Reset button's height, and Flickable clamps every content-y
+            // assignment to content-height — so even an exact scroll target came out short. The Key
+            // Bindings section pushes its real measured height here on every focus change (see
+            // `changed _reset-fi-mirror`); right-vp-h takes the larger value, only while that section
+            // shows (a stale measurement must not add scroll space to other sections).
             property <length> kb-content-h-override: 0px;
             property <length> right-vp-h: (AppState.settings-section == "keybindings"
                 ? max(right-inner.preferred-height, kb-content-h-override)
                 : right-inner.preferred-height) + Theme.sp-xl * 2;
-            // Reset to Defaults (keybinding-focused == the past-the-end
-            // index, one past every real row) is pinned to the exact
-            // bottom of the content rather than routed through
-            // kb-row-y's own per-row approximation (2026-08-08 — the
-            // approximation alone still left Reset out of view; still worth
-            // keeping accurate for actual rows, but Reset itself doesn't
-            // need an estimate at all, since it's provably the very last
-            // thing in the section — scrolling all the way down always
-            // reveals it, with no approximation error possible).
+            // Reset to Defaults (keybinding-focused == kb-total, past every row) is the last thing in
+            // the section and is scrolled to from its own real geometry, not kb-row-y.
             property <int> kb-total: AppState.keybinding-normal.length + AppState.keybinding-player.length;
-            // Reset to Defaults' OWN scroll target is computed separately,
-            // directly against `reset-btn`'s real resolved geometry (see
-            // below, inside the Key Bindings section itself, where that
-            // element is actually in scope) — not here. Three straight
-            // attempts at ESTIMATING it (a bare row offset, then a
-            // preferred-height-based "exact bottom" formula) each still
-            // left it short: `right-inner.preferred-height` did not
-            // reliably equal the sum this formula assumed, so the computed
-            // bottom was short by close to the button's own height in
-            // practice — "only the top of the button visible" is exactly
-            // what an undershoot that size produces. `kb-y` below covers
-            // every OTHER row (0..kb-total-1) plus the general-settings-row
-            // case; the reset-fi-focused case is deliberately excluded from
-            // both changed handlers so there is exactly one writer of
-            // `content-y` for that specific transition, not two disagreeing
-            // estimates racing each other.
+            // kb-y covers every real row (0..kb-total-1) and the general settings rows. Reset's target
+            // is set inside the Key Bindings section, where reset-btn is in scope; both changed
+            // handlers exclude that case so content-y has one writer for it.
             property <length> kb-y: AppState.keybinding-focused >= 0 && AppState.keybinding-focused < kb-total
                 ? clamp(-(kb-row-y(AppState.keybinding-focused) - self.height / 2),
                          min(0px, self.height - right-vp-h), 0px)
@@ -551,12 +426,7 @@ export component SettingsScreen inherits Rectangle {
                             }
                         }
 
-                        // Bonfire Phase 2 (2026-08-09) — only reachable when the
-                    // active profile is itself a master account
-                    // (settings-is-master-profile), matching
-                    // bonfire_list_profiles' own "all profiles under THIS
-                    // master account" semantics; a sub-profile has no
-                    // siblings to manage.
+                        // Manage Profiles: only for a master account (a sub-profile has no siblings to manage).
                     if AppState.settings-is-master-profile: Rectangle {
                             border-radius: Theme.radius;
                             background: AppState.settings-focused == "profiles.manage_profiles" ? Theme.accent-muted
@@ -568,19 +438,10 @@ export component SettingsScreen inherits Rectangle {
                                 duration: 90ms * AppState.settings-animation-speed;
                                 easing: ease-out-expo;
                             }
-                        // !show-manage-profiles — real bug, live-reported 2026-08-29 for
-                        // Bonfire Group ("when i presses enter it is like i press enter on
-                        // profiles in the background"), then found to be the identical,
-                        // pre-existing gap here too: this screen's own translucent backdrop
-                        // (#000000aa, not opaque) leaves this row dimly visible behind it,
-                        // and opening the overlay never touches settings-focused — so every
-                        // Enter pressed INSIDE ManageProfilesScreen (its own raw-key tier
-                        // bumps the same shared kb-activate-pulse counter) visibly flashed
-                        // this row's border, looking exactly like the keypress had leaked
-                        // through to the background. Deliberately not clearing
-                        // settings-focused itself on open — that's the sentinel that puts
-                        // keyboard focus back on THIS row when the overlay closes, clearing
-                        // it would silently land the user on the section list instead.
+                        // !show-manage-profiles: the overlay's backdrop is translucent and Enter inside it bumps
+                        // the shared kb-activate-pulse, which flashed this row as if the key leaked through.
+                        // settings-focused is deliberately kept — it returns focus to this row when the overlay
+                        // closes.
                         manage-pulse := PressPulse {
                                 trigger: AppState.kb-activate-pulse;
                                 active: AppState.settings-focused == "profiles.manage_profiles" && !AppState.show-manage-profiles;
@@ -603,13 +464,8 @@ export component SettingsScreen inherits Rectangle {
                             }
                         }
 
-                        // ── Account launch policy (2026-08-14, the 2-tier
-                    // account/profile redesign) — the identical shape one
-                    // tier up, appended after the existing profile-level
-                    // rows rather than inserted before them. Only
-                    // meaningfully different from "always ask" once 2+
-                    // accounts actually exist (should_show_picker_at_startup's
-                    // own doc comment has the full design).
+                        // ── Account launch policy — the same shape one tier up; only differs from "always ask"
+                        // once 2+ accounts exist (see should_show_picker_at_startup).
                     SettingsRow {
                             key: "profiles.account_launch_policy";
                             title: "Account launch behavior";
@@ -639,10 +495,8 @@ export component SettingsScreen inherits Rectangle {
                             }
                         }
 
-                        // Always visible, regardless of how many accounts
-                    // already exist — the picker's own "+ Add Account"
-                    // tile only shows once there's a 2nd one to switch
-                    // between; this is the actual way to go from 1 to 2.
+                        // Always visible: the picker's "+ Add Account" tile only shows once there are two
+                        // accounts, so this is the way to add the second.
                     Rectangle {
                             border-radius: Theme.radius;
                             background: AppState.settings-focused == "profiles.add_account" ? Theme.accent-muted
@@ -676,15 +530,9 @@ export component SettingsScreen inherits Rectangle {
                             }
                         }
 
-                        // Live-questioned 2026-08-17 ("no why to change this
-                    // on the accaunt without sinign out and in again") —
-                    // see app_state.slint's own settings-remember-login
-                    // doc comment. Not a plain <=> two-way toggle since ON
-                    // and OFF need genuinely different behavior (OFF is
-                    // immediate, ON opens the confirm-password modal) —
-                    // one-way `checked:` read plus a manual toggled=>
-                    // dispatch through the same settings_row_action key
-                    // both keyboard and mouse already funnel through.
+                        // Not a two-way binding: OFF applies immediately, ON opens the confirm-password modal —
+                        // both keyboard and mouse go through settings_row_action (see app_state.slint's
+                        // settings-remember-login).
                     SettingsRow {
                             key: "profiles.remember_login";
                             title: "Remember this login";
@@ -731,11 +579,7 @@ export component SettingsScreen inherits Rectangle {
                             }
                         }
 
-                        // Bonfire Phase 5 (cross-household groups, 2026-08-29) —
-                    // appended at the end of the section (not sandwiched
-                    // next to Manage Profiles), same "append, don't insert"
-                    // precedent as profiles.account_launch_policy above; same
-                    // settings-is-master-profile gate as Manage Profiles.
+                        // Bonfire Group: master accounts only, like Manage Profiles.
                     if AppState.settings-is-master-profile: Rectangle {
                             border-radius: Theme.radius;
                             background: AppState.settings-focused == "profiles.bonfire_group" ? Theme.accent-muted
@@ -772,15 +616,9 @@ export component SettingsScreen inherits Rectangle {
                             }
                         }
 
-                        // Bonfire Phase 6 (admin actions, 2026-09-04) — appended at
-                    // the very end of the section, same "append, don't insert"
-                    // precedent as Bonfire Group above. Deliberately gated on
-                    // jellyfin-is-server-admin, NOT settings-is-master-profile
-                    // — mappings/reset-pin/set-limit/audit-logs all authorize
-                    // against Jellyfin's own core Policy.IsAdministrator on the
-                    // real plugin controller, so this row's visibility must
-                    // track that flag specifically, not Bonfire household
-                    // ownership (see settings.rs's PROF_BONFIRE_ADMIN comment).
+                        // Bonfire Admin: gated on jellyfin-is-server-admin, not settings-is-master-profile — the
+                        // plugin's admin endpoints authorize against Jellyfin's Policy.IsAdministrator (see
+                        // settings.rs's PROF_BONFIRE_ADMIN).
                     if AppState.jellyfin-is-server-admin: Rectangle {
                             border-radius: Theme.radius;
                             background: AppState.settings-focused == "profiles.bonfire_admin" ? Theme.accent-muted
@@ -847,12 +685,8 @@ export component SettingsScreen inherits Rectangle {
                             }
                         }
 
-                        // Only meaningful with NVDEC actually decoding (fixes
-                    // NVDEC's own stride-corruption bug — see CLAUDE.md) —
-                    // hidden for every other hwdec, including "auto" (2026-08-08,
-                    // direct choice: auto is treated as "not committed to
-                    // NVDEC" rather than shown just in case it resolves to
-                    // nvdec at runtime).
+                        // Only with NVDEC selected explicitly (works around NVDEC's stride corruption, see
+                        // CLAUDE.md) — hidden for every other hwdec, including "auto".
                     if AppState.settings-hwdec == "nvdec" || AppState.settings-hwdec == "nvdec-copy": SettingsRow {
                             key: "video.vf";
                             title: "Video filter (vf)";
@@ -989,29 +823,12 @@ export component SettingsScreen inherits Rectangle {
                             }
                         }
 
-                        // Per-curve descriptions (2026-08-15, live-reported: "can we also add
-                    // description of what the different tone mapping curves do"), a pure
-                    // ternary over AppState.settings-tone-mapping rather than a new AppState
-                    // property computed in Rust — this value is already kept correctly in
-                    // sync across both the keyboard popup and this row's own mouse dropdown
-                    // by everything above, so a derived expression can't drift out of sync
-                    // with it the way two independently-maintained copies could (the exact
-                    // "Rust list vs. Slint condition" drift class this file has been bitten
-                    // by more than once elsewhere). The old static "auto is usually correct"
-                    // wording was corrected the same day: it's no longer universally true —
-                    // see CLAUDE.md's "HDR tone-mapping shader compile failure" section for
-                    // a real case where mpv's own auto-picked curve failed to compile on an
-                    // older/strict NVIDIA GLSL driver and froze the whole app.
-                    //
-                    // No longer gated on !settings-target-colorspace-hint (2026-08-15,
-                    // live-reported: "the tonemap setting shuld not be gateded byt the hdr
-                    // hint setting") — mpv's own target-colorspace-hint-strict (default on)
-                    // falls back to this exact stored curve whenever HDR passthrough is
-                    // enabled but the compositor doesn't actually accept it, so hiding the
-                    // row while passthrough is on left no way to choose which curve backs
-                    // that fallback. mpv.rs sets --tone-mapping and --target-colorspace-hint
-                    // as two fully independent options — never gated on each other there
-                    // either, so this was purely a Settings-visibility bug, not a deeper one.
+                        // Per-curve description, a ternary over settings-tone-mapping (one source of truth with
+                        // the dropdown). Some curves fail to compile on NVIDIA's GLSL compiler, so "auto" isn't
+                        // always safe (DEVLOG → HDR tone-mapping shader compile failure).
+                        //
+                        // Not gated on the colorspace hint: mpv's target-colorspace-hint-strict falls back to this
+                        // curve when the compositor refuses HDR passthrough, so the curve must stay choosable.
                     SettingsRow {
                             key: "video.tone_mapping";
                             title: "Tone mapping";
@@ -1061,10 +878,8 @@ export component SettingsScreen inherits Rectangle {
                             text: "DISPLAY SYNC";
                         }
 
-                        // display_sync (2026-09-18) — native resolution/refresh-rate/
-                    // HDR/WCG matching to source via kscreen-doctor (KDE Plasma
-                    // Wayland only). See CLAUDE.md's own display_sync section and
-                    // display_sync.rs's module doc comment for the full design.
+                        // Display sync — resolution/refresh-rate/HDR matching to the source via kscreen-doctor
+                        // (KDE Plasma Wayland only); see display_sync.rs.
                     SettingsRow {
                             key: "video.display_sync_enabled";
                             title: "Sync display to source";
@@ -1957,10 +1772,7 @@ export component SettingsScreen inherits Rectangle {
                 if AppState.settings-section == "keybindings": VerticalLayout {
                         spacing: 0;
 
-                        // Live-tested feedback (2026-08-07): the rebind
-                    // interaction (Enter starts capturing the very next
-                    // keypress as the new binding, no confirmation) wasn't
-                    // obvious without this spelled out up front.
+                        // Spell out that Enter captures the very next key as the new binding.
                     Text {
                             text: "Enter rebinds the focused action — press any key to set it, or Escape to cancel";
                             color: Theme.text-muted;
@@ -2066,14 +1878,8 @@ export component SettingsScreen inherits Rectangle {
                             }
                         }
 
-                        // kbd-focused wasn't bound to anything before (2026-08-07
-                    // live-tested feedback: "no feedback... did not know it
-                    // was highlighted or pressed") — this is the same
-                    // condition dispatch_keybinding_nav (keys.rs) uses to
-                    // decide "focus is on the Reset button" (fi == total).
-                    // Reset no longer fires directly on click/Confirm — both
-                    // now open the confirm dialog below instead, so an
-                    // accidental press can be backed out of.
+                        // kbd-focused uses the same condition as keys.rs's dispatch_keybinding_nav (fi == total).
+                        // Click/Confirm opens the confirm dialog below instead of resetting directly.
                     reset-btn := FjordButton {
                             text: "Reset to Defaults";
                             kbd-focused: AppState.keybinding-focused == AppState.keybinding-normal.length + AppState.keybinding-player.length;
@@ -2084,40 +1890,13 @@ export component SettingsScreen inherits Rectangle {
                             }
                         }
 
-                        // Precise Reset-row scroll (2026-08-08, 4th attempt) —
-                    // every prior attempt ESTIMATED how far to scroll
-                    // (a row-offset formula, then a
-                    // `right-inner.preferred-height`-based "exact bottom"
-                    // formula) and each still left the button's bottom cut
-                    // off in practice, meaning the estimate was short by
-                    // close to the button's own height. Rather than refine
-                    // the estimate a fourth time, this reads `reset-btn`'s
-                    // own REAL resolved position directly — `reset-btn.y`
-                    // is Slint's actual layout-computed offset within this
-                    // VerticalLayout (which itself sits at y:0 within
-                    // right-inner, being its sole mounted child), so this
-                    // is not an approximation at all. Declared here rather
-                    // than on right-pane because `reset-btn` only exists
-                    // while this section is mounted — referencing it from
-                    // right-pane's own kb-y would be a dangling reference
-                    // whenever any other section is showing; `right-fl`/
-                    // `right-pane` are safe to reach from here since they
-                    // are plain, unconditionally-mounted ancestors.
+                        // Exact Reset-row scroll: reads reset-btn's real layout position (estimates kept coming
+                        // up short). Declared here because reset-btn only exists while this section is mounted;
+                        // right-fl/right-pane are unconditional ancestors, safe to reach from here.
                     property <int> _reset-fi-mirror: AppState.keybinding-focused;
                         changed _reset-fi-mirror => {
-                        // Code review follow-up, 2026-08-08 (5th report —
-                        // the mathematically-correct target above was still
-                        // being silently re-clamped short by Flickable's
-                        // own `content-height` binding, which trusted
-                        // `right-inner.preferred-height` and apparently
-                        // shouldn't have). Push the real measured content
-                        // height up to right-pane on every focus change
-                        // (cheap, and this fires on every row navigation
-                        // too, not just when Reset itself is focused) so
-                        // `right-vp-h`/`content-height` can never be
-                        // smaller than reality while this section is shown
-                        // — see right-pane's own `kb-content-h-override`
-                        // doc comment for the full reasoning.
+                        // Push the real content height to right-pane on every focus change (see its
+                        // kb-content-h-override) so Flickable can't clamp the target short.
                         right-pane.kb-content-h-override = reset-btn.y + reset-btn.height;
                             if AppState.keybinding-focused >= AppState.keybinding-normal.length + AppState.keybinding-player.length {
                                 right-fl.content-y = min(0px,
@@ -2360,13 +2139,8 @@ export component SettingsScreen inherits Rectangle {
                             }
                         }
 
-                        // Display Language (dynamic dropdown, same shape as
-                    // Streaming Region — Seerr's own "Display Language": its
-                    // real effect for Fjord is the default TMDB `language`
-                    // query param on every Discover movie/tv/search call,
-                    // translating titles/overviews; it does NOT affect
-                    // Jellyfin library metadata, which follows Jellyfin's own
-                    // separate per-library language config)
+                        // Display Language: Seerr's default TMDB `language` for every Discover call (translated
+                        // titles/overviews); Jellyfin library metadata follows Jellyfin's own library settings.
                     if AppState.seerr-connected: SettingsRow {
                             key: "integrations.display_language";
                             title: "Display Language";
@@ -2560,14 +2334,9 @@ export component SettingsScreen inherits Rectangle {
         }
     }
 
-    // Rebind-collision confirm dialog (2026-08-08) — same shape as the
-    // Reset dialog above, declared after it so a (structurally impossible,
-    // but just in case) simultaneous show still renders this on top. The
-    // actual apply/discard is done in Rust (keys::apply_rebind via
-    // main.rs's on_keybinding_collision_confirmed/-cancelled), not here —
-    // this dialog's own confirmed/cancelled just forward to those same
-    // callbacks so mouse and keyboard (keys.rs::dispatch_keybinding_nav)
-    // can never diverge on what Confirm/Cancel actually does.
+    // Rebind-collision confirm. Apply/discard happens in Rust (keys::apply_rebind via
+    // on_keybinding_collision_confirmed/-cancelled); mouse and keyboard
+    // (keys.rs's dispatch_keybinding_nav) both go through those callbacks.
     if AppState.show-keybinding-collision-confirm: ConfirmDialog {
         title: "Key Already Bound";
         message: AppState.keybinding-collision-message;
@@ -2583,14 +2352,9 @@ export component SettingsScreen inherits Rectangle {
         }
     }
 
-    // Disconnect Seerr confirm dialog, 2026-08-22 — see show-seerr-
-    // disconnect-confirm's own doc comment in app_state.slint. Declared
-    // last so it renders on top of everything else on this screen,
-    // including the two Key Bindings dialogs above (structurally
-    // impossible to coexist, same reasoning as the collision dialog's own
-    // comment). Keyboard (Left/Right/Confirm/Back) is handled by
-    // settings.rs::dispatch_settings, not here — ConfirmDialog itself is
-    // keyboard-dumb by design.
+    // Disconnect Seerr confirm (see show-seerr-disconnect-confirm in app_state.slint). Declared
+    // last so it draws on top. Keyboard is handled in settings.rs's dispatch_settings —
+    // ConfirmDialog has no key handling of its own.
     if AppState.show-seerr-disconnect-confirm: ConfirmDialog {
         title: "Disconnect Seerr?";
         message: "Fjord will forget the saved connection — reconnecting means re-entering your credentials.";

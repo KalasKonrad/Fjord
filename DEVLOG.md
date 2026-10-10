@@ -13201,3 +13201,1232 @@ Above `let mut det: Vec<String> = Vec::new();`:
 //   spawn_jellyfin_admin_check  is the signed-in user a Jellyfin admin (Settings gating)
 // ─────────────────────────────────────────────────────────────────────────────
 ```
+
+#### `crates/fjord-app/ui/settings.slint`
+
+Above `pure function kb-row-y(i: int) -> length {`:
+```
+// Approximate — used for scroll-into-view only, not exact pixel
+// positioning (same "used for scroll only" framing this doc already
+// established for this function). Fixed 2026-08-08: this used to be a
+// bare `i * 44px`, which only held when every row was a uniform 44px
+// starting right at the top of the content — true before the "Enter
+// rebinds..." hint text was added above the row list, and never true
+// at all for rows after the "PLAYER" SectionHeader or for the Reset
+// button (index == keybinding-normal.length + keybinding-player.length,
+// past every real row), which is exactly why Reset never scrolled into
+// view (fixed separately, see reset-btn below — pinned to its own real
+// resolved geometry instead of an estimate).
+//
+// Code review, 2026-08-08: re-examined whether the two `28px`
+// SectionHeader terms and the row stride (`i * 44px`) are themselves
+// estimates too. They're not — `SectionHeader` (widgets.slint) has an
+// explicit fixed `height: 28px`, and each row Rectangle below has an
+// explicit fixed `height: 44px`, so both are exact, not approximations.
+// The ONE genuinely-approximate term is the hint `Text`'s own height —
+// it's `wrap: word-wrap` with no fixed height, so its real rendered
+// height depends on the pane's actual width (window size) and can
+// exceed a narrow estimate on a narrow window. Reading it directly
+// (the same technique reset-btn below uses) isn't available to this
+// function specifically: `kb-row-y` is a `pure function` on
+// `SettingsScreen`'s own root, called from `kb-y` regardless of which
+// section is active, but the hint `Text` only exists inside the
+// `if settings-section == "keybindings":` block — referencing it from
+// here would be exactly the dangling-reference hazard documented in
+// CLAUDE.md's Slint gotchas (an element inside a conditional isn't a
+// valid reference from outside that conditional's own scope), unlike
+// reset-btn's own tracker, which lives INSIDE that same block. Widened
+// the constant instead — kb-y's own clamp caps any overshoot at the
+// true bottom of the content either way, so erring generous remains
+// the safe direction; erring short is what caused the original bug.
+```
+
+Above `AppState.keybinding-focused = -1;`:
+```
+// Code review, 2026-08-08: this never reset
+// keybinding-focused, so a section switch while
+// it was still >= 0 (from earlier keyboard/mouse
+// navigation into Key Bindings) left EVERY
+// subsequent keypress routed to the invisible
+// keybinding dispatcher (keys.rs checks
+// keybinding-focused before settings-section) —
+// Enter could silently arm rebind-capture on
+// whatever action that stale index pointed at.
+```
+
+Above `property <length> kb-content-h-override: 0px;`:
+```
+// `kb-content-h-override`, code review follow-up (2026-08-08,
+// 5th live report — "still only see the top of the reset to
+// default"): attempt 4 (reset-btn's own real y/height) computed
+// a mathematically-correct scroll target, re-derived by hand —
+// but STILL undershot in practice, which only makes sense if
+// Flickable re-clamps a programmatic `content-y` assignment
+// against its own `content-height` binding (`right-fl`'s
+// `content-height: right-pane.right-vp-h;`), same as it
+// already clamps drag/wheel input — meaning the real bug was
+// never the TARGET value, it was `right-vp-h` itself
+// (ultimately `right-inner.preferred-height`) under-reporting
+// the true content height by roughly the button's own size,
+// silently truncating even a provably-correct target back down.
+// `right-pane` can't read `reset-btn` directly (dangling
+// reference risk whenever another section is showing — same
+// reasoning as reset-btn's own tracker below) — so the Key
+// Bindings section itself pushes its own real measured height
+// UP into this property whenever keybinding-focused changes
+// (see `changed _reset-fi-mirror` below), and `right-vp-h`
+// takes whichever of the estimate or the real measurement is
+// larger, gated to only apply while that section is actually
+// showing so a stale measurement can't inflate scroll space in
+// every OTHER section after Key Bindings has been visited once.
+```
+
+Above `property <int> kb-total: AppState.keybinding-normal.length + AppState.keybinding-player.length;`:
+```
+// Reset to Defaults (keybinding-focused == the past-the-end
+// index, one past every real row) is pinned to the exact
+// bottom of the content rather than routed through
+// kb-row-y's own per-row approximation (2026-08-08 — the
+// approximation alone still left Reset out of view; still worth
+// keeping accurate for actual rows, but Reset itself doesn't
+// need an estimate at all, since it's provably the very last
+// thing in the section — scrolling all the way down always
+// reveals it, with no approximation error possible).
+```
+
+Above `property <length> kb-y: AppState.keybinding-focused >= 0 && AppState.keybinding-focused < kb-total`:
+```
+// Reset to Defaults' OWN scroll target is computed separately,
+// directly against `reset-btn`'s real resolved geometry (see
+// below, inside the Key Bindings section itself, where that
+// element is actually in scope) — not here. Three straight
+// attempts at ESTIMATING it (a bare row offset, then a
+// preferred-height-based "exact bottom" formula) each still
+// left it short: `right-inner.preferred-height` did not
+// reliably equal the sum this formula assumed, so the computed
+// bottom was short by close to the button's own height in
+// practice — "only the top of the button visible" is exactly
+// what an undershoot that size produces. `kb-y` below covers
+// every OTHER row (0..kb-total-1) plus the general-settings-row
+// case; the reset-fi-focused case is deliberately excluded from
+// both changed handlers so there is exactly one writer of
+// `content-y` for that specific transition, not two disagreeing
+// estimates racing each other.
+```
+
+Above `if AppState.settings-is-master-profile: Rectangle {`:
+```
+// Bonfire Phase 2 (2026-08-09) — only reachable when the
+// active profile is itself a master account
+// (settings-is-master-profile), matching
+// bonfire_list_profiles' own "all profiles under THIS
+// master account" semantics; a sub-profile has no
+// siblings to manage.
+```
+
+Above `manage-pulse := PressPulse {`:
+```
+// !show-manage-profiles — real bug, live-reported 2026-08-29 for
+// Bonfire Group ("when i presses enter it is like i press enter on
+// profiles in the background"), then found to be the identical,
+// pre-existing gap here too: this screen's own translucent backdrop
+// (#000000aa, not opaque) leaves this row dimly visible behind it,
+// and opening the overlay never touches settings-focused — so every
+// Enter pressed INSIDE ManageProfilesScreen (its own raw-key tier
+// bumps the same shared kb-activate-pulse counter) visibly flashed
+// this row's border, looking exactly like the keypress had leaked
+// through to the background. Deliberately not clearing
+// settings-focused itself on open — that's the sentinel that puts
+// keyboard focus back on THIS row when the overlay closes, clearing
+// it would silently land the user on the section list instead.
+```
+
+Above `SettingsRow {`:
+```
+// ── Account launch policy (2026-08-14, the 2-tier
+// account/profile redesign) — the identical shape one
+// tier up, appended after the existing profile-level
+// rows rather than inserted before them. Only
+// meaningfully different from "always ask" once 2+
+// accounts actually exist (should_show_picker_at_startup's
+// own doc comment has the full design).
+```
+
+Above `Rectangle {`:
+```
+// Always visible, regardless of how many accounts
+// already exist — the picker's own "+ Add Account"
+// tile only shows once there's a 2nd one to switch
+// between; this is the actual way to go from 1 to 2.
+```
+
+Above `SettingsRow {`:
+```
+// Live-questioned 2026-08-17 ("no why to change this
+// on the accaunt without sinign out and in again") —
+// see app_state.slint's own settings-remember-login
+// doc comment. Not a plain <=> two-way toggle since ON
+// and OFF need genuinely different behavior (OFF is
+// immediate, ON opens the confirm-password modal) —
+// one-way `checked:` read plus a manual toggled=>
+// dispatch through the same settings_row_action key
+// both keyboard and mouse already funnel through.
+```
+
+Above `if AppState.settings-is-master-profile: Rectangle {`:
+```
+// Bonfire Phase 5 (cross-household groups, 2026-08-29) —
+// appended at the end of the section (not sandwiched
+// next to Manage Profiles), same "append, don't insert"
+// precedent as profiles.account_launch_policy above; same
+// settings-is-master-profile gate as Manage Profiles.
+```
+
+Above `if AppState.jellyfin-is-server-admin: Rectangle {`:
+```
+// Bonfire Phase 6 (admin actions, 2026-09-04) — appended at
+// the very end of the section, same "append, don't insert"
+// precedent as Bonfire Group above. Deliberately gated on
+// jellyfin-is-server-admin, NOT settings-is-master-profile
+// — mappings/reset-pin/set-limit/audit-logs all authorize
+// against Jellyfin's own core Policy.IsAdministrator on the
+// real plugin controller, so this row's visibility must
+// track that flag specifically, not Bonfire household
+// ownership (see settings.rs's PROF_BONFIRE_ADMIN comment).
+```
+
+Above `if AppState.settings-hwdec == "nvdec" || AppState.settings-hwdec == "nvdec-copy": SettingsRow {`:
+```
+// Only meaningful with NVDEC actually decoding (fixes
+// NVDEC's own stride-corruption bug — see CLAUDE.md) —
+// hidden for every other hwdec, including "auto" (2026-08-08,
+// direct choice: auto is treated as "not committed to
+// NVDEC" rather than shown just in case it resolves to
+// nvdec at runtime).
+```
+
+Above `SettingsRow {`:
+```
+// Per-curve descriptions (2026-08-15, live-reported: "can we also add
+// description of what the different tone mapping curves do"), a pure
+// ternary over AppState.settings-tone-mapping rather than a new AppState
+// property computed in Rust — this value is already kept correctly in
+// sync across both the keyboard popup and this row's own mouse dropdown
+// by everything above, so a derived expression can't drift out of sync
+// with it the way two independently-maintained copies could (the exact
+// "Rust list vs. Slint condition" drift class this file has been bitten
+// by more than once elsewhere). The old static "auto is usually correct"
+// wording was corrected the same day: it's no longer universally true —
+// see CLAUDE.md's "HDR tone-mapping shader compile failure" section for
+// a real case where mpv's own auto-picked curve failed to compile on an
+// older/strict NVIDIA GLSL driver and froze the whole app.
+//
+// No longer gated on !settings-target-colorspace-hint (2026-08-15,
+// live-reported: "the tonemap setting shuld not be gateded byt the hdr
+// hint setting") — mpv's own target-colorspace-hint-strict (default on)
+// falls back to this exact stored curve whenever HDR passthrough is
+// enabled but the compositor doesn't actually accept it, so hiding the
+// row while passthrough is on left no way to choose which curve backs
+// that fallback. mpv.rs sets --tone-mapping and --target-colorspace-hint
+// as two fully independent options — never gated on each other there
+// either, so this was purely a Settings-visibility bug, not a deeper one.
+```
+
+Above `SettingsRow {`:
+```
+// display_sync (2026-09-18) — native resolution/refresh-rate/
+// HDR/WCG matching to source via kscreen-doctor (KDE Plasma
+// Wayland only). See CLAUDE.md's own display_sync section and
+// display_sync.rs's module doc comment for the full design.
+```
+
+Above `Text {`:
+```
+// Live-tested feedback (2026-08-07): the rebind
+// interaction (Enter starts capturing the very next
+// keypress as the new binding, no confirmation) wasn't
+// obvious without this spelled out up front.
+```
+
+Above `reset-btn := FjordButton {`:
+```
+// kbd-focused wasn't bound to anything before (2026-08-07
+// live-tested feedback: "no feedback... did not know it
+// was highlighted or pressed") — this is the same
+// condition dispatch_keybinding_nav (keys.rs) uses to
+// decide "focus is on the Reset button" (fi == total).
+// Reset no longer fires directly on click/Confirm — both
+// now open the confirm dialog below instead, so an
+// accidental press can be backed out of.
+```
+
+Above `property <int> _reset-fi-mirror: AppState.keybinding-focused;`:
+```
+// Precise Reset-row scroll (2026-08-08, 4th attempt) —
+// every prior attempt ESTIMATED how far to scroll
+// (a row-offset formula, then a
+// `right-inner.preferred-height`-based "exact bottom"
+// formula) and each still left the button's bottom cut
+// off in practice, meaning the estimate was short by
+// close to the button's own height. Rather than refine
+// the estimate a fourth time, this reads `reset-btn`'s
+// own REAL resolved position directly — `reset-btn.y`
+// is Slint's actual layout-computed offset within this
+// VerticalLayout (which itself sits at y:0 within
+// right-inner, being its sole mounted child), so this
+// is not an approximation at all. Declared here rather
+// than on right-pane because `reset-btn` only exists
+// while this section is mounted — referencing it from
+// right-pane's own kb-y would be a dangling reference
+// whenever any other section is showing; `right-fl`/
+// `right-pane` are safe to reach from here since they
+// are plain, unconditionally-mounted ancestors.
+```
+
+Above `right-pane.kb-content-h-override = reset-btn.y + reset-btn.height;`:
+```
+// Code review follow-up, 2026-08-08 (5th report —
+// the mathematically-correct target above was still
+// being silently re-clamped short by Flickable's
+// own `content-height` binding, which trusted
+// `right-inner.preferred-height` and apparently
+// shouldn't have). Push the real measured content
+// height up to right-pane on every focus change
+// (cheap, and this fires on every row navigation
+// too, not just when Reset itself is focused) so
+// `right-vp-h`/`content-height` can never be
+// smaller than reality while this section is shown
+// — see right-pane's own `kb-content-h-override`
+// doc comment for the full reasoning.
+```
+
+Above `if AppState.seerr-connected: SettingsRow {`:
+```
+// Display Language (dynamic dropdown, same shape as
+// Streaming Region — Seerr's own "Display Language": its
+// real effect for Fjord is the default TMDB `language`
+// query param on every Discover movie/tv/search call,
+// translating titles/overviews; it does NOT affect
+// Jellyfin library metadata, which follows Jellyfin's own
+// separate per-library language config)
+```
+
+Above `if AppState.show-keybinding-collision-confirm: ConfirmDialog {`:
+```
+// Rebind-collision confirm dialog (2026-08-08) — same shape as the
+// Reset dialog above, declared after it so a (structurally impossible,
+// but just in case) simultaneous show still renders this on top. The
+// actual apply/discard is done in Rust (keys::apply_rebind via
+// main.rs's on_keybinding_collision_confirmed/-cancelled), not here —
+// this dialog's own confirmed/cancelled just forward to those same
+// callbacks so mouse and keyboard (keys.rs::dispatch_keybinding_nav)
+// can never diverge on what Confirm/Cancel actually does.
+```
+
+Above `if AppState.show-seerr-disconnect-confirm: ConfirmDialog {`:
+```
+// Disconnect Seerr confirm dialog, 2026-08-22 — see show-seerr-
+// disconnect-confirm's own doc comment in app_state.slint. Declared
+// last so it renders on top of everything else on this screen,
+// including the two Key Bindings dialogs above (structurally
+// impossible to coexist, same reasoning as the collision dialog's own
+// comment). Keyboard (Left/Right/Confirm/Back) is handled by
+// settings.rs::dispatch_settings, not here — ConfirmDialog itself is
+// keyboard-dumb by design.
+```
+
+#### `crates/fjord-app/ui/settings.slint` — file header (TOC)
+```
+// ── fjord-app · settings.slint ───────────────────────────────────────────────
+//   SettingsScreen   two-pane layout: left section list, right scrollable content
+//     Left pane      "General" / "Profiles" / "Video" / "Audio" / "Player" / "Key Bindings" /
+//                    "UI" / "Integrations" — a parallel (key, label) array pair (sect-keys/
+//                    sect-labels below), keyed on AppState.settings-section (a string, Phase 0
+//                    2026-08-07 — was an int position; see settings.rs's own module doc comment
+//                    for the full "why" — a section can now be inserted anywhere in the array
+//                    without renumbering anything that follows it); below the section list, a
+//                    vertical-stretch:1 spacer pins a SERVER/CLIENT/SEERR info block to the
+//                    bottom of the pane — SEERR only rendered when AppState.seerr-connected;
+//                    "Not encrypted (http://)" under SERVER/SEERR for plain-HTTP connections
+//     Right pane     Flickable; shows section content based on settings-section (string key)
+//       General      launch-in-fullscreen, video-behind, log-level, prewarm-metadata,
+//                    prewarm-images — Sign Out moved to the new Profiles section below
+//       Profiles     sign-out (Phase 0 shell — Phase 1 adds Bonfire profile switching/
+//                    launch-policy rows here; see the Bonfire integration plan); bonfire_group
+//                    (Phase 5, 2026-08-29, appended at the end — same settings-is-master-profile
+//                    gate as manage_profiles) opens BonfireGroupScreen (bonfire_group.slint)
+//       Video        hwdec, vf, deinterlace, video-sync, interpolation, tscale (virtual —
+//                    only while interpolation is on), target-colorspace, tone-mapping
+//                    + separate-video-surface (HDR Stage 5, Wayland only — is-wayland)
+//                    + video-own-buffers (indented under it while it's on, 2026-10-08)
+//                    + video-dither-off ("Turn off dithering (test)", always, 2026-10-08)
+//                    (always visible as of 2026-08-15 — was virtual, hidden while HDR
+//                    passthrough was on; wrong, since it's also the fallback curve mpv
+//                    uses when target-colorspace-hint-strict rejects the passthrough hint),
+//                    opengl-early-flush, video-latency-hacks (virtual — only while
+//                    video-sync == display-resample); display_sync_enabled (2026-09-18 —
+//                    native resolution/refresh-rate/HDR/WCG matching to source via
+//                    kscreen-doctor, see display_sync.rs) + 10 virtual sub-rows shown only
+//                    (+ "Sync display for trailers", 2026-10-04, default off)
+//                    while it's on: screen (dynamic dropdown), sync_resolution/
+//                    sync_refresh_rate (toggles), default_resolution/default_hz (both
+//                    dynamic dropdowns too as of the same day — real per-output modes via
+//                    display_sync::supported_resolutions_and_hz, not a fixed compile-time
+//                    list; refetched whenever screen changes), scale_4k/scale_1080p,
+//                    4k_odd_fps_mode (virtual — only while sync_resolution is on),
+//                    hdr_mode, wcg_mode
+//       Audio        audio-device, audio-channels, SPDIF, AC3, EAC3, DTS, DTS-HD, TrueHD,
+//                    passthrough-device (hidden when SPDIF off), alsa-irq-scheduling (virtual,
+//                    hidden when SPDIF off or non-PipeWire device), skip-fade-mute (virtual,
+//                    hidden when SPDIF off — 2026-08-11, gates only the skip-fade's own
+//                    passthrough mute, not the video fade or the PCM ramp), audio-lang,
+//                    gapless-audio, now-playing-auto-open
+//       Player       sub-enabled, sub-lang/-lang2/-type/-scale/-pos/-respect-ass-styling
+//                    (all hidden while sub-enabled is off), sub-color/sub-background (virtual —
+//                    only while sub-enabled and !respect-ass-styling), cache-secs/cache-max-mb;
+//                    INTRO SKIPPER: intro/recap/preview/commercial mode + *-secs (virtual,
+//                    only while that mode == ask-timed); CREDITS: credits-mode + credits-secs
+//                    (virtual, only while credits-mode == ask); SEEKING: seek-step,
+//                    seek-step-long, skip-fade-ms (2026-08-11, base ms of the skip-segment
+//                    fade-to-black + audio ramp/mute — 0 = today's original instant cut) —
+//                    all three appended at the end, always visible
+//       Key Bindings keybinding-focused 0..N rows, Reset button — unchanged by Phase 0 (a
+//                    different, inherently positional data shape — see settings.rs)
+//       UI           scroll-speed, animation-speed (percentage multipliers driving ~119
+//                    animate blocks + LoadingSpinner's cycle Timer across all other .slint
+//                    files, see settings-scroll-speed/settings-animation-speed in
+//                    app_state.slint), text-font (dynamic dropdown — fc-list at startup)
+//       Integrations seerr-enabled (toggle — gates the Discover sidebar tab AND every row
+//                    below it), seerr-connect (bespoke Rectangle like Sign Out —
+//                    "Connect Seerr"/"Disconnect"; only rendered while seerr-enabled),
+//                    streaming-region/trailer-quality/display-language/discover-language/
+//                    discover-region (dynamic or static dropdowns, only rendered while
+//                    connected), manage-blocklist (bespoke Rectangle, gated on connected AND
+//                    seerr-can-manage-blocklist)
+//   Row identity     every SettingsRow/bespoke-action-row takes a stable string `key` (Phase 0)
+//                    matching the constant of the same name in settings.rs's module doc comment
+//                    — NOT a positional row-index/section pair anymore. Mouse click on a row's
+//                    background routes through AppState.settings-row-focused(key) so
+//                    settings-focused-visual-index (used for scroll-to-view) stays correct;
+//                    SettingsDropdown's own inline mouse popup is a separate, pre-existing,
+//                    self-contained mechanism (Slint's native PopupWindow) untouched by any of
+//                    this — only the KEYBOARD-driven overlay at the bottom of this file goes
+//                    through settings.rs's open_dropdown_popup/apply_dropdown_selection.
+//   Row highlight    handled by SettingsRow component (TouchArea lower z, children higher z)
+//   Scroll           content-y tracks settings-focused-visual-index (≈64px/row for
+//                    Video/Audio/Player/Integrations, ≈48px for General/Profiles/UI — see kb-y);
+//                    keybinding scroll ≈base + index*44px. content-y is only ever assigned
+//                    imperatively from a changed-tracker (native mouse-wheel needs content-y
+//                    NOT to be a live binding) — since kb-y's own clamp() means different focus
+//                    positions near a list's edges can share the identical computed value,
+//                    `changed kb-y` alone can silently miss a real transition; two local mirror
+//                    properties (_kb-fi-mirror/_kb-sf-mirror, tracking the raw keybinding-focused/
+//                    settings-focused navigation state instead of the derived+clamped value)
+//                    back it up so the reassignment can't be skipped (2026-08-08). The Reset row
+//                    itself is NOT covered by kb-y/kb-row-y at all (both explicitly exclude it,
+//                    `keybinding-focused < kb-total`) — after 3 estimate-based attempts still left
+//                    it cut off, its own scroll target is computed directly from reset-btn's real
+//                    resolved y/height (see the Key Bindings section body, near reset-btn) instead
+//                    of being approximated from an ancestor's preferred-height.
+//   kb-row-y(i)      approximate: i*44px + 22px  (used for scroll only; never used for Reset itself)
+// ─────────────────────────────────────────────────────────────────────────────
+```
+
+#### `crates/fjord-app/ui/request_detail.slint`
+
+Above `Rectangle {`:
+```
+// Deterministic fixed-position fix (2026-07-18, replaces
+// an earlier height:240px + vertical-stretch:1-spacer
+// version that looked right on paper but didn't
+// reliably hold up live — see detail.slint's identical
+// fix for the full "why" writeup). A plain Rectangle,
+// not a Layout, fixed at 240px matching PosterBlock;
+// title/meta sit at its top (independent VerticalLayout,
+// sized to its own content), req-row is pinned via an
+// explicit `y: parent.height - 38px` (both FjordButton
+// and the status pill's Rectangle top out at 38px in
+// this row — FjordButton itself is a hard-coded 38px
+// in widgets.slint) — neither child's position depends
+// on the other's size, which is what actually
+// guarantees the fixed Y this time.
+```
+
+Above `width: root.width - 48px - 48px - 160px - 32px - (has-details ? 452px : 0px);`:
+```
+// Explicit computed width off root.width — see
+// detail.slint's identical fix for the full three-
+// attempt "why" (horizontal-stretch:1 confirmed live
+// not to work on a plain Rectangle; parent.width
+// caused a genuine compile-time binding loop, since
+// a HorizontalLayout's own width can't depend on a
+// child reading it back). root.width minus the
+// HorizontalLayout's own padding-left/padding-right
+// (48+48), PosterBlock's fixed 160px, and the 32px
+// spacing before it — plus, ONLY when has-details,
+// the extra 32px spacing + 420px fixed width the
+// Details column (a third sibling in this same row)
+// also claims.
+```
+
+Above `req-row := Flickable {`:
+```
+// ── Status / Request / Trailer / More buttons ─────────
+// Request opens the Request Options modal (4K/tags/
+// seasons configured there — see RequestOptionsOverlay
+// below) rather than submitting directly or exposing
+// every picker inline on this page. Trailer is
+// independent of request status — watching a trailer
+// makes sense even for an already-requested/available
+// item — so it's its own sibling here, not nested
+// inside either the Request-button or status-pill
+// branch (see request-detail-trailer-url's own doc
+// comment in app_state.slint).
+//
+// 2K and 4K are tracked completely independently
+// (real bug fixed 2026-07-18 — see submit_request's
+// own doc comment): Request stays visible/clickable
+// as long as EITHER tier is still "" (its Quality
+// toggle in the modal picks which one you're actually
+// submitting), and each tier that already has a
+// status gets its own small pill — both can show at
+// once (e.g. "4K Requested" pill next to a still-live
+// Request button for 2K).
+// Flickable, not a bare HorizontalLayout — real overflow
+// risk found in code review, 2026-07-31: with up to 5
+// elements (Request/status pill + Trailer + More +
+// Watchlist), combined width can reach ~500-520px,
+// which exceeds the available width on any realistic
+// sub-~1350px window (a non-maximized window or a
+// 720p HTPC, not an extreme edge case) — nothing
+// clipped or scrolled the overflow before this, so it
+// would spill past the row into/past the Details
+// column. Flickable is this codebase's own established
+// fix for "a row of things that might not all fit"
+// (CastRow, RequestOptionsOverlay's tag/season strips)
+// — mouse-wheel scroll reaches an overflowing button;
+// no keyboard-driven auto-scroll-into-view added here
+// (unlike those two, which track a fixed per-item
+// stride) since these buttons have variable widths,
+// out of scope for this pass.
+```
+
+Above `clicked => {`:
+```
+// Mouse clicks must sync the keyboard focus
+// state too, or a later Left/Right/Enter press
+// acts on stale focus — the exact bug class
+// documented in CLAUDE.md's Seerr integration
+// section (Phase 142's zone-numbering fix).
+```
+
+Above `if AppState.request-detail-trailer-state != "" && AppState.yt-dlp-available: FjordButton {`:
+```
+// Watch Trailer — Discover only (see CLAUDE.md's
+// Seerr integration section). Hidden unless both a
+// trailer was found AND yt-dlp is actually
+// installed (proactive detection, not just a
+// reactive failure toast — see main.rs::detect_yt_dlp).
+// 2026-10-04: always shown once the title has
+// loaded (yt-dlp installed), greyed out while the
+// background check runs ("Checking…") or when no
+// listed trailer plays ("No trailer") — see
+// discover::start_trailer_check. Only "ok" is
+// pressable and a D-pad stop.
+```
+
+Above `if AppState.request-detail-request-id != "": FjordButton {`:
+```
+// ⋮ More (2026-07-18) — opens the same Discover
+// context menu the grid's right-click uses
+// (View Request/Edit/Cancel/Approve/Decline,
+// correctly gated by mine/admin/pending), sourced
+// from request-detail-request-id/-pending/-mine
+// instead of a CardItem. Only shown once a
+// request actually exists — with none, every one
+// of that menu's rows either doesn't apply or
+// duplicates the Request button already here.
+// "☰" (Symbols2-covered, confirmed via fc-query,
+// unlike "⋮" which is only in the Math fallback)
+// reuses FjordButton's own icon-left mechanism
+// rather than a hand-rolled button.
+```
+
+Above `FjordButton {`:
+```
+// Watchlist (2026-07-18, slot 3) — always
+// visible, unlike Request. Deliberately icon-
+// only (44px, same width as ⋮ More) rather than
+// a labelled button, to minimize how much this
+// adds to a row that's already needed 3 separate
+// layout-fix rounds this session — the narrowest
+// possible 4th element. "☆"/"★" (confirmed
+// covered by Noto Sans Symbols2 via fc-query,
+// same as ⋮ More's own "☰") toggle with state.
+```
+
+Above `if AppState.seerr-can-manage-blocklist`:
+```
+// Blocklist (2026-08-06, slot 4) — same icon-only
+// 44px shape as ⋮ More/Watchlist above. Gated on
+// seerr-can-manage-blocklist AND the item being
+// untouched or already blocklisted (mirrors the
+// Discover context menu's row 7 eligibility
+// exactly). "⛔"/"✕" (both confirmed covered by
+// Noto Sans Symbols2 via fc-query).
+```
+
+Above `if has-details: VerticalLayout {`:
+```
+// ── Details (Status/dates/language/countries/network/
+// streaming) — moved into the backdrop's empty
+// right-side space, per user request 2026-07-18 ("move
+// the metadata and currently streaming on to the
+// backdrop area... to the right"). Fixed 420px width,
+// not horizontal-stretch: this column contains a
+// Flickable (the streaming-provider strip) nested two
+// levels down, and per the Slint gotcha in CLAUDE.md a
+// width ultimately derived from HorizontalLayout stretch
+// distribution (a layout-cache value, re-evaluated
+// during the very hit-test/layout pass that's already
+// in progress) is the same class of risk as the
+// documented self.width-in-conditional "Recursion
+// detected" crash — a plain fixed literal is the safe,
+// established alternative (matches PosterBlock's own
+// fixed 160px width), not a corner cut for convenience.
+```
+
+Above `item-selected(idx) => {`:
+```
+// Wired 2026-08-13 — was deliberately left unbound
+// ("there's no TMDB-person detail screen to open"),
+// live-reported ("in the descover detail you cant
+// enter person detail"). request-detail-cast[idx].id is
+// a TMDB person id (straight from TMDB's own Credits
+// response), not a Jellyfin one — open-discover-person
+// resolves a local Jellyfin Person match first, falling
+// back to a TMDB-only screen. Same mouse/keyboard
+// convergence discipline as every other zone on this
+// screen: Enter (handle_key_request_detail's own zone-2
+// Confirm arm) calls the identical callback.
+```
+
+Above `export component RequestOptionsOverlay inherits Rectangle {`:
+```
+// ── Request Options modal ─────────────────────────────────────────────────────
+// 4K toggle + tag chips + season cards + Cancel/Request confirm row — the
+// actual request settings, opened from RequestDetailScreen's Request button
+// instead of sitting inline on the page. Same dim-backdrop-plus-centered-box
+// shape as PlaylistPicker (context_menu.slint); tag chip / season card
+// Flickable strips are the tag/season strips that used to live on the page
+// itself, unchanged apart from the fixed dialog-w width (see dialog-w below).
+// Profile/tag/season Flickable widths are `min(dialog-w - 64px, *-hbox.
+// preferred-width)`, not a bare fixed width — a server with only 1-3 chips
+// configured (verified live: this user's 4K Radarr has exactly one quality
+// profile) previously still got the full-width strip, showing a wide box of
+// mostly empty space. Since every chip/card in these rows has a fixed pixel
+// width, `*-hbox.preferred-width` is deterministic and doesn't depend back
+// on the Flickable's own size, so this isn't the self.width-in-conditional
+// "Recursion detected" trap (see CLAUDE.md's Slint gotchas) — same reasoning
+// already relied on by the pre-existing `content-width: *-hbox.preferred-
+// width` binding on each of these Flickables.
+```
+
+Above `property <length> dialog-w: 480px;`:
+```
+// Fixed, non-conditional width for the dialog's content — read by the
+// tag/season Flickables below instead of an unset/layout-derived width,
+// same "Recursion detected" avoidance as the page's own root.width
+// remedy (see CLAUDE.md) — root here is this component's own top-level
+// Rectangle (the full-screen backdrop), never itself conditional.
+```
+
+Above `height: self.preferred-height;`:
+```
+// Real bug, live-reported 2026-08-12: "det cancel and request
+// button is outside tha popaut window" — the exact same shape as
+// ConfirmDialog's own once-shipped bug (widgets.slint): a Layout
+// element placed directly in a plain Rectangle, with explicit
+// x/y/width but no explicit height, doesn't reliably default to
+// its own natural content height — so this VerticalLayout's real
+// `.height` and the OUTER box's separately-computed
+// `dialog-content.preferred-height + 32px` could disagree,
+// leaving the confirm row past the box's real bottom edge once
+// enough conditional rows (Quality/Profile/Tags/Seasons) were
+// mounted at once. Same proven fix as ConfirmDialog: bind height
+// to this element's own preferred-height so the two numbers are
+// guaranteed to agree — not an attempt to read a specific
+// child's geometry (tried first; that approach hit a genuine
+// Slint binding loop instead, confirm-row.y depending on this
+// VerticalLayout's own layout-cache, which itself depends on
+// this element's height — exactly the class of "a Layout
+// child's own height implicitly ties back to its parent's" trap
+// CLAUDE.md's Slint gotchas section already warns about).
+```
+
+Above `if !AppState.request-options-editing: VerticalLayout {`:
+```
+// ── Quality (2K / 4K) ─────────────────────────────────────────────
+// A pair, not a single on/off toggle — "off" reading ambiguously
+// as "no quality chosen" was the original design's weak point;
+// exactly one of the two is always the visibly selected one.
+// Left/Right directly set the value (no separate cursor state to
+// track — the selected button already IS the keyboard position).
+// Hidden entirely while editing an existing request
+// (request-options-editing, Discover context menu, 2026-07-18)
+// — confirmed from Seerr's real PUT /request/{id} route source
+// that the tier can't be changed by editing at all, so showing
+// a picker here would imply a capability that doesn't exist;
+// see SeerrClient::update_request's own doc comment.
+```
+
+Above `if has-profiles: VerticalLayout {`:
+```
+// ── Quality profile (Radarr/Sonarr, radio-select) ────────────────
+// Same horizontal Flickable/kb-x shape as Tags below, but exactly
+// one chip is ever selected (clicking one replaces the previous
+// choice, rather than toggling independently) — row 0 is always
+// the synthetic "Default" entry Rust prepends, so there's always
+// an explicit way back to "no override" without a separate button.
+```
+
+Above `border-color: (p.id == AppState.request-detail-selected-profile-id`:
+```
+// Real bug, live-reported 2026-08-12: "hard so
+// see the hilgited item... not consistent with
+// the rest of the app" — the focused-but-not-
+// selected case only ever bumped border-width
+// 1px→2px on the SAME Theme.border-strong gray,
+// no color change at all. Originally fixed to
+// Theme.accent on focus, matching CastRow/season
+// cards at the time — then unified to
+// Theme.focus-border (white) same day, once the
+// broader app-wide blue-vs-white inconsistency
+// this exact report was part of got its own fix
+// (see CLAUDE.md's Context menu section). Selected
+// and focused-but-unselected now share one color,
+// hence the single non-ternary condition below.
+```
+
+Above `for t[i] in AppState.request-detail-tags: Rectangle {`:
+```
+// Pill shape (border-radius = height/2, not Theme.radius)
+// and an always-visible border (subtle when unselected,
+// white when focused or selected — unified onto one
+// color 2026-08-13, see the app-wide focus-border
+// consistency fix in CLAUDE.md's Context menu section)
+// — the original flat rectangles with no border when
+// idle read as plain gray blobs rather than chips.
+```
+
+Above `confirm-row := HorizontalLayout {`:
+```
+// ── Confirm row ───────────────────────────────────────────────────
+// Cancel is deliberately NOT a FjordButton — that widget always
+// renders filled accent blue, which made Cancel look just as
+// "primary" as Request with no visual hint of which one is the
+// safe/reversible action. A plain outlined ("ghost") button reads
+// as secondary next to Request's solid fill, the standard
+// primary/secondary confirm-dialog convention.
+```
+
+#### `crates/fjord-app/ui/request_detail.slint` — file header (TOC)
+```
+// ── fjord-app · request_detail.slint ─────────────────────────────────────────
+//   MetaRow                 File-local label/value line for the Details panel
+//                          below (not widgets.slint's StatRow — that's sized
+//                          for the small dark stats overlay, a poor fit here).
+//   RequestDetailScreen    Seerr movie/TV detail: rating badge, collapsible
+//                          StorylineSection overview, Cast & Crew row (CastRow,
+//                          TMDB photos), Details panel (Status/Release-or-
+//                          First-Air-Date/Next Air Date/Original Language/
+//                          Production Countries/Network/Currently Streaming
+//                          On — purely display, no keyboard zone, reached by
+//                          scrolling like MetaLine's genre text), tier-aware
+//                          Request/pill/Trailer/⋮-More button row (2026-07-18
+//                          Trailer button: greyed "Checking…"/"No trailer" until request-detail-
+//                          trailer-state == "ok" (2026-10-04)
+//                          — see below), poster request-status badge
+//                          (PosterBlock, same day — see its own comment in
+//                          widgets.slint). Free-floating overlay
+//                          (FadeGate at the main.slint mount site, not owned
+//                          here — see connect_seerr.slint's header comment for
+//                          why). Header matches the universal detail-screen
+//                          pattern used by DetailPage/SeasonScreen/
+//                          CollectionScreen: full-bleed backdrop Image + dark
+//                          gradient overlay behind the poster+title content,
+//                          plus a floating "← Back" FjordButton overlaid
+//                          top-left — not a copy of DetailPage (different data
+//                          source and action set: Request, not Play; no
+//                          Jellyfin item id; no resume/watched state).
+//                          Keyboard-nav fix (2026-07-18): the StorylineSection header's
+//                          clicked-header() and the Request/Trailer/⋮-More buttons' own
+//                          clicked handlers now also sync request-detail-zone/-back-focused,
+//                          which they previously left stale on a mouse click — a following
+//                          Enter could activate the wrong element (real bug).
+//                          Title column: plain Rectangle fixed at height:240px matching
+//                          PosterBlock, width: root.width - 288px - (has-details ? 452px : 0px)
+//                          (NOT parent.width — compile-time binding loop, see the Slint
+//                          gotchas section), with two independently-positioned children —
+//                          title/meta at its top, req-row pinned via explicit
+//                          y: parent.height - 38px (2026-07-18, user request; three-attempt
+//                          fix — vertical-stretch:1 spacer, then horizontal-stretch:1, both
+//                          confirmed live not to work, before landing on root.width
+//                          arithmetic — see CLAUDE.md's Seerr integration section for the
+//                          full story, confirmed live-working on detail.slint's identical
+//                          structure). Same fix now applied to Detail/Season/Collection/
+//                          Artist too, so this no longer diverges from them — all five
+//                          detail-style screens pin their button row to a fixed Y matching
+//                          whatever art size is on screen. The Details
+//                          panel (Status/dates/language/countries/network/
+//                          Currently Streaming On) moved from below Cast & Crew
+//                          into this same header row too (2026-07-18, user
+//                          request) — a third HorizontalLayout sibling next to
+//                          PosterBlock and the title column, fixed 420px width
+//                          (not horizontal-stretch — see has-details's own doc
+//                          comment for why a stretch-derived width isn't safe
+//                          here, given the nested Flickable two levels down).
+//                          Keyboard flow: opens with focus on the button row
+//                          (request-detail-back-focused=false, zone=0,
+//                          btn-focused=0/Request — 2026-07-18, real bug:
+//                          used to default to the Back button, requiring an
+//                          extra Down before Request was even reachable,
+//                          unlike every other detail-style screen's own
+//                          entry focus), Up from there reaches Back ->
+//                          request-detail-zone (0=button row, 1=storyline,
+//                          2=cast row — see existing_zones()/
+//                          handle_key_request_detail in discover.rs).
+//                          Button row (2026-07-18, real bugs fixed — see
+//                          CLAUDE.md's Seerr integration section for the
+//                          full "aproved or needs aprovment" writeup): 2K
+//                          and 4K are tracked completely independently, so
+//                          Request stays visible whenever EITHER
+//                          request-detail-status/-status-4k is still "" (its
+//                          Quality toggle picks which tier you're actually
+//                          submitting); each tier that already has a status
+//                          gets its own small pill (both can show at once);
+//                          ⋮ More (icon-left:"☰", confirmed Symbols2-covered
+//                          via fc-query) opens the same Discover context
+//                          menu the grid's right-click uses, only shown once
+//                          request-detail-request-id is non-empty. Watchlist
+//                          (2026-07-18, Watchlist + Release Calendar) is a
+//                          4th, icon-only 44px ★/☆ toggle button, always
+//                          visible regardless of request state — clicked
+//                          resets zone/back-focused (same fix as the other
+//                          3 buttons above) then calls
+//                          AppState.request-detail-toggle-watchlist().
+//                          request-detail-btn-focused is a "gaps are fine"
+//                          slot index now (0=Request/1=Trailer/2=⋮ More/
+//                          3=Watchlist, see discover.rs::existing_detail_btn_slots),
+//                          not a fixed 0/1 binary.
+//   RequestOptionsOverlay  Modal opened by the Request button (or the
+//                          Discover context menu's Request/Edit Request
+//                          rows, 2026-07-18): Quality (2K/4K pair, HIDDEN
+//                          while request-options-editing — Seerr's PUT
+//                          /request/{id} can't change the tier, see this
+//                          section's own comment), quality profile
+//                          (radio-select chip strip, if any configured —
+//                          Radarr/Sonarr's own named profiles, e.g.
+//                          "WEB-1080p"/"Remux-2160p"), tag chips, season
+//                          cards, Cancel/Request confirm row — the actual
+//                          request settings, kept off the main page and out
+//                          of the way until the user decides to request.
+//                          Same dim-backdrop-plus-centered-box shape as
+//                          PlaylistPicker (context_menu.slint); tag chip /
+//                          season card / profile chip Flickable strips are
+//                          the same horizontal kb-x idiom as CastRow.
+//                          Keyboard flow: request-options-zone (0=Quality
+//                          row, absent while editing, 1=profile row,
+//                          2=tags row, 3=seasons row, 4=confirm row — see
+//                          existing_option_zones()/handle_key_request_options
+//                          in discover.rs).
+// ─────────────────────────────────────────────────────────────────────────────
+```
+
+#### `crates/fjord-app/src/settings.rs`
+
+Above `const PROF_ACCOUNT_LAUNCH_POLICY: &str = "profiles.account_launch_policy";`:
+```
+// 2026-08-14, the 2-tier account/profile redesign — the identical
+// launch-policy shape one tier up, appended after the existing
+// profile-level rows (not inserted before them) per this codebase's own
+// "append, don't insert" convention for exactly this reason.
+```
+
+Above `const PROF_ADD_ACCOUNT: &str = "profiles.add_account";`:
+```
+// Always visible, regardless of how many accounts already exist — the
+// picker's own "+ Add Account" tile only shows once there's a 2nd one to
+// switch between; this is the actual way to go from 1 to 2 in the first
+// place.
+```
+
+Above `const PROF_REMEMBER_LOGIN: &str = "profiles.remember_login";`:
+```
+// Live-questioned 2026-08-17 ("no why to change this on the accaunt
+// without sinign out and in again") — see app_state.slint's own doc
+// comment on settings-remember-login for the full design. A toggle, not a
+// dropdown: OFF is immediate, ON opens the confirm-password modal instead
+// of flipping directly (handled entirely in profile::on_remember_login_toggle,
+// not the generic toggle-row shape most other bool rows use).
+```
+
+Above `const PROF_BONFIRE_GROUP: &str = "profiles.bonfire_group";`:
+```
+// Bonfire Phase 5 (cross-household groups, 2026-08-29) — appended at the
+// end of the section, not sandwiched next to Manage Profiles, matching
+// this section's own "append, don't insert" precedent (see
+// PROF_ACCOUNT_LAUNCH_POLICY's comment above). Same gate as Manage
+// Profiles (settings-is-master-profile — now correctly true while
+// impersonating a foreign group account too, see profile.rs::is_true_master).
+```
+
+Above `const PROF_BONFIRE_ADMIN: &str = "profiles.bonfire_admin";`:
+```
+// Bonfire Phase 6 (admin actions, 2026-09-04) — gated on
+// jellyfin-is-server-admin, NOT settings-is-master-profile: the
+// mappings/reset-pin/set-limit/audit-log endpoints all authorize against
+// Jellyfin's own core Policy.IsAdministrator, confirmed against the real
+// plugin controller source — a Bonfire household master with no server
+// admin rights should never see this row, and a genuine server admin who
+// happens to run no Bonfire household of their own still should.
+```
+
+Above `const VID_DISPLAY_SYNC_ENABLED: &str = "video.display_sync_enabled";`:
+```
+// display_sync (2026-09-18) — native resolution/refresh-rate/HDR/WCG matched
+// to source. See CLAUDE.md's own display_sync section and display_sync.rs's
+// module doc comment for the full design. Every row below the master toggle
+// is virtual (hidden while the toggle is off) — see section_row_keys' own
+// SECTION_VIDEO arm.
+```
+
+Above `if matches!(g.get_settings_hwdec().as_str(), "nvdec" | "nvdec-copy") {`:
+```
+// vf exists solely to fix NVDEC's own stride-corruption bug (see
+// CLAUDE.md's "NVIDIA legacy Wayland: NVDEC stride corruption")
+// — with any other decoder there's no stride mismatch for it to
+// correct, so it does nothing useful. `auto` is deliberately
+// treated as "not committed to NVDEC" and hidden too (2026-08-08,
+// direct user choice) rather than shown just in case it resolves
+// to nvdec at runtime.
+```
+
+Above `rows.push(VID_TONE_MAPPING);`:
+```
+// Always visible now (2026-08-15, live-reported: "the tonemap setting shuld
+// not be gateded byt the hdr hint setting") — was hidden whenever HDR
+// passthrough was on, on the assumption tone-mapping never runs in that
+// state. That assumption is wrong: mpv's own target-colorspace-hint-strict
+// (default on) falls back to tone-mapping whenever the compositor doesn't
+// actually accept the hint, using this exact stored value (fjord-player's
+// Player::new sets --tone-mapping and --target-colorspace-hint as two fully
+// independent mpv options, never gated on each other) — so hiding the row
+// left no way to pick which curve backs that fallback.
+```
+
+Above `if g.get_settings_dropdown_open() {`:
+```
+// Code review, 2026-08-08: a dropdown popup opened via keyboard Confirm
+// has no backdrop and doesn't cover the whole right pane, so a row
+// behind it stayed clickable while the popup was open — clicking one
+// re-pointed settings-focused without closing the popup, so the next
+// Confirm applied the NEWLY-clicked row's value using the OLD popup's
+// stale cursor position. Closing it here means a row click always means
+// "focus this row", never "also silently keep an unrelated popup open".
+```
+
+Above `if g.get_show_seerr_disconnect_confirm() {`:
+```
+// Disconnect Seerr confirmation (2026-08-22, see show-seerr-disconnect-
+// confirm's own doc comment in app_state.slint) — checked first, same
+// shape as the dropdown-open gate right below: intercepts all Settings
+// input while open, regardless of section/row focus. Settings-only
+// (single trigger context, the Integrations row), unlike Sign Out /
+// Cancel Request, so this doesn't need a global main.slint-level
+// dialog or a pre-active_mode() keys.rs tier.
+```
+
+Above `let Some(_) = idx else {`:
+```
+// Code review, 2026-08-08: unlike Up/Down (which already
+// look up `idx` and self-heal on a miss), Confirm/Right used
+// to act on `sf` unconditionally — if a MOUSE interaction
+// elsewhere hid the row `sf` still pointed at (e.g. toggling
+// a setting that hides other rows, without going through
+// settings-row-focused), Enter/Right would silently open a
+// dropdown for, or mutate, a row the user can no longer see.
+// Self-heal the same way Up/Down already do instead of
+// acting on a key that's no longer actually on screen.
+```
+
+Above `const DISPLAY_SYNC_SCALE_MODEL: &[&str] = &["1.0", "1.25", "1.5", "1.75", "2.0"];`:
+```
+// display_sync (2026-09-18) — Default resolution/Default refresh rate
+// started as a small, pragmatic static list here (hand-picked common
+// values, since display_sync::get_supported_modes was private to
+// display_sync.rs at the time) but a real dev-machine report ("not many
+// choices... none of them necessarily even valid for my display") showed
+// that was the wrong trade-off — both are now genuinely dynamic dropdowns
+// (VID_DISPLAY_SYNC_DEFAULT_RESOLUTION/_HZ in is_dynamic_dropdown below),
+// sourced from display_sync::supported_resolutions_and_hz for whichever
+// screen is actually selected, the same shape VID_DISPLAY_SYNC_SCREEN
+// already used. Scale still has no per-output "supported scales" concept
+// to query, so it stays a plain static list.
+```
+
+Above `const CACHE_MAX_MB_MODEL: &[&str] = &["0", "150", "300", "500", "1000", "2000"];`:
+```
+// "0" here means a genuinely raised byte ceiling (mpv.rs sets
+// demuxer-max-bytes to a large fixed value, not mpv's own 150 MiB stock
+// default — see its own doc comment), so Cache Duration alone governs —
+// also displayed as "Unlimited" via display_val.
+```
+
+Above `const SUB_POS_MODEL: &[&str] = &[`:
+```
+// mpv's real supported range is 0-150 (verified via `man mpv` 0.41.0) — 100 is
+// mpv's own "default bottom" position, not the screen edge; values above 100
+// push subtitles further down still. Text/ASS subs can get clipped above 100
+// (a libass restriction, per the same manual page), which is why the row's
+// subtitle string calls this out rather than silently allowing it.
+```
+
+Above `AUD_AUDIO_LANG | PLY_SUB_LANG | PLY_SUB_LANG2 => "Default",`:
+```
+// "Default" (2026-08-08, user feedback): an empty language
+// preference doesn't mean "no subtitle/audio track selected at
+// all" — playback.rs's wire_mpv_timer tries sub_lang/sub_lang2
+// by lang.starts_with(code) only when actually set, and "if no
+// match, mpv's default selection is left unchanged" (see
+// CLAUDE.md's Subtitle auto-select section) — so an empty value
+// genuinely means "use whatever the video container's own
+// default track is," which "Default" names directly rather
+// than "Any" (which reads as "no filtering," the correct word
+// for PLY_SUB_TYPE below, a real type filter, but a misleading
+// one for a language preference that actually does fall
+// through to the container's default track).
+```
+
+Above `VID_DISPLAY_SYNC_SCREEN => Some((`:
+```
+// Output's own desc is the annotated display label ("HDMI-A-2
+// (Primary)"), not the raw connector name — a real name<->desc
+// lookup exists for this one (FjordState.display_sync_outputs,
+// resolved in main.rs's own on_display_sync_screen_selected), same
+// shape as audio-device/font-family. Resolution/Hz's own desc IS
+// still the value directly (a plain resolution/Hz string, nothing
+// to annotate) — see display-sync-hz/resolution-selected's own doc
+// comments in app_state.slint.
+```
+
+Above `g.set_sign_out_confirm_focused(0);`:
+```
+// Confirmation dialog, 2026-08-22 — see show-sign-out-confirm's
+// own doc comment in app_state.slint. This row's own Confirm/
+// Enter no longer signs out directly; it opens the (global,
+// main.slint-level) dialog instead — the same one the sidebar
+// quick-menu's "Sign Out" row and OfflineScreen's "Change
+// Server" button now also open.
+```
+
+Above `{`:
+```
+// ── default profile selected callback (Bonfire Phase 1, step 7) ──────────
+// 100% local, no network round trip — same shape as font-family above.
+// Resolves the selected display label back to a user_id (duplicate
+// labels resolve to whichever profile matches first, the same known
+// limitation refresh_profile_settings_dropdown's own doc comment
+// already states) and lets the generic on_settings_changed handler
+// below persist it via read_settings_from_window + save_config.
+```
+
+Above `let account_id = s.config.device.default_account_id.clone();`:
+```
+// Scoped to the current Default Account (2026-08-17, same
+// fix as refresh_profile_settings_dropdown's own doc
+// comment) — the dropdown's own option list is already
+// scoped this way, so this just avoids the pre-existing,
+// documented "duplicate display label" edge case picking a
+// same-named profile under a DIFFERENT account by mistake.
+```
+
+Above `{`:
+```
+// ── default account selected callback (2026-08-14) ───────────────────────
+// Account-tier mirror of default-profile-selected just above — same
+// 100%-local shape, resolves the display label back to an account's own
+// root_id via group_into_accounts.
+```
+
+Above `{`:
+```
+// Re-scope Default Profile's own option list to the just-picked
+// account immediately (2026-08-17) — without this, the profile
+// dropdown kept showing whatever account's profiles it happened
+// to load with until Settings was reopened, which could still
+// let a stale cross-account combination through the UI in the
+// gap between the two picks even though refresh_profile_settings_dropdown
+// is now correctly scoped. cfg is cloned+patched locally rather
+// than persisted here — the real Config write still happens
+// below via invoke_settings_changed, this is purely a same-tick
+// display refresh.
+```
+
+Above `{`:
+```
+// ── streaming region selected callback ────────────────────────────────────
+// Unlike font-family (100% local, no network write), this needs an
+// actual round trip to Seerr — GET the connected user's current general
+// settings first (see UserGeneralSettings' own doc comment for why a
+// bare {"streamingRegion": ...} body would blank out their username),
+// mutate just streamingRegion, POST the whole thing back. Updates
+// AppState + the FjordState cache resolve_streaming_region reads from
+// only on success, so a failed write leaves the picker showing the
+// still-actually-current value rather than a value that didn't take.
+```
+
+Above `{`:
+```
+// ── discover region selected callback (2026-07-18, Watchlist + Release ──
+// Calendar) — same GET-mutate-POST shape as streaming region above, just
+// mutating discoverRegion instead. Reuses the same seerr_regions list
+// (region codes are shared between the two settings) for the code lookup.
+```
+
+Above `s.seerr_client = seerr_auth::build_seerr_client(s.config.active());`:
+```
+// Live-reflect the seerr-enabled toggle: rebuild seerr_client
+// (build_seerr_client already returns None when seerr_enabled
+// is false, so this both tears it down on disable and rebuilds
+// it from the still-saved credentials on re-enable — no forced
+// reconnect either way) and push seerr-connected/-label so
+// every row/block gated on `seerr-connected` (Streaming Region,
+// Display/Discover Language, Trailer Quality, the Settings
+// sidebar SEERR info block) hides/shows immediately rather than
+// only after the next app restart. Real bug, user-reported
+// 2026-07-17 ("for me it shuld turn off seerr") — previously
+// only the Discover sidebar tab responded to this toggle live.
+```
+
+Above `g.set_settings_is_master_profile(profile::is_true_master(s.config.active()));`:
+```
+// Bonfire Phase 5: `is_true_master`, not bare `!is_bonfire` — a session
+// actively impersonating a foreign group account (`is_group_account`)
+// also has `is_bonfire == true` on its own local entry, but it's "a
+// fully privileged session for that account" per Bonfire's own docs,
+// and should still see Manage Profiles / Bonfire Group in Settings.
+```
+
+Above `let mut counts: HashMap<String, usize> = HashMap::new();`:
+```
+// Real devices can be exposed under more than one backend with an
+// identical parenthetical description — confirmed live 2026-08-07: a USB
+// interface listed once as `pipewire/alsa_output...` and once as
+// `pulse/alsa_output...`, both described "UAC-2 Digital Stereo (IEC958)".
+// Selection in Settings round-trips purely through this description
+// string (the dropdown widget only knows strings, not indices), so two
+// entries sharing one desc made the second unselectable — picking it
+// always resolved back to the first matching desc instead. Suffix every
+// duplicate with its backend (the part of `name` before the first '/')
+// so every entry's desc is unique; `Config.audio_device`/
+// `audio_device_passthrough` store the device NAME, not desc, so this is
+// purely a display-string fix with nothing to migrate on disk.
+```
+
+Above `let mut counts2: HashMap<String, usize> = HashMap::new();`:
+```
+// Code review, 2026-08-08: the backend suffix above only disambiguates
+// ACROSS backends — two devices under the SAME backend with the same
+// description (a real, confirmed case: two USB devices both enumerating
+// as "HD-Audio Generic/USB Stream Output" under `alsa`) still collide
+// after suffixing, reproducing the exact unselectable-second-entry bug
+// this whole fix was for, just narrower. Re-check after the backend
+// suffix and fall back to the raw device name (mpv's own identifier,
+// guaranteed unique) for anything still colliding.
+```
+
+#### `crates/fjord-app/src/settings.rs` — file header (TOC)
+```
+// ── fjord-app · settings.rs ───────────────────────────────────────────────────
+//   Design (Phase 0, 2026-08-07, Bonfire prep — full data-driven rewrite,
+//   zero intended behavior change)  Every section and every row now has a
+//   stable string KEY ("general.launch_fullscreen", "video", ...) instead of
+//   a positional int. `AppState.settings-section`/`settings-focused` are now
+//   `string` (see app_state.slint) — "" is the sentinel for "nothing
+//   selected" (was -1). Row *existence* for a section is computed by
+//   `section_row_keys()`, one function per section that pushes each row's
+//   key only when its visibility condition holds — this REPLACES the old
+//   ~15 hand-duplicated skip-blocks that used to live inside dispatch_settings's
+//   Up AND Down arms separately (two copies of every condition, easy to let
+//   drift). Up/Down now just step through whatever section_row_keys()
+//   returns; Confirm/Right resolve the row directly via key match. A row
+//   being hidden is controlled ONLY by settings.slint's own `if` condition on
+//   the Slint side and ONLY by section_row_keys()'s matching condition on the
+//   Rust side — these two are still independently maintained (Slint can't
+//   call Rust to ask "is this visible", and Rust has no visibility into
+//   Slint's render tree), so a row's condition must still be kept in sync by
+//   hand between the two files, same as before — but now there is exactly
+//   ONE place per direction, not two, and the row's IDENTITY no longer
+//   depends on getting that in sync (a row with a wrong/missing visibility
+//   condition just doesn't appear or doesn't get skipped — it can no longer
+//   silently push every LATER row's numbering off by one).
+//   Sections     SECTION_GENERAL, SECTION_PROFILES (Sign Out moved here from
+//                General; Bonfire Phase 1 step 7 added the launch-policy
+//                rows — profiles.launch_policy + the virtual
+//                profiles.default_profile dynamic dropdown; 2026-08-14's 2-tier
+//                account/profile redesign added the identical pair one tier up —
+//                profiles.account_launch_policy + the virtual profiles.default_account
+//                — plus profiles.add_account, a plain button row: always available
+//                regardless of how many accounts exist, since the account picker's own
+//                "+ Add Account" tile only ever shows once 2+ accounts already do),
+//                SECTION_VIDEO, SECTION_AUDIO,
+//                SECTION_PLAYER_CFG, SECTION_KEYBINDINGS, SECTION_UI,
+//                SECTION_INTEGRATIONS — ALL_SECTIONS is the sidebar order.
+//   Row keys     see the const block below, grouped by section; each key is
+//                "<section>.<field>" except the few bespoke action/button
+//                rows (Sign Out, Connect/Disconnect, Manage Blocklist,
+//                Prewarm ×2), which follow the same naming shape.
+//   section_row_keys(section, g) -> Vec<&'static str>   ordered, visible-only
+//                row list for a section — the single source of truth for
+//                Up/Down bounds and stepping.
+//   dispatch_settings   keyboard nav (three-state: sidebar → left pane →
+//                right pane / keybindings; Enter opens dropdown popup;
+//                Up/Down/Enter/Esc navigate popup).
+//   dropdown_model(key)         static model strings for a row (None for
+//                toggle/button/action rows and for the 12 dynamic-dropdown
+//                rows, whose list comes from an AppState property instead).
+//   is_dynamic_dropdown(key)    the 12 rows whose list/current-desc are
+//                fetched at runtime (Default Profile/Default Account — built
+//                from Config.profiles itself, not a network fetch — audio
+//                device ×2, font family, Seerr streaming region/display
+//                language/discover language/discover region, and display_sync's
+//                VID_SEPARATE_VIDEO_SURFACE (HDR Stage 5) is only listed on Wayland (is-wayland);
+//                VID_OWN_BUFFERS (10-bit video plane, 2026-10-08) under it while it's on;
+//                VID_DITHER_OFF (test aid, 2026-10-08) always, right after them
+//                own output/default-resolution/default-hz ×3 — kscreen-doctor,
+//                re-fetched whenever the selected output changes) rather than
+//                a fixed compile-time list.
+//   open_dropdown_popup(key, g)   populates settings-dropdown-model/-cursor/
+//                -display and opens the popup — used by both keyboard
+//                Confirm and mouse click-to-open (main.rs wires the latter
+//                through the same call via on_dropdown_pick/settings-row
+//                click paths that already resolve to Confirm-equivalent).
+//   current_value_str / display_val / apply_dropdown_selection   same shape
+//                as before, re-keyed from (section, row) to a flat key.
+//   settings_row_action(key, g)   per-row Confirm/Right activation — toggle
+//                flip, dropdown cycle-forward-by-one, or button/action
+//                invoke. `forward` was dropped: the old parameter was always
+//                called with `true` from both of its two call sites, so the
+//                backward branch was dead code — confirmed by reading every
+//                call site before removing it.
+//   wire_device_lists      callbacks moved from main() (0.5.0 step 3): audio/passthrough device and font lists (fetched once) + their dropdowns
+//   wire_profile_defaults  callbacks moved from main() (0.5.0 step 3): default profile / account dropdowns
+//   wire_regions           callbacks moved from main() (0.5.0 step 3): streaming/discover region + display/discover language dropdowns
+//   wire_settings_changed  callbacks moved from main() (0.5.0 step 3): settings-changed, dropdown mouse pick, settings row focus
+//   settings helpers     apply_settings_to_window ↔ read_settings_from_window;
+//                        settings_snapshot/settings_diff — the settings-changed handler logs
+//                        which settings changed (debug; text values by name only)
+//   fetch_audio_devices / fetch_system_fonts  startup fetches for the audio-device and font dropdowns
+// ─────────────────────────────────────────────────────────────────────────────
+```
