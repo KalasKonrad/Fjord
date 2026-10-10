@@ -2878,6 +2878,12 @@ Decided with the user so outside contributors can send pull requests without ref
 - Not done yet: a CI check on pull requests (`cargo fmt --check`, clippy, tests) — only once outside PRs actually arrive, and on GitHub-hosted runners: the self-hosted runner must never run code from pull requests (PLAN.md → Deferred).
 
 
+### 0.5.0 step 3 — splitting the big files (2026-10-10, branch `release-0.5`)
+
+Pure moves, one file per commit, no behaviour change: code lines are cut out by anchor lines (the `// ──` markers), each new file starts with its share of the old TOC header and `use super::*;`, and `mod.rs` re-exports every submodule (`pub(crate) use x::*`) so no caller's path changes. Checked per file by a line-multiset diff (old vs. all new files: only header/`mod`/`use` lines differ), then build/clippy/tests/fmt. Items that were private in the one big file but are now used across files became `pub(crate)` (visibility only).
+
+- **playback.rs (4,848 lines) → `playback/`:** `mod.rs` 1,657 (VideoState, start/stop/teardown, reset helpers, play_trailer), `timer.rs` 1,817 (wire_mpv_timer — one function, still ~1,780 lines), `queue.rs` 516 (playlist/queue/repeat/shuffle + resolve_true_next_episode + the repeat tests), `render.rs` 439 (wire_rendering_notifier + FBO helpers), `tracks.rs` 229 (track model, time formatting, apply_audio_track), `inhibit.rs` 138, `stall.rs` 105. The plan named four files; queue/inhibit/tracks got their own small files because they're separate concerns. The old header's interleaved lines (play_trailer's sentence was split by a tear_down_player addendum) were reassembled per item, wording unchanged.
+
 ### Movies grid without posters after Discover (2026-10-10, branch `release-0.5`)
 
 User report from the dev smoke test: "movie posters took some time to show in the library". The log showed it wasn't slowness: in the session that opened Discover first (nav-selected(6) 13:52:14), no `push_library_cards[Movie]` ever happened — the grid opened at 13:58:22 with 617 poster-less cards, and posters only arrived at 14:00:41, after a profile switch. Whenever the grid was opened before Discover, its posters landed ~0.4 s after the list (617 cached posters fetched 8 at a time + decoded).
