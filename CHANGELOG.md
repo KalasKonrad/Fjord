@@ -35,6 +35,9 @@ are bumped together as one step, not separately.
 - **Security: Sign Out now really signs out.** Fjord forgot your login but
   the server kept it valid. Signing out now also ends the session on the
   server — for the account and every profile signed out with it.
+- **Fixed: live updates didn't work with an https:// Jellyfin server.** The
+  connection Fjord uses to hear about library changes and watch-state
+  updates couldn't be encrypted, so with HTTPS it never connected.
 - **Fixed: Fjord's log file contained your Jellyfin access key** (in the
   line logged when the live-update connection starts). It's now hidden there
   and in connection errors and player messages, like it already was for
