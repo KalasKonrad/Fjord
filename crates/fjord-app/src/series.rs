@@ -1,42 +1,29 @@
 // ── fjord-app · series.rs ────────────────────────────────────────────────────
 //   ep_to_card              MediaItem (Episode) → CardItem (title "S01E02 · Title")
 //   spawn_episode_thumb_loading  parallel episode thumbnail fetch → series-episode-cards
-//   SeriesCtx               shared context for background fetch tasks;
-//                           cached_detail: Option<MediaItem> — Part 2 screen-open cache hit, if any
-//                           (only spawn_main uses it; spawn_next_up/spawn_similar always get None)
-//     spawn_main    detail(skips network on cache hit)+poster+seasons in parallel — seasons/
-//                   first-season-episodes are deliberately NOT cached, to avoid interacting with
-//                   the CR10-20 stale-fetch guards; caches the fetched/reused detail; backdrop;
-//                   first eps; all cast portraits (fetched before show); emits
-//                   app-loading-progress=0.5 at midpoint; single invoke shows page with all data +
-//                   portraits ready; sets app-content-loading=false + show-series=true; spawns
-//                   episode thumb loading after
-//     spawn_next_up fetch next unwatched episode for this series (always fresh — inherently
-//                   dynamic); set series-has-next-up + thumb
-//     spawn_similar fetch similar series (FjordState.similar_items_cache, keyed by this series'
-//                   id); push series-similar SectionRow via apply_cards_preserving_identity
-//   spawn_recommended       "Recommended" row (2026-07-29, Deep Seerr integration) — standalone fn,
-//                           not a SeriesCtx method (needs only Seerr + state, not the Jellyfin
-//                           client); TMDB recommendations via Seerr filtered to not-already-owned
-//                           titles, shown below More Like This
-//   spawn_missing_seasons   "Missing Seasons" row (2026-07-29, Deep Seerr integration) — any TMDB
-//                           season number (excluding 0/Specials) not present locally, any status
-//                           regardless of Continuing/Ended; per-season request-status pill via
-//                           discover::season_request_status; placed between Episodes and Cast
-//   activate_missing_season Confirm/click on a missing-season card — no covering request opens
-//                           Request Options preselected to all still-unrequested missing seasons;
-//                           an already-covered one opens RequestDetailScreen normally instead
-//                           (its own ⋮ More button handles Edit/Cancel); called from main.rs's
-//                           on_series_missing_season_activate wiring (needs state/rt)
-//   refresh_series_next_up  re-fetch Next Up after an episode is marked played; no focus-stealing
-//   open_series_screen      reset AppState; checks item_detail_cache (Part 2) — only sets
-//                           app-content-loading=true on a cache miss; (show-series deferred until
-//                           spawn_main completes), build SeriesCtx, spawn tasks (incl. Recommended +
-//                           Missing Seasons, 2026-07-29)
-//   handle_key              keyboard dispatch for the series screen; row order top-to-bottom:
-//                           episodes → missing-seasons → cast → similar → recommended (2026-07-29)
-//   wire_series            callbacks moved from main() (0.5.0 step 3): series drill-down
-//   wire_series_toggles    callbacks moved from main() (0.5.0 step 3): series favourite / played
+//   SeriesCtx               shared context for the background fetches; cached_detail = a
+//                           screen-open cache hit (spawn_main only)
+//     spawn_main    detail (no network on a cache hit) + poster + seasons in parallel (seasons and
+//                   first-season episodes never cached — stale-fetch guards); backdrop, first
+//                   episodes, cast portraits; one commit shows the page fully loaded, then episode
+//                   thumbnails. Guarded by series_open_id and session_current
+//     spawn_next_up next unwatched episode (always fresh) → series-has-next-up + thumb
+//     spawn_similar similar series (similar_items_cache) → series-similar row
+//   spawn_recommended       "Recommended": Seerr/TMDB recommendations not in the library
+//   spawn_missing_seasons   "Missing Seasons": TMDB seasons (not 0/Specials) missing locally, any
+//                           status; request-status pill (discover::season_request_status); unaired
+//                           seasons show "Upcoming" + date; between Episodes and Cast
+//   activate_missing_season Confirm/click on a missing-season card: Request Options pre-checked
+//                           with every unrequested missing season, or RequestDetailScreen when one
+//                           already covers it; called from discover/wire.rs (needs state/rt)
+//   refresh_series_next_up  re-fetch Next Up after an episode is marked played (focus untouched)
+//   open_series_screen      reset AppState, check item_detail_cache (loading overlay only on a
+//                           miss), claim series_open_id, spawn the tasks (show-series waits for
+//                           spawn_main)
+//   handle_key              rows top to bottom: season tabs/episodes → missing seasons → cast →
+//                           similar → recommended; C on a season tab opens its context menu
+//   wire_series             callbacks moved from main() (0.5.0 step 3): series drill-down
+//   wire_series_toggles     callbacks moved from main() (0.5.0 step 3): series favourite / played
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
 
@@ -184,11 +171,8 @@ impl SeriesCtx {
                 fetch_poster_cached(&client, &id),
                 client.get_seasons(&id),
             );
-            // Sign-out (or a different account signing in on a shared HTPC)
-            // mid-fetch must not let this per-user data land in the new
-            // session's cache — same guard class as main.rs::session_current's
-            // own doc comment (CR11-2). Applies to both the original open and
-            // a background revalidate call alike.
+            // Per-user data must not land in a new session's cache after a mid-fetch sign-out or
+            // switch (the original open and a revalidate alike).
             if let Ok(d) = &detail_res {
                 if !crate::session_current(&state, &client) {
                     return;
@@ -238,25 +222,10 @@ impl SeriesCtx {
             });
             debug!("series {} — {} season(s)", id, seasons.len());
 
-            // Season list + season-0 episodes: skipped on revalidate for the
-            // same reason the later set_series_episode_cards write already
-            // skips itself (real bug, caught in review before shipping — the
-            // only pre-existing guard here, series_open_id (CR10-20), catches
-            // switching to a *different series* or closing the screen, but
-            // says nothing about switching *seasons* within the same series.
-            // Before revalidate existed this was safe by construction — the
-            // screen wasn't interactive until this one call finished, so
-            // there was no window for the user to tab to a different season
-            // mid-fetch. Revalidate changes that: the cache-hit path shows
-            // the screen instantly while this background call is still
-            // running, so a season switch during that window would get
-            // silently clobbered back to season 0 the moment this call
-            // finishes, with playback still starting fine but the episode
-            // title falling back to the raw id (series_episode_items lookup
-            // miss). The purpose-built guard for this exact race,
-            // series_season_generation, exists for on_series_select_season —
-            // simplest correct fix is just not touching this state at all
-            // during a revalidate pass, matching the UI-side precedent.
+            // Skipped on revalidate (like the set_series_episode_cards write below): the cache-hit
+            // path shows the screen at once, so the user may switch seasons while this runs, and
+            // writing season 0's episodes would clobber that choice (series_open_id only guards a
+            // different series; series_season_generation is on_series_select_season's guard).
             let season_ids: Vec<String> = seasons.iter().map(|s| s.id.clone()).collect();
             if !revalidate {
                 let mut s = state.lock().unwrap();
@@ -484,14 +453,9 @@ impl SeriesCtx {
                 if AppState::get(&w).get_series_id().as_str() != id_guard {
                     return;
                 }
-                // Session guard (Bonfire Phase 1, step 8 audit, 2026-08-09):
-                // the id check above now catches most of this
-                // (reset_session_state clears series-id on a switch/sign-
-                // out), but the early session_current check further up
-                // this fn only runs on the Ok(detail) branch — an Err path,
-                // or a coincidental same-id reopen under a NEW profile
-                // before this stale fetch resolves, would still slip
-                // through an id check alone.
+                // Session guard: the id check above catches most stale results (reset_session_state
+                // clears series-id), but the earlier session_current check only runs on Ok(detail),
+                // and the same id can reopen under a new profile.
                 if !crate::session_current(&state, &client_guard) {
                     return;
                 }
@@ -606,7 +570,8 @@ impl SeriesCtx {
                 0.0
             };
             let has_played = ep.user_data.played;
-            // Decode poster outside the closure (SharedPixelBuffer is Send; Image::from_rgba8 is not).
+            // Decode poster outside the closure (SharedPixelBuffer is Send; Image::from_rgba8 is
+            // not).
             let thumb_buf = thumb_bytes.as_deref().and_then(decode_poster_buffer);
             let has_thumb = thumb_buf.is_some();
             let _ = slint::invoke_from_event_loop(move || {
@@ -860,22 +825,16 @@ pub(crate) fn open_series_screen(
         return;
     };
     let basic = s.all_series.iter().find(|i| i.id == id).cloned();
-    // Screen-open cache (Part 2): only the get_item_detail fetch is cached here —
-    // seasons/first-season-episodes are always refetched fresh, since they
-    // interact with the CR10-20 stale-fetch guards (series_open_id/
-    // series_episode_cache, cleared below on every open) and caching them too
-    // would risk reintroducing exactly the kind of subtle bug those guards exist
-    // to prevent. Detail alone still skips the slowest single call (full
-    // metadata + cast list) in spawn_main's join.
+    // Screen-open cache: only get_item_detail (the slowest call — full metadata + cast) is
+    // cached. Seasons/first-season episodes are always refetched: they interact with the
+    // stale-fetch guards (series_open_id/series_episode_cache, cleared below on every open).
     let cached_detail = s.item_detail_cache.get(&id);
     debug!(
         "open_series_screen({id}): cache_hit={}",
         cached_detail.is_some()
     );
-    // Claim the canonical series slot synchronously (CR10-20). spawn_main's
-    // async writes are guarded by series_open_id == id, so a slow task for a
-    // previously opened series can no longer overwrite the state of the one
-    // now on screen after rapid A -> B navigation.
+    // Claim the series slot synchronously: spawn_main's writes check series_open_id == id, so
+    // a slow task from a previously opened series can't overwrite this one (rapid A → B).
     s.series_open_id = id.clone();
     s.series_season_ids.clear();
     s.series_episode_items.clear();
@@ -994,12 +953,9 @@ pub(crate) fn open_series_screen(
     spawn_missing_seasons(id, client, state, ww, rt_handle);
 }
 
-/// "Recommended" row (2026-07-29, Deep Seerr integration) — see
-/// `detail.rs::DetailCtx::spawn_recommended`'s own doc comment for the full
-/// shape this mirrors (TMDB recommendations via Seerr, filtered to titles
-/// not already in the local library, shown below the existing local-only
-/// "More Like This" row). A standalone fn rather than a `SeriesCtx` method
-/// since it doesn't need the Jellyfin client, only Seerr + state.
+/// "Recommended" row — mirrors detail.rs's DetailCtx::spawn_recommended (TMDB recommendations
+/// via Seerr minus what's in the library, below "More Like This"). A plain fn: it needs
+/// Seerr + state, not the Jellyfin client.
 fn spawn_recommended(
     id: String,
     state: Arc<Mutex<FjordState>>,
@@ -1036,18 +992,10 @@ fn spawn_recommended(
     });
 }
 
-/// "Missing Seasons" row (2026-07-29, Deep Seerr integration) — for a
-/// partially-owned series (any season number TMDB knows about but that
-/// isn't a local Jellyfin season, excluding season 0/"Specials" — confirmed
-/// decision, most libraries deliberately don't own specials, and counting
-/// it would flag nearly every partial show as "missing" something nobody
-/// wants), shows a card per missing season with a request-status pill
-/// (`season_request_status`, discover.rs) so an already-in-flight season
-/// isn't re-requested. Scope: any partially-owned series regardless of
-/// `Status` — confirmed via `AskUserQuestion`, not restricted to `Continuing`
-/// shows the way the Coming Up calendar's own new candidate source is.
-/// A standalone fn (not a `SeriesCtx` method) since it needs both the
-/// Jellyfin client (for the local season list) and Seerr.
+/// "Missing Seasons" row for a partially-owned series (any Status): every season TMDB knows
+/// that isn't a local season, except season 0 (Specials — most libraries skip them), with a
+/// request-status pill (discover's season_request_status) so in-flight seasons aren't
+/// requested twice. A plain fn (needs the Jellyfin client and Seerr).
 fn spawn_missing_seasons(
     id: String,
     client: Arc<JellyfinClient>,
@@ -1173,15 +1121,8 @@ fn spawn_missing_seasons(
             bool,
             Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>,
         );
-        // Real bug/UX gap, live-reported 2026-08-12: "in some ongoing series
-        // the upcomming season is stated as missing and 0 episodes it shuld
-        // state upcomming and the date." A season TMDB already knows the
-        // number/name of but hasn't aired yet (no local episodes AND either
-        // no air_date at all or one still in the future) isn't "missing" in
-        // the same sense as a genuinely already-released, unowned season —
-        // "0 episodes" read as broken/empty rather than "not out yet."
-        // Confirmed via the real fjord_seerr::Season struct that `air_date`
-        // is already fetched, just never used for this row before now.
+        // A season that hasn't aired yet is "Upcoming" with its date, not "missing, 0 episodes"
+        // (fjord_seerr::Season already carries air_date).
         let today = chrono::Local::now().date_naive();
         let rows: Vec<MissingSeasonRow> = missing
             .into_iter()
@@ -1200,20 +1141,8 @@ fn spawn_missing_seasons(
                     .air_date
                     .as_deref()
                     .and_then(|d| chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d").ok());
-                // Real bug, live-reported 2026-08-17 ("no this is not
-                // working"): the original condition required
-                // episode_count==0 as a hard gate before ever looking at
-                // air_date — but TMDB can (and does) populate a real,
-                // nonzero episode_count for an announced-but-unaired
-                // season well ahead of its air date (a real press-release-
-                // sourced count, not "the season has actually released N
-                // episodes"). A season with episode_count=8 and an air_date
-                // 3 months in the future fell straight through to the "N
-                // episodes" branch, exactly what this feature was built to
-                // avoid. Fixed by treating a real, known air_date as the
-                // authoritative signal on its own — only fall back to the
-                // episode_count==0 heuristic when there's no air_date at
-                // all to check.
+                // A known air_date decides on its own: TMDB often gives an announced season a real
+                // episode count months early. Without an air_date, fall back to episode_count == 0.
                 let is_upcoming = match air_date_known {
                     Some(d) => d >= today,
                     None => season.episode_count == 0,
@@ -1288,17 +1217,11 @@ fn spawn_missing_seasons(
     });
 }
 
-/// Confirm on a focused "Missing Seasons" card — a season with no covering
-/// request opens the Request Options modal pre-checked to every currently-
-/// missing-and-unrequested season (not just the one activated), so several
-/// can be requested in one submission; a season that already has one opens
-/// RequestDetailScreen normally instead (its own ⋮ More button is the
-/// correct place to Edit/Cancel it — see `discover::open_series_request_detail`'s
-/// own doc comment for why this doesn't try to build a season-scoped
-/// context menu). Routed through an AppState callback (wired in main.rs,
-/// where `state`/`rt` are available) rather than handled inline in
-/// `handle_key`, matching this codebase's established pattern for any
-/// keyboard-triggered action that needs an async network call.
+/// Confirm on a focused "Missing Seasons" card: without a covering request, open Request
+/// Options pre-checked with every missing, unrequested season (several in one request); with
+/// one, open RequestDetailScreen (its ⋮ More edits/cancels — see
+/// discover::open_series_request_detail). Called from the series-missing-season-activate
+/// callback (discover/wire.rs), which has state/rt for the async work.
 pub(crate) fn activate_missing_season(
     g: &AppState,
     idx: usize,
@@ -1543,14 +1466,8 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &crate::AppState) -> b
                 }
                 true
             }
-            // C key on a season tab → context menu (Mark Watched/Unwatched,
-            // Favourite, View Details) — live-reported 2026-08-12, user
-            // approved "Full menu" via AskUserQuestion. Reuses the fully
-            // generic open-context-menu callback (item-type "Season") rather
-            // than a bespoke season-specific menu — Mark Played/Favourite
-            // already work for any Jellyfin item id, and View Details is
-            // wired below (on_open_detail's "Season" arm) to open the same
-            // season detail screen Confirm/I already open.
+            // C on a season tab → the generic context menu with item type "Season" (Mark
+            // Watched/Unwatched, Favourite, View Details → the season detail screen).
             Action::OpenContextMenu => {
                 let idx = g.get_series_season_idx() as usize;
                 if let Some(season) = g.get_series_seasons().row_data(idx) {

@@ -1,20 +1,19 @@
 // ── fjord-app · browse.rs ────────────────────────────────────────────────────
-//   refresh_library_display  apply current sort + filter + query → library-display + alpha-offsets;
-//                            #[track_caller] logs caller file:line (Phase 99 diagnostic)
-//   build_alpha_offsets      [i32; 27] first flat-index for A-Z+# in the display model
-//   pseudo_shuffle           deterministic Fisher-Yates using LCG seed
-//   update_library_filter    update library-query then call refresh_library_display;
-//                            #[track_caller] too (Phase 99 diagnostic)
+//   refresh_library_display  current sort + filter + query → library-display (preserving
+//                            identity) + alpha-offsets; #[track_caller] logs the caller
+//   build_alpha_offsets      [i32; 27] first flat index for A–Z + # in the display model
+//   pseudo_shuffle           deterministic Fisher-Yates with an LCG seed
+//   update_library_filter    set library-query, then refresh_library_display (#[track_caller])
 //   populate_browse_async    filter all_movies + all_series off the UI thread
-//   wire_browse              register AppState browse + library-search + sort + jump callbacks
-//                            (append/backspace/delete edit at the caret via text_field.rs, 2026-10-05)
-//   clear_browse_results     called from discover::wire_discover's on_nav_selected (the one
-//                            registration of that Slint callback that actually survives —
-//                            see its own doc comment)
+//   wire_browse              browse + library-search + sort + jump callbacks (edits at the caret
+//                            via text_field.rs); Browse All built once per session
+//                            (browse_populated), first build debounced
+//   clear_browse_results     on leaving Browse All (from discover's on_nav_selected): rebuild only
+//                            after a search, reset the search field focus
 //   handle_key               keyboard dispatch for the browse list / sidebar
-//   sidebar_nav              sidebar Up/Down cycle; nav=6 (Discover) only participates when
-//                            settings-seerr-enabled, otherwise 5 <-> 10 skip it entirely
-//   wire_play_item         callbacks moved from main() (0.5.0 step 3): play from the Browse list
+//   sidebar_nav              sidebar Up/Down cycle (Discover only with Seerr enabled; Profile
+//                            always, before Settings)
+//   wire_play_item           callbacks moved from main() (0.5.0 step 3): play from the Browse list
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -67,9 +66,8 @@ pub(crate) fn build_alpha_offsets(model: &ModelRc<CardItem>) -> Vec<i32> {
 
 /// Rebuild library-display from current sort/filter/query and update alpha offsets.
 /// Must be called on the UI thread.
-/// `#[track_caller]`: the diagnostic log below needs to know which of the ~15 call
-/// sites triggered a given refresh, to trace an intermittent post-open flash that
-/// isn't explained by any single obviously-guilty caller (investigation ongoing).
+/// `#[track_caller]`: the diagnostic log below names which of the ~15 call sites triggered a
+/// refresh (an intermittent post-open flash is still being traced).
 #[track_caller]
 pub(crate) fn refresh_library_display(w: &MainWindow) {
     let g = AppState::get(w);
@@ -151,13 +149,9 @@ pub(crate) fn refresh_library_display(w: &MainWindow) {
             .collect()
     };
 
-    // Apply preserving identity (Phase 97): this function runs unconditionally on
-    // every grid-open, every network-fetch-landing, and every poster-decode
-    // completion — a plain rebuild here would flash every card even after
-    // apply_cards_preserving_identity already correctly preserved all_movies/etc
-    // underneath, since library-display (not all_movies) is what the grid actually
-    // renders. Only genuinely different content/order (e.g. sort==4's Shuffle,
-    // where a fresh random order is the point) falls back to a real rebuild.
+    // Applied preserving identity: this runs on every grid open, fetch landing and poster decode,
+    // and library-display (what the grid renders) would otherwise flash every card. Only really
+    // different content/order (e.g. Shuffle) rebuilds.
     let caller = std::panic::Location::caller();
     tracing::debug!(
         "refresh_library_display[nav={nav} sort={sort}]: applying {} card(s), called from {}:{}",
@@ -236,10 +230,8 @@ fn populate_browse_async(
             {
                 let mut s = state.lock().unwrap();
                 s.filtered_items = filtered;
-                // Only the unfiltered (query="") build represents "Browse All
-                // is fully populated for this session" — a search-filtered
-                // result is a narrower, transient view, not the cached
-                // baseline sidebar-arrival reuses.
+                // Only the unfiltered build marks Browse All as populated for the session (a search
+                // result is a transient view).
                 if is_full_list { s.browse_populated = true; }
             }
             if let Some(w) = ww.upgrade() {
@@ -315,29 +307,17 @@ pub(crate) fn wire_browse(
             let g = AppState::get(&w);
             g.set_browse_query("".into());
             g.set_current_item(-1);
-            // Already built this session (and nothing has invalidated it via
-            // WS LibraryChanged since — see ws.rs) — media_items already
-            // holds the correct list from the last time this ran, nothing
-            // to rebuild. Matches discover_landing_fetched's own "fetch
-            // once per session, not on every arrival" shape; Browse All
-            // never had this guard before, so every single sidebar arrival
-            // unconditionally rebuilt the ~800-item Slint list model.
+            // Built once per session (until a WS LibraryChanged invalidates it, see ws.rs):
+            // media_items already holds the list, so arriving again rebuilds nothing (like
+            // discover_landing_fetched).
             if state.lock().unwrap().browse_populated {
                 return;
             }
-            // Debounced, not immediate: this fires every time the sidebar
-            // cursor lands on Browse All (nav=5), including when the user is
-            // just passing through it on the way to another tab. Real,
-            // live-reported hitch: rebuilding the ~800-item Slint list model
-            // (StandardListViewItem × all_movies+all_series) is cheap on its
-            // own but lands on the UI thread via invoke_from_event_loop —
-            // if the next keypress arrives while that's still in flight, the
-            // two pieces of UI-thread work collide and the transition
-            // visibly stutters. Waiting a short moment for the cursor to
-            // actually settle means a quick pass-through never starts the
-            // rebuild at all, so there's nothing to collide with. Only
-            // matters for the first arrival each session now that the cache
-            // check above handles every arrival after that.
+            // Debounced: this fires whenever the sidebar cursor lands on Browse All, also when just
+            // passing through. Rebuilding the ~800-item list model lands on the UI thread and
+            // stuttered the next key's transition; waiting for the cursor to settle means a
+            // pass-through never starts it. Only the first arrival per session gets here (see the
+            // check above).
             let ww2 = ww.clone();
             let state2 = Arc::clone(&state);
             let gen2 = Arc::clone(&generation);
@@ -469,41 +449,18 @@ pub(crate) fn wire_browse(
     // would just be silently overwritten rather than adding a second listener.
 }
 
-// Clear browse results on nav change (skip when nav=5 — browse is opening).
-// Called from discover.rs's on_nav_selected registration, the surviving one
-// of two registrations against the same Slint callback — Slint callbacks are
-// single-handler, so a second `.on_nav_selected(...)` call silently replaces
-// the first rather than adding a listener; this used to be its own dead
-// registration here (code review, 2026-08-08) that never actually ran once
-// discover::wire_discover registered its own handler later in main.rs.
+// Clear browse results on nav change (skipped for nav 5 — browse is opening). Called from
+// discover's on_nav_selected handler: a Slint callback has one handler, so a second
+// registration would replace the first.
 pub(crate) fn clear_browse_results(state: &Arc<Mutex<FjordState>>, g: &AppState, nav: i32) {
     if nav == 5 {
         return;
     }
-    // Real bug, live-reported 2026-08-14 (dev-machine log confirmed a fresh
-    // build): "the browse all bug is still present." Traced via
-    // `browse::handle_key`'s own `media_items_len` debug line — the FIRST
-    // visit each session showed 796 items; every visit after that showed 0,
-    // permanently, for the rest of the session. Root cause: this function
-    // unconditionally wiped `media-items` to an EMPTY model on every
-    // sidebar switch away from Browse All — but `on_browse_search_clear`'s
-    // `browse_populated` guard (see its own doc comment, a deliberate
-    // Phase ~131 performance fix) means the full ~800-item list is only
-    // ever (re)built ONCE per session; every arrival after the first is
-    // meant to just show/reuse what's already there. Wiping it here left
-    // nothing for that guard to reuse — the list stayed empty forever after
-    // the first departure, which is a strictly worse bug than the
-    // `browse-header-focused` one fixed below on 2026-08-12 (that one only
-    // broke keyboard dispatch; this one broke the actual content).
-    //
-    // Fix: don't touch `media-items`/`filtered_items` at all in the common
-    // case (no search was active) — they already hold the correct,
-    // still-valid full list, matching `browse_populated`'s own "built once,
-    // persists" contract. Only rebuild when the user left mid-search (the
-    // grid would otherwise keep showing a stale filtered subset once the
-    // query below resets to "") — done synchronously here (cheap, no need
-    // for the async `populate_browse_async` pipeline) by mirroring its own
-    // `is_full_list` branch directly against `all_movies`/`all_series`.
+    // Leave media-items/filtered_items alone in the common case: the full list is built only
+    // once per session (browse_populated), so wiping it here left Browse All empty on every
+    // later visit. Only after leaving mid-search, rebuild the full list synchronously (cheap)
+    // from all_movies/all_series — the query resets to "" below and a filtered subset would
+    // stay.
     if !g.get_browse_query().is_empty() {
         let mut s = state.lock().unwrap();
         let all: Vec<_> = s
@@ -519,29 +476,9 @@ pub(crate) fn clear_browse_results(state: &Arc<Mutex<FjordState>>, g: &AppState,
     }
     g.set_current_item(-1);
     g.set_browse_query("".into());
-    // Real bug, live-reported 2026-08-12: "the browse all breacks haver you
-    // passt it once, it works first time you land on it then it is broken
-    // after that." Root cause: browse-header-focused (search-field-focused
-    // state) was only ever reset by explicit in-screen exit paths — the
-    // Back key (browse::handle_key's own Action::Back arm) or Escape/Down/
-    // Enter from inside the search field itself (handle_browse_search, in
-    // keys.rs) — never by leaving Browse All any OTHER way (a mouse click
-    // on a different sidebar tab, or arrowing away mid-search-focus without
-    // pressing one of those specific keys first). A stale `true` left over
-    // from a previous visit meant keys.rs's own raw-key pre-dispatch
-    // (`show-browse && browse-header-focused`) would immediately swallow
-    // arrow-key navigation into `handle_browse_search` on the VERY NEXT
-    // visit, before browse::handle_key's own list/sidebar navigation ever
-    // got a chance to run — Up/Left/Right silently did nothing (only Down/
-    // Enter happened to self-heal it, by design of that same handler),
-    // which is exactly what reads as "broken" for a D-pad-first app. Same
-    // class of gap this project already found and fixed once for Settings
-    // (`keybinding-focused` never cleared on a mouse-driven section
-    // switch) — fixed here the same way, at the one hook every sidebar
-    // switch already funnels through regardless of input method. (Both
-    // bugs happened to share the same "works first time, broken after
-    // that" symptom description from the user — genuinely two separate
-    // causes, fixed two days apart.)
+    // Reset browse-header-focused on every way of leaving Browse All (mouse or keys): a stale
+    // true made keys.rs's raw-key pre-dispatch send arrows to handle_browse_search on the next
+    // visit, so Up/Left/Right did nothing.
     g.set_browse_header_focused(false);
 }
 
@@ -638,10 +575,8 @@ pub(crate) fn sidebar_nav(g: &AppState, dir: i32) {
         return;
     }
 
-    // Discover (nav=6) only participates in the cycle when Seerr is enabled —
-    // otherwise the sidebar has no way to land the cursor on a hidden tab.
-    // Profile (nav=7, 2026-08-14) always participates, sitting right before
-    // Settings regardless of whether Discover is shown.
+    // Discover (nav 6) is in the cycle only when Seerr is enabled (a hidden tab can't take the
+    // cursor). Profile (nav 7) always is, right before Settings.
     let seerr_on = g.get_settings_seerr_enabled();
     let next = if dir < 0 {
         match nav {
