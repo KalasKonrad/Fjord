@@ -15,9 +15,12 @@ use slint::{Global, Model, ModelRc, VecModel};
 use tokio::task::JoinSet;
 use tracing::warn;
 
-use crate::config::FjordState;
 use crate::AppState;
-use crate::poster::{fetch_poster_cached, fetch_backdrop_cached, fetch_backdrop_cached_tagged, decode_backdrop_buffer, decode_poster_buffer};
+use crate::config::FjordState;
+use crate::poster::{
+    decode_backdrop_buffer, decode_poster_buffer, fetch_backdrop_cached,
+    fetch_backdrop_cached_tagged, fetch_poster_cached,
+};
 use crate::{CastMember, MainWindow};
 
 // ── open_season_screen ────────────────────────────────────────────────────────
@@ -25,17 +28,22 @@ use crate::{CastMember, MainWindow};
 pub(crate) fn open_season_screen(
     season_id: String,
     series_id: String,
-    state:     Arc<Mutex<FjordState>>,
-    ww:        slint::Weak<MainWindow>,
-    rt:        tokio::runtime::Handle,
+    state: Arc<Mutex<FjordState>>,
+    ww: slint::Weak<MainWindow>,
+    rt: tokio::runtime::Handle,
 ) {
     let s = state.lock().unwrap();
-    let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
+    let Some(client) = s.client.as_ref().map(Arc::clone) else {
+        return;
+    };
     // Screen-open cache (Part 2): skip the loading spinner on a cache hit — the
     // remaining work (poster/backdrop/cast-portrait fetch) is disk-cached and fast.
     let cached_detail = s.item_detail_cache.get(&season_id);
     drop(s);
-    tracing::debug!("open_season_screen({season_id}): cache_hit={}", cached_detail.is_some());
+    tracing::debug!(
+        "open_season_screen({season_id}): cache_hit={}",
+        cached_detail.is_some()
+    );
 
     if let Some(w) = ww.upgrade() {
         let g = AppState::get(&w);
@@ -73,8 +81,14 @@ pub(crate) fn open_season_screen(
 
     let is_cache_hit = cached_detail.is_some();
     spawn_season_fetch(SeasonFetchArgs {
-        sid: season_id.clone(), series_id: series_id.clone(), client: Arc::clone(&client),
-        state: Arc::clone(&state), ww: ww.clone(), cached_detail, revalidate: false, rt: rt.clone(),
+        sid: season_id.clone(),
+        series_id: series_id.clone(),
+        client: Arc::clone(&client),
+        state: Arc::clone(&state),
+        ww: ww.clone(),
+        cached_detail,
+        revalidate: false,
+        rt: rt.clone(),
     });
 
     // Cache-hit only: the screen above already showed instantly from cached
@@ -86,46 +100,74 @@ pub(crate) fn open_season_screen(
     // whatever's actually on screen right now.
     if is_cache_hit && crate::should_revalidate(&state, &season_id) {
         spawn_season_fetch(SeasonFetchArgs {
-            sid: season_id, series_id, client, state, ww, cached_detail: None, revalidate: true, rt,
+            sid: season_id,
+            series_id,
+            client,
+            state,
+            ww,
+            cached_detail: None,
+            revalidate: true,
+            rt,
         });
     }
 }
 
 struct SeasonFetchArgs {
-    sid:           String,
-    series_id:     String,
-    client:        Arc<fjord_api::JellyfinClient>,
-    state:         Arc<Mutex<FjordState>>,
-    ww:            slint::Weak<MainWindow>,
+    sid: String,
+    series_id: String,
+    client: Arc<fjord_api::JellyfinClient>,
+    state: Arc<Mutex<FjordState>>,
+    ww: slint::Weak<MainWindow>,
     cached_detail: Option<fjord_api::models::MediaItem>,
-    revalidate:    bool,
-    rt:            tokio::runtime::Handle,
+    revalidate: bool,
+    rt: tokio::runtime::Handle,
 }
 
 fn spawn_season_fetch(args: SeasonFetchArgs) {
-    let SeasonFetchArgs { sid, series_id, client, state: state2, ww: ww_ui, cached_detail, revalidate, rt } = args;
+    let SeasonFetchArgs {
+        sid,
+        series_id,
+        client,
+        state: state2,
+        ww: ww_ui,
+        cached_detail,
+        revalidate,
+        rt,
+    } = args;
     rt.spawn(async move {
         let detail_fut = async {
-            if let Some(d) = cached_detail { return Ok(d); }
+            if let Some(d) = cached_detail {
+                return Ok(d);
+            }
             client.get_item_detail(&sid).await
         };
-        let (detail_res, poster_bytes) = tokio::join!(
-            detail_fut,
-            fetch_poster_cached(&client, &sid),
-        );
+        let (detail_res, poster_bytes) =
+            tokio::join!(detail_fut, fetch_poster_cached(&client, &sid),);
         // Sign-out (or a different account signing in on a shared HTPC)
         // mid-fetch must not let this per-user data land in the new session's
         // cache — same guard class as main.rs::session_current's own doc
         // comment (CR11-2). Applies to both the original open and a
         // background revalidate call alike.
         if let Ok(d) = &detail_res {
-            if !crate::session_current(&state2, &client) { return; }
-            state2.lock().unwrap().item_detail_cache.insert(sid.clone(), d.clone());
+            if !crate::session_current(&state2, &client) {
+                return;
+            }
+            state2
+                .lock()
+                .unwrap()
+                .item_detail_cache
+                .insert(sid.clone(), d.clone());
         }
         // Use season backdrop if available, else fall back to series backdrop.
         let backdrop_bytes = match &detail_res {
-            Ok(d) if !d.backdrop_image_tags.is_empty() =>
-                fetch_backdrop_cached_tagged(&client, &sid, d.backdrop_image_tags.first().map(String::as_str)).await,
+            Ok(d) if !d.backdrop_image_tags.is_empty() => {
+                fetch_backdrop_cached_tagged(
+                    &client,
+                    &sid,
+                    d.backdrop_image_tags.first().map(String::as_str),
+                )
+                .await
+            }
             _ if !series_id.is_empty() => fetch_backdrop_cached(&client, &series_id).await,
             _ => None,
         };
@@ -133,34 +175,67 @@ fn spawn_season_fetch(args: SeasonFetchArgs) {
         let (title, overview, meta, is_fav, has_played, cast_data) = match detail_res {
             Ok(ref d) => {
                 let mut meta_parts: Vec<String> = vec![];
-                if let Some(y) = d.production_year { meta_parts.push(y.to_string()); }
-                if let Some(ref r) = d.official_rating { meta_parts.push(r.clone()); }
+                if let Some(y) = d.production_year {
+                    meta_parts.push(y.to_string());
+                }
+                if let Some(ref r) = d.official_rating {
+                    meta_parts.push(r.clone());
+                }
                 let meta = meta_parts.join(" · ");
 
                 let mut seen: std::collections::HashSet<String> = Default::default();
                 let mut cast: Vec<(String, String, String)> = vec![];
-                for p in d.people.iter().filter(|p| p.person_type == "Director").take(2) {
+                for p in d
+                    .people
+                    .iter()
+                    .filter(|p| p.person_type == "Director")
+                    .take(2)
+                {
                     if seen.insert(p.id.clone()) {
                         cast.push((p.id.clone(), p.name.clone(), "Director".to_string()));
                     }
                 }
-                for p in d.people.iter().filter(|p| p.person_type == "Writer").take(3) {
+                for p in d
+                    .people
+                    .iter()
+                    .filter(|p| p.person_type == "Writer")
+                    .take(3)
+                {
                     if seen.insert(p.id.clone()) {
                         cast.push((p.id.clone(), p.name.clone(), "Writer".to_string()));
                     }
                 }
-                for p in d.people.iter().filter(|p| p.person_type == "Actor").take(12) {
+                for p in d
+                    .people
+                    .iter()
+                    .filter(|p| p.person_type == "Actor")
+                    .take(12)
+                {
                     if seen.insert(p.id.clone()) {
                         cast.push((p.id.clone(), p.name.clone(), p.role.clone()));
                     }
                 }
-                let is_fav     = d.user_data.is_favorite;
+                let is_fav = d.user_data.is_favorite;
                 let has_played = d.user_data.played;
-                (d.name.clone(), crate::strip_html_to_text(d.overview.clone().unwrap_or_default().trim()), meta, is_fav, has_played, cast)
+                (
+                    d.name.clone(),
+                    crate::strip_html_to_text(d.overview.clone().unwrap_or_default().trim()),
+                    meta,
+                    is_fav,
+                    has_played,
+                    cast,
+                )
             }
             Err(e) => {
                 warn!("get_item_detail season {}: {:#}", sid, e);
-                (String::new(), String::new(), String::new(), false, false, vec![])
+                (
+                    String::new(),
+                    String::new(),
+                    String::new(),
+                    false,
+                    false,
+                    vec![],
+                )
             }
         };
 
@@ -168,26 +243,31 @@ fn spawn_season_fetch(args: SeasonFetchArgs) {
         // Skipped on a background revalidate: no loading bar is showing.
         if !revalidate {
             let _ = slint::invoke_from_event_loop({
-                let ww  = ww_ui.clone();
+                let ww = ww_ui.clone();
                 let sid = sid.clone();
                 move || {
                     let Some(w) = ww.upgrade() else { return };
-                    if AppState::get(&w).get_season_id().as_str() != sid { return; }
+                    if AppState::get(&w).get_season_id().as_str() != sid {
+                        return;
+                    }
                     AppState::get(&w).set_app_loading_progress(0.5);
                 }
             });
         }
 
         // Fetch ALL cast portraits in parallel before showing the page (no trickle-in).
-        let person_ids: Vec<(usize, String)> = cast_data.iter()
+        let person_ids: Vec<(usize, String)> = cast_data
+            .iter()
             .enumerate()
             .filter(|(_, (pid, _, _))| !pid.is_empty())
             .map(|(idx, (pid, _, _))| (idx, pid.clone()))
             .collect();
 
         let sem = Arc::new(tokio::sync::Semaphore::new(6));
-        let mut portrait_tasks: JoinSet<(usize, Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>)> =
-            JoinSet::new();
+        let mut portrait_tasks: JoinSet<(
+            usize,
+            Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>,
+        )> = JoinSet::new();
         for (model_idx, pid) in person_ids {
             let c2 = client.clone();
             let s2 = sem.clone();
@@ -197,26 +277,38 @@ fn spawn_season_fetch(args: SeasonFetchArgs) {
                 (model_idx, bytes.as_deref().and_then(decode_poster_buffer))
             });
         }
-        let mut portraits: std::collections::HashMap<usize, slint::SharedPixelBuffer<slint::Rgba8Pixel>> =
-            std::collections::HashMap::new();
+        let mut portraits: std::collections::HashMap<
+            usize,
+            slint::SharedPixelBuffer<slint::Rgba8Pixel>,
+        > = std::collections::HashMap::new();
         while let Some(res) = portrait_tasks.join_next().await {
-            if let Ok((idx, Some(buf))) = res { portraits.insert(idx, buf); }
+            if let Ok((idx, Some(buf))) = res {
+                portraits.insert(idx, buf);
+            }
         }
 
         // Single invoke — set everything and show the page with portraits already populated.
         let sid2 = sid.clone();
         let _ = slint::invoke_from_event_loop(move || {
             let Some(w) = ww_ui.upgrade() else { return };
-            if AppState::get(&w).get_season_id().as_str() != sid2 { return; }
+            if AppState::get(&w).get_season_id().as_str() != sid2 {
+                return;
+            }
             // Session guard (Bonfire Phase 1, step 8 audit, 2026-08-09) —
             // same reasoning as series.rs's own spawn_main: the id check
             // above (helped by reset_session_state now clearing season-id
             // on a switch/sign-out) doesn't cover an Err(detail) path or a
             // coincidental same-id reopen under a new profile.
-            if !crate::session_current(&state2, &client) { return; }
+            if !crate::session_current(&state2, &client) {
+                return;
+            }
             let g = AppState::get(&w);
-            if !title.is_empty()    { g.set_season_title(title.as_str().into()); }
-            if !overview.is_empty() { g.set_season_overview(overview.as_str().into()); }
+            if !title.is_empty() {
+                g.set_season_title(title.as_str().into());
+            }
+            if !overview.is_empty() {
+                g.set_season_overview(overview.as_str().into());
+            }
             g.set_season_meta(meta.as_str().into());
             g.set_season_is_favorite(is_fav);
             g.set_season_has_played(has_played);
@@ -228,15 +320,20 @@ fn spawn_season_fetch(args: SeasonFetchArgs) {
                 g.set_season_backdrop(slint::Image::from_rgba8(buf));
                 g.set_season_has_backdrop(true);
             }
-            let cast_members: Vec<CastMember> = cast_data.into_iter()
+            let cast_members: Vec<CastMember> = cast_data
+                .into_iter()
                 .enumerate()
                 .map(|(idx, (cid, name, role))| {
-                    let (photo, has_photo) = portraits.remove(&idx)
+                    let (photo, has_photo) = portraits
+                        .remove(&idx)
                         .map(|buf| (slint::Image::from_rgba8(buf), true))
                         .unwrap_or_default();
                     CastMember {
-                        id: cid.as_str().into(), name: name.as_str().into(),
-                        role: role.as_str().into(), photo, has_photo,
+                        id: cid.as_str().into(),
+                        name: name.as_str().into(),
+                        role: role.as_str().into(),
+                        photo,
+                        has_photo,
                     }
                 })
                 .collect();
@@ -268,29 +365,45 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &crate::AppState) -> b
     if btn >= 0 {
         return match action {
             Action::Left => {
-                if (1..=2).contains(&btn) { g.set_season_focused_btn(btn - 1); }
+                if (1..=2).contains(&btn) {
+                    g.set_season_focused_btn(btn - 1);
+                }
                 true
             }
             Action::Right => {
                 match btn {
-                    0 => { g.set_season_focused_btn(1); }
-                    1 => { g.set_season_focused_btn(2); }
+                    0 => {
+                        g.set_season_focused_btn(1);
+                    }
+                    1 => {
+                        g.set_season_focused_btn(2);
+                    }
                     _ => {}
                 }
                 true
             }
             Action::Up => {
                 match btn {
-                    0 => { return false; } // Back — let focus_bar_on_up handle it
-                    3 => { g.set_season_focused_btn(1); } // Overview → ♥ fav
-                    _ => { g.set_season_focused_btn(0); } // ♥/✓ → Back
+                    0 => {
+                        return false;
+                    } // Back — let focus_bar_on_up handle it
+                    3 => {
+                        g.set_season_focused_btn(1);
+                    } // Overview → ♥ fav
+                    _ => {
+                        g.set_season_focused_btn(0);
+                    } // ♥/✓ → Back
                 }
                 true
             }
             Action::Down => {
                 match btn {
-                    0 => { g.set_season_focused_btn(1); } // Back → ♥ fav
-                    3 => { g.set_season_focused_btn(-1); } // Overview → episodes
+                    0 => {
+                        g.set_season_focused_btn(1);
+                    } // Back → ♥ fav
+                    3 => {
+                        g.set_season_focused_btn(-1);
+                    } // Overview → episodes
                     _ => {
                         // ♥/✓ → Overview if present, else episodes
                         if !g.get_season_overview().is_empty() {
@@ -304,17 +417,32 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &crate::AppState) -> b
             }
             Action::Confirm => {
                 match btn {
-                    0 => { g.set_season_focused_btn(-1); g.invoke_close_season_detail(); }
-                    1 => { g.invoke_toggle_season_fav(); }
-                    2 => { g.invoke_toggle_season_played(); }
-                    3 => { g.set_season_overview_expanded(!g.get_season_overview_expanded()); }
+                    0 => {
+                        g.set_season_focused_btn(-1);
+                        g.invoke_close_season_detail();
+                    }
+                    1 => {
+                        g.invoke_toggle_season_fav();
+                    }
+                    2 => {
+                        g.invoke_toggle_season_played();
+                    }
+                    3 => {
+                        g.set_season_overview_expanded(!g.get_season_overview_expanded());
+                    }
                     _ => {}
                 }
                 true
             }
-            Action::Fullscreen => { g.invoke_toggle_fullscreen(); true }
-            Action::Quit       => { g.invoke_quit(); true }
-            _ => false
+            Action::Fullscreen => {
+                g.invoke_toggle_fullscreen();
+                true
+            }
+            Action::Quit => {
+                g.invoke_quit();
+                true
+            }
+            _ => false,
         };
     }
 
@@ -325,7 +453,9 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &crate::AppState) -> b
         return match action {
             Action::Left => {
                 let idx = g.get_season_cast_focused();
-                if idx > 0 { g.set_season_cast_focused(idx - 1); }
+                if idx > 0 {
+                    g.set_season_cast_focused(idx - 1);
+                }
                 true
             }
             Action::Right => {
@@ -341,14 +471,22 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &crate::AppState) -> b
             }
             Action::Confirm => {
                 let idx = g.get_season_cast_focused();
-                if idx >= 0 && let Some(c) = g.get_season_cast().row_data(idx as usize) {
+                if idx >= 0
+                    && let Some(c) = g.get_season_cast().row_data(idx as usize)
+                {
                     g.invoke_open_person(c.id, c.name);
                 }
                 true
             }
-            Action::Fullscreen => { g.invoke_toggle_fullscreen(); true }
-            Action::Quit       => { g.invoke_quit(); true }
-            _ => false
+            Action::Fullscreen => {
+                g.invoke_toggle_fullscreen();
+                true
+            }
+            Action::Quit => {
+                g.invoke_quit();
+                true
+            }
+            _ => false,
         };
     }
 
@@ -356,13 +494,17 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &crate::AppState) -> b
     match action {
         Action::Left => {
             let ep = g.get_season_focused_ep();
-            if ep > 0 { g.set_season_focused_ep(ep - 1); }
+            if ep > 0 {
+                g.set_season_focused_ep(ep - 1);
+            }
             true
         }
         Action::Right => {
-            let ep  = g.get_season_focused_ep();
+            let ep = g.get_season_focused_ep();
             let max = g.get_series_episode_cards().row_count() as i32 - 1;
-            if ep < max { g.set_season_focused_ep(ep + 1); }
+            if ep < max {
+                g.set_season_focused_ep(ep + 1);
+            }
             true
         }
         Action::Up => {
@@ -383,31 +525,47 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &crate::AppState) -> b
         }
         Action::Confirm => {
             let cards = g.get_series_episode_cards();
-            if cards.row_count() > 0 && let Some(card) = cards.row_data(g.get_season_focused_ep() as usize) {
+            if cards.row_count() > 0
+                && let Some(card) = cards.row_data(g.get_season_focused_ep() as usize)
+            {
                 g.invoke_play_series_episode(card.id);
             }
             true
         }
         Action::OpenDetail => {
             let cards = g.get_series_episode_cards();
-            if cards.row_count() > 0 && let Some(card) = cards.row_data(g.get_season_focused_ep() as usize) {
+            if cards.row_count() > 0
+                && let Some(card) = cards.row_data(g.get_season_focused_ep() as usize)
+            {
                 g.invoke_open_detail(card.id, "Episode".into());
             }
             true
         }
         Action::OpenContextMenu => {
             let cards = g.get_series_episode_cards();
-            if cards.row_count() > 0 && let Some(card) = cards.row_data(g.get_season_focused_ep() as usize) {
+            if cards.row_count() > 0
+                && let Some(card) = cards.row_data(g.get_season_focused_ep() as usize)
+            {
                 g.set_context_menu_title(card.title.clone());
                 g.invoke_open_context_menu(
-                    card.id, card.has_played, card.is_favorite, card.resume_pct,
-                    card.item_type, card.series_id,
+                    card.id,
+                    card.has_played,
+                    card.is_favorite,
+                    card.resume_pct,
+                    card.item_type,
+                    card.series_id,
                 );
             }
             true
         }
-        Action::Fullscreen => { g.invoke_toggle_fullscreen(); true }
-        Action::Quit       => { g.invoke_quit(); true }
-        _ => false
+        Action::Fullscreen => {
+            g.invoke_toggle_fullscreen();
+            true
+        }
+        Action::Quit => {
+            g.invoke_quit();
+            true
+        }
+        _ => false,
     }
 }

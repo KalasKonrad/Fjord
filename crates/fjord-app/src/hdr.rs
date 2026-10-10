@@ -71,7 +71,7 @@ use std::sync::{LazyLock, Mutex};
 use std::time::{Duration, Instant};
 
 use wayland_backend::client::{Backend, ObjectId};
-use wayland_client::globals::{registry_queue_init, BindError, GlobalListContents};
+use wayland_client::globals::{BindError, GlobalListContents, registry_queue_init};
 use wayland_client::protocol::wl_registry;
 use wayland_client::protocol::wl_surface::WlSurface;
 use wayland_client::{Connection, Dispatch, Proxy, QueueHandle, WEnum};
@@ -113,13 +113,13 @@ enum HdrStatus {
 impl HdrStatus {
     fn as_str(self) -> &'static str {
         match self {
-            HdrStatus::Idle          => "Idle",
-            HdrStatus::Disabled      => "Disabled",
+            HdrStatus::Idle => "Idle",
+            HdrStatus::Disabled => "Disabled",
             HdrStatus::NotApplicable => "Not applicable",
-            HdrStatus::Unavailable   => "Unavailable",
-            HdrStatus::Negotiating   => "Negotiating…",
-            HdrStatus::Active        => "Active (HDR10)",
-            HdrStatus::Failed        => "Failed",
+            HdrStatus::Unavailable => "Unavailable",
+            HdrStatus::Negotiating => "Negotiating…",
+            HdrStatus::Active => "Active (HDR10)",
+            HdrStatus::Failed => "Failed",
         }
     }
 }
@@ -152,9 +152,9 @@ pub(crate) fn is_active() -> bool {
 /// are hardcoded to St2084Pq/Bt2020 by the worker itself for v1 — eligibility
 /// already guarantees the source matches those, so they aren't fields here.
 pub(crate) struct HdrParams {
-    pub(crate) min_lum:  Option<f64>,
-    pub(crate) max_lum:  Option<f64>,
-    pub(crate) max_cll:  Option<f64>,
+    pub(crate) min_lum: Option<f64>,
+    pub(crate) max_lum: Option<f64>,
+    pub(crate) max_cll: Option<f64>,
     pub(crate) max_fall: Option<f64>,
 }
 
@@ -181,7 +181,10 @@ pub(crate) enum HdrCommand {
 /// worker-spawn logic (the winit-callback thread) — whichever runs first;
 /// `LazyLock` handles that race safely with no explicit init call needed
 /// from `main()` at all.
-type HdrChannel = (mpsc::Sender<HdrCommand>, Mutex<Option<mpsc::Receiver<HdrCommand>>>);
+type HdrChannel = (
+    mpsc::Sender<HdrCommand>,
+    Mutex<Option<mpsc::Receiver<HdrCommand>>>,
+);
 static HDR_CHANNEL: LazyLock<HdrChannel> = LazyLock::new(|| {
     let (tx, rx) = mpsc::channel();
     (tx, Mutex::new(Some(rx)))
@@ -253,9 +256,9 @@ fn build_hdr_params(meta: &fjord_player::SourceHdrMetadata) -> Option<HdrParams>
         return None;
     }
     Some(HdrParams {
-        min_lum:  meta.min_luma,
-        max_lum:  meta.max_luma,
-        max_cll:  meta.max_cll,
+        min_lum: meta.min_luma,
+        max_lum: meta.max_luma,
+        max_cll: meta.max_cll,
         max_fall: meta.max_fall,
     })
 }
@@ -387,12 +390,16 @@ unsafe fn run_worker(display_ptr: *mut c_void, surface_ptr: *mut c_void) {
                     Some(surface)
                 }
                 Err(e) => {
-                    tracing::warn!("hdr worker: Proxy::from_id for the existing wl_surface failed: {e}");
+                    tracing::warn!(
+                        "hdr worker: Proxy::from_id for the existing wl_surface failed: {e}"
+                    );
                     None
                 }
             },
             Err(e) => {
-                tracing::warn!("hdr worker: ObjectId::from_ptr for the existing wl_surface failed: {e}");
+                tracing::warn!(
+                    "hdr worker: ObjectId::from_ptr for the existing wl_surface failed: {e}"
+                );
                 None
             }
         };
@@ -418,7 +425,10 @@ unsafe fn run_worker(display_ptr: *mut c_void, surface_ptr: *mut c_void) {
     // get_surface()'d at most once ever (the protocol allows one per
     // wl_surface). `active` = which one currently has a description:
     // Some(None) = the window, Some(Some(addr)) = the subsurface.
-    let mut main_target = Target { surface: wrapped_surface, cms: None };
+    let mut main_target = Target {
+        surface: wrapped_surface,
+        cms: None,
+    };
     let mut child_target: Option<(usize, Target)> = None;
     let mut active: Option<Option<usize>> = None;
 
@@ -426,9 +436,17 @@ unsafe fn run_worker(display_ptr: *mut c_void, surface_ptr: *mut c_void) {
         match cmd {
             HdrCommand::SetHdr(params, subsurface) => {
                 // A description left on the other surface goes first.
-                if let Some(prev) = active && prev != subsurface {
-                    let t = if prev.is_none() { Some(&main_target) } else { child_target.as_ref().map(|(_, t)| t) };
-                    if let Some(t) = t { t.unset(); }
+                if let Some(prev) = active
+                    && prev != subsurface
+                {
+                    let t = if prev.is_none() {
+                        Some(&main_target)
+                    } else {
+                        child_target.as_ref().map(|(_, t)| t)
+                    };
+                    if let Some(t) = t {
+                        t.unset();
+                    }
                     active = None;
                 }
                 let target = match subsurface {
@@ -437,7 +455,10 @@ unsafe fn run_worker(display_ptr: *mut c_void, surface_ptr: *mut c_void) {
                         if child_target.as_ref().map(|(a, _)| *a) != Some(addr) {
                             match wrap_surface(&connection, addr) {
                                 Some(surface) => {
-                                    tracing::info!("hdr worker: tagging the video subsurface ({:?}), not the window", surface.id());
+                                    tracing::info!(
+                                        "hdr worker: tagging the video subsurface ({:?}), not the window",
+                                        surface.id()
+                                    );
                                     child_target = Some((addr, Target { surface, cms: None }));
                                 }
                                 None => {
@@ -451,19 +472,33 @@ unsafe fn run_worker(display_ptr: *mut c_void, surface_ptr: *mut c_void) {
                 };
                 let mut has_active = active.is_some();
                 if let Err(fatal) = handle_set_hdr(
-                    &manager, &qh, &mut event_queue, &mut state,
-                    &target.surface, &mut target.cms, &mut has_active, params,
+                    &manager,
+                    &qh,
+                    &mut event_queue,
+                    &mut state,
+                    &target.surface,
+                    &mut target.cms,
+                    &mut has_active,
+                    params,
                 ) {
                     tracing::warn!("hdr worker: {fatal} — connection likely dead, exiting");
                     set_status(HdrStatus::Unavailable);
                     return;
                 }
-                if has_active { active = Some(subsurface); }
+                if has_active {
+                    active = Some(subsurface);
+                }
             }
             HdrCommand::Unset => {
                 if let Some(prev) = active.take() {
-                    let t = if prev.is_none() { Some(&main_target) } else { child_target.as_ref().map(|(_, t)| t) };
-                    if let Some(t) = t { t.unset(); }
+                    let t = if prev.is_none() {
+                        Some(&main_target)
+                    } else {
+                        child_target.as_ref().map(|(_, t)| t)
+                    };
+                    if let Some(t) = t {
+                        t.unset();
+                    }
                 }
                 // Unconditional — see HDR_STATUS's own doc comment for why
                 // this must always reset to Idle, even when nothing was
@@ -478,7 +513,7 @@ unsafe fn run_worker(display_ptr: *mut c_void, surface_ptr: *mut c_void) {
 /// subsurface.
 struct Target {
     surface: WlSurface,
-    cms:     Option<WpColorManagementSurfaceV1>,
+    cms: Option<WpColorManagementSurfaceV1>,
 }
 
 impl Target {
@@ -499,9 +534,15 @@ fn wrap_surface(connection: &Connection, addr: usize) -> Option<WlSurface> {
     match unsafe { ObjectId::from_ptr(WlSurface::interface(), addr as *mut _) } {
         Ok(id) => match Proxy::from_id(connection, id) {
             Ok(surface) => Some(surface),
-            Err(e) => { tracing::warn!("hdr worker: Proxy::from_id for the video subsurface failed: {e}"); None }
+            Err(e) => {
+                tracing::warn!("hdr worker: Proxy::from_id for the video subsurface failed: {e}");
+                None
+            }
         },
-        Err(e) => { tracing::warn!("hdr worker: ObjectId::from_ptr for the video subsurface failed: {e}"); None }
+        Err(e) => {
+            tracing::warn!("hdr worker: ObjectId::from_ptr for the video subsurface failed: {e}");
+            None
+        }
     }
 }
 
@@ -531,7 +572,9 @@ fn handle_set_hdr(
     let has_prim = has_value(&state.supported_primaries_named, Primaries::Bt2020);
     let has_feature = |f: Feature| has_value(&state.supported_features, f);
     if !has_tf || !has_prim || !has_feature(Feature::Parametric) {
-        tracing::warn!("hdr worker: compositor no longer advertises what HDR10 negotiation needs — skipping");
+        tracing::warn!(
+            "hdr worker: compositor no longer advertises what HDR10 negotiation needs — skipping"
+        );
         set_status(HdrStatus::Failed);
         return Ok(());
     }
@@ -549,7 +592,8 @@ fn handle_set_hdr(
     // get chromaticity-coordinate scaling wrong on.
     if has_feature(Feature::SetMasteringDisplayPrimaries)
         && let (Some(min_l), Some(max_l)) = (params.min_lum, params.max_lum)
-        && max_l > min_l {
+        && max_l > min_l
+    {
         let min_scaled = (min_l * 10_000.0).round() as u32;
         let max_scaled = max_l.round() as u32;
         creator.set_mastering_luminance(min_scaled, max_scaled);
@@ -617,15 +661,22 @@ fn handle_set_hdr(
                 tracing::info!(
                     "hdr worker: negotiated HDR10 image description — \
                      min_lum={:?} max_lum={:?} max_cll={:?} max_fall={:?}",
-                    params.min_lum, params.max_lum, params.max_cll, params.max_fall,
+                    params.min_lum,
+                    params.max_lum,
+                    params.max_cll,
+                    params.max_fall,
                 );
             } else {
-                tracing::warn!("hdr worker: no wp_color_management_surface_v1 to apply the image description to");
+                tracing::warn!(
+                    "hdr worker: no wp_color_management_surface_v1 to apply the image description to"
+                );
                 set_status(HdrStatus::Failed);
             }
         }
         Some(Err((cause, msg))) => {
-            tracing::warn!("hdr worker: image description creation failed: cause={cause:?} msg={msg}");
+            tracing::warn!(
+                "hdr worker: image description creation failed: cause={cause:?} msg={msg}"
+            );
             set_status(HdrStatus::Failed);
         }
         None => {
@@ -637,7 +688,8 @@ fn handle_set_hdr(
 }
 
 fn has_value<T: PartialEq>(list: &[WEnum<T>], target: T) -> bool {
-    list.iter().any(|w| matches!(w, WEnum::Value(v) if *v == target))
+    list.iter()
+        .any(|w| matches!(w, WEnum::Value(v) if *v == target))
 }
 
 /// The worker thread's own `Dispatch` target for its whole lifetime — not

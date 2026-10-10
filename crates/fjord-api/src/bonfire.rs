@@ -15,7 +15,7 @@
 //   that same injection mechanism). GET /plugins/profiles/image/{profileId} is an unauthenticated
 //   image URL, consumed directly by callers, no client method needed.
 // ─────────────────────────────────────────────────────────────────────────────
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use reqwest::{Response, StatusCode};
 use serde_json::json;
 
@@ -58,25 +58,42 @@ impl JellyfinClient {
     /// `get_episode_timestamps` uses for Intro Skipper.
     pub async fn bonfire_list_profiles(&self) -> Result<Vec<BonfireProfile>> {
         let url = self.api_url("/plugins/profiles/list")?;
-        let resp = self.http.get(url).header("Authorization", self.auth_header()).send().await?;
+        let resp = self
+            .http
+            .get(url)
+            .header("Authorization", self.auth_header())
+            .send()
+            .await?;
         if resp.status() == StatusCode::NOT_FOUND {
             return Ok(Vec::new());
         }
-        Ok(ok_or_body_err(resp).await?.json::<Vec<BonfireProfile>>().await?)
+        Ok(ok_or_body_err(resp)
+            .await?
+            .json::<Vec<BonfireProfile>>()
+            .await?)
     }
 
     /// `pin` only needs to be `Some` when the target profile's own
     /// `requires_pin` is true — sent as `null`-omitted (not `null`) either
     /// way via `skip_serializing_if`, matching the request-body discipline
     /// this module uses throughout.
-    pub async fn bonfire_switch_profile(&self, profile_id: &str, pin: Option<&str>) -> Result<SwitchResult> {
+    pub async fn bonfire_switch_profile(
+        &self,
+        profile_id: &str,
+        pin: Option<&str>,
+    ) -> Result<SwitchResult> {
         let url = self.api_url("/plugins/profiles/switch")?;
         let mut body = json!({ "profileId": profile_id });
-        if let Some(p) = pin { body["pin"] = json!(p); }
-        let resp = self.http.post(url)
+        if let Some(p) = pin {
+            body["pin"] = json!(p);
+        }
+        let resp = self
+            .http
+            .post(url)
             .header("Authorization", self.auth_header())
             .json(&body)
-            .send().await?;
+            .send()
+            .await?;
         Ok(ok_or_body_err(resp).await?.json::<SwitchResult>().await?)
     }
 
@@ -85,73 +102,124 @@ impl JellyfinClient {
     /// don't document a distinct status code for "wrong PIN" specifically.
     pub async fn bonfire_verify_pin(&self, profile_id: &str, pin: &str) -> Result<()> {
         let url = self.api_url("/plugins/profiles/verify-pin")?;
-        let resp = self.http.post(url)
+        let resp = self
+            .http
+            .post(url)
             .header("Authorization", self.auth_header())
             .json(&json!({ "profileId": profile_id, "pin": pin }))
-            .send().await?;
+            .send()
+            .await?;
         ok_or_body_err(resp).await?;
         Ok(())
     }
 
-    pub async fn bonfire_create_profile(&self, req: &CreateProfileRequest) -> Result<CreateProfileResult> {
+    pub async fn bonfire_create_profile(
+        &self,
+        req: &CreateProfileRequest,
+    ) -> Result<CreateProfileResult> {
         let url = self.api_url("/plugins/profiles/create")?;
-        let resp = self.http.post(url)
+        let resp = self
+            .http
+            .post(url)
             .header("Authorization", self.auth_header())
             .json(req)
-            .send().await?;
-        Ok(ok_or_body_err(resp).await?.json::<CreateProfileResult>().await?)
+            .send()
+            .await?;
+        Ok(ok_or_body_err(resp)
+            .await?
+            .json::<CreateProfileResult>()
+            .await?)
     }
 
     pub async fn bonfire_update_profile(&self, req: &UpdateProfileRequest) -> Result<()> {
         let url = self.api_url("/plugins/profiles/update")?;
-        let resp = self.http.post(url)
+        let resp = self
+            .http
+            .post(url)
             .header("Authorization", self.auth_header())
             .json(req)
-            .send().await?;
+            .send()
+            .await?;
         ok_or_body_err(resp).await?;
         Ok(())
     }
 
     /// `master_pin` is required only when the calling master profile itself
     /// has a PIN set (same conditional shape as `switch_profile`'s own `pin`).
-    pub async fn bonfire_delete_profile(&self, profile_id: &str, master_pin: Option<&str>) -> Result<()> {
+    pub async fn bonfire_delete_profile(
+        &self,
+        profile_id: &str,
+        master_pin: Option<&str>,
+    ) -> Result<()> {
         let url = self.api_url("/plugins/profiles/delete")?;
         let mut body = json!({ "profileId": profile_id });
-        if let Some(p) = master_pin { body["masterPin"] = json!(p); }
-        let resp = self.http.post(url)
+        if let Some(p) = master_pin {
+            body["masterPin"] = json!(p);
+        }
+        let resp = self
+            .http
+            .post(url)
             .header("Authorization", self.auth_header())
             .json(&body)
-            .send().await?;
+            .send()
+            .await?;
         ok_or_body_err(resp).await?;
         Ok(())
     }
 
     pub async fn bonfire_list_libraries(&self) -> Result<Vec<BonfireLibrary>> {
         let url = self.api_url("/plugins/profiles/libraries")?;
-        let resp = self.http.get(url).header("Authorization", self.auth_header()).send().await?;
-        Ok(ok_or_body_err(resp).await?.json::<Vec<BonfireLibrary>>().await?)
+        let resp = self
+            .http
+            .get(url)
+            .header("Authorization", self.auth_header())
+            .send()
+            .await?;
+        Ok(ok_or_body_err(resp)
+            .await?
+            .json::<Vec<BonfireLibrary>>()
+            .await?)
     }
 
     pub async fn bonfire_list_devices(&self) -> Result<Vec<BonfireDevice>> {
         let url = self.api_url("/plugins/profiles/devices")?;
-        let resp = self.http.get(url).header("Authorization", self.auth_header()).send().await?;
-        Ok(ok_or_body_err(resp).await?.json::<Vec<BonfireDevice>>().await?)
+        let resp = self
+            .http
+            .get(url)
+            .header("Authorization", self.auth_header())
+            .send()
+            .await?;
+        Ok(ok_or_body_err(resp)
+            .await?
+            .json::<Vec<BonfireDevice>>()
+            .await?)
     }
 
     pub async fn bonfire_delete_device(&self, device_id: &str) -> Result<()> {
         let url = self.api_url("/plugins/profiles/devices/delete")?;
-        let resp = self.http.post(url)
+        let resp = self
+            .http
+            .post(url)
             .header("Authorization", self.auth_header())
             .json(&json!({ "deviceId": device_id }))
-            .send().await?;
+            .send()
+            .await?;
         ok_or_body_err(resp).await?;
         Ok(())
     }
 
     pub async fn bonfire_status(&self) -> Result<BonfireGroupStatus> {
         let url = self.api_url("/plugins/profiles/bonfire/status")?;
-        let resp = self.http.get(url).header("Authorization", self.auth_header()).send().await?;
-        Ok(ok_or_body_err(resp).await?.json::<BonfireGroupStatus>().await?)
+        let resp = self
+            .http
+            .get(url)
+            .header("Authorization", self.auth_header())
+            .send()
+            .await?;
+        Ok(ok_or_body_err(resp)
+            .await?
+            .json::<BonfireGroupStatus>()
+            .await?)
     }
 
     pub async fn bonfire_settings(
@@ -165,58 +233,98 @@ impl JellyfinClient {
             "hideMySubProfilesFromOthers": hide_my_sub_profiles_from_others,
             "hideOthersSubProfilesFromMe": hide_others_sub_profiles_from_me,
         });
-        if let Some(b) = allow_household_lan_bypass { body["allowHouseholdLanBypass"] = json!(b); }
-        let resp = self.http.post(url)
+        if let Some(b) = allow_household_lan_bypass {
+            body["allowHouseholdLanBypass"] = json!(b);
+        }
+        let resp = self
+            .http
+            .post(url)
             .header("Authorization", self.auth_header())
             .json(&body)
-            .send().await?;
+            .send()
+            .await?;
         ok_or_body_err(resp).await?;
         Ok(())
     }
 
     pub async fn bonfire_generate(&self) -> Result<BonfireGroupInfo> {
         let url = self.api_url("/plugins/profiles/bonfire/generate")?;
-        let resp = self.http.post(url).header("Authorization", self.auth_header()).send().await?;
-        Ok(ok_or_body_err(resp).await?.json::<BonfireGroupInfo>().await?)
+        let resp = self
+            .http
+            .post(url)
+            .header("Authorization", self.auth_header())
+            .send()
+            .await?;
+        Ok(ok_or_body_err(resp)
+            .await?
+            .json::<BonfireGroupInfo>()
+            .await?)
     }
 
     pub async fn bonfire_join(&self, code: &str) -> Result<BonfireJoinResult> {
         let url = self.api_url("/plugins/profiles/bonfire/join")?;
-        let resp = self.http.post(url)
+        let resp = self
+            .http
+            .post(url)
             .header("Authorization", self.auth_header())
             .json(&json!({ "code": code }))
-            .send().await?;
-        Ok(ok_or_body_err(resp).await?.json::<BonfireJoinResult>().await?)
+            .send()
+            .await?;
+        Ok(ok_or_body_err(resp)
+            .await?
+            .json::<BonfireJoinResult>()
+            .await?)
     }
 
     pub async fn bonfire_kick(&self, member_id: &str) -> Result<()> {
         let url = self.api_url("/plugins/profiles/bonfire/kick")?;
-        let resp = self.http.post(url)
+        let resp = self
+            .http
+            .post(url)
             .header("Authorization", self.auth_header())
             .json(&json!({ "memberId": member_id }))
-            .send().await?;
+            .send()
+            .await?;
         ok_or_body_err(resp).await?;
         Ok(())
     }
 
     pub async fn bonfire_leave(&self) -> Result<()> {
         let url = self.api_url("/plugins/profiles/bonfire/leave")?;
-        let resp = self.http.post(url).header("Authorization", self.auth_header()).send().await?;
+        let resp = self
+            .http
+            .post(url)
+            .header("Authorization", self.auth_header())
+            .send()
+            .await?;
         ok_or_body_err(resp).await?;
         Ok(())
     }
 
     pub async fn bonfire_delete_group(&self) -> Result<()> {
         let url = self.api_url("/plugins/profiles/bonfire/delete-group")?;
-        let resp = self.http.post(url).header("Authorization", self.auth_header()).send().await?;
+        let resp = self
+            .http
+            .post(url)
+            .header("Authorization", self.auth_header())
+            .send()
+            .await?;
         ok_or_body_err(resp).await?;
         Ok(())
     }
 
     pub async fn bonfire_get_preferences(&self) -> Result<BonfirePreferences> {
         let url = self.api_url("/plugins/profiles/preferences")?;
-        let resp = self.http.get(url).header("Authorization", self.auth_header()).send().await?;
-        Ok(ok_or_body_err(resp).await?.json::<BonfirePreferences>().await?)
+        let resp = self
+            .http
+            .get(url)
+            .header("Authorization", self.auth_header())
+            .send()
+            .await?;
+        Ok(ok_or_body_err(resp)
+            .await?
+            .json::<BonfirePreferences>()
+            .await?)
     }
 
     /// `switcher_mode` must be `"gate"` or `"native"` per the plugin's own
@@ -224,25 +332,39 @@ impl JellyfinClient {
     /// server's own 400 to raise, not ours to pre-empt.
     pub async fn bonfire_set_preferences(&self, switcher_mode: &str) -> Result<BonfirePreferences> {
         let url = self.api_url("/plugins/profiles/preferences")?;
-        let resp = self.http.post(url)
+        let resp = self
+            .http
+            .post(url)
             .header("Authorization", self.auth_header())
             .json(&json!({ "switcherMode": switcher_mode }))
-            .send().await?;
-        Ok(ok_or_body_err(resp).await?.json::<BonfirePreferences>().await?)
+            .send()
+            .await?;
+        Ok(ok_or_body_err(resp)
+            .await?
+            .json::<BonfirePreferences>()
+            .await?)
     }
 
     pub async fn bonfire_admin_mappings(&self) -> Result<AdminMappings> {
         let url = self.api_url("/plugins/profiles/admin/mappings")?;
-        let resp = self.http.get(url).header("Authorization", self.auth_header()).send().await?;
+        let resp = self
+            .http
+            .get(url)
+            .header("Authorization", self.auth_header())
+            .send()
+            .await?;
         Ok(ok_or_body_err(resp).await?.json::<AdminMappings>().await?)
     }
 
     pub async fn bonfire_admin_reset_pin(&self, profile_id: &str) -> Result<()> {
         let url = self.api_url("/plugins/profiles/admin/reset-pin")?;
-        let resp = self.http.post(url)
+        let resp = self
+            .http
+            .post(url)
             .header("Authorization", self.auth_header())
             .json(&json!({ "profileId": profile_id }))
-            .send().await?;
+            .send()
+            .await?;
         ok_or_body_err(resp).await?;
         Ok(())
     }
@@ -251,22 +373,39 @@ impl JellyfinClient {
     /// plugin's own default — not explicitly documented, and there's no way
     /// to confirm without a live admin-permissioned server; flagged here
     /// rather than assumed silently correct.
-    pub async fn bonfire_admin_set_profile_limit(&self, user_id: &str, max_profiles: Option<u32>) -> Result<()> {
+    pub async fn bonfire_admin_set_profile_limit(
+        &self,
+        user_id: &str,
+        max_profiles: Option<u32>,
+    ) -> Result<()> {
         let url = self.api_url("/plugins/profiles/admin/set-profile-limit")?;
         let mut body = json!({ "userId": user_id });
-        if let Some(m) = max_profiles { body["maxProfiles"] = json!(m); }
-        let resp = self.http.post(url)
+        if let Some(m) = max_profiles {
+            body["maxProfiles"] = json!(m);
+        }
+        let resp = self
+            .http
+            .post(url)
             .header("Authorization", self.auth_header())
             .json(&body)
-            .send().await?;
+            .send()
+            .await?;
         ok_or_body_err(resp).await?;
         Ok(())
     }
 
     pub async fn bonfire_admin_audit_logs(&self) -> Result<Vec<AuditLogEntry>> {
         let url = self.api_url("/plugins/profiles/admin/audit-logs")?;
-        let resp = self.http.get(url).header("Authorization", self.auth_header()).send().await?;
-        Ok(ok_or_body_err(resp).await?.json::<Vec<AuditLogEntry>>().await?)
+        let resp = self
+            .http
+            .get(url)
+            .header("Authorization", self.auth_header())
+            .send()
+            .await?;
+        Ok(ok_or_body_err(resp)
+            .await?
+            .json::<Vec<AuditLogEntry>>()
+            .await?)
     }
 }
 
@@ -275,6 +414,7 @@ impl JellyfinClient {
 /// source the same way poster/backdrop URLs already are elsewhere in this
 /// app, no client method needed for a plain GET with no auth header.
 pub fn bonfire_profile_image_url(client: &JellyfinClient, profile_id: &str) -> Result<url::Url> {
-    client.api_url(&format!("/plugins/profiles/image/{}", profile_id))
+    client
+        .api_url(&format!("/plugins/profiles/image/{}", profile_id))
         .map_err(|e| anyhow!("bonfire_profile_image_url: {e}"))
 }

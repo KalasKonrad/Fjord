@@ -25,13 +25,22 @@ use slint::{Global, SharedString};
 use crate::AppState;
 use crate::MainWindow;
 
-fn ss(s: &str) -> SharedString { SharedString::from(s) }
+fn ss(s: &str) -> SharedString {
+    SharedString::from(s)
+}
 
 pub(crate) fn update_stats_window(w: &MainWindow, s: &fjord_player::StatsData) {
     // VID IN: codec  ·  WxH  ·  fps (no pixel format — avoids elide on long pix_fmt strings)
     let vid_in = if s.width > 0 {
-        let codec = if s.video_codec.is_empty() { "?" } else { &s.video_codec };
-        format!("{}  ·  {}×{}  ·  {:.2} fps", codec, s.width, s.height, s.fps)
+        let codec = if s.video_codec.is_empty() {
+            "?"
+        } else {
+            &s.video_codec
+        };
+        format!(
+            "{}  ·  {}×{}  ·  {:.2} fps",
+            codec, s.width, s.height, s.fps
+        )
     } else {
         "Buffering…".into()
     };
@@ -39,8 +48,16 @@ pub(crate) fn update_stats_window(w: &MainWindow, s: &fjord_player::StatsData) {
     // VID OUT: WxH  ·  in_pix  →  out_pix  (carries pixel format info)
     let vid_out = if s.video_out_w > 0 {
         let scale = format!("{}×{}", s.video_out_w, s.video_out_h);
-        let in_fmt  = if s.video_pix_fmt.is_empty()     { String::new() } else { format!("  ·  {}", s.video_pix_fmt)     };
-        let out_fmt = if s.video_out_pix_fmt.is_empty() { String::new() } else { format!("  →  {}", s.video_out_pix_fmt) };
+        let in_fmt = if s.video_pix_fmt.is_empty() {
+            String::new()
+        } else {
+            format!("  ·  {}", s.video_pix_fmt)
+        };
+        let out_fmt = if s.video_out_pix_fmt.is_empty() {
+            String::new()
+        } else {
+            format!("  →  {}", s.video_out_pix_fmt)
+        };
         format!("{}{}{}", scale, in_fmt, out_fmt)
     } else {
         "—".into()
@@ -57,14 +74,17 @@ pub(crate) fn update_stats_window(w: &MainWindow, s: &fjord_player::StatsData) {
     // the two apart.
     let fmt_color = |prim: &str, gamma: &str, sig_peak: f64| -> String {
         let hdr = match gamma {
-            "pq"  => format!("  ·  HDR10 (peak {:.0} nits)", sig_peak * 100.0),
+            "pq" => format!("  ·  HDR10 (peak {:.0} nits)", sig_peak * 100.0),
             "hlg" => "  ·  HLG".into(),
-            _     => String::new(),
+            _ => String::new(),
         };
-        if prim.is_empty() && gamma.is_empty() { "—".into() }
-        else { format!("{}  ·  {}{}", prim, gamma, hdr) }
+        if prim.is_empty() && gamma.is_empty() {
+            "—".into()
+        } else {
+            format!("{}  ·  {}{}", prim, gamma, hdr)
+        }
     };
-    let color_in  = fmt_color(&s.video_primaries, &s.video_gamma, s.video_sig_peak);
+    let color_in = fmt_color(&s.video_primaries, &s.video_gamma, s.video_sig_peak);
     // CLR OUT: video-target-params is confirmed (2026-08-17, live-reported "the clr out is
     // just empty" + a direct empirical check) to always come back unavailable under
     // vo=libmpv — the property reflects a real VO's own swapchain target, and mpv never
@@ -80,21 +100,37 @@ pub(crate) fn update_stats_window(w: &MainWindow, s: &fjord_player::StatsData) {
     let color_out = if s.video_out_primaries.is_empty() && s.video_out_gamma.is_empty() {
         "n/a — not reported under this render path".into()
     } else {
-        fmt_color(&s.video_out_primaries, &s.video_out_gamma, s.video_out_sig_peak)
+        fmt_color(
+            &s.video_out_primaries,
+            &s.video_out_gamma,
+            s.video_out_sig_peak,
+        )
     };
 
     let hwdec = match s.hwdec_current.as_str() {
         "" | "no" => "CPU (software)".into(),
-        v         => v.to_string(),
+        v => v.to_string(),
     };
 
     let aud_in = {
-        let name = if !s.audio_codec_name.is_empty() { &s.audio_codec_name } else { &s.audio_codec };
+        let name = if !s.audio_codec_name.is_empty() {
+            &s.audio_codec_name
+        } else {
+            &s.audio_codec
+        };
         if name.is_empty() {
             "—".into()
         } else {
-            let ch  = if s.audio_channels.is_empty()  { String::new() } else { format!("  ·  {}", s.audio_channels) };
-            let sr  = if s.audio_samplerate == 0       { String::new() } else { format!("  ·  {} Hz", s.audio_samplerate) };
+            let ch = if s.audio_channels.is_empty() {
+                String::new()
+            } else {
+                format!("  ·  {}", s.audio_channels)
+            };
+            let sr = if s.audio_samplerate == 0 {
+                String::new()
+            } else {
+                format!("  ·  {} Hz", s.audio_samplerate)
+            };
             format!("{}{}{}", name, ch, sr)
         }
     };
@@ -106,14 +142,30 @@ pub(crate) fn update_stats_window(w: &MainWindow, s: &fjord_player::StatsData) {
         if passthrough {
             format!("{}  ·  passthrough  ({})", s.current_ao, s.audio_out_format)
         } else {
-            let fmt = if s.audio_out_format.is_empty()     { String::new() } else { format!("  ·  {}", s.audio_out_format) };
-            let ch  = if s.audio_out_channels.is_empty()   { String::new() } else { format!("  ·  {}", s.audio_out_channels) };
-            let sr  = if s.audio_out_samplerate == 0       { String::new() } else { format!("  ·  {} Hz", s.audio_out_samplerate) };
+            let fmt = if s.audio_out_format.is_empty() {
+                String::new()
+            } else {
+                format!("  ·  {}", s.audio_out_format)
+            };
+            let ch = if s.audio_out_channels.is_empty() {
+                String::new()
+            } else {
+                format!("  ·  {}", s.audio_out_channels)
+            };
+            let sr = if s.audio_out_samplerate == 0 {
+                String::new()
+            } else {
+                format!("  ·  {} Hz", s.audio_out_samplerate)
+            };
             format!("{}{}{}{}", s.current_ao, fmt, sr, ch)
         }
     };
 
-    let display = if s.display_fps > 0.0 { format!("{:.3} Hz", s.display_fps) } else { "—".into() };
+    let display = if s.display_fps > 0.0 {
+        format!("{:.3} Hz", s.display_fps)
+    } else {
+        "—".into()
+    };
 
     // video-sync is read back from mpv; vsync-ratio is only non-zero in display-sync modes.
     let vsync = match s.video_sync_mode.as_str() {
@@ -126,18 +178,25 @@ pub(crate) fn update_stats_window(w: &MainWindow, s: &fjord_player::StatsData) {
             }
         }
     };
-    let avsync  = format!("{:+.3}s", s.avsync);
+    let avsync = format!("{:+.3}s", s.avsync);
 
     // audio-speed-correction ≈ 0 when passthrough is active (can't resample);
     // large drift here with passthrough means the AO clock is unstable → dropout.
-    let speed = format!("A: {:+.6}  V: {:+.6}",
-        s.audio_speed_correction, s.video_speed_correction);
+    let speed = format!(
+        "A: {:+.6}  V: {:+.6}",
+        s.audio_speed_correction, s.video_speed_correction
+    );
 
-    let drop_ = format!("{} VO  ·  {} decoder  ·  {} mistimed",
-        s.dropped_frames, s.decoder_dropped, s.mistimed_frames);
+    let drop_ = format!(
+        "{} VO  ·  {} decoder  ·  {} mistimed",
+        s.dropped_frames, s.decoder_dropped, s.mistimed_frames
+    );
 
-    let bitrate = format!("V: {:.1} Mbps  A: {:.0} kbps",
-        s.video_bitrate / 1_000_000.0, s.audio_bitrate / 1_000.0);
+    let bitrate = format!(
+        "V: {:.1} Mbps  A: {:.0} kbps",
+        s.video_bitrate / 1_000_000.0,
+        s.audio_bitrate / 1_000.0
+    );
     // cache_state (cache-buffering-state) is "% until playback unpauses"
     // (cache-pause-wait, 1s by default) — NOT how full the real configured
     // buffer is, so it reads ~100% almost immediately during normal
@@ -145,7 +204,10 @@ pub(crate) fn update_stats_window(w: &MainWindow, s: &fjord_player::StatsData) {
     // sometimes-unavailable mpv guess — shown only when > 0) is the actual
     // seconds currently held.
     let cache = if s.cache_duration_secs > 0.0 {
-        format!("{}%  ·  {:.1}s buffered", s.cache_state, s.cache_duration_secs)
+        format!(
+            "{}%  ·  {:.1}s buffered",
+            s.cache_state, s.cache_duration_secs
+        )
     } else {
         format!("{}%", s.cache_state)
     };

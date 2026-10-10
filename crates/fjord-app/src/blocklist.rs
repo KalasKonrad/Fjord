@@ -25,7 +25,7 @@ use tracing::{debug, warn};
 use crate::config::FjordState;
 use crate::discover::{discover_toggle_blocklist, format_date_pretty, handle_seerr_error};
 use crate::keys::Action;
-use crate::{show_toast, AppState, BlocklistRow, MainWindow};
+use crate::{AppState, BlocklistRow, MainWindow, show_toast};
 
 const BLOCKLIST_PAGE_SIZE: u32 = 25;
 
@@ -34,20 +34,31 @@ fn blocklisted_by_pretty(item: &fjord_seerr::BlocklistItem) -> String {
 }
 
 fn blocklisted_at_pretty(item: &fjord_seerr::BlocklistItem) -> String {
-    item.created_at.as_deref().map(|s| format_date_pretty(&s[..s.len().min(10)])).unwrap_or_default()
+    item.created_at
+        .as_deref()
+        .map(|s| format_date_pretty(&s[..s.len().min(10)]))
+        .unwrap_or_default()
 }
 
 fn item_to_row(item: fjord_seerr::BlocklistItem) -> BlocklistRow {
     BlocklistRow {
         tmdb_id: item.tmdb_id as i32,
         media_type: item.media_type.as_str().into(),
-        title: item.title.clone().unwrap_or_else(|| format!("tmdb #{}", item.tmdb_id)).into(),
+        title: item
+            .title
+            .clone()
+            .unwrap_or_else(|| format!("tmdb #{}", item.tmdb_id))
+            .into(),
         blocklisted_by: blocklisted_by_pretty(&item).into(),
         blocklisted_at: blocklisted_at_pretty(&item).into(),
     }
 }
 
-pub(crate) fn open_blocklist_screen(state: Arc<Mutex<FjordState>>, ww: slint::Weak<MainWindow>, rt: tokio::runtime::Handle) {
+pub(crate) fn open_blocklist_screen(
+    state: Arc<Mutex<FjordState>>,
+    ww: slint::Weak<MainWindow>,
+    rt: tokio::runtime::Handle,
+) {
     let Some(client) = state.lock().unwrap().seerr_client.clone() else {
         show_toast(ww.clone(), "Not connected to Seerr".into());
         return;
@@ -77,7 +88,11 @@ pub(crate) fn open_blocklist_screen(state: Arc<Mutex<FjordState>>, ww: slint::We
     rt.spawn(async move {
         match client.get_blocklist(BLOCKLIST_PAGE_SIZE, 0).await {
             Ok(resp) => {
-                debug!("seerr: get_blocklist page 1 -> {} of {} total", resp.results.len(), resp.page_info.results);
+                debug!(
+                    "seerr: get_blocklist page 1 -> {} of {} total",
+                    resp.results.len(),
+                    resp.page_info.results
+                );
                 {
                     let mut s = state.lock().unwrap();
                     s.blocklist_skip = resp.results.len() as u32;
@@ -99,12 +114,22 @@ pub(crate) fn open_blocklist_screen(state: Arc<Mutex<FjordState>>, ww: slint::We
     });
 }
 
-pub(crate) fn load_more_blocklist(state: Arc<Mutex<FjordState>>, ww: slint::Weak<MainWindow>, rt: tokio::runtime::Handle) {
+pub(crate) fn load_more_blocklist(
+    state: Arc<Mutex<FjordState>>,
+    ww: slint::Weak<MainWindow>,
+    rt: tokio::runtime::Handle,
+) {
     let (client, skip) = {
         let mut s = state.lock().unwrap();
-        if s.blocklist_loading_more { return; }
-        if s.blocklist_skip >= s.blocklist_total_results && s.blocklist_total_results > 0 { return; }
-        let Some(client) = s.seerr_client.clone() else { return };
+        if s.blocklist_loading_more {
+            return;
+        }
+        if s.blocklist_skip >= s.blocklist_total_results && s.blocklist_total_results > 0 {
+            return;
+        }
+        let Some(client) = s.seerr_client.clone() else {
+            return;
+        };
         s.blocklist_loading_more = true;
         (client, s.blocklist_skip)
     };
@@ -112,7 +137,9 @@ pub(crate) fn load_more_blocklist(state: Arc<Mutex<FjordState>>, ww: slint::Weak
     let _ = slint::invoke_from_event_loop({
         let ww = ww.clone();
         move || {
-            if let Some(w) = ww.upgrade() { AppState::get(&w).set_blocklist_loading_more(true); }
+            if let Some(w) = ww.upgrade() {
+                AppState::get(&w).set_blocklist_loading_more(true);
+            }
         }
     });
 
@@ -121,7 +148,11 @@ pub(crate) fn load_more_blocklist(state: Arc<Mutex<FjordState>>, ww: slint::Weak
         state.lock().unwrap().blocklist_loading_more = false;
         match result {
             Ok(resp) => {
-                debug!("seerr: get_blocklist skip={skip} -> {} more, {} total", resp.results.len(), resp.page_info.results);
+                debug!(
+                    "seerr: get_blocklist skip={skip} -> {} more, {} total",
+                    resp.results.len(),
+                    resp.page_info.results
+                );
                 {
                     let mut s = state.lock().unwrap();
                     s.blocklist_skip = skip + resp.results.len() as u32;
@@ -140,10 +171,13 @@ pub(crate) fn load_more_blocklist(state: Arc<Mutex<FjordState>>, ww: slint::Weak
                         // back to it and extending appends onto the SAME
                         // live model instance — no already-shown row is
                         // torn down/reconstructed just to add a few more.
-                        if let Some(vm) = existing.as_any().downcast_ref::<VecModel<BlocklistRow>>() {
+                        if let Some(vm) = existing.as_any().downcast_ref::<VecModel<BlocklistRow>>()
+                        {
                             vm.extend(rows);
                         } else {
-                            let mut all: Vec<BlocklistRow> = (0..existing.row_count()).filter_map(|i| existing.row_data(i)).collect();
+                            let mut all: Vec<BlocklistRow> = (0..existing.row_count())
+                                .filter_map(|i| existing.row_data(i))
+                                .collect();
                             all.extend(rows);
                             g.set_blocklist_items(ModelRc::new(VecModel::from(all)));
                         }
@@ -155,20 +189,35 @@ pub(crate) fn load_more_blocklist(state: Arc<Mutex<FjordState>>, ww: slint::Weak
                 let _ = slint::invoke_from_event_loop({
                     let ww = ww.clone();
                     move || {
-                        if let Some(w) = ww.upgrade() { AppState::get(&w).set_blocklist_loading_more(false); }
+                        if let Some(w) = ww.upgrade() {
+                            AppState::get(&w).set_blocklist_loading_more(false);
+                        }
                     }
                 });
-                handle_seerr_error(&state, &ww, is_session_auth, "Couldn't load more of the blocklist", &e);
+                handle_seerr_error(
+                    &state,
+                    &ww,
+                    is_session_auth,
+                    "Couldn't load more of the blocklist",
+                    &e,
+                );
             }
         }
     });
 }
 
-pub(crate) fn remove_blocklist_row(state: Arc<Mutex<FjordState>>, ww: slint::Weak<MainWindow>, rt: tokio::runtime::Handle, index: i32) {
+pub(crate) fn remove_blocklist_row(
+    state: Arc<Mutex<FjordState>>,
+    ww: slint::Weak<MainWindow>,
+    rt: tokio::runtime::Handle,
+    index: i32,
+) {
     let Some(w) = ww.upgrade() else { return };
     let g = AppState::get(&w);
     let model = g.get_blocklist_items();
-    let Some(row) = model.row_data(index as usize) else { return };
+    let Some(row) = model.row_data(index as usize) else {
+        return;
+    };
     let tmdb_id = row.tmdb_id as i64;
     let media_type = row.media_type.to_string();
     let title = row.title.to_string();
@@ -182,8 +231,10 @@ pub(crate) fn remove_blocklist_row(state: Arc<Mutex<FjordState>>, ww: slint::Wea
         // Defensive fallback — this model is always constructed as a
         // VecModel by open_blocklist_screen/load_more_blocklist above, so
         // this should never actually trigger.
-        let kept: Vec<BlocklistRow> =
-            (0..model.row_count()).filter(|&i| i != index as usize).filter_map(|i| model.row_data(i)).collect();
+        let kept: Vec<BlocklistRow> = (0..model.row_count())
+            .filter(|&i| i != index as usize)
+            .filter_map(|i| model.row_data(i))
+            .collect();
         g.set_blocklist_items(ModelRc::new(VecModel::from(kept)));
     }
     {

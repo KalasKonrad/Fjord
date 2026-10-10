@@ -100,10 +100,10 @@
 //      discover::handle_key_calendar/handle_key_calendar_day_popup.
 // ─────────────────────────────────────────────────────────────────────────────
 
+use serde::{Deserialize, Serialize};
+use slint::{Global, Model, ModelRc, SharedString, VecModel};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use slint::{Global, Model, ModelRc, SharedString, VecModel};
-use serde::{Deserialize, Serialize};
 use tracing::{debug, warn};
 
 use crate::config::FjordState;
@@ -112,18 +112,18 @@ use crate::config::FjordState;
 // Slint encodes named keys as Unicode Private Use Area (PUA) codepoints.
 // These match i-slint-common/key_codes.rs exactly.
 pub mod key {
-    pub const BACKSPACE:  &str = "\u{0008}";
-    pub const RETURN:     &str = "\u{000a}";
-    pub const ESCAPE:     &str = "\u{001b}";
-    pub const UP:         &str = "\u{F700}";
-    pub const DOWN:       &str = "\u{F701}";
-    pub const LEFT:       &str = "\u{F702}";
-    pub const RIGHT:      &str = "\u{F703}";
+    pub const BACKSPACE: &str = "\u{0008}";
+    pub const RETURN: &str = "\u{000a}";
+    pub const ESCAPE: &str = "\u{001b}";
+    pub const UP: &str = "\u{F700}";
+    pub const DOWN: &str = "\u{F701}";
+    pub const LEFT: &str = "\u{F702}";
+    pub const RIGHT: &str = "\u{F703}";
     // Slint key codes (i-slint-common key_codes.rs) — text-field caret keys.
-    pub const DELETE:     &str = "\u{007f}";
-    pub const HOME:       &str = "\u{F729}";
-    pub const END:        &str = "\u{F72B}";
-    pub const F11:        &str = "\u{F70E}";
+    pub const DELETE: &str = "\u{007f}";
+    pub const HOME: &str = "\u{F729}";
+    pub const END: &str = "\u{F72B}";
+    pub const F11: &str = "\u{F70E}";
 }
 
 // ── Action ────────────────────────────────────────────────────────────────────
@@ -137,61 +137,61 @@ pub mod key {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Action {
     // ── Universal navigation ─────────────────────────────────────────────────
-    Confirm,          // Return — confirm / play / activate
-    Back,             // Escape / Backspace — go back / close
-    Up,               // UpArrow
-    Down,             // DownArrow
-    Left,             // LeftArrow
-    Right,            // RightArrow
-    SearchJump,       // / — focus the search field
+    Confirm,    // Return — confirm / play / activate
+    Back,       // Escape / Backspace — go back / close
+    Up,         // UpArrow
+    Down,       // DownArrow
+    Left,       // LeftArrow
+    Right,      // RightArrow
+    SearchJump, // / — focus the search field
 
     // ── Player-only ──────────────────────────────────────────────────────────
-    MinimizePlayer,   // Backspace (player) — close panel or minimize; Escape stops instead
+    MinimizePlayer, // Backspace (player) — close panel or minimize; Escape stops instead
 
     // ── Global tab / screen shortcuts ────────────────────────────────────────
-    NavHome,          // 1
-    NavMovies,        // 2
-    NavTV,            // 3
-    NavSettings,      // S (when not in player)
-    OpenBrowse,       // B
-    Fullscreen,       // F / F11
-    Quit,             // Ctrl+Q (plain q/Q opens the queue panel)
+    NavHome,     // 1
+    NavMovies,   // 2
+    NavTV,       // 3
+    NavSettings, // S (when not in player)
+    OpenBrowse,  // B
+    Fullscreen,  // F / F11
+    Quit,        // Ctrl+Q (plain q/Q opens the queue panel)
 
     // ── Card / item actions ──────────────────────────────────────────────────
-    OpenDetail,       // I — open detail or series screen
-    OpenContextMenu,  // C — context menu on focused card / episode
-    ResumePlayer,     // R — resume the background player
-    FocusFloatCard,   // N — focus the mini-player bar from any screen
+    OpenDetail,      // I — open detail or series screen
+    OpenContextMenu, // C — context menu on focused card / episode
+    ResumePlayer,    // R — resume the background player
+    FocusFloatCard,  // N — focus the mini-player bar from any screen
 
     // ── Player controls (active in player map) ───────────────────────────────
-    PausePlay,        // Space / K / P
-    SeekBackward,     // Left  (player)
-    SeekForward,      // Right (player)
-    SeekBackwardLong, // Shift+Left
-    SeekForwardLong,  // Shift+Right
-    VolumeUp,         // Up    (player)
-    VolumeDown,       // Down  (player)
-    Mute,             // M
-    ToggleStats,      // I (player — shadows OpenDetail)
-    PanelSubtitles,   // S (player — shadows NavSettings)
-    PanelAudio,       // A
-    PanelVideo,       // V
-    SeekToPercent(u8), // 0–9 → seek to 0%, 10%, …, 90% (player only)
-    NextChapter,       // .
-    PrevChapter,       // ,
-    SubDelayIncrease,  // z  (+100 ms, matching mpv default)
-    SubDelayDecrease,  // Z  (−100 ms, matching mpv default)
+    PausePlay,          // Space / K / P
+    SeekBackward,       // Left  (player)
+    SeekForward,        // Right (player)
+    SeekBackwardLong,   // Shift+Left
+    SeekForwardLong,    // Shift+Right
+    VolumeUp,           // Up    (player)
+    VolumeDown,         // Down  (player)
+    Mute,               // M
+    ToggleStats,        // I (player — shadows OpenDetail)
+    PanelSubtitles,     // S (player — shadows NavSettings)
+    PanelAudio,         // A
+    PanelVideo,         // V
+    SeekToPercent(u8),  // 0–9 → seek to 0%, 10%, …, 90% (player only)
+    NextChapter,        // .
+    PrevChapter,        // ,
+    SubDelayIncrease,   // z  (+100 ms, matching mpv default)
+    SubDelayDecrease,   // Z  (−100 ms, matching mpv default)
     AudioDelayIncrease, // x (+100 ms)
     AudioDelayDecrease, // X (−100 ms)
 
     // ── Playlist controls ────────────────────────────────────────────────────
-    PrevTrack,       // [ — prev track or restart current (music bar / player)
-    NextTrack,       // ] — next track (music bar / player)
-    ToggleShuffle,   // remappable — flip shuffle on/off
-    CycleRepeat,     // remappable — cycle Off → All → One → Off
-    OpenQueuePanel,  // q — open/close queue panel (audio playing, queue non-empty, or video player)
-    DeleteItem,      // Delete — remove focused item from playlist in queue panel
-    ToggleLyrics,    // L — show/hide lyrics overlay (only when lyrics-available)
+    PrevTrack,        // [ — prev track or restart current (music bar / player)
+    NextTrack,        // ] — next track (music bar / player)
+    ToggleShuffle,    // remappable — flip shuffle on/off
+    CycleRepeat,      // remappable — cycle Off → All → One → Off
+    OpenQueuePanel, // q — open/close queue panel (audio playing, queue non-empty, or video player)
+    DeleteItem,     // Delete — remove focused item from playlist in queue panel
+    ToggleLyrics,   // L — show/hide lyrics overlay (only when lyrics-available)
     ToggleNowPlaying, // m — open/close fullscreen Now Playing screen (audio playing only)
 }
 
@@ -204,10 +204,10 @@ pub enum Action {
 ///   `"f"`, `"shift+Left"`, `"ctrl+shift+f"`, `"Space"`, `"F11"`, etc.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct KeyCombo {
-    pub key:   String,
+    pub key: String,
     pub shift: bool,
-    pub ctrl:  bool,
-    pub alt:   bool,
+    pub ctrl: bool,
+    pub alt: bool,
 }
 
 /// A captured rebind that collided with another action's existing binding,
@@ -215,7 +215,7 @@ pub struct KeyCombo {
 /// (see `rebind_action`/`dispatch_keybinding_nav`'s own doc comments).
 #[derive(Debug, Clone)]
 pub(crate) struct PendingKeybindRebind {
-    pub fi:    i32,
+    pub fi: i32,
     pub combo: KeyCombo,
 }
 
@@ -239,7 +239,12 @@ impl KeyCombo {
     /// symbols/named keys — `to_lowercase()` only changes actual uppercase
     /// letters.
     pub fn new(key: impl Into<String>, shift: bool, ctrl: bool, alt: bool) -> Self {
-        Self { key: key.into().to_lowercase(), shift, ctrl, alt }
+        Self {
+            key: key.into().to_lowercase(),
+            shift,
+            ctrl,
+            alt,
+        }
     }
     pub fn plain(key: impl Into<String>) -> Self {
         Self::new(key, false, false, false)
@@ -253,20 +258,26 @@ impl KeyCombo {
 
 impl std::fmt::Display for KeyCombo {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.ctrl  { write!(f, "ctrl+")?;  }
-        if self.alt   { write!(f, "alt+")?;   }
-        if self.shift { write!(f, "shift+")?; }
+        if self.ctrl {
+            write!(f, "ctrl+")?;
+        }
+        if self.alt {
+            write!(f, "alt+")?;
+        }
+        if self.shift {
+            write!(f, "shift+")?;
+        }
         let name = match self.key.as_str() {
             k if k == key::BACKSPACE => "Backspace",
-            k if k == key::RETURN    => "Return",
-            k if k == key::ESCAPE    => "Escape",
-            k if k == key::UP        => "Up",
-            k if k == key::DOWN      => "Down",
-            k if k == key::LEFT      => "Left",
-            k if k == key::RIGHT     => "Right",
-            k if k == key::F11       => "F11",
-            " "                      => "Space",
-            k                        => k,
+            k if k == key::RETURN => "Return",
+            k if k == key::ESCAPE => "Escape",
+            k if k == key::UP => "Up",
+            k if k == key::DOWN => "Down",
+            k if k == key::LEFT => "Left",
+            k if k == key::RIGHT => "Right",
+            k if k == key::F11 => "F11",
+            " " => "Space",
+            k => k,
         };
         write!(f, "{}", name)
     }
@@ -279,18 +290,18 @@ impl TryFrom<String> for KeyCombo {
         let (mods, key_parts) = parts.split_at(parts.len().saturating_sub(1));
         let key_name = key_parts.first().copied().unwrap_or("");
         let mut shift = mods.contains(&"shift");
-        let ctrl  = mods.contains(&"ctrl");
-        let alt   = mods.contains(&"alt");
+        let ctrl = mods.contains(&"ctrl");
+        let alt = mods.contains(&"alt");
         let key = match key_name {
-            "Backspace"          => key::BACKSPACE.to_string(),
-            "Return" | "Enter"   => key::RETURN.to_string(),
-            "Escape" | "Esc"     => key::ESCAPE.to_string(),
-            "Up"                 => key::UP.to_string(),
-            "Down"               => key::DOWN.to_string(),
-            "Left"               => key::LEFT.to_string(),
-            "Right"              => key::RIGHT.to_string(),
-            "F11"                => key::F11.to_string(),
-            "Space"              => " ".to_string(),
+            "Backspace" => key::BACKSPACE.to_string(),
+            "Return" | "Enter" => key::RETURN.to_string(),
+            "Escape" | "Esc" => key::ESCAPE.to_string(),
+            "Up" => key::UP.to_string(),
+            "Down" => key::DOWN.to_string(),
+            "Left" => key::LEFT.to_string(),
+            "Right" => key::RIGHT.to_string(),
+            "F11" => key::F11.to_string(),
+            "Space" => " ".to_string(),
             k if k.chars().count() == 1 => {
                 // Migration (2026-08-08): an old-format single uppercase
                 // letter with no explicit "shift+" prefix — e.g. a bare
@@ -325,7 +336,14 @@ impl TryFrom<String> for KeyCombo {
                 // on, shift genuinely not held. Reconstructing shift there
                 // too would wrongly turn a real Ctrl+z binding into
                 // Ctrl+Shift+z.
-                if !shift && !ctrl && !alt && let Some(ch) = k.chars().next() && ch.is_uppercase() { shift = true; }
+                if !shift
+                    && !ctrl
+                    && !alt
+                    && let Some(ch) = k.chars().next()
+                    && ch.is_uppercase()
+                {
+                    shift = true;
+                }
                 k.to_string()
             }
             k => return Err(format!("unknown key: {k}")),
@@ -389,8 +407,9 @@ where
             let mut raw_by_combo: HashMap<KeyCombo, String> = HashMap::new();
 
             while let Some((raw_key, action)) = map.next_entry::<String, Action>()? {
-                let combo = KeyCombo::try_from(raw_key.clone())
-                    .map_err(|e| serde::de::Error::custom(format!("invalid key combo {raw_key:?}: {e}")))?;
+                let combo = KeyCombo::try_from(raw_key.clone()).map_err(|e| {
+                    serde::de::Error::custom(format!("invalid key combo {raw_key:?}: {e}"))
+                })?;
                 match raw_by_combo.get(&combo).cloned() {
                     Some(existing_raw) => {
                         let keep_new = raw_key.contains('+') && !existing_raw.contains('+');
@@ -438,7 +457,10 @@ pub struct Keybindings {
 
 /// Which KeyMap an action belongs to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ActionMap { Normal, Player }
+pub enum ActionMap {
+    Normal,
+    Player,
+}
 
 // ── AppMode ───────────────────────────────────────────────────────────────────
 
@@ -448,21 +470,52 @@ pub enum ActionMap { Normal, Player }
 /// `Login` is guarded before `active_mode` is called and never appears as a mode value.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AppMode {
-    ContextMenu, QueuePanel, NowPlaying, Person, Season, Series, Detail, Artist, Collection, Album,
-    RequestOptions, RequestDetail, CalendarDayPopup, Calendar, Blocklist, BonfireAdmin, Player, Library, Browse, Discover, Settings, Dashboard,
+    ContextMenu,
+    QueuePanel,
+    NowPlaying,
+    Person,
+    Season,
+    Series,
+    Detail,
+    Artist,
+    Collection,
+    Album,
+    RequestOptions,
+    RequestDetail,
+    CalendarDayPopup,
+    Calendar,
+    Blocklist,
+    BonfireAdmin,
+    Player,
+    Library,
+    Browse,
+    Discover,
+    Settings,
+    Dashboard,
 }
 
 fn active_mode(g: &crate::AppState) -> AppMode {
-    if g.get_show_context_menu()                                    { AppMode::ContextMenu }
-    else if g.get_show_queue_panel()                                { AppMode::QueuePanel }
-    else if g.get_show_now_playing() && g.get_is_audio_playing()    { AppMode::NowPlaying }
-    else if g.get_show_person()     && !g.get_is_playing()         { AppMode::Person }
-    else if g.get_show_detail()     && !g.get_is_playing()         { AppMode::Detail }
-    else if g.get_show_season()     && !g.get_is_playing()         { AppMode::Season }
-    else if g.get_show_series()     && !g.get_is_playing()         { AppMode::Series }
-    else if g.get_show_artist()     && !g.get_is_playing()         { AppMode::Artist }
-    else if g.get_show_collection() && !g.get_is_playing()         { AppMode::Collection }
-    else if g.get_show_album()      && !g.get_is_playing()         { AppMode::Album }
+    if g.get_show_context_menu() {
+        AppMode::ContextMenu
+    } else if g.get_show_queue_panel() {
+        AppMode::QueuePanel
+    } else if g.get_show_now_playing() && g.get_is_audio_playing() {
+        AppMode::NowPlaying
+    } else if g.get_show_person() && !g.get_is_playing() {
+        AppMode::Person
+    } else if g.get_show_detail() && !g.get_is_playing() {
+        AppMode::Detail
+    } else if g.get_show_season() && !g.get_is_playing() {
+        AppMode::Season
+    } else if g.get_show_series() && !g.get_is_playing() {
+        AppMode::Series
+    } else if g.get_show_artist() && !g.get_is_playing() {
+        AppMode::Artist
+    } else if g.get_show_collection() && !g.get_is_playing() {
+        AppMode::Collection
+    } else if g.get_show_album() && !g.get_is_playing() {
+        AppMode::Album
+    }
     // Checked ahead of RequestDetail so the modal captures all input while
     // open — show-request-options can only ever be true while already on
     // that screen, so there's no ordering conflict with it taking priority.
@@ -471,27 +524,43 @@ fn active_mode(g: &crate::AppState) -> AppMode {
     // backgrounded player via 'r' while the modal was open left it stuck
     // rendered on top of the fullscreen video, still eating all keyboard
     // input meant for playback).
-    else if g.get_show_request_options() && !g.get_is_playing()     { AppMode::RequestOptions }
-    else if g.get_show_request_detail() && !g.get_is_playing()     { AppMode::RequestDetail }
+    else if g.get_show_request_options() && !g.get_is_playing() {
+        AppMode::RequestOptions
+    } else if g.get_show_request_detail() && !g.get_is_playing() {
+        AppMode::RequestDetail
+    }
     // Calendar (2026-07-18, Watchlist + Release Calendar) — same tier and
     // !is_playing guard as RequestOptions/RequestDetail above, for the
     // identical reason (see that fix's own comment). DayPopup checked
     // first so it captures all input while open, same nesting shape as
     // RequestOptions-over-RequestDetail.
-    else if g.get_show_calendar_day_popup() && !g.get_is_playing()  { AppMode::CalendarDayPopup }
-    else if g.get_show_calendar() && !g.get_is_playing()            { AppMode::Calendar }
+    else if g.get_show_calendar_day_popup() && !g.get_is_playing() {
+        AppMode::CalendarDayPopup
+    } else if g.get_show_calendar() && !g.get_is_playing() {
+        AppMode::Calendar
+    }
     // Manage Blocklist (2026-08-06, Seerr Blocklist support) — same tier
     // and !is_playing guard as Calendar above, for the identical reason.
-    else if g.get_show_blocklist() && !g.get_is_playing()           { AppMode::Blocklist }
+    else if g.get_show_blocklist() && !g.get_is_playing() {
+        AppMode::Blocklist
+    }
     // Bonfire Admin (Phase 6, admin actions, 2026-09-04) — same tier and
     // !is_playing guard as Blocklist above, for the identical reason.
-    else if g.get_show_bonfire_admin() && !g.get_is_playing()       { AppMode::BonfireAdmin }
-    else if g.get_is_playing()                                      { AppMode::Player }
-    else if g.get_show_library()                                    { AppMode::Library }
-    else if g.get_show_browse()                                     { AppMode::Browse }
-    else if g.get_active_nav() == 6                                 { AppMode::Discover }
-    else if g.get_active_nav() == 10                                { AppMode::Settings }
-    else                                                            { AppMode::Dashboard }
+    else if g.get_show_bonfire_admin() && !g.get_is_playing() {
+        AppMode::BonfireAdmin
+    } else if g.get_is_playing() {
+        AppMode::Player
+    } else if g.get_show_library() {
+        AppMode::Library
+    } else if g.get_show_browse() {
+        AppMode::Browse
+    } else if g.get_active_nav() == 6 {
+        AppMode::Discover
+    } else if g.get_active_nav() == 10 {
+        AppMode::Settings
+    } else {
+        AppMode::Dashboard
+    }
 }
 
 // ── Default keybindings ───────────────────────────────────────────────────────
@@ -506,14 +575,14 @@ pub fn default_keybindings() -> Keybindings {
 fn default_normal_map() -> KeyMap {
     let mut m = KeyMap::new();
 
-    m.insert(KeyCombo::plain(key::ESCAPE),    Action::Back);
-    m.insert(KeyCombo::plain(key::BACKSPACE),  Action::Back);
-    m.insert(KeyCombo::plain(key::RETURN),     Action::Confirm);
-    m.insert(KeyCombo::plain(key::UP),         Action::Up);
-    m.insert(KeyCombo::plain(key::DOWN),       Action::Down);
-    m.insert(KeyCombo::plain(key::LEFT),       Action::Left);
-    m.insert(KeyCombo::plain(key::RIGHT),      Action::Right);
-    m.insert(KeyCombo::plain("/"),             Action::SearchJump);
+    m.insert(KeyCombo::plain(key::ESCAPE), Action::Back);
+    m.insert(KeyCombo::plain(key::BACKSPACE), Action::Back);
+    m.insert(KeyCombo::plain(key::RETURN), Action::Confirm);
+    m.insert(KeyCombo::plain(key::UP), Action::Up);
+    m.insert(KeyCombo::plain(key::DOWN), Action::Down);
+    m.insert(KeyCombo::plain(key::LEFT), Action::Left);
+    m.insert(KeyCombo::plain(key::RIGHT), Action::Right);
+    m.insert(KeyCombo::plain("/"), Action::SearchJump);
 
     // Single, shift-insensitive entry per letter (2026-08-08) — used to be
     // two ("f" and "F") to cover Shift/Caps Lock, which also meant the Key
@@ -522,29 +591,29 @@ fn default_normal_map() -> KeyMap {
     // second entry unnecessary: pressing the key with Shift held (or with
     // Caps Lock on, which KeyCombo::new's lower-casing makes indistinguishable
     // from not holding Shift at all) still resolves to this one entry.
-    m.insert(KeyCombo::plain("f"),             Action::Fullscreen);
-    m.insert(KeyCombo::plain(key::F11),        Action::Fullscreen);
+    m.insert(KeyCombo::plain("f"), Action::Fullscreen);
+    m.insert(KeyCombo::plain(key::F11), Action::Fullscreen);
     // Ctrl+Q quits. Plain q belongs to OpenQueuePanel (Phase 51) — before
     // CR10-4, plain-q Quit entries here were silently overwritten by the
     // queue-panel inserts below, leaving Quit with no binding at all.
     m.insert(KeyCombo::new("q", false, true, false), Action::Quit);
-    m.insert(KeyCombo::plain("b"),             Action::OpenBrowse);
-    m.insert(KeyCombo::plain("1"),             Action::NavHome);
-    m.insert(KeyCombo::plain("2"),             Action::NavMovies);
-    m.insert(KeyCombo::plain("3"),             Action::NavTV);
-    m.insert(KeyCombo::plain("s"),             Action::NavSettings);
+    m.insert(KeyCombo::plain("b"), Action::OpenBrowse);
+    m.insert(KeyCombo::plain("1"), Action::NavHome);
+    m.insert(KeyCombo::plain("2"), Action::NavMovies);
+    m.insert(KeyCombo::plain("3"), Action::NavTV);
+    m.insert(KeyCombo::plain("s"), Action::NavSettings);
 
-    m.insert(KeyCombo::plain("i"),             Action::OpenDetail);
-    m.insert(KeyCombo::plain("c"),             Action::OpenContextMenu);
-    m.insert(KeyCombo::plain("r"),             Action::ResumePlayer);
-    m.insert(KeyCombo::plain("n"),             Action::FocusFloatCard);
+    m.insert(KeyCombo::plain("i"), Action::OpenDetail);
+    m.insert(KeyCombo::plain("c"), Action::OpenContextMenu);
+    m.insert(KeyCombo::plain("r"), Action::ResumePlayer);
+    m.insert(KeyCombo::plain("n"), Action::FocusFloatCard);
 
-    m.insert(KeyCombo::plain("["),             Action::PrevTrack);
-    m.insert(KeyCombo::plain("]"),             Action::NextTrack);
-    m.insert(KeyCombo::plain("q"),             Action::OpenQueuePanel);
-    m.insert(KeyCombo::plain("\u{007f}"),      Action::DeleteItem); // Delete key
-    m.insert(KeyCombo::plain("l"),             Action::ToggleLyrics);
-    m.insert(KeyCombo::plain("m"),             Action::ToggleNowPlaying);
+    m.insert(KeyCombo::plain("["), Action::PrevTrack);
+    m.insert(KeyCombo::plain("]"), Action::NextTrack);
+    m.insert(KeyCombo::plain("q"), Action::OpenQueuePanel);
+    m.insert(KeyCombo::plain("\u{007f}"), Action::DeleteItem); // Delete key
+    m.insert(KeyCombo::plain("l"), Action::ToggleLyrics);
+    m.insert(KeyCombo::plain("m"), Action::ToggleNowPlaying);
 
     m
 }
@@ -552,27 +621,27 @@ fn default_normal_map() -> KeyMap {
 fn default_player_map() -> KeyMap {
     let mut m = KeyMap::new();
 
-    m.insert(KeyCombo::plain(key::BACKSPACE),  Action::MinimizePlayer);
+    m.insert(KeyCombo::plain(key::BACKSPACE), Action::MinimizePlayer);
 
-    m.insert(KeyCombo::plain(key::LEFT),       Action::SeekBackward);
-    m.insert(KeyCombo::plain(key::RIGHT),      Action::SeekForward);
-    m.insert(KeyCombo::shifted(key::LEFT),     Action::SeekBackwardLong);
-    m.insert(KeyCombo::shifted(key::RIGHT),    Action::SeekForwardLong);
-    m.insert(KeyCombo::plain(key::UP),         Action::VolumeUp);
-    m.insert(KeyCombo::plain(key::DOWN),       Action::VolumeDown);
+    m.insert(KeyCombo::plain(key::LEFT), Action::SeekBackward);
+    m.insert(KeyCombo::plain(key::RIGHT), Action::SeekForward);
+    m.insert(KeyCombo::shifted(key::LEFT), Action::SeekBackwardLong);
+    m.insert(KeyCombo::shifted(key::RIGHT), Action::SeekForwardLong);
+    m.insert(KeyCombo::plain(key::UP), Action::VolumeUp);
+    m.insert(KeyCombo::plain(key::DOWN), Action::VolumeDown);
 
-    m.insert(KeyCombo::plain(" "),             Action::PausePlay);
-    m.insert(KeyCombo::plain("k"),             Action::PausePlay);
-    m.insert(KeyCombo::plain("p"),             Action::PausePlay);
-    m.insert(KeyCombo::plain("m"),             Action::Mute);
+    m.insert(KeyCombo::plain(" "), Action::PausePlay);
+    m.insert(KeyCombo::plain("k"), Action::PausePlay);
+    m.insert(KeyCombo::plain("p"), Action::PausePlay);
+    m.insert(KeyCombo::plain("m"), Action::Mute);
 
-    m.insert(KeyCombo::plain("i"),             Action::ToggleStats);
-    m.insert(KeyCombo::plain("s"),             Action::PanelSubtitles);
-    m.insert(KeyCombo::plain("a"),             Action::PanelAudio);
-    m.insert(KeyCombo::plain("v"),             Action::PanelVideo);
+    m.insert(KeyCombo::plain("i"), Action::ToggleStats);
+    m.insert(KeyCombo::plain("s"), Action::PanelSubtitles);
+    m.insert(KeyCombo::plain("a"), Action::PanelAudio);
+    m.insert(KeyCombo::plain("v"), Action::PanelVideo);
 
-    m.insert(KeyCombo::plain("."),             Action::NextChapter);
-    m.insert(KeyCombo::plain(","),             Action::PrevChapter);
+    m.insert(KeyCombo::plain("."), Action::NextChapter);
+    m.insert(KeyCombo::plain(","), Action::PrevChapter);
 
     // Genuinely shift-SENSITIVE, unlike every plain letter above (matches
     // mpv's own convention: z/x increase, Shift+z/Shift+x decrease) — used
@@ -583,26 +652,26 @@ fn default_player_map() -> KeyMap {
     // correct: Caps Lock alone (no Shift held) would have produced the same
     // "Z" text and wrongly fired Decrease instead of Increase.
     // KeyCombo::shifted expresses the real intent directly.
-    m.insert(KeyCombo::plain("z"),             Action::SubDelayIncrease);
-    m.insert(KeyCombo::shifted("z"),           Action::SubDelayDecrease);
-    m.insert(KeyCombo::plain("x"),             Action::AudioDelayIncrease);
-    m.insert(KeyCombo::shifted("x"),           Action::AudioDelayDecrease);
+    m.insert(KeyCombo::plain("z"), Action::SubDelayIncrease);
+    m.insert(KeyCombo::shifted("z"), Action::SubDelayDecrease);
+    m.insert(KeyCombo::plain("x"), Action::AudioDelayIncrease);
+    m.insert(KeyCombo::shifted("x"), Action::AudioDelayDecrease);
 
-    m.insert(KeyCombo::plain("["),             Action::PrevTrack);
-    m.insert(KeyCombo::plain("]"),             Action::NextTrack);
-    m.insert(KeyCombo::plain("q"),             Action::OpenQueuePanel);
-    m.insert(KeyCombo::plain("l"),             Action::ToggleLyrics);
+    m.insert(KeyCombo::plain("["), Action::PrevTrack);
+    m.insert(KeyCombo::plain("]"), Action::NextTrack);
+    m.insert(KeyCombo::plain("q"), Action::OpenQueuePanel);
+    m.insert(KeyCombo::plain("l"), Action::ToggleLyrics);
 
-    m.insert(KeyCombo::plain("0"),             Action::SeekToPercent(0));
-    m.insert(KeyCombo::plain("1"),             Action::SeekToPercent(10));
-    m.insert(KeyCombo::plain("2"),             Action::SeekToPercent(20));
-    m.insert(KeyCombo::plain("3"),             Action::SeekToPercent(30));
-    m.insert(KeyCombo::plain("4"),             Action::SeekToPercent(40));
-    m.insert(KeyCombo::plain("5"),             Action::SeekToPercent(50));
-    m.insert(KeyCombo::plain("6"),             Action::SeekToPercent(60));
-    m.insert(KeyCombo::plain("7"),             Action::SeekToPercent(70));
-    m.insert(KeyCombo::plain("8"),             Action::SeekToPercent(80));
-    m.insert(KeyCombo::plain("9"),             Action::SeekToPercent(90));
+    m.insert(KeyCombo::plain("0"), Action::SeekToPercent(0));
+    m.insert(KeyCombo::plain("1"), Action::SeekToPercent(10));
+    m.insert(KeyCombo::plain("2"), Action::SeekToPercent(20));
+    m.insert(KeyCombo::plain("3"), Action::SeekToPercent(30));
+    m.insert(KeyCombo::plain("4"), Action::SeekToPercent(40));
+    m.insert(KeyCombo::plain("5"), Action::SeekToPercent(50));
+    m.insert(KeyCombo::plain("6"), Action::SeekToPercent(60));
+    m.insert(KeyCombo::plain("7"), Action::SeekToPercent(70));
+    m.insert(KeyCombo::plain("8"), Action::SeekToPercent(80));
+    m.insert(KeyCombo::plain("9"), Action::SeekToPercent(90));
 
     m
 }
@@ -617,51 +686,51 @@ pub fn remappable_actions() -> Vec<(Action, &'static str, ActionMap)> {
     use ActionMap::*;
     vec![
         // Normal map — navigation
-        (Action::Confirm,          "Confirm",           Normal),
-        (Action::Back,             "Back",              Normal),
-        (Action::Up,               "Up",                Normal),
-        (Action::Down,             "Down",              Normal),
-        (Action::Left,             "Left",              Normal),
-        (Action::Right,            "Right",             Normal),
-        (Action::SearchJump,       "Jump to Search",    Normal),
+        (Action::Confirm, "Confirm", Normal),
+        (Action::Back, "Back", Normal),
+        (Action::Up, "Up", Normal),
+        (Action::Down, "Down", Normal),
+        (Action::Left, "Left", Normal),
+        (Action::Right, "Right", Normal),
+        (Action::SearchJump, "Jump to Search", Normal),
         // Normal map — global shortcuts
-        (Action::NavHome,          "Nav: Home",         Normal),
-        (Action::NavMovies,        "Nav: Movies",       Normal),
-        (Action::NavTV,            "Nav: TV",           Normal),
-        (Action::NavSettings,      "Nav: Settings",     Normal),
-        (Action::OpenBrowse,       "Open Browse",       Normal),
-        (Action::Fullscreen,       "Toggle Fullscreen", Normal),
-        (Action::Quit,             "Quit",              Normal),
+        (Action::NavHome, "Nav: Home", Normal),
+        (Action::NavMovies, "Nav: Movies", Normal),
+        (Action::NavTV, "Nav: TV", Normal),
+        (Action::NavSettings, "Nav: Settings", Normal),
+        (Action::OpenBrowse, "Open Browse", Normal),
+        (Action::Fullscreen, "Toggle Fullscreen", Normal),
+        (Action::Quit, "Quit", Normal),
         // Normal map — item actions
-        (Action::OpenDetail,       "Open Detail",       Normal),
-        (Action::OpenContextMenu,  "Context Menu",      Normal),
-        (Action::ResumePlayer,     "Resume Player",     Normal),
-        (Action::FocusFloatCard,   "Focus Mini Player", Normal),
+        (Action::OpenDetail, "Open Detail", Normal),
+        (Action::OpenContextMenu, "Context Menu", Normal),
+        (Action::ResumePlayer, "Resume Player", Normal),
+        (Action::FocusFloatCard, "Focus Mini Player", Normal),
         // Player map
-        (Action::PausePlay,        "Pause / Play",      Player),
-        (Action::SeekBackward,     "Seek Back",         Player),
-        (Action::SeekForward,      "Seek Fwd",          Player),
-        (Action::SeekBackwardLong, "Seek Back (Long)",  Player),
-        (Action::SeekForwardLong,  "Seek Fwd (Long)",   Player),
-        (Action::VolumeUp,         "Volume Up",         Player),
-        (Action::VolumeDown,       "Volume Down",       Player),
-        (Action::Mute,             "Mute",              Player),
-        (Action::ToggleStats,      "Toggle Stats",      Player),
-        (Action::PanelSubtitles,   "Subtitles Panel",   Player),
-        (Action::PanelAudio,       "Audio Panel",       Player),
-        (Action::PanelVideo,       "Video Panel",       Player),
-        (Action::MinimizePlayer,   "Minimize Player",   Player),
-        (Action::NextChapter,       "Next Chapter",       Player),
-        (Action::PrevChapter,       "Prev Chapter",       Player),
-        (Action::SubDelayIncrease,  "Sub Delay +100ms",   Player),
-        (Action::SubDelayDecrease,  "Sub Delay −100ms",   Player),
-        (Action::AudioDelayIncrease,"Audio Delay +100ms", Player),
-        (Action::AudioDelayDecrease,"Audio Delay −100ms", Player),
+        (Action::PausePlay, "Pause / Play", Player),
+        (Action::SeekBackward, "Seek Back", Player),
+        (Action::SeekForward, "Seek Fwd", Player),
+        (Action::SeekBackwardLong, "Seek Back (Long)", Player),
+        (Action::SeekForwardLong, "Seek Fwd (Long)", Player),
+        (Action::VolumeUp, "Volume Up", Player),
+        (Action::VolumeDown, "Volume Down", Player),
+        (Action::Mute, "Mute", Player),
+        (Action::ToggleStats, "Toggle Stats", Player),
+        (Action::PanelSubtitles, "Subtitles Panel", Player),
+        (Action::PanelAudio, "Audio Panel", Player),
+        (Action::PanelVideo, "Video Panel", Player),
+        (Action::MinimizePlayer, "Minimize Player", Player),
+        (Action::NextChapter, "Next Chapter", Player),
+        (Action::PrevChapter, "Prev Chapter", Player),
+        (Action::SubDelayIncrease, "Sub Delay +100ms", Player),
+        (Action::SubDelayDecrease, "Sub Delay −100ms", Player),
+        (Action::AudioDelayIncrease, "Audio Delay +100ms", Player),
+        (Action::AudioDelayDecrease, "Audio Delay −100ms", Player),
         // Playlist controls (normal map — active when music is playing)
-        (Action::PrevTrack,         "Prev Track",         Normal),
-        (Action::NextTrack,         "Next Track",         Normal),
-        (Action::ToggleShuffle,     "Toggle Shuffle",     Normal),
-        (Action::CycleRepeat,       "Cycle Repeat",       Normal),
+        (Action::PrevTrack, "Prev Track", Normal),
+        (Action::NextTrack, "Next Track", Normal),
+        (Action::ToggleShuffle, "Toggle Shuffle", Normal),
+        (Action::CycleRepeat, "Cycle Repeat", Normal),
     ]
 }
 
@@ -671,36 +740,48 @@ pub fn remappable_actions() -> Vec<(Action, &'static str, ActionMap)> {
 pub fn key_display_name(key: &str) -> String {
     match key {
         k if k == key::BACKSPACE => "Bksp".into(),
-        k if k == key::RETURN    => "Enter".into(),
-        k if k == key::ESCAPE    => "Esc".into(),
-        k if k == key::UP        => "↑".into(),
-        k if k == key::DOWN      => "↓".into(),
-        k if k == key::LEFT      => "←".into(),
-        k if k == key::RIGHT     => "→".into(),
-        k if k == key::F11       => "F11".into(),
-        " "                      => "Space".into(),
-        k                        => k.into(),
+        k if k == key::RETURN => "Enter".into(),
+        k if k == key::ESCAPE => "Esc".into(),
+        k if k == key::UP => "↑".into(),
+        k if k == key::DOWN => "↓".into(),
+        k if k == key::LEFT => "←".into(),
+        k if k == key::RIGHT => "→".into(),
+        k if k == key::F11 => "F11".into(),
+        " " => "Space".into(),
+        k => k.into(),
     }
 }
 
 fn format_combo(combo: &KeyCombo) -> String {
     let key_name = key_display_name(&combo.key);
     let mut mods: Vec<&str> = vec![];
-    if combo.ctrl  { mods.push("Ctrl"); }
-    if combo.alt   { mods.push("Alt");  }
-    if combo.shift { mods.push("Shift");}
-    if mods.is_empty() { key_name }
-    else { format!("{}+{}", mods.join("+"), key_name) }
+    if combo.ctrl {
+        mods.push("Ctrl");
+    }
+    if combo.alt {
+        mods.push("Alt");
+    }
+    if combo.shift {
+        mods.push("Shift");
+    }
+    if mods.is_empty() {
+        key_name
+    } else {
+        format!("{}+{}", mods.join("+"), key_name)
+    }
 }
 
 /// All KeyCombos in `map` that resolve to `action`, formatted and joined with "  ".
 /// Returns "—" if the action has no binding.
 pub fn action_key_labels(action: &Action, map: &KeyMap) -> String {
-    let mut labels: Vec<String> = map.iter()
+    let mut labels: Vec<String> = map
+        .iter()
         .filter(|(_, v)| *v == action)
         .map(|(k, _)| format_combo(k))
         .collect();
-    if labels.is_empty() { return "—".into(); }
+    if labels.is_empty() {
+        return "—".into();
+    }
     labels.sort();
     labels.dedup();
     labels.join("  ")
@@ -708,18 +789,21 @@ pub fn action_key_labels(action: &Action, map: &KeyMap) -> String {
 
 // ── Keybinding row model ──────────────────────────────────────────────────────
 
-fn build_keybinding_entries(kb: &Keybindings)
-    -> (Vec<crate::KeyBindingEntry>, Vec<crate::KeyBindingEntry>)
-{
+fn build_keybinding_entries(
+    kb: &Keybindings,
+) -> (Vec<crate::KeyBindingEntry>, Vec<crate::KeyBindingEntry>) {
     let mut normal_rows = vec![];
     let mut player_rows = vec![];
 
     for (action, label, map) in remappable_actions() {
-        let the_map = match map { ActionMap::Normal => &kb.normal, ActionMap::Player => &kb.player };
+        let the_map = match map {
+            ActionMap::Normal => &kb.normal,
+            ActionMap::Player => &kb.player,
+        };
         let key_str = action_key_labels(&action, the_map);
         let entry = crate::KeyBindingEntry {
             action: SharedString::from(label),
-            key:    SharedString::from(key_str.as_str()),
+            key: SharedString::from(key_str.as_str()),
         };
         match map {
             ActionMap::Normal => normal_rows.push(entry),
@@ -747,14 +831,17 @@ pub(crate) fn push_keybinding_rows(window: &crate::MainWindow, state: &Arc<Mutex
 /// `on_keybinding_collision_confirmed` (main.rs), which calls this once the
 /// user has confirmed overwriting another action's binding.
 pub(crate) fn apply_rebind(
-    fi:        i32,
+    fi: i32,
     new_combo: KeyCombo,
-    state:     &Arc<Mutex<FjordState>>,
-    window:    &crate::MainWindow,
+    state: &Arc<Mutex<FjordState>>,
+    window: &crate::MainWindow,
 ) {
     let actions = remappable_actions();
     let Some((action, _, map)) = actions.get(fi as usize) else {
-        debug!("keybindings: apply_rebind fi={fi} out of range ({} actions), ignoring", actions.len());
+        debug!(
+            "keybindings: apply_rebind fi={fi} out of range ({} actions), ignoring",
+            actions.len()
+        );
         return;
     };
     debug!("keybindings: rebinding {action:?} ({map:?}) -> {new_combo:?}");
@@ -790,11 +877,11 @@ pub(crate) fn apply_rebind(
 /// happens in `on_keybinding_collision_confirmed` (main.rs) via
 /// `apply_rebind` above, once the user has explicitly said to overwrite it.
 fn rebind_action(
-    fi:     i32,
-    key:    &str,
-    shift:  bool,
-    ctrl:   bool,
-    state:  &Arc<Mutex<FjordState>>,
+    fi: i32,
+    key: &str,
+    shift: bool,
+    ctrl: bool,
+    state: &Arc<Mutex<FjordState>>,
     window: &crate::MainWindow,
 ) {
     let actions = remappable_actions();
@@ -804,7 +891,10 @@ fn rebind_action(
     g.set_keybinding_rebinding(false);
 
     if fi < 0 || fi as usize >= actions.len() {
-        debug!("keybindings: rebind_action fi={fi} out of range ({} actions), ignoring", actions.len());
+        debug!(
+            "keybindings: rebind_action fi={fi} out of range ({} actions), ignoring",
+            actions.len()
+        );
         return;
     }
 
@@ -828,10 +918,12 @@ fn rebind_action(
             ActionMap::Normal => &st.keybindings.normal,
             ActionMap::Player => &st.keybindings.player,
         };
-        existing_map.get(&new_combo)
+        existing_map
+            .get(&new_combo)
             .filter(|other| *other != action)
             .map(|other_action| {
-                actions.iter()
+                actions
+                    .iter()
                     .find(|(a, _, _)| a == other_action)
                     .map(|(_, label, _)| label.to_string())
                     .unwrap_or_else(|| format!("{other_action:?}"))
@@ -841,7 +933,10 @@ fn rebind_action(
     if let Some(other_label) = collision {
         let message = format!("{new_combo} is already bound to {other_label} — reassign it?");
         debug!("keybindings: collision — {message}");
-        state.lock().unwrap().pending_keybind_rebind = Some(PendingKeybindRebind { fi, combo: new_combo });
+        state.lock().unwrap().pending_keybind_rebind = Some(PendingKeybindRebind {
+            fi,
+            combo: new_combo,
+        });
         g.set_keybinding_collision_message(message.into());
         g.set_keybinding_collision_confirm_focused(0);
         g.set_show_keybinding_collision_confirm(true);
@@ -871,26 +966,33 @@ fn rebind_action(
 /// never needs to reason about letter case itself — only about whether an
 /// exact (key, shift) match exists.
 fn lookup_action(map: &KeyMap, combo: &KeyCombo) -> Option<Action> {
-    if let Some(a) = map.get(combo) { return Some(a.clone()); }
+    if let Some(a) = map.get(combo) {
+        return Some(a.clone());
+    }
     if combo.shift && is_printable(&combo.key) {
-        let unshifted = KeyCombo { shift: false, ..combo.clone() };
+        let unshifted = KeyCombo {
+            shift: false,
+            ..combo.clone()
+        };
         return map.get(&unshifted).cloned();
     }
     None
 }
 
 pub(crate) fn handle_key(
-    key:    &str,
-    shift:  bool,
-    ctrl:   bool,
+    key: &str,
+    shift: bool,
+    ctrl: bool,
     repeat: bool,
-    state:  &Arc<Mutex<FjordState>>,
+    state: &Arc<Mutex<FjordState>>,
     window: &crate::MainWindow,
-    _rt:    &tokio::runtime::Handle,
+    _rt: &tokio::runtime::Handle,
 ) -> bool {
     let g = crate::AppState::get(window);
 
-    if key.is_empty() { return false; }
+    if key.is_empty() {
+        return false;
+    }
 
     // On-screen alphanumeric keyboard (Bonfire Phase 3, 2026-08-22; full
     // rollout beyond Login, 2026-08-23) — checked before show_login (and
@@ -927,7 +1029,11 @@ pub(crate) fn handle_key(
         // next log capture will show directly whether a given keypress
         // ever reached this gate at all, or whether some field's native
         // focus swallowed it first.
-        debug!("onscreen-kb: key={key:?} target={:?} cursor={}", g.get_onscreen_keyboard_target(), g.get_onscreen_keyboard_cursor());
+        debug!(
+            "onscreen-kb: key={key:?} target={:?} cursor={}",
+            g.get_onscreen_keyboard_target(),
+            g.get_onscreen_keyboard_cursor()
+        );
         if ctrl && (key == "q" || key == "Q") {
             g.invoke_quit();
             return true;
@@ -967,7 +1073,10 @@ pub(crate) fn handle_key(
             // same U+E000-U+F8FF block as key::RIGHT's own \u{F703}) as
             // well as plain C0/C1 control characters (Tab, etc.) — neither
             // is a real character a text field should ever receive.
-            if key.chars().count() == 1 && !c.is_control() && !('\u{E000}'..='\u{F8FF}').contains(&c) {
+            if key.chars().count() == 1
+                && !c.is_control()
+                && !('\u{E000}'..='\u{F8FF}').contains(&c)
+            {
                 g.set_onscreen_keyboard_physical_key(key.into());
                 g.set_onscreen_keyboard_physical_key_seq(
                     g.get_onscreen_keyboard_physical_key_seq().wrapping_add(1),
@@ -1100,7 +1209,20 @@ pub(crate) fn handle_key(
                 }
                 return true;
             }
-            const PIN_VALS: [&str; 12] = ["1","2","3","4","5","6","7","8","9","backspace","0","confirm"];
+            const PIN_VALS: [&str; 12] = [
+                "1",
+                "2",
+                "3",
+                "4",
+                "5",
+                "6",
+                "7",
+                "8",
+                "9",
+                "backspace",
+                "0",
+                "confirm",
+            ];
             // Real bug, live-reported 2026-08-17: "cant use numpad or
             // numbers if you have a real keybord and backspace dont work."
             // Two gaps, both fixed together: (1) no arm at all accepted a
@@ -1114,13 +1236,16 @@ pub(crate) fn handle_key(
             // Digit keys sync the cursor to the matching on-screen key too,
             // same mouse-sync discipline as everywhere else in this app.
             match key {
-                key::LEFT   => g.set_profile_pin_cursor((g.get_profile_pin_cursor() - 1).max(0)),
-                key::RIGHT  => g.set_profile_pin_cursor((g.get_profile_pin_cursor() + 1).min(11)),
-                key::UP     => g.set_profile_pin_cursor((g.get_profile_pin_cursor() - 3).max(0)),
-                key::DOWN   => {
+                key::LEFT => g.set_profile_pin_cursor((g.get_profile_pin_cursor() - 1).max(0)),
+                key::RIGHT => g.set_profile_pin_cursor((g.get_profile_pin_cursor() + 1).min(11)),
+                key::UP => g.set_profile_pin_cursor((g.get_profile_pin_cursor() - 3).max(0)),
+                key::DOWN => {
                     let cursor = g.get_profile_pin_cursor();
-                    if cursor >= 9 { g.set_profile_pin_cancel_focused(true); }
-                    else { g.set_profile_pin_cursor((cursor + 3).min(11)); }
+                    if cursor >= 9 {
+                        g.set_profile_pin_cancel_focused(true);
+                    } else {
+                        g.set_profile_pin_cursor((cursor + 3).min(11));
+                    }
                 }
                 key::RETURN => {
                     if let Some(v) = PIN_VALS.get(g.get_profile_pin_cursor() as usize) {
@@ -1135,9 +1260,16 @@ pub(crate) fn handle_key(
                     g.set_show_profile_pin_entry(false);
                     g.set_profile_pin_error("".into());
                 }
-                digit if digit.len() == 1 && digit.chars().next().is_some_and(|c| c.is_ascii_digit()) => {
+                digit
+                    if digit.len() == 1
+                        && digit.chars().next().is_some_and(|c| c.is_ascii_digit()) =>
+                {
                     let d = digit.chars().next().unwrap();
-                    let cursor = if d == '0' { 10 } else { d.to_digit(10).unwrap() as i32 - 1 };
+                    let cursor = if d == '0' {
+                        10
+                    } else {
+                        d.to_digit(10).unwrap() as i32 - 1
+                    };
                     g.set_profile_pin_cursor(cursor);
                     g.invoke_profile_pin_key(digit.into());
                 }
@@ -1248,8 +1380,13 @@ pub(crate) fn handle_key(
         // instead of "the only row").
         let sections = g.get_profile_picker_sections();
         let section_count = sections.row_count() as i32;
-        let section = g.get_profile_picker_section().clamp(0, (section_count - 1).max(0));
-        let tile_count = sections.row_data(section as usize).map(|s| s.tiles.row_count() as i32).unwrap_or(0);
+        let section = g
+            .get_profile_picker_section()
+            .clamp(0, (section_count - 1).max(0));
+        let tile_count = sections
+            .row_data(section as usize)
+            .map(|s| s.tiles.row_count() as i32)
+            .unwrap_or(0);
         if key == key::RETURN {
             g.set_kb_activate_pulse(g.get_kb_activate_pulse().wrapping_add(1));
         }
@@ -1259,14 +1396,19 @@ pub(crate) fn handle_key(
                     g.set_profile_picker_back_focused(true);
                 } else {
                     let new_section = section - 1;
-                    let new_len = sections.row_data(new_section as usize).map(|s| s.tiles.row_count() as i32).unwrap_or(0);
+                    let new_len = sections
+                        .row_data(new_section as usize)
+                        .map(|s| s.tiles.row_count() as i32)
+                        .unwrap_or(0);
                     g.set_profile_picker_section(new_section);
                     // Preserve the current column, only pull it down if the
                     // section being landed on is shorter — Discover's own
                     // reclamp formula (`.min(...)`), not an unconditional
                     // jump to the last tile, which would discard the
                     // user's column on every vertical move.
-                    g.set_profile_picker_cursor(g.get_profile_picker_cursor().min((new_len - 1).max(0)));
+                    g.set_profile_picker_cursor(
+                        g.get_profile_picker_cursor().min((new_len - 1).max(0)),
+                    );
                 }
             }
             key::DOWN => {
@@ -1274,17 +1416,25 @@ pub(crate) fn handle_key(
                     g.set_profile_picker_quit_focused(true);
                 } else {
                     let new_section = section + 1;
-                    let new_len = sections.row_data(new_section as usize).map(|s| s.tiles.row_count() as i32).unwrap_or(0);
+                    let new_len = sections
+                        .row_data(new_section as usize)
+                        .map(|s| s.tiles.row_count() as i32)
+                        .unwrap_or(0);
                     g.set_profile_picker_section(new_section);
-                    g.set_profile_picker_cursor(g.get_profile_picker_cursor().min((new_len - 1).max(0)));
+                    g.set_profile_picker_cursor(
+                        g.get_profile_picker_cursor().min((new_len - 1).max(0)),
+                    );
                 }
             }
-            key::LEFT  => g.set_profile_picker_cursor((g.get_profile_picker_cursor() - 1).max(0)),
-            key::RIGHT => g.set_profile_picker_cursor((g.get_profile_picker_cursor() + 1).min((tile_count - 1).max(0))),
+            key::LEFT => g.set_profile_picker_cursor((g.get_profile_picker_cursor() - 1).max(0)),
+            key::RIGHT => g.set_profile_picker_cursor(
+                (g.get_profile_picker_cursor() + 1).min((tile_count - 1).max(0)),
+            ),
             key::RETURN => {
                 let cursor = g.get_profile_picker_cursor();
                 if let Some(sec) = sections.row_data(section as usize)
-                    && let Some(t) = sec.tiles.row_data(cursor as usize) {
+                    && let Some(t) = sec.tiles.row_data(cursor as usize)
+                {
                     g.invoke_profile_picker_select(t.user_id);
                 }
             }
@@ -1359,9 +1509,11 @@ pub(crate) fn handle_key(
             // account-picker-cancelable's own doc comment for why it's
             // deliberately absent at cold startup.
             key::UP if g.get_account_picker_cancelable() => g.set_account_picker_back_focused(true),
-            key::DOWN  => g.set_account_picker_quit_focused(true),
-            key::LEFT  => g.set_account_picker_cursor((g.get_account_picker_cursor() - 1).max(0)),
-            key::RIGHT => g.set_account_picker_cursor((g.get_account_picker_cursor() + 1).min(count)),
+            key::DOWN => g.set_account_picker_quit_focused(true),
+            key::LEFT => g.set_account_picker_cursor((g.get_account_picker_cursor() - 1).max(0)),
+            key::RIGHT => {
+                g.set_account_picker_cursor((g.get_account_picker_cursor() + 1).min(count))
+            }
             key::RETURN => {
                 let cursor = g.get_account_picker_cursor();
                 if cursor == count {
@@ -1388,9 +1540,15 @@ pub(crate) fn handle_key(
             g.set_kb_activate_pulse(g.get_kb_activate_pulse().wrapping_add(1));
         }
         match key {
-            key::UP     => g.set_sidebar_profile_menu_focused((g.get_sidebar_profile_menu_focused() - 1).max(0)),
-            key::DOWN   => g.set_sidebar_profile_menu_focused((g.get_sidebar_profile_menu_focused() + 1).min(count - 1)),
-            key::RETURN => g.invoke_sidebar_profile_menu_action(g.get_sidebar_profile_menu_focused()),
+            key::UP => g.set_sidebar_profile_menu_focused(
+                (g.get_sidebar_profile_menu_focused() - 1).max(0),
+            ),
+            key::DOWN => g.set_sidebar_profile_menu_focused(
+                (g.get_sidebar_profile_menu_focused() + 1).min(count - 1),
+            ),
+            key::RETURN => {
+                g.invoke_sidebar_profile_menu_action(g.get_sidebar_profile_menu_focused())
+            }
             key::ESCAPE | key::BACKSPACE => {
                 g.set_show_sidebar_profile_menu(false);
                 window.invoke_grab_keyboard_focus();
@@ -1493,7 +1651,11 @@ pub(crate) fn handle_key(
         }
         match zone {
             -1 => match key {
-                key::DOWN => if let Some(n) = next_zone() { g.set_connect_seerr_zone(n); },
+                key::DOWN => {
+                    if let Some(n) = next_zone() {
+                        g.set_connect_seerr_zone(n);
+                    }
+                }
                 key::RETURN => {
                     g.set_show_connect_seerr(false);
                     g.set_show_onscreen_keyboard(false);
@@ -1504,8 +1666,16 @@ pub(crate) fn handle_key(
                 _ => {}
             },
             1 => match key {
-                key::UP => if let Some(p) = prev_zone() { g.set_connect_seerr_zone(p); },
-                key::DOWN => if let Some(n) = next_zone() { g.set_connect_seerr_zone(n); },
+                key::UP => {
+                    if let Some(p) = prev_zone() {
+                        g.set_connect_seerr_zone(p);
+                    }
+                }
+                key::DOWN => {
+                    if let Some(n) = next_zone() {
+                        g.set_connect_seerr_zone(n);
+                    }
+                }
                 key::LEFT => {
                     let m = g.get_connect_seerr_method();
                     g.set_connect_seerr_method((m + 3) % 4);
@@ -1519,8 +1689,16 @@ pub(crate) fn handle_key(
                 _ => {}
             },
             z if z >= 2 && zones.last() == Some(&z) => match key {
-                key::UP => if let Some(p) = prev_zone() { g.set_connect_seerr_zone(p); },
-                key::DOWN => if let Some(n) = next_zone() { g.set_connect_seerr_zone(n); },
+                key::UP => {
+                    if let Some(p) = prev_zone() {
+                        g.set_connect_seerr_zone(p);
+                    }
+                }
+                key::DOWN => {
+                    if let Some(n) = next_zone() {
+                        g.set_connect_seerr_zone(n);
+                    }
+                }
                 // Enter has no Rust-side arm here — the actual submit/get-
                 // code call needs live LineEdit.text values Rust can't read
                 // directly, same "Rust can only bump kb-activate-pulse, a
@@ -1656,16 +1834,22 @@ pub(crate) fn handle_key(
         // The real (server-reported) cap, not a hardcoded 5 — see
         // profile_edit.rs::open_manage_profiles_screen's own doc comment on
         // manage-profiles-max-sub-profiles for why "5" alone was wrong.
-        let add_shown  = list_count < g.get_manage_profiles_max_sub_profiles();
-        let max_cursor = if add_shown { list_count } else { (list_count - 1).max(0) };
+        let add_shown = list_count < g.get_manage_profiles_max_sub_profiles();
+        let max_cursor = if add_shown {
+            list_count
+        } else {
+            (list_count - 1).max(0)
+        };
         if key == key::RETURN {
             g.set_kb_activate_pulse(g.get_kb_activate_pulse().wrapping_add(1));
         }
         match key {
             // 2026-08-21, part of the close-button reachability fix above.
-            key::UP    => g.set_manage_profiles_close_focused(true),
-            key::LEFT  => g.set_manage_profiles_cursor((g.get_manage_profiles_cursor() - 1).max(0)),
-            key::RIGHT => g.set_manage_profiles_cursor((g.get_manage_profiles_cursor() + 1).min(max_cursor)),
+            key::UP => g.set_manage_profiles_close_focused(true),
+            key::LEFT => g.set_manage_profiles_cursor((g.get_manage_profiles_cursor() - 1).max(0)),
+            key::RIGHT => {
+                g.set_manage_profiles_cursor((g.get_manage_profiles_cursor() + 1).min(max_cursor))
+            }
             key::RETURN => {
                 let cursor = g.get_manage_profiles_cursor();
                 if add_shown && cursor == list_count {
@@ -1696,9 +1880,13 @@ pub(crate) fn handle_key(
         // needed for that, matching every other on-screen-keyboard consumer
         // in this app; a raw letter key typed before that is silently
         // swallowed by this tier's own unconditional `return true`).
-        debug!("bonfire_group: key={key:?} zone={} is_owner={} is_member={} onscreen_kb_open={}",
-            g.get_bonfire_group_zone(), g.get_bonfire_group_is_owner(), g.get_bonfire_group_is_member(),
-            g.get_show_onscreen_keyboard());
+        debug!(
+            "bonfire_group: key={key:?} zone={} is_owner={} is_member={} onscreen_kb_open={}",
+            g.get_bonfire_group_zone(),
+            g.get_bonfire_group_is_owner(),
+            g.get_bonfire_group_is_member(),
+            g.get_show_onscreen_keyboard()
+        );
         if ctrl && (key == "q" || key == "Q") {
             g.invoke_quit();
             return true;
@@ -1708,7 +1896,7 @@ pub(crate) fn handle_key(
         // delete-confirm gate; checked before everything else in this tier.
         if g.get_show_bonfire_kick_confirm() {
             match key {
-                key::LEFT  => g.set_bonfire_kick_confirm_focused(0),
+                key::LEFT => g.set_bonfire_kick_confirm_focused(0),
                 key::RIGHT => g.set_bonfire_kick_confirm_focused(1),
                 key::RETURN => {
                     if g.get_bonfire_kick_confirm_focused() == 1 {
@@ -1723,7 +1911,7 @@ pub(crate) fn handle_key(
         }
         if g.get_show_bonfire_leave_confirm() {
             match key {
-                key::LEFT  => g.set_bonfire_leave_confirm_focused(0),
+                key::LEFT => g.set_bonfire_leave_confirm_focused(0),
                 key::RIGHT => g.set_bonfire_leave_confirm_focused(1),
                 key::RETURN => {
                     if g.get_bonfire_leave_confirm_focused() == 1 {
@@ -1738,7 +1926,7 @@ pub(crate) fn handle_key(
         }
         if g.get_show_bonfire_delete_group_confirm() {
             match key {
-                key::LEFT  => g.set_bonfire_delete_group_confirm_focused(0),
+                key::LEFT => g.set_bonfire_delete_group_confirm_focused(0),
                 key::RIGHT => g.set_bonfire_delete_group_confirm_focused(1),
                 key::RETURN => {
                     if g.get_bonfire_delete_group_confirm_focused() == 1 {
@@ -1753,7 +1941,7 @@ pub(crate) fn handle_key(
         }
         if g.get_show_bonfire_lan_bypass_confirm() {
             match key {
-                key::LEFT  => g.set_bonfire_lan_bypass_confirm_focused(0),
+                key::LEFT => g.set_bonfire_lan_bypass_confirm_focused(0),
                 key::RIGHT => g.set_bonfire_lan_bypass_confirm_focused(1),
                 key::RETURN => {
                     if g.get_bonfire_lan_bypass_confirm_focused() == 1 {
@@ -1796,12 +1984,12 @@ pub(crate) fn handle_key(
         // Computed once here since both the BACKSPACE check and the
         // printable-char fallback below need `join_base` too, not just the
         // RETURN dispatch.
-        let is_owner  = g.get_bonfire_group_is_owner();
+        let is_owner = g.get_bonfire_group_is_owner();
         let is_member = g.get_bonfire_group_is_member();
         let n_members = g.get_bonfire_group_owned_members().row_count() as i32;
-        let host_count  = if is_owner { n_members + 2 } else { 1 };
-        let join_base   = host_count;
-        let join_count  = if is_member { 1 } else { 2 };
+        let host_count = if is_owner { n_members + 2 } else { 1 };
+        let join_base = host_count;
+        let join_count = if is_member { 1 } else { 2 };
         let toggle_base = join_base + join_count;
 
         if key == key::BACKSPACE {
@@ -1831,17 +2019,20 @@ pub(crate) fn handle_key(
             // -1 (the floating "✕" button) sits above zone 0 in every
             // state, matching every other master-only screen's own
             // Back-button convention.
-            key::UP => {
-                match zones.iter().position(|&z| z == zone) {
-                    Some(0) | None => g.set_bonfire_group_zone(-1),
-                    Some(pos) => g.set_bonfire_group_zone(zones[pos - 1]),
-                }
-            }
+            key::UP => match zones.iter().position(|&z| z == zone) {
+                Some(0) | None => g.set_bonfire_group_zone(-1),
+                Some(pos) => g.set_bonfire_group_zone(zones[pos - 1]),
+            },
             key::DOWN => {
                 if zone == -1 {
-                    if let Some(&first) = zones.first() { g.set_bonfire_group_zone(first); }
+                    if let Some(&first) = zones.first() {
+                        g.set_bonfire_group_zone(first);
+                    }
                 } else if let Some(pos) = zones.iter().position(|&z| z == zone)
-                    && pos + 1 < zones.len() { g.set_bonfire_group_zone(zones[pos + 1]); }
+                    && pos + 1 < zones.len()
+                {
+                    g.set_bonfire_group_zone(zones[pos + 1]);
+                }
             }
             key::RETURN => {
                 if zone == -1 {
@@ -1853,7 +2044,10 @@ pub(crate) fn handle_key(
                         if zone == 0 {
                             // Code display — purely informational.
                         } else if zone <= n_members {
-                            if let Some(m) = g.get_bonfire_group_owned_members().row_data((zone - 1) as usize) {
+                            if let Some(m) = g
+                                .get_bonfire_group_owned_members()
+                                .row_data((zone - 1) as usize)
+                            {
                                 g.set_bonfire_kick_target_id(m.user_id);
                                 g.set_bonfire_kick_target_name(m.username);
                                 g.set_bonfire_kick_confirm_focused(0);
@@ -1946,7 +2140,9 @@ pub(crate) fn handle_key(
             }
             // Caret keys in the join-code field (2026-10-05) — this screen
             // only moves between zones with Up/Down, so Left/Right are free.
-            k if !is_member && zone == join_base && caret_key(&crate::text_field::JOIN_CODE, k, &g) => {}
+            k if !is_member
+                && zone == join_base
+                && caret_key(&crate::text_field::JOIN_CODE, k, &g) => {}
             k if !is_member && zone == join_base && k == key::DELETE => {
                 crate::text_field::JOIN_CODE.delete(&g);
             }
@@ -2017,7 +2213,9 @@ pub(crate) fn handle_key(
         g.invoke_quit();
         return true;
     }
-    if g.get_show_connecting() { return true; }
+    if g.get_show_connecting() {
+        return true;
+    }
     if g.get_show_offline() {
         // Bump the same central press-pulse counter as the main RETURN handler
         // below (which this block returns before ever reaching) — otherwise
@@ -2028,7 +2226,7 @@ pub(crate) fn handle_key(
             g.set_kb_activate_pulse(g.get_kb_activate_pulse().wrapping_add(1));
         }
         match key {
-            key::LEFT  => g.set_offline_focused((g.get_offline_focused() + 2) % 3),
+            key::LEFT => g.set_offline_focused((g.get_offline_focused() + 2) % 3),
             key::RIGHT => g.set_offline_focused((g.get_offline_focused() + 1) % 3),
             key::RETURN => match g.get_offline_focused() {
                 0 => g.invoke_retry_connection(),
@@ -2073,14 +2271,16 @@ pub(crate) fn handle_key(
     // Back/Escape (cancel the pending load) and Quit.
     if g.get_app_content_loading() {
         let cancel = key == key::ESCAPE || key == key::BACKSPACE;
-        let quit   = ctrl && (key == "q" || key == "Q");
+        let quit = ctrl && (key == "q" || key == "Q");
         if cancel || quit {
             g.set_app_content_loading(false);
             g.set_app_loading_progress(0.0);
             // Clear both IDs so any still-running fetch tasks see a stale check and exit.
             g.set_detail_id("".into());
             g.set_series_id("".into());
-            if quit { g.invoke_quit(); }
+            if quit {
+                g.invoke_quit();
+            }
         }
         return true; // swallow all keys during loading
     }
@@ -2092,7 +2292,9 @@ pub(crate) fn handle_key(
             g.set_keybinding_rebinding(false);
         } else {
             let fi = g.get_keybinding_focused();
-            debug!("keybindings: rebind capture key={key:?} shift={shift} ctrl={ctrl} for row {fi}");
+            debug!(
+                "keybindings: rebind capture key={key:?} shift={shift} ctrl={ctrl} for row {fi}"
+            );
             drop(g);
             rebind_action(fi, key, shift, ctrl, state, window);
         }
@@ -2103,14 +2305,16 @@ pub(crate) fn handle_key(
     if key == "\t" && g.get_show_library() && !g.get_library_header_focused() {
         let focused = g.get_library_sort_focused();
         g.set_library_sort_focused(!focused);
-        if !focused { g.set_library_sort_cursor(sort_bar_init_cursor(&g)); }
+        if !focused {
+            g.set_library_sort_cursor(sort_bar_init_cursor(&g));
+        }
         return true;
     }
 
     // Key → Action lookup. KeyCombo::new lower-cases key, so Caps Lock never
     // affects which binding this resolves to — only the physical Shift key
     // state (shift, reported separately by Slint) does.
-    let combo     = KeyCombo::new(key, shift, ctrl, false);
+    let combo = KeyCombo::new(key, shift, ctrl, false);
     let in_player = g.get_is_playing();
     let action: Option<Action> = {
         let s = state.lock().unwrap();
@@ -2162,14 +2366,38 @@ pub(crate) fn handle_key(
     // were missing from this list, so 'r' could yank the user into the
     // fullscreen player mid-request-flow.
     if action == Some(Action::ResumePlayer)
-        && !matches!(mode, AppMode::Player | AppMode::Person | AppMode::Season | AppMode::Detail | AppMode::Artist | AppMode::Collection | AppMode::Album | AppMode::ContextMenu | AppMode::QueuePanel | AppMode::NowPlaying | AppMode::RequestDetail | AppMode::RequestOptions | AppMode::Calendar | AppMode::CalendarDayPopup | AppMode::Blocklist | AppMode::BonfireAdmin)
+        && !matches!(
+            mode,
+            AppMode::Player
+                | AppMode::Person
+                | AppMode::Season
+                | AppMode::Detail
+                | AppMode::Artist
+                | AppMode::Collection
+                | AppMode::Album
+                | AppMode::ContextMenu
+                | AppMode::QueuePanel
+                | AppMode::NowPlaying
+                | AppMode::RequestDetail
+                | AppMode::RequestOptions
+                | AppMode::Calendar
+                | AppMode::CalendarDayPopup
+                | AppMode::Blocklist
+                | AppMode::BonfireAdmin
+        )
     {
         let g = crate::AppState::get(window);
-        if g.get_has_background_player() { g.invoke_resume_player(); return true; }
+        if g.get_has_background_player() {
+            g.invoke_resume_player();
+            return true;
+        }
     }
 
     // N: focus the mini-player bar from any non-player screen.
-    if action == Some(Action::FocusFloatCard) && mode != AppMode::Player && mode != AppMode::ContextMenu {
+    if action == Some(Action::FocusFloatCard)
+        && mode != AppMode::Player
+        && mode != AppMode::ContextMenu
+    {
         let g = crate::AppState::get(window);
         if g.get_has_background_player() && !g.get_is_playing() {
             g.set_float_card_focused(0);
@@ -2192,11 +2420,19 @@ pub(crate) fn handle_key(
             g.set_queue_panel_cursor(0);
             let items = g.get_queue_items();
             for i in 0..items.row_count() {
-                if let Some(e) = items.row_data(i) && e.is_current { g.set_queue_panel_cursor(i as i32); break; }
+                if let Some(e) = items.row_data(i)
+                    && e.is_current
+                {
+                    g.set_queue_panel_cursor(i as i32);
+                    break;
+                }
             }
             g.set_show_queue_panel(true);
         } else {
-            crate::show_toast(slint::ComponentHandle::as_weak(window), "Queue is empty".to_string());
+            crate::show_toast(
+                slint::ComponentHandle::as_weak(window),
+                "Queue is empty".to_string(),
+            );
         }
         return true;
     }
@@ -2220,13 +2456,30 @@ pub(crate) fn handle_key(
     // Global playlist controls when audio is playing (fire from any mode except ContextMenu).
     if mode != AppMode::ContextMenu {
         let g = crate::AppState::get(window);
-        if g.get_is_audio_playing() && let Some(ref a) = action {
+        if g.get_is_audio_playing()
+            && let Some(ref a) = action
+        {
             match a {
-                Action::PrevTrack      => { g.invoke_queue_prev_track();   return true; }
-                Action::NextTrack      => { g.invoke_queue_next_track();   return true; }
-                Action::ToggleShuffle  => { g.invoke_toggle_shuffle();     return true; }
-                Action::CycleRepeat    => { g.invoke_cycle_repeat();       return true; }
-                Action::ToggleLyrics   => { g.invoke_toggle_lyrics();      return true; }
+                Action::PrevTrack => {
+                    g.invoke_queue_prev_track();
+                    return true;
+                }
+                Action::NextTrack => {
+                    g.invoke_queue_next_track();
+                    return true;
+                }
+                Action::ToggleShuffle => {
+                    g.invoke_toggle_shuffle();
+                    return true;
+                }
+                Action::CycleRepeat => {
+                    g.invoke_cycle_repeat();
+                    return true;
+                }
+                Action::ToggleLyrics => {
+                    g.invoke_toggle_lyrics();
+                    return true;
+                }
                 _ => {}
             }
         }
@@ -2241,70 +2494,134 @@ pub(crate) fn handle_key(
     // music-bar-focused >= 0 left over from earlier keyboard navigation
     // survives a mouse-driven screen switch (mouse clicks bypass handle_key
     // entirely) and would otherwise hijack this screen's own arrow keys/Enter.
-    if !matches!(mode, AppMode::Player | AppMode::ContextMenu | AppMode::QueuePanel | AppMode::NowPlaying | AppMode::RequestDetail | AppMode::RequestOptions | AppMode::Calendar | AppMode::CalendarDayPopup | AppMode::Blocklist | AppMode::BonfireAdmin) {
+    if !matches!(
+        mode,
+        AppMode::Player
+            | AppMode::ContextMenu
+            | AppMode::QueuePanel
+            | AppMode::NowPlaying
+            | AppMode::RequestDetail
+            | AppMode::RequestOptions
+            | AppMode::Calendar
+            | AppMode::CalendarDayPopup
+            | AppMode::Blocklist
+            | AppMode::BonfireAdmin
+    ) {
         let mf = crate::AppState::get(window).get_music_bar_focused();
         if mf >= 0 {
             let g = crate::AppState::get(window);
             if g.get_is_audio_playing() {
-                let Some(ref action) = action else { return false; };
+                let Some(ref action) = action else {
+                    return false;
+                };
                 match action {
                     Action::Left => {
                         match mf {
-                            3 => { g.invoke_music_bar_seek_rel(-10.0); }
-                            4 => { g.set_music_bar_focused(2); }  // ⏮ ← ⏹ (skip timeline)
+                            3 => {
+                                g.invoke_music_bar_seek_rel(-10.0);
+                            }
+                            4 => {
+                                g.set_music_bar_focused(2);
+                            } // ⏮ ← ⏹ (skip timeline)
                             // Slot 10 (🔉) steps back to 9 (♪) only when lyrics are available.
                             10 => {
-                                g.set_music_bar_focused(if g.get_lyrics_available() { 9 } else { 8 });
+                                g.set_music_bar_focused(if g.get_lyrics_available() {
+                                    9
+                                } else {
+                                    8
+                                });
                             }
-                            1 | 2 | 5 | 6 | 7 | 8 | 9 | 11 => { g.set_music_bar_focused(mf - 1); }
+                            1 | 2 | 5 | 6 | 7 | 8 | 9 | 11 => {
+                                g.set_music_bar_focused(mf - 1);
+                            }
                             _ => {} // 0: absorbed
                         }
                         return true;
                     }
                     Action::Right => {
                         match mf {
-                            3 => { g.invoke_music_bar_seek_rel(10.0); }
-                            2 => { g.set_music_bar_focused(4); }  // ⏹ → ⏮ (skip timeline)
+                            3 => {
+                                g.invoke_music_bar_seek_rel(10.0);
+                            }
+                            2 => {
+                                g.set_music_bar_focused(4);
+                            } // ⏹ → ⏮ (skip timeline)
                             // Slot 8 (⋮) advances to 9 (♪) when available, else straight to 10 (🔉).
                             8 => {
-                                g.set_music_bar_focused(if g.get_lyrics_available() { 9 } else { 10 });
+                                g.set_music_bar_focused(if g.get_lyrics_available() {
+                                    9
+                                } else {
+                                    10
+                                });
                             }
-                            0 | 1 | 4 | 5 | 6 | 7 | 9 | 10 => { g.set_music_bar_focused(mf + 1); }
+                            0 | 1 | 4 | 5 | 6 | 7 | 9 | 10 => {
+                                g.set_music_bar_focused(mf + 1);
+                            }
                             _ => {} // 11: absorbed
                         }
                         return true;
                     }
                     Action::Down => {
-                        if mf != 3 { g.set_music_bar_focused(3); }
+                        if mf != 3 {
+                            g.set_music_bar_focused(3);
+                        }
                         return true;
                     }
                     Action::Up => {
-                        if mf == 3 { g.set_music_bar_focused(1); }
-                        else { g.set_music_bar_focused(-1); }
+                        if mf == 3 {
+                            g.set_music_bar_focused(1);
+                        } else {
+                            g.set_music_bar_focused(-1);
+                        }
                         return true;
                     }
                     Action::Confirm => {
                         match mf {
-                            0 => { g.invoke_open_now_playing(); }
-                            2 => { g.set_music_bar_focused(-1); g.invoke_music_bar_stop(); }
-                            4 => { g.invoke_queue_prev_track(); }
-                            5 => { g.invoke_queue_next_track(); }
-                            6 => { g.invoke_toggle_shuffle(); }
-                            7 => { g.invoke_cycle_repeat(); }
+                            0 => {
+                                g.invoke_open_now_playing();
+                            }
+                            2 => {
+                                g.set_music_bar_focused(-1);
+                                g.invoke_music_bar_stop();
+                            }
+                            4 => {
+                                g.invoke_queue_prev_track();
+                            }
+                            5 => {
+                                g.invoke_queue_next_track();
+                            }
+                            6 => {
+                                g.invoke_toggle_shuffle();
+                            }
+                            7 => {
+                                g.invoke_cycle_repeat();
+                            }
                             8 => {
                                 // ⋮ Queue button: open queue panel
                                 g.invoke_refresh_queue_display();
                                 let items = g.get_queue_items();
                                 for i in 0..items.row_count() {
                                     if let Some(e) = items.row_data(i)
-                                        && e.is_current { g.set_queue_panel_cursor(i as i32); break; }
+                                        && e.is_current
+                                    {
+                                        g.set_queue_panel_cursor(i as i32);
+                                        break;
+                                    }
                                 }
                                 g.set_show_queue_panel(true);
                             }
-                            9 => { g.invoke_toggle_lyrics(); } // ♪ Lyrics
-                            10 => { g.invoke_volume_down(); }  // 🔉
-                            11 => { g.invoke_volume_up(); }    // 🔊
-                            _ => { g.invoke_music_bar_play_pause(); } // 1 or 3
+                            9 => {
+                                g.invoke_toggle_lyrics();
+                            } // ♪ Lyrics
+                            10 => {
+                                g.invoke_volume_down();
+                            } // 🔉
+                            11 => {
+                                g.invoke_volume_up();
+                            } // 🔊
+                            _ => {
+                                g.invoke_music_bar_play_pause();
+                            } // 1 or 3
                         }
                         return true;
                     }
@@ -2323,12 +2640,26 @@ pub(crate) fn handle_key(
     // Mini-player bar focused: intercept nav keys before the underlying screen sees them.
     // RequestDetail/RequestOptions added 2026-07-18 — same stale-focus-survives-
     // a-mouse-click reasoning as the music-bar block above.
-    if !matches!(mode, AppMode::Player | AppMode::ContextMenu | AppMode::NowPlaying | AppMode::QueuePanel | AppMode::RequestDetail | AppMode::RequestOptions | AppMode::Calendar | AppMode::CalendarDayPopup | AppMode::Blocklist | AppMode::BonfireAdmin) {
+    if !matches!(
+        mode,
+        AppMode::Player
+            | AppMode::ContextMenu
+            | AppMode::NowPlaying
+            | AppMode::QueuePanel
+            | AppMode::RequestDetail
+            | AppMode::RequestOptions
+            | AppMode::Calendar
+            | AppMode::CalendarDayPopup
+            | AppMode::Blocklist
+            | AppMode::BonfireAdmin
+    ) {
         let fc = crate::AppState::get(window).get_float_card_focused();
         if fc >= 0 {
             let g = crate::AppState::get(window);
             if g.get_has_background_player() && !g.get_is_playing() {
-                let Some(ref action) = action else { return false; };
+                let Some(ref action) = action else {
+                    return false;
+                };
                 match action {
                     Action::Left | Action::Right => {
                         g.set_float_card_focused(1 - fc);
@@ -2336,7 +2667,11 @@ pub(crate) fn handle_key(
                     }
                     Action::Confirm => {
                         g.set_float_card_focused(-1);
-                        if fc == 0 { g.invoke_resume_player(); } else { g.invoke_stop_playback(); }
+                        if fc == 0 {
+                            g.invoke_resume_player();
+                        } else {
+                            g.invoke_stop_playback();
+                        }
                         return true;
                     }
                     Action::Up | Action::Back => {
@@ -2360,7 +2695,10 @@ pub(crate) fn handle_key(
         let g = crate::AppState::get(window);
         if g.get_is_audio_playing() {
             let player_action = lookup_action(&state.lock().unwrap().keybindings.player, &combo);
-            if let Some(Action::PausePlay) = player_action { g.invoke_music_bar_play_pause(); return true; }
+            if let Some(Action::PausePlay) = player_action {
+                g.invoke_music_bar_play_pause();
+                return true;
+            }
         }
     }
 
@@ -2369,143 +2707,216 @@ pub(crate) fn handle_key(
     match mode {
         AppMode::ContextMenu => {
             let g = crate::AppState::get(window);
-            let Some(action) = action else { return true; }; // swallow unknown keys
+            let Some(action) = action else {
+                return true;
+            }; // swallow unknown keys
             crate::context_menu::handle_key(&action, &g)
         }
 
         AppMode::QueuePanel => {
             let g = crate::AppState::get(window);
-            let Some(action) = action else { return true; }; // swallow unknown keys
+            let Some(action) = action else {
+                return true;
+            }; // swallow unknown keys
             handle_key_queue_panel(&action, &g)
         }
 
         AppMode::NowPlaying => {
             let g = crate::AppState::get(window);
-            let Some(action) = action else { return true; }; // swallow unknown keys
+            let Some(action) = action else {
+                return true;
+            }; // swallow unknown keys
             handle_key_now_playing(&action, &g)
         }
 
         AppMode::Person => {
             let g = crate::AppState::get(window);
-            let Some(action) = action else { return false; };
-            crate::person::handle_key(&action, &g) || focus_bar_on_up(&action, window) || focus_bar_on_down(&action, window)
+            let Some(action) = action else {
+                return false;
+            };
+            crate::person::handle_key(&action, &g)
+                || focus_bar_on_up(&action, window)
+                || focus_bar_on_down(&action, window)
         }
 
         AppMode::Season => {
             let g = crate::AppState::get(window);
-            let Some(action) = action else { return false; };
-            crate::season::handle_key(&action, &g) || focus_bar_on_up(&action, window) || focus_bar_on_down(&action, window)
+            let Some(action) = action else {
+                return false;
+            };
+            crate::season::handle_key(&action, &g)
+                || focus_bar_on_up(&action, window)
+                || focus_bar_on_down(&action, window)
         }
 
         AppMode::Series => {
             let g = crate::AppState::get(window);
-            let Some(action) = action else { return false; };
-            crate::series::handle_key(&action, &g) || focus_bar_on_up(&action, window) || focus_bar_on_down(&action, window)
+            let Some(action) = action else {
+                return false;
+            };
+            crate::series::handle_key(&action, &g)
+                || focus_bar_on_up(&action, window)
+                || focus_bar_on_down(&action, window)
         }
 
         // show-detail stays true during playback (hidden by !is-playing in main.slint);
         // active_mode() already routes is-playing → Player, so this arm is safe.
         AppMode::Detail => {
             let g = crate::AppState::get(window);
-            let Some(action) = action else { return false; };
-            crate::detail::handle_key(&action, &g) || focus_bar_on_up(&action, window) || focus_bar_on_down(&action, window)
+            let Some(action) = action else {
+                return false;
+            };
+            crate::detail::handle_key(&action, &g)
+                || focus_bar_on_up(&action, window)
+                || focus_bar_on_down(&action, window)
         }
 
         AppMode::Artist => {
             let g = crate::AppState::get(window);
-            let Some(action) = action else { return false; };
-            crate::artist::handle_key(&action, &g) || focus_bar_on_up(&action, window) || focus_bar_on_down(&action, window)
+            let Some(action) = action else {
+                return false;
+            };
+            crate::artist::handle_key(&action, &g)
+                || focus_bar_on_up(&action, window)
+                || focus_bar_on_down(&action, window)
         }
 
         AppMode::Collection => {
             let g = crate::AppState::get(window);
-            let Some(action) = action else { return false; };
-            crate::collection::handle_key(&action, &g) || focus_bar_on_up(&action, window) || focus_bar_on_down(&action, window)
+            let Some(action) = action else {
+                return false;
+            };
+            crate::collection::handle_key(&action, &g)
+                || focus_bar_on_up(&action, window)
+                || focus_bar_on_down(&action, window)
         }
 
         AppMode::Album => {
             let g = crate::AppState::get(window);
-            let Some(action) = action else { return false; };
-            crate::album::handle_key(&action, &g) || focus_bar_on_up(&action, window) || focus_bar_on_down(&action, window)
+            let Some(action) = action else {
+                return false;
+            };
+            crate::album::handle_key(&action, &g)
+                || focus_bar_on_up(&action, window)
+                || focus_bar_on_down(&action, window)
         }
 
         AppMode::RequestOptions => {
             let g = crate::AppState::get(window);
-            let Some(action) = action else { return true; }; // swallow unknown keys, same as ContextMenu/QueuePanel
+            let Some(action) = action else {
+                return true;
+            }; // swallow unknown keys, same as ContextMenu/QueuePanel
             crate::discover::handle_key_request_options(&action, &g)
         }
 
         AppMode::RequestDetail => {
             let g = crate::AppState::get(window);
-            let Some(action) = action else { return false; };
-            crate::discover::handle_key_request_detail(&action, &g) || focus_bar_on_up(&action, window) || focus_bar_on_down(&action, window)
+            let Some(action) = action else {
+                return false;
+            };
+            crate::discover::handle_key_request_detail(&action, &g)
+                || focus_bar_on_up(&action, window)
+                || focus_bar_on_down(&action, window)
         }
 
         AppMode::Calendar => {
             let g = crate::AppState::get(window);
-            let Some(action) = action else { return false; };
+            let Some(action) = action else {
+                return false;
+            };
             crate::discover::handle_key_calendar(&action, &g)
         }
 
         AppMode::CalendarDayPopup => {
             let g = crate::AppState::get(window);
-            let Some(action) = action else { return true; }; // swallow unknown keys, same as ContextMenu/QueuePanel/RequestOptions
+            let Some(action) = action else {
+                return true;
+            }; // swallow unknown keys, same as ContextMenu/QueuePanel/RequestOptions
             crate::discover::handle_key_calendar_day_popup(&action, &g)
         }
 
         AppMode::Blocklist => {
             let g = crate::AppState::get(window);
-            let Some(action) = action else { return true; }; // swallow unknown keys, same as Calendar's own sibling modes
+            let Some(action) = action else {
+                return true;
+            }; // swallow unknown keys, same as Calendar's own sibling modes
             crate::blocklist::handle_key(&action, &g)
         }
         AppMode::BonfireAdmin => {
             let g = crate::AppState::get(window);
-            let Some(action) = action else { return true; };
+            let Some(action) = action else {
+                return true;
+            };
             crate::bonfire_admin::handle_key(&action, &g)
         }
 
         AppMode::Discover => {
             let g = crate::AppState::get(window);
-            let Some(action) = action else { return false; };
-            crate::discover::handle_key(&action, &g) || focus_bar_on_up(&action, window) || focus_bar_on_down(&action, window)
+            let Some(action) = action else {
+                return false;
+            };
+            crate::discover::handle_key(&action, &g)
+                || focus_bar_on_up(&action, window)
+                || focus_bar_on_down(&action, window)
         }
 
         AppMode::Player => {
             let g = crate::AppState::get(window);
-            let Some(action) = action else { return false; };
+            let Some(action) = action else {
+                return false;
+            };
             // ToggleStats and PausePlay must not reveal the full controls bar.
             // Seek actions use seek accumulation + minimal bar (no full controls).
             // Confirm (Enter) activates skip/banner/panel overlays — should not reveal controls.
-            let shows_controls = !matches!(action,
+            let shows_controls = !matches!(
+                action,
                 Action::ToggleStats
-                | Action::PausePlay
-                | Action::SeekBackward | Action::SeekForward
-                | Action::SeekBackwardLong | Action::SeekForwardLong
-                | Action::NextChapter | Action::PrevChapter
-                | Action::SubDelayIncrease | Action::SubDelayDecrease
-                | Action::AudioDelayIncrease | Action::AudioDelayDecrease
-                | Action::PrevTrack | Action::NextTrack
-                | Action::Confirm
+                    | Action::PausePlay
+                    | Action::SeekBackward
+                    | Action::SeekForward
+                    | Action::SeekBackwardLong
+                    | Action::SeekForwardLong
+                    | Action::NextChapter
+                    | Action::PrevChapter
+                    | Action::SubDelayIncrease
+                    | Action::SubDelayDecrease
+                    | Action::AudioDelayIncrease
+                    | Action::AudioDelayDecrease
+                    | Action::PrevTrack
+                    | Action::NextTrack
+                    | Action::Confirm
             );
-            if shows_controls { g.invoke_show_controls(); }
+            if shows_controls {
+                g.invoke_show_controls();
+            }
             drop(g);
             dispatch_player(action, window)
         }
 
         AppMode::Library => {
             let g = crate::AppState::get(window);
-            let Some(action) = action else { return false; };
-            dispatch_library(&action, &g) || focus_bar_on_up(&action, window) || focus_bar_on_down(&action, window)
+            let Some(action) = action else {
+                return false;
+            };
+            dispatch_library(&action, &g)
+                || focus_bar_on_up(&action, window)
+                || focus_bar_on_down(&action, window)
         }
 
         AppMode::Browse => {
             let g = crate::AppState::get(window);
-            let Some(action) = action else { return false; };
-            crate::browse::handle_key(&action, &g) || focus_bar_on_up(&action, window) || focus_bar_on_down(&action, window)
+            let Some(action) = action else {
+                return false;
+            };
+            crate::browse::handle_key(&action, &g)
+                || focus_bar_on_up(&action, window)
+                || focus_bar_on_down(&action, window)
         }
 
         AppMode::Settings => {
-            let Some(action) = action else { return false; };
+            let Some(action) = action else {
+                return false;
+            };
             {
                 let g = crate::AppState::get(window);
                 if g.get_keybinding_focused() >= 0 {
@@ -2527,8 +2938,12 @@ pub(crate) fn handle_key(
         }
 
         AppMode::Dashboard => {
-            let Some(action) = action else { return false; };
-            if handle_global_shortcuts(&action, window) { return true; }
+            let Some(action) = action else {
+                return false;
+            };
+            if handle_global_shortcuts(&action, window) {
+                return true;
+            }
             dispatch_dashboard(&action, repeat, window)
                 || focus_bar_on_up(&action, window)
                 || focus_bar_on_down(&action, window)
@@ -2574,7 +2989,9 @@ fn onscreen_keyboard_move_row(row_lens: &[i32], cursor: i32, dir: i32) -> i32 {
             Some(s)
         })
         .collect();
-    let Some(row) = starts.iter().rposition(|&s| s <= cursor) else { return cursor };
+    let Some(row) = starts.iter().rposition(|&s| s <= cursor) else {
+        return cursor;
+    };
     let col = cursor - starts[row];
     let new_row = row as i32 + dir;
     if new_row < 0 || new_row as usize >= row_lens.len() {
@@ -2591,10 +3008,14 @@ fn onscreen_keyboard_move_row(row_lens: &[i32], cursor: i32, dir: i32) -> i32 {
 // window (Phase 49+). focus_bar_on_down is called when a screen's Down handler
 // falls off the bottom; it focuses whichever bar is currently visible.
 // focus_bar_on_up is kept as a no-op so call sites compile without change.
-fn focus_bar_on_up(_action: &Action, _window: &crate::MainWindow) -> bool { false }
+fn focus_bar_on_up(_action: &Action, _window: &crate::MainWindow) -> bool {
+    false
+}
 
 fn focus_bar_on_down(action: &Action, window: &crate::MainWindow) -> bool {
-    if *action != Action::Down { return false; }
+    if *action != Action::Down {
+        return false;
+    }
     let g = crate::AppState::get(window);
     if g.get_is_audio_playing() {
         g.set_music_bar_focused(1); // enter at play/pause; navigate Left to reach art/title
@@ -2638,14 +3059,22 @@ fn dispatch_library(action: &Action, g: &crate::AppState) -> bool {
         match action {
             Action::Left => {
                 let c = g.get_library_sort_cursor();
-                if c > 0 { g.set_library_sort_cursor(c - 1); }
+                if c > 0 {
+                    g.set_library_sort_cursor(c - 1);
+                }
                 return true;
             }
             Action::Right => {
-                let c   = g.get_library_sort_cursor();
+                let c = g.get_library_sort_cursor();
                 let nav = g.get_active_nav();
                 // Music: cursor 0-2=view, 3-7=sort, 8=Favorites. Others: 0-4=sort, 5-6=filters or 0-4.
-                let max = if nav == 4 { 8 } else if g.get_library_has_filters() { 6 } else { 4 };
+                let max = if nav == 4 {
+                    8
+                } else if g.get_library_has_filters() {
+                    6
+                } else {
+                    4
+                };
                 if c < max {
                     g.set_library_sort_cursor(c + 1);
                 } else if g.get_library_sort() == 0 && g.get_library_query().is_empty() {
@@ -2657,25 +3086,40 @@ fn dispatch_library(action: &Action, g: &crate::AppState) -> bool {
                 return true;
             }
             Action::Confirm => {
-                let c    = g.get_library_sort_cursor();
-                let nav  = g.get_active_nav();
+                let c = g.get_library_sort_cursor();
+                let nav = g.get_active_nav();
                 let sort = g.get_library_sort();
-                let fw   = g.get_library_filter_unwatched();
-                let ff   = g.get_library_filter_favorites();
+                let fw = g.get_library_filter_unwatched();
+                let ff = g.get_library_filter_favorites();
                 if nav == 4 {
                     // Music: 0=Artists, 1=Albums, 2=Playlists, 3-7=sort(c-3), 8=Favorites
                     match c {
-                        0 => { g.invoke_library_music_view_changed(0); g.set_library_sort_focused(false); }
-                        1 => { g.invoke_library_music_view_changed(1); g.set_library_sort_focused(false); }
-                        2 => { g.invoke_library_music_view_changed(2); g.set_library_sort_focused(false); }
-                        3..=7 => { g.invoke_library_sort_apply(c - 3, fw, ff); g.set_library_sort_focused(false); }
+                        0 => {
+                            g.invoke_library_music_view_changed(0);
+                            g.set_library_sort_focused(false);
+                        }
+                        1 => {
+                            g.invoke_library_music_view_changed(1);
+                            g.set_library_sort_focused(false);
+                        }
+                        2 => {
+                            g.invoke_library_music_view_changed(2);
+                            g.set_library_sort_focused(false);
+                        }
+                        3..=7 => {
+                            g.invoke_library_sort_apply(c - 3, fw, ff);
+                            g.set_library_sort_focused(false);
+                        }
                         _ => g.invoke_library_sort_apply(sort, fw, !ff), // 8=Favorites, stays open
                     }
                 } else {
                     match c {
-                        0..=4 => { g.invoke_library_sort_apply(c, fw, ff); g.set_library_sort_focused(false); }
-                        5     => g.invoke_library_sort_apply(sort, !fw, ff),
-                        _     => g.invoke_library_sort_apply(sort, fw, !ff),
+                        0..=4 => {
+                            g.invoke_library_sort_apply(c, fw, ff);
+                            g.set_library_sort_focused(false);
+                        }
+                        5 => g.invoke_library_sort_apply(sort, !fw, ff),
+                        _ => g.invoke_library_sort_apply(sort, fw, !ff),
                     }
                 }
                 return true;
@@ -2704,19 +3148,25 @@ fn dispatch_library(action: &Action, g: &crate::AppState) -> bool {
         match action {
             Action::Up => {
                 let c = g.get_library_scrubber_cursor();
-                if c > 0 { g.set_library_scrubber_cursor(c - 1); }
+                if c > 0 {
+                    g.set_library_scrubber_cursor(c - 1);
+                }
                 return true;
             }
             Action::Down => {
                 let c = g.get_library_scrubber_cursor();
-                if c < 26 { g.set_library_scrubber_cursor(c + 1); }
+                if c < 26 {
+                    g.set_library_scrubber_cursor(c + 1);
+                }
                 return true;
             }
             Action::Confirm => {
-                let c       = g.get_library_scrubber_cursor();
-                let cols    = g.get_library_cols();
+                let c = g.get_library_scrubber_cursor();
+                let cols = g.get_library_cols();
                 let offsets = g.get_library_alpha_offsets();
-                if let Some(flat_idx) = offsets.row_data(c as usize) && flat_idx >= 0 {
+                if let Some(flat_idx) = offsets.row_data(c as usize)
+                    && flat_idx >= 0
+                {
                     g.set_library_focused(flat_idx);
                     g.set_library_focused_row(flat_idx / cols);
                 }
@@ -2743,32 +3193,32 @@ fn dispatch_library(action: &Action, g: &crate::AppState) -> bool {
             true
         }
         Action::Left => {
-            let f    = g.get_library_focused();
+            let f = g.get_library_focused();
             let cols = g.get_library_cols();
             if f % cols > 0 {
-                g.set_library_focused(f - 1);                   // within row — no scroll
+                g.set_library_focused(f - 1); // within row — no scroll
             } else if f > 0 {
                 let nf = f - 1;
                 g.set_library_focused(nf);
-                g.set_library_focused_row(nf / cols);           // wrap to prev row — scroll
+                g.set_library_focused_row(nf / cols); // wrap to prev row — scroll
             }
             true
         }
         Action::Right => {
-            let f     = g.get_library_focused();
-            let cols  = g.get_library_cols();
+            let f = g.get_library_focused();
+            let cols = g.get_library_cols();
             let count = g.get_library_display().row_count() as i32;
             if f % cols < cols - 1 && f + 1 < count {
-                g.set_library_focused(f + 1);                   // within row — no scroll
+                g.set_library_focused(f + 1); // within row — no scroll
             } else if f + 1 < count {
                 let nf = f + 1;
                 g.set_library_focused(nf);
-                g.set_library_focused_row(nf / cols);           // wrap to next row — scroll
+                g.set_library_focused_row(nf / cols); // wrap to next row — scroll
             }
             true
         }
         Action::Up => {
-            let f    = g.get_library_focused();
+            let f = g.get_library_focused();
             let cols = g.get_library_cols();
             if f >= cols {
                 let nf = f - cols;
@@ -2780,7 +3230,7 @@ fn dispatch_library(action: &Action, g: &crate::AppState) -> bool {
             true
         }
         Action::Down => {
-            let f    = g.get_library_focused();
+            let f = g.get_library_focused();
             let cols = g.get_library_cols();
             if f + cols < g.get_library_display().row_count() as i32 {
                 let nf = f + cols;
@@ -2808,8 +3258,14 @@ fn dispatch_library(action: &Action, g: &crate::AppState) -> bool {
             if f < g.get_library_display().row_count() as i32 {
                 let card = g.get_library_display().row_data(f as usize).unwrap();
                 g.set_context_menu_title(card.title.clone());
-                g.invoke_open_context_menu(card.id, card.has_played, card.is_favorite,
-                    card.resume_pct, card.item_type, card.series_id);
+                g.invoke_open_context_menu(
+                    card.id,
+                    card.has_played,
+                    card.is_favorite,
+                    card.resume_pct,
+                    card.item_type,
+                    card.series_id,
+                );
             }
             true
         }
@@ -2819,14 +3275,14 @@ fn dispatch_library(action: &Action, g: &crate::AppState) -> bool {
             g.set_library_focused_row(0);
             true
         }
-        _ => false
+        _ => false,
     }
 }
 
 // ── Player dispatch ───────────────────────────────────────────────────────────
 
 fn dispatch_player(action: Action, window: &crate::MainWindow) -> bool {
-    let g     = crate::AppState::get(window);
+    let g = crate::AppState::get(window);
     let panel = g.get_player_open_panel();
 
     // Ask-timed overlay: Left/Right toggle focus; Enter activates; Back/Esc dismisses
@@ -2840,7 +3296,9 @@ fn dispatch_player(action: Action, window: &crate::MainWindow) -> bool {
                 // real seek path below it). If show-skip-timed is ever
                 // left stuck true outside a genuine Intro Skipper prompt,
                 // this line is what would reveal it.
-                debug!("dispatch_player: {action:?} intercepted by show-skip-timed overlay, not seeking");
+                debug!(
+                    "dispatch_player: {action:?} intercepted by show-skip-timed overlay, not seeking"
+                );
                 g.set_skip_timed_focused(1 - g.get_skip_timed_focused());
                 return true;
             }
@@ -2872,7 +3330,9 @@ fn dispatch_player(action: Action, window: &crate::MainWindow) -> bool {
             Action::Left | Action::Right | Action::SeekBackward | Action::SeekForward => {
                 // Debug logging added 2026-08-28 — same reasoning as the
                 // show-skip-timed branch above.
-                debug!("dispatch_player: {action:?} intercepted by show-next-ep-banner, not seeking");
+                debug!(
+                    "dispatch_player: {action:?} intercepted by show-next-ep-banner, not seeking"
+                );
                 g.set_next_ep_banner_focused(1 - g.get_next_ep_banner_focused());
                 return true;
             }
@@ -2906,18 +3366,22 @@ fn dispatch_player(action: Action, window: &crate::MainWindow) -> bool {
             // so match both forms here to keep panel nav working.
             Action::Up | Action::VolumeUp => {
                 let c = g.get_player_panel_cursor();
-                if c > 0 { g.set_player_panel_cursor(c - 1); }
+                if c > 0 {
+                    g.set_player_panel_cursor(c - 1);
+                }
                 return true;
             }
             Action::Down | Action::VolumeDown => {
-                let c   = g.get_player_panel_cursor();
+                let c = g.get_player_panel_cursor();
                 let max = match panel {
                     1 => g.get_sub_tracks().row_count() as i32,
                     2 => (g.get_audio_tracks().row_count() as i32 - 1).max(0),
                     3 => (g.get_video_tracks().row_count() as i32 - 1).max(0),
                     _ => (g.get_chapter_entries().row_count() as i32 - 1).max(0),
                 };
-                if c < max { g.set_player_panel_cursor(c + 1); }
+                if c < max {
+                    g.set_player_panel_cursor(c + 1);
+                }
                 return true;
             }
             Action::Confirm => {
@@ -2933,7 +3397,7 @@ fn dispatch_player(action: Action, window: &crate::MainWindow) -> bool {
     match action {
         // Ignore PausePlay while the seek bar is held — Space during scrub would toggle mpv
         // back to playing while the seek bar still shows the frozen drag position.
-        Action::PausePlay if g.get_seek_dragging() => { true }
+        Action::PausePlay if g.get_seek_dragging() => true,
         Action::PausePlay => {
             if g.get_is_paused() {
                 // Resuming: immediately hide everything, even if full controls were up from mouse.
@@ -2947,37 +3411,94 @@ fn dispatch_player(action: Action, window: &crate::MainWindow) -> bool {
             g.invoke_pause_play_toggle();
             true
         }
-        Action::SeekBackward     => { g.invoke_seek_acc(-(g.get_settings_seek_step_secs() as f32)); true }
-        Action::SeekForward      => { g.invoke_seek_acc(  g.get_settings_seek_step_secs() as f32);  true }
-        Action::SeekBackwardLong => { g.invoke_seek_acc(-(g.get_settings_seek_step_long_secs() as f32)); true }
-        Action::SeekForwardLong  => { g.invoke_seek_acc(  g.get_settings_seek_step_long_secs() as f32);  true }
-        Action::VolumeUp         => { g.invoke_volume_up(); true }
-        Action::VolumeDown       => { g.invoke_volume_down(); true }
-        Action::Mute             => { g.invoke_mute_toggle(); true }
-        Action::ToggleStats      => { g.invoke_toggle_stats(); true }
-        Action::Fullscreen       => { g.invoke_toggle_fullscreen(); true }
-        Action::PanelSubtitles   => {
+        Action::SeekBackward => {
+            g.invoke_seek_acc(-(g.get_settings_seek_step_secs() as f32));
+            true
+        }
+        Action::SeekForward => {
+            g.invoke_seek_acc(g.get_settings_seek_step_secs() as f32);
+            true
+        }
+        Action::SeekBackwardLong => {
+            g.invoke_seek_acc(-(g.get_settings_seek_step_long_secs() as f32));
+            true
+        }
+        Action::SeekForwardLong => {
+            g.invoke_seek_acc(g.get_settings_seek_step_long_secs() as f32);
+            true
+        }
+        Action::VolumeUp => {
+            g.invoke_volume_up();
+            true
+        }
+        Action::VolumeDown => {
+            g.invoke_volume_down();
+            true
+        }
+        Action::Mute => {
+            g.invoke_mute_toggle();
+            true
+        }
+        Action::ToggleStats => {
+            g.invoke_toggle_stats();
+            true
+        }
+        Action::Fullscreen => {
+            g.invoke_toggle_fullscreen();
+            true
+        }
+        Action::PanelSubtitles => {
             g.set_player_open_panel(if panel == 1 { 0 } else { 1 });
-            g.set_player_panel_cursor(0); true
+            g.set_player_panel_cursor(0);
+            true
         }
         Action::PanelAudio => {
             g.set_player_open_panel(if panel == 2 { 0 } else { 2 });
-            g.set_player_panel_cursor(0); true
+            g.set_player_panel_cursor(0);
+            true
         }
         Action::PanelVideo => {
             g.set_player_open_panel(if panel == 3 { 0 } else { 3 });
-            g.set_player_panel_cursor(0); true
+            g.set_player_panel_cursor(0);
+            true
         }
-        Action::SeekToPercent(p) => { g.invoke_seek_to(p as f32 / 100.0); true }
-        Action::NextChapter         => { g.invoke_chapter_next();      true }
-        Action::PrevChapter         => { g.invoke_chapter_prev();      true }
-        Action::SubDelayIncrease    => { g.invoke_sub_delay_inc();     true }
-        Action::SubDelayDecrease    => { g.invoke_sub_delay_dec();     true }
-        Action::AudioDelayIncrease  => { g.invoke_audio_delay_inc();   true }
-        Action::AudioDelayDecrease  => { g.invoke_audio_delay_dec();   true }
+        Action::SeekToPercent(p) => {
+            g.invoke_seek_to(p as f32 / 100.0);
+            true
+        }
+        Action::NextChapter => {
+            g.invoke_chapter_next();
+            true
+        }
+        Action::PrevChapter => {
+            g.invoke_chapter_prev();
+            true
+        }
+        Action::SubDelayIncrease => {
+            g.invoke_sub_delay_inc();
+            true
+        }
+        Action::SubDelayDecrease => {
+            g.invoke_sub_delay_dec();
+            true
+        }
+        Action::AudioDelayIncrease => {
+            g.invoke_audio_delay_inc();
+            true
+        }
+        Action::AudioDelayDecrease => {
+            g.invoke_audio_delay_dec();
+            true
+        }
         // Playlist prev/next fire in player mode too (e.g. audio queued into video player).
-        Action::PrevTrack           => { g.invoke_queue_prev_track();  true }
-        Action::NextTrack           => { g.invoke_queue_next_track();  true }
+        Action::PrevTrack => {
+            g.invoke_queue_prev_track();
+            true
+        }
+        Action::NextTrack => {
+            g.invoke_queue_next_track();
+            true
+        }
         Action::OpenQueuePanel => {
             if g.get_show_queue_panel() {
                 g.set_show_queue_panel(false);
@@ -2985,13 +3506,18 @@ fn dispatch_player(action: Action, window: &crate::MainWindow) -> bool {
                 g.invoke_refresh_queue_display();
                 let items = g.get_queue_items();
                 for i in 0..items.row_count() {
-                    if let Some(e) = items.row_data(i) && e.is_current { g.set_queue_panel_cursor(i as i32); break; }
+                    if let Some(e) = items.row_data(i)
+                        && e.is_current
+                    {
+                        g.set_queue_panel_cursor(i as i32);
+                        break;
+                    }
                 }
                 g.set_show_queue_panel(true);
             }
             true
         }
-        _ => false
+        _ => false,
     }
 }
 
@@ -3037,9 +3563,11 @@ fn handle_key_queue_panel(action: &Action, g: &crate::AppState) -> bool {
             true
         }
         Action::Down => {
-            let c   = g.get_queue_panel_cursor();
+            let c = g.get_queue_panel_cursor();
             let max = (g.get_queue_items().row_count() as i32 - 1).max(0);
-            if c < max { g.set_queue_panel_cursor(c + 1); }
+            if c < max {
+                g.set_queue_panel_cursor(c + 1);
+            }
             true
         }
         Action::Confirm => {
@@ -3060,13 +3588,15 @@ fn handle_key_queue_panel(action: &Action, g: &crate::AppState) -> bool {
         }
         Action::DeleteItem => {
             let c = g.get_queue_panel_cursor();
-            if c < 0 { return true; }
+            if c < 0 {
+                return true;
+            }
             if let Some(row) = g.get_queue_items().row_data(c as usize) {
                 g.invoke_queue_remove(row.index);
             }
             true
         }
-        _ => true // absorb all other keys while panel is open
+        _ => true, // absorb all other keys while panel is open
     }
 }
 
@@ -3114,21 +3644,29 @@ fn handle_key_now_playing(action: &Action, g: &crate::AppState) -> bool {
         Action::Left => {
             if g.get_now_playing_in_strip() {
                 let c = g.get_now_playing_strip_focused();
-                if c > 0 { g.set_now_playing_strip_focused(c - 1); }
+                if c > 0 {
+                    g.set_now_playing_strip_focused(c - 1);
+                }
             } else {
                 let c = g.get_now_playing_ctrl_focused();
-                if c > 0 { g.set_now_playing_ctrl_focused(c - 1); }
+                if c > 0 {
+                    g.set_now_playing_ctrl_focused(c - 1);
+                }
             }
             true
         }
         Action::Right => {
             if g.get_now_playing_in_strip() {
-                let c   = g.get_now_playing_strip_focused();
+                let c = g.get_now_playing_strip_focused();
                 let max = g.get_queue_items().row_count() as i32 - 1;
-                if c < max { g.set_now_playing_strip_focused(c + 1); }
+                if c < max {
+                    g.set_now_playing_strip_focused(c + 1);
+                }
             } else {
                 let c = g.get_now_playing_ctrl_focused();
-                if c < 7 { g.set_now_playing_ctrl_focused(c + 1); }
+                if c < 7 {
+                    g.set_now_playing_ctrl_focused(c + 1);
+                }
             }
             true
         }
@@ -3140,7 +3678,10 @@ fn handle_key_now_playing(action: &Action, g: &crate::AppState) -> bool {
                 }
             } else {
                 match g.get_now_playing_ctrl_focused() {
-                    0 => { g.invoke_music_bar_open_album(); g.set_show_now_playing(false); }
+                    0 => {
+                        g.invoke_music_bar_open_album();
+                        g.set_show_now_playing(false);
+                    }
                     1 => g.invoke_queue_prev_track(),
                     2 => g.invoke_music_bar_play_pause(),
                     3 => g.invoke_queue_next_track(),
@@ -3160,7 +3701,9 @@ fn handle_key_now_playing(action: &Action, g: &crate::AppState) -> bool {
 
 fn handle_library_search(key: &str, ctrl: bool, window: &crate::MainWindow) -> bool {
     let g = crate::AppState::get(window);
-    if ctrl { return true; }
+    if ctrl {
+        return true;
+    }
     match key {
         k if k == key::ESCAPE => {
             g.invoke_library_search_clear();
@@ -3191,7 +3734,9 @@ fn handle_library_search(key: &str, ctrl: bool, window: &crate::MainWindow) -> b
             true
         }
         k if k == key::BACKSPACE => {
-            if !g.get_library_query().is_empty() { g.invoke_library_search_backspace(); }
+            if !g.get_library_query().is_empty() {
+                g.invoke_library_search_backspace();
+            }
             true
         }
         k if k == key::UP => {
@@ -3202,10 +3747,16 @@ fn handle_library_search(key: &str, ctrl: bool, window: &crate::MainWindow) -> b
         }
         // Caret keys (2026-10-05) — Left/Right were swallowed before.
         k if caret_key(&crate::text_field::LIBRARY_SEARCH, k, &g) => true,
-        k if k == key::DELETE => { g.invoke_library_search_delete(); true }
+        k if k == key::DELETE => {
+            g.invoke_library_search_delete();
+            true
+        }
         k if is_navigation_key(k) => true,
-        k if is_printable(k) => { g.invoke_library_search_append(k.into()); true }
-        _ => true
+        k if is_printable(k) => {
+            g.invoke_library_search_append(k.into());
+            true
+        }
+        _ => true,
     }
 }
 
@@ -3213,7 +3764,9 @@ fn handle_library_search(key: &str, ctrl: bool, window: &crate::MainWindow) -> b
 
 fn handle_browse_search(key: &str, ctrl: bool, window: &crate::MainWindow) -> bool {
     let g = crate::AppState::get(window);
-    if ctrl { return true; }
+    if ctrl {
+        return true;
+    }
     match key {
         k if k == key::ESCAPE => {
             g.invoke_browse_search_clear();
@@ -3222,7 +3775,9 @@ fn handle_browse_search(key: &str, ctrl: bool, window: &crate::MainWindow) -> bo
         }
         k if k == key::DOWN => {
             g.set_browse_header_focused(false);
-            if g.get_media_items().row_count() > 0 { g.set_current_item(0); }
+            if g.get_media_items().row_count() > 0 {
+                g.set_current_item(0);
+            }
             true
         }
         // On-screen keyboard, 2026-08-23 — was merged with Down above
@@ -3237,21 +3792,31 @@ fn handle_browse_search(key: &str, ctrl: bool, window: &crate::MainWindow) -> bo
             true
         }
         k if k == key::BACKSPACE => {
-            if !g.get_browse_query().is_empty() { g.invoke_browse_search_backspace(); }
+            if !g.get_browse_query().is_empty() {
+                g.invoke_browse_search_backspace();
+            }
             true
         }
         // Caret keys (2026-10-05) — Left/Right were swallowed before.
         k if caret_key(&crate::text_field::BROWSE_SEARCH, k, &g) => true,
-        k if k == key::DELETE => { g.invoke_browse_search_delete(); true }
+        k if k == key::DELETE => {
+            g.invoke_browse_search_delete();
+            true
+        }
         k if is_navigation_key(k) => true,
-        k if is_printable(k) => { g.invoke_browse_search_append(k.into()); true }
-        _ => true
+        k if is_printable(k) => {
+            g.invoke_browse_search_append(k.into());
+            true
+        }
+        _ => true,
     }
 }
 
 fn handle_discover_search(key: &str, ctrl: bool, window: &crate::MainWindow) -> bool {
     let g = crate::AppState::get(window);
-    if ctrl { return true; }
+    if ctrl {
+        return true;
+    }
     match key {
         k if k == key::ESCAPE => {
             g.invoke_discover_search_clear();
@@ -3285,7 +3850,9 @@ fn handle_discover_search(key: &str, ctrl: bool, window: &crate::MainWindow) -> 
             true
         }
         k if k == key::BACKSPACE => {
-            if !g.get_discover_query().is_empty() { g.invoke_discover_search_backspace(); }
+            if !g.get_discover_query().is_empty() {
+                g.invoke_discover_search_backspace();
+            }
             true
         }
         // Up now always enters the filter bar (2026-07-18, Discover
@@ -3330,10 +3897,16 @@ fn handle_discover_search(key: &str, ctrl: bool, window: &crate::MainWindow) -> 
         // very start stays put — leaving the field mid-edit would be easy to
         // hit by accident; Escape/Up/Down still leave it.
         k if caret_key(&crate::text_field::DISCOVER_SEARCH, k, &g) => true,
-        k if k == key::DELETE => { g.invoke_discover_search_delete(); true }
+        k if k == key::DELETE => {
+            g.invoke_discover_search_delete();
+            true
+        }
         k if is_navigation_key(k) => true,
-        k if is_printable(k) => { g.invoke_discover_search_append(k.into()); true }
-        _ => true
+        k if is_printable(k) => {
+            g.invoke_discover_search_append(k.into());
+            true
+        }
+        _ => true,
     }
 }
 
@@ -3342,12 +3915,17 @@ fn handle_discover_search(key: &str, ctrl: bool, window: &crate::MainWindow) -> 
 fn handle_playlist_picker(key: &str, ctrl: bool, window: &crate::MainWindow) -> bool {
     let g = crate::AppState::get(window);
     if ctrl {
-        if key == "q" || key == "Q" { g.invoke_quit(); }
+        if key == "q" || key == "Q" {
+            g.invoke_quit();
+        }
         return true;
     }
     if g.get_playlist_picker_naming() {
         return match key {
-            k if k == key::ESCAPE => { g.set_playlist_picker_naming(false); true }
+            k if k == key::ESCAPE => {
+                g.set_playlist_picker_naming(false);
+                true
+            }
             // On-screen keyboard, 2026-08-23 — Enter now opens it (was
             // "create the playlist directly," the closest analog to
             // Login's own password-submit conflict). Right takes over
@@ -3367,17 +3945,25 @@ fn handle_playlist_picker(key: &str, ctrl: bool, window: &crate::MainWindow) -> 
                 true
             }
             k if caret_key(&crate::text_field::PLAYLIST_NAME, k, &g) => true,
-            k if k == key::DELETE => { crate::text_field::PLAYLIST_NAME.delete(&g); true }
+            k if k == key::DELETE => {
+                crate::text_field::PLAYLIST_NAME.delete(&g);
+                true
+            }
             // Routed through the new playlist-picker-name-append/-backspace
             // callbacks (grapheme-cluster-correct) instead of a direct
             // property mutation, unifying this with the on-screen
             // keyboard's own path so the two can't drift apart.
             k if k == key::BACKSPACE => {
-                if !g.get_playlist_picker_name().is_empty() { g.invoke_playlist_picker_name_backspace(); }
+                if !g.get_playlist_picker_name().is_empty() {
+                    g.invoke_playlist_picker_name_backspace();
+                }
                 true
             }
             k if is_navigation_key(k) => true,
-            k if is_printable(k) => { g.invoke_playlist_picker_name_append(k.into()); true }
+            k if is_printable(k) => {
+                g.invoke_playlist_picker_name_append(k.into());
+                true
+            }
             _ => true,
         };
     }
@@ -3389,12 +3975,16 @@ fn handle_playlist_picker(key: &str, ctrl: bool, window: &crate::MainWindow) -> 
         }
         k if k == key::UP => {
             let c = g.get_playlist_picker_cursor();
-            if c > 0 { g.set_playlist_picker_cursor(c - 1); }
+            if c > 0 {
+                g.set_playlist_picker_cursor(c - 1);
+            }
             true
         }
         k if k == key::DOWN => {
             let c = g.get_playlist_picker_cursor();
-            if c < count { g.set_playlist_picker_cursor(c + 1); }
+            if c < count {
+                g.set_playlist_picker_cursor(c + 1);
+            }
             true
         }
         k if k == key::RETURN => {
@@ -3495,9 +4085,9 @@ fn dispatch_keybinding_nav(action: Action, g: &crate::AppState<'_>) -> bool {
         return true;
     }
 
-    let fi    = g.get_keybinding_focused();
-    let total = g.get_keybinding_normal().row_count() as i32
-              + g.get_keybinding_player().row_count() as i32;
+    let fi = g.get_keybinding_focused();
+    let total =
+        g.get_keybinding_normal().row_count() as i32 + g.get_keybinding_player().row_count() as i32;
     debug!("keybindings: dispatch action={action:?} fi={fi} total={total}");
 
     match action {
@@ -3544,7 +4134,7 @@ fn dispatch_keybinding_nav(action: Action, g: &crate::AppState<'_>) -> bool {
             }
             true
         }
-        _ => false
+        _ => false,
     }
 }
 
@@ -3554,13 +4144,31 @@ fn dispatch_keybinding_nav(action: Action, g: &crate::AppState<'_>) -> bool {
 
 fn handle_global_shortcuts(action: &Action, window: &crate::MainWindow) -> bool {
     match action {
-        Action::Fullscreen  => { crate::AppState::get(window).invoke_toggle_fullscreen(); true }
-        Action::Quit        => { crate::AppState::get(window).invoke_quit(); true }
-        Action::NavHome     => { nav_to(window, 0);  true }
-        Action::NavMovies   => { nav_to(window, 2);  true }  // Movies is now nav=2
-        Action::NavTV       => { nav_to(window, 1);  true }  // TV Shows is now nav=1
-        Action::NavSettings => { nav_to(window, 10); true }
-        Action::OpenBrowse  => {
+        Action::Fullscreen => {
+            crate::AppState::get(window).invoke_toggle_fullscreen();
+            true
+        }
+        Action::Quit => {
+            crate::AppState::get(window).invoke_quit();
+            true
+        }
+        Action::NavHome => {
+            nav_to(window, 0);
+            true
+        }
+        Action::NavMovies => {
+            nav_to(window, 2);
+            true
+        } // Movies is now nav=2
+        Action::NavTV => {
+            nav_to(window, 1);
+            true
+        } // TV Shows is now nav=1
+        Action::NavSettings => {
+            nav_to(window, 10);
+            true
+        }
+        Action::OpenBrowse => {
             let g = crate::AppState::get(window);
             if g.get_active_nav() < 10 {
                 g.set_show_library(false);
@@ -3572,7 +4180,7 @@ fn handle_global_shortcuts(action: &Action, window: &crate::MainWindow) -> bool 
             }
             true
         }
-        _ => false
+        _ => false,
     }
 }
 
@@ -3583,17 +4191,27 @@ fn handle_global_shortcuts(action: &Action, window: &crate::MainWindow) -> bool 
 fn dispatch_dashboard(action: &Action, repeat: bool, window: &crate::MainWindow) -> bool {
     if *action == Action::Back {
         let g = crate::AppState::get(window);
-        if g.get_focused_section() >= 0 { g.set_focused_section(-1); return true; }
+        if g.get_focused_section() >= 0 {
+            g.set_focused_section(-1);
+            return true;
+        }
         return false;
     }
 
     if *action == Action::Up || *action == Action::Down {
-        let g  = crate::AppState::get(window);
+        let g = crate::AppState::get(window);
         let fs = g.get_focused_section();
         if *action == Action::Down {
-            if fs < 0 { sidebar_nav(&g, 1); return true; }
+            if fs < 0 {
+                sidebar_nav(&g, 1);
+                return true;
+            }
             let n = g.invoke_find_next_section(fs);
-            if n != fs { g.set_focused_section(n); g.set_focused_card(0); return true; }
+            if n != fs {
+                g.set_focused_section(n);
+                g.set_focused_card(0);
+                return true;
+            }
             return false; // at bottom of content — let focus_bar_on_down handle it
         }
         // Up
@@ -3602,23 +4220,30 @@ fn dispatch_dashboard(action: &Action, repeat: bool, window: &crate::MainWindow)
             return true;
         }
         let p = g.invoke_find_prev_section(fs);
-        if p >= 0 { g.set_focused_section(p); g.set_focused_card(0); return true; }
+        if p >= 0 {
+            g.set_focused_section(p);
+            g.set_focused_card(0);
+            return true;
+        }
         return false; // at top of content grid — let focus_bar_on_up handle it
     }
 
     if *action == Action::Left {
-        let g  = crate::AppState::get(window);
+        let g = crate::AppState::get(window);
         let fs = g.get_focused_section();
         if fs >= 0 {
             let fc = g.get_focused_card();
-            if fc > 0 { g.set_focused_card(fc - 1); }
-            else if !repeat { g.set_focused_section(-1); }
+            if fc > 0 {
+                g.set_focused_card(fc - 1);
+            } else if !repeat {
+                g.set_focused_section(-1);
+            }
             return true;
         }
     }
 
     if *action == Action::Right {
-        let g  = crate::AppState::get(window);
+        let g = crate::AppState::get(window);
         let fs = g.get_focused_section();
         if fs < 0 && g.get_active_nav() == 7 {
             // Real bug, live-reported 2026-08-14: the Profile sidebar row
@@ -3638,7 +4263,9 @@ fn dispatch_dashboard(action: &Action, repeat: bool, window: &crate::MainWindow)
             g.set_focused_card(0);
         } else if fs >= 0 {
             let fc = g.get_focused_card();
-            if fc < g.invoke_section_len(fs) - 1 { g.set_focused_card(fc + 1); }
+            if fc < g.invoke_section_len(fs) - 1 {
+                g.set_focused_card(fc + 1);
+            }
         }
         return true;
     }
@@ -3655,12 +4282,16 @@ fn dispatch_dashboard(action: &Action, repeat: bool, window: &crate::MainWindow)
     // established for mixed-content rows on Detail/Series/Collection/
     // Person's own Recommended/Other Work/Missing-Items rows.
     if *action == Action::OpenDetail {
-        let g  = crate::AppState::get(window);
+        let g = crate::AppState::get(window);
         let fs = g.get_focused_section();
         if fs >= 0 {
             let card = g.invoke_section_card_item(fs, g.get_focused_card());
             if card.item_type.as_str().starts_with("Discover") {
-                let media_type = if card.item_type.as_str() == "DiscoverMovie" { "movie" } else { "tv" };
+                let media_type = if card.item_type.as_str() == "DiscoverMovie" {
+                    "movie"
+                } else {
+                    "tv"
+                };
                 g.invoke_open_discover_item(media_type.into(), card.id);
             } else {
                 g.invoke_open_detail(card.id, card.item_type);
@@ -3670,7 +4301,7 @@ fn dispatch_dashboard(action: &Action, repeat: bool, window: &crate::MainWindow)
     }
 
     if *action == Action::OpenContextMenu {
-        let g  = crate::AppState::get(window);
+        let g = crate::AppState::get(window);
         let fs = g.get_focused_section();
         if fs >= 0 {
             let card = g.invoke_section_card_item(fs, g.get_focused_card());
@@ -3678,20 +4309,30 @@ fn dispatch_dashboard(action: &Action, repeat: bool, window: &crate::MainWindow)
                 g.invoke_open_context_menu_discover(card);
             } else {
                 g.set_context_menu_title(card.title.clone());
-                g.invoke_open_context_menu(card.id, card.has_played, card.is_favorite,
-                    card.resume_pct, card.item_type, card.series_id);
+                g.invoke_open_context_menu(
+                    card.id,
+                    card.has_played,
+                    card.is_favorite,
+                    card.resume_pct,
+                    card.item_type,
+                    card.series_id,
+                );
             }
             return true;
         }
     }
 
     if *action == Action::Confirm {
-        let g  = crate::AppState::get(window);
+        let g = crate::AppState::get(window);
         let fs = g.get_focused_section();
         if fs >= 0 {
             let card = g.invoke_section_card_item(fs, g.get_focused_card());
             if card.item_type.as_str().starts_with("Discover") {
-                let media_type = if card.item_type.as_str() == "DiscoverMovie" { "movie" } else { "tv" };
+                let media_type = if card.item_type.as_str() == "DiscoverMovie" {
+                    "movie"
+                } else {
+                    "tv"
+                };
                 g.invoke_open_discover_item(media_type.into(), card.id);
             } else {
                 g.invoke_item_play(card.id);
@@ -3699,7 +4340,10 @@ fn dispatch_dashboard(action: &Action, repeat: bool, window: &crate::MainWindow)
             return true;
         }
         let nav = g.get_active_nav();
-        if nav == 11 { g.invoke_quit(); return true; }
+        if nav == 11 {
+            g.invoke_quit();
+            return true;
+        }
         if nav == 7 {
             // Same fix, same reasoning as the Right arm just above — nav==7
             // (Profile row) has no content section for the generic fallback
@@ -3710,7 +4354,9 @@ fn dispatch_dashboard(action: &Action, repeat: bool, window: &crate::MainWindow)
         if nav < 10 {
             if nav == 5 {
                 // Browse All
-                if g.get_media_items().row_count() > 0 { g.set_current_item(0); }
+                if g.get_media_items().row_count() > 0 {
+                    g.set_current_item(0);
+                }
             } else if nav == 1 || nav == 2 || nav == 3 || nav == 4 {
                 g.set_show_library(true);
                 g.set_library_focused(0);
@@ -3735,7 +4381,11 @@ fn dispatch_dashboard(action: &Action, repeat: bool, window: &crate::MainWindow)
 // For Music (nav=4) view pills occupy cursor 0-1, so sort pills start at offset 2.
 fn sort_bar_init_cursor(g: &crate::AppState) -> i32 {
     let sort = g.get_library_sort();
-    if g.get_active_nav() == 4 { sort + 3 } else { sort }
+    if g.get_active_nav() == 4 {
+        sort + 3
+    } else {
+        sort
+    }
 }
 
 fn nav_to(window: &crate::MainWindow, nav: i32) {
@@ -3758,13 +4408,19 @@ fn sidebar_nav(g: &crate::AppState<'_>, dir: i32) {
 }
 
 fn is_navigation_key(key: &str) -> bool {
-    let Some(ch) = key.chars().next() else { return true; };
+    let Some(ch) = key.chars().next() else {
+        return true;
+    };
     (ch as u32) >= 0xE000 || ch.is_control()
 }
 
 fn is_printable(key: &str) -> bool {
-    let Some(ch) = key.chars().next() else { return false; };
-    if key.chars().count() != 1 { return false; }
+    let Some(ch) = key.chars().next() else {
+        return false;
+    };
+    if key.chars().count() != 1 {
+        return false;
+    }
     (ch as u32) < 0xE000 && !ch.is_control()
 }
 
@@ -3772,10 +4428,10 @@ fn is_printable(key: &str) -> bool {
 /// see text_field.rs). True if `key` was one of them.
 fn caret_key(field: &crate::text_field::DrawnField, key: &str, g: &crate::AppState) -> bool {
     match key {
-        k if k == key::LEFT  => field.move_by(g, -1),
+        k if k == key::LEFT => field.move_by(g, -1),
         k if k == key::RIGHT => field.move_by(g, 1),
-        k if k == key::HOME  => field.home(g),
-        k if k == key::END   => field.end(g),
+        k if k == key::HOME => field.home(g),
+        k if k == key::END => field.end(g),
         _ => return false,
     }
     true

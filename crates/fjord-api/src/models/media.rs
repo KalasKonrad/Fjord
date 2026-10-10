@@ -195,8 +195,12 @@ pub struct MediaItem {
     // with this field end up in item_detail_cache, which is persisted to
     // screen_caches.json and can hold the whole library after a prewarm —
     // keeping every audio/subtitle entry would bloat it for data nothing reads.
-    #[serde(rename = "MediaStreams", default, deserialize_with = "video_streams_only",
-            skip_serializing_if = "Vec::is_empty")]
+    #[serde(
+        rename = "MediaStreams",
+        default,
+        deserialize_with = "video_streams_only",
+        skip_serializing_if = "Vec::is_empty"
+    )]
     pub media_streams: Vec<MediaStream>,
 }
 
@@ -219,7 +223,11 @@ impl MediaItem {
 
     pub fn resume_position_secs(&self) -> Option<f64> {
         let ticks = self.user_data.playback_position_ticks;
-        if ticks > 0 { Some(ticks as f64 / 10_000_000.0) } else { None }
+        if ticks > 0 {
+            Some(ticks as f64 / 10_000_000.0)
+        } else {
+            None
+        }
     }
 
     /// Extracts the primary video stream's resolution/fps/HDR-ness, for
@@ -232,10 +240,17 @@ impl MediaItem {
     /// are present (they agree in the overwhelming majority of real files;
     /// live-verified, not assumed).
     pub fn video_stream_info(&self) -> Option<VideoStreamInfo> {
-        let v = self.media_streams.iter().find(|s| s.stream_type == "Video")?;
+        let v = self
+            .media_streams
+            .iter()
+            .find(|s| s.stream_type == "Video")?;
         let width = v.width.filter(|w| *w > 0)?;
         let fps = v.real_frame_rate.or(v.average_frame_rate)?;
-        Some(VideoStreamInfo { width, fps, is_hdr: v.video_range.as_deref() == Some("HDR") })
+        Some(VideoStreamInfo {
+            width,
+            fps,
+            is_hdr: v.video_range.as_deref() == Some("HDR"),
+        })
     }
 
     pub fn display_name(&self) -> String {
@@ -262,8 +277,11 @@ impl MediaItem {
     /// episodes, item name otherwise.
     pub fn card_title(&self) -> String {
         match self.item_type.as_str() {
-            "Episode" => self.series_name.clone().unwrap_or_else(|| self.name.clone()),
-            _         => self.name.clone(),
+            "Episode" => self
+                .series_name
+                .clone()
+                .unwrap_or_else(|| self.name.clone()),
+            _ => self.name.clone(),
         }
     }
 
@@ -278,11 +296,19 @@ impl MediaItem {
             "Episode" => {
                 let s = self.parent_index_number.unwrap_or(0);
                 let e = self.index_number.unwrap_or(0);
-                if s > 0 || e > 0 { format!("S{}:E{} - {}", s, e, self.name) } else { self.name.clone() }
+                if s > 0 || e > 0 {
+                    format!("S{}:E{} - {}", s, e, self.name)
+                } else {
+                    self.name.clone()
+                }
             }
             "Series" => {
-                let Some(start) = self.production_year else { return String::new() };
-                let end_year = self.end_date.as_deref()
+                let Some(start) = self.production_year else {
+                    return String::new();
+                };
+                let end_year = self
+                    .end_date
+                    .as_deref()
                     .and_then(|d| d.get(..4))
                     .and_then(|y| y.parse::<u32>().ok());
                 match self.status.as_deref() {
@@ -293,15 +319,21 @@ impl MediaItem {
                     },
                 }
             }
-            "MusicAlbum" => self.album_artist.clone().unwrap_or_else(||
-                self.production_year.map(|y| y.to_string()).unwrap_or_default()),
+            "MusicAlbum" => self.album_artist.clone().unwrap_or_else(|| {
+                self.production_year
+                    .map(|y| y.to_string())
+                    .unwrap_or_default()
+            }),
             "MusicArtist" => String::new(),
             "Playlist" => match self.child_count {
                 Some(1) => "1 track".to_string(),
                 Some(n) => format!("{} tracks", n),
-                None    => String::new(),
+                None => String::new(),
             },
-            _ => self.production_year.map(|y| y.to_string()).unwrap_or_default(),
+            _ => self
+                .production_year
+                .map(|y| y.to_string())
+                .unwrap_or_default(),
         }
     }
 
@@ -310,7 +342,11 @@ impl MediaItem {
         let total_mins = (ticks / 600_000_000) as u32;
         let h = total_mins / 60;
         let m = total_mins % 60;
-        Some(if h > 0 { format!("{}h {}m", h, m) } else { format!("{}m", m) })
+        Some(if h > 0 {
+            format!("{}h {}m", h, m)
+        } else {
+            format!("{}m", m)
+        })
     }
 }
 
@@ -399,7 +435,9 @@ mod tests {
             {"Type":"Video","Width":3840,"Height":2160,"RealFrameRate":23.976025,"AverageFrameRate":23.9,"VideoRange":"HDR"}
         ]}"#;
         let item: MediaItem = serde_json::from_str(json).unwrap();
-        let info = item.video_stream_info().expect("should find the video stream");
+        let info = item
+            .video_stream_info()
+            .expect("should find the video stream");
         assert_eq!(info.width, 3840);
         assert!((info.fps - 23.976025).abs() < 0.0001);
         assert!(info.is_hdr);
@@ -411,7 +449,9 @@ mod tests {
             {"Type":"Video","Width":1920,"Height":1080,"AverageFrameRate":29.97,"VideoRange":"SDR"}
         ]}"#;
         let item: MediaItem = serde_json::from_str(json).unwrap();
-        let info = item.video_stream_info().expect("should find the video stream");
+        let info = item
+            .video_stream_info()
+            .expect("should find the video stream");
         assert_eq!(info.width, 1920);
         assert!((info.fps - 29.97).abs() < 0.0001);
         assert!(!info.is_hdr);
@@ -481,7 +521,9 @@ mod tests {
             {"Type":"Video","Width":1280,"RealFrameRate":25.0}
         ]}"#;
         let item: MediaItem = serde_json::from_str(json).unwrap();
-        let info = item.video_stream_info().expect("should find the video stream");
+        let info = item
+            .video_stream_info()
+            .expect("should find the video stream");
         assert!(!info.is_hdr);
     }
 }

@@ -107,21 +107,32 @@ use std::sync::{Arc, Mutex};
 use slint::{ComponentHandle, Global, Model, ModelRc, SharedString, VecModel};
 use tracing::{debug, warn};
 
-use fjord_api::JellyfinClient;
 use crate::config::FjordState;
 use crate::playback::{QueueItem, VideoState, start_playback};
 use crate::series::open_series_screen;
 use crate::{AppState, CardItem, MainWindow};
+use fjord_api::JellyfinClient;
 
 // Patch every dashboard row, library grid, and episode list; called after a successful API toggle.
 // Uses set_row_data to mutate rows in place — preserves poster images and fires per-row
 // change notifications without rebuilding the whole model.
-pub(crate) fn update_card_in_all_models(w: &MainWindow, id: &str, played: Option<bool>, fav: Option<bool>) {
+pub(crate) fn update_card_in_all_models(
+    w: &MainWindow,
+    id: &str,
+    played: Option<bool>,
+    fav: Option<bool>,
+) {
     let patch_cards = |model: ModelRc<CardItem>| {
         for i in 0..model.row_count() {
-            if let Some(mut c) = model.row_data(i) && c.id.as_str() == id {
-                if let Some(p) = played { c.has_played  = p; }
-                if let Some(f) = fav    { c.is_favorite = f; }
+            if let Some(mut c) = model.row_data(i)
+                && c.id.as_str() == id
+            {
+                if let Some(p) = played {
+                    c.has_played = p;
+                }
+                if let Some(f) = fav {
+                    c.is_favorite = f;
+                }
                 model.set_row_data(i, c);
                 break;
             }
@@ -134,9 +145,15 @@ pub(crate) fn update_card_in_all_models(w: &MainWindow, id: &str, played: Option
     {
         let tracks = g.get_album_tracks();
         for i in 0..tracks.row_count() {
-            if let Some(mut t) = tracks.row_data(i) && t.id.as_str() == id {
-                if let Some(p) = played { t.has_played  = p; }
-                if let Some(f) = fav    { t.is_favorite = f; }
+            if let Some(mut t) = tracks.row_data(i)
+                && t.id.as_str() == id
+            {
+                if let Some(p) = played {
+                    t.has_played = p;
+                }
+                if let Some(f) = fav {
+                    t.is_favorite = f;
+                }
                 tracks.set_row_data(i, t);
                 break;
             }
@@ -150,9 +167,15 @@ pub(crate) fn update_card_in_all_models(w: &MainWindow, id: &str, played: Option
     {
         let seasons = g.get_series_seasons();
         for i in 0..seasons.row_count() {
-            if let Some(mut s) = seasons.row_data(i) && s.id.as_str() == id {
-                if let Some(p) = played { s.played      = p; }
-                if let Some(f) = fav    { s.is_favorite = f; }
+            if let Some(mut s) = seasons.row_data(i)
+                && s.id.as_str() == id
+            {
+                if let Some(p) = played {
+                    s.played = p;
+                }
+                if let Some(f) = fav {
+                    s.is_favorite = f;
+                }
                 seasons.set_row_data(i, s);
                 break;
             }
@@ -199,10 +222,17 @@ pub(crate) fn update_card_in_all_models(w: &MainWindow, id: &str, played: Option
 /// web UI) correctly clears a stale star too — the identical bug class
 /// already found and fixed once this session for the Coming Up row's own
 /// `on_watchlist` field.
-pub(crate) fn patch_watchlist_on_jellyfin_models(g: &AppState, jellyfin_id: &str, on_watchlist: bool) {
+pub(crate) fn patch_watchlist_on_jellyfin_models(
+    g: &AppState,
+    jellyfin_id: &str,
+    on_watchlist: bool,
+) {
     let patch_cards = |model: ModelRc<CardItem>| {
         for i in 0..model.row_count() {
-            if let Some(mut c) = model.row_data(i) && c.id.as_str() == jellyfin_id && c.on_watchlist != on_watchlist {
+            if let Some(mut c) = model.row_data(i)
+                && c.id.as_str() == jellyfin_id
+                && c.on_watchlist != on_watchlist
+            {
                 c.on_watchlist = on_watchlist;
                 model.set_row_data(i, c);
                 break;
@@ -257,11 +287,18 @@ pub(crate) fn remove_item_from_all_models(w: &MainWindow, id: &str) {
     // slot (library-focused/series-focused-ep/season-focused-ep are all plain
     // integer indices with this exact risk).
     let lib_focus_hit = g.get_show_library()
-        && g.get_library_display().row_data(g.get_library_focused().max(0) as usize).is_some_and(|c| c.id.as_str() == id);
-    let series_ep_hit = g.get_show_series() && !g.get_series_in_season_row()
-        && g.get_series_episode_cards().row_data(g.get_series_focused_ep().max(0) as usize).is_some_and(|c| c.id.as_str() == id);
+        && g.get_library_display()
+            .row_data(g.get_library_focused().max(0) as usize)
+            .is_some_and(|c| c.id.as_str() == id);
+    let series_ep_hit = g.get_show_series()
+        && !g.get_series_in_season_row()
+        && g.get_series_episode_cards()
+            .row_data(g.get_series_focused_ep().max(0) as usize)
+            .is_some_and(|c| c.id.as_str() == id);
     let season_ep_hit = g.get_show_season()
-        && g.get_series_episode_cards().row_data(g.get_season_focused_ep().max(0) as usize).is_some_and(|c| c.id.as_str() == id);
+        && g.get_series_episode_cards()
+            .row_data(g.get_season_focused_ep().max(0) as usize)
+            .is_some_and(|c| c.id.as_str() == id);
 
     g.set_continue_watching(filter(g.get_continue_watching()));
     g.set_next_up(filter(g.get_next_up()));
@@ -383,7 +420,11 @@ pub(crate) fn remove_from_favorites(w: &MainWindow, id: &str) {
 // this exact risk). Returns None if the item is no longer present — callers
 // should fall back to a screen-appropriate safe reset, not a stale index.
 pub(crate) fn reanchor_focus(model: &ModelRc<CardItem>, focused_id: &str) -> Option<usize> {
-    (0..model.row_count()).find(|&i| model.row_data(i).is_some_and(|c| c.id.as_str() == focused_id))
+    (0..model.row_count()).find(|&i| {
+        model
+            .row_data(i)
+            .is_some_and(|c| c.id.as_str() == focused_id)
+    })
 }
 
 /// Insert/replace `items` by id into a CardItem model — the WS delta-sync counterpart to
@@ -395,11 +436,13 @@ pub(crate) fn reanchor_focus(model: &ModelRc<CardItem>, focused_id: &str) -> Opt
 /// actual model apply is delegated to crate::apply_cards_preserving_identity (Phase 96, shared
 /// with poster.rs/movies.rs/home.rs) so an upsert-only batch (no new rows) mutates in place.
 pub(crate) fn upsert_cards_in_model(
-    model:   ModelRc<CardItem>,
-    items:   &[fjord_api::models::MediaItem],
+    model: ModelRc<CardItem>,
+    items: &[fjord_api::models::MediaItem],
     posters: &std::collections::HashMap<String, slint::SharedPixelBuffer<slint::Rgba8Pixel>>,
 ) -> ModelRc<CardItem> {
-    let mut rows: Vec<CardItem> = (0..model.row_count()).filter_map(|i| model.row_data(i)).collect();
+    let mut rows: Vec<CardItem> = (0..model.row_count())
+        .filter_map(|i| model.row_data(i))
+        .collect();
     for item in items {
         // No FjordState access here (this is a pure model-merge fn) — same
         // carry-forward-from-existing-row idiom as home::refresh_row_preserving_posters
@@ -412,7 +455,7 @@ pub(crate) fn upsert_cards_in_model(
         match rows.iter_mut().find(|c| c.id.as_str() == item.id.as_str()) {
             Some(existing) => {
                 if !card.has_poster && existing.has_poster {
-                    card.poster     = existing.poster.clone();
+                    card.poster = existing.poster.clone();
                     card.has_poster = true;
                 }
                 card.on_watchlist = existing.on_watchlist;
@@ -439,7 +482,11 @@ pub(crate) fn upsert_cards_in_model(
 /// straight to this Jellyfin-flavored menu, which never had a Watchlist row
 /// at all; Discover's own Watchlist toggle only ever lived on the separate
 /// Discover-card menu family, unreachable once `find_local_item` redirects.
-pub(crate) fn resolve_tmdb_for_jellyfin_item(s: &FjordState, id: &str, item_type: &str) -> Option<(String, &'static str)> {
+pub(crate) fn resolve_tmdb_for_jellyfin_item(
+    s: &FjordState,
+    id: &str,
+    item_type: &str,
+) -> Option<(String, &'static str)> {
     let (list, media_type): (&[fjord_api::models::MediaItem], &'static str) = match item_type {
         "Movie" => (&s.all_movies, "movie"),
         "Series" => (&s.all_series, "tv"),
@@ -466,7 +513,14 @@ struct OpenMenuArgs {
 }
 
 fn open_context_menu_state(g: &AppState, state: &Arc<Mutex<FjordState>>, args: OpenMenuArgs) {
-    let OpenMenuArgs { id, item_type, played, is_fav, resume_pct, series_id } = args;
+    let OpenMenuArgs {
+        id,
+        item_type,
+        played,
+        is_fav,
+        resume_pct,
+        series_id,
+    } = args;
     g.set_context_menu_item_id(id.clone());
     g.set_context_menu_item_type(item_type.clone());
     g.set_context_menu_series_id(series_id);
@@ -477,7 +531,14 @@ fn open_context_menu_state(g: &AppState, state: &Arc<Mutex<FjordState>>, args: O
         let s = state.lock().unwrap();
         match resolve_tmdb_for_jellyfin_item(&s, id.as_str(), item_type.as_str()) {
             Some((tmdb_id, media_type)) => {
-                let on_watchlist = s.discover_watchlist_ids.contains(&(if media_type == "movie" { "DiscoverMovie" } else { "DiscoverTv" }, tmdb_id.clone()));
+                let on_watchlist = s.discover_watchlist_ids.contains(&(
+                    if media_type == "movie" {
+                        "DiscoverMovie"
+                    } else {
+                        "DiscoverTv"
+                    },
+                    tmdb_id.clone(),
+                ));
                 g.set_context_menu_jf_tmdb_id(tmdb_id.into());
                 g.set_context_menu_jf_media_type(media_type.into());
                 g.set_context_menu_on_watchlist(on_watchlist);
@@ -502,7 +563,9 @@ fn open_context_menu_state(g: &AppState, state: &Arc<Mutex<FjordState>>, args: O
 pub(crate) fn update_series_unplayed_count(w: &MainWindow, series_id: &str, delta: i32) {
     let patch = |model: slint::ModelRc<crate::CardItem>| {
         for i in 0..model.row_count() {
-            if let Some(mut c) = model.row_data(i) && c.id.as_str() == series_id {
+            if let Some(mut c) = model.row_data(i)
+                && c.id.as_str() == series_id
+            {
                 c.unplayed_count = (c.unplayed_count + delta).max(0);
                 model.set_row_data(i, c);
                 break;
@@ -529,40 +592,66 @@ pub(crate) fn update_series_unplayed_count(w: &MainWindow, series_id: &str, delt
 }
 
 pub(crate) fn wire_context_menu(
-    window:    &MainWindow,
-    state:     Arc<Mutex<FjordState>>,
-    video:     Arc<Mutex<VideoState>>,
+    window: &MainWindow,
+    state: Arc<Mutex<FjordState>>,
+    video: Arc<Mutex<VideoState>>,
     rt_handle: tokio::runtime::Handle,
 ) {
     // ── open-context-menu: called with full card data from Slint ─────────────
     {
         let state = Arc::clone(&state);
         let ww = window.as_weak();
-        AppState::get(window).on_open_context_menu(move |id, has_played, is_fav, resume_pct, item_type, series_id| {
-            let Some(w) = ww.upgrade() else { return };
-            open_context_menu_state(&AppState::get(&w), &state, OpenMenuArgs { id, item_type, played: has_played, is_fav, resume_pct, series_id });
-        });
+        AppState::get(window).on_open_context_menu(
+            move |id, has_played, is_fav, resume_pct, item_type, series_id| {
+                let Some(w) = ww.upgrade() else { return };
+                open_context_menu_state(
+                    &AppState::get(&w),
+                    &state,
+                    OpenMenuArgs {
+                        id,
+                        item_type,
+                        played: has_played,
+                        is_fav,
+                        resume_pct,
+                        series_id,
+                    },
+                );
+            },
+        );
     }
 
     // ── open-context-menu-browse: Rust resolves index into filtered_items ────
     {
         let state = Arc::clone(&state);
-        let ww    = window.as_weak();
+        let ww = window.as_weak();
         AppState::get(window).on_open_context_menu_browse(move |index| {
             let Some(w) = ww.upgrade() else { return };
             let s = state.lock().unwrap();
-            let Some(item) = s.filtered_items.get(index as usize) else { return };
-            let id         = SharedString::from(item.id.as_str());
-            let played     = item.user_data.played;
-            let is_fav     = item.user_data.is_favorite;
+            let Some(item) = s.filtered_items.get(index as usize) else {
+                return;
+            };
+            let id = SharedString::from(item.id.as_str());
+            let played = item.user_data.played;
+            let is_fav = item.user_data.is_favorite;
             let resume_pct = item.resume_pct();
-            let item_type  = SharedString::from(item.item_type.as_str());
-            let series_id  = SharedString::from(item.series_id.as_deref().unwrap_or(""));
-            let title      = SharedString::from(item.display_name());
+            let item_type = SharedString::from(item.item_type.as_str());
+            let series_id = SharedString::from(item.series_id.as_deref().unwrap_or(""));
+            let title = SharedString::from(item.display_name());
             drop(s);
             let g = AppState::get(&w);
             g.set_context_menu_title(title);
-            open_context_menu_state(&g, &state, OpenMenuArgs { id, item_type, played, is_fav, resume_pct, series_id });
+            open_context_menu_state(
+                &g,
+                &state,
+                OpenMenuArgs {
+                    id,
+                    item_type,
+                    played,
+                    is_fav,
+                    resume_pct,
+                    series_id,
+                },
+            );
         });
     }
 
@@ -570,10 +659,23 @@ pub(crate) fn wire_context_menu(
     {
         let state = Arc::clone(&state);
         let ww = window.as_weak();
-        AppState::get(window).on_open_context_menu_series_ep(move |id, has_played, is_fav, resume_pct, series_id| {
-            let Some(w) = ww.upgrade() else { return };
-            open_context_menu_state(&AppState::get(&w), &state, OpenMenuArgs { id, item_type: "Episode".into(), played: has_played, is_fav, resume_pct, series_id });
-        });
+        AppState::get(window).on_open_context_menu_series_ep(
+            move |id, has_played, is_fav, resume_pct, series_id| {
+                let Some(w) = ww.upgrade() else { return };
+                open_context_menu_state(
+                    &AppState::get(&w),
+                    &state,
+                    OpenMenuArgs {
+                        id,
+                        item_type: "Episode".into(),
+                        played: has_played,
+                        is_fav,
+                        resume_pct,
+                        series_id,
+                    },
+                );
+            },
+        );
     }
 
     // ── context-jf-toggle-watchlist: Watchlist row on the JELLYFIN menu
@@ -585,8 +687,8 @@ pub(crate) fn wire_context_menu(
     // distinction once the id is known.
     {
         let state = Arc::clone(&state);
-        let ww    = window.as_weak();
-        let rt    = rt_handle.clone();
+        let ww = window.as_weak();
+        let rt = rt_handle.clone();
         AppState::get(window).on_context_jf_toggle_watchlist(move || {
             let Some(w) = ww.upgrade() else { return };
             let g = AppState::get(&w);
@@ -598,29 +700,41 @@ pub(crate) fn wire_context_menu(
             let media_type = g.get_context_menu_jf_media_type().to_string();
             let adding = !g.get_context_menu_on_watchlist();
             let title = g.get_context_menu_title().to_string();
-            crate::discover::discover_toggle_watchlist(Arc::clone(&state), ww.clone(), rt.clone(), tmdb_id, media_type, title, adding, None);
+            crate::discover::discover_toggle_watchlist(
+                Arc::clone(&state),
+                ww.clone(),
+                rt.clone(),
+                tmdb_id,
+                media_type,
+                title,
+                adding,
+                None,
+            );
         });
     }
 
     // ── context-mark-played: toggle played state ──────────────────────────────
     {
         let state = Arc::clone(&state);
-        let ww    = window.as_weak();
-        let rt    = rt_handle.clone();
+        let ww = window.as_weak();
+        let rt = rt_handle.clone();
         AppState::get(window).on_context_mark_played(move |id, currently_played| {
-            let s  = state.lock().unwrap();
-            let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
+            let s = state.lock().unwrap();
+            let Some(client) = s.client.as_ref().map(Arc::clone) else {
+                return;
+            };
             drop(s);
-            let id2     = id.to_string();
+            let id2 = id.to_string();
             // Capture series_id now (CR2-4): re-reading inside invoke_from_event_loop
             // would see whatever item the menu is open for at response time, not this one.
-            let sid2    = ww.upgrade()
+            let sid2 = ww
+                .upgrade()
                 .map(|w| AppState::get(&w).get_context_menu_series_id().to_string())
                 .unwrap_or_default();
-            let ww2     = ww.clone();
-            let state2  = Arc::clone(&state);
+            let ww2 = ww.clone();
+            let state2 = Arc::clone(&state);
             let client2 = Arc::clone(&client); // for refresh_series_next_up
-            let rt2     = rt.clone();           // for refresh_series_next_up
+            let rt2 = rt.clone(); // for refresh_series_next_up
             rt.spawn(async move {
                 let result = if currently_played {
                     client.mark_unplayed(&id2).await
@@ -632,7 +746,10 @@ pub(crate) fn wire_context_menu(
                     crate::show_toast(ww2.clone(), "Couldn't update watch status".to_string());
                 } else {
                     let new_played = !currently_played;
-                    state2.lock().unwrap().update_item_user_state(&id2, Some(new_played), None);
+                    state2
+                        .lock()
+                        .unwrap()
+                        .update_item_user_state(&id2, Some(new_played), None);
                     let _ = slint::invoke_from_event_loop(move || {
                         if let Some(w) = ww2.upgrade() {
                             // Only update the menu display if it's still open for this item (CR-7).
@@ -656,7 +773,10 @@ pub(crate) fn wire_context_menu(
                             // OR unplayed) so the new first-unwatched episode appears immediately.
                             if !sid2.is_empty() {
                                 crate::series::refresh_series_next_up(
-                                    sid2.clone(), client2, ww2.clone(), rt2
+                                    sid2.clone(),
+                                    client2,
+                                    ww2.clone(),
+                                    rt2,
                                 );
                             }
                             // Adjust unplayed badge on the parent series card if this is an episode.
@@ -674,14 +794,16 @@ pub(crate) fn wire_context_menu(
     // ── context-toggle-fav: toggle favourite state ────────────────────────────
     {
         let state = Arc::clone(&state);
-        let ww    = window.as_weak();
-        let rt    = rt_handle.clone();
+        let ww = window.as_weak();
+        let rt = rt_handle.clone();
         AppState::get(window).on_context_toggle_fav(move |id, currently_fav| {
-            let s  = state.lock().unwrap();
-            let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
+            let s = state.lock().unwrap();
+            let Some(client) = s.client.as_ref().map(Arc::clone) else {
+                return;
+            };
             drop(s);
-            let id2    = id.to_string();
-            let ww2    = ww.clone();
+            let id2 = id.to_string();
+            let ww2 = ww.clone();
             let state2 = Arc::clone(&state);
             rt.spawn(async move {
                 let result = if currently_fav {
@@ -695,7 +817,10 @@ pub(crate) fn wire_context_menu(
                     return;
                 }
                 let new_fav = !currently_fav;
-                state2.lock().unwrap().update_item_user_state(&id2, None, Some(new_fav));
+                state2
+                    .lock()
+                    .unwrap()
+                    .update_item_user_state(&id2, None, Some(new_fav));
                 let ww3 = ww2.clone();
                 let _ = slint::invoke_from_event_loop(move || {
                     if let Some(w) = ww2.upgrade() {
@@ -714,10 +839,10 @@ pub(crate) fn wire_context_menu(
 
     // ── context-play-from-start: play with no resume position ───────────────
     {
-        let state  = Arc::clone(&state);
-        let video  = Arc::clone(&video);
-        let ww     = window.as_weak();
-        let rt     = rt_handle.clone();
+        let state = Arc::clone(&state);
+        let video = Arc::clone(&video);
+        let ww = window.as_weak();
+        let rt = rt_handle.clone();
         AppState::get(window).on_context_play_from_start(move |id| {
             let id = id.to_string();
             let s  = state.lock().unwrap();
@@ -845,16 +970,22 @@ pub(crate) fn wire_context_menu(
 // ── Queue helpers ─────────────────────────────────────────────────────────────
 
 fn find_title_in_state(s: &FjordState, id: &str) -> String {
-    for item in s.all_movies.iter()
+    for item in s
+        .all_movies
+        .iter()
         .chain(s.all_series.iter())
         .chain(s.all_albums.iter())
         .chain(s.all_artists.iter())
     {
-        if item.id == id { return item.display_name(); }
+        if item.id == id {
+            return item.display_name();
+        }
     }
     for eps in s.series_episode_cache.values() {
         for ep in eps {
-            if ep.id == id { return ep.display_name(); }
+            if ep.id == id {
+                return ep.display_name();
+            }
         }
     }
     id.to_string()
@@ -902,7 +1033,9 @@ fn enqueue_item(vs: &mut VideoState, item: QueueItem, play_next: bool) {
             vs.playlist.insert(insert_at, item);
             // Keep shuffle_order valid: shift indices >= insert_at up by one
             for idx in vs.shuffle_order.iter_mut() {
-                if *idx >= insert_at { *idx += 1; }
+                if *idx >= insert_at {
+                    *idx += 1;
+                }
             }
             // Insert the new position right after the CURRENT item's slot in
             // shuffle_order. Slot 1 (pre-CR10-8) was only correct immediately
@@ -910,7 +1043,9 @@ fn enqueue_item(vs: &mut VideoState, item: QueueItem, play_next: bool) {
             // position k, anything inserted at slot 1 was behind the cursor
             // and never played.
             if vs.shuffle && !vs.shuffle_order.is_empty() {
-                let cur_pos = vs.shuffle_order.iter()
+                let cur_pos = vs
+                    .shuffle_order
+                    .iter()
                     .position(|&i| i == vs.playlist_index)
                     .unwrap_or(0);
                 vs.shuffle_order.insert(cur_pos + 1, insert_at);
@@ -927,30 +1062,36 @@ fn enqueue_item(vs: &mut VideoState, item: QueueItem, play_next: bool) {
 // resolved to their next unwatched episode first (CR10-7) — a raw series id
 // has no stream, so enqueueing it verbatim produced an unplayable item.
 fn queue_from_context_menu(
-    g:         &AppState,
-    state:     &Arc<Mutex<FjordState>>,
-    video:     &Arc<Mutex<VideoState>>,
-    ww:        &slint::Weak<MainWindow>,
-    rt:        &tokio::runtime::Handle,
+    g: &AppState,
+    state: &Arc<Mutex<FjordState>>,
+    video: &Arc<Mutex<VideoState>>,
+    ww: &slint::Weak<MainWindow>,
+    rt: &tokio::runtime::Handle,
     play_next: bool,
 ) {
-    let id        = g.get_context_menu_item_id().to_string();
+    let id = g.get_context_menu_item_id().to_string();
     let item_type = g.get_context_menu_item_type().to_string();
-    let sid_str   = g.get_context_menu_series_id().to_string();
-    let series_id = if sid_str.is_empty() { None } else { Some(sid_str) };
+    let sid_str = g.get_context_menu_series_id().to_string();
+    let series_id = if sid_str.is_empty() {
+        None
+    } else {
+        Some(sid_str)
+    };
 
     if item_type == "Series" {
-        let Some(client) = state.lock().unwrap().client.as_ref().map(Arc::clone) else { return };
+        let Some(client) = state.lock().unwrap().client.as_ref().map(Arc::clone) else {
+            return;
+        };
         let video2 = Arc::clone(video);
-        let ww2    = ww.clone();
+        let ww2 = ww.clone();
         rt.spawn(async move {
             match client.get_next_up_for_series(&id).await {
                 Ok(Some(ep)) => {
                     let item = QueueItem {
-                        id:         ep.id.clone(),
-                        item_type:  "Episode".into(),
-                        series_id:  ep.series_id.clone().or(Some(id)),
-                        title:      ep.display_name(),
+                        id: ep.id.clone(),
+                        item_type: "Episode".into(),
+                        series_id: ep.series_id.clone().or(Some(id)),
+                        title: ep.display_name(),
                         audio_meta: None,
                     };
                     let _ = slint::invoke_from_event_loop(move || {
@@ -965,7 +1106,10 @@ fn queue_from_context_menu(
                 }
                 Err(e) => {
                     warn!("queue series next-up failed: {e:#}");
-                    crate::show_toast(ww2, "Couldn't queue series — check your server connection".to_string());
+                    crate::show_toast(
+                        ww2,
+                        "Couldn't queue series — check your server connection".to_string(),
+                    );
                 }
             }
         });
@@ -979,16 +1123,21 @@ fn queue_from_context_menu(
     // artist id has no stream, so enqueueing it verbatim produced an unplayable
     // row (and its GUID as the title). Same class of bug as Series (CR10-7).
     if item_type == "MusicAlbum" || item_type == "MusicArtist" || item_type == "Playlist" {
-        let Some(client) = state.lock().unwrap().client.as_ref().map(Arc::clone) else { return };
-        let video2    = Arc::clone(video);
-        let ww2       = ww.clone();
+        let Some(client) = state.lock().unwrap().client.as_ref().map(Arc::clone) else {
+            return;
+        };
+        let video2 = Arc::clone(video);
+        let ww2 = ww.clone();
         let itype2 = item_type.clone();
         rt.spawn(async move {
             let items = match music_container_tracks(&client, &id, &itype2).await {
-                Ok(v)  => v,
+                Ok(v) => v,
                 Err(e) => {
                     warn!("queue container tracks failed: {e:#}");
-                    crate::show_toast(ww2, "Couldn't queue — check your server connection".to_string());
+                    crate::show_toast(
+                        ww2,
+                        "Couldn't queue — check your server connection".to_string(),
+                    );
                     return;
                 }
             };
@@ -1002,9 +1151,13 @@ fn queue_from_context_menu(
                 if play_next {
                     // enqueue_item(play_next) inserts each track right after the
                     // current position — reverse iteration keeps album order.
-                    for item in items.into_iter().rev() { enqueue_item(&mut vs, item, true); }
+                    for item in items.into_iter().rev() {
+                        enqueue_item(&mut vs, item, true);
+                    }
                 } else {
-                    for item in items { enqueue_item(&mut vs, item, false); }
+                    for item in items {
+                        enqueue_item(&mut vs, item, false);
+                    }
                 }
                 crate::push_queue_display(&vs, &AppState::get(&w));
             });
@@ -1031,21 +1184,31 @@ fn queue_from_context_menu(
         }
     };
     let mut vs = video.lock().unwrap();
-    enqueue_item(&mut vs, QueueItem { id, item_type, series_id, title, audio_meta: None }, play_next);
+    enqueue_item(
+        &mut vs,
+        QueueItem {
+            id,
+            item_type,
+            series_id,
+            title,
+            audio_meta: None,
+        },
+        play_next,
+    );
     crate::push_queue_display(&vs, g); // also updates queue-count (CR10-6)
 }
 
 pub(crate) fn wire_queue_callbacks(
-    window:    &MainWindow,
-    state:     Arc<Mutex<FjordState>>,
-    video:     Arc<Mutex<VideoState>>,
+    window: &MainWindow,
+    state: Arc<Mutex<FjordState>>,
+    video: Arc<Mutex<VideoState>>,
     rt_handle: tokio::runtime::Handle,
 ) {
     {
         let state = Arc::clone(&state);
         let video = Arc::clone(&video);
-        let ww    = window.as_weak();
-        let rt    = rt_handle.clone();
+        let ww = window.as_weak();
+        let rt = rt_handle.clone();
         AppState::get(window).on_queue_add_item(move || {
             let Some(w) = ww.upgrade() else { return };
             queue_from_context_menu(&AppState::get(&w), &state, &video, &ww, &rt, false);
@@ -1054,8 +1217,8 @@ pub(crate) fn wire_queue_callbacks(
     {
         let state = Arc::clone(&state);
         let video = Arc::clone(&video);
-        let ww    = window.as_weak();
-        let rt    = rt_handle.clone();
+        let ww = window.as_weak();
+        let rt = rt_handle.clone();
         AppState::get(window).on_queue_play_next_item(move || {
             let Some(w) = ww.upgrade() else { return };
             queue_from_context_menu(&AppState::get(&w), &state, &video, &ww, &rt, true);
@@ -1149,12 +1312,18 @@ fn handle_key_discover_menu(action: &crate::keys::Action, g: &AppState) -> bool 
             true
         }
         Action::Up => {
-            let pos = rows.iter().position(|&r| r == g.get_context_menu_focused()).unwrap_or(0);
+            let pos = rows
+                .iter()
+                .position(|&r| r == g.get_context_menu_focused())
+                .unwrap_or(0);
             g.set_context_menu_focused(rows[if pos == 0 { rows.len() - 1 } else { pos - 1 }]);
             true
         }
         Action::Down => {
-            let pos = rows.iter().position(|&r| r == g.get_context_menu_focused()).unwrap_or(0);
+            let pos = rows
+                .iter()
+                .position(|&r| r == g.get_context_menu_focused())
+                .unwrap_or(0);
             g.set_context_menu_focused(rows[if pos + 1 >= rows.len() { 0 } else { pos + 1 }]);
             true
         }
@@ -1227,13 +1396,17 @@ fn existing_jellyfin_menu_rows(g: &AppState) -> Vec<i32> {
 }
 
 pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
-    if g.get_context_menu_item_type().as_str().starts_with("Discover") {
+    if g.get_context_menu_item_type()
+        .as_str()
+        .starts_with("Discover")
+    {
         return handle_key_discover_menu(action, g);
     }
     use crate::keys::Action;
     match action {
         Action::Back | Action::OpenContextMenu => {
-            g.set_show_context_menu(false); true
+            g.set_show_context_menu(false);
+            true
         }
         Action::Up => {
             let rows = existing_jellyfin_menu_rows(g);
@@ -1250,10 +1423,10 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
             true
         }
         Action::Confirm => {
-            let id     = g.get_context_menu_item_id();
+            let id = g.get_context_menu_item_id();
             let played = g.get_context_menu_has_played();
-            let fav    = g.get_context_menu_is_favorite();
-            let itype  = g.get_context_menu_item_type();
+            let fav = g.get_context_menu_is_favorite();
+            let itype = g.get_context_menu_item_type();
             match g.get_context_menu_focused() {
                 0 => g.invoke_item_play(id),
                 1 => g.invoke_context_play_from_start(id),
@@ -1292,26 +1465,35 @@ fn is_music_type(t: &str) -> bool {
 // Audio QueueItems in play order. Errors on the container-level fetch bubble up;
 // a single failing album inside an artist is warned and skipped.
 async fn music_container_tracks(
-    client:    &JellyfinClient,
-    id:        &str,
+    client: &JellyfinClient,
+    id: &str,
     item_type: &str,
 ) -> anyhow::Result<Vec<QueueItem>> {
     if item_type == "Playlist" {
-        return Ok(client.get_playlist_items(id).await?
+        return Ok(client
+            .get_playlist_items(id)
+            .await?
             .into_iter()
             .filter(|t| t.item_type == "Audio")
             .map(|t| QueueItem {
-                id:         t.id.clone(),
-                item_type:  "Audio".into(),
-                series_id:  None,
-                title:      t.name.clone(),
-                audio_meta: Some((t.album_artist.clone().unwrap_or_default(),
-                                  t.album_id.clone().unwrap_or_default())),
+                id: t.id.clone(),
+                item_type: "Audio".into(),
+                series_id: None,
+                title: t.name.clone(),
+                audio_meta: Some((
+                    t.album_artist.clone().unwrap_or_default(),
+                    t.album_id.clone().unwrap_or_default(),
+                )),
             })
             .collect());
     }
     let album_ids: Vec<String> = if item_type == "MusicArtist" {
-        client.get_artist_albums(id).await?.into_iter().map(|a| a.id).collect()
+        client
+            .get_artist_albums(id)
+            .await?
+            .into_iter()
+            .map(|a| a.id)
+            .collect()
     } else {
         vec![id.to_string()]
     };
@@ -1321,12 +1503,14 @@ async fn music_container_tracks(
             Ok(tracks) => {
                 for t in tracks {
                     items.push(QueueItem {
-                        id:         t.id.clone(),
-                        item_type:  "Audio".into(),
-                        series_id:  None,
-                        title:      t.display_name(),
-                        audio_meta: Some((t.album_artist.clone().unwrap_or_default(),
-                                          album_id.clone())),
+                        id: t.id.clone(),
+                        item_type: "Audio".into(),
+                        series_id: None,
+                        title: t.display_name(),
+                        audio_meta: Some((
+                            t.album_artist.clone().unwrap_or_default(),
+                            album_id.clone(),
+                        )),
                     });
                 }
             }
@@ -1338,27 +1522,33 @@ async fn music_container_tracks(
 
 // Target items for playlist add: a track is itself; an album is its tracks.
 async fn resolve_music_ids(
-    client:    &JellyfinClient,
-    id:        String,
+    client: &JellyfinClient,
+    id: String,
     item_type: &str,
 ) -> anyhow::Result<Vec<String>> {
     if item_type == "MusicAlbum" {
-        Ok(client.get_album_tracks(&id).await?.into_iter().map(|t| t.id).collect())
+        Ok(client
+            .get_album_tracks(&id)
+            .await?
+            .into_iter()
+            .map(|t| t.id)
+            .collect())
     } else {
         Ok(vec![id])
     }
 }
 
 fn playlist_items_model(playlists: &[fjord_api::models::MediaItem]) -> ModelRc<CardItem> {
-    let items: Vec<CardItem> = playlists.iter().map(|p| {
-        CardItem {
-            id:        p.id.as_str().into(),
+    let items: Vec<CardItem> = playlists
+        .iter()
+        .map(|p| CardItem {
+            id: p.id.as_str().into(),
             item_type: "Playlist".into(),
-            title:     p.name.as_str().into(),
-            subtitle:  p.card_subtitle().as_str().into(),
+            title: p.name.as_str().into(),
+            subtitle: p.card_subtitle().as_str().into(),
             ..Default::default()
-        }
-    }).collect();
+        })
+        .collect();
     ModelRc::new(VecModel::from(items))
 }
 
@@ -1366,12 +1556,14 @@ fn playlist_items_model(playlists: &[fjord_api::models::MediaItem]) -> ModelRc<C
 // new playlist appeared): updates FjordState + disk cache + all-playlists model
 // + the open library grid + the picker list if it is still open.
 fn refresh_playlists(
-    state:      Arc<Mutex<FjordState>>,
-    ww:         slint::Weak<MainWindow>,
-    rt:         tokio::runtime::Handle,
+    state: Arc<Mutex<FjordState>>,
+    ww: slint::Weak<MainWindow>,
+    rt: tokio::runtime::Handle,
     mutated_id: Option<String>,
 ) {
-    let Some(client) = state.lock().unwrap().client.as_ref().map(Arc::clone) else { return };
+    let Some(client) = state.lock().unwrap().client.as_ref().map(Arc::clone) else {
+        return;
+    };
     let user_id = client.user_id.clone();
     let rt_task = rt.clone();
     rt.spawn(async move {
@@ -1379,7 +1571,7 @@ fn refresh_playlists(
             Ok(playlists) => {
                 {
                     let mut s = state.lock().unwrap();
-                    s.all_playlists     = playlists.clone();
+                    s.all_playlists = playlists.clone();
                     s.playlists_fetched = true;
                 }
                 crate::home::save_playlists_cache(&user_id, &playlists);
@@ -1388,22 +1580,32 @@ fn refresh_playlists(
                 // (disk-cache hits for the ones already shown).
                 let posters = crate::poster::fetch_posters_for_delta(&client, &playlists).await;
                 let state2 = Arc::clone(&state);
-                let ww2    = ww.clone();
-                let rt2    = rt_task.clone();
+                let ww2 = ww.clone();
+                let rt2 = rt_task.clone();
                 let _ = slint::invoke_from_event_loop(move || {
                     let Some(w) = ww.upgrade() else { return };
                     let g = AppState::get(&w);
-                    g.set_all_playlists(crate::items_to_model(&playlists, &std::collections::HashSet::new()));
+                    g.set_all_playlists(crate::items_to_model(
+                        &playlists,
+                        &std::collections::HashSet::new(),
+                    ));
                     // Music dashboard "Playlists" row (HomeData.playlists — the same
                     // get_all_playlists list). Without this it only caught up via
                     // the WS LibraryChanged → delta refresh, which Jellyfin sends
                     // ~30 s after a playlist is created (seen live on the HTPC).
-                    let row = crate::home::refresh_row_preserving_posters(&g.get_music_playlists(), &playlists);
+                    let row = crate::home::refresh_row_preserving_posters(
+                        &g.get_music_playlists(),
+                        &playlists,
+                    );
                     for i in 0..row.row_count() {
-                        let Some(mut card) = row.row_data(i) else { continue };
-                        if card.has_poster { continue; }
+                        let Some(mut card) = row.row_data(i) else {
+                            continue;
+                        };
+                        if card.has_poster {
+                            continue;
+                        }
                         if let Some(buf) = posters.get(card.id.as_str()) {
-                            card.poster     = slint::Image::from_rgba8(buf.clone());
+                            card.poster = slint::Image::from_rgba8(buf.clone());
                             card.has_poster = true;
                             row.set_row_data(i, card);
                         }
@@ -1412,13 +1614,19 @@ fn refresh_playlists(
                     if g.get_show_playlist_picker() {
                         g.set_playlist_picker_items(playlist_items_model(&playlists));
                     }
-                    if g.get_show_library() && g.get_active_nav() == 4 && g.get_library_music_view() == 2 {
+                    if g.get_show_library()
+                        && g.get_active_nav() == 4
+                        && g.get_library_music_view() == 2
+                    {
                         crate::browse::refresh_library_display(&w);
                     }
                     // The open playlist detail screen isn't covered by any model
                     // above — reopen it so its tracklist reflects the change (CR11-7).
                     if let Some(id) = mutated_id
-                        && g.get_show_album() && g.get_album_is_playlist() && g.get_album_id() == id.as_str() {
+                        && g.get_show_album()
+                        && g.get_album_is_playlist()
+                        && g.get_album_id() == id.as_str()
+                    {
                         let title = g.get_album_title().to_string();
                         // Invalidate container_tracks_cache first — without this the
                         // "reopen" below just re-serves the pre-mutation cached
@@ -1437,15 +1645,15 @@ fn refresh_playlists(
 }
 
 pub(crate) fn wire_playlist_picker(
-    window:    &MainWindow,
-    state:     Arc<Mutex<FjordState>>,
+    window: &MainWindow,
+    state: Arc<Mutex<FjordState>>,
     rt_handle: tokio::runtime::Handle,
 ) {
     // ── open: populate from FjordState, refresh in background ────────────────
     {
         let state = Arc::clone(&state);
-        let ww    = window.as_weak();
-        let rt    = rt_handle.clone();
+        let ww = window.as_weak();
+        let rt = rt_handle.clone();
         AppState::get(window).on_open_playlist_picker(move || {
             let Some(w) = ww.upgrade() else { return };
             let g = AppState::get(&w);
@@ -1482,39 +1690,52 @@ pub(crate) fn wire_playlist_picker(
     // ── select: add the context-menu item to an existing playlist ────────────
     {
         let state = Arc::clone(&state);
-        let ww    = window.as_weak();
-        let rt    = rt_handle.clone();
+        let ww = window.as_weak();
+        let rt = rt_handle.clone();
         AppState::get(window).on_playlist_picker_select(move |idx| {
             let Some(w) = ww.upgrade() else { return };
             let g = AppState::get(&w);
-            let Some(pl) = g.get_playlist_picker_items().row_data(idx as usize) else { return };
-            let pl_id     = pl.id.to_string();
-            let pl_name   = pl.title.to_string();
-            let target    = g.get_context_menu_item_id().to_string();
+            let Some(pl) = g.get_playlist_picker_items().row_data(idx as usize) else {
+                return;
+            };
+            let pl_id = pl.id.to_string();
+            let pl_name = pl.title.to_string();
+            let target = g.get_context_menu_item_id().to_string();
             let item_type = g.get_context_menu_item_type().to_string();
             g.set_show_playlist_picker(false);
-            let Some(client) = state.lock().unwrap().client.as_ref().map(Arc::clone) else { return };
+            let Some(client) = state.lock().unwrap().client.as_ref().map(Arc::clone) else {
+                return;
+            };
             let state2 = Arc::clone(&state);
-            let ww2    = ww.clone();
-            let rt2    = rt.clone();
+            let ww2 = ww.clone();
+            let rt2 = rt.clone();
             rt.spawn(async move {
                 let ids = match resolve_music_ids(&client, target, &item_type).await {
                     Ok(v) if !v.is_empty() => v,
-                    Ok(_)  => { crate::show_toast(ww2, "Nothing to add".to_string()); return; }
+                    Ok(_) => {
+                        crate::show_toast(ww2, "Nothing to add".to_string());
+                        return;
+                    }
                     Err(e) => {
                         warn!("playlist add resolve: {e:#}");
-                        crate::show_toast(ww2, "Couldn't add to playlist — check your server connection".to_string());
+                        crate::show_toast(
+                            ww2,
+                            "Couldn't add to playlist — check your server connection".to_string(),
+                        );
                         return;
                     }
                 };
                 match client.add_to_playlist(&pl_id, &ids).await {
-                    Ok(())  => {
+                    Ok(()) => {
                         crate::show_toast(ww2.clone(), format!("Added to {pl_name}"));
                         refresh_playlists(state2, ww2, rt2, Some(pl_id));
                     }
                     Err(e) => {
                         warn!("add_to_playlist: {e:#}");
-                        crate::show_toast(ww2, "Couldn't add to playlist — check your server connection".to_string());
+                        crate::show_toast(
+                            ww2,
+                            "Couldn't add to playlist — check your server connection".to_string(),
+                        );
                     }
                 }
             });
@@ -1524,8 +1745,8 @@ pub(crate) fn wire_playlist_picker(
     // ── create: new playlist named playlist-picker-name with the item ────────
     {
         let state = Arc::clone(&state);
-        let ww    = window.as_weak();
-        let rt    = rt_handle.clone();
+        let ww = window.as_weak();
+        let rt = rt_handle.clone();
         AppState::get(window).on_playlist_picker_create(move || {
             let Some(w) = ww.upgrade() else { return };
             let g = AppState::get(&w);
@@ -1534,31 +1755,42 @@ pub(crate) fn wire_playlist_picker(
                 crate::show_toast(ww.clone(), "Enter a playlist name".to_string());
                 return;
             }
-            let target    = g.get_context_menu_item_id().to_string();
+            let target = g.get_context_menu_item_id().to_string();
             let item_type = g.get_context_menu_item_type().to_string();
             g.set_show_playlist_picker(false);
-            let Some(client) = state.lock().unwrap().client.as_ref().map(Arc::clone) else { return };
+            let Some(client) = state.lock().unwrap().client.as_ref().map(Arc::clone) else {
+                return;
+            };
             let state2 = Arc::clone(&state);
-            let ww2    = ww.clone();
-            let rt2    = rt.clone();
+            let ww2 = ww.clone();
+            let rt2 = rt.clone();
             rt.spawn(async move {
                 let ids = match resolve_music_ids(&client, target, &item_type).await {
                     Ok(v) if !v.is_empty() => v,
-                    Ok(_)  => { crate::show_toast(ww2, "Nothing to add".to_string()); return; }
+                    Ok(_) => {
+                        crate::show_toast(ww2, "Nothing to add".to_string());
+                        return;
+                    }
                     Err(e) => {
                         warn!("playlist create resolve: {e:#}");
-                        crate::show_toast(ww2, "Couldn't create playlist — check your server connection".to_string());
+                        crate::show_toast(
+                            ww2,
+                            "Couldn't create playlist — check your server connection".to_string(),
+                        );
                         return;
                     }
                 };
                 match client.create_playlist(&name, &ids).await {
-                    Ok(_)  => {
+                    Ok(_) => {
                         crate::show_toast(ww2.clone(), format!("Created playlist {name}"));
                         refresh_playlists(state2, ww2, rt2, None);
                     }
                     Err(e) => {
                         warn!("create_playlist: {e:#}");
-                        crate::show_toast(ww2, "Couldn't create playlist — check your server connection".to_string());
+                        crate::show_toast(
+                            ww2,
+                            "Couldn't create playlist — check your server connection".to_string(),
+                        );
                     }
                 }
             });

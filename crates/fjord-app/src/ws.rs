@@ -64,8 +64,8 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-use fjord_api::models::MediaItem;
 use fjord_api::JellyfinClient;
+use fjord_api::models::MediaItem;
 use futures_util::{SinkExt, StreamExt};
 use serde::Deserialize;
 use serde_json::json;
@@ -74,15 +74,16 @@ use tracing::{debug, info, warn};
 
 use slint::{Global, Model, ModelRc};
 
+use crate::CardItem;
 use crate::MainWindow;
 use crate::config::{FjordState, upsert_media_item};
 use crate::context_menu::{reanchor_focus, update_card_in_all_models, upsert_cards_in_model};
 use crate::home::{
-    fetch_home_data, home_data_sections, push_home_data_preserving_posters, save_home_cache, save_series_cache,
-    save_movies_cache, save_collections_cache, save_artists_cache, save_albums_cache, save_playlists_cache,
+    fetch_home_data, home_data_sections, push_home_data_preserving_posters, save_albums_cache,
+    save_artists_cache, save_collections_cache, save_home_cache, save_movies_cache,
+    save_playlists_cache, save_series_cache,
 };
 use crate::poster::{fetch_posters_for_delta, spawn_poster_loading};
-use crate::CardItem;
 
 // ── wire types ────────────────────────────────────────────────────────────────
 
@@ -96,9 +97,12 @@ struct WsMsg {
 
 #[derive(Deserialize, Default)]
 struct LibraryChangedPayload {
-    #[serde(rename = "ItemsAdded",   default)] items_added:   Vec<String>,
-    #[serde(rename = "ItemsUpdated", default)] items_updated: Vec<String>,
-    #[serde(rename = "ItemsRemoved", default)] items_removed: Vec<String>,
+    #[serde(rename = "ItemsAdded", default)]
+    items_added: Vec<String>,
+    #[serde(rename = "ItemsUpdated", default)]
+    items_updated: Vec<String>,
+    #[serde(rename = "ItemsRemoved", default)]
+    items_removed: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -125,20 +129,21 @@ struct WsUserItem {
 /// `abort()` on sign-out to stop it cleanly.
 pub(crate) fn start_websocket(
     client: Arc<JellyfinClient>,
-    state:  Arc<Mutex<FjordState>>,
-    ww:     slint::Weak<MainWindow>,
-    rt:     tokio::runtime::Handle,
+    state: Arc<Mutex<FjordState>>,
+    ww: slint::Weak<MainWindow>,
+    rt: tokio::runtime::Handle,
 ) -> tokio::task::AbortHandle {
-    rt.spawn(ws_loop(client, state, ww, rt.clone())).abort_handle()
+    rt.spawn(ws_loop(client, state, ww, rt.clone()))
+        .abort_handle()
 }
 
 // ── reconnect loop ────────────────────────────────────────────────────────────
 
 async fn ws_loop(
     client: Arc<JellyfinClient>,
-    state:  Arc<Mutex<FjordState>>,
-    ww:     slint::Weak<MainWindow>,
-    rt:     tokio::runtime::Handle,
+    state: Arc<Mutex<FjordState>>,
+    ww: slint::Weak<MainWindow>,
+    rt: tokio::runtime::Handle,
 ) {
     let url = client.ws_url();
     // One AtomicBool shared across reconnects so a debounced refresh spawned
@@ -171,7 +176,16 @@ async fn ws_loop(
                 // socket).
                 state.lock().unwrap().ws_connected = true;
                 backoff = Duration::from_secs(1);
-                run_session(ws, &client, &state, &ww, &rt, &refresh_pending, &pending_upsert_ids).await;
+                run_session(
+                    ws,
+                    &client,
+                    &state,
+                    &ww,
+                    &rt,
+                    &refresh_pending,
+                    &pending_upsert_ids,
+                )
+                .await;
                 state.lock().unwrap().ws_connected = false;
                 info!("ws: disconnected — reconnecting in {:?}", backoff);
             }
@@ -197,15 +211,15 @@ async fn ws_loop(
 // from under this function; the None branch below is defensive, matching the
 // same clamp behavior used for the library grid. Must run on the UI thread.
 fn sync_open_episodes(
-    w:        &MainWindow,
-    state:    &Arc<Mutex<FjordState>>,
+    w: &MainWindow,
+    state: &Arc<Mutex<FjordState>>,
     episodes: &[MediaItem],
-    posters:  &std::collections::HashMap<String, slint::SharedPixelBuffer<slint::Rgba8Pixel>>,
+    posters: &std::collections::HashMap<String, slint::SharedPixelBuffer<slint::Rgba8Pixel>>,
 ) {
     if episodes.is_empty() {
         return;
     }
-    let g   = crate::AppState::get(w);
+    let g = crate::AppState::get(w);
     let sid = g.get_series_id().to_string();
     if sid.is_empty() {
         return;
@@ -213,24 +227,36 @@ fn sync_open_episodes(
     let idx = g.get_series_season_idx();
     let Some(cur_season_id) = ({
         let s = state.lock().unwrap();
-        if s.series_open_id != sid { None } else { s.series_season_ids.get(idx.max(0) as usize).cloned() }
+        if s.series_open_id != sid {
+            None
+        } else {
+            s.series_season_ids.get(idx.max(0) as usize).cloned()
+        }
     }) else {
         return;
     };
-    let relevant: Vec<&MediaItem> = episodes.iter()
-        .filter(|e| e.series_id.as_deref() == Some(sid.as_str()) && e.season_id.as_deref() == Some(cur_season_id.as_str()))
+    let relevant: Vec<&MediaItem> = episodes
+        .iter()
+        .filter(|e| {
+            e.series_id.as_deref() == Some(sid.as_str())
+                && e.season_id.as_deref() == Some(cur_season_id.as_str())
+        })
         .collect();
     if relevant.is_empty() {
         return;
     }
 
     let showing_season_detail = g.get_show_season() && g.get_season_id() == cur_season_id.as_str();
-    let showing_series_eps    = g.get_show_series() && !g.get_series_in_season_row();
+    let showing_series_eps = g.get_show_series() && !g.get_series_in_season_row();
     let cards_before = g.get_series_episode_cards();
     let focused_before = if showing_season_detail {
-        cards_before.row_data(g.get_season_focused_ep().max(0) as usize).map(|c| c.id.to_string())
+        cards_before
+            .row_data(g.get_season_focused_ep().max(0) as usize)
+            .map(|c| c.id.to_string())
     } else if showing_series_eps {
-        cards_before.row_data(g.get_series_focused_ep().max(0) as usize).map(|c| c.id.to_string())
+        cards_before
+            .row_data(g.get_series_focused_ep().max(0) as usize)
+            .map(|c| c.id.to_string())
     } else {
         None
     };
@@ -240,18 +266,22 @@ fn sync_open_episodes(
         for ep in &relevant {
             upsert_media_item(&mut s.series_episode_items, (*ep).clone());
         }
-        s.series_episode_items.sort_by_key(|e| e.index_number.unwrap_or(0));
+        s.series_episode_items
+            .sort_by_key(|e| e.index_number.unwrap_or(0));
         s.series_episode_items.clone()
     };
 
-    let cards: Vec<CardItem> = sorted.iter().map(|ep| {
-        let mut c = crate::series::ep_to_card(ep);
-        if let Some(buf) = posters.get(&ep.id) {
-            c.poster     = slint::Image::from_rgba8(buf.clone());
-            c.has_poster = true;
-        }
-        c
-    }).collect();
+    let cards: Vec<CardItem> = sorted
+        .iter()
+        .map(|ep| {
+            let mut c = crate::series::ep_to_card(ep);
+            if let Some(buf) = posters.get(&ep.id) {
+                c.poster = slint::Image::from_rgba8(buf.clone());
+                c.has_poster = true;
+            }
+            c
+        })
+        .collect();
     // apply_cards_preserving_identity (Phase 96): mutates in place when the season's
     // episode ids/order are unchanged, so unrelated episode cards' poster Images
     // don't get destroyed/recreated (re-triggering FadeInTrigger) just because one
@@ -263,12 +293,18 @@ fn sync_open_episodes(
     let len = model.row_count() as i32;
     match reanchor_focus(&model, &fid) {
         Some(new_idx) => {
-            if showing_season_detail      { g.set_season_focused_ep(new_idx as i32); }
-            else if showing_series_eps    { g.set_series_focused_ep(new_idx as i32); }
+            if showing_season_detail {
+                g.set_season_focused_ep(new_idx as i32);
+            } else if showing_series_eps {
+                g.set_series_focused_ep(new_idx as i32);
+            }
         }
         None => {
-            if showing_season_detail      { g.set_season_focused_ep(g.get_season_focused_ep().clamp(0, (len - 1).max(0))); }
-            else if showing_series_eps    { g.set_series_focused_ep(g.get_series_focused_ep().clamp(0, (len - 1).max(0))); }
+            if showing_season_detail {
+                g.set_season_focused_ep(g.get_season_focused_ep().clamp(0, (len - 1).max(0)));
+            } else if showing_series_eps {
+                g.set_series_focused_ep(g.get_series_focused_ep().clamp(0, (len - 1).max(0)));
+            }
         }
     }
 }
@@ -280,13 +316,13 @@ fn sync_open_episodes(
 // Playlists) share one nav id (4) while only the visible one touches
 // library-display. Must be called on the UI thread.
 fn upsert_library_bucket(
-    w:           &MainWindow,
-    nav:         i32,
-    items:       &[MediaItem],
-    posters:     &std::collections::HashMap<String, slint::SharedPixelBuffer<slint::Rgba8Pixel>>,
+    w: &MainWindow,
+    nav: i32,
+    items: &[MediaItem],
+    posters: &std::collections::HashMap<String, slint::SharedPixelBuffer<slint::Rgba8Pixel>>,
     view_active: bool,
-    get_all:     impl Fn(&crate::AppState) -> ModelRc<CardItem>,
-    set_all:     impl Fn(&crate::AppState, ModelRc<CardItem>),
+    get_all: impl Fn(&crate::AppState) -> ModelRc<CardItem>,
+    set_all: impl Fn(&crate::AppState, ModelRc<CardItem>),
 ) {
     if items.is_empty() {
         return;
@@ -295,11 +331,13 @@ fn upsert_library_bucket(
     set_all(&g, upsert_cards_in_model(get_all(&g), items, posters));
 
     if view_active && g.get_show_library() && g.get_active_nav() == nav {
-        let display     = g.get_library_display();
-        let focused_id   = display.row_data(g.get_library_focused().max(0) as usize).map(|c| c.id.to_string());
+        let display = g.get_library_display();
+        let focused_id = display
+            .row_data(g.get_library_focused().max(0) as usize)
+            .map(|c| c.id.to_string());
         crate::browse::refresh_library_display(w);
         let Some(fid) = focused_id else { return };
-        let g       = crate::AppState::get(w);
+        let g = crate::AppState::get(w);
         let display = g.get_library_display();
         match reanchor_focus(&display, &fid) {
             Some(idx) => g.set_library_focused(idx as i32),
@@ -326,12 +364,12 @@ fn row_has_id(model: &ModelRc<CardItem>, id: &str) -> bool {
 // targeted series unplayed-count refresh). Only one instance runs at a time
 // (refresh_pending gate); callers just merge ids first and call this.
 fn maybe_spawn_delta_refresh(
-    refresh_pending:    &Arc<AtomicBool>,
+    refresh_pending: &Arc<AtomicBool>,
     pending_upsert_ids: &Arc<Mutex<HashSet<String>>>,
-    client:             &Arc<JellyfinClient>,
-    state:              &Arc<Mutex<FjordState>>,
-    ww:                 &slint::Weak<MainWindow>,
-    rt:                 &tokio::runtime::Handle,
+    client: &Arc<JellyfinClient>,
+    state: &Arc<Mutex<FjordState>>,
+    ww: &slint::Weak<MainWindow>,
+    rt: &tokio::runtime::Handle,
 ) {
     if refresh_pending
         .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
@@ -341,11 +379,11 @@ fn maybe_spawn_delta_refresh(
         return;
     }
     info!("ws: delta refresh scheduled (fires in 5s)");
-    let client2  = Arc::clone(client);
-    let state2   = Arc::clone(state);
-    let ww2      = ww.clone();
-    let rt2      = rt.clone();
-    let pending  = Arc::clone(refresh_pending);
+    let client2 = Arc::clone(client);
+    let state2 = Arc::clone(state);
+    let ww2 = ww.clone();
+    let rt2 = rt.clone();
+    let pending = Arc::clone(refresh_pending);
     let pending_upsert2 = Arc::clone(pending_upsert_ids);
     rt.spawn(async move {
         tokio::time::sleep(Duration::from_secs(5)).await;
@@ -588,12 +626,14 @@ fn maybe_spawn_delta_refresh(
 // ── session handler ───────────────────────────────────────────────────────────
 
 async fn run_session(
-    ws:                 tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>,
-    client:             &Arc<JellyfinClient>,
-    state:              &Arc<Mutex<FjordState>>,
-    ww:                 &slint::Weak<MainWindow>,
-    rt:                 &tokio::runtime::Handle,
-    refresh_pending:    &Arc<AtomicBool>,
+    ws: tokio_tungstenite::WebSocketStream<
+        tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+    >,
+    client: &Arc<JellyfinClient>,
+    state: &Arc<Mutex<FjordState>>,
+    ww: &slint::Weak<MainWindow>,
+    rt: &tokio::runtime::Handle,
+    refresh_pending: &Arc<AtomicBool>,
     pending_upsert_ids: &Arc<Mutex<HashSet<String>>>,
 ) {
     let (mut write, mut read) = ws.split();
@@ -627,7 +667,10 @@ async fn run_session(
         let Ok(msg) = serde_json::from_str::<WsMsg>(&text) else {
             // chars().take(): byte-index slicing panics mid-UTF-8-char, and a
             // panic here kills the whole ws_loop task — reconnects included (CR10-11).
-            debug!("ws: non-JSON: {}", text.chars().take(120).collect::<String>());
+            debug!(
+                "ws: non-JSON: {}",
+                text.chars().take(120).collect::<String>()
+            );
             continue;
         };
 
@@ -643,11 +686,13 @@ async fn run_session(
             }
 
             "LibraryChanged" => {
-                let payload = serde_json::from_value::<LibraryChangedPayload>(msg.data)
-                    .unwrap_or_default();
+                let payload =
+                    serde_json::from_value::<LibraryChangedPayload>(msg.data).unwrap_or_default();
                 info!(
                     "ws: LibraryChanged — {} added, {} updated, {} removed; scheduling refresh in 5 s",
-                    payload.items_added.len(), payload.items_updated.len(), payload.items_removed.len()
+                    payload.items_added.len(),
+                    payload.items_updated.len(),
+                    payload.items_removed.len()
                 );
                 let removed = payload.items_removed;
 
@@ -655,12 +700,12 @@ async fn run_session(
                 // the next grid open (or the open grid, below) re-fetches (S1/S3).
                 {
                     let mut s = state.lock().unwrap();
-                    s.movies_fetched      = false;
+                    s.movies_fetched = false;
                     s.collections_fetched = false;
-                    s.artists_fetched     = false;
-                    s.albums_fetched      = false;
-                    s.playlists_fetched   = false;
-                    s.browse_populated    = false;
+                    s.artists_fetched = false;
+                    s.albums_fetched = false;
+                    s.playlists_fetched = false;
+                    s.browse_populated = false;
                     for id in &removed {
                         s.all_movies.retain(|i| &i.id != id);
                         s.all_series.retain(|i| &i.id != id);
@@ -689,7 +734,10 @@ async fn run_session(
                 // sweep otherwise leaves poster-less ghosts in stale grids.
                 for id in &removed {
                     // None for an id that isn't a valid cache name — nothing to delete.
-                    let (Some(pp), Some(bp)) = (crate::config::poster_cache_path(id), crate::config::backdrop_cache_path(id)) else {
+                    let (Some(pp), Some(bp)) = (
+                        crate::config::poster_cache_path(id),
+                        crate::config::backdrop_cache_path(id),
+                    ) else {
                         continue;
                     };
                     rt.spawn(async move {
@@ -720,26 +768,40 @@ async fn run_session(
                     ids.extend(payload.items_added.iter().cloned());
                     ids.extend(payload.items_updated.iter().cloned());
                 }
-                maybe_spawn_delta_refresh(refresh_pending, pending_upsert_ids, client, state, ww, rt);
+                maybe_spawn_delta_refresh(
+                    refresh_pending,
+                    pending_upsert_ids,
+                    client,
+                    state,
+                    ww,
+                    rt,
+                );
             }
 
             "UserDataChanged" => {
-                let Ok(payload) =
-                    serde_json::from_value::<UserDataChangedPayload>(msg.data)
-                else {
+                let Ok(payload) = serde_json::from_value::<UserDataChangedPayload>(msg.data) else {
                     continue;
                 };
                 let items: Vec<(String, bool, bool, i64)> = payload
                     .user_data_list
                     .into_iter()
-                    .map(|u| (u.item_id, u.played, u.is_favorite, u.playback_position_ticks))
+                    .map(|u| {
+                        (
+                            u.item_id,
+                            u.played,
+                            u.is_favorite,
+                            u.playback_position_ticks,
+                        )
+                    })
                     .collect();
                 if items.is_empty() {
                     continue;
                 }
                 info!("ws: UserDataChanged — {} item(s)", items.len());
                 for (id, played, fav, pos_ticks) in &items {
-                    info!("ws: UserDataChanged item id={id} played={played} favorite={fav} position_ticks={pos_ticks}");
+                    info!(
+                        "ws: UserDataChanged item id={id} played={played} favorite={fav} position_ticks={pos_ticks}"
+                    );
                 }
                 // Watchlisted item marked watched -> remove it from the Seerr
                 // watchlist (2026-08-02, user request — "if something is
@@ -776,8 +838,14 @@ async fn run_session(
                             // type field.
                             if s.jellyfin_watchlist_ids.contains(id)
                                 && let Some((tmdb_id_str, media_type)) =
-                                    crate::context_menu::resolve_tmdb_for_jellyfin_item(&s, id, "Movie")
-                                        .or_else(|| crate::context_menu::resolve_tmdb_for_jellyfin_item(&s, id, "Series"))
+                                    crate::context_menu::resolve_tmdb_for_jellyfin_item(
+                                        &s, id, "Movie",
+                                    )
+                                    .or_else(|| {
+                                        crate::context_menu::resolve_tmdb_for_jellyfin_item(
+                                            &s, id, "Series",
+                                        )
+                                    })
                             {
                                 // A still-airing series stays on the
                                 // watchlist even once fully caught up
@@ -796,26 +864,40 @@ async fn run_session(
                                 // series-status check, above in this
                                 // file.
                                 let still_continuing = media_type == "tv"
-                                    && s.all_series.iter().find(|m| &m.id == id).and_then(|m| m.status.as_deref())
+                                    && s.all_series
+                                        .iter()
+                                        .find(|m| &m.id == id)
+                                        .and_then(|m| m.status.as_deref())
                                         == Some("Continuing");
-                                if !still_continuing && let Ok(tmdb_id) = tmdb_id_str.parse::<i64>() {
-                                    newly_watched_on_watchlist.push((tmdb_id, media_type.to_string()));
+                                if !still_continuing && let Ok(tmdb_id) = tmdb_id_str.parse::<i64>()
+                                {
+                                    newly_watched_on_watchlist
+                                        .push((tmdb_id, media_type.to_string()));
                                 }
                             }
                         }
                     }
                 }
                 for (tmdb_id, media_type) in newly_watched_on_watchlist {
-                    info!("ws: watched item tmdb={tmdb_id} media_type={media_type} was on the watchlist — removing");
+                    info!(
+                        "ws: watched item tmdb={tmdb_id} media_type={media_type} was on the watchlist — removing"
+                    );
                     crate::discover::discover_toggle_watchlist(
-                        Arc::clone(state), ww.clone(), rt.clone(), tmdb_id, media_type, String::new(), false, None,
+                        Arc::clone(state),
+                        ww.clone(),
+                        rt.clone(),
+                        tmdb_id,
+                        media_type,
+                        String::new(),
+                        false,
+                        None,
                     );
                 }
                 let ww2 = ww.clone();
                 let client2 = Arc::clone(client);
-                let state2  = Arc::clone(state);
-                let rt2     = rt.clone();
-                let refresh_pending2    = Arc::clone(refresh_pending);
+                let state2 = Arc::clone(state);
+                let rt2 = rt.clone();
+                let refresh_pending2 = Arc::clone(refresh_pending);
                 let pending_upsert_ids2 = Arc::clone(pending_upsert_ids);
                 let _ = slint::invoke_from_event_loop(move || {
                     let Some(w) = ww2.upgrade() else { return };
@@ -851,7 +933,8 @@ async fn run_session(
                             && !row_has_id(&g.get_favorite_movies(), id)
                             && !row_has_id(&g.get_favorite_series(), id)
                             && !row_has_id(&g.get_favorite_albums(), id);
-                        let new_resumable = *pos_ticks > 0 && !*played
+                        let new_resumable = *pos_ticks > 0
+                            && !*played
                             && !row_has_id(&g.get_continue_watching(), id);
                         // Real bug, live-reported 2026-08-03 ("in the
                         // unwatched collection row shows collections that
@@ -876,15 +959,25 @@ async fn run_session(
                         // now fully watched, so it's correct (and harmless
                         // to over-trigger) even when the movie wasn't the
                         // collection's last unwatched one.
-                        let in_known_collection = *played && state2.lock().unwrap().movie_collections.contains_key(id);
-                        info!("ws: UserDataChanged item id={id} new_favorite={new_favorite} new_resumable={new_resumable} in_known_collection={in_known_collection}");
+                        let in_known_collection =
+                            *played && state2.lock().unwrap().movie_collections.contains_key(id);
+                        info!(
+                            "ws: UserDataChanged item id={id} new_favorite={new_favorite} new_resumable={new_resumable} in_known_collection={in_known_collection}"
+                        );
                         if new_favorite || new_resumable || in_known_collection {
                             needs_refresh = true;
                         }
                     }
                     info!("ws: UserDataChanged batch processed, needs_refresh={needs_refresh}");
                     if needs_refresh {
-                        maybe_spawn_delta_refresh(&refresh_pending2, &pending_upsert_ids2, &client2, &state2, &ww2, &rt2);
+                        maybe_spawn_delta_refresh(
+                            &refresh_pending2,
+                            &pending_upsert_ids2,
+                            &client2,
+                            &state2,
+                            &ww2,
+                            &rt2,
+                        );
                     }
                 });
             }

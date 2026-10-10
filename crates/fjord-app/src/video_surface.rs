@@ -57,19 +57,19 @@
 // ───────────────────────────────────────────────────────────────────────────
 
 use std::cell::RefCell;
-use std::ffi::{c_char, c_void, CStr, CString};
+use std::ffi::{CStr, CString, c_char, c_void};
 use std::ptr::NonNull;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::OnceLock;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Instant;
 
-use anyhow::{anyhow, bail, Context as _, Result};
+use anyhow::{Context as _, Result, anyhow, bail};
 use fjord_player::{MpvRenderCtx, Player};
 use glutin_egl_sys::egl;
 use glutin_egl_sys::egl::types::{EGLConfig, EGLContext, EGLDisplay, EGLSurface, EGLenum, EGLint};
 use tracing::{debug, error, info, warn};
 use wayland_backend::client::{Backend, ObjectId};
-use wayland_client::globals::{registry_queue_init, GlobalListContents};
+use wayland_client::globals::{GlobalListContents, registry_queue_init};
 use wayland_client::protocol::wl_buffer::{self, WlBuffer};
 use wayland_client::protocol::wl_compositor::WlCompositor;
 use wayland_client::protocol::wl_region::WlRegion;
@@ -77,12 +77,16 @@ use wayland_client::protocol::wl_registry;
 use wayland_client::protocol::wl_subcompositor::WlSubcompositor;
 use wayland_client::protocol::wl_subsurface::WlSubsurface;
 use wayland_client::protocol::wl_surface::WlSurface;
-use wayland_client::{delegate_noop, Connection, Dispatch, EventQueue, Proxy, QueueHandle};
-use wayland_protocols::wp::linux_dmabuf::zv1::client::zwp_linux_buffer_params_v1::{self, ZwpLinuxBufferParamsV1};
-use wayland_protocols::wp::linux_dmabuf::zv1::client::zwp_linux_dmabuf_v1::{self, ZwpLinuxDmabufV1};
+use wayland_client::{Connection, Dispatch, EventQueue, Proxy, QueueHandle, delegate_noop};
+use wayland_protocols::wp::linux_dmabuf::zv1::client::zwp_linux_buffer_params_v1::{
+    self, ZwpLinuxBufferParamsV1,
+};
+use wayland_protocols::wp::linux_dmabuf::zv1::client::zwp_linux_dmabuf_v1::{
+    self, ZwpLinuxDmabufV1,
+};
 use wayland_protocols::wp::viewporter::client::wp_viewport::WpViewport;
 use wayland_protocols::wp::viewporter::client::wp_viewporter::WpViewporter;
-use wayland_sys::egl::{wayland_egl_option, wl_egl_window, WaylandEgl};
+use wayland_sys::egl::{WaylandEgl, wayland_egl_option, wl_egl_window};
 
 use crate::dmabuf_plane::{self, Swapchain};
 
@@ -175,7 +179,9 @@ pub(crate) fn present_summary() -> String {
 pub(crate) fn create_render_ctx(player: &Player) -> Result<MpvRenderCtx> {
     BACKPLANE.with(|slot| {
         let mut slot = slot.borrow_mut();
-        let Slot::Ready(bp) = &mut *slot else { bail!("video backplane isn't ready") };
+        let Slot::Ready(bp) = &mut *slot else {
+            bail!("video backplane isn't ready")
+        };
         let gl = bp.gl;
         let handle = player.raw_handle_ptr();
         bp.stats = FrameStats::default();
@@ -194,12 +200,12 @@ pub(crate) fn create_render_ctx(player: &Player) -> Result<MpvRenderCtx> {
 /// framebuffer and what's blitted into it), and the depth to dither to
 /// (0 = leave it out — mpv assumes 8).
 pub(crate) struct Target {
-    pub fbo:    i32,
-    pub w:      i32,
-    pub h:      i32,
+    pub fbo: i32,
+    pub w: i32,
+    pub h: i32,
     pub format: i32,
     pub flip_y: bool,
-    pub depth:  i32,
+    pub depth: i32,
 }
 
 /// How one render_frame call went.
@@ -230,7 +236,9 @@ pub(crate) fn render_frame(
 ) -> Result<FrameOutcome> {
     BACKPLANE.with(|slot| {
         let mut slot = slot.borrow_mut();
-        let Slot::Ready(bp) = &mut *slot else { return Ok(FrameOutcome::Unusable) };
+        let Slot::Ready(bp) = &mut *slot else {
+            return Ok(FrameOutcome::Unusable);
+        };
         bp.render(phys, scale, rect, fill, render)
     })
 }
@@ -297,7 +305,9 @@ pub(crate) fn idle_fill(fill: [f32; 3]) {
     BACKPLANE.with(|slot| {
         let mut slot = slot.borrow_mut();
         let Slot::Ready(bp) = &mut *slot else { return };
-        if !bp.dirty { return; }
+        if !bp.dirty {
+            return;
+        }
         match bp.fill_frame(fill) {
             Ok(true) => bp.dirty = false,
             Ok(false) => {} // no free buffer yet — the next redraw tries again
@@ -314,7 +324,10 @@ pub(crate) fn idle_fill(fill: [f32; 3]) {
 enum Present {
     /// Between setups — only inside create().
     Unset,
-    EglWindow { window: *mut wl_egl_window, bits: [EGLint; 4] },
+    EglWindow {
+        window: *mut wl_egl_window,
+        bits: [EGLint; 4],
+    },
     Dmabuf(Swapchain),
 }
 
@@ -332,8 +345,13 @@ impl Present {
     fn summary(&self) -> String {
         match self {
             Present::Unset => "not set up".into(),
-            Present::EglWindow { bits: [r, g, b, a], .. } => {
-                format!("EGL window R{r}G{g}B{b}A{a}, mpv depth {}", if *r == 10 { 10 } else { 8 })
+            Present::EglWindow {
+                bits: [r, g, b, a], ..
+            } => {
+                format!(
+                    "EGL window R{r}G{g}B{b}A{a}, mpv depth {}",
+                    if *r == 10 { 10 } else { 8 }
+                )
             }
             Present::Dmabuf(sc) => format!("own dmabuf buffers {}, mpv depth 10", sc.format_name),
         }
@@ -341,32 +359,32 @@ impl Present {
 }
 
 struct Backplane {
-    gl:         OurGl,
-    wl_egl:     &'static WaylandEgl,
-    present:    Present,
-    conn:       Connection,
-    queue:      EventQueue<BpState>,
-    state:      BpState,
-    child:      WlSurface,
+    gl: OurGl,
+    wl_egl: &'static WaylandEgl,
+    present: Present,
+    conn: Connection,
+    queue: EventQueue<BpState>,
+    state: BpState,
+    child: WlSurface,
     /// Kept for the process lifetime once published (see destroy()).
     subsurface: WlSubsurface,
-    viewport:   WpViewport,
+    viewport: WpViewport,
     /// linux-dmabuf v3, if KWin offers it (own buffers only).
-    dmabuf:     Option<ZwpLinuxDmabufV1>,
-    phys:       (u32, u32),
-    logical:    (i32, i32),
+    dmabuf: Option<ZwpLinuxDmabufV1>,
+    phys: (u32, u32),
+    logical: (i32, i32),
     /// Offscreen target for a video spot smaller than the plane:
     /// (fbo, texture, w, h), RGB10_A2, on our context.
-    rect_fbo:   Option<(u32, u32, i32, i32)>,
+    rect_fbo: Option<(u32, u32, i32, i32)>,
     /// Holds a video frame (set by render, cleared by idle_fill).
-    dirty:      bool,
+    dirty: bool,
     /// Per-player frame timing, logged when the player's render context is
     /// freed: frames, and for OUR overhead (context switches + blit + swap/
     /// GPU wait, i.e. everything but mpv's own render call — which by default
     /// blocks until the frame's display time, as on the in-window path) the
     /// number over 4 ms and the slowest; mpv's slowest render call; with own
     /// buffers also the glFinish wait and skipped frames.
-    stats:      FrameStats,
+    stats: FrameStats,
 }
 
 /// The backplane's event-queue state: linux-dmabuf's format list, the answer
@@ -376,10 +394,10 @@ struct Backplane {
 struct BpState {
     /// (fourcc, modifier) pairs KWin advertised (linux-dmabuf v3 events;
     /// None = a bare `format` event).
-    formats:  Vec<(u32, Option<u64>)>,
+    formats: Vec<(u32, Option<u64>)>,
     /// Answer to the last zwp_linux_buffer_params_v1.create: the new buffer,
     /// or None if KWin refused it.
-    created:  Option<Option<WlBuffer>>,
+    created: Option<Option<WlBuffer>>,
     /// wl_buffer.release events not yet handed to the swapchain.
     released: Vec<ObjectId>,
 }
@@ -388,9 +406,9 @@ struct BpState {
 /// surfaceless). Copy, so GL work can run while other fields are borrowed.
 #[derive(Clone, Copy)]
 struct OurGl {
-    egl:  &'static egl::Egl,
-    dpy:  EGLDisplay,
-    ctx:  EGLContext,
+    egl: &'static egl::Egl,
+    dpy: EGLDisplay,
+    ctx: EGLContext,
     surf: EGLSurface,
 }
 
@@ -403,8 +421,15 @@ impl OurGl {
         // are live until destroyed, Slint's are whatever was current on entry.
         unsafe {
             let saved = SavedCurrent::capture(self.egl);
-            if self.egl.MakeCurrent(self.dpy, self.surf, self.surf, self.ctx) != egl::TRUE {
-                bail!("eglMakeCurrent(backplane) failed: 0x{:x}", self.egl.GetError());
+            if self
+                .egl
+                .MakeCurrent(self.dpy, self.surf, self.surf, self.ctx)
+                != egl::TRUE
+            {
+                bail!(
+                    "eglMakeCurrent(backplane) failed: 0x{:x}",
+                    self.egl.GetError()
+                );
             }
             let out = f();
             if !saved.restore(self.egl, self.dpy) {
@@ -423,10 +448,14 @@ impl OurGl {
         // Safety: plain EGL calls on the main/GL thread.
         unsafe {
             let saved = SavedCurrent::capture(self.egl);
-            self.egl.MakeCurrent(self.dpy, egl::NO_SURFACE, egl::NO_SURFACE, egl::NO_CONTEXT);
+            self.egl
+                .MakeCurrent(self.dpy, egl::NO_SURFACE, egl::NO_SURFACE, egl::NO_CONTEXT);
             f();
             if !saved.restore(self.egl, self.dpy) {
-                error!("video backplane: couldn't make Slint's EGL context current again: 0x{:x}", self.egl.GetError());
+                error!(
+                    "video backplane: couldn't make Slint's EGL context current again: 0x{:x}",
+                    self.egl.GetError()
+                );
             }
         }
     }
@@ -437,16 +466,21 @@ impl OurGl {
         if unsafe { self.egl.SwapBuffers(self.dpy, self.surf) } == egl::TRUE {
             Ok(())
         } else {
-            Err(anyhow!("eglSwapBuffers(backplane) failed: 0x{:x}", unsafe { self.egl.GetError() }))
+            Err(anyhow!(
+                "eglSwapBuffers(backplane) failed: 0x{:x}",
+                unsafe { self.egl.GetError() }
+            ))
         }
     }
 }
 
 impl Backplane {
     fn create(phys: (u32, u32), scale: f32, own_buffers: bool) -> Result<Self> {
-        let &(display_addr, surface_addr) =
-            HANDLES.get().ok_or_else(|| anyhow!("not running under Wayland"))?;
-        let wl_egl = wayland_egl_option().ok_or_else(|| anyhow!("libwayland-egl.so.1 not found"))?;
+        let &(display_addr, surface_addr) = HANDLES
+            .get()
+            .ok_or_else(|| anyhow!("not running under Wayland"))?;
+        let wl_egl =
+            wayland_egl_option().ok_or_else(|| anyhow!("libwayland-egl.so.1 not found"))?;
         let egl = load_egl()?;
 
         // ── Slint's context: we must use the same display and client API ──
@@ -476,7 +510,9 @@ impl Backplane {
             egl_string(egl, dpy, egl::VENDOR),
         );
         if !slint_alpha.is_some_and(|a| a > 0) {
-            bail!("Slint's window has no alpha channel — it can't be made transparent over the video");
+            bail!(
+                "Slint's window has no alpha channel — it can't be made transparent over the video"
+            );
         }
         // Fjord's `gl::` pointers were loaded once from Slint's context; they
         // are valid on ours only if eglGetProcAddress results are context-
@@ -488,7 +524,8 @@ impl Backplane {
             .and_then(|(maj, min)| Some((maj.parse::<u32>().ok()?, min.parse::<u32>().ok()?)))
             .is_some_and(|v| v >= (1, 5));
         let all_procs = egl_15
-            || egl_string(egl, egl::NO_DISPLAY, egl::EXTENSIONS).contains("EGL_KHR_client_get_all_proc_addresses")
+            || egl_string(egl, egl::NO_DISPLAY, egl::EXTENSIONS)
+                .contains("EGL_KHR_client_get_all_proc_addresses")
             || egl_string(egl, dpy, egl::EXTENSIONS).contains("EGL_KHR_get_all_proc_addresses");
         if !all_procs {
             bail!("EGL {egl_version} doesn't guarantee context-independent GL function pointers");
@@ -498,17 +535,26 @@ impl Backplane {
         // Safety: see HANDLES — a live wl_display for the process lifetime.
         let backend = unsafe { Backend::from_foreign_display(display_addr as *mut _) };
         let conn = Connection::from_backend(backend);
-        let (globals, queue) = registry_queue_init::<BpState>(&conn).context("registry_queue_init")?;
+        let (globals, queue) =
+            registry_queue_init::<BpState>(&conn).context("registry_queue_init")?;
         let qh = queue.handle();
-        let compositor: WlCompositor = globals.bind(&qh, 1..=4, ()).context("binding wl_compositor")?;
-        let subcompositor: WlSubcompositor = globals.bind(&qh, 1..=1, ()).context("binding wl_subcompositor")?;
-        let viewporter: WpViewporter = globals.bind(&qh, 1..=1, ()).context("binding wp_viewporter")?;
+        let compositor: WlCompositor = globals
+            .bind(&qh, 1..=4, ())
+            .context("binding wl_compositor")?;
+        let subcompositor: WlSubcompositor = globals
+            .bind(&qh, 1..=1, ())
+            .context("binding wl_subcompositor")?;
+        let viewporter: WpViewporter = globals
+            .bind(&qh, 1..=1, ())
+            .context("binding wp_viewporter")?;
         // v3: the format/modifier list arrives as events right after binding.
         let dmabuf: Option<ZwpLinuxDmabufV1> = globals.bind(&qh, 3..=3, ()).ok();
         // Safety: see HANDLES. `from_ptr` checks the proxy's real interface.
-        let parent_id = unsafe { ObjectId::from_ptr(WlSurface::interface(), surface_addr as *mut _) }
-            .context("wrapping Fjord's wl_surface")?;
-        let parent: WlSurface = Proxy::from_id(&conn, parent_id).context("wrapping Fjord's wl_surface")?;
+        let parent_id =
+            unsafe { ObjectId::from_ptr(WlSurface::interface(), surface_addr as *mut _) }
+                .context("wrapping Fjord's wl_surface")?;
+        let parent: WlSurface =
+            Proxy::from_id(&conn, parent_id).context("wrapping Fjord's wl_surface")?;
 
         let child = compositor.create_surface(&qh, ());
         let subsurface = subcompositor.get_subsurface(&child, &parent, &qh, ());
@@ -529,13 +575,34 @@ impl Backplane {
         viewport.set_destination(logical.0, logical.1);
 
         let mut bp = Backplane {
-            gl: OurGl { egl, dpy, ctx: egl::NO_CONTEXT, surf: egl::NO_SURFACE },
-            wl_egl, present: Present::Unset, conn, queue, state: BpState::default(), child, subsurface,
-            viewport, dmabuf, phys, logical, rect_fbo: None, dirty: false, stats: FrameStats::default(),
+            gl: OurGl {
+                egl,
+                dpy,
+                ctx: egl::NO_CONTEXT,
+                surf: egl::NO_SURFACE,
+            },
+            wl_egl,
+            present: Present::Unset,
+            conn,
+            queue,
+            state: BpState::default(),
+            child,
+            subsurface,
+            viewport,
+            dmabuf,
+            phys,
+            logical,
+            rect_fbo: None,
+            dirty: false,
+            stats: FrameStats::default(),
         };
 
         // ── Presentation: own 10-bit buffers only when the setting is on ──
-        let renderable = if api == egl::OPENGL_ES_API { egl::OPENGL_ES3_BIT } else { egl::OPENGL_BIT };
+        let renderable = if api == egl::OPENGL_ES_API {
+            egl::OPENGL_ES3_BIT
+        } else {
+            egl::OPENGL_BIT
+        };
         log_window_configs(egl, dpy, renderable);
         let window_configs = ranked_window_configs(egl, dpy, renderable);
         let own_note = if !own_buffers {
@@ -585,9 +652,15 @@ impl Backplane {
                         dmabuf_plane::modifier_text(sc.modifier()),
                         sc.planes(),
                         dmabuf_plane::BUFFER_COUNT,
-                        if gl.surf == egl::NO_SURFACE { ", surfaceless context" } else { ", pbuffer context" },
+                        if gl.surf == egl::NO_SURFACE {
+                            ", surfaceless context"
+                        } else {
+                            ", pbuffer context"
+                        },
                     ),
-                    Present::EglWindow { bits: [r, g, b, a], .. } => format!("EGL window R{r}G{g}B{b}A{a} ({own_note})"),
+                    Present::EglWindow {
+                        bits: [r, g, b, a], ..
+                    } => format!("EGL window R{r}G{g}B{b}A{a} ({own_note})"),
                     Present::Unset => unreachable!("set up above"),
                 };
                 info!(
@@ -611,20 +684,35 @@ impl Backplane {
         let surf_attribs = [egl::NONE as EGLint];
         for &(_, cfg, bits) in configs {
             let Some(ctx) = create_context(egl, dpy, cfg) else {
-                debug!("video backplane: no 3.0 context for config {bits:?}: 0x{:x}", unsafe { egl.GetError() });
+                debug!(
+                    "video backplane: no 3.0 context for config {bits:?}: 0x{:x}",
+                    unsafe { egl.GetError() }
+                );
                 continue;
             };
             // Safety: standard EGL/wayland-egl object creation on Slint's
             // (initialised) display and our live child surface.
             unsafe {
-                let window = (self.wl_egl.wl_egl_window_create)(self.child.id().as_ptr(), self.phys.0 as i32, self.phys.1 as i32);
+                let window = (self.wl_egl.wl_egl_window_create)(
+                    self.child.id().as_ptr(),
+                    self.phys.0 as i32,
+                    self.phys.1 as i32,
+                );
                 if window.is_null() {
                     egl.DestroyContext(dpy, ctx);
                     bail!("wl_egl_window_create failed");
                 }
-                let surf = egl.CreateWindowSurface(dpy, cfg, window as *const c_void, surf_attribs.as_ptr());
+                let surf = egl.CreateWindowSurface(
+                    dpy,
+                    cfg,
+                    window as *const c_void,
+                    surf_attribs.as_ptr(),
+                );
                 if surf == egl::NO_SURFACE {
-                    debug!("video backplane: no window surface for config {bits:?}: 0x{:x}", egl.GetError());
+                    debug!(
+                        "video backplane: no window surface for config {bits:?}: 0x{:x}",
+                        egl.GetError()
+                    );
                     (self.wl_egl.wl_egl_window_destroy)(window);
                     egl.DestroyContext(dpy, ctx);
                     continue;
@@ -645,25 +733,45 @@ impl Backplane {
         if self.dmabuf.is_none() {
             bail!("the compositor has no linux-dmabuf v3");
         }
-        self.queue.roundtrip(&mut self.state).context("linux-dmabuf roundtrip")?;
+        self.queue
+            .roundtrip(&mut self.state)
+            .context("linux-dmabuf roundtrip")?;
         let OurGl { egl, dpy, .. } = self.gl;
         let surfaceless = egl_string(egl, dpy, egl::EXTENSIONS)
             .split_whitespace()
             .any(|e| e == "EGL_KHR_surfaceless_context");
         let attribs = [
             // 0 = any surface type (surfaceless); else it must do pbuffers.
-            egl::SURFACE_TYPE as EGLint, if surfaceless { 0 } else { egl::PBUFFER_BIT as EGLint },
-            egl::RENDERABLE_TYPE as EGLint, renderable as EGLint,
-            egl::COLOR_BUFFER_TYPE as EGLint, egl::RGB_BUFFER as EGLint,
-            egl::RED_SIZE as EGLint, 8,
-            egl::GREEN_SIZE as EGLint, 8,
-            egl::BLUE_SIZE as EGLint, 8,
+            egl::SURFACE_TYPE as EGLint,
+            if surfaceless {
+                0
+            } else {
+                egl::PBUFFER_BIT as EGLint
+            },
+            egl::RENDERABLE_TYPE as EGLint,
+            renderable as EGLint,
+            egl::COLOR_BUFFER_TYPE as EGLint,
+            egl::RGB_BUFFER as EGLint,
+            egl::RED_SIZE as EGLint,
+            8,
+            egl::GREEN_SIZE as EGLint,
+            8,
+            egl::BLUE_SIZE as EGLint,
+            8,
             egl::NONE as EGLint,
         ];
         let configs = choose_configs(egl, dpy, &attribs)?;
-        let pbuffer_attribs = [egl::WIDTH as EGLint, 1, egl::HEIGHT as EGLint, 1, egl::NONE as EGLint];
+        let pbuffer_attribs = [
+            egl::WIDTH as EGLint,
+            1,
+            egl::HEIGHT as EGLint,
+            1,
+            egl::NONE as EGLint,
+        ];
         for cfg in configs {
-            let Some(ctx) = create_context(egl, dpy, cfg) else { continue };
+            let Some(ctx) = create_context(egl, dpy, cfg) else {
+                continue;
+            };
             let surf = if surfaceless {
                 egl::NO_SURFACE
             } else {
@@ -682,7 +790,11 @@ impl Backplane {
         if self.gl.ctx == egl::NO_CONTEXT {
             bail!(
                 "no 3.0 context {}",
-                if surfaceless { "for a surfaceless context" } else { "with a pbuffer (no EGL_KHR_surfaceless_context)" }
+                if surfaceless {
+                    "for a surfaceless context"
+                } else {
+                    "with a pbuffer (no EGL_KHR_surfaceless_context)"
+                }
             );
         }
         self.present = Present::Dmabuf(Swapchain::new(egl, dpy, &self.state.formats)?);
@@ -693,8 +805,12 @@ impl Backplane {
     /// is freed once KWin has released it). Waits for KWin's answer to each
     /// buffer (a roundtrip — only at setup and on resize).
     fn allocate_buffers(&mut self) -> Result<()> {
-        let Present::Dmabuf(sc) = &mut self.present else { return Ok(()) };
-        let Some(dm) = self.dmabuf.as_ref() else { bail!("no linux-dmabuf") };
+        let Present::Dmabuf(sc) = &mut self.present else {
+            return Ok(());
+        };
+        let Some(dm) = self.dmabuf.as_ref() else {
+            bail!("no linux-dmabuf")
+        };
         let qh = self.queue.handle();
         let (queue, state) = (&mut self.queue, &mut self.state);
         let size = (self.phys.0.max(1), self.phys.1.max(1));
@@ -704,14 +820,28 @@ impl Backplane {
             sc.allocate(size, |planes, modifier| {
                 let params = dm.create_params(&qh, ());
                 for (i, p) in planes.iter().enumerate() {
-                    params.add(p.fd, i as u32, p.offset, p.stride, (modifier >> 32) as u32, modifier as u32);
+                    params.add(
+                        p.fd,
+                        i as u32,
+                        p.offset,
+                        p.stride,
+                        (modifier >> 32) as u32,
+                        modifier as u32,
+                    );
                 }
                 state.created = None;
                 // Asynchronous create: a refusal is an event, never a protocol
                 // error on the display winit shares (create_immed's would be).
-                params.create(size.0 as i32, size.1 as i32, fourcc, zwp_linux_buffer_params_v1::Flags::empty());
+                params.create(
+                    size.0 as i32,
+                    size.1 as i32,
+                    fourcc,
+                    zwp_linux_buffer_params_v1::Flags::empty(),
+                );
                 for _ in 0..5 {
-                    if state.created.is_some() { break; }
+                    if state.created.is_some() {
+                        break;
+                    }
                     queue.roundtrip(state).context("linux-dmabuf roundtrip")?;
                 }
                 params.destroy();
@@ -722,7 +852,12 @@ impl Backplane {
                 }
             })
         })??;
-        debug!("video backplane: {} own buffers allocated at {}x{}", dmabuf_plane::BUFFER_COUNT, size.0, size.1);
+        debug!(
+            "video backplane: {} own buffers allocated at {}x{}",
+            dmabuf_plane::BUFFER_COUNT,
+            size.0,
+            size.1
+        );
         Ok(())
     }
 
@@ -804,19 +939,37 @@ impl Backplane {
         let rendered = match &mut self.present {
             Present::Unset => return Ok(FrameOutcome::Unusable),
             Present::EglWindow { bits, .. } => {
-                let window_format = if bits[0] == 10 { gl::RGB10_A2 as i32 } else { 0 };
+                let window_format = if bits[0] == 10 {
+                    gl::RGB10_A2 as i32
+                } else {
+                    0
+                };
                 gl.with_current(|| -> Result<bool> {
                     // Safety: our context is current; every GL object used
                     // here was created on it.
                     unsafe {
                         if full {
                             gl::BindFramebuffer(gl::FRAMEBUFFER, 0);
-                            let ok = timed(Target { fbo: 0, w, h, format: window_format, flip_y: true, depth });
+                            let ok = timed(Target {
+                                fbo: 0,
+                                w,
+                                h,
+                                format: window_format,
+                                flip_y: true,
+                                depth,
+                            });
                             gl.swap()?;
                             return Ok(ok);
                         }
                         let src = ensure_rect_fbo(rect_fbo, rw, rh)?;
-                        let ok = timed(Target { fbo: src as i32, w: rw, h: rh, format: gl::RGB10_A2 as i32, flip_y: true, depth });
+                        let ok = timed(Target {
+                            fbo: src as i32,
+                            w: rw,
+                            h: rh,
+                            format: gl::RGB10_A2 as i32,
+                            flip_y: true,
+                            depth,
+                        });
                         blit_into(0, src, (w, h), flip_rect_y(rect, h), fill);
                         gl.swap()?;
                         Ok(ok)
@@ -836,10 +989,24 @@ impl Backplane {
                     unsafe {
                         let ok = if full {
                             gl::BindFramebuffer(gl::FRAMEBUFFER, dst);
-                            timed(Target { fbo: dst as i32, w, h, format: gl::RGB10_A2 as i32, flip_y: false, depth })
+                            timed(Target {
+                                fbo: dst as i32,
+                                w,
+                                h,
+                                format: gl::RGB10_A2 as i32,
+                                flip_y: false,
+                                depth,
+                            })
                         } else {
                             let src = ensure_rect_fbo(rect_fbo, rw, rh)?;
-                            let ok = timed(Target { fbo: src as i32, w: rw, h: rh, format: gl::RGB10_A2 as i32, flip_y: false, depth });
+                            let ok = timed(Target {
+                                fbo: src as i32,
+                                w: rw,
+                                h: rh,
+                                format: gl::RGB10_A2 as i32,
+                                flip_y: false,
+                                depth,
+                            });
                             // Top-origin rect: the buffer's row 0 is the top.
                             blit_into(dst, src, (w, h), [rx, ry, rw, rh], fill);
                             ok
@@ -861,14 +1028,22 @@ impl Backplane {
         let overhead = started.elapsed().as_secs_f64() * 1000.0 - mpv_ms;
         let st = &mut self.stats;
         st.frames += 1;
-        if overhead > 4.0 { st.slow_overhead += 1; }
+        if overhead > 4.0 {
+            st.slow_overhead += 1;
+        }
         st.max_overhead_ms = st.max_overhead_ms.max(overhead);
         st.max_mpv_ms = st.max_mpv_ms.max(mpv_ms);
         if let Some(g) = gpu_ms {
-            if g > 4.0 { st.slow_gpu_wait += 1; }
+            if g > 4.0 {
+                st.slow_gpu_wait += 1;
+            }
             st.max_gpu_wait_ms = st.max_gpu_wait_ms.max(g);
         }
-        Ok(if rendered { FrameOutcome::Drawn } else { FrameOutcome::MpvFailed })
+        Ok(if rendered {
+            FrameOutcome::Drawn
+        } else {
+            FrameOutcome::MpvFailed
+        })
     }
 
     /// Clears the whole plane to `rgb` and commits it. Ok(false) = own
@@ -893,7 +1068,9 @@ impl Backplane {
                 })??;
             }
             Present::Dmabuf(sc) => {
-                let Some(i) = sc.acquire() else { return Ok(false) };
+                let Some(i) = sc.acquire() else {
+                    return Ok(false);
+                };
                 let dst = sc.buffer(i).fbo;
                 gl.with_current(|| {
                     clear(dst);
@@ -920,7 +1097,13 @@ impl Backplane {
             Present::Dmabuf(sc) => {
                 let mut sc = Some(sc);
                 let current = gl.ctx != egl::NO_CONTEXT
-                    && gl.with_current(|| if let Some(sc) = sc.take() { sc.destroy() }).is_ok();
+                    && gl
+                        .with_current(|| {
+                            if let Some(sc) = sc.take() {
+                                sc.destroy()
+                            }
+                        })
+                        .is_ok();
                 if !current && let Some(sc) = sc.take() {
                     gl.with_no_context(|| sc.destroy());
                 }
@@ -930,9 +1113,15 @@ impl Backplane {
         }
         // Safety: created by start_*; each destroyed once (fields reset below).
         unsafe {
-            if gl.surf != egl::NO_SURFACE { gl.egl.DestroySurface(gl.dpy, gl.surf); }
-            if gl.ctx != egl::NO_CONTEXT { gl.egl.DestroyContext(gl.dpy, gl.ctx); }
-            if !window.is_null() { (self.wl_egl.wl_egl_window_destroy)(window); }
+            if gl.surf != egl::NO_SURFACE {
+                gl.egl.DestroySurface(gl.dpy, gl.surf);
+            }
+            if gl.ctx != egl::NO_CONTEXT {
+                gl.egl.DestroyContext(gl.dpy, gl.ctx);
+            }
+            if !window.is_null() {
+                (self.wl_egl.wl_egl_window_destroy)(window);
+            }
         }
         self.gl.ctx = egl::NO_CONTEXT;
         self.gl.surf = egl::NO_SURFACE;
@@ -955,7 +1144,9 @@ impl Backplane {
     /// Wayland objects can go too.
     fn discard(mut self) {
         self.drop_present();
-        if let Some(dm) = self.dmabuf.take() { dm.destroy(); }
+        if let Some(dm) = self.dmabuf.take() {
+            dm.destroy();
+        }
         self.viewport.destroy();
         self.subsurface.destroy();
         self.child.destroy();
@@ -978,7 +1169,11 @@ fn present_buffer(child: &WlSurface, sc: &mut Swapchain, i: usize, (w, h): (i32,
 
 /// The offscreen buffer for a spot of `rw`×`rh` (recreated when the size
 /// changes). Our context must be current.
-unsafe fn ensure_rect_fbo(rect_fbo: &mut Option<(u32, u32, i32, i32)>, rw: i32, rh: i32) -> Result<u32> {
+unsafe fn ensure_rect_fbo(
+    rect_fbo: &mut Option<(u32, u32, i32, i32)>,
+    rw: i32,
+    rh: i32,
+) -> Result<u32> {
     // SAFETY: our context is current (this fn's contract).
     unsafe {
         if rect_fbo.map(|f| (f.2, f.3)) != Some((rw, rh)) {
@@ -997,7 +1192,13 @@ unsafe fn ensure_rect_fbo(rect_fbo: &mut Option<(u32, u32, i32, i32)>, rw: i32, 
 
 /// Clears framebuffer `dst` (`w`×`h`) to `fill` and copies `src` into `rect`
 /// (in `dst`'s own coordinates). Our context must be current.
-unsafe fn blit_into(dst: u32, src: u32, (w, h): (i32, i32), [x, y, rw, rh]: [i32; 4], fill: [f32; 3]) {
+unsafe fn blit_into(
+    dst: u32,
+    src: u32,
+    (w, h): (i32, i32),
+    [x, y, rw, rh]: [i32; 4],
+    fill: [f32; 3],
+) {
     // SAFETY: our context is current (this fn's contract).
     unsafe {
         gl::BindFramebuffer(gl::FRAMEBUFFER, dst);
@@ -1006,34 +1207,62 @@ unsafe fn blit_into(dst: u32, src: u32, (w, h): (i32, i32), [x, y, rw, rh]: [i32
         gl::ClearColor(fill[0], fill[1], fill[2], 1.0);
         gl::Clear(gl::COLOR_BUFFER_BIT);
         gl::BindFramebuffer(gl::READ_FRAMEBUFFER, src);
-        gl::BlitFramebuffer(0, 0, rw, rh, x, y, x + rw, y + rh, gl::COLOR_BUFFER_BIT, gl::NEAREST);
+        gl::BlitFramebuffer(
+            0,
+            0,
+            rw,
+            rh,
+            x,
+            y,
+            x + rw,
+            y + rh,
+            gl::COLOR_BUFFER_BIT,
+            gl::NEAREST,
+        );
         gl::BindFramebuffer(gl::FRAMEBUFFER, 0);
     }
 }
 
 /// Window configs for our client API, best first (`rank_config`), with their
 /// [R, G, B, A] bits. Empty = none usable.
-fn ranked_window_configs(egl: &egl::Egl, dpy: EGLDisplay, renderable: EGLenum) -> Result<Vec<(u8, EGLConfig, [EGLint; 4])>> {
+fn ranked_window_configs(
+    egl: &egl::Egl,
+    dpy: EGLDisplay,
+    renderable: EGLenum,
+) -> Result<Vec<(u8, EGLConfig, [EGLint; 4])>> {
     let attribs = [
-        egl::SURFACE_TYPE as EGLint, egl::WINDOW_BIT as EGLint,
-        egl::RENDERABLE_TYPE as EGLint, renderable as EGLint,
-        egl::COLOR_BUFFER_TYPE as EGLint, egl::RGB_BUFFER as EGLint,
-        egl::RED_SIZE as EGLint, 8,
-        egl::GREEN_SIZE as EGLint, 8,
-        egl::BLUE_SIZE as EGLint, 8,
+        egl::SURFACE_TYPE as EGLint,
+        egl::WINDOW_BIT as EGLint,
+        egl::RENDERABLE_TYPE as EGLint,
+        renderable as EGLint,
+        egl::COLOR_BUFFER_TYPE as EGLint,
+        egl::RGB_BUFFER as EGLint,
+        egl::RED_SIZE as EGLint,
+        8,
+        egl::GREEN_SIZE as EGLint,
+        8,
+        egl::BLUE_SIZE as EGLint,
+        8,
         egl::NONE as EGLint,
     ];
     let mut ranked: Vec<(u8, EGLConfig, [EGLint; 4])> = choose_configs(egl, dpy, &attribs)?
         .into_iter()
         .filter_map(|cfg| {
-            let bits = [egl::RED_SIZE, egl::GREEN_SIZE, egl::BLUE_SIZE, egl::ALPHA_SIZE]
-                .map(|a| config_attr(egl, dpy, cfg, a).unwrap_or(-1));
+            let bits = [
+                egl::RED_SIZE,
+                egl::GREEN_SIZE,
+                egl::BLUE_SIZE,
+                egl::ALPHA_SIZE,
+            ]
+            .map(|a| config_attr(egl, dpy, cfg, a).unwrap_or(-1));
             rank_config(bits).map(|rank| (rank, cfg, bits))
         })
         .collect();
     ranked.sort_by_key(|(rank, ..)| *rank); // stable: keeps EGL's own order within a rank
     if ranked.is_empty() {
-        bail!("no usable EGL window config (want 10- or 8-bit RGB, renderable type 0x{renderable:x})");
+        bail!(
+            "no usable EGL window config (want 10- or 8-bit RGB, renderable type 0x{renderable:x})"
+        );
     }
     Ok(ranked)
 }
@@ -1042,7 +1271,15 @@ fn choose_configs(egl: &egl::Egl, dpy: EGLDisplay, attribs: &[EGLint]) -> Result
     let mut configs: Vec<EGLConfig> = vec![std::ptr::null(); 128];
     let mut n: EGLint = 0;
     // Safety: buffers sized as declared; attribs is NONE-terminated.
-    let ok = unsafe { egl.ChooseConfig(dpy, attribs.as_ptr(), configs.as_mut_ptr(), configs.len() as EGLint, &mut n) };
+    let ok = unsafe {
+        egl.ChooseConfig(
+            dpy,
+            attribs.as_ptr(),
+            configs.as_mut_ptr(),
+            configs.len() as EGLint,
+            &mut n,
+        )
+    };
     if ok != egl::TRUE {
         bail!("eglChooseConfig failed: 0x{:x}", unsafe { egl.GetError() });
     }
@@ -1053,8 +1290,10 @@ fn choose_configs(egl: &egl::Egl, dpy: EGLDisplay, attribs: &[EGLint]) -> Result
 /// A context of the current client API at version 3.0+ (glBlitFramebuffer).
 fn create_context(egl: &egl::Egl, dpy: EGLDisplay, cfg: EGLConfig) -> Option<EGLContext> {
     let attribs = [
-        egl::CONTEXT_MAJOR_VERSION as EGLint, 3,
-        egl::CONTEXT_MINOR_VERSION as EGLint, 0,
+        egl::CONTEXT_MAJOR_VERSION as EGLint,
+        3,
+        egl::CONTEXT_MINOR_VERSION as EGLint,
+        0,
         egl::NONE as EGLint,
     ];
     // Safety: standard EGL context creation on Slint's (initialised) display.
@@ -1081,24 +1320,37 @@ fn log_window_configs(egl: &egl::Egl, dpy: EGLDisplay, renderable: EGLenum) {
     let mut formats: Vec<String> = Vec::new();
     for cfg in all {
         let attr = |a: EGLenum| config_attr(egl, dpy, cfg, a).unwrap_or(0);
-        if attr(egl::SURFACE_TYPE) & egl::WINDOW_BIT as EGLint == 0 { continue; }
-        if attr(egl::RENDERABLE_TYPE) & renderable as EGLint == 0 { continue; }
-        let float = attr(egl::COLOR_COMPONENT_TYPE_EXT) == egl::COLOR_COMPONENT_TYPE_FLOAT_EXT as EGLint;
+        if attr(egl::SURFACE_TYPE) & egl::WINDOW_BIT as EGLint == 0 {
+            continue;
+        }
+        if attr(egl::RENDERABLE_TYPE) & renderable as EGLint == 0 {
+            continue;
+        }
+        let float =
+            attr(egl::COLOR_COMPONENT_TYPE_EXT) == egl::COLOR_COMPONENT_TYPE_FLOAT_EXT as EGLint;
         let f = format!(
             "R{}G{}B{}A{}{}",
-            attr(egl::RED_SIZE), attr(egl::GREEN_SIZE), attr(egl::BLUE_SIZE), attr(egl::ALPHA_SIZE),
+            attr(egl::RED_SIZE),
+            attr(egl::GREEN_SIZE),
+            attr(egl::BLUE_SIZE),
+            attr(egl::ALPHA_SIZE),
             if float { " float" } else { "" },
         );
-        if !formats.contains(&f) { formats.push(f); }
+        if !formats.contains(&f) {
+            formats.push(f);
+        }
     }
-    debug!("video backplane: window colour formats offered: {}", formats.join(", "));
+    debug!(
+        "video backplane: window colour formats offered: {}",
+        formats.join(", ")
+    );
 }
 
 struct SavedCurrent {
-    dpy:  EGLDisplay,
+    dpy: EGLDisplay,
     draw: EGLSurface,
     read: EGLSurface,
-    ctx:  EGLContext,
+    ctx: EGLContext,
 }
 
 impl SavedCurrent {
@@ -1106,10 +1358,10 @@ impl SavedCurrent {
         // SAFETY: plain EGL queries; `egl` is the loaded library.
         unsafe {
             Self {
-                dpy:  egl.GetCurrentDisplay(),
+                dpy: egl.GetCurrentDisplay(),
                 draw: egl.GetCurrentSurface(egl::DRAW as EGLint),
                 read: egl.GetCurrentSurface(egl::READ as EGLint),
-                ctx:  egl.GetCurrentContext(),
+                ctx: egl.GetCurrentContext(),
             }
         }
     }
@@ -1120,7 +1372,8 @@ impl SavedCurrent {
         // SAFETY: `dpy` and the saved handles come from this EGL library.
         unsafe {
             if self.ctx == egl::NO_CONTEXT {
-                return egl.MakeCurrent(dpy, egl::NO_SURFACE, egl::NO_SURFACE, egl::NO_CONTEXT) == egl::TRUE;
+                return egl.MakeCurrent(dpy, egl::NO_SURFACE, egl::NO_SURFACE, egl::NO_CONTEXT)
+                    == egl::TRUE;
             }
             egl.MakeCurrent(self.dpy, self.draw, self.read, self.ctx) == egl::TRUE
         }
@@ -1138,9 +1391,13 @@ fn load_egl() -> Result<&'static egl::Egl> {
     let lib: &'static libloading::Library = Box::leak(Box::new(lib));
     // Safety: eglGetProcAddress has exactly this signature.
     let get_proc: Option<GetProcAddress> =
-        unsafe { lib.get::<GetProcAddress>(b"eglGetProcAddress\0") }.ok().map(|s| *s);
+        unsafe { lib.get::<GetProcAddress>(b"eglGetProcAddress\0") }
+            .ok()
+            .map(|s| *s);
     let egl = egl::Egl::load_with(|name| {
-        let Ok(cname) = CString::new(name) else { return std::ptr::null() };
+        let Ok(cname) = CString::new(name) else {
+            return std::ptr::null();
+        };
         // Safety: symbol lookups only; the address is what the loader wants.
         if let Ok(sym) = unsafe { lib.get::<*const c_void>(cname.as_bytes_with_nul()) } {
             return *sym;
@@ -1150,7 +1407,12 @@ fn load_egl() -> Result<&'static egl::Egl> {
     Ok(Box::leak(Box::new(egl)))
 }
 
-fn query_context(egl: &egl::Egl, dpy: EGLDisplay, ctx: EGLContext, attr: EGLenum) -> Option<EGLint> {
+fn query_context(
+    egl: &egl::Egl,
+    dpy: EGLDisplay,
+    ctx: EGLContext,
+    attr: EGLenum,
+) -> Option<EGLint> {
     let mut v: EGLint = 0;
     (unsafe { egl.QueryContext(dpy, ctx, attr as EGLint, &mut v) } == egl::TRUE).then_some(v)
 }
@@ -1184,7 +1446,9 @@ fn gl_string(name: gl::types::GLenum) -> String {
         return String::new();
     }
     // Safety: GL returns a static NUL-terminated string.
-    unsafe { CStr::from_ptr(p.cast()) }.to_string_lossy().into_owned()
+    unsafe { CStr::from_ptr(p.cast()) }
+        .to_string_lossy()
+        .into_owned()
 }
 
 // ── Pure helpers ──────────────────────────────────────────────────────────
@@ -1207,21 +1471,25 @@ fn rank_config(bits: [EGLint; 4]) -> Option<u8> {
 /// physical = round(logical × scale), and for scale ≥ 1 rounding back
 /// recovers the same logical size, so the child matches Slint's surface.
 fn logical_size(phys: (u32, u32), scale: f32) -> (i32, i32) {
-    let s = if scale.is_finite() && scale > 0.0 { scale as f64 } else { 1.0 };
+    let s = if scale.is_finite() && scale > 0.0 {
+        scale as f64
+    } else {
+        1.0
+    };
     let l = |p: u32| ((p as f64) / s).round().max(1.0) as i32;
     (l(phys.0), l(phys.1))
 }
 
 #[derive(Debug, Clone, Copy, Default)]
 struct FrameStats {
-    frames:          u64,
-    slow_overhead:   u64,
+    frames: u64,
+    slow_overhead: u64,
     max_overhead_ms: f64,
-    max_mpv_ms:      f64,
+    max_mpv_ms: f64,
     /// Own buffers: glFinish waits over 4 ms, the slowest, frames skipped.
-    slow_gpu_wait:   u64,
+    slow_gpu_wait: u64,
     max_gpu_wait_ms: f64,
-    skipped:         u64,
+    skipped: u64,
 }
 
 /// The window background as the subsurface must fill it while it's tagged
@@ -1230,7 +1498,13 @@ struct FrameStats {
 /// windows to its own SDR brightness, so the match is close, not exact —
 /// fine for Fjord's near-black background.
 pub(crate) fn pq_fill_from_srgb(rgb: [f32; 3]) -> [f32; 3] {
-    let lin = rgb.map(|c| if c <= 0.04045 { c / 12.92 } else { ((c + 0.055) / 1.055).powf(2.4) });
+    let lin = rgb.map(|c| {
+        if c <= 0.04045 {
+            c / 12.92
+        } else {
+            ((c + 0.055) / 1.055).powf(2.4)
+        }
+    });
     const M: [[f32; 3]; 3] = [
         [0.6274, 0.3293, 0.0433],
         [0.0691, 0.9195, 0.0114],
@@ -1258,7 +1532,11 @@ pub(crate) enum Spot {
     Thumb,
 }
 
-pub(crate) fn pick_spot(is_playing: bool, video_behind_ui: bool, has_background_player: bool) -> Option<Spot> {
+pub(crate) fn pick_spot(
+    is_playing: bool,
+    video_behind_ui: bool,
+    has_background_player: bool,
+) -> Option<Spot> {
     if is_playing {
         Some(Spot::Player)
     } else if has_background_player && video_behind_ui {
@@ -1273,8 +1551,16 @@ pub(crate) fn pick_spot(is_playing: bool, video_behind_ui: bool, has_background_
 /// A spot's logical rect (x, y, w, h — Slint's absolute position, top-left
 /// origin) → physical px, still top-left origin (a wl_buffer's own
 /// coordinates), clipped to the window. None when nothing of it is on screen.
-pub(crate) fn to_buffer_rect(logical: (f32, f32, f32, f32), scale: f32, win: (i32, i32)) -> Option<[i32; 4]> {
-    let s = if scale.is_finite() && scale > 0.0 { scale } else { 1.0 };
+pub(crate) fn to_buffer_rect(
+    logical: (f32, f32, f32, f32),
+    scale: f32,
+    win: (i32, i32),
+) -> Option<[i32; 4]> {
+    let s = if scale.is_finite() && scale > 0.0 {
+        scale
+    } else {
+        1.0
+    };
     let (x, y, w, h) = logical;
     let x0 = ((x * s).round() as i32).clamp(0, win.0);
     let y0 = ((y * s).round() as i32).clamp(0, win.1);
@@ -1314,11 +1600,25 @@ delegate_noop!(BpState: WpViewport);
 delegate_noop!(BpState: ignore WlSurface);
 
 impl Dispatch<ZwpLinuxDmabufV1, ()> for BpState {
-    fn event(state: &mut Self, _: &ZwpLinuxDmabufV1, event: zwp_linux_dmabuf_v1::Event, _: &(), _: &Connection, _: &QueueHandle<Self>) {
+    fn event(
+        state: &mut Self,
+        _: &ZwpLinuxDmabufV1,
+        event: zwp_linux_dmabuf_v1::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
         match event {
             zwp_linux_dmabuf_v1::Event::Format { format } => state.formats.push((format, None)),
-            zwp_linux_dmabuf_v1::Event::Modifier { format, modifier_hi, modifier_lo } => {
-                state.formats.push((format, Some(((modifier_hi as u64) << 32) | modifier_lo as u64)));
+            zwp_linux_dmabuf_v1::Event::Modifier {
+                format,
+                modifier_hi,
+                modifier_lo,
+            } => {
+                state.formats.push((
+                    format,
+                    Some(((modifier_hi as u64) << 32) | modifier_lo as u64),
+                ));
             }
             _ => {}
         }
@@ -1326,9 +1626,18 @@ impl Dispatch<ZwpLinuxDmabufV1, ()> for BpState {
 }
 
 impl Dispatch<ZwpLinuxBufferParamsV1, ()> for BpState {
-    fn event(state: &mut Self, _: &ZwpLinuxBufferParamsV1, event: zwp_linux_buffer_params_v1::Event, _: &(), _: &Connection, _: &QueueHandle<Self>) {
+    fn event(
+        state: &mut Self,
+        _: &ZwpLinuxBufferParamsV1,
+        event: zwp_linux_buffer_params_v1::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
         match event {
-            zwp_linux_buffer_params_v1::Event::Created { buffer } => state.created = Some(Some(buffer)),
+            zwp_linux_buffer_params_v1::Event::Created { buffer } => {
+                state.created = Some(Some(buffer))
+            }
             zwp_linux_buffer_params_v1::Event::Failed => state.created = Some(None),
             _ => {}
         }
@@ -1340,7 +1649,14 @@ impl Dispatch<ZwpLinuxBufferParamsV1, ()> for BpState {
 }
 
 impl Dispatch<WlBuffer, ()> for BpState {
-    fn event(state: &mut Self, buffer: &WlBuffer, event: wl_buffer::Event, _: &(), _: &Connection, _: &QueueHandle<Self>) {
+    fn event(
+        state: &mut Self,
+        buffer: &WlBuffer,
+        event: wl_buffer::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
         if let wl_buffer::Event::Release = event {
             state.released.push(buffer.id());
         }
@@ -1365,9 +1681,13 @@ mod tests {
     fn pq_fill_matches_reference_values() {
         // SDR white (203 nits) is PQ ≈ 0.5807 (BT.2408); black is ~0.
         let w = pq_fill_from_srgb([1.0, 1.0, 1.0]);
-        for c in w { assert!((c - 0.5807).abs() < 0.002, "{c}"); }
+        for c in w {
+            assert!((c - 0.5807).abs() < 0.002, "{c}");
+        }
         let b = pq_fill_from_srgb([0.0, 0.0, 0.0]);
-        for c in b { assert!(c < 0.001, "{c}"); }
+        for c in b {
+            assert!(c < 0.001, "{c}");
+        }
         // Fjord's #0d0d0d background stays dark grey, not black or bright.
         let bg = pq_fill_from_srgb([13.0 / 255.0; 3]);
         assert!(bg[0] > 0.05 && bg[0] < 0.2, "{}", bg[0]);
@@ -1385,20 +1705,50 @@ mod tests {
     fn spot_rects_scale_clip_and_flip() {
         let gl = |l, s, win: (i32, i32)| to_buffer_rect(l, s, win).map(|r| flip_rect_y(r, win.1));
         // Fullscreen at scale 2.
-        assert_eq!(to_buffer_rect((0.0, 0.0, 1920.0, 1080.0), 2.0, (3840, 2160)), Some([0, 0, 3840, 2160]));
-        assert_eq!(gl((0.0, 0.0, 1920.0, 1080.0), 2.0, (3840, 2160)), Some([0, 0, 3840, 2160]));
+        assert_eq!(
+            to_buffer_rect((0.0, 0.0, 1920.0, 1080.0), 2.0, (3840, 2160)),
+            Some([0, 0, 3840, 2160])
+        );
+        assert_eq!(
+            gl((0.0, 0.0, 1920.0, 1080.0), 2.0, (3840, 2160)),
+            Some([0, 0, 3840, 2160])
+        );
         // Mini-player thumbnail at the bottom-left of a 1920x1012 window:
         // own buffers keep Slint's top-origin y, GL counts from the bottom.
-        assert_eq!(to_buffer_rect((0.0, 904.0, 192.0, 108.0), 1.0, (1920, 1012)), Some([0, 904, 192, 108]));
-        assert_eq!(gl((0.0, 904.0, 192.0, 108.0), 1.0, (1920, 1012)), Some([0, 0, 192, 108]));
+        assert_eq!(
+            to_buffer_rect((0.0, 904.0, 192.0, 108.0), 1.0, (1920, 1012)),
+            Some([0, 904, 192, 108])
+        );
+        assert_eq!(
+            gl((0.0, 904.0, 192.0, 108.0), 1.0, (1920, 1012)),
+            Some([0, 0, 192, 108])
+        );
         // Content area above a 108px bar.
-        assert_eq!(to_buffer_rect((0.0, 0.0, 1920.0, 904.0), 1.0, (1920, 1012)), Some([0, 0, 1920, 904]));
-        assert_eq!(gl((0.0, 0.0, 1920.0, 904.0), 1.0, (1920, 1012)), Some([0, 108, 1920, 904]));
+        assert_eq!(
+            to_buffer_rect((0.0, 0.0, 1920.0, 904.0), 1.0, (1920, 1012)),
+            Some([0, 0, 1920, 904])
+        );
+        assert_eq!(
+            gl((0.0, 0.0, 1920.0, 904.0), 1.0, (1920, 1012)),
+            Some([0, 108, 1920, 904])
+        );
         // Fractional scale rounds; partly off-screen is clipped; off-screen is None.
-        assert_eq!(to_buffer_rect((10.0, 10.0, 100.0, 50.0), 1.25, (1600, 900)), Some([13, 13, 125, 62]));
-        assert_eq!(gl((10.0, 10.0, 100.0, 50.0), 1.25, (1600, 900)), Some([13, 825, 125, 62]));
-        assert_eq!(to_buffer_rect((-10.0, 90.0, 50.0, 50.0), 1.0, (100, 100)), Some([0, 90, 40, 10]));
-        assert_eq!(to_buffer_rect((0.0, 2000.0, 10.0, 10.0), 1.0, (100, 100)), None);
+        assert_eq!(
+            to_buffer_rect((10.0, 10.0, 100.0, 50.0), 1.25, (1600, 900)),
+            Some([13, 13, 125, 62])
+        );
+        assert_eq!(
+            gl((10.0, 10.0, 100.0, 50.0), 1.25, (1600, 900)),
+            Some([13, 825, 125, 62])
+        );
+        assert_eq!(
+            to_buffer_rect((-10.0, 90.0, 50.0, 50.0), 1.0, (100, 100)),
+            Some([0, 90, 40, 10])
+        );
+        assert_eq!(
+            to_buffer_rect((0.0, 2000.0, 10.0, 10.0), 1.0, (100, 100)),
+            None
+        );
     }
 
     #[test]

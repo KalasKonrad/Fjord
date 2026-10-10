@@ -36,29 +36,35 @@ use std::sync::{Arc, Mutex};
 use slint::{Global, Model, ModelRc, VecModel};
 use tracing::{debug, warn};
 
-use crate::config::FjordState;
-use crate::discover;
 use crate::AppState;
+use crate::config::FjordState;
 use crate::detail::{fetch_card_posters, items_to_cards};
+use crate::discover;
 use crate::poster::{decode_poster_buffer, fetch_poster_cached};
 use crate::{CardItem, MainWindow};
 
 // ── open_person_screen ────────────────────────────────────────────────────────
 
 pub(crate) fn open_person_screen(
-    id:    String,
-    name:  String,
+    id: String,
+    name: String,
     state: Arc<Mutex<FjordState>>,
-    ww:    slint::Weak<MainWindow>,
-    rt:    tokio::runtime::Handle,
+    ww: slint::Weak<MainWindow>,
+    rt: tokio::runtime::Handle,
 ) {
     // Screen-open cache (Part 2): skip the loading spinner when both the bio
     // (via detail) and filmography are cached — the remaining work (portrait +
     // film-poster fetch) is disk-cached and fast enough to feel instant.
     let (client, cached_detail, cached_film) = {
         let s = state.lock().unwrap();
-        let Some(c) = s.client.as_ref().map(Arc::clone) else { return };
-        (c, s.item_detail_cache.get(&id), s.person_filmography_cache.get(&id))
+        let Some(c) = s.client.as_ref().map(Arc::clone) else {
+            return;
+        };
+        (
+            c,
+            s.item_detail_cache.get(&id),
+            s.person_filmography_cache.get(&id),
+        )
     };
     let is_cache_hit = cached_detail.is_some() && cached_film.is_some();
     tracing::debug!("open_person_screen({id}): cache_hit={is_cache_hit}");
@@ -83,12 +89,20 @@ pub(crate) fn open_person_screen(
 
     let ww2 = ww.clone();
 
-    spawn_other_work(id.clone(), name.clone(), Arc::clone(&state), ww.clone(), rt.clone(), cached_detail.clone(), Arc::clone(&client));
+    spawn_other_work(
+        id.clone(),
+        name.clone(),
+        Arc::clone(&state),
+        ww.clone(),
+        rt.clone(),
+        cached_detail.clone(),
+        Arc::clone(&client),
+    );
 
-    let id_revalidate    = id.clone();
+    let id_revalidate = id.clone();
     let state_revalidate = Arc::clone(&state);
-    let ww_revalidate    = ww.clone();
-    let rt_revalidate    = rt.clone();
+    let ww_revalidate = ww.clone();
+    let rt_revalidate = rt.clone();
 
     rt.spawn(async move {
         let detail_fut = async {
@@ -190,41 +204,65 @@ pub(crate) fn open_person_screen(
     // fallback. This revalidation is what closes that gap for whatever's
     // actually on screen right now.
     if is_cache_hit {
-        spawn_person_revalidate(id_revalidate, state_revalidate, ww_revalidate, rt_revalidate);
+        spawn_person_revalidate(
+            id_revalidate,
+            state_revalidate,
+            ww_revalidate,
+            rt_revalidate,
+        );
     }
 }
 
 fn spawn_person_revalidate(
-    id:    String,
+    id: String,
     state: Arc<Mutex<FjordState>>,
-    ww:    slint::Weak<MainWindow>,
-    rt:    tokio::runtime::Handle,
+    ww: slint::Weak<MainWindow>,
+    rt: tokio::runtime::Handle,
 ) {
-    if !crate::should_revalidate(&state, &id) { return; }
-    let Some(client) = state.lock().unwrap().client.as_ref().map(Arc::clone) else { return };
+    if !crate::should_revalidate(&state, &id) {
+        return;
+    }
+    let Some(client) = state.lock().unwrap().client.as_ref().map(Arc::clone) else {
+        return;
+    };
     rt.spawn(async move {
-        let (detail_res, film_res) = tokio::join!(client.get_item_detail(&id), client.get_person_filmography(&id));
-        let (Ok(detail), Ok(film_items)) = (detail_res, film_res) else { return };
+        let (detail_res, film_res) = tokio::join!(
+            client.get_item_detail(&id),
+            client.get_person_filmography(&id)
+        );
+        let (Ok(detail), Ok(film_items)) = (detail_res, film_res) else {
+            return;
+        };
         // Sign-out (or a different account signing in on a shared HTPC)
         // mid-fetch must not let this per-user data land in the new session's
         // cache — same guard class as main.rs::session_current's own doc
         // comment (CR11-2).
-        if !crate::session_current(&state, &client) { return; }
+        if !crate::session_current(&state, &client) {
+            return;
+        }
         {
             let mut s = state.lock().unwrap();
             s.item_detail_cache.insert(id.clone(), detail.clone());
-            s.person_filmography_cache.insert(id.clone(), film_items.clone());
+            s.person_filmography_cache
+                .insert(id.clone(), film_items.clone());
         }
         let bio = crate::strip_html_to_text(detail.overview.clone().unwrap_or_default().trim());
         let film_bufs = fetch_card_posters(&client, &film_items).await;
-        let id_guard  = id.clone();
+        let id_guard = id.clone();
         let _ = slint::invoke_from_event_loop(move || {
             let Some(w) = ww.upgrade() else { return };
-            if AppState::get(&w).get_person_id().as_str() != id_guard { return; }
+            if AppState::get(&w).get_person_id().as_str() != id_guard {
+                return;
+            }
             let g = AppState::get(&w);
-            if !bio.is_empty() { g.set_person_bio(bio.as_str().into()); }
+            if !bio.is_empty() {
+                g.set_person_bio(bio.as_str().into());
+            }
             let fresh = items_to_cards(&film_items, film_bufs);
-            g.set_person_filmography(crate::apply_cards_preserving_identity(&g.get_person_filmography(), fresh));
+            g.set_person_filmography(crate::apply_cards_preserving_identity(
+                &g.get_person_filmography(),
+                fresh,
+            ));
         });
     });
 }
@@ -242,11 +280,11 @@ fn spawn_person_revalidate(
 /// deliberate exception). Cached either way, including a `None` miss, so a
 /// failed resolution isn't retried on every visit to the same person.
 async fn resolve_person_tmdb_id(
-    client:        &Arc<fjord_api::JellyfinClient>,
-    seerr:         &Arc<fjord_seerr::SeerrClient>,
-    state:         &Arc<Mutex<FjordState>>,
-    id:            &str,
-    name:          &str,
+    client: &Arc<fjord_api::JellyfinClient>,
+    seerr: &Arc<fjord_seerr::SeerrClient>,
+    state: &Arc<Mutex<FjordState>>,
+    id: &str,
+    name: &str,
     cached_detail: Option<fjord_api::models::MediaItem>,
 ) -> Option<i64> {
     if let Some(cached) = state.lock().unwrap().person_tmdb_id_cache.get(id) {
@@ -257,19 +295,33 @@ async fn resolve_person_tmdb_id(
         Some(d) => Some(d),
         None => client.get_item_detail(id).await.ok(),
     };
-    if let Some(tmdb_id) =
-        detail.as_ref().and_then(|d| d.provider_ids.get("Tmdb")).and_then(|s| s.parse::<i64>().ok())
+    if let Some(tmdb_id) = detail
+        .as_ref()
+        .and_then(|d| d.provider_ids.get("Tmdb"))
+        .and_then(|s| s.parse::<i64>().ok())
     {
         debug!("resolve_person_tmdb_id({id}): resolved via ProviderIds -> {tmdb_id}");
-        state.lock().unwrap().person_tmdb_id_cache.insert(id.to_string(), Some(tmdb_id));
+        state
+            .lock()
+            .unwrap()
+            .person_tmdb_id_cache
+            .insert(id.to_string(), Some(tmdb_id));
         return Some(tmdb_id);
     }
     let resolved = match seerr.search(name, 1).await {
         Ok(resp) => {
-            let persons: Vec<_> = resp.results.iter().filter(|r| r.media_type == "person").collect();
+            let persons: Vec<_> = resp
+                .results
+                .iter()
+                .filter(|r| r.media_type == "person")
+                .collect();
             persons
                 .iter()
-                .find(|r| r.name.as_deref().is_some_and(|n| n.eq_ignore_ascii_case(name)))
+                .find(|r| {
+                    r.name
+                        .as_deref()
+                        .is_some_and(|n| n.eq_ignore_ascii_case(name))
+                })
                 .or_else(|| persons.first())
                 .map(|r| r.id)
         }
@@ -279,7 +331,11 @@ async fn resolve_person_tmdb_id(
         }
     };
     debug!("resolve_person_tmdb_id({id}): fuzzy search for {name:?} -> {resolved:?}");
-    state.lock().unwrap().person_tmdb_id_cache.insert(id.to_string(), resolved);
+    state
+        .lock()
+        .unwrap()
+        .person_tmdb_id_cache
+        .insert(id.to_string(), resolved);
     resolved
 }
 
@@ -292,28 +348,40 @@ async fn resolve_person_tmdb_id(
 /// .length > 0` idiom as every other conditional row in this codebase, no
 /// error surfaced to the user for what is an inherently best-effort feature.
 fn spawn_other_work(
-    id:            String,
-    name:          String,
-    state:         Arc<Mutex<FjordState>>,
-    ww:            slint::Weak<MainWindow>,
-    rt:            tokio::runtime::Handle,
+    id: String,
+    name: String,
+    state: Arc<Mutex<FjordState>>,
+    ww: slint::Weak<MainWindow>,
+    rt: tokio::runtime::Handle,
     cached_detail: Option<fjord_api::models::MediaItem>,
-    client:        Arc<fjord_api::JellyfinClient>,
+    client: Arc<fjord_api::JellyfinClient>,
 ) {
-    let Some(seerr) = state.lock().unwrap().seerr_client.clone() else { return };
+    let Some(seerr) = state.lock().unwrap().seerr_client.clone() else {
+        return;
+    };
     rt.spawn(async move {
-        let Some(tmdb_id) = resolve_person_tmdb_id(&client, &seerr, &state, &id, &name, cached_detail).await else {
+        let Some(tmdb_id) =
+            resolve_person_tmdb_id(&client, &seerr, &state, &id, &name, cached_detail).await
+        else {
             debug!("spawn_other_work({id}): no tmdb id resolved for {name:?} — row will not show");
             return;
         };
         let cache_key = tmdb_id.to_string();
-        let cached = state.lock().unwrap().person_other_work_cache.get(&cache_key);
+        let cached = state
+            .lock()
+            .unwrap()
+            .person_other_work_cache
+            .get(&cache_key);
         let items = match cached {
             Some(v) => v,
             None => match seerr.get_person_combined_credits(tmdb_id).await {
                 Ok(credits) => {
                     let built = discover::build_person_credit_metas(&credits);
-                    state.lock().unwrap().person_other_work_cache.insert(cache_key, built.clone());
+                    state
+                        .lock()
+                        .unwrap()
+                        .person_other_work_cache
+                        .insert(cache_key, built.clone());
                     built
                 }
                 Err(e) => {
@@ -323,13 +391,21 @@ fn spawn_other_work(
             },
         };
         let ready = discover::resolve_and_fetch_discovery_row(&state, items, 20).await;
-        debug!("spawn_other_work({id}): tmdb={tmdb_id} -> {} card(s) after owned-filter", ready.len());
+        debug!(
+            "spawn_other_work({id}): tmdb={tmdb_id} -> {} card(s) after owned-filter",
+            ready.len()
+        );
         let _ = slint::invoke_from_event_loop(move || {
             let Some(w) = ww.upgrade() else { return };
             let g = AppState::get(&w);
-            if g.get_person_id().as_str() != id { return; }
+            if g.get_person_id().as_str() != id {
+                return;
+            }
             let cards = discover::discover_cards_from(ready);
-            g.set_person_other_work(crate::apply_cards_preserving_identity(&g.get_person_other_work(), cards));
+            g.set_person_other_work(crate::apply_cards_preserving_identity(
+                &g.get_person_other_work(),
+                cards,
+            ));
         });
     });
 }
@@ -352,12 +428,14 @@ fn spawn_other_work(
 /// silently no-ops rather than guessing.
 pub(crate) fn open_person_from_discover(
     tmdb_id: String,
-    name:    String,
-    state:   Arc<Mutex<FjordState>>,
-    ww:      slint::Weak<MainWindow>,
-    rt:      tokio::runtime::Handle,
+    name: String,
+    state: Arc<Mutex<FjordState>>,
+    ww: slint::Weak<MainWindow>,
+    rt: tokio::runtime::Handle,
 ) {
-    let Some(client) = state.lock().unwrap().client.as_ref().map(Arc::clone) else { return };
+    let Some(client) = state.lock().unwrap().client.as_ref().map(Arc::clone) else {
+        return;
+    };
     let Ok(tmdb_num) = tmdb_id.parse::<i64>() else {
         warn!("open_person_from_discover: {tmdb_id:?} doesn't parse as a TMDB id");
         return;
@@ -371,14 +449,16 @@ pub(crate) fn open_person_from_discover(
     {
         let mut s = state.lock().unwrap();
         if s.person_discover_resolving == Some(tmdb_num) {
-            debug!("open_person_from_discover({tmdb_num}): already resolving, ignoring repeat press");
+            debug!(
+                "open_person_from_discover({tmdb_num}): already resolving, ignoring repeat press"
+            );
             return;
         }
         s.person_discover_resolving = Some(tmdb_num);
     }
     let state2 = Arc::clone(&state);
-    let ww2    = ww.clone();
-    let rt2    = rt.clone();
+    let ww2 = ww.clone();
+    let rt2 = rt.clone();
     rt.spawn(async move {
         let resolved = resolve_local_person(&client, &state2, tmdb_num, &name).await;
         // Cleared here, not in either downstream function's own commit
@@ -415,11 +495,9 @@ pub(crate) fn open_person_from_discover(
         // correctly — their own internal `rt.spawn` calls for the actual
         // async fetch work are unaffected, `Handle::spawn` queues onto the
         // runtime regardless of which thread calls it.
-        let _ = slint::invoke_from_event_loop(move || {
-            match resolved {
-                Some(local_id) => open_person_screen(local_id, name, state2, ww2, rt2),
-                None           => open_person_screen_tmdb(tmdb_num, name, state2, ww2, rt2),
-            }
+        let _ = slint::invoke_from_event_loop(move || match resolved {
+            Some(local_id) => open_person_screen(local_id, name, state2, ww2, rt2),
+            None => open_person_screen_tmdb(tmdb_num, name, state2, ww2, rt2),
         });
     });
 }
@@ -437,10 +515,10 @@ pub(crate) fn open_person_from_discover(
 /// exact false-match risk flagged to the user when this design was chosen.
 /// Cached (hit or miss) in `local_person_by_tmdb_cache`.
 async fn resolve_local_person(
-    client:  &Arc<fjord_api::JellyfinClient>,
-    state:   &Arc<Mutex<FjordState>>,
+    client: &Arc<fjord_api::JellyfinClient>,
+    state: &Arc<Mutex<FjordState>>,
     tmdb_id: i64,
-    name:    &str,
+    name: &str,
 ) -> Option<String> {
     let key = tmdb_id.to_string();
     if let Some(cached) = state.lock().unwrap().local_person_by_tmdb_cache.get(&key) {
@@ -451,16 +529,34 @@ async fn resolve_local_person(
         Ok(v) => v,
         Err(e) => {
             warn!("search_persons_by_name({name:?}): {e:#}");
-            state.lock().unwrap().local_person_by_tmdb_cache.insert(key, None);
+            state
+                .lock()
+                .unwrap()
+                .local_person_by_tmdb_cache
+                .insert(key, None);
             return None;
         }
     };
-    let resolved = candidates.iter()
+    let resolved = candidates
+        .iter()
         .find(|c| c.provider_ids.get("Tmdb").is_some_and(|t| t == &key))
         .map(|c| c.id.clone())
-        .or_else(|| if candidates.len() == 1 { Some(candidates[0].id.clone()) } else { None });
-    debug!("resolve_local_person({tmdb_id}, {name:?}): {} candidate(s) -> {resolved:?}", candidates.len());
-    state.lock().unwrap().local_person_by_tmdb_cache.insert(key, resolved.clone());
+        .or_else(|| {
+            if candidates.len() == 1 {
+                Some(candidates[0].id.clone())
+            } else {
+                None
+            }
+        });
+    debug!(
+        "resolve_local_person({tmdb_id}, {name:?}): {} candidate(s) -> {resolved:?}",
+        candidates.len()
+    );
+    state
+        .lock()
+        .unwrap()
+        .local_person_by_tmdb_cache
+        .insert(key, resolved.clone());
     resolved
 }
 
@@ -482,12 +578,14 @@ async fn resolve_local_person(
 /// guards (`if g.get_person_id().as_str() != ...`) keep working unchanged.
 fn open_person_screen_tmdb(
     tmdb_id: i64,
-    name:    String,
-    state:   Arc<Mutex<FjordState>>,
-    ww:      slint::Weak<MainWindow>,
-    rt:      tokio::runtime::Handle,
+    name: String,
+    state: Arc<Mutex<FjordState>>,
+    ww: slint::Weak<MainWindow>,
+    rt: tokio::runtime::Handle,
 ) {
-    let Some(seerr) = state.lock().unwrap().seerr_client.clone() else { return };
+    let Some(seerr) = state.lock().unwrap().seerr_client.clone() else {
+        return;
+    };
     let synthetic_id = format!("tmdb:{tmdb_id}");
     if let Some(w) = ww.upgrade() {
         let g = AppState::get(&w);
@@ -520,26 +618,37 @@ fn open_person_screen_tmdb(
         g.set_app_content_loading(true);
         g.set_app_loading_progress(0.0);
     }
-    let ww2      = ww.clone();
-    let seerr2   = Arc::clone(&seerr);
-    let state2   = Arc::clone(&state);
+    let ww2 = ww.clone();
+    let seerr2 = Arc::clone(&seerr);
+    let state2 = Arc::clone(&state);
     rt.spawn(async move {
-        let http = reqwest::Client::builder().timeout(std::time::Duration::from_secs(30)).build().ok();
-        let (person_res, credits_res) = tokio::join!(seerr.get_person(tmdb_id), seerr.get_person_combined_credits(tmdb_id));
+        let http = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .build()
+            .ok();
+        let (person_res, credits_res) = tokio::join!(
+            seerr.get_person(tmdb_id),
+            seerr.get_person_combined_credits(tmdb_id)
+        );
         if let Err(e) = &person_res {
             warn!("open_person_screen_tmdb({tmdb_id}): get_person: {e:#}");
         }
-        let bio = person_res.as_ref().ok()
+        let bio = person_res
+            .as_ref()
+            .ok()
             .and_then(|p| p.biography.clone())
             .map(|b| crate::strip_html_to_text(b.trim()))
             .unwrap_or_default();
         let profile_path = person_res.ok().and_then(|p| p.profile_path);
         let portrait_buf = match (&http, profile_path) {
-            (Some(h), Some(path)) => {
-                discover::fetch_tmdb_image(h, discover::TMDB_PROFILE_BASE, &path, &format!("person-{tmdb_id}"))
-                    .await
-                    .and_then(|b| decode_poster_buffer(&b))
-            }
+            (Some(h), Some(path)) => discover::fetch_tmdb_image(
+                h,
+                discover::TMDB_PROFILE_BASE,
+                &path,
+                &format!("person-{tmdb_id}"),
+            )
+            .await
+            .and_then(|b| decode_poster_buffer(&b)),
             _ => None,
         };
         let items = match credits_res {
@@ -550,17 +659,26 @@ fn open_person_screen_tmdb(
             }
         };
         let ready = discover::resolve_and_fetch_discovery_row(&state, items, 20).await;
-        debug!("open_person_screen_tmdb({tmdb_id}): {} filmography card(s)", ready.len());
+        debug!(
+            "open_person_screen_tmdb({tmdb_id}): {} filmography card(s)",
+            ready.len()
+        );
         let _ = slint::invoke_from_event_loop(move || {
             let Some(w) = ww2.upgrade() else { return };
             // Session guard, same class as every other Seerr-fetch commit
             // closure in this codebase (Bonfire Phase 1 step 8 audit) — a
             // sign-out/profile-switch/Seerr-disconnect mid-fetch must not
             // let this land in the new session's UI.
-            if !crate::seerr_session_current(&state2, &seerr2) { return; }
+            if !crate::seerr_session_current(&state2, &seerr2) {
+                return;
+            }
             let g = AppState::get(&w);
-            if g.get_person_id().as_str() != synthetic_id { return; }
-            if !bio.is_empty() { g.set_person_bio(bio.as_str().into()); }
+            if g.get_person_id().as_str() != synthetic_id {
+                return;
+            }
+            if !bio.is_empty() {
+                g.set_person_bio(bio.as_str().into());
+            }
             if let Some(buf) = portrait_buf {
                 g.set_person_portrait(slint::Image::from_rgba8(buf));
                 g.set_person_has_portrait(true);
@@ -579,7 +697,7 @@ fn open_person_screen_tmdb(
 
 pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
     use crate::keys::Action;
-    let in_film       = g.get_person_in_film_row();
+    let in_film = g.get_person_in_film_row();
     let in_other_work = g.get_person_in_other_work_row();
     match action {
         Action::Back => {
@@ -617,37 +735,55 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
             } else if in_film {
                 g.set_person_in_film_row(false);
                 true
-            } else { false }
+            } else {
+                false
+            }
         }
         Action::Left => {
             if in_other_work {
                 let idx = g.get_person_other_work_focused();
-                if idx > 0 { g.set_person_other_work_focused(idx - 1); }
+                if idx > 0 {
+                    g.set_person_other_work_focused(idx - 1);
+                }
                 true
             } else if in_film {
                 let idx = g.get_person_film_focused();
-                if idx > 0 { g.set_person_film_focused(idx - 1); }
+                if idx > 0 {
+                    g.set_person_film_focused(idx - 1);
+                }
                 true
-            } else { false }
+            } else {
+                false
+            }
         }
         Action::Right => {
             if in_other_work {
                 let idx = g.get_person_other_work_focused();
                 let max = g.get_person_other_work().row_count() as i32 - 1;
-                if idx < max { g.set_person_other_work_focused(idx + 1); }
+                if idx < max {
+                    g.set_person_other_work_focused(idx + 1);
+                }
                 true
             } else if in_film {
                 let idx = g.get_person_film_focused();
                 let max = g.get_person_filmography().row_count() as i32 - 1;
-                if idx < max { g.set_person_film_focused(idx + 1); }
+                if idx < max {
+                    g.set_person_film_focused(idx + 1);
+                }
                 true
-            } else { false }
+            } else {
+                false
+            }
         }
         Action::Confirm => {
             if in_other_work {
                 let idx = g.get_person_other_work_focused() as usize;
                 if let Some(card) = g.get_person_other_work().row_data(idx) {
-                    let media_type = if card.item_type == "DiscoverMovie" { "movie" } else { "tv" };
+                    let media_type = if card.item_type == "DiscoverMovie" {
+                        "movie"
+                    } else {
+                        "tv"
+                    };
                     g.invoke_open_discover_item(media_type.into(), card.id);
                 }
             } else if in_film {
@@ -671,15 +807,25 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
                 if let Some(card) = g.get_person_filmography().row_data(idx) {
                     g.set_context_menu_title(card.title.clone());
                     g.invoke_open_context_menu(
-                        card.id, card.has_played, card.is_favorite,
-                        card.resume_pct, card.item_type, card.series_id,
+                        card.id,
+                        card.has_played,
+                        card.is_favorite,
+                        card.resume_pct,
+                        card.item_type,
+                        card.series_id,
                     );
                 }
             }
             true
         }
-        Action::Fullscreen => { g.invoke_toggle_fullscreen(); true }
-        Action::Quit       => { g.invoke_quit(); true }
-        _ => false
+        Action::Fullscreen => {
+            g.invoke_toggle_fullscreen();
+            true
+        }
+        Action::Quit => {
+            g.invoke_quit();
+            true
+        }
+        _ => false,
     }
 }

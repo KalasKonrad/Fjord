@@ -25,11 +25,11 @@
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::Arc;
 
-use fjord_api::{models::MediaItem, JellyfinClient};
+use fjord_api::{JellyfinClient, models::MediaItem};
 use slint::{Global, Model, ModelRc, SharedString, VecModel};
 
 use crate::AppState;
-use crate::poster::{fetch_poster_cached_tagged, decode_poster_buffer};
+use crate::poster::{decode_poster_buffer, fetch_poster_cached_tagged};
 use crate::{CardItem, MainWindow};
 
 // (id, title, subtitle, year, played, is_favorite, resume_pct, unplayed_count) — raw
@@ -37,8 +37,17 @@ use crate::{CardItem, MainWindow};
 type CardMeta = (String, String, String, i32, bool, bool, f32, i32);
 // CardMeta's fields, Slint-ready (SharedString) plus the decoded poster buffer
 // (None when that item has no poster or decode failed).
-type DecodedCard = (SharedString, SharedString, SharedString, i32, bool, bool, f32, i32,
-                     Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>);
+type DecodedCard = (
+    SharedString,
+    SharedString,
+    SharedString,
+    i32,
+    bool,
+    bool,
+    f32,
+    i32,
+    Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>,
+);
 
 #[derive(Copy, Clone)]
 enum LibraryKind {
@@ -52,47 +61,47 @@ enum LibraryKind {
 impl LibraryKind {
     fn item_type(self) -> &'static str {
         match self {
-            Self::Movies      => "Movie",
+            Self::Movies => "Movie",
             Self::Collections => "BoxSet",
-            Self::Artists     => "MusicArtist",
-            Self::Albums      => "MusicAlbum",
-            Self::Playlists   => "Playlist",
+            Self::Artists => "MusicArtist",
+            Self::Albums => "MusicAlbum",
+            Self::Playlists => "Playlist",
         }
     }
     fn active_nav(self) -> i32 {
         match self {
-            Self::Movies      => 2,
+            Self::Movies => 2,
             Self::Collections => 3,
-            Self::Artists     => 4,
-            Self::Albums      => 4,
-            Self::Playlists   => 4,
+            Self::Artists => 4,
+            Self::Albums => 4,
+            Self::Playlists => 4,
         }
     }
     fn set_all(self, g: &AppState, model: ModelRc<CardItem>) {
         match self {
-            Self::Movies      => g.set_all_movies(model),
+            Self::Movies => g.set_all_movies(model),
             Self::Collections => g.set_all_collections(model),
-            Self::Artists     => g.set_all_artists(model),
-            Self::Albums      => g.set_all_albums(model),
-            Self::Playlists   => g.set_all_playlists(model),
+            Self::Artists => g.set_all_artists(model),
+            Self::Albums => g.set_all_albums(model),
+            Self::Playlists => g.set_all_playlists(model),
         }
     }
     fn get_all(self, g: &AppState) -> ModelRc<CardItem> {
         match self {
-            Self::Movies      => g.get_all_movies(),
+            Self::Movies => g.get_all_movies(),
             Self::Collections => g.get_all_collections(),
-            Self::Artists     => g.get_all_artists(),
-            Self::Albums      => g.get_all_albums(),
-            Self::Playlists   => g.get_all_playlists(),
+            Self::Artists => g.get_all_artists(),
+            Self::Albums => g.get_all_albums(),
+            Self::Playlists => g.get_all_playlists(),
         }
     }
     // For Albums/Artists, only overwrite library-display when the current music view matches.
     fn matches_library_display(self, g: &AppState) -> bool {
         match self {
-            Self::Artists   => g.get_library_music_view() == 0,
-            Self::Albums    => g.get_library_music_view() == 1,
+            Self::Artists => g.get_library_music_view() == 0,
+            Self::Albums => g.get_library_music_view() == 1,
             Self::Playlists => g.get_library_music_view() == 2,
-            _               => true,
+            _ => true,
         }
     }
 }
@@ -100,13 +109,15 @@ impl LibraryKind {
 // Build decoded cards and push them to AppState from the Slint event loop.
 // Called at both the normal completion point and the panic-flush fallback.
 fn push_library_cards(
-    decoded:     Vec<DecodedCard>,
-    kind:        LibraryKind,
+    decoded: Vec<DecodedCard>,
+    kind: LibraryKind,
     window_weak: slint::Weak<MainWindow>,
 ) {
     let _ = slint::invoke_from_event_loop(move || {
-        let Some(w) = window_weak.upgrade() else { return };
-        let g   = AppState::get(&w);
+        let Some(w) = window_weak.upgrade() else {
+            return;
+        };
+        let g = AppState::get(&w);
         let old = kind.get_all(&g);
         // Prefer whatever poster the row already has over a freshly-decoded one,
         // even when the new decode succeeded: apply_cards_preserving_identity only
@@ -119,41 +130,53 @@ fn push_library_cards(
             .filter_map(|i| old.row_data(i))
             .map(|c| (c.id.to_string(), c))
             .collect();
-        let items: Vec<CardItem> = decoded.into_iter().map(|(id, title, subtitle, year, played, is_fav, rpct, upc, buf)| {
-            let mut h = CardItem::default();
-            let existing_poster = old_by_id.get(id.as_str()).filter(|c| c.has_poster).map(|c| c.poster.clone());
-            let existing_watchlist = old_by_id.get(id.as_str()).map(|c| c.on_watchlist);
-            h.id             = id;
-            h.item_type      = kind.item_type().into();
-            h.title          = title;
-            h.subtitle       = subtitle;
-            h.year           = year;
-            h.has_played     = played;
-            h.is_favorite    = is_fav;
-            h.resume_pct     = rpct;
-            h.unplayed_count = upc;
-            if let Some(poster) = existing_poster {
-                h.poster = poster;
-                h.has_poster = true;
-            } else if let Some(spb) = buf {
-                h.poster = slint::Image::from_rgba8(spb);
-                h.has_poster = true;
-            }
-            // Carry forward on_watchlist the same way the poster is carried
-            // forward above — this function has no FjordState access (pure
-            // Slint-model merge), so a live patch from
-            // resync_jellyfin_watchlist_stars/discover_toggle_watchlist onto
-            // this row survives the next rebuild instead of silently
-            // resetting to false (real bug, live-reported 2026-07-20 — "the
-            // watch list symbol do not show up on items i the library
-            // screens"; the Library Grid's Movies view is built exclusively
-            // through this function).
-            if let Some(on_watchlist) = existing_watchlist {
-                h.on_watchlist = on_watchlist;
-            }
-            h
-        }).collect();
-        tracing::debug!("push_library_cards[{}]: applying {} card(s)", kind.item_type(), items.len());
+        let items: Vec<CardItem> = decoded
+            .into_iter()
+            .map(
+                |(id, title, subtitle, year, played, is_fav, rpct, upc, buf)| {
+                    let mut h = CardItem::default();
+                    let existing_poster = old_by_id
+                        .get(id.as_str())
+                        .filter(|c| c.has_poster)
+                        .map(|c| c.poster.clone());
+                    let existing_watchlist = old_by_id.get(id.as_str()).map(|c| c.on_watchlist);
+                    h.id = id;
+                    h.item_type = kind.item_type().into();
+                    h.title = title;
+                    h.subtitle = subtitle;
+                    h.year = year;
+                    h.has_played = played;
+                    h.is_favorite = is_fav;
+                    h.resume_pct = rpct;
+                    h.unplayed_count = upc;
+                    if let Some(poster) = existing_poster {
+                        h.poster = poster;
+                        h.has_poster = true;
+                    } else if let Some(spb) = buf {
+                        h.poster = slint::Image::from_rgba8(spb);
+                        h.has_poster = true;
+                    }
+                    // Carry forward on_watchlist the same way the poster is carried
+                    // forward above — this function has no FjordState access (pure
+                    // Slint-model merge), so a live patch from
+                    // resync_jellyfin_watchlist_stars/discover_toggle_watchlist onto
+                    // this row survives the next rebuild instead of silently
+                    // resetting to false (real bug, live-reported 2026-07-20 — "the
+                    // watch list symbol do not show up on items i the library
+                    // screens"; the Library Grid's Movies view is built exclusively
+                    // through this function).
+                    if let Some(on_watchlist) = existing_watchlist {
+                        h.on_watchlist = on_watchlist;
+                    }
+                    h
+                },
+            )
+            .collect();
+        tracing::debug!(
+            "push_library_cards[{}]: applying {} card(s)",
+            kind.item_type(),
+            items.len()
+        );
         let model = crate::apply_cards_preserving_identity(&old, items);
         kind.set_all(&g, model);
         // Route through refresh_library_display (like poster.rs::push_decoded_series
@@ -163,8 +186,11 @@ fn push_library_cards(
         // refresh_library_display (e.g. the library-search-clear a NavItem double-click
         // fires) would re-sort by title and visibly reshuffle — a flash TV never had
         // because it already went through the sorted path from the start.
-        if g.get_show_library() && g.get_active_nav() == kind.active_nav()
-           && g.get_library_query().is_empty() && kind.matches_library_display(&g) {
+        if g.get_show_library()
+            && g.get_active_nav() == kind.active_nav()
+            && g.get_library_query().is_empty()
+            && kind.matches_library_display(&g)
+        {
             crate::browse::refresh_library_display(&w);
         }
     });
@@ -173,11 +199,11 @@ fn push_library_cards(
 // ── spawn_library_poster_loading ──────────────────────────────────────────────
 
 fn spawn_library_poster_loading(
-    client:      Arc<JellyfinClient>,
-    items:       Vec<MediaItem>,
+    client: Arc<JellyfinClient>,
+    items: Vec<MediaItem>,
     window_weak: slint::Weak<MainWindow>,
-    rt_handle:   tokio::runtime::Handle,
-    kind:        LibraryKind,
+    rt_handle: tokio::runtime::Handle,
+    kind: LibraryKind,
 ) {
     rt_handle.spawn(async move {
         use std::collections::HashSet;
@@ -193,12 +219,28 @@ fn spawn_library_poster_loading(
             return;
         }
 
-        let meta: Vec<CardMeta> = items.iter()
-            .map(|i| (i.id.clone(), i.card_title(), i.card_subtitle(), i.production_year.unwrap_or(0) as i32, i.user_data.played, i.user_data.is_favorite, i.resume_pct(), i.user_data.unplayed_item_count))
+        let meta: Vec<CardMeta> = items
+            .iter()
+            .map(|i| {
+                (
+                    i.id.clone(),
+                    i.card_title(),
+                    i.card_subtitle(),
+                    i.production_year.unwrap_or(0) as i32,
+                    i.user_data.played,
+                    i.user_data.is_favorite,
+                    i.resume_pct(),
+                    i.user_data.unplayed_item_count,
+                )
+            })
             .collect();
-        let mut pending: HashSet<String> = meta.iter().map(|(id, _, _, _, _, _, _, _)| id.clone()).collect();
+        let mut pending: HashSet<String> = meta
+            .iter()
+            .map(|(id, _, _, _, _, _, _, _)| id.clone())
+            .collect();
         // id → primary image tag for artwork revalidation.
-        let tags: std::collections::HashMap<String, String> = items.iter()
+        let tags: std::collections::HashMap<String, String> = items
+            .iter()
             .filter_map(|i| i.primary_image_tag().map(|t| (i.id.clone(), t.to_string())))
             .collect();
 
@@ -207,12 +249,16 @@ fn spawn_library_poster_loading(
             tokio::task::JoinSet::new();
         for (id, _, _, _, _, _, _, _) in &meta {
             let client = Arc::clone(&client);
-            let sem    = Arc::clone(&sem);
-            let id     = id.clone();
-            let tag    = tags.get(&id).cloned();
+            let sem = Arc::clone(&sem);
+            let id = id.clone();
+            let tag = tags.get(&id).cloned();
             fetch_set.spawn(async move {
-                let Ok(_permit) = sem.acquire_owned().await else { return (id, None) };
-                let bytes = fetch_poster_cached_tagged(&client, &id, tag.as_deref()).await.map(SArc::new);
+                let Ok(_permit) = sem.acquire_owned().await else {
+                    return (id, None);
+                };
+                let bytes = fetch_poster_cached_tagged(&client, &id, tag.as_deref())
+                    .await
+                    .map(SArc::new);
                 (id, bytes)
             });
         }
@@ -222,74 +268,127 @@ fn spawn_library_poster_loading(
         while let Some(res) = fetch_set.join_next().await {
             let (id, bytes) = match res {
                 Ok(pair) => pair,
-                Err(e) => { tracing::warn!("{} poster task panicked: {e}", kind.item_type()); continue; }
+                Err(e) => {
+                    tracing::warn!("{} poster task panicked: {e}", kind.item_type());
+                    continue;
+                }
             };
-            if let Some(b) = bytes { poster_map.insert(id.clone(), b); }
+            if let Some(b) = bytes {
+                poster_map.insert(id.clone(), b);
+            }
             pending.remove(&id);
-            if !pending.is_empty() { continue; }
+            if !pending.is_empty() {
+                continue;
+            }
 
-            let decoded: Vec<DecodedCard> =
-                meta.iter().map(|(cid, title, subtitle, year, played, is_fav, rpct, upc)| {
+            let decoded: Vec<DecodedCard> = meta
+                .iter()
+                .map(|(cid, title, subtitle, year, played, is_fav, rpct, upc)| {
                     let buf = poster_map.get(cid).and_then(|b| decode_poster_buffer(b));
-                    (SharedString::from(cid.as_str()), SharedString::from(title.as_str()), SharedString::from(subtitle.as_str()), *year, *played, *is_fav, *rpct, *upc, buf)
-                }).collect();
+                    (
+                        SharedString::from(cid.as_str()),
+                        SharedString::from(title.as_str()),
+                        SharedString::from(subtitle.as_str()),
+                        *year,
+                        *played,
+                        *is_fav,
+                        *rpct,
+                        *upc,
+                        buf,
+                    )
+                })
+                .collect();
             push_library_cards(decoded, kind, window_weak.clone());
         }
 
         // Post-loop flush: push with partial results if tasks panicked.
         if !pending.is_empty() {
-            tracing::warn!("{} poster: {} item(s) never resolved — pushing partial results", kind.item_type(), pending.len());
-            let decoded: Vec<DecodedCard> =
-                meta.iter().map(|(cid, title, subtitle, year, played, is_fav, rpct, upc)| {
+            tracing::warn!(
+                "{} poster: {} item(s) never resolved — pushing partial results",
+                kind.item_type(),
+                pending.len()
+            );
+            let decoded: Vec<DecodedCard> = meta
+                .iter()
+                .map(|(cid, title, subtitle, year, played, is_fav, rpct, upc)| {
                     let buf = poster_map.get(cid).and_then(|b| decode_poster_buffer(b));
-                    (SharedString::from(cid.as_str()), SharedString::from(title.as_str()), SharedString::from(subtitle.as_str()), *year, *played, *is_fav, *rpct, *upc, buf)
-                }).collect();
+                    (
+                        SharedString::from(cid.as_str()),
+                        SharedString::from(title.as_str()),
+                        SharedString::from(subtitle.as_str()),
+                        *year,
+                        *played,
+                        *is_fav,
+                        *rpct,
+                        *upc,
+                        buf,
+                    )
+                })
+                .collect();
             push_library_cards(decoded, kind, window_weak.clone());
         }
     });
 }
 
 pub(crate) fn spawn_movies_poster_loading(
-    client:      Arc<JellyfinClient>,
-    movies:      Vec<MediaItem>,
+    client: Arc<JellyfinClient>,
+    movies: Vec<MediaItem>,
     window_weak: slint::Weak<MainWindow>,
-    rt_handle:   tokio::runtime::Handle,
+    rt_handle: tokio::runtime::Handle,
 ) {
     spawn_library_poster_loading(client, movies, window_weak, rt_handle, LibraryKind::Movies);
 }
 
 pub(crate) fn spawn_collections_poster_loading(
-    client:      Arc<JellyfinClient>,
-    cols:        Vec<MediaItem>,
+    client: Arc<JellyfinClient>,
+    cols: Vec<MediaItem>,
     window_weak: slint::Weak<MainWindow>,
-    rt_handle:   tokio::runtime::Handle,
+    rt_handle: tokio::runtime::Handle,
 ) {
-    spawn_library_poster_loading(client, cols, window_weak, rt_handle, LibraryKind::Collections);
+    spawn_library_poster_loading(
+        client,
+        cols,
+        window_weak,
+        rt_handle,
+        LibraryKind::Collections,
+    );
 }
 
 pub(crate) fn spawn_artists_poster_loading(
-    client:      Arc<JellyfinClient>,
-    artists:     Vec<MediaItem>,
+    client: Arc<JellyfinClient>,
+    artists: Vec<MediaItem>,
     window_weak: slint::Weak<MainWindow>,
-    rt_handle:   tokio::runtime::Handle,
+    rt_handle: tokio::runtime::Handle,
 ) {
-    spawn_library_poster_loading(client, artists, window_weak, rt_handle, LibraryKind::Artists);
+    spawn_library_poster_loading(
+        client,
+        artists,
+        window_weak,
+        rt_handle,
+        LibraryKind::Artists,
+    );
 }
 
 pub(crate) fn spawn_albums_poster_loading(
-    client:      Arc<JellyfinClient>,
-    albums:      Vec<MediaItem>,
+    client: Arc<JellyfinClient>,
+    albums: Vec<MediaItem>,
     window_weak: slint::Weak<MainWindow>,
-    rt_handle:   tokio::runtime::Handle,
+    rt_handle: tokio::runtime::Handle,
 ) {
     spawn_library_poster_loading(client, albums, window_weak, rt_handle, LibraryKind::Albums);
 }
 
 pub(crate) fn spawn_playlists_poster_loading(
-    client:      Arc<JellyfinClient>,
-    playlists:   Vec<MediaItem>,
+    client: Arc<JellyfinClient>,
+    playlists: Vec<MediaItem>,
     window_weak: slint::Weak<MainWindow>,
-    rt_handle:   tokio::runtime::Handle,
+    rt_handle: tokio::runtime::Handle,
 ) {
-    spawn_library_poster_loading(client, playlists, window_weak, rt_handle, LibraryKind::Playlists);
+    spawn_library_poster_loading(
+        client,
+        playlists,
+        window_weak,
+        rt_handle,
+        LibraryKind::Playlists,
+    );
 }

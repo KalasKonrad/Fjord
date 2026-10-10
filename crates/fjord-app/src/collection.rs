@@ -38,28 +38,36 @@ use std::sync::{Arc, Mutex};
 use slint::{Global, Model, ModelRc, VecModel};
 use tracing::{debug, warn};
 
-use crate::config::FjordState;
 use crate::AppState;
-use crate::detail::{fetch_card_posters, items_to_cards};
-use crate::poster::{decode_backdrop_buffer, decode_poster_buffer, fetch_backdrop_cached_tagged, fetch_poster_cached};
 use crate::MainWindow;
+use crate::config::FjordState;
+use crate::detail::{fetch_card_posters, items_to_cards};
+use crate::poster::{
+    decode_backdrop_buffer, decode_poster_buffer, fetch_backdrop_cached_tagged, fetch_poster_cached,
+};
 
 // ── open_collection_screen ────────────────────────────────────────────────────
 
 pub(crate) fn open_collection_screen(
-    id:    String,
+    id: String,
     title: String,
     state: Arc<Mutex<FjordState>>,
-    ww:    slint::Weak<MainWindow>,
-    rt:    tokio::runtime::Handle,
+    ww: slint::Weak<MainWindow>,
+    rt: tokio::runtime::Handle,
 ) {
     // Screen-open cache (Part 2): skip the loading spinner when both the item
     // list and detail are cached — the remaining work (poster/backdrop fetch)
     // is disk-cached and fast enough to feel instant.
     let (client, cached_items, cached_detail) = {
         let s = state.lock().unwrap();
-        let Some(c) = s.client.as_ref().map(Arc::clone) else { return };
-        (c, s.boxset_items_cache.get(&id), s.item_detail_cache.get(&id))
+        let Some(c) = s.client.as_ref().map(Arc::clone) else {
+            return;
+        };
+        (
+            c,
+            s.boxset_items_cache.get(&id),
+            s.item_detail_cache.get(&id),
+        )
     };
     let is_cache_hit = cached_items.is_some() && cached_detail.is_some();
     tracing::debug!("open_collection_screen({id}): cache_hit={is_cache_hit}");
@@ -90,40 +98,55 @@ pub(crate) fn open_collection_screen(
         g.set_collection_open_gen(next);
         next
     } else {
-        -1  // window gone; async task will abort on the generation check
+        -1 // window gone; async task will abort on the generation check
     };
 
-    let id2    = id.clone();
+    let id2 = id.clone();
     let title2 = title.clone();
     let ww_task = ww.clone();
     let state_missing = Arc::clone(&state);
-    let id_revalidate    = id.clone();
+    let id_revalidate = id.clone();
     let state_revalidate = Arc::clone(&state);
-    let ww_revalidate    = ww.clone();
-    let rt_revalidate    = rt.clone();
+    let ww_revalidate = ww.clone();
+    let rt_revalidate = rt.clone();
     let state_task = state;
     rt.spawn(async move {
         // Fetch items + poster in parallel; backdrop only if the BoxSet has backdrop tags.
         // Cached items/detail (if any) skip their respective network call.
         let items_fut = async {
-            if let Some(v) = cached_items { return Ok(v); }
+            if let Some(v) = cached_items {
+                return Ok(v);
+            }
             client.get_boxset_items(&id2).await
         };
         let detail_fut = async {
-            if let Some(d) = cached_detail { return Ok(d); }
+            if let Some(d) = cached_detail {
+                return Ok(d);
+            }
             client.get_item_detail(&id2).await
         };
-        let (items_res, poster_bytes, detail_res) = tokio::join!(
-            items_fut,
-            fetch_poster_cached(&client, &id2),
-            detail_fut,
-        );
-        if let Ok(v) = &items_res  { state_task.lock().unwrap().boxset_items_cache.insert(id2.clone(), v.clone()); }
-        if let Ok(d) = &detail_res { state_task.lock().unwrap().item_detail_cache.insert(id2.clone(), d.clone()); }
+        let (items_res, poster_bytes, detail_res) =
+            tokio::join!(items_fut, fetch_poster_cached(&client, &id2), detail_fut,);
+        if let Ok(v) = &items_res {
+            state_task
+                .lock()
+                .unwrap()
+                .boxset_items_cache
+                .insert(id2.clone(), v.clone());
+        }
+        if let Ok(d) = &detail_res {
+            state_task
+                .lock()
+                .unwrap()
+                .item_detail_cache
+                .insert(id2.clone(), d.clone());
+        }
 
         // Deleted BoxSet: the ParentId item query returns an empty 200, so the
         // ghost is only visible on the detail fetch's 404 — purge and bail (S4).
-        if let Err(e) = &detail_res && crate::is_not_found(e) {
+        if let Err(e) = &detail_res
+            && crate::is_not_found(e)
+        {
             let ww_err = ww_task.clone();
             let _ = slint::invoke_from_event_loop(move || {
                 if let Some(w) = ww_err.upgrade() {
@@ -137,8 +160,14 @@ pub(crate) fn open_collection_screen(
             return;
         }
         let backdrop_bytes = match &detail_res {
-            Ok(d) if !d.backdrop_image_tags.is_empty() =>
-                fetch_backdrop_cached_tagged(&client, &id2, d.backdrop_image_tags.first().map(String::as_str)).await,
+            Ok(d) if !d.backdrop_image_tags.is_empty() => {
+                fetch_backdrop_cached_tagged(
+                    &client,
+                    &id2,
+                    d.backdrop_image_tags.first().map(String::as_str),
+                )
+                .await
+            }
             _ => None,
         };
 
@@ -155,7 +184,10 @@ pub(crate) fn open_collection_screen(
                         }
                     }
                 });
-                crate::show_toast(ww_task, "Couldn't load collection — check your server connection".into());
+                crate::show_toast(
+                    ww_task,
+                    "Couldn't load collection — check your server connection".into(),
+                );
                 return;
             }
         };
@@ -168,7 +200,9 @@ pub(crate) fn open_collection_screen(
             let g = AppState::get(&w);
 
             // Stale-request guard: abort if superseded by any newer open (same or different collection).
-            if g.get_collection_open_gen() != generation { return; }
+            if g.get_collection_open_gen() != generation {
+                return;
+            }
             // Session guard (Bonfire Phase 1, step 8 audit, 2026-08-09): the
             // generation counter above only catches a SAME-TYPE re-open — nothing
             // increments it on sign-out or a profile switch, so a stale
@@ -178,29 +212,40 @@ pub(crate) fn open_collection_screen(
             // guard class as spawn_collection_revalidate's own, applied
             // here too since that one only covers the cache-hit revalidate
             // path, not this, the actual open-screen path.
-            if !crate::session_current(&state_task, &client) { return; }
+            if !crate::session_current(&state_task, &client) {
+                return;
+            }
 
             // Overview + user state from detail fetch
             if let Ok(d) = &detail_res {
-                g.set_collection_overview(crate::strip_html_to_text(d.overview.clone().unwrap_or_default().trim()).into());
+                g.set_collection_overview(
+                    crate::strip_html_to_text(d.overview.clone().unwrap_or_default().trim()).into(),
+                );
                 g.set_collection_is_favorite(d.user_data.is_favorite);
                 g.set_collection_has_played(d.user_data.played);
             }
 
             // Collection poster
-            if let Some(bytes) = poster_bytes && let Some(spb) = decode_poster_buffer(&bytes) {
+            if let Some(bytes) = poster_bytes
+                && let Some(spb) = decode_poster_buffer(&bytes)
+            {
                 g.set_collection_poster(slint::Image::from_rgba8(spb));
                 g.set_collection_has_poster(true);
             }
 
             // Backdrop
-            if let Some(bytes) = backdrop_bytes && let Some(spb) = decode_backdrop_buffer(&bytes) {
+            if let Some(bytes) = backdrop_bytes
+                && let Some(spb) = decode_backdrop_buffer(&bytes)
+            {
                 g.set_collection_backdrop(slint::Image::from_rgba8(spb));
                 g.set_collection_has_backdrop(true);
             }
 
             let cards = items_to_cards(&items, bufs);
-            g.set_collection_items(crate::apply_cards_preserving_identity(&g.get_collection_items(), cards));
+            g.set_collection_items(crate::apply_cards_preserving_identity(
+                &g.get_collection_items(),
+                cards,
+            ));
             g.set_collection_focused(0);
             g.set_collection_back_focused(false);
             g.set_collection_title(title2.as_str().into());
@@ -221,7 +266,13 @@ pub(crate) fn open_collection_screen(
     // its JoinHandle is ready to hand over — see that function's own doc
     // comment for why it needs to know about this specific revalidate.
     let revalidate_handle = if is_cache_hit {
-        spawn_collection_revalidate(id_revalidate, generation, state_revalidate, ww_revalidate, rt_revalidate)
+        spawn_collection_revalidate(
+            id_revalidate,
+            generation,
+            state_revalidate,
+            ww_revalidate,
+            rt_revalidate,
+        )
     } else {
         None
     };
@@ -234,24 +285,31 @@ pub(crate) fn open_collection_screen(
 // freshly-written cache, instead of firing its own redundant fetch — see
 // that function's own doc comment for the bug this fixes.
 fn spawn_collection_revalidate(
-    id:    String,
-    generation:   i32,
+    id: String,
+    generation: i32,
     state: Arc<Mutex<FjordState>>,
-    ww:    slint::Weak<MainWindow>,
-    rt:    tokio::runtime::Handle,
+    ww: slint::Weak<MainWindow>,
+    rt: tokio::runtime::Handle,
 ) -> Option<tokio::task::JoinHandle<()>> {
-    if !crate::should_revalidate(&state, &id) { return None; }
+    if !crate::should_revalidate(&state, &id) {
+        return None;
+    }
     let client = state.lock().unwrap().client.as_ref().map(Arc::clone)?;
     Some(rt.spawn(async move {
-        let (items_res, detail_res) = tokio::join!(client.get_boxset_items(&id), client.get_item_detail(&id));
-        let (Ok(items), Ok(detail)) = (items_res, detail_res) else { return };
+        let (items_res, detail_res) =
+            tokio::join!(client.get_boxset_items(&id), client.get_item_detail(&id));
+        let (Ok(items), Ok(detail)) = (items_res, detail_res) else {
+            return;
+        };
         // Sign-out (or a different account signing in on a shared HTPC) mid-
         // fetch must not let this stale/wrong-session data land in the new
         // session's caches — same guard class as main.rs::session_current's
         // own doc comment (CR11-2), reapplied here since this is exactly the
         // "background fetch writes per-user data into shared FjordState"
         // pattern that guard exists for.
-        if !crate::session_current(&state, &client) { return; }
+        if !crate::session_current(&state, &client) {
+            return;
+        }
         {
             let mut s = state.lock().unwrap();
             s.boxset_items_cache.insert(id.clone(), items.clone());
@@ -261,12 +319,20 @@ fn spawn_collection_revalidate(
         let _ = slint::invoke_from_event_loop(move || {
             let Some(w) = ww.upgrade() else { return };
             let g = AppState::get(&w);
-            if g.get_collection_open_gen() != generation { return; }
-            g.set_collection_overview(crate::strip_html_to_text(detail.overview.clone().unwrap_or_default().trim()).into());
+            if g.get_collection_open_gen() != generation {
+                return;
+            }
+            g.set_collection_overview(
+                crate::strip_html_to_text(detail.overview.clone().unwrap_or_default().trim())
+                    .into(),
+            );
             g.set_collection_is_favorite(detail.user_data.is_favorite);
             g.set_collection_has_played(detail.user_data.played);
             let cards = items_to_cards(&items, bufs);
-            g.set_collection_items(crate::apply_cards_preserving_identity(&g.get_collection_items(), cards));
+            g.set_collection_items(crate::apply_cards_preserving_identity(
+                &g.get_collection_items(),
+                cards,
+            ));
         });
     }))
 }
@@ -301,16 +367,20 @@ fn spawn_collection_revalidate(
 /// and retrying once reuses ITS fetch (already written into the caches this
 /// function reads) instead of firing a redundant one of its own.
 fn spawn_missing_items(
-    id:    String,
+    id: String,
     state: Arc<Mutex<FjordState>>,
-    ww:    slint::Weak<MainWindow>,
-    rt:    tokio::runtime::Handle,
+    ww: slint::Weak<MainWindow>,
+    rt: tokio::runtime::Handle,
     revalidate_handle: Option<tokio::task::JoinHandle<()>>,
 ) {
     let (client, seerr) = {
         let s = state.lock().unwrap();
-        let Some(c) = s.client.as_ref().map(Arc::clone) else { return };
-        let Some(sr) = s.seerr_client.clone() else { return };
+        let Some(c) = s.client.as_ref().map(Arc::clone) else {
+            return;
+        };
+        let Some(sr) = s.seerr_client.clone() else {
+            return;
+        };
         (c, sr)
     };
     rt.spawn(async move {
@@ -349,18 +419,21 @@ fn spawn_missing_items(
 /// now, and once more after an in-flight revalidate finishes, without
 /// duplicating the whole resolution logic inline at both call sites.
 async fn resolve_missing_items_collection_id(
-    id:     &str,
+    id: &str,
     client: &Arc<fjord_api::JellyfinClient>,
-    seerr:  &Arc<fjord_seerr::SeerrClient>,
-    state:  &Arc<Mutex<FjordState>>,
+    seerr: &Arc<fjord_seerr::SeerrClient>,
+    state: &Arc<Mutex<FjordState>>,
 ) -> Option<i64> {
     let cached_items = state.lock().unwrap().boxset_items_cache.get(id);
     let items = match cached_items {
         Some(v) => v,
         None => match client.get_boxset_items(id).await {
-            Ok(v)  => v,
-            Err(e) => { warn!("spawn_missing_items get_boxset_items({id}): {:#}", e); return None; }
-        }
+            Ok(v) => v,
+            Err(e) => {
+                warn!("spawn_missing_items get_boxset_items({id}): {:#}", e);
+                return None;
+            }
+        },
     };
 
     let cached_detail = state.lock().unwrap().item_detail_cache.get(id);
@@ -387,22 +460,41 @@ async fn resolve_missing_items_collection_id(
         // an otherwise well-known, real TMDB franchise.
         let movie_members: Vec<_> = items.iter().filter(|m| m.item_type == "Movie").collect();
         if movie_members.is_empty() {
-            debug!("spawn_missing_items({id}): no Movie-type member in this BoxSet ({} item(s) total)", items.len());
+            debug!(
+                "spawn_missing_items({id}): no Movie-type member in this BoxSet ({} item(s) total)",
+                items.len()
+            );
         } else {
-            debug!("spawn_missing_items({id}): {} Movie-type member(s) to try", movie_members.len());
+            debug!(
+                "spawn_missing_items({id}): {} Movie-type member(s) to try",
+                movie_members.len()
+            );
             for m in &movie_members {
-                let Some(tmdb_id) = m.provider_ids.get("Tmdb").and_then(|s| s.parse::<i64>().ok()) else {
-                    debug!("spawn_missing_items({id}): member {:?} ({}) has no Tmdb ProviderId, trying next", m.name, m.id);
+                let Some(tmdb_id) = m
+                    .provider_ids
+                    .get("Tmdb")
+                    .and_then(|s| s.parse::<i64>().ok())
+                else {
+                    debug!(
+                        "spawn_missing_items({id}): member {:?} ({}) has no Tmdb ProviderId, trying next",
+                        m.name, m.id
+                    );
                     continue;
                 };
                 match seerr.get_movie(tmdb_id).await {
                     Ok(mv) => match mv.collection {
                         Some(c) => {
-                            debug!("spawn_missing_items({id}): tmdb collection id resolved via member movie {:?} ({tmdb_id}) -> {}", m.name, c.id);
+                            debug!(
+                                "spawn_missing_items({id}): tmdb collection id resolved via member movie {:?} ({tmdb_id}) -> {}",
+                                m.name, c.id
+                            );
                             collection_id = Some(c.id);
                             break;
                         }
-                        None => debug!("spawn_missing_items({id}): member movie {:?} ({tmdb_id}) has no TMDB collection, trying next", m.name),
+                        None => debug!(
+                            "spawn_missing_items({id}): member movie {:?} ({tmdb_id}) has no TMDB collection, trying next",
+                            m.name
+                        ),
                     },
                     Err(e) => warn!("spawn_missing_items get_movie({tmdb_id}): {:#}", e),
                 }
@@ -426,14 +518,16 @@ async fn resolve_missing_items_collection_id(
 /// whatever Seerr's own bulk-exclusion semantics actually did server-side,
 /// rather than Fjord guessing at them. 2026-08-06, Seerr Blocklist support.
 pub(crate) fn resolve_and_blocklist_collection(
-    id:    String,
+    id: String,
     state: Arc<Mutex<FjordState>>,
-    ww:    slint::Weak<MainWindow>,
-    rt:    tokio::runtime::Handle,
+    ww: slint::Weak<MainWindow>,
+    rt: tokio::runtime::Handle,
 ) {
     let (client, seerr) = {
         let s = state.lock().unwrap();
-        let Some(c) = s.client.as_ref().map(Arc::clone) else { return };
+        let Some(c) = s.client.as_ref().map(Arc::clone) else {
+            return;
+        };
         let Some(sr) = s.seerr_client.clone() else {
             crate::show_toast(ww, "Not connected to Seerr".into());
             return;
@@ -443,7 +537,9 @@ pub(crate) fn resolve_and_blocklist_collection(
     let is_session_auth = seerr.is_session_auth();
     let rt2 = rt.clone();
     rt.spawn(async move {
-        let Some(collection_id) = resolve_missing_items_collection_id(&id, &client, &seerr, &state).await else {
+        let Some(collection_id) =
+            resolve_missing_items_collection_id(&id, &client, &seerr, &state).await
+        else {
             crate::show_toast(ww, "Couldn't resolve this collection's TMDB id".into());
             return;
         };
@@ -453,7 +549,13 @@ pub(crate) fn resolve_and_blocklist_collection(
                 crate::show_toast(ww.clone(), "Collection blocklisted".into());
                 spawn_missing_items(id, state, ww, rt2, None);
             }
-            Err(e) => crate::discover::handle_seerr_error(&state, &ww, is_session_auth, "Couldn't blocklist collection", &e),
+            Err(e) => crate::discover::handle_seerr_error(
+                &state,
+                &ww,
+                is_session_auth,
+                "Couldn't blocklist collection",
+                &e,
+            ),
         }
     });
 }
@@ -519,10 +621,20 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
         // focus from landing on a button that isn't there, the exact
         // focus/visibility mismatch this codebase has been bitten by
         // before elsewhere. 2026-08-06, Seerr Blocklist support.
-        let max_btn = if g.get_seerr_can_manage_blocklist() { 2 } else { 1 };
+        let max_btn = if g.get_seerr_can_manage_blocklist() {
+            2
+        } else {
+            1
+        };
         return match action {
-            Action::Left  => { g.set_collection_btn_focused((btn - 1).max(0)); true }
-            Action::Right => { g.set_collection_btn_focused((btn + 1).min(max_btn)); true }
+            Action::Left => {
+                g.set_collection_btn_focused((btn - 1).max(0));
+                true
+            }
+            Action::Right => {
+                g.set_collection_btn_focused((btn + 1).min(max_btn));
+                true
+            }
             Action::Confirm => {
                 match btn {
                     0 => g.invoke_toggle_collection_fav(),
@@ -565,11 +677,15 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
         let missing_len = g.get_collection_missing().row_count() as i32;
         return match action {
             Action::Left => {
-                if missing_focused > 0 { g.set_collection_missing_focused(missing_focused - 1); }
+                if missing_focused > 0 {
+                    g.set_collection_missing_focused(missing_focused - 1);
+                }
                 true
             }
             Action::Right => {
-                if missing_focused < missing_len - 1 { g.set_collection_missing_focused(missing_focused + 1); }
+                if missing_focused < missing_len - 1 {
+                    g.set_collection_missing_focused(missing_focused + 1);
+                }
                 true
             }
             Action::Up => {
@@ -577,14 +693,24 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
                 true
             }
             Action::Confirm => {
-                if let Some(card) = g.get_collection_missing().row_data(missing_focused as usize) {
-                    let media_type = if card.item_type == "DiscoverMovie" { "movie" } else { "tv" };
+                if let Some(card) = g
+                    .get_collection_missing()
+                    .row_data(missing_focused as usize)
+                {
+                    let media_type = if card.item_type == "DiscoverMovie" {
+                        "movie"
+                    } else {
+                        "tv"
+                    };
                     g.invoke_open_discover_item(media_type.into(), card.id);
                 }
                 true
             }
             Action::OpenContextMenu => {
-                if let Some(card) = g.get_collection_missing().row_data(missing_focused as usize) {
+                if let Some(card) = g
+                    .get_collection_missing()
+                    .row_data(missing_focused as usize)
+                {
                     g.invoke_open_context_menu_discover(card);
                 }
                 true
@@ -599,9 +725,9 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
     }
 
     // ── Grid navigation ────────────────────────────────────────────────────────
-    let f    = g.get_collection_focused();
+    let f = g.get_collection_focused();
     let cols = g.get_library_cols();
-    let len  = g.get_collection_items().row_count() as i32;
+    let len = g.get_collection_items().row_count() as i32;
 
     match action {
         Action::Back => {
@@ -626,11 +752,15 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
             true
         }
         Action::Left => {
-            if f > 0 { g.set_collection_focused(f - 1); }
+            if f > 0 {
+                g.set_collection_focused(f - 1);
+            }
             true
         }
         Action::Right => {
-            if f < len - 1 { g.set_collection_focused(f + 1); }
+            if f < len - 1 {
+                g.set_collection_focused(f + 1);
+            }
             true
         }
         Action::Confirm => {
@@ -645,8 +775,12 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
                 let card = g.get_collection_items().row_data(f as usize).unwrap();
                 g.set_context_menu_title(card.title.clone());
                 g.invoke_open_context_menu(
-                    card.id, card.has_played, card.is_favorite,
-                    card.resume_pct, card.item_type, card.series_id,
+                    card.id,
+                    card.has_played,
+                    card.is_favorite,
+                    card.resume_pct,
+                    card.item_type,
+                    card.series_id,
                 );
             }
             true

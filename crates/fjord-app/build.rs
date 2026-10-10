@@ -6,7 +6,7 @@ fn main() {
     // which build produced it. Without this there's no way to tell a stale
     // log from a fresh one after a forgotten rebuild or uncommitted changes.
     let count = git_output(&["rev-list", "--count", "HEAD"]).unwrap_or_else(|| "0".into());
-    let hash  = git_output(&["rev-parse", "--short", "HEAD"]).unwrap_or_else(|| "unknown".into());
+    let hash = git_output(&["rev-parse", "--short", "HEAD"]).unwrap_or_else(|| "unknown".into());
     let dirty = git_output(&["status", "--porcelain"]).is_some_and(|s| !s.is_empty());
     let build_id = format!("r{count}.{hash}{}", if dirty { "-dirty" } else { "" });
     println!("cargo:rustc-env=FJORD_BUILD_ID={build_id}");

@@ -209,61 +209,63 @@ mod config;
 mod context_menu;
 mod controls;
 mod detail;
+mod discover;
 mod display_sync;
+mod dmabuf_plane;
 mod hdr;
 mod home;
 mod keys;
 mod movies;
+mod person;
+mod pipewire_fix;
 mod playback;
 mod poster;
+mod prewarm;
 mod profile;
 mod profile_edit;
 mod season;
-mod series;
-mod person;
-mod pipewire_fix;
-mod settings;
-mod discover;
-mod prewarm;
 mod secrets;
 mod seerr_auth;
+mod series;
+mod settings;
 mod stats;
-mod dmabuf_plane;
 mod text_field;
 mod video_surface;
 mod ws;
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, AtomicU32};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use anyhow::Result;
-use fjord_api::{models::MediaItem, JellyfinClient};
+use fjord_api::{JellyfinClient, models::MediaItem};
 use slint::{Global, Model, ModelRc, SharedString, StandardListViewItem, VecModel};
 use tracing::{debug, info, warn};
 use url::Url;
 
 use config::{
-    FjordState, ScreenCachesFile,
-    load_config, save_config, ensure_device_id,
-    load_screen_caches, save_screen_caches, sub_color_hex,
+    FjordState, ScreenCachesFile, ensure_device_id, load_config, load_screen_caches, save_config,
+    save_screen_caches, sub_color_hex,
 };
 use home::{
-    HomeSection,
-    load_home_cache, save_home_cache, fetch_home_data, push_home_data, push_home_data_preserving_posters,
-    refresh_row_preserving_posters, home_data_sections, wire_nw_timer,
-    load_movies_cache, save_movies_cache, load_series_cache, save_series_cache,
-    load_collections_cache, save_collections_cache,
-    load_artists_cache, save_artists_cache,
-    load_albums_cache, save_albums_cache,
-    load_playlists_cache, save_playlists_cache,
-    fetch_movie_collections, run_poster_cache_cleanup,
+    HomeSection, fetch_home_data, fetch_movie_collections, home_data_sections, load_albums_cache,
+    load_artists_cache, load_collections_cache, load_home_cache, load_movies_cache,
+    load_playlists_cache, load_series_cache, push_home_data, push_home_data_preserving_posters,
+    refresh_row_preserving_posters, run_poster_cache_cleanup, save_albums_cache,
+    save_artists_cache, save_collections_cache, save_home_cache, save_movies_cache,
+    save_playlists_cache, save_series_cache, wire_nw_timer,
 };
-use movies::{spawn_movies_poster_loading, spawn_collections_poster_loading, spawn_artists_poster_loading, spawn_albums_poster_loading, spawn_playlists_poster_loading,};
-use playback::{VideoState, start_playback, quit_cleanup, do_stop_playback, wire_rendering_notifier, wire_mpv_timer};
+use movies::{
+    spawn_albums_poster_loading, spawn_artists_poster_loading, spawn_collections_poster_loading,
+    spawn_movies_poster_loading, spawn_playlists_poster_loading,
+};
+use playback::{
+    VideoState, do_stop_playback, quit_cleanup, start_playback, wire_mpv_timer,
+    wire_rendering_notifier,
+};
 use poster::{spawn_poster_loading, spawn_series_poster_loading};
-use series::{ep_to_card, spawn_episode_thumb_loading, open_series_screen};
+use series::{ep_to_card, open_series_screen, spawn_episode_thumb_loading};
 
 pub(crate) fn is_unauthorized(e: &anyhow::Error) -> bool {
     e.downcast_ref::<reqwest::Error>()
@@ -306,7 +308,12 @@ pub(crate) fn is_rate_limited(e: &anyhow::Error) -> bool {
 /// risk. Shared by `spawn_screen_cache_refresh` (below, runs on every login)
 /// and `prewarm.rs::spawn_metadata_prewarm` (opt-in, user-triggered).
 pub(crate) fn session_current(state: &Mutex<FjordState>, client: &Arc<JellyfinClient>) -> bool {
-    state.lock().unwrap().client.as_ref().is_some_and(|c| Arc::ptr_eq(c, client))
+    state
+        .lock()
+        .unwrap()
+        .client
+        .as_ref()
+        .is_some_and(|c| Arc::ptr_eq(c, client))
 }
 
 /// The Seerr-flavored twin of `session_current` (Bonfire Phase 1, step 8
@@ -319,8 +326,16 @@ pub(crate) fn session_current(state: &Mutex<FjordState>, client: &Arc<JellyfinCl
 /// a completely different, or no, Seerr connection), and Discover's fetches
 /// are comparatively long (several sequential/parallel TMDB calls) with no
 /// other per-fetch staleness guard of their own.
-pub(crate) fn seerr_session_current(state: &Mutex<FjordState>, client: &Arc<fjord_seerr::SeerrClient>) -> bool {
-    state.lock().unwrap().seerr_client.as_ref().is_some_and(|c| Arc::ptr_eq(c, client))
+pub(crate) fn seerr_session_current(
+    state: &Mutex<FjordState>,
+    client: &Arc<fjord_seerr::SeerrClient>,
+) -> bool {
+    state
+        .lock()
+        .unwrap()
+        .seerr_client
+        .as_ref()
+        .is_some_and(|c| Arc::ptr_eq(c, client))
 }
 
 // Rate-limits the 7 screen-open "revalidate on a cache hit" functions
@@ -336,10 +351,14 @@ const REVALIDATE_COOLDOWN: Duration = Duration::from_secs(60);
 
 pub(crate) fn should_revalidate(state: &Mutex<FjordState>, id: &str) -> bool {
     let mut s = state.lock().unwrap();
-    if s.screen_revalidate_last_run.get(id).is_some_and(|t| t.elapsed() < REVALIDATE_COOLDOWN) {
+    if s.screen_revalidate_last_run
+        .get(id)
+        .is_some_and(|t| t.elapsed() < REVALIDATE_COOLDOWN)
+    {
         return false;
     }
-    s.screen_revalidate_last_run.insert(id.to_string(), Instant::now());
+    s.screen_revalidate_last_run
+        .insert(id.to_string(), Instant::now());
     true
 }
 
@@ -349,8 +368,8 @@ pub(crate) fn should_revalidate(state: &Mutex<FjordState>, id: &str) -> bool {
 // from any thread.
 pub(crate) fn purge_deleted_item(
     state: &Arc<Mutex<FjordState>>,
-    ww:    &slint::Weak<MainWindow>,
-    id:    &str,
+    ww: &slint::Weak<MainWindow>,
+    id: &str,
 ) {
     {
         let mut s = state.lock().unwrap();
@@ -365,10 +384,10 @@ pub(crate) fn purge_deleted_item(
             eps.retain(|e| e.id != id);
         }
         // Whatever list this ghost came from is stale — refresh on next grid open.
-        s.movies_fetched      = false;
+        s.movies_fetched = false;
         s.collections_fetched = false;
-        s.artists_fetched     = false;
-        s.albums_fetched      = false;
+        s.artists_fetched = false;
+        s.albums_fetched = false;
     }
     let id2 = id.to_string();
     let ww2 = ww.clone();
@@ -428,7 +447,11 @@ pub(crate) fn strip_html_to_text(s: &str) -> String {
         }
         let tag_lower = tag.to_ascii_lowercase();
         let closing = tag_lower.starts_with('/');
-        let tag_name = tag_lower.trim_start_matches('/').split_whitespace().next().unwrap_or("");
+        let tag_name = tag_lower
+            .trim_start_matches('/')
+            .split_whitespace()
+            .next()
+            .unwrap_or("");
         match tag_name {
             "br" => out.push('\n'),
             "li" if !closing => {
@@ -485,24 +508,35 @@ pub(crate) fn strip_html_to_text(s: &str) -> String {
 /// afterward, since a patch alone gets silently wiped by the next rebuild
 /// (see `FjordState.jellyfin_watchlist_ids`'s own doc comment for the real
 /// bug this fixes, 2026-07-20).
-pub(crate) fn item_to_card_item(i: &MediaItem, watchlist: &std::collections::HashSet<String>) -> CardItem {
+pub(crate) fn item_to_card_item(
+    i: &MediaItem,
+    watchlist: &std::collections::HashSet<String>,
+) -> CardItem {
     CardItem {
-        id:             SharedString::from(i.id.as_str()),
-        item_type:      SharedString::from(i.item_type.as_str()),
-        title:          SharedString::from(i.card_title().as_str()),
-        subtitle:       SharedString::from(i.card_subtitle().as_str()),
-        year:           i.production_year.unwrap_or(0) as i32,
-        has_played:     i.user_data.played,
-        is_favorite:    i.user_data.is_favorite,
-        resume_pct:     i.resume_pct(),
+        id: SharedString::from(i.id.as_str()),
+        item_type: SharedString::from(i.item_type.as_str()),
+        title: SharedString::from(i.card_title().as_str()),
+        subtitle: SharedString::from(i.card_subtitle().as_str()),
+        year: i.production_year.unwrap_or(0) as i32,
+        has_played: i.user_data.played,
+        is_favorite: i.user_data.is_favorite,
+        resume_pct: i.resume_pct(),
         unplayed_count: i.user_data.unplayed_item_count,
-        on_watchlist:   watchlist.contains(&i.id),
+        on_watchlist: watchlist.contains(&i.id),
         ..Default::default()
     }
 }
 
-pub(crate) fn items_to_model(items: &[MediaItem], watchlist: &std::collections::HashSet<String>) -> ModelRc<CardItem> {
-    ModelRc::new(VecModel::from(items.iter().map(|i| item_to_card_item(i, watchlist)).collect::<Vec<_>>()))
+pub(crate) fn items_to_model(
+    items: &[MediaItem],
+    watchlist: &std::collections::HashSet<String>,
+) -> ModelRc<CardItem> {
+    ModelRc::new(VecModel::from(
+        items
+            .iter()
+            .map(|i| item_to_card_item(i, watchlist))
+            .collect::<Vec<_>>(),
+    ))
 }
 
 /// Apply `fresh` cards to `old`'s model. If `fresh` has the same ids in the same
@@ -515,12 +549,23 @@ pub(crate) fn items_to_model(items: &[MediaItem], watchlist: &std::collections::
 /// every place that builds a fresh Vec<CardItem> and pushes it to a model —
 /// poster.rs's home/series decode, movies.rs's library decode, home.rs's row
 /// merges, context_menu.rs's WS delta-sync upserts (Phase 96 consolidation).
-pub(crate) fn apply_cards_preserving_identity(old: &ModelRc<CardItem>, fresh: Vec<CardItem>) -> ModelRc<CardItem> {
-    let old_rows: Vec<CardItem> = (0..old.row_count()).filter_map(|i| old.row_data(i)).collect();
+pub(crate) fn apply_cards_preserving_identity(
+    old: &ModelRc<CardItem>,
+    fresh: Vec<CardItem>,
+) -> ModelRc<CardItem> {
+    let old_rows: Vec<CardItem> = (0..old.row_count())
+        .filter_map(|i| old.row_data(i))
+        .collect();
     let same_shape = old_rows.len() == fresh.len()
-        && old_rows.iter().zip(fresh.iter()).all(|(a, b)| a.id.as_str() == b.id.as_str());
+        && old_rows
+            .iter()
+            .zip(fresh.iter())
+            .all(|(a, b)| a.id.as_str() == b.id.as_str());
     if same_shape {
-        tracing::debug!("apply_cards_preserving_identity: {} row(s), same_shape=true", fresh.len());
+        tracing::debug!(
+            "apply_cards_preserving_identity: {} row(s), same_shape=true",
+            fresh.len()
+        );
         for (i, card) in fresh.into_iter().enumerate() {
             old.set_row_data(i, card);
         }
@@ -529,10 +574,15 @@ pub(crate) fn apply_cards_preserving_identity(old: &ModelRc<CardItem>, fresh: Ve
     // Diagnostic: pin down *why* same_shape failed — different length, or same
     // length but reordered/different ids. Left at debug (not removed) since this
     // exact log is what pinpointed Phases 96-99's library-grid flash bugs.
-    let first_mismatch = old_rows.iter().zip(fresh.iter()).position(|(a, b)| a.id.as_str() != b.id.as_str());
+    let first_mismatch = old_rows
+        .iter()
+        .zip(fresh.iter())
+        .position(|(a, b)| a.id.as_str() != b.id.as_str());
     tracing::debug!(
         "apply_cards_preserving_identity: old_len={} fresh_len={} same_shape=false first_mismatch_idx={:?}",
-        old_rows.len(), fresh.len(), first_mismatch
+        old_rows.len(),
+        fresh.len(),
+        first_mismatch
     );
     ModelRc::new(VecModel::from(fresh))
 }
@@ -540,23 +590,23 @@ pub(crate) fn apply_cards_preserving_identity(old: &ModelRc<CardItem>, fresh: Ve
 pub(crate) fn push_section_model(window: &MainWindow, sec: HomeSection, model: ModelRc<CardItem>) {
     let g = AppState::get(window);
     match sec {
-        HomeSection::ContinueWatching         => g.set_continue_watching(model),
-        HomeSection::NextUp                   => g.set_next_up(model),
-        HomeSection::RecentlyAdded            => g.set_recently_added(model),
-        HomeSection::ContinueWatchingMovies   => g.set_continue_watching_movies(model),
-        HomeSection::RecentlyAddedMovies      => g.set_recently_added_movies(model),
-        HomeSection::NotWatchedMovies         => g.set_not_watched_movies(model),
-        HomeSection::ContinueWatchingTv       => g.set_continue_watching_tv(model),
-        HomeSection::RecentlyAddedTv          => g.set_recently_added_tv(model),
-        HomeSection::NotWatchedTv             => g.set_not_watched_tv(model),
+        HomeSection::ContinueWatching => g.set_continue_watching(model),
+        HomeSection::NextUp => g.set_next_up(model),
+        HomeSection::RecentlyAdded => g.set_recently_added(model),
+        HomeSection::ContinueWatchingMovies => g.set_continue_watching_movies(model),
+        HomeSection::RecentlyAddedMovies => g.set_recently_added_movies(model),
+        HomeSection::NotWatchedMovies => g.set_not_watched_movies(model),
+        HomeSection::ContinueWatchingTv => g.set_continue_watching_tv(model),
+        HomeSection::RecentlyAddedTv => g.set_recently_added_tv(model),
+        HomeSection::NotWatchedTv => g.set_not_watched_tv(model),
         HomeSection::RecentlyAddedCollections => g.set_recently_added_collections(model),
-        HomeSection::UnwatchedCollections     => g.set_unwatched_collections(model),
-        HomeSection::RecentlyAddedAlbums      => g.set_recently_added_albums(model),
-        HomeSection::RecentlyPlayedAlbums     => g.set_recently_played_albums(model),
-        HomeSection::FavoriteMovies           => g.set_favorite_movies(model),
-        HomeSection::FavoriteSeries           => g.set_favorite_series(model),
-        HomeSection::FavoriteAlbums           => g.set_favorite_albums(model),
-        HomeSection::Playlists                => g.set_music_playlists(model),
+        HomeSection::UnwatchedCollections => g.set_unwatched_collections(model),
+        HomeSection::RecentlyAddedAlbums => g.set_recently_added_albums(model),
+        HomeSection::RecentlyPlayedAlbums => g.set_recently_played_albums(model),
+        HomeSection::FavoriteMovies => g.set_favorite_movies(model),
+        HomeSection::FavoriteSeries => g.set_favorite_series(model),
+        HomeSection::FavoriteAlbums => g.set_favorite_albums(model),
+        HomeSection::Playlists => g.set_music_playlists(model),
     }
 }
 
@@ -565,23 +615,23 @@ pub(crate) fn push_section_model(window: &MainWindow, sec: HomeSection, model: M
 pub(crate) fn get_section_model(window: &MainWindow, sec: HomeSection) -> ModelRc<CardItem> {
     let g = AppState::get(window);
     match sec {
-        HomeSection::ContinueWatching         => g.get_continue_watching(),
-        HomeSection::NextUp                   => g.get_next_up(),
-        HomeSection::RecentlyAdded            => g.get_recently_added(),
-        HomeSection::ContinueWatchingMovies   => g.get_continue_watching_movies(),
-        HomeSection::RecentlyAddedMovies      => g.get_recently_added_movies(),
-        HomeSection::NotWatchedMovies         => g.get_not_watched_movies(),
-        HomeSection::ContinueWatchingTv       => g.get_continue_watching_tv(),
-        HomeSection::RecentlyAddedTv          => g.get_recently_added_tv(),
-        HomeSection::NotWatchedTv             => g.get_not_watched_tv(),
+        HomeSection::ContinueWatching => g.get_continue_watching(),
+        HomeSection::NextUp => g.get_next_up(),
+        HomeSection::RecentlyAdded => g.get_recently_added(),
+        HomeSection::ContinueWatchingMovies => g.get_continue_watching_movies(),
+        HomeSection::RecentlyAddedMovies => g.get_recently_added_movies(),
+        HomeSection::NotWatchedMovies => g.get_not_watched_movies(),
+        HomeSection::ContinueWatchingTv => g.get_continue_watching_tv(),
+        HomeSection::RecentlyAddedTv => g.get_recently_added_tv(),
+        HomeSection::NotWatchedTv => g.get_not_watched_tv(),
         HomeSection::RecentlyAddedCollections => g.get_recently_added_collections(),
-        HomeSection::UnwatchedCollections     => g.get_unwatched_collections(),
-        HomeSection::RecentlyAddedAlbums      => g.get_recently_added_albums(),
-        HomeSection::RecentlyPlayedAlbums     => g.get_recently_played_albums(),
-        HomeSection::FavoriteMovies           => g.get_favorite_movies(),
-        HomeSection::FavoriteSeries           => g.get_favorite_series(),
-        HomeSection::FavoriteAlbums           => g.get_favorite_albums(),
-        HomeSection::Playlists                => g.get_music_playlists(),
+        HomeSection::UnwatchedCollections => g.get_unwatched_collections(),
+        HomeSection::RecentlyAddedAlbums => g.get_recently_added_albums(),
+        HomeSection::RecentlyPlayedAlbums => g.get_recently_played_albums(),
+        HomeSection::FavoriteMovies => g.get_favorite_movies(),
+        HomeSection::FavoriteSeries => g.get_favorite_series(),
+        HomeSection::FavoriteAlbums => g.get_favorite_albums(),
+        HomeSection::Playlists => g.get_music_playlists(),
     }
 }
 
@@ -597,16 +647,22 @@ pub(crate) fn get_section_model(window: &MainWindow, sec: HomeSection) -> ModelR
 pub(crate) async fn timed<T>(label: &str, fut: impl std::future::Future<Output = T>) -> T {
     let started = std::time::Instant::now();
     let r = fut.await;
-    tracing::debug!("timing: {label} took {:.3}s", started.elapsed().as_secs_f64());
+    tracing::debug!(
+        "timing: {label} took {:.3}s",
+        started.elapsed().as_secs_f64()
+    );
     r
 }
 
 pub(crate) fn to_slint_model(names: Vec<String>) -> ModelRc<StandardListViewItem> {
-    let items: Vec<StandardListViewItem> = names.into_iter().map(|name| {
-        let mut e = StandardListViewItem::default();
-        e.text = SharedString::from(name.as_str());
-        e
-    }).collect();
+    let items: Vec<StandardListViewItem> = names
+        .into_iter()
+        .map(|name| {
+            let mut e = StandardListViewItem::default();
+            e.text = SharedString::from(name.as_str());
+            e
+        })
+        .collect();
     ModelRc::new(VecModel::from(items))
 }
 
@@ -614,7 +670,9 @@ pub(crate) fn display_names(items: &[MediaItem]) -> Vec<String> {
     items.iter().map(|i| i.display_name()).collect()
 }
 
-fn ss(s: &str) -> SharedString { SharedString::from(s) }
+fn ss(s: &str) -> SharedString {
+    SharedString::from(s)
+}
 
 /// Drop the last Unicode GRAPHEME CLUSTER from `s`, not the last `char`
 /// (Unicode scalar value). A naive char-based trim never splits a
@@ -735,52 +793,67 @@ pub(crate) fn push_queue_display(vs: &crate::playback::VideoState, g: &AppState)
             .collect()
     };
     let to_entry = |i: i32, qi: &crate::playback::QueueItem, is_current: bool, is_queued: bool| {
-        let artist = qi.audio_meta.as_ref()
+        let artist = qi
+            .audio_meta
+            .as_ref()
             .map(|(a, _)| a.as_str())
             .unwrap_or("")
             .to_string();
         // Audio items: poster-id = album_art_id; video items: poster-id = item id.
-        let poster_id = qi.audio_meta.as_ref()
+        let poster_id = qi
+            .audio_meta
+            .as_ref()
             .map(|(_, art)| art.as_str())
             .unwrap_or(qi.id.as_str())
             .to_string();
         let cached = known_art.get(&poster_id).cloned();
         crate::QueueEntry {
-            id:         qi.id.as_str().into(),
-            index:      i,
-            title:      qi.title.as_str().into(),
-            artist:     artist.as_str().into(),
+            id: qi.id.as_str().into(),
+            index: i,
+            title: qi.title.as_str().into(),
+            artist: artist.as_str().into(),
             is_current,
             is_queued,
-            poster_id:  poster_id.as_str().into(),
+            poster_id: poster_id.as_str().into(),
             has_poster: cached.is_some(),
-            poster:     cached.unwrap_or_default(),
+            poster: cached.unwrap_or_default(),
         }
     };
 
     let cur_id = vs.item_id.as_deref();
     // Current play IS the playlist row at playlist_index (normal album playback)?
     let cur_is_listed = cur_id.is_some()
-        && vs.playlist.get(vs.playlist_index).map(|q| Some(q.id.as_str()) == cur_id)
+        && vs
+            .playlist
+            .get(vs.playlist_index)
+            .map(|q| Some(q.id.as_str()) == cur_id)
             .unwrap_or(false);
 
     let mut items: Vec<crate::QueueEntry> = Vec::new();
 
     // Off-list play (queue jump / single track): synthetic now-playing row on top.
-    if let (Some(id), Some(np)) = (cur_id, vs.now_playing.as_ref()) && !cur_is_listed && np.id == id {
+    if let (Some(id), Some(np)) = (cur_id, vs.now_playing.as_ref())
+        && !cur_is_listed
+        && np.id == id
+    {
         items.push(to_entry(-1, np, true, false));
     }
 
     if vs.repeat_mode != crate::playback::RepeatMode::Off {
         // Repeat: everything plays again — show the whole playlist.
-        items.extend(vs.playlist.iter().enumerate()
-            .map(|(i, qi)| to_entry(i as i32, qi, cur_is_listed && i == vs.playlist_index, false)));
+        items.extend(
+            vs.playlist.iter().enumerate().map(|(i, qi)| {
+                to_entry(i as i32, qi, cur_is_listed && i == vs.playlist_index, false)
+            }),
+        );
     } else {
         // Play order from the current position (shuffle-aware); rows already
         // played are gone. When the current play is off-list, the slot at
         // playlist_index will not play (advance goes to the next one) — skip it.
         let order: Vec<usize> = if vs.shuffle && !vs.shuffle_order.is_empty() {
-            let pos = vs.shuffle_order.iter()
+            let pos = vs
+                .shuffle_order
+                .iter()
                 .position(|&i| i == vs.playlist_index)
                 .unwrap_or(0);
             vs.shuffle_order[pos..].to_vec()
@@ -788,16 +861,27 @@ pub(crate) fn push_queue_display(vs: &crate::playback::VideoState, g: &AppState)
             (vs.playlist_index..vs.playlist.len()).collect()
         };
         for (k, &i) in order.iter().enumerate() {
-            if k == 0 && !cur_is_listed && cur_id.is_some() { continue; }
+            if k == 0 && !cur_is_listed && cur_id.is_some() {
+                continue;
+            }
             if let Some(qi) = vs.playlist.get(i) {
-                items.push(to_entry(i as i32, qi, cur_is_listed && i == vs.playlist_index, false));
+                items.push(to_entry(
+                    i as i32,
+                    qi,
+                    cur_is_listed && i == vs.playlist_index,
+                    false,
+                ));
             }
         }
     }
 
     let base = vs.playlist.len() as i32;
-    items.extend(vs.queue.iter().enumerate()
-        .map(|(i, qi)| to_entry(base + i as i32, qi, false, true)));
+    items.extend(
+        vs.queue
+            .iter()
+            .enumerate()
+            .map(|(i, qi)| to_entry(base + i as i32, qi, false, true)),
+    );
     g.set_queue_items(ModelRc::new(VecModel::from(items)));
     g.set_queue_count(crate::playback::upcoming_count(vs));
 }
@@ -805,9 +889,9 @@ pub(crate) fn push_queue_display(vs: &crate::playback::VideoState, g: &AppState)
 // Fetch album art for each QueueEntry and fill in poster/has_poster via set_row_data.
 // Reads poster-ids from the current queue-items model snapshot.
 pub(crate) fn spawn_queue_poster_loading(
-    client:      std::sync::Arc<fjord_api::JellyfinClient>,
-    ww:          slint::Weak<MainWindow>,
-    rt:          tokio::runtime::Handle,
+    client: std::sync::Arc<fjord_api::JellyfinClient>,
+    ww: slint::Weak<MainWindow>,
+    rt: tokio::runtime::Handle,
 ) {
     use slint::Model;
     // Snapshot poster_ids from the model (must be on UI thread; caller ensures this).
@@ -822,17 +906,20 @@ pub(crate) fn spawn_queue_poster_loading(
         })
         .collect();
     drop(w);
-    if entries.is_empty() { return; }
+    if entries.is_empty() {
+        return;
+    }
 
     let sem = std::sync::Arc::new(tokio::sync::Semaphore::new(8));
     for (row_idx, poster_id) in entries {
         let client2 = std::sync::Arc::clone(&client);
-        let ww2     = ww.clone();
-        let sem2    = std::sync::Arc::clone(&sem);
+        let ww2 = ww.clone();
+        let sem2 = std::sync::Arc::clone(&sem);
         rt.spawn(async move {
             let _permit = sem2.acquire().await;
             if let Some(bytes) = poster::fetch_poster_cached(&client2, &poster_id).await
-                && let Some(spb) = poster::decode_poster_buffer(&bytes) {
+                && let Some(spb) = poster::decode_poster_buffer(&bytes)
+            {
                 let _ = slint::invoke_from_event_loop(move || {
                     use slint::Model;
                     if let Some(w) = ww2.upgrade() {
@@ -841,7 +928,7 @@ pub(crate) fn spawn_queue_poster_loading(
                             // Guard: poster-id must still match (playlist may have changed)
                             if row.poster_id.as_str() == poster_id.as_str() {
                                 row.has_poster = true;
-                                row.poster     = slint::Image::from_rgba8(spb);
+                                row.poster = slint::Image::from_rgba8(spb);
                                 model.set_row_data(row_idx, row);
                             }
                         }
@@ -851,7 +938,6 @@ pub(crate) fn spawn_queue_poster_loading(
         });
     }
 }
-
 
 // ── spawn_library_fetch ───────────────────────────────────────────────────────
 // Network-refresh the library list for `nav` (1=TV posters, 2=Movies,
@@ -863,13 +949,15 @@ pub(crate) fn spawn_queue_poster_loading(
 // already decoded from the startup cache push survive this first-open-this-
 // session refresh instead of flashing blank (Phase 94).
 pub(crate) fn spawn_library_fetch(
-    nav:   i32,
+    nav: i32,
     state: Arc<Mutex<FjordState>>,
-    ww:    slint::Weak<MainWindow>,
-    rt:    tokio::runtime::Handle,
+    ww: slint::Weak<MainWindow>,
+    rt: tokio::runtime::Handle,
 ) {
     let s = state.lock().unwrap();
-    let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
+    let Some(client) = s.client.as_ref().map(Arc::clone) else {
+        return;
+    };
     // Captured once up front (client.user_id — the session this whole call
     // is under, more direct than re-deriving from state.config.active()),
     // cloned into each of the nav==3/4 spawned fetches below rather than
@@ -880,21 +968,26 @@ pub(crate) fn spawn_library_fetch(
         // TV: all_series already loaded at startup; poster loading runs then too.
         let series = s.all_series.clone();
         drop(s);
-        let ww2  = ww.clone();
+        let ww2 = ww.clone();
         let rth2 = rt.clone();
         if !series.is_empty() {
-            tracing::debug!("spawn_library_fetch[TV]: re-decoding {} already-loaded series (grid opened/switched to)", series.len());
+            tracing::debug!(
+                "spawn_library_fetch[TV]: re-decoding {} already-loaded series (grid opened/switched to)",
+                series.len()
+            );
             spawn_series_poster_loading(client, series, ww2, rth2, Arc::clone(&state));
         }
         return;
     }
     if nav == 3 {
         // Collections: lazy-fetch from network once per session.
-        if s.collections_fetched { return; }
+        if s.collections_fetched {
+            return;
+        }
         drop(s);
         let state2 = Arc::clone(&state);
-        let ww2  = ww.clone();
-        let ww3  = ww.clone();
+        let ww2 = ww.clone();
+        let ww3 = ww.clone();
         let rt3 = rt.clone();
         let user_id3 = user_id.clone();
         rt.spawn(async move {
@@ -931,17 +1024,19 @@ pub(crate) fn spawn_library_fetch(
         return;
     }
     if nav == 4 {
-        let artists_done   = s.artists_fetched;
-        let albums_done    = s.albums_fetched;
+        let artists_done = s.artists_fetched;
+        let albums_done = s.albums_fetched;
         let playlists_done = s.playlists_fetched;
-        if artists_done && albums_done && playlists_done { return; }
+        if artists_done && albums_done && playlists_done {
+            return;
+        }
         drop(s);
         // Fetch artists if not yet done.
         if !artists_done {
             let state_a = Arc::clone(&state);
-            let ww2     = ww.clone();
-            let ww3     = ww.clone();
-            let rt3    = rt.clone();
+            let ww2 = ww.clone();
+            let ww3 = ww.clone();
+            let rt3 = rt.clone();
             let client_a = Arc::clone(&client);
             let user_id_a = user_id.clone();
             rt.spawn(async move {
@@ -977,9 +1072,9 @@ pub(crate) fn spawn_library_fetch(
         // Fetch albums if not yet done.
         if !albums_done {
             let state_b = Arc::clone(&state);
-            let ww2b    = ww.clone();
-            let ww3b    = ww.clone();
-            let rt3b   = rt.clone();
+            let ww2b = ww.clone();
+            let ww3b = ww.clone();
+            let rt3b = rt.clone();
             let client_b = Arc::clone(&client);
             let user_id_b = user_id.clone();
             rt.spawn(async move {
@@ -1014,10 +1109,10 @@ pub(crate) fn spawn_library_fetch(
         }
         // Fetch playlists if not yet done.
         if !playlists_done {
-            let state_p  = Arc::clone(&state);
-            let ww2p     = ww.clone();
-            let ww3p     = ww.clone();
-            let rt3p     = rt.clone();
+            let state_p = Arc::clone(&state);
+            let ww2p = ww.clone();
+            let ww3p = ww.clone();
+            let rt3p = rt.clone();
             let client_p = Arc::clone(&client);
             let user_id_p = user_id.clone();
             rt.spawn(async move {
@@ -1072,20 +1167,24 @@ pub(crate) fn spawn_library_fetch(
 /// user opened Discover would be a real, unnecessary cost for a large
 /// library.
 pub(crate) fn spawn_movies_list_fetch(
-    state:        Arc<Mutex<FjordState>>,
-    ww:           slint::Weak<MainWindow>,
-    rt:           tokio::runtime::Handle,
+    state: Arc<Mutex<FjordState>>,
+    ww: slint::Weak<MainWindow>,
+    rt: tokio::runtime::Handle,
     with_posters: bool,
 ) {
     let s = state.lock().unwrap();
-    let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
-    if s.movies_fetched { return; }
+    let Some(client) = s.client.as_ref().map(Arc::clone) else {
+        return;
+    };
+    if s.movies_fetched {
+        return;
+    }
     let user_id = client.user_id.clone();
     drop(s);
     let state2 = Arc::clone(&state);
-    let ww2  = ww.clone();
-    let ww3  = ww.clone();
-    let ww4  = ww.clone();
+    let ww2 = ww.clone();
+    let ww3 = ww.clone();
+    let ww4 = ww.clone();
     let rt3 = rt.clone();
     rt.spawn(async move {
         match client.get_all_movies().await {
@@ -1104,7 +1203,7 @@ pub(crate) fn spawn_movies_list_fetch(
                 }
                 {
                     let mut s = state2.lock().unwrap();
-                    s.all_movies     = movies.clone();
+                    s.all_movies = movies.clone();
                     s.movies_fetched = true;
                 }
                 save_movies_cache(&user_id, &movies);
@@ -1112,8 +1211,14 @@ pub(crate) fn spawn_movies_list_fetch(
                 let _ = slint::invoke_from_event_loop(move || {
                     if let Some(w) = ww2.upgrade() {
                         let g = AppState::get(&w);
-                        tracing::debug!("spawn_movies_list_fetch: network fetch landed, {} item(s)", movies2.len());
-                        g.set_all_movies(refresh_row_preserving_posters(&g.get_all_movies(), &movies2));
+                        tracing::debug!(
+                            "spawn_movies_list_fetch: network fetch landed, {} item(s)",
+                            movies2.len()
+                        );
+                        g.set_all_movies(refresh_row_preserving_posters(
+                            &g.get_all_movies(),
+                            &movies2,
+                        ));
                         if AppState::get(&w).get_show_library() {
                             browse::refresh_library_display(&w);
                         }
@@ -1141,26 +1246,46 @@ pub(crate) fn spawn_movies_list_fetch(
 
 pub(crate) fn apply_settings_to_window(w: &MainWindow, s: &FjordState) {
     let g = AppState::get(w);
-    let c  = &s.config.device;
+    let c = &s.config.device;
     let cp = s.config.active();
     g.set_settings_audio_device(ss(&c.audio_device));
-    let dev_desc = s.audio_devices.iter()
+    let dev_desc = s
+        .audio_devices
+        .iter()
         .find(|(n, _)| n == &c.audio_device)
         .map(|(_, d)| d.as_str())
-        .unwrap_or(if c.audio_device.is_empty() { "" } else { c.audio_device.as_str() })
+        .unwrap_or(if c.audio_device.is_empty() {
+            ""
+        } else {
+            c.audio_device.as_str()
+        })
         .to_string();
     g.set_settings_audio_device_desc(ss(&dev_desc));
     g.set_settings_passthrough_device(ss(&c.audio_device_passthrough));
-    let pt_desc = s.audio_devices.iter()
+    let pt_desc = s
+        .audio_devices
+        .iter()
         .find(|(n, _)| n == &c.audio_device_passthrough)
         .map(|(_, d)| d.as_str())
-        .unwrap_or(if c.audio_device_passthrough.is_empty() { "" } else { c.audio_device_passthrough.as_str() })
+        .unwrap_or(if c.audio_device_passthrough.is_empty() {
+            ""
+        } else {
+            c.audio_device_passthrough.as_str()
+        })
         .to_string();
     g.set_settings_passthrough_device_desc(ss(&pt_desc));
     // The IRQ fix targets the device passthrough actually plays on.
-    let effective = if c.audio_device_passthrough.is_empty() { &c.audio_device } else { &c.audio_device_passthrough };
+    let effective = if c.audio_device_passthrough.is_empty() {
+        &c.audio_device
+    } else {
+        &c.audio_device_passthrough
+    };
     g.set_settings_device_is_pipewire(pipewire_fix::is_pipewire_device(effective));
-    g.set_settings_audio_channels(ss(if c.audio_channels.is_empty() { "auto-safe" } else { &c.audio_channels }));
+    g.set_settings_audio_channels(ss(if c.audio_channels.is_empty() {
+        "auto-safe"
+    } else {
+        &c.audio_channels
+    }));
     g.set_settings_gapless_audio(c.gapless_audio);
     g.set_settings_now_playing_auto_open(cp.now_playing_auto_open);
     g.set_settings_audio_spdif(c.audio_spdif);
@@ -1233,12 +1358,18 @@ pub(crate) fn apply_settings_to_window(w: &MainWindow, s: &FjordState) {
     // for the human-readable desc) is fetched asynchronously and may still be
     // empty here; fall back to a sensible label rather than waiting on it.
     g.set_settings_font_family(ss(&c.ui_font_family));
-    let font_desc = s.system_fonts.iter()
+    let font_desc = s
+        .system_fonts
+        .iter()
         .find(|(v, _)| v == &c.ui_font_family)
         .map(|(_, d)| d.as_str())
-        .unwrap_or(if c.ui_font_family == "Inter" { "Inter (Fjord default)" }
-                   else if c.ui_font_family.is_empty() { "System default" }
-                   else { c.ui_font_family.as_str() })
+        .unwrap_or(if c.ui_font_family == "Inter" {
+            "Inter (Fjord default)"
+        } else if c.ui_font_family.is_empty() {
+            "System default"
+        } else {
+            c.ui_font_family.as_str()
+        })
         .to_string();
     g.set_settings_font_family_desc(ss(&font_desc));
     g.set_settings_onscreen_keyboard_enabled(c.onscreen_keyboard_enabled);
@@ -1256,7 +1387,10 @@ pub(crate) fn apply_settings_to_window(w: &MainWindow, s: &FjordState) {
     g.set_settings_is_master_profile(profile::is_true_master(s.config.active()));
     {
         let root_id = profile::account_root_id(s.config.active()).to_string();
-        let remember = s.config.profiles.iter()
+        let remember = s
+            .config
+            .profiles
+            .iter()
             .find(|p| p.user_id == root_id)
             .is_none_or(|p| p.remember_login); // no matching entry shouldn't happen; default to the field's own true
         g.set_settings_remember_login(remember);
@@ -1282,12 +1416,18 @@ fn settings_diff(before: &[serde_json::Value; 2], after: &[serde_json::Value; 2]
     use serde_json::Value;
     let mut out = Vec::new();
     for (b, a) in before.iter().zip(after) {
-        let (Some(b), Some(a)) = (b.as_object(), a.as_object()) else { continue };
+        let (Some(b), Some(a)) = (b.as_object(), a.as_object()) else {
+            continue;
+        };
         for (key, new) in a {
             let old = b.get(key).unwrap_or(&Value::Null);
-            if old == new { continue; }
+            if old == new {
+                continue;
+            }
             out.push(match (old, new) {
-                (Value::Bool(_) | Value::Number(_), Value::Bool(_) | Value::Number(_)) => format!("{key}: {old} → {new}"),
+                (Value::Bool(_) | Value::Number(_), Value::Bool(_) | Value::Number(_)) => {
+                    format!("{key}: {old} → {new}")
+                }
                 _ => format!("{key} (changed)"),
             });
         }
@@ -1297,85 +1437,86 @@ fn settings_diff(before: &[serde_json::Value; 2], after: &[serde_json::Value; 2]
 
 fn read_settings_from_window(w: &MainWindow, s: &mut FjordState) {
     let g = AppState::get(w);
-    let c  = &mut s.config.device;
-    c.audio_spdif            = g.get_settings_audio_spdif();
-    c.spdif_ac3              = g.get_settings_spdif_ac3();
-    c.spdif_eac3             = g.get_settings_spdif_eac3();
-    c.spdif_dts              = g.get_settings_spdif_dts();
-    c.spdif_dts_hd           = g.get_settings_spdif_dts_hd();
-    c.spdif_truehd           = g.get_settings_spdif_truehd();
-    c.hwdec                  = g.get_settings_hwdec().to_string();
-    c.vf                     = g.get_settings_vf().to_string();
-    c.video_sync             = g.get_settings_video_sync().to_string();
-    c.opengl_early_flush     = g.get_settings_opengl_early_flush();
-    c.video_latency_hacks    = g.get_settings_video_latency_hacks();
-    c.interpolation          = g.get_settings_interpolation();
-    c.tscale                 = g.get_settings_tscale().to_string();
-    c.tone_mapping           = g.get_settings_tone_mapping().to_string();
+    let c = &mut s.config.device;
+    c.audio_spdif = g.get_settings_audio_spdif();
+    c.spdif_ac3 = g.get_settings_spdif_ac3();
+    c.spdif_eac3 = g.get_settings_spdif_eac3();
+    c.spdif_dts = g.get_settings_spdif_dts();
+    c.spdif_dts_hd = g.get_settings_spdif_dts_hd();
+    c.spdif_truehd = g.get_settings_spdif_truehd();
+    c.hwdec = g.get_settings_hwdec().to_string();
+    c.vf = g.get_settings_vf().to_string();
+    c.video_sync = g.get_settings_video_sync().to_string();
+    c.opengl_early_flush = g.get_settings_opengl_early_flush();
+    c.video_latency_hacks = g.get_settings_video_latency_hacks();
+    c.interpolation = g.get_settings_interpolation();
+    c.tscale = g.get_settings_tscale().to_string();
+    c.tone_mapping = g.get_settings_tone_mapping().to_string();
     c.target_colorspace_hint = g.get_settings_target_colorspace_hint();
     c.separate_video_surface = g.get_settings_separate_video_surface();
     c.video_own_buffers = g.get_settings_video_own_buffers();
     c.video_dither_off = g.get_settings_video_dither_off();
-    c.deinterlace            = g.get_settings_deinterlace().to_string();
-    c.cache_secs             = g.get_settings_cache_secs().max(0) as u32;
-    c.cache_max_mb           = g.get_settings_cache_max_mb().max(0) as u32;
-    c.video_behind           = g.get_settings_video_behind();
-    c.launch_fullscreen      = g.get_settings_launch_fullscreen();
-    c.log_level              = g.get_settings_log_level().to_string();
-    c.audio_device           = g.get_settings_audio_device().to_string();
+    c.deinterlace = g.get_settings_deinterlace().to_string();
+    c.cache_secs = g.get_settings_cache_secs().max(0) as u32;
+    c.cache_max_mb = g.get_settings_cache_max_mb().max(0) as u32;
+    c.video_behind = g.get_settings_video_behind();
+    c.launch_fullscreen = g.get_settings_launch_fullscreen();
+    c.log_level = g.get_settings_log_level().to_string();
+    c.audio_device = g.get_settings_audio_device().to_string();
     c.audio_device_passthrough = g.get_settings_passthrough_device().to_string();
-    c.audio_channels           = g.get_settings_audio_channels().to_string();
-    c.gapless_audio            = g.get_settings_gapless_audio();
-    c.alsa_irq_scheduling    = g.get_settings_alsa_irq_scheduling();
+    c.audio_channels = g.get_settings_audio_channels().to_string();
+    c.gapless_audio = g.get_settings_gapless_audio();
+    c.alsa_irq_scheduling = g.get_settings_alsa_irq_scheduling();
     c.skip_fade_mute_passthrough = g.get_settings_skip_fade_mute_passthrough();
-    c.seek_step_secs         = g.get_settings_seek_step_secs().max(0) as u32;
-    c.seek_step_long_secs    = g.get_settings_seek_step_long_secs().max(0) as u32;
-    c.skip_fade_ms           = g.get_settings_skip_fade_ms().max(0) as u32;
-    c.scroll_speed_pct       = g.get_settings_scroll_speed_pct().max(0) as u32;
-    c.animation_speed_pct    = g.get_settings_animation_speed_pct().max(0) as u32;
-    c.ui_font_family         = g.get_settings_font_family().to_string();
+    c.seek_step_secs = g.get_settings_seek_step_secs().max(0) as u32;
+    c.seek_step_long_secs = g.get_settings_seek_step_long_secs().max(0) as u32;
+    c.skip_fade_ms = g.get_settings_skip_fade_ms().max(0) as u32;
+    c.scroll_speed_pct = g.get_settings_scroll_speed_pct().max(0) as u32;
+    c.animation_speed_pct = g.get_settings_animation_speed_pct().max(0) as u32;
+    c.ui_font_family = g.get_settings_font_family().to_string();
     c.onscreen_keyboard_enabled = g.get_settings_onscreen_keyboard_enabled();
-    c.launch_policy          = g.get_settings_launch_policy().to_string();
-    c.default_profile_id     = g.get_settings_default_profile_id().to_string();
-    c.account_launch_policy  = g.get_settings_account_launch_policy().to_string();
-    c.default_account_id     = g.get_settings_default_account_id().to_string();
-    c.display_sync_enabled            = g.get_settings_display_sync_enabled();
-    c.display_sync_trailers           = g.get_settings_display_sync_trailers();
-    c.display_sync_screen_name        = g.get_settings_display_sync_screen_name().to_string();
-    c.display_sync_default_resolution = g.get_settings_display_sync_default_resolution().to_string();
-    c.display_sync_default_hz         = g.get_settings_display_sync_default_hz().to_string();
-    c.display_sync_scale_4k           = g.get_settings_display_sync_scale_4k().to_string();
-    c.display_sync_scale_1080p        = g.get_settings_display_sync_scale_1080p().to_string();
-    c.display_sync_sync_resolution    = g.get_settings_display_sync_sync_resolution();
-    c.display_sync_sync_refresh_rate  = g.get_settings_display_sync_sync_refresh_rate();
-    c.display_sync_4k_odd_fps_mode    = g.get_settings_display_sync_4k_odd_fps_mode().to_string();
-    c.display_sync_hdr_mode           = g.get_settings_display_sync_hdr_mode().to_string();
-    c.display_sync_wcg_mode           = g.get_settings_display_sync_wcg_mode().to_string();
+    c.launch_policy = g.get_settings_launch_policy().to_string();
+    c.default_profile_id = g.get_settings_default_profile_id().to_string();
+    c.account_launch_policy = g.get_settings_account_launch_policy().to_string();
+    c.default_account_id = g.get_settings_default_account_id().to_string();
+    c.display_sync_enabled = g.get_settings_display_sync_enabled();
+    c.display_sync_trailers = g.get_settings_display_sync_trailers();
+    c.display_sync_screen_name = g.get_settings_display_sync_screen_name().to_string();
+    c.display_sync_default_resolution =
+        g.get_settings_display_sync_default_resolution().to_string();
+    c.display_sync_default_hz = g.get_settings_display_sync_default_hz().to_string();
+    c.display_sync_scale_4k = g.get_settings_display_sync_scale_4k().to_string();
+    c.display_sync_scale_1080p = g.get_settings_display_sync_scale_1080p().to_string();
+    c.display_sync_sync_resolution = g.get_settings_display_sync_sync_resolution();
+    c.display_sync_sync_refresh_rate = g.get_settings_display_sync_sync_refresh_rate();
+    c.display_sync_4k_odd_fps_mode = g.get_settings_display_sync_4k_odd_fps_mode().to_string();
+    c.display_sync_hdr_mode = g.get_settings_display_sync_hdr_mode().to_string();
+    c.display_sync_wcg_mode = g.get_settings_display_sync_wcg_mode().to_string();
 
     let cp = s.config.active_mut();
-    cp.sub_enabled            = g.get_settings_sub_enabled();
-    cp.sub_lang               = g.get_settings_sub_lang().to_string();
-    cp.sub_lang2               = g.get_settings_sub_lang2().to_string();
-    cp.sub_type               = g.get_settings_sub_type().to_string();
-    cp.sub_scale_pct          = g.get_settings_sub_scale_pct().max(0) as u32;
-    cp.sub_pos_pct            = g.get_settings_sub_pos_pct().max(0) as u32;
+    cp.sub_enabled = g.get_settings_sub_enabled();
+    cp.sub_lang = g.get_settings_sub_lang().to_string();
+    cp.sub_lang2 = g.get_settings_sub_lang2().to_string();
+    cp.sub_type = g.get_settings_sub_type().to_string();
+    cp.sub_scale_pct = g.get_settings_sub_scale_pct().max(0) as u32;
+    cp.sub_pos_pct = g.get_settings_sub_pos_pct().max(0) as u32;
     cp.sub_respect_ass_styling = g.get_settings_sub_respect_ass_styling();
-    cp.sub_color              = g.get_settings_sub_color().to_string();
-    cp.sub_background         = g.get_settings_sub_background();
-    cp.audio_lang             = g.get_settings_audio_lang().to_string();
-    cp.now_playing_auto_open   = g.get_settings_now_playing_auto_open();
-    cp.skip_intro_mode        = g.get_settings_skip_intro_mode().to_string();
-    cp.skip_intro_secs        = g.get_settings_skip_intro_secs().max(0) as u32;
-    cp.skip_recap_mode        = g.get_settings_skip_recap_mode().to_string();
-    cp.skip_recap_secs        = g.get_settings_skip_recap_secs().max(0) as u32;
-    cp.skip_preview_mode      = g.get_settings_skip_preview_mode().to_string();
-    cp.skip_preview_secs      = g.get_settings_skip_preview_secs().max(0) as u32;
-    cp.skip_commercial_mode   = g.get_settings_skip_commercial_mode().to_string();
-    cp.skip_commercial_secs   = g.get_settings_skip_commercial_secs().max(0) as u32;
-    cp.skip_credits_mode      = g.get_settings_skip_credits_mode().to_string();
-    cp.skip_credits_secs      = g.get_settings_skip_credits_secs().max(0) as u32;
-    cp.seerr_enabled          = g.get_settings_seerr_enabled();
-    cp.trailer_quality        = g.get_settings_trailer_quality().to_string();
+    cp.sub_color = g.get_settings_sub_color().to_string();
+    cp.sub_background = g.get_settings_sub_background();
+    cp.audio_lang = g.get_settings_audio_lang().to_string();
+    cp.now_playing_auto_open = g.get_settings_now_playing_auto_open();
+    cp.skip_intro_mode = g.get_settings_skip_intro_mode().to_string();
+    cp.skip_intro_secs = g.get_settings_skip_intro_secs().max(0) as u32;
+    cp.skip_recap_mode = g.get_settings_skip_recap_mode().to_string();
+    cp.skip_recap_secs = g.get_settings_skip_recap_secs().max(0) as u32;
+    cp.skip_preview_mode = g.get_settings_skip_preview_mode().to_string();
+    cp.skip_preview_secs = g.get_settings_skip_preview_secs().max(0) as u32;
+    cp.skip_commercial_mode = g.get_settings_skip_commercial_mode().to_string();
+    cp.skip_commercial_secs = g.get_settings_skip_commercial_secs().max(0) as u32;
+    cp.skip_credits_mode = g.get_settings_skip_credits_mode().to_string();
+    cp.skip_credits_secs = g.get_settings_skip_credits_secs().max(0) as u32;
+    cp.seerr_enabled = g.get_settings_seerr_enabled();
+    cp.trailer_quality = g.get_settings_trailer_quality().to_string();
 }
 
 // ── audio device discovery ────────────────────────────────────────────────────
@@ -1388,18 +1529,30 @@ fn fetch_audio_devices() -> Vec<(String, String)> {
         return vec![("auto".into(), "Autoselect device".into())];
     };
     let raw = String::from_utf8_lossy(&out.stdout);
-    let text = if raw.trim().is_empty() { String::from_utf8_lossy(&out.stderr).into_owned() } else { raw.into_owned() };
+    let text = if raw.trim().is_empty() {
+        String::from_utf8_lossy(&out.stderr).into_owned()
+    } else {
+        raw.into_owned()
+    };
     let mut devices = vec![("auto".into(), "Autoselect device".into())];
     for line in text.lines() {
         let line = line.trim();
-        if !line.starts_with('\'') { continue; }
-        let Some(end_q) = line[1..].find('\'') else { continue };
+        if !line.starts_with('\'') {
+            continue;
+        }
+        let Some(end_q) = line[1..].find('\'') else {
+            continue;
+        };
         let name = line[1..end_q + 1].to_string();
-        if name == "auto" { continue; }
+        if name == "auto" {
+            continue;
+        }
         let rest = line[end_q + 2..].trim();
         let desc = if rest.starts_with('(') && rest.ends_with(')') {
             rest[1..rest.len() - 1].to_string()
-        } else { name.clone() };
+        } else {
+            name.clone()
+        };
         devices.push((name, desc));
     }
     // Real devices can be exposed under more than one backend with an
@@ -1501,11 +1654,13 @@ fn detect_yt_dlp() -> bool {
 pub(crate) fn trailer_ytdl_format(quality: &str) -> Option<String> {
     let height = match quality {
         "1080p" => 1080,
-        "720p"  => 720,
-        "480p"  => 480,
-        _       => return None,
+        "720p" => 720,
+        "480p" => 480,
+        _ => return None,
     };
-    Some(format!("bestvideo[height<={height}]+bestaudio/best[height<={height}]"))
+    Some(format!(
+        "bestvideo[height<={height}]+bestaudio/best[height<={height}]"
+    ))
 }
 
 // ── Seerr user-settings discovery (region + display language + discover language) ──
@@ -1524,9 +1679,9 @@ pub(crate) fn trailer_ytdl_format(quality: &str) -> Option<String> {
 // underlying settings object).
 pub(crate) fn spawn_seerr_settings_fetch(
     client: Arc<fjord_seerr::SeerrClient>,
-    state:  Arc<Mutex<FjordState>>,
-    ww:     slint::Weak<MainWindow>,
-    rt:     tokio::runtime::Handle,
+    state: Arc<Mutex<FjordState>>,
+    ww: slint::Weak<MainWindow>,
+    rt: tokio::runtime::Handle,
 ) {
     rt.spawn(async move {
         let (regions_res, languages_res) =
@@ -1685,14 +1840,17 @@ pub(crate) fn spawn_seerr_settings_fetch(
 // silently skip this for the common already-named case).
 pub(crate) fn spawn_jellyfin_admin_check(
     client: Arc<JellyfinClient>,
-    state:  Arc<Mutex<FjordState>>,
-    ww:     slint::Weak<MainWindow>,
-    rt:     tokio::runtime::Handle,
+    state: Arc<Mutex<FjordState>>,
+    ww: slint::Weak<MainWindow>,
+    rt: tokio::runtime::Handle,
 ) {
     rt.spawn(async move {
         let is_admin = match client.get_user_info().await {
             Ok(info) => info.policy.is_administrator,
-            Err(e) => { warn!("get_user_info (server-admin check): {:#}", e); return; }
+            Err(e) => {
+                warn!("get_user_info (server-admin check): {:#}", e);
+                return;
+            }
         };
         // Re-check via session_current (Arc::ptr_eq), matching every other
         // async-result race in this file — NOT a string comparison against
@@ -1703,7 +1861,9 @@ pub(crate) fn spawn_jellyfin_admin_check(
         // wrongly passed that check and overwritten this session's own
         // jellyfin_is_server_admin with a result computed for a client
         // that's no longer live.
-        if !session_current(&state, &client) { return; }
+        if !session_current(&state, &client) {
+            return;
+        }
         let mut s = state.lock().unwrap();
         s.jellyfin_is_server_admin = is_admin;
         drop(s);
@@ -1723,10 +1883,10 @@ pub(crate) fn spawn_jellyfin_admin_check(
 // operation (nothing distinguished "stale but fine" from "can't reach the
 // server at all").
 fn push_cached_data(
-    window:        &MainWindow,
-    client:        &Arc<JellyfinClient>,
-    state:         &Arc<Mutex<FjordState>>,
-    rt_handle:     &tokio::runtime::Handle,
+    window: &MainWindow,
+    client: &Arc<JellyfinClient>,
+    state: &Arc<Mutex<FjordState>>,
+    rt_handle: &tokio::runtime::Handle,
     screen_caches: Option<ScreenCachesFile>,
 ) {
     let watchlist = state.lock().unwrap().jellyfin_watchlist_ids.clone();
@@ -1738,11 +1898,22 @@ fn push_cached_data(
     if let Some(cached_home) = load_home_cache(&user_id) {
         push_home_data(window, &cached_home, &watchlist);
         let sections = home_data_sections(&cached_home);
-        spawn_poster_loading(Arc::clone(client), sections, window.as_weak(), rt_handle.clone(), Arc::clone(state));
+        spawn_poster_loading(
+            Arc::clone(client),
+            sections,
+            window.as_weak(),
+            rt_handle.clone(),
+            Arc::clone(state),
+        );
     }
     if let Some(cached_movies) = load_movies_cache(&user_id) {
         let model = items_to_model(&cached_movies, &watchlist);
-        spawn_movies_poster_loading(Arc::clone(client), cached_movies.clone(), window.as_weak(), rt_handle.clone());
+        spawn_movies_poster_loading(
+            Arc::clone(client),
+            cached_movies.clone(),
+            window.as_weak(),
+            rt_handle.clone(),
+        );
         // Display-only: do NOT set movies_fetched — the first grid open this
         // session must still do its network refresh (cache-staleness fix S1).
         state.lock().unwrap().all_movies = cached_movies;
@@ -1750,30 +1921,56 @@ fn push_cached_data(
     }
     if let Some(cached_series) = load_series_cache(&user_id) {
         AppState::get(window).set_all_series(items_to_model(&cached_series, &watchlist));
-        spawn_series_poster_loading(Arc::clone(client), cached_series.clone(), window.as_weak(), rt_handle.clone(), Arc::clone(state));
+        spawn_series_poster_loading(
+            Arc::clone(client),
+            cached_series.clone(),
+            window.as_weak(),
+            rt_handle.clone(),
+            Arc::clone(state),
+        );
         state.lock().unwrap().all_series = cached_series;
     }
     if let Some(cached_cols) = load_collections_cache(&user_id) {
         let model = items_to_model(&cached_cols, &watchlist);
-        spawn_collections_poster_loading(Arc::clone(client), cached_cols.clone(), window.as_weak(), rt_handle.clone());
+        spawn_collections_poster_loading(
+            Arc::clone(client),
+            cached_cols.clone(),
+            window.as_weak(),
+            rt_handle.clone(),
+        );
         state.lock().unwrap().all_collections = cached_cols;
         AppState::get(window).set_all_collections(model);
     }
     if let Some(cached_artists) = load_artists_cache(&user_id) {
         let model = items_to_model(&cached_artists, &watchlist);
-        spawn_artists_poster_loading(Arc::clone(client), cached_artists.clone(), window.as_weak(), rt_handle.clone());
+        spawn_artists_poster_loading(
+            Arc::clone(client),
+            cached_artists.clone(),
+            window.as_weak(),
+            rt_handle.clone(),
+        );
         state.lock().unwrap().all_artists = cached_artists;
         AppState::get(window).set_all_artists(model);
     }
     if let Some(cached_albums) = load_albums_cache(&user_id) {
         let model = items_to_model(&cached_albums, &watchlist);
-        spawn_albums_poster_loading(Arc::clone(client), cached_albums.clone(), window.as_weak(), rt_handle.clone());
+        spawn_albums_poster_loading(
+            Arc::clone(client),
+            cached_albums.clone(),
+            window.as_weak(),
+            rt_handle.clone(),
+        );
         state.lock().unwrap().all_albums = cached_albums;
         AppState::get(window).set_all_albums(model);
     }
     if let Some(cached_playlists) = load_playlists_cache(&user_id) {
         let model = items_to_model(&cached_playlists, &watchlist);
-        spawn_playlists_poster_loading(Arc::clone(client), cached_playlists.clone(), window.as_weak(), rt_handle.clone());
+        spawn_playlists_poster_loading(
+            Arc::clone(client),
+            cached_playlists.clone(),
+            window.as_weak(),
+            rt_handle.clone(),
+        );
         state.lock().unwrap().all_playlists = cached_playlists;
         AppState::get(window).set_all_playlists(model);
     }
@@ -1789,13 +1986,13 @@ fn push_cached_data(
     // doing the blocking I/O here would stall rendering for its duration.
     if let Some(file) = screen_caches {
         let mut s = state.lock().unwrap();
-        s.item_detail_cache        = file.item_detail;
-        s.similar_items_cache      = file.similar_items;
-        s.boxset_items_cache       = file.boxset_items;
-        s.artist_albums_cache      = file.artist_albums;
+        s.item_detail_cache = file.item_detail;
+        s.similar_items_cache = file.similar_items;
+        s.boxset_items_cache = file.boxset_items;
+        s.artist_albums_cache = file.artist_albums;
         s.person_filmography_cache = file.person_filmography;
-        s.container_tracks_cache   = file.container_tracks;
-        s.person_tmdb_id_cache     = file.person_tmdb_id;
+        s.container_tracks_cache = file.container_tracks;
+        s.person_tmdb_id_cache = file.person_tmdb_id;
     }
     // Re-resolve the in-library watchlist star now that all_movies/all_series
     // have just been populated from disk cache (2026-07-20) — the very first
@@ -1841,15 +2038,21 @@ const AMBIENT_REFRESH_LIMIT: usize = 40;
 
 fn spawn_screen_cache_refresh(
     client: Arc<JellyfinClient>,
-    state:  Arc<Mutex<FjordState>>,
-    rt:     tokio::runtime::Handle,
+    state: Arc<Mutex<FjordState>>,
+    rt: tokio::runtime::Handle,
 ) {
     rt.spawn(async move {
-        let detail_keys = state.lock().unwrap().item_detail_cache.recent_keys(AMBIENT_REFRESH_LIMIT);
+        let detail_keys = state
+            .lock()
+            .unwrap()
+            .item_detail_cache
+            .recent_keys(AMBIENT_REFRESH_LIMIT);
         if !detail_keys.is_empty() {
             match client.get_items_by_ids_detailed(&detail_keys).await {
                 Ok(items) => {
-                    if !session_current(&state, &client) { return; }
+                    if !session_current(&state, &client) {
+                        return;
+                    }
                     let returned: std::collections::HashSet<String> =
                         items.iter().map(|i| i.id.clone()).collect();
                     let mut s = state.lock().unwrap();
@@ -1857,9 +2060,14 @@ fn spawn_screen_cache_refresh(
                         s.item_detail_cache.insert(item.id.clone(), item);
                     }
                     for key in &detail_keys {
-                        if !returned.contains(key) { s.item_detail_cache.remove(key); }
+                        if !returned.contains(key) {
+                            s.item_detail_cache.remove(key);
+                        }
                     }
-                    debug!("screen cache refresh: item_detail_cache ({} keys)", detail_keys.len());
+                    debug!(
+                        "screen cache refresh: item_detail_cache ({} keys)",
+                        detail_keys.len()
+                    );
                 }
                 Err(e) => warn!("screen cache refresh: get_items_by_ids_detailed: {:#}", e),
             }
@@ -1868,65 +2076,148 @@ fn spawn_screen_cache_refresh(
         let sem = Arc::new(tokio::sync::Semaphore::new(2));
         let mut set = tokio::task::JoinSet::new();
 
-        for key in state.lock().unwrap().similar_items_cache.recent_keys(AMBIENT_REFRESH_LIMIT) {
+        for key in state
+            .lock()
+            .unwrap()
+            .similar_items_cache
+            .recent_keys(AMBIENT_REFRESH_LIMIT)
+        {
             let (client, state, sem) = (client.clone(), Arc::clone(&state), Arc::clone(&sem));
             set.spawn(async move {
                 let _permit = sem.acquire_owned().await.ok();
-                if !session_current(&state, &client) { return; }
+                if !session_current(&state, &client) {
+                    return;
+                }
                 match client.get_similar_items(&key).await {
-                    Ok(v)  => { if session_current(&state, &client) { state.lock().unwrap().similar_items_cache.insert(key, v); } }
-                    Err(e) => if is_not_found(&e) { state.lock().unwrap().similar_items_cache.remove(&key); }
+                    Ok(v) => {
+                        if session_current(&state, &client) {
+                            state.lock().unwrap().similar_items_cache.insert(key, v);
+                        }
+                    }
+                    Err(e) => {
+                        if is_not_found(&e) {
+                            state.lock().unwrap().similar_items_cache.remove(&key);
+                        }
+                    }
                 }
             });
         }
-        for key in state.lock().unwrap().boxset_items_cache.recent_keys(AMBIENT_REFRESH_LIMIT) {
+        for key in state
+            .lock()
+            .unwrap()
+            .boxset_items_cache
+            .recent_keys(AMBIENT_REFRESH_LIMIT)
+        {
             let (client, state, sem) = (client.clone(), Arc::clone(&state), Arc::clone(&sem));
             set.spawn(async move {
                 let _permit = sem.acquire_owned().await.ok();
-                if !session_current(&state, &client) { return; }
+                if !session_current(&state, &client) {
+                    return;
+                }
                 match client.get_boxset_items(&key).await {
-                    Ok(v)  => { if session_current(&state, &client) { state.lock().unwrap().boxset_items_cache.insert(key, v); } }
-                    Err(e) => if is_not_found(&e) { state.lock().unwrap().boxset_items_cache.remove(&key); }
+                    Ok(v) => {
+                        if session_current(&state, &client) {
+                            state.lock().unwrap().boxset_items_cache.insert(key, v);
+                        }
+                    }
+                    Err(e) => {
+                        if is_not_found(&e) {
+                            state.lock().unwrap().boxset_items_cache.remove(&key);
+                        }
+                    }
                 }
             });
         }
-        for key in state.lock().unwrap().artist_albums_cache.recent_keys(AMBIENT_REFRESH_LIMIT) {
+        for key in state
+            .lock()
+            .unwrap()
+            .artist_albums_cache
+            .recent_keys(AMBIENT_REFRESH_LIMIT)
+        {
             let (client, state, sem) = (client.clone(), Arc::clone(&state), Arc::clone(&sem));
             set.spawn(async move {
                 let _permit = sem.acquire_owned().await.ok();
-                if !session_current(&state, &client) { return; }
+                if !session_current(&state, &client) {
+                    return;
+                }
                 match client.get_artist_albums(&key).await {
-                    Ok(v)  => { if session_current(&state, &client) { state.lock().unwrap().artist_albums_cache.insert(key, v); } }
-                    Err(e) => if is_not_found(&e) { state.lock().unwrap().artist_albums_cache.remove(&key); }
+                    Ok(v) => {
+                        if session_current(&state, &client) {
+                            state.lock().unwrap().artist_albums_cache.insert(key, v);
+                        }
+                    }
+                    Err(e) => {
+                        if is_not_found(&e) {
+                            state.lock().unwrap().artist_albums_cache.remove(&key);
+                        }
+                    }
                 }
             });
         }
-        for key in state.lock().unwrap().person_filmography_cache.recent_keys(AMBIENT_REFRESH_LIMIT) {
+        for key in state
+            .lock()
+            .unwrap()
+            .person_filmography_cache
+            .recent_keys(AMBIENT_REFRESH_LIMIT)
+        {
             let (client, state, sem) = (client.clone(), Arc::clone(&state), Arc::clone(&sem));
             set.spawn(async move {
                 let _permit = sem.acquire_owned().await.ok();
-                if !session_current(&state, &client) { return; }
+                if !session_current(&state, &client) {
+                    return;
+                }
                 match client.get_person_filmography(&key).await {
-                    Ok(v)  => { if session_current(&state, &client) { state.lock().unwrap().person_filmography_cache.insert(key, v); } }
-                    Err(e) => if is_not_found(&e) { state.lock().unwrap().person_filmography_cache.remove(&key); }
+                    Ok(v) => {
+                        if session_current(&state, &client) {
+                            state
+                                .lock()
+                                .unwrap()
+                                .person_filmography_cache
+                                .insert(key, v);
+                        }
+                    }
+                    Err(e) => {
+                        if is_not_found(&e) {
+                            state.lock().unwrap().person_filmography_cache.remove(&key);
+                        }
+                    }
                 }
             });
         }
-        for key in state.lock().unwrap().container_tracks_cache.recent_keys(AMBIENT_REFRESH_LIMIT) {
+        for key in state
+            .lock()
+            .unwrap()
+            .container_tracks_cache
+            .recent_keys(AMBIENT_REFRESH_LIMIT)
+        {
             let (client, state, sem) = (client.clone(), Arc::clone(&state), Arc::clone(&sem));
             set.spawn(async move {
                 let _permit = sem.acquire_owned().await.ok();
-                if !session_current(&state, &client) { return; }
+                if !session_current(&state, &client) {
+                    return;
+                }
                 // container_tracks_cache holds both album and playlist ids with no
                 // stored type marker; get_album_tracks is a ParentId-filtered query
                 // so a playlist id just yields an empty (not error) result — try
                 // that first, fall back to get_playlist_items on empty.
                 match client.get_album_tracks(&key).await {
-                    Ok(v) if !v.is_empty() => { if session_current(&state, &client) { state.lock().unwrap().container_tracks_cache.insert(key, v); } }
-                    _ => match client.get_playlist_items(&key).await {
-                        Ok(v)  => { if session_current(&state, &client) { state.lock().unwrap().container_tracks_cache.insert(key, v); } }
-                        Err(e) => if is_not_found(&e) { state.lock().unwrap().container_tracks_cache.remove(&key); }
+                    Ok(v) if !v.is_empty() => {
+                        if session_current(&state, &client) {
+                            state.lock().unwrap().container_tracks_cache.insert(key, v);
+                        }
                     }
+                    _ => match client.get_playlist_items(&key).await {
+                        Ok(v) => {
+                            if session_current(&state, &client) {
+                                state.lock().unwrap().container_tracks_cache.insert(key, v);
+                            }
+                        }
+                        Err(e) => {
+                            if is_not_found(&e) {
+                                state.lock().unwrap().container_tracks_cache.remove(&key);
+                            }
+                        }
+                    },
                 }
             });
         }
@@ -1942,7 +2233,7 @@ fn spawn_screen_cache_refresh(
 /// small and the write is cheap, so there's no real cost to a periodic write
 /// that happened to find nothing new since the last one.
 fn wire_screen_cache_save_timer(
-    state:     Arc<Mutex<FjordState>>,
+    state: Arc<Mutex<FjordState>>,
     rt_handle: tokio::runtime::Handle,
 ) -> slint::Timer {
     let timer = slint::Timer::default();
@@ -1956,36 +2247,45 @@ fn wire_screen_cache_save_timer(
     // `Arc::make_mut`-based copy-on-write (see its own doc comment), so the
     // clone this timer triggers is O(1) in the common case — no reason left
     // to save less often than before.
-    timer.start(slint::TimerMode::Repeated, std::time::Duration::from_secs(60), move || {
-        let state2 = Arc::clone(&state);
-        rt_handle.spawn(async move {
-            // Read live at save time, unlike the fetch-tied call sites
-            // elsewhere in this file — a periodic flush of whatever's
-            // currently in FjordState has no async gap between "whose data
-            // is this" and "whose file do I write it to": both come from
-            // the same instant, inside save_screen_caches's own lock.
-            //
-            // Real bug, code-review 2026-08-16: this used to read
-            // `config.active().user_id`, which can genuinely diverge from
-            // what's actually loaded in FjordState — `Config::active()`
-            // falls back to `profiles.first()` whenever `active_profile_id`
-            // doesn't match any entry (exactly what sign-out does: it
-            // clears active_profile_id, so if another account remains
-            // known, this resolved to THAT unrelated account and wrote the
-            // just-cleared caches into ITS screen_caches.json). Using the
-            // live client's own user_id instead ties the save to the
-            // session that's actually loaded — None (skip entirely) when
-            // signed out or before any login completes, and correctly the
-            // just-switched-to profile mid-switch, matching every other
-            // fetch-tied call site in this file, which already keys off
-            // `client.user_id` rather than `config.active()` for the exact
-            // same reason.
-            let user_id = state2.lock().unwrap().client.as_ref().map(|c| c.user_id.clone());
-            if let Some(user_id) = user_id {
-                save_screen_caches(&state2, &user_id);
-            }
-        });
-    });
+    timer.start(
+        slint::TimerMode::Repeated,
+        std::time::Duration::from_secs(60),
+        move || {
+            let state2 = Arc::clone(&state);
+            rt_handle.spawn(async move {
+                // Read live at save time, unlike the fetch-tied call sites
+                // elsewhere in this file — a periodic flush of whatever's
+                // currently in FjordState has no async gap between "whose data
+                // is this" and "whose file do I write it to": both come from
+                // the same instant, inside save_screen_caches's own lock.
+                //
+                // Real bug, code-review 2026-08-16: this used to read
+                // `config.active().user_id`, which can genuinely diverge from
+                // what's actually loaded in FjordState — `Config::active()`
+                // falls back to `profiles.first()` whenever `active_profile_id`
+                // doesn't match any entry (exactly what sign-out does: it
+                // clears active_profile_id, so if another account remains
+                // known, this resolved to THAT unrelated account and wrote the
+                // just-cleared caches into ITS screen_caches.json). Using the
+                // live client's own user_id instead ties the save to the
+                // session that's actually loaded — None (skip entirely) when
+                // signed out or before any login completes, and correctly the
+                // just-switched-to profile mid-switch, matching every other
+                // fetch-tied call site in this file, which already keys off
+                // `client.user_id` rather than `config.active()` for the exact
+                // same reason.
+                let user_id = state2
+                    .lock()
+                    .unwrap()
+                    .client
+                    .as_ref()
+                    .map(|c| c.user_id.clone());
+                if let Some(user_id) = user_id {
+                    save_screen_caches(&state2, &user_id);
+                }
+            });
+        },
+    );
     timer
 }
 
@@ -1995,26 +2295,32 @@ fn wire_screen_cache_save_timer(
 /// otherwise need an invoke_from_event_loop call per item processed.
 fn wire_prewarm_progress_timer(
     window_weak: slint::Weak<MainWindow>,
-    state:       Arc<Mutex<FjordState>>,
+    state: Arc<Mutex<FjordState>>,
 ) -> slint::Timer {
     let timer = slint::Timer::default();
-    timer.start(slint::TimerMode::Repeated, std::time::Duration::from_secs(1), move || {
-        let Some(w) = window_weak.upgrade() else { return };
-        let s = state.lock().unwrap();
-        let g = AppState::get(&w);
-        g.set_prewarm_metadata_running(s.prewarm_metadata_running);
-        g.set_prewarm_metadata_total(s.prewarm_metadata_total as i32);
-        g.set_prewarm_metadata_done(s.prewarm_metadata_done as i32);
-        if !s.prewarm_metadata_summary.is_empty() {
-            g.set_prewarm_metadata_summary(ss(&s.prewarm_metadata_summary));
-        }
-        g.set_prewarm_image_running(s.prewarm_image_running);
-        g.set_prewarm_image_total(s.prewarm_image_total as i32);
-        g.set_prewarm_image_done(s.prewarm_image_done as i32);
-        if !s.prewarm_image_summary.is_empty() {
-            g.set_prewarm_image_summary(ss(&s.prewarm_image_summary));
-        }
-    });
+    timer.start(
+        slint::TimerMode::Repeated,
+        std::time::Duration::from_secs(1),
+        move || {
+            let Some(w) = window_weak.upgrade() else {
+                return;
+            };
+            let s = state.lock().unwrap();
+            let g = AppState::get(&w);
+            g.set_prewarm_metadata_running(s.prewarm_metadata_running);
+            g.set_prewarm_metadata_total(s.prewarm_metadata_total as i32);
+            g.set_prewarm_metadata_done(s.prewarm_metadata_done as i32);
+            if !s.prewarm_metadata_summary.is_empty() {
+                g.set_prewarm_metadata_summary(ss(&s.prewarm_metadata_summary));
+            }
+            g.set_prewarm_image_running(s.prewarm_image_running);
+            g.set_prewarm_image_total(s.prewarm_image_total as i32);
+            g.set_prewarm_image_done(s.prewarm_image_done as i32);
+            if !s.prewarm_image_summary.is_empty() {
+                g.set_prewarm_image_summary(ss(&s.prewarm_image_summary));
+            }
+        },
+    );
     timer
 }
 
@@ -2024,10 +2330,10 @@ fn wire_prewarm_progress_timer(
 /// tell if the session is still valid). Re-invoked by the Retry button on
 /// OfflineScreen with fresh clones, so this must not assume it only runs once.
 fn spawn_auto_login(
-    client:      Arc<JellyfinClient>,
-    state:       Arc<Mutex<FjordState>>,
+    client: Arc<JellyfinClient>,
+    state: Arc<Mutex<FjordState>>,
     window_weak: slint::Weak<MainWindow>,
-    rt_handle:   tokio::runtime::Handle,
+    rt_handle: tokio::runtime::Handle,
 ) {
     let rt_handle2 = rt_handle.clone();
     rt_handle.spawn(async move {
@@ -2072,14 +2378,22 @@ fn spawn_auto_login(
         // all, so it never sees a real name unless fetched explicitly here.
         // Best-effort, only when actually needed (skips the extra request
         // for the overwhelmingly common already-named case).
-        let needs_name = state.lock().unwrap().config.active().display_name.is_empty();
+        let needs_name = state
+            .lock()
+            .unwrap()
+            .config
+            .active()
+            .display_name
+            .is_empty();
         if needs_name {
             match client.get_user_info().await {
                 Ok(info) if !info.name.is_empty() => {
                     let mut s = state.lock().unwrap();
                     // Re-check under the lock — a picker-driven switch could have
                     // changed the active profile while this request was in flight.
-                    if s.config.active_profile_id == client.user_id && s.config.active().display_name.is_empty() {
+                    if s.config.active_profile_id == client.user_id
+                        && s.config.active().display_name.is_empty()
+                    {
                         s.config.active_mut().display_name = info.name;
                         let cfg_snapshot = s.config.clone();
                         drop(s);
@@ -2104,11 +2418,14 @@ fn spawn_auto_login(
         // the very first post-upgrade launch gets its instant warm start for
         // ALL eight files, not seven of eight.
         crate::config::migrate_flat_caches_to_profile(&user_id_sc);
-        let screen_caches = tokio::task::spawn_blocking(move || load_screen_caches(&user_id_sc)).await.ok().flatten();
-        let ww_cache     = window_weak.clone();
+        let screen_caches = tokio::task::spawn_blocking(move || load_screen_caches(&user_id_sc))
+            .await
+            .ok()
+            .flatten();
+        let ww_cache = window_weak.clone();
         let client_cache = Arc::clone(&client);
-        let state_cache  = Arc::clone(&state);
-        let rt_cache     = rt_handle2.clone();
+        let state_cache = Arc::clone(&state);
+        let rt_cache = rt_handle2.clone();
         let _ = slint::invoke_from_event_loop(move || {
             let Some(w) = ww_cache.upgrade() else { return };
             push_cached_data(&w, &client_cache, &state_cache, &rt_cache, screen_caches);
@@ -2155,14 +2472,25 @@ fn spawn_auto_login(
             return;
         }
 
-        let series = series_res.unwrap_or_else(|e| { warn!("get_all_series: {:#}", e); vec![] });
+        let series = series_res.unwrap_or_else(|e| {
+            warn!("get_all_series: {:#}", e);
+            vec![]
+        });
         info!("loaded {} series", series.len());
         let (srv_name, srv_ver) = sysinfo_res
             .map(|i| (i.server_name, i.version))
-            .unwrap_or_else(|e| { warn!("get_system_info: {:#}", e); (String::new(), String::new()) });
+            .unwrap_or_else(|e| {
+                warn!("get_system_info: {:#}", e);
+                (String::new(), String::new())
+            });
         let plugins: std::collections::HashSet<String> = plugins_res
-            .unwrap_or_else(|e| { warn!("get_plugins: {:#}", e); vec![] })
-            .into_iter().map(|p| p.name).collect();
+            .unwrap_or_else(|e| {
+                warn!("get_plugins: {:#}", e);
+                vec![]
+            })
+            .into_iter()
+            .map(|p| p.name)
+            .collect();
         {
             let mut s = state.lock().unwrap();
             s.all_series = series.clone();
@@ -2184,7 +2512,12 @@ fn spawn_auto_login(
         // already makes — get_plugins()/bonfire_list_profiles() both degrade
         // gracefully when the plugin isn't installed, so this costs nothing
         // extra for the overwhelming majority of servers that don't have it.
-        crate::profile::sync_bonfire_subprofiles(Arc::clone(&client), Arc::clone(&state), rt_handle2.clone(), window_weak.clone());
+        crate::profile::sync_bonfire_subprofiles(
+            Arc::clone(&client),
+            Arc::clone(&state),
+            rt_handle2.clone(),
+            window_weak.clone(),
+        );
         // Bonfire Phase 6 (2026-09-04) — same "must run on every session-
         // establishment path, not just when something else happens to need
         // it" reasoning as the sync_bonfire_subprofiles fix directly above:
@@ -2193,7 +2526,12 @@ fn spawn_auto_login(
         // launches) would otherwise leave it stuck at its default `false`
         // for the whole session, hiding the Bonfire Admin Settings row even
         // for a genuine server admin, on every launch after the first.
-        crate::spawn_jellyfin_admin_check(Arc::clone(&client), Arc::clone(&state), window_weak.clone(), rt_handle2.clone());
+        crate::spawn_jellyfin_admin_check(
+            Arc::clone(&client),
+            Arc::clone(&state),
+            window_weak.clone(),
+            rt_handle2.clone(),
+        );
         // Re-resolve the in-library watchlist star now that all_series holds
         // the fresh (not just cached) post-login list (2026-07-20) — one more
         // trigger point alongside push_cached_data's own, for the same
@@ -2209,7 +2547,7 @@ fn spawn_auto_login(
         save_home_cache(&client.user_id, &home_data);
         save_series_cache(&client.user_id, &series);
         let sections = home_data_sections(&home_data);
-        let series2  = series.clone();
+        let series2 = series.clone();
         let ww2 = window_weak.clone();
         let ww3 = window_weak.clone();
         let _ = slint::invoke_from_event_loop(move || {
@@ -2221,7 +2559,10 @@ fn spawn_auto_login(
                 // across this unconditional startup refresh instead of flashing every
                 // row blank — same rationale as ws.rs's delta-sync task (Phase 91/92).
                 push_home_data_preserving_posters(&w, &home_data);
-                g.set_all_series(refresh_row_preserving_posters(&g.get_all_series(), &series2));
+                g.set_all_series(refresh_row_preserving_posters(
+                    &g.get_all_series(),
+                    &series2,
+                ));
                 g.set_status(ss(""));
                 w.invoke_grab_keyboard_focus();
             }
@@ -2230,13 +2571,18 @@ fn spawn_auto_login(
         let client3 = Arc::clone(&client);
         let client4 = Arc::clone(&client);
         let client5 = Arc::clone(&client);
-        let state3  = Arc::clone(&state);
-        let state4  = Arc::clone(&state);
-        let state5  = Arc::clone(&state);
-        let state6  = Arc::clone(&state);
-        let state7  = Arc::clone(&state);
-        let state8  = Arc::clone(&state);
-        let ws_abort = ws::start_websocket(client4, Arc::clone(&state4), window_weak.clone(), rt_handle2.clone());
+        let state3 = Arc::clone(&state);
+        let state4 = Arc::clone(&state);
+        let state5 = Arc::clone(&state);
+        let state6 = Arc::clone(&state);
+        let state7 = Arc::clone(&state);
+        let state8 = Arc::clone(&state);
+        let ws_abort = ws::start_websocket(
+            client4,
+            Arc::clone(&state4),
+            window_weak.clone(),
+            rt_handle2.clone(),
+        );
         state4.lock().unwrap().ws_abort = Some(ws_abort);
         spawn_poster_loading(client, sections, window_weak, rt_handle2.clone(), state7);
         spawn_series_poster_loading(client2, series, ww3, rt_handle2.clone(), state8);
@@ -2245,12 +2591,20 @@ fn spawn_auto_login(
             state3.lock().unwrap().movie_collections = map;
         });
         rt_handle2.spawn(async move {
-            let (movie_ids, series_ids, collection_ids, artist_ids, album_ids, playlist_ids, detail_ids) = {
+            let (
+                movie_ids,
+                series_ids,
+                collection_ids,
+                artist_ids,
+                album_ids,
+                playlist_ids,
+                detail_ids,
+            ) = {
                 let s = state5.lock().unwrap();
-                let m  = s.all_movies.iter().map(|i| i.id.clone()).collect();
+                let m = s.all_movies.iter().map(|i| i.id.clone()).collect();
                 let se = s.all_series.iter().map(|i| i.id.clone()).collect();
-                let c  = s.all_collections.iter().map(|i| i.id.clone()).collect();
-                let a  = s.all_artists.iter().map(|i| i.id.clone()).collect();
+                let c = s.all_collections.iter().map(|i| i.id.clone()).collect();
+                let a = s.all_artists.iter().map(|i| i.id.clone()).collect();
                 let al = s.all_albums.iter().map(|i| i.id.clone()).collect();
                 let pl = s.all_playlists.iter().map(|i| i.id.clone()).collect();
                 // Cast-member portraits are cached in posters/ under PERSON ids,
@@ -2263,13 +2617,24 @@ fn spawn_auto_login(
                 let mut det: Vec<String> = Vec::new();
                 for (k, item) in s.item_detail_cache.iter() {
                     for p in &item.people {
-                        if !p.id.is_empty() { det.push(p.id.clone()); }
+                        if !p.id.is_empty() {
+                            det.push(p.id.clone());
+                        }
                     }
                     det.push(k.to_string());
                 }
                 (m, se, c, a, al, pl, det)
             };
-            run_poster_cache_cleanup(movie_ids, series_ids, collection_ids, artist_ids, album_ids, playlist_ids, detail_ids).await;
+            run_poster_cache_cleanup(
+                movie_ids,
+                series_ids,
+                collection_ids,
+                artist_ids,
+                album_ids,
+                playlist_ids,
+                detail_ids,
+            )
+            .await;
         });
         spawn_screen_cache_refresh(client5, state6, rt_handle2.clone());
     });
@@ -2287,7 +2652,11 @@ fn spawn_auto_login(
 struct LocalTimer;
 impl tracing_subscriber::fmt::time::FormatTime for LocalTimer {
     fn format_time(&self, w: &mut tracing_subscriber::fmt::format::Writer<'_>) -> std::fmt::Result {
-        write!(w, "{}", chrono::Local::now().format("%Y-%m-%dT%H:%M:%S%.6f%:z"))
+        write!(
+            w,
+            "{}",
+            chrono::Local::now().format("%Y-%m-%dT%H:%M:%S%.6f%:z")
+        )
     }
 }
 
@@ -2331,10 +2700,10 @@ pub(crate) fn close_login_screen(g: &AppState) {
 //   profile's Detail/Series/etc. page over the incoming one), but the
 //   final destination is each caller's own business.
 pub(crate) fn reset_session_state(
-    video:       &Arc<Mutex<VideoState>>,
+    video: &Arc<Mutex<VideoState>>,
     window_weak: &slint::Weak<MainWindow>,
-    rt_handle:   &tokio::runtime::Handle,
-    state:       &Arc<Mutex<FjordState>>,
+    rt_handle: &tokio::runtime::Handle,
+    state: &Arc<Mutex<FjordState>>,
 ) {
     // The queue belongs to the session: clear it BEFORE the stop so
     // do_stop_playback's own push_queue_display publishes the empty state.
@@ -2350,7 +2719,9 @@ pub(crate) fn reset_session_state(
     do_stop_playback(video, window_weak, rt_handle, state);
 
     let mut s = state.lock().unwrap();
-    if let Some(abort) = s.ws_abort.take() { abort.abort(); }
+    if let Some(abort) = s.ws_abort.take() {
+        abort.abort();
+    }
     s.client = None;
     s.seerr_client = None;
     s.discover_landing_fetched = false;
@@ -2387,11 +2758,11 @@ pub(crate) fn reset_session_state(
     s.movies_fetched = false;
     s.collections_fetched = false;
     s.artists_fetched = false;
-    s.albums_fetched  = false;
+    s.albums_fetched = false;
     s.playlists_fetched = false;
     s.browse_populated = false;
     s.last_nw_mov_refresh = None;
-    s.last_nw_tv_refresh  = None;
+    s.last_nw_tv_refresh = None;
     // Screen-open caches (Phase 102/103) hold per-user UserData
     // (played/favorite) keyed only by item id, with no user/server
     // scoping — a second account signing in on the same install would
@@ -2470,7 +2841,9 @@ pub(crate) fn reset_session_state(
     let video2 = Arc::clone(video);
     let window_weak2 = window_weak.clone();
     let _ = slint::invoke_from_event_loop(move || {
-        let Some(w) = window_weak2.upgrade() else { return };
+        let Some(w) = window_weak2.upgrade() else {
+            return;
+        };
         let g = AppState::get(&w);
         g.set_show_browse(false);
         g.set_show_library(false);
@@ -2663,8 +3036,13 @@ pub(crate) fn reset_session_state(
         g.set_show_bonfire_admin_reset_confirm(false);
         g.set_bonfire_admin_reset_confirm_target(ss(""));
         g.set_bonfire_admin_error(ss(""));
-        g.set_bonfire_admin_rows(slint::ModelRc::new(slint::VecModel::from(Vec::<BonfireAdminRow>::new())));
-        g.set_bonfire_admin_audit_rows(slint::ModelRc::new(slint::VecModel::from(Vec::<BonfireAuditRow>::new())));
+        g.set_bonfire_admin_rows(slint::ModelRc::new(slint::VecModel::from(Vec::<
+            BonfireAdminRow,
+        >::new())));
+        g.set_bonfire_admin_audit_rows(slint::ModelRc::new(slint::VecModel::from(Vec::<
+            BonfireAuditRow,
+        >::new(
+        ))));
         g.set_jellyfin_is_server_admin(false);
         // Remember-login confirm modal (2026-08-17) — same reasoning: a
         // switch/sign-out mid-confirm shouldn't leave it open against a
@@ -2802,7 +3180,12 @@ fn restrict_log_permissions(log_dir: &std::path::Path, keep: usize) -> Vec<Strin
         let mut errors: Vec<String> = Vec::new();
         errors.extend(set(log_dir, 0o700));
         let current = log_dir.join("fjord.log");
-        if let Err(e) = std::fs::OpenOptions::new().create(true).append(true).mode(0o600).open(&current) {
+        if let Err(e) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .mode(0o600)
+            .open(&current)
+        {
             errors.push(format!("{}: {e}", current.display()));
         }
         errors.extend(set(&current, 0o600));
@@ -2910,32 +3293,54 @@ fn main() -> Result<()> {
     let log_path = log_dir.join("fjord.log");
     let file_appender = tracing_appender::rolling::never(&log_dir, "fjord.log");
     let (file_writer, _guard) = tracing_appender::non_blocking(file_appender);
-    use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Layer};
+    use tracing_subscriber::{EnvFilter, Layer, layer::SubscriberExt, util::SubscriberInitExt};
     // User's Settings→General log-level choice (default "info"), read directly from
     // disk before the subscriber exists — the full config load happens later once
     // `state`/`window` exist, this is just a cheap early peek. Applies on next
     // launch, not live. RUST_LOG still wins over this when set (dev override) —
     // the file used to grow without bound before Phase 62's per-launch rotation,
     // so a debug-level file is now bounded to one session's worth.
-    let user_level = load_config().map(|c| c.device.log_level).unwrap_or_default();
+    let user_level = load_config()
+        .map(|c| c.device.log_level)
+        .unwrap_or_default();
     let level_str = match user_level.as_str() {
         "error" | "warn" | "debug" => user_level.as_str(),
         _ => "info",
     };
     let console_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
-        EnvFilter::new(format!("warn,fjord_app={level_str},fjord_player={level_str},fjord_api={level_str}"))
+        EnvFilter::new(format!(
+            "warn,fjord_app={level_str},fjord_player={level_str},fjord_api={level_str}"
+        ))
     });
     let file_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
-        EnvFilter::new(format!("warn,fjord_app={level_str},fjord_player={level_str},fjord_api={level_str}"))
+        EnvFilter::new(format!(
+            "warn,fjord_app={level_str},fjord_player={level_str},fjord_api={level_str}"
+        ))
     });
     tracing_subscriber::registry()
-        .with(tracing_subscriber::fmt::layer().with_timer(LocalTimer).with_filter(console_filter))
-        .with(tracing_subscriber::fmt::layer().with_timer(LocalTimer).with_writer(file_writer).with_filter(file_filter))
+        .with(
+            tracing_subscriber::fmt::layer()
+                .with_timer(LocalTimer)
+                .with_filter(console_filter),
+        )
+        .with(
+            tracing_subscriber::fmt::layer()
+                .with_timer(LocalTimer)
+                .with_writer(file_writer)
+                .with_filter(file_filter),
+        )
         .init();
     info!("log file: {}", log_path.display());
-    info!("fjord version: {} ({})", env!("CARGO_PKG_VERSION"), env!("FJORD_BUILD_ID"));
+    info!(
+        "fjord version: {} ({})",
+        env!("CARGO_PKG_VERSION"),
+        env!("FJORD_BUILD_ID")
+    );
     if !log_permission_errors.is_empty() {
-        warn!("log permissions not tightened: {}", log_permission_errors.join("; "));
+        warn!(
+            "log permissions not tightened: {}",
+            log_permission_errors.join("; ")
+        );
     }
 
     // Panic hook — writes directly to the log file so Slint "Recursion detected"
@@ -2946,9 +3351,12 @@ fn main() -> Result<()> {
     // the log lines around it (two "Recursion detected" panics on the HTPC
     // had neither).
     std::panic::set_hook(Box::new(move |info| {
-        let bt  = std::backtrace::Backtrace::force_capture();
+        let bt = std::backtrace::Backtrace::force_capture();
         let when = chrono::Local::now().format("%Y-%m-%dT%H:%M:%S%.6f%:z");
-        let thread = std::thread::current().name().unwrap_or("unnamed").to_string();
+        let thread = std::thread::current()
+            .name()
+            .unwrap_or("unnamed")
+            .to_string();
         let msg = format!("{when} PANIC (thread {thread}): {info}\nBacktrace:\n{bt}\n");
         eprintln!("{msg}");
         let mut opts = std::fs::OpenOptions::new();
@@ -2988,7 +3396,9 @@ fn main() -> Result<()> {
         })
         .select()
     {
-        tracing::warn!("couldn't install global mouse-activity tap, falling back to default backend init: {e}");
+        tracing::warn!(
+            "couldn't install global mouse-activity tap, falling back to default backend init: {e}"
+        );
     }
 
     let window = MainWindow::new()?;
@@ -3027,8 +3437,8 @@ fn main() -> Result<()> {
         tracing::warn!("couldn't set Wayland/X11 app id: {e}");
     }
 
-    let state  = Arc::new(Mutex::new(FjordState::new()));
-    let video  = Arc::new(Mutex::new(VideoState::default()));
+    let state = Arc::new(Mutex::new(FjordState::new()));
+    let video = Arc::new(Mutex::new(VideoState::default()));
 
     // Fjord's own version — compile-time constants, no login/network round
     // trip needed, so this is set once here rather than alongside server-name/
@@ -3037,37 +3447,60 @@ fn main() -> Result<()> {
     // CHANGELOG.md release) for a human-readable sense of progress, plus
     // FJORD_BUILD_ID (build.rs, changes every commit) for exact-commit HTPC
     // log triage — see Cargo.toml's version comment for the full reasoning.
-    AppState::get(&window)
-        .set_client_version(format!("{} ({})", env!("CARGO_PKG_VERSION"), env!("FJORD_BUILD_ID")).into());
+    AppState::get(&window).set_client_version(
+        format!("{} ({})", env!("CARGO_PKG_VERSION"), env!("FJORD_BUILD_ID")).into(),
+    );
 
     // Shared flag: show_controls() sets it lock-free; the mpv timer reads it
     // while already holding the video lock and resets controls_idle_ticks.
     // This avoids the UI thread blocking on the video mutex during mouse movement.
-    let controls_show  = Arc::new(AtomicBool::new(false));
-    let seek_suppress  = Arc::new(AtomicU32::new(0));
+    let controls_show = Arc::new(AtomicBool::new(false));
+    let seek_suppress = Arc::new(AtomicU32::new(0));
 
     wire_rendering_notifier(&window, Arc::clone(&video));
-    let mpv_timer = wire_mpv_timer(window.as_weak(), Arc::clone(&video), Arc::clone(&state), rt.handle().clone(), Arc::clone(&controls_show), Arc::clone(&seek_suppress));
+    let mpv_timer = wire_mpv_timer(
+        window.as_weak(),
+        Arc::clone(&video),
+        Arc::clone(&state),
+        rt.handle().clone(),
+        Arc::clone(&controls_show),
+        Arc::clone(&seek_suppress),
+    );
     std::mem::forget(mpv_timer);
 
-    let nw_timer = wire_nw_timer(window.as_weak(), Arc::clone(&video), Arc::clone(&state), rt.handle().clone());
+    let nw_timer = wire_nw_timer(
+        window.as_weak(),
+        Arc::clone(&video),
+        Arc::clone(&state),
+        rt.handle().clone(),
+    );
     std::mem::forget(nw_timer);
 
-    let screen_cache_save_timer = wire_screen_cache_save_timer(Arc::clone(&state), rt.handle().clone());
+    let screen_cache_save_timer =
+        wire_screen_cache_save_timer(Arc::clone(&state), rt.handle().clone());
     std::mem::forget(screen_cache_save_timer);
 
     let prewarm_progress_timer = wire_prewarm_progress_timer(window.as_weak(), Arc::clone(&state));
     std::mem::forget(prewarm_progress_timer);
 
     // Bonfire Phase 4 (inactivity auto-lock, 2026-08-29).
-    let idle_lock_timer = profile::wire_idle_lock_timer(window.as_weak(), Arc::clone(&state), Arc::clone(&video), rt.handle().clone(), activity_clock.clone());
+    let idle_lock_timer = profile::wire_idle_lock_timer(
+        window.as_weak(),
+        Arc::clone(&state),
+        Arc::clone(&video),
+        rt.handle().clone(),
+        activity_clock.clone(),
+    );
     std::mem::forget(idle_lock_timer);
 
     // ── random logo index — pick from available icons at startup ─────────────
     {
         use std::time::{SystemTime, UNIX_EPOCH};
         const LOGOS: [i32; 6] = [1, 2, 4, 5, 9, 10];
-        let n = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().subsec_nanos() as usize;
+        let n = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .subsec_nanos() as usize;
         AppState::get(&window).set_app_logo_idx(LOGOS[n % LOGOS.len()]);
     }
 
@@ -3081,9 +3514,11 @@ fn main() -> Result<()> {
         // switches back to a PipeWire device.
         if cfg.device.audio_spdif
             && cfg.device.alsa_irq_scheduling
-            && pipewire_fix::is_pipewire_device(
-                if cfg.device.audio_device_passthrough.is_empty() { &cfg.device.audio_device }
-                else { &cfg.device.audio_device_passthrough })
+            && pipewire_fix::is_pipewire_device(if cfg.device.audio_device_passthrough.is_empty() {
+                &cfg.device.audio_device
+            } else {
+                &cfg.device.audio_device_passthrough
+            })
             && !pipewire_fix::wireplumber_config_exists()
         {
             cfg.device.alsa_irq_scheduling = false;
@@ -3098,9 +3533,18 @@ fn main() -> Result<()> {
             let s = state.lock().unwrap();
             if let Some(client) = s.seerr_client.clone() {
                 if let Ok(base_url) = Url::parse(&s.config.active().seerr_url) {
-                    seerr_auth::spawn_refresh_seerr_version(base_url, window.as_weak(), rt.handle());
+                    seerr_auth::spawn_refresh_seerr_version(
+                        base_url,
+                        window.as_weak(),
+                        rt.handle(),
+                    );
                 }
-                spawn_seerr_settings_fetch(client, Arc::clone(&state), window.as_weak(), rt.handle().clone());
+                spawn_seerr_settings_fetch(
+                    client,
+                    Arc::clone(&state),
+                    window.as_weak(),
+                    rt.handle().clone(),
+                );
             }
         }
         // Also triggers the Home/Movies/TV dashboard Watchlist rows (2026-07-20)
@@ -3119,7 +3563,11 @@ fn main() -> Result<()> {
         // /proc/<pid>/wchan showing futex_do_wait on every launch attempt).
         // It has its own internal seerr_client presence check, so it doesn't
         // need to be nested inside the `if let Some(client) = ...` above.
-        discover::ensure_discover_watchlist(Arc::clone(&state), window.as_weak(), rt.handle().clone());
+        discover::ensure_discover_watchlist(
+            Arc::clone(&state),
+            window.as_weak(),
+            rt.handle().clone(),
+        );
         apply_settings_to_window(&window, &state.lock().unwrap());
 
         // Bonfire Phase 1, step 6 (2026-08-09): with 2+ known profiles, the
@@ -3153,116 +3601,141 @@ fn main() -> Result<()> {
         }
 
         match gate {
-        profile::StartupGate::ShowAccountPicker => {
-            profile::open_account_picker(&state, &window, false);
-            // Real bug, live-reported 2026-09-01 — see
-            // sync_all_known_accounts_in_background's own doc comment for
-            // the full story: a change made entirely outside Fjord (here,
-            // kicking an account via Jellyfin's own web UI) has no way to
-            // reach the cold-start picker before this call, since no
-            // authenticated session exists yet at this exact point. Fired
-            // AFTER the picker opens (matches the sidebar's own "Switch
-            // Profile"/"Switch Account" precedent) — instant open from
-            // cached data, self-corrects a moment later if anything changed.
-            profile::sync_all_known_accounts_in_background(&state, &window, rt.handle());
-        }
-        profile::StartupGate::ShowProfilePicker(account_root_id) => {
-            profile::open_profile_picker(&state, &window, false, false, &account_root_id);
-            profile::sync_all_known_accounts_in_background(&state, &window, rt.handle());
-        }
-        profile::StartupGate::ShowProfilePickerPin(account_root_id, target_user_id) => {
-            profile::open_profile_picker_with_pin(&state, &window, &account_root_id, &target_user_id);
-            profile::sync_all_known_accounts_in_background(&state, &window, rt.handle());
-        }
-        profile::StartupGate::RequireLogin(server_url, username) => {
-            let g = AppState::get(&window);
-            g.set_login_server_prefill(ss(&server_url));
-            g.set_login_username_prefill(ss(&username));
-            g.set_login_append_mode(false);
-            g.set_login_append_source(ss(""));
-            // login-remember reflects this account's own already-known
-            // false value (code review 2026-08-16, resolved via
-            // AskUserQuestion) — a plain re-login without touching the
-            // checkbox keeps remember_login=false, rather than silently
-            // flipping it back to the default true. Mirrors
-            // profile::require_login_for_account's identical fix for the
-            // mid-session (picker-driven) RequireLogin path.
-            g.set_login_remember(false);
-            g.set_show_login(true);
-            // Deferred (2026-08-15) — this arm runs synchronously, before
-            // window.run() has started the event loop, same as the picker
-            // arms right above it; see profile::grab_focus_deferred's own
-            // doc comment for the full reasoning.
-            profile::grab_focus_deferred(&window);
-        }
-        profile::StartupGate::AutoLogin => {
-            let s = state.lock().unwrap();
-            let server_url_str = s.config.active().server_url.clone();
-            let user_id        = s.config.active().user_id.clone();
-            let token          = s.config.active().token.clone();
-            let device_id      = s.config.device.device_id.clone();
-            drop(s);
+            profile::StartupGate::ShowAccountPicker => {
+                profile::open_account_picker(&state, &window, false);
+                // Real bug, live-reported 2026-09-01 — see
+                // sync_all_known_accounts_in_background's own doc comment for
+                // the full story: a change made entirely outside Fjord (here,
+                // kicking an account via Jellyfin's own web UI) has no way to
+                // reach the cold-start picker before this call, since no
+                // authenticated session exists yet at this exact point. Fired
+                // AFTER the picker opens (matches the sidebar's own "Switch
+                // Profile"/"Switch Account" precedent) — instant open from
+                // cached data, self-corrects a moment later if anything changed.
+                profile::sync_all_known_accounts_in_background(&state, &window, rt.handle());
+            }
+            profile::StartupGate::ShowProfilePicker(account_root_id) => {
+                profile::open_profile_picker(&state, &window, false, false, &account_root_id);
+                profile::sync_all_known_accounts_in_background(&state, &window, rt.handle());
+            }
+            profile::StartupGate::ShowProfilePickerPin(account_root_id, target_user_id) => {
+                profile::open_profile_picker_with_pin(
+                    &state,
+                    &window,
+                    &account_root_id,
+                    &target_user_id,
+                );
+                profile::sync_all_known_accounts_in_background(&state, &window, rt.handle());
+            }
+            profile::StartupGate::RequireLogin(server_url, username) => {
+                let g = AppState::get(&window);
+                g.set_login_server_prefill(ss(&server_url));
+                g.set_login_username_prefill(ss(&username));
+                g.set_login_append_mode(false);
+                g.set_login_append_source(ss(""));
+                // login-remember reflects this account's own already-known
+                // false value (code review 2026-08-16, resolved via
+                // AskUserQuestion) — a plain re-login without touching the
+                // checkbox keeps remember_login=false, rather than silently
+                // flipping it back to the default true. Mirrors
+                // profile::require_login_for_account's identical fix for the
+                // mid-session (picker-driven) RequireLogin path.
+                g.set_login_remember(false);
+                g.set_show_login(true);
+                // Deferred (2026-08-15) — this arm runs synchronously, before
+                // window.run() has started the event loop, same as the picker
+                // arms right above it; see profile::grab_focus_deferred's own
+                // doc comment for the full reasoning.
+                profile::grab_focus_deferred(&window);
+            }
+            profile::StartupGate::AutoLogin => {
+                let s = state.lock().unwrap();
+                let server_url_str = s.config.active().server_url.clone();
+                let user_id = s.config.active().user_id.clone();
+                let token = s.config.active().token.clone();
+                let device_id = s.config.device.device_id.clone();
+                drop(s);
 
-            if let Ok(server_url) = Url::parse(&server_url_str) {
-                let Ok(raw_client) = JellyfinClient::new(server_url.clone(), user_id, token, device_id)
-                    else { tracing::error!("failed to build HTTP client — skipping auto-login"); return Ok(()) };
-                let client = Arc::new(raw_client);
-                state.lock().unwrap().client = Some(Arc::clone(&client));
-                set_server_url_ui(&AppState::get(&window), &server_url_str);
+                if let Ok(server_url) = Url::parse(&server_url_str) {
+                    let Ok(raw_client) =
+                        JellyfinClient::new(server_url.clone(), user_id, token, device_id)
+                    else {
+                        tracing::error!("failed to build HTTP client — skipping auto-login");
+                        return Ok(());
+                    };
+                    let client = Arc::new(raw_client);
+                    state.lock().unwrap().client = Some(Arc::clone(&client));
+                    set_server_url_ui(&AppState::get(&window), &server_url_str);
 
-                // Startup connectivity gate: show a plain connecting state instead
-                // of pushing cached content until the saved session is confirmed
-                // reachable — a full outage should be visibly different from
-                // normal quiet operation, not hidden behind a stale dashboard.
-                // show-login must be explicitly cleared here too — it defaults to
-                // true, and keys.rs's handle_key checks it before show-connecting/
-                // show-offline, so leaving it at the default would silently eat
-                // every key on both new screens (only the 401 branch sets it back
-                // to true).
-                {
-                    let g = AppState::get(&window);
-                    g.set_show_login(false);
-                    g.set_show_connecting(true);
-                }
-
-                spawn_auto_login(Arc::clone(&client), Arc::clone(&state), window.as_weak(), rt.handle().clone());
-
-                let client_retry = Arc::clone(&client);
-                let state_retry  = Arc::clone(&state);
-                let ww_retry     = window.as_weak();
-                let rt_retry     = rt.handle().clone();
-                AppState::get(&window).on_retry_connection(move || {
-                    if let Some(w) = ww_retry.upgrade() {
-                        let g = AppState::get(&w);
-                        g.set_show_offline(false);
+                    // Startup connectivity gate: show a plain connecting state instead
+                    // of pushing cached content until the saved session is confirmed
+                    // reachable — a full outage should be visibly different from
+                    // normal quiet operation, not hidden behind a stale dashboard.
+                    // show-login must be explicitly cleared here too — it defaults to
+                    // true, and keys.rs's handle_key checks it before show-connecting/
+                    // show-offline, so leaving it at the default would silently eat
+                    // every key on both new screens (only the 401 branch sets it back
+                    // to true).
+                    {
+                        let g = AppState::get(&window);
                         g.set_show_login(false);
                         g.set_show_connecting(true);
                     }
-                    spawn_auto_login(Arc::clone(&client_retry), Arc::clone(&state_retry), ww_retry.clone(), rt_retry.clone());
-                });
+
+                    spawn_auto_login(
+                        Arc::clone(&client),
+                        Arc::clone(&state),
+                        window.as_weak(),
+                        rt.handle().clone(),
+                    );
+
+                    let client_retry = Arc::clone(&client);
+                    let state_retry = Arc::clone(&state);
+                    let ww_retry = window.as_weak();
+                    let rt_retry = rt.handle().clone();
+                    AppState::get(&window).on_retry_connection(move || {
+                        if let Some(w) = ww_retry.upgrade() {
+                            let g = AppState::get(&w);
+                            g.set_show_offline(false);
+                            g.set_show_login(false);
+                            g.set_show_connecting(true);
+                        }
+                        spawn_auto_login(
+                            Arc::clone(&client_retry),
+                            Arc::clone(&state_retry),
+                            ww_retry.clone(),
+                            rt_retry.clone(),
+                        );
+                    });
+                }
             }
-        }
         }
     }
 
     // ── login ─────────────────────────────────────────────────────────────────
     {
-        let state       = Arc::clone(&state);
+        let state = Arc::clone(&state);
         let window_weak = window.as_weak();
-        let rt_handle   = rt.handle().clone();
+        let rt_handle = rt.handle().clone();
         AppState::get(&window).on_do_login(move |server, user, pass, append, remember| {
-            auth::do_login(server.to_string(), user.to_string(), pass.to_string(),
-                           auth::LoginOptions { append, remember },
-                           Arc::clone(&state), window_weak.clone(), rt_handle.clone());
+            auth::do_login(
+                server.to_string(),
+                user.to_string(),
+                pass.to_string(),
+                auth::LoginOptions { append, remember },
+                Arc::clone(&state),
+                window_weak.clone(),
+                rt_handle.clone(),
+            );
         });
     }
 
     // ── profile picker (Bonfire Phase 1, step 6, 2026-08-09) ────────────────────
     {
-        let state       = Arc::clone(&state);
-        let video       = Arc::clone(&video);
+        let state = Arc::clone(&state);
+        let video = Arc::clone(&video);
         let window_weak = window.as_weak();
-        let rt_handle   = rt.handle().clone();
+        let rt_handle = rt.handle().clone();
         AppState::get(&window).on_profile_picker_select(move |user_id| {
             if let Some(w) = window_weak.upgrade() {
                 profile::on_profile_picker_select(&state, &video, &w, &rt_handle, user_id);
@@ -3270,19 +3743,21 @@ fn main() -> Result<()> {
         });
     }
     {
-        let state       = Arc::clone(&state);
+        let state = Arc::clone(&state);
         let window_weak = window.as_weak();
         AppState::get(&window).on_cancel_add_account(move || {
-            if let Some(w) = window_weak.upgrade() { profile::on_cancel_add_account(&state, &w); }
+            if let Some(w) = window_weak.upgrade() {
+                profile::on_cancel_add_account(&state, &w);
+            }
         });
     }
 
     // ── account picker (2026-08-14, the 2-tier account/profile redesign) ───────
     {
-        let state       = Arc::clone(&state);
-        let video       = Arc::clone(&video);
+        let state = Arc::clone(&state);
+        let video = Arc::clone(&video);
         let window_weak = window.as_weak();
-        let rt_handle   = rt.handle().clone();
+        let rt_handle = rt.handle().clone();
         AppState::get(&window).on_account_picker_select(move |root_id| {
             if let Some(w) = window_weak.upgrade() {
                 profile::on_account_picker_select(&state, &video, &w, &rt_handle, root_id);
@@ -3292,29 +3767,35 @@ fn main() -> Result<()> {
     {
         let window_weak = window.as_weak();
         AppState::get(&window).on_account_picker_add_account(move || {
-            if let Some(w) = window_weak.upgrade() { profile::on_account_picker_add_account(&w); }
+            if let Some(w) = window_weak.upgrade() {
+                profile::on_account_picker_add_account(&w);
+            }
         });
     }
     {
         let window_weak = window.as_weak();
         AppState::get(&window).on_settings_add_account(move || {
-            if let Some(w) = window_weak.upgrade() { profile::on_settings_add_account(&w); }
+            if let Some(w) = window_weak.upgrade() {
+                profile::on_settings_add_account(&w);
+            }
         });
     }
     // "Remember this login" toggle + its confirm-password modal
     // (2026-08-17) — see app_state.slint's own settings-remember-login doc
     // comment for the full design.
     {
-        let state       = Arc::clone(&state);
+        let state = Arc::clone(&state);
         let window_weak = window.as_weak();
         AppState::get(&window).on_settings_remember_login_toggle(move || {
-            if let Some(w) = window_weak.upgrade() { profile::on_remember_login_toggle(&state, &w); }
+            if let Some(w) = window_weak.upgrade() {
+                profile::on_remember_login_toggle(&state, &w);
+            }
         });
     }
     {
-        let state       = Arc::clone(&state);
+        let state = Arc::clone(&state);
         let window_weak = window.as_weak();
-        let rt_handle   = rt.handle().clone();
+        let rt_handle = rt.handle().clone();
         AppState::get(&window).on_remember_login_confirm(move |password| {
             if let Some(w) = window_weak.upgrade() {
                 profile::on_remember_login_confirm(&state, &w, &rt_handle, password);
@@ -3324,15 +3805,21 @@ fn main() -> Result<()> {
     {
         let window_weak = window.as_weak();
         AppState::get(&window).on_remember_login_confirm_cancel(move || {
-            if let Some(w) = window_weak.upgrade() { profile::on_remember_login_confirm_cancel(&w); }
+            if let Some(w) = window_weak.upgrade() {
+                profile::on_remember_login_confirm_cancel(&w);
+            }
         });
     }
     {
-        let state       = Arc::clone(&state);
+        let state = Arc::clone(&state);
         let window_weak = window.as_weak();
         AppState::get(&window).on_profile_picker_back_to_accounts(move || {
             if let Some(w) = window_weak.upgrade() {
-                profile::open_account_picker(&state, &w, AppState::get(&w).get_profile_picker_cancelable());
+                profile::open_account_picker(
+                    &state,
+                    &w,
+                    AppState::get(&w).get_profile_picker_cancelable(),
+                );
             }
         });
     }
@@ -3351,10 +3838,10 @@ fn main() -> Result<()> {
         });
     }
     {
-        let state       = Arc::clone(&state);
-        let video       = Arc::clone(&video);
+        let state = Arc::clone(&state);
+        let video = Arc::clone(&video);
         let window_weak = window.as_weak();
-        let rt_handle   = rt.handle().clone();
+        let rt_handle = rt.handle().clone();
         AppState::get(&window).on_profile_pin_key(move |key| {
             if let Some(w) = window_weak.upgrade() {
                 profile::on_profile_pin_key(&state, &video, &w, &rt_handle, key);
@@ -3363,16 +3850,18 @@ fn main() -> Result<()> {
     }
     // ── sidebar profile row + quick-menu (2026-08-14) ───────────────────────────
     {
-        let state       = Arc::clone(&state);
+        let state = Arc::clone(&state);
         let window_weak = window.as_weak();
         AppState::get(&window).on_open_sidebar_profile_menu(move || {
-            if let Some(w) = window_weak.upgrade() { profile::on_open_sidebar_profile_menu(&state, &w); }
+            if let Some(w) = window_weak.upgrade() {
+                profile::on_open_sidebar_profile_menu(&state, &w);
+            }
         });
     }
     {
-        let state       = Arc::clone(&state);
+        let state = Arc::clone(&state);
         let window_weak = window.as_weak();
-        let rt_handle   = rt.handle().clone();
+        let rt_handle = rt.handle().clone();
         AppState::get(&window).on_sidebar_profile_menu_action(move |idx| {
             if let Some(w) = window_weak.upgrade() {
                 profile::on_sidebar_profile_menu_action(idx, &state, &w, &rt_handle);
@@ -3382,9 +3871,9 @@ fn main() -> Result<()> {
 
     // ── manage profiles / profile edit (Bonfire Phase 2, 2026-08-09) ────────────
     {
-        let state       = Arc::clone(&state);
+        let state = Arc::clone(&state);
         let window_weak = window.as_weak();
-        let rt_handle   = rt.handle().clone();
+        let rt_handle = rt.handle().clone();
         AppState::get(&window).on_open_manage_profiles(move || {
             if let Some(w) = window_weak.upgrade() {
                 profile_edit::open_manage_profiles_screen(&state, &w, &rt_handle);
@@ -3392,9 +3881,9 @@ fn main() -> Result<()> {
         });
     }
     {
-        let state       = Arc::clone(&state);
+        let state = Arc::clone(&state);
         let window_weak = window.as_weak();
-        let rt_handle   = rt.handle().clone();
+        let rt_handle = rt.handle().clone();
         AppState::get(&window).on_manage_profiles_select(move |user_id| {
             if let Some(w) = window_weak.upgrade() {
                 profile_edit::on_manage_profiles_select(&state, &w, &rt_handle, user_id);
@@ -3402,9 +3891,9 @@ fn main() -> Result<()> {
         });
     }
     {
-        let state       = Arc::clone(&state);
+        let state = Arc::clone(&state);
         let window_weak = window.as_weak();
-        let rt_handle   = rt.handle().clone();
+        let rt_handle = rt.handle().clone();
         AppState::get(&window).on_manage_profiles_add(move || {
             if let Some(w) = window_weak.upgrade() {
                 profile_edit::on_manage_profiles_add(&state, &w, &rt_handle);
@@ -3412,7 +3901,7 @@ fn main() -> Result<()> {
         });
     }
     {
-        let state       = Arc::clone(&state);
+        let state = Arc::clone(&state);
         let window_weak = window.as_weak();
         AppState::get(&window).on_profile_edit_pin_key(move |key| {
             if let Some(w) = window_weak.upgrade() {
@@ -3421,7 +3910,7 @@ fn main() -> Result<()> {
         });
     }
     {
-        let state       = Arc::clone(&state);
+        let state = Arc::clone(&state);
         let window_weak = window.as_weak();
         AppState::get(&window).on_profile_edit_master_pin_key(move |key| {
             if let Some(w) = window_weak.upgrade() {
@@ -3432,50 +3921,69 @@ fn main() -> Result<()> {
     {
         let window_weak = window.as_weak();
         AppState::get(&window).on_profile_edit_avatar_color_selected(move |hex| {
-            if let Some(w) = window_weak.upgrade() { profile_edit::on_profile_edit_avatar_color_selected(&w, hex); }
+            if let Some(w) = window_weak.upgrade() {
+                profile_edit::on_profile_edit_avatar_color_selected(&w, hex);
+            }
         });
     }
     {
         let window_weak = window.as_weak();
         AppState::get(&window).on_profile_edit_toggle_library(move |idx| {
-            if let Some(w) = window_weak.upgrade() { profile_edit::on_profile_edit_toggle_library(&w, idx); }
+            if let Some(w) = window_weak.upgrade() {
+                profile_edit::on_profile_edit_toggle_library(&w, idx);
+            }
         });
     }
     {
         let window_weak = window.as_weak();
         AppState::get(&window).on_profile_edit_toggle_device(move |idx| {
-            if let Some(w) = window_weak.upgrade() { profile_edit::on_profile_edit_toggle_device(&w, idx); }
+            if let Some(w) = window_weak.upgrade() {
+                profile_edit::on_profile_edit_toggle_device(&w, idx);
+            }
         });
     }
     {
-        let state       = Arc::clone(&state);
+        let state = Arc::clone(&state);
         let window_weak = window.as_weak();
         AppState::get(&window).on_profile_edit_cancel(move || {
-            if let Some(w) = window_weak.upgrade() { profile_edit::on_profile_edit_cancel(&state, &w); }
+            if let Some(w) = window_weak.upgrade() {
+                profile_edit::on_profile_edit_cancel(&state, &w);
+            }
         });
     }
     {
-        let state       = Arc::clone(&state);
+        let state = Arc::clone(&state);
         let window_weak = window.as_weak();
-        let rt_handle   = rt.handle().clone();
+        let rt_handle = rt.handle().clone();
         AppState::get(&window).on_profile_edit_save(move |name, blocked_tags, allowed_tags| {
-            profile_edit::on_profile_edit_save(Arc::clone(&state), window_weak.clone(), rt_handle.clone(), name, blocked_tags, allowed_tags);
+            profile_edit::on_profile_edit_save(
+                Arc::clone(&state),
+                window_weak.clone(),
+                rt_handle.clone(),
+                name,
+                blocked_tags,
+                allowed_tags,
+            );
         });
     }
     {
-        let state       = Arc::clone(&state);
+        let state = Arc::clone(&state);
         let window_weak = window.as_weak();
-        let rt_handle   = rt.handle().clone();
+        let rt_handle = rt.handle().clone();
         AppState::get(&window).on_profile_edit_delete(move || {
-            profile_edit::on_profile_edit_delete(Arc::clone(&state), window_weak.clone(), rt_handle.clone());
+            profile_edit::on_profile_edit_delete(
+                Arc::clone(&state),
+                window_weak.clone(),
+                rt_handle.clone(),
+            );
         });
     }
 
     // ── Bonfire Group (Phase 5, cross-household groups, 2026-08-29) ────────────
     {
-        let state       = Arc::clone(&state);
+        let state = Arc::clone(&state);
         let window_weak = window.as_weak();
-        let rt_handle   = rt.handle().clone();
+        let rt_handle = rt.handle().clone();
         AppState::get(&window).on_open_bonfire_group(move || {
             if let Some(w) = window_weak.upgrade() {
                 profile::open_bonfire_group_screen(&state, &w, &rt_handle);
@@ -3483,9 +3991,9 @@ fn main() -> Result<()> {
         });
     }
     {
-        let state       = Arc::clone(&state);
+        let state = Arc::clone(&state);
         let window_weak = window.as_weak();
-        let rt_handle   = rt.handle().clone();
+        let rt_handle = rt.handle().clone();
         AppState::get(&window).on_bonfire_group_generate(move || {
             if let Some(w) = window_weak.upgrade() {
                 profile::on_bonfire_group_generate(&state, &w, &rt_handle);
@@ -3493,9 +4001,9 @@ fn main() -> Result<()> {
         });
     }
     {
-        let state       = Arc::clone(&state);
+        let state = Arc::clone(&state);
         let window_weak = window.as_weak();
-        let rt_handle   = rt.handle().clone();
+        let rt_handle = rt.handle().clone();
         AppState::get(&window).on_bonfire_group_join_code_submit(move || {
             if let Some(w) = window_weak.upgrade() {
                 profile::on_bonfire_group_join_submit(&state, &w, &rt_handle);
@@ -3526,9 +4034,9 @@ fn main() -> Result<()> {
         });
     }
     {
-        let state       = Arc::clone(&state);
+        let state = Arc::clone(&state);
         let window_weak = window.as_weak();
-        let rt_handle   = rt.handle().clone();
+        let rt_handle = rt.handle().clone();
         AppState::get(&window).on_bonfire_group_kick(move |member_id| {
             if let Some(w) = window_weak.upgrade() {
                 profile::on_bonfire_group_kick(&state, &w, &rt_handle, member_id);
@@ -3536,9 +4044,9 @@ fn main() -> Result<()> {
         });
     }
     {
-        let state       = Arc::clone(&state);
+        let state = Arc::clone(&state);
         let window_weak = window.as_weak();
-        let rt_handle   = rt.handle().clone();
+        let rt_handle = rt.handle().clone();
         AppState::get(&window).on_bonfire_group_leave(move || {
             if let Some(w) = window_weak.upgrade() {
                 profile::on_bonfire_group_leave(&state, &w, &rt_handle);
@@ -3546,9 +4054,9 @@ fn main() -> Result<()> {
         });
     }
     {
-        let state       = Arc::clone(&state);
+        let state = Arc::clone(&state);
         let window_weak = window.as_weak();
-        let rt_handle   = rt.handle().clone();
+        let rt_handle = rt.handle().clone();
         AppState::get(&window).on_bonfire_group_delete(move || {
             if let Some(w) = window_weak.upgrade() {
                 profile::on_bonfire_group_delete(&state, &w, &rt_handle);
@@ -3556,21 +4064,30 @@ fn main() -> Result<()> {
         });
     }
     {
-        let state       = Arc::clone(&state);
+        let state = Arc::clone(&state);
         let window_weak = window.as_weak();
-        let rt_handle   = rt.handle().clone();
-        AppState::get(&window).on_bonfire_group_settings_changed(move |hide_my, hide_others, allow_lan_bypass| {
-            if let Some(w) = window_weak.upgrade() {
-                profile::on_bonfire_group_settings_changed(&state, &w, &rt_handle, hide_my, hide_others, allow_lan_bypass);
-            }
-        });
+        let rt_handle = rt.handle().clone();
+        AppState::get(&window).on_bonfire_group_settings_changed(
+            move |hide_my, hide_others, allow_lan_bypass| {
+                if let Some(w) = window_weak.upgrade() {
+                    profile::on_bonfire_group_settings_changed(
+                        &state,
+                        &w,
+                        &rt_handle,
+                        hide_my,
+                        hide_others,
+                        allow_lan_bypass,
+                    );
+                }
+            },
+        );
     }
 
     // ── Bonfire Admin (Phase 6, admin actions, 2026-09-04) ──────────────────────
     {
-        let state       = Arc::clone(&state);
+        let state = Arc::clone(&state);
         let window_weak = window.as_weak();
-        let rt_handle   = rt.handle().clone();
+        let rt_handle = rt.handle().clone();
         AppState::get(&window).on_open_bonfire_admin(move || {
             if let Some(w) = window_weak.upgrade() {
                 bonfire_admin::open_bonfire_admin_screen(&state, &w, &rt_handle);
@@ -3578,9 +4095,9 @@ fn main() -> Result<()> {
         });
     }
     {
-        let state       = Arc::clone(&state);
+        let state = Arc::clone(&state);
         let window_weak = window.as_weak();
-        let rt_handle   = rt.handle().clone();
+        let rt_handle = rt.handle().clone();
         AppState::get(&window).on_bonfire_admin_tab_selected(move |new_tab| {
             if let Some(w) = window_weak.upgrade() {
                 bonfire_admin::on_bonfire_admin_tab_selected(&state, &w, &rt_handle, new_tab);
@@ -3588,9 +4105,9 @@ fn main() -> Result<()> {
         });
     }
     {
-        let state       = Arc::clone(&state);
+        let state = Arc::clone(&state);
         let window_weak = window.as_weak();
-        let rt_handle   = rt.handle().clone();
+        let rt_handle = rt.handle().clone();
         AppState::get(&window).on_bonfire_admin_reset_pin(move |profile_id| {
             if let Some(w) = window_weak.upgrade() {
                 bonfire_admin::on_bonfire_admin_reset_pin(&state, &w, &rt_handle, profile_id);
@@ -3598,19 +4115,21 @@ fn main() -> Result<()> {
         });
     }
     {
-        let state       = Arc::clone(&state);
+        let state = Arc::clone(&state);
         let window_weak = window.as_weak();
-        let rt_handle   = rt.handle().clone();
+        let rt_handle = rt.handle().clone();
         AppState::get(&window).on_bonfire_admin_set_limit(move |user_id, new_value| {
             if let Some(w) = window_weak.upgrade() {
-                bonfire_admin::on_bonfire_admin_set_limit(&state, &w, &rt_handle, user_id, new_value);
+                bonfire_admin::on_bonfire_admin_set_limit(
+                    &state, &w, &rt_handle, user_id, new_value,
+                );
             }
         });
     }
     {
-        let state       = Arc::clone(&state);
+        let state = Arc::clone(&state);
         let window_weak = window.as_weak();
-        let rt_handle   = rt.handle().clone();
+        let rt_handle = rt.handle().clone();
         AppState::get(&window).on_bonfire_admin_cycle_limit(move |user_id| {
             if let Some(w) = window_weak.upgrade() {
                 bonfire_admin::on_bonfire_admin_cycle_limit(&state, &w, &rt_handle, user_id);
@@ -3623,42 +4142,47 @@ fn main() -> Result<()> {
 
     // ── play from browse list ─────────────────────────────────────────────────
     {
-        let state        = Arc::clone(&state);
-        let video2       = Arc::clone(&video);
-        let window_weak  = window.as_weak();
-        let rt_handle    = rt.handle().clone();
+        let state = Arc::clone(&state);
+        let video2 = Arc::clone(&video);
+        let window_weak = window.as_weak();
+        let rt_handle = rt.handle().clone();
 
         AppState::get(&window).on_play_item(move |idx| {
             let s = state.lock().unwrap();
-            let Some(client) = s.client.as_ref().map(Arc::clone) else { return; };
-            let Some(item)   = s.filtered_items.get(idx as usize) else { return; };
-            let item_id    = item.id.clone();
+            let Some(client) = s.client.as_ref().map(Arc::clone) else {
+                return;
+            };
+            let Some(item) = s.filtered_items.get(idx as usize) else {
+                return;
+            };
+            let item_id = item.id.clone();
             let item_title = item.display_name();
             if item.item_type == "Series" {
-                let state2     = state.clone();
-                let ww2        = window_weak.clone();
+                let state2 = state.clone();
+                let ww2 = window_weak.clone();
                 let rt_handle2 = rt_handle.clone();
                 drop(s);
                 open_series_screen(item_id, state2, ww2, rt_handle2);
                 return;
             }
-            let play_url  = client.direct_play_url(&item_id);
+            let play_url = client.direct_play_url(&item_id);
             let mut config = s.player_config();
-            let item_type  = item.item_type.clone();
-            let series_id  = item.series_id.clone();
+            let item_type = item.item_type.clone();
+            let series_id = item.series_id.clone();
             drop(s);
-            let video2b   = Arc::clone(&video2);
-            let ww2       = window_weak.clone();
-            let rth2      = rt_handle.clone();
-            let state2b   = Arc::clone(&state);
+            let video2b = Arc::clone(&video2);
+            let ww2 = window_weak.clone();
+            let rth2 = rt_handle.clone();
+            let state2b = Arc::clone(&state);
             rt_handle.spawn(async move {
-                let detail     = client.get_item_detail(&item_id).await.ok();
+                let detail = client.get_item_detail(&item_id).await.ok();
                 let video_info = detail.as_ref().and_then(|i| i.video_stream_info());
                 config.start_position_secs = detail.and_then(|i| i.resume_position_secs());
                 let _ = slint::invoke_from_event_loop(move || {
-                    start_playback(play_url, item_id, &item_type, item_title, config, client,
-                                   series_id, None, &video2b, &ww2, &rth2,
-                                   &state2b, video_info);
+                    start_playback(
+                        play_url, item_id, &item_type, item_title, config, client, series_id, None,
+                        &video2b, &ww2, &rth2, &state2b, video_info,
+                    );
                 });
             });
         });
@@ -3666,20 +4190,24 @@ fn main() -> Result<()> {
 
     // ── play from home / library rows ─────────────────────────────────────────
     {
-        let state       = Arc::clone(&state);
-        let video3      = Arc::clone(&video);
+        let state = Arc::clone(&state);
+        let video3 = Arc::clone(&video);
         let window_weak = window.as_weak();
-        let rt_handle   = rt.handle().clone();
+        let rt_handle = rt.handle().clone();
 
         AppState::get(&window).on_item_play(move |item_id| {
             let item_id = item_id.to_string();
             let s = state.lock().unwrap();
-            let Some(client) = s.client.as_ref().map(Arc::clone) else { return; };
+            let Some(client) = s.client.as_ref().map(Arc::clone) else {
+                return;
+            };
 
             // BoxSet (collection) — open collection screen instead of playing.
             // all_collections is only populated when the library grid is first opened; fall
             // back to the always-present dashboard models when it hasn't been opened yet.
-            let boxset_info = s.all_collections.iter()
+            let boxset_info = s
+                .all_collections
+                .iter()
                 .find(|i| i.id == item_id)
                 .map(|bs| (bs.id.clone(), bs.name.clone()))
                 .or_else(|| {
@@ -3688,7 +4216,9 @@ fn main() -> Result<()> {
                     let find_boxset = |model: ModelRc<CardItem>| -> Option<(String, String)> {
                         for idx in 0..model.row_count() {
                             if let Some(c) = model.row_data(idx)
-                                && c.id.as_str() == item_id && c.item_type.as_str() == "BoxSet" {
+                                && c.id.as_str() == item_id
+                                && c.item_type.as_str() == "BoxSet"
+                            {
                                 return Some((c.id.to_string(), c.title.to_string()));
                             }
                         }
@@ -3698,8 +4228,8 @@ fn main() -> Result<()> {
                         .or_else(|| find_boxset(g.get_unwatched_collections()))
                 });
             if let Some((bs_id, bs_name)) = boxset_info {
-                let ww2        = window_weak.clone();
-                let state2     = state.clone();
+                let ww2 = window_weak.clone();
+                let state2 = state.clone();
                 let rt_handle2 = rt_handle.clone();
                 drop(s);
                 collection::open_collection_screen(bs_id, bs_name, state2, ww2, rt_handle2);
@@ -3707,32 +4237,44 @@ fn main() -> Result<()> {
             }
 
             if s.all_series.iter().any(|i| i.id == item_id) {
-                let state2     = state.clone();
-                let ww2        = window_weak.clone();
+                let state2 = state.clone();
+                let ww2 = window_weak.clone();
                 let rt_handle2 = rt_handle.clone();
-                let video4     = Arc::clone(&video3);
+                let video4 = Arc::clone(&video3);
                 drop(s);
                 rt_handle.spawn(async move {
                     let next = client.get_next_up_for_series(&item_id).await.ok().flatten();
                     if let Some(next) = next {
                         let mut config = state2.lock().unwrap().player_config();
                         config.start_position_secs = next.resume_position_secs();
-                        let cli2   = state2.lock().unwrap().client.as_ref().map(Arc::clone);
+                        let cli2 = state2.lock().unwrap().client.as_ref().map(Arc::clone);
                         let Some(cli2) = cli2 else {
                             let _ = slint::invoke_from_event_loop(move || {
                                 open_series_screen(item_id, state2, ww2, rt_handle2);
                             });
                             return;
                         };
-                        let url       = cli2.direct_play_url(&next.id);
-                        let title     = next.display_name();
-                        let ep_id     = next.id.clone();
+                        let url = cli2.direct_play_url(&next.id);
+                        let title = next.display_name();
+                        let ep_id = next.id.clone();
                         let series_id = next.series_id.clone();
                         let video_info = next.video_stream_info();
                         let _ = slint::invoke_from_event_loop(move || {
-                            start_playback(url, ep_id, "Episode", title, config, cli2,
-                                           series_id, None, &video4, &ww2, &rt_handle2,
-                                           &state2, video_info);
+                            start_playback(
+                                url,
+                                ep_id,
+                                "Episode",
+                                title,
+                                config,
+                                cli2,
+                                series_id,
+                                None,
+                                &video4,
+                                &ww2,
+                                &rt_handle2,
+                                &state2,
+                                video_info,
+                            );
                         });
                     } else {
                         let _ = slint::invoke_from_event_loop(move || {
@@ -3743,15 +4285,15 @@ fn main() -> Result<()> {
                 return;
             }
 
-            let mut config  = s.player_config();
+            let mut config = s.player_config();
             let state_album = Arc::clone(&state);
             let state_purge = Arc::clone(&state);
-            let state_play  = Arc::clone(&state);
+            let state_play = Arc::clone(&state);
             drop(s);
             let play_url = client.direct_play_url(&item_id);
-            let video3b  = Arc::clone(&video3);
-            let ww3      = window_weak.clone();
-            let rth3     = rt_handle.clone();
+            let video3b = Arc::clone(&video3);
+            let ww3 = window_weak.clone();
+            let rth3 = rt_handle.clone();
             rt_handle.spawn(async move {
                 let detail = match client.get_item_detail(&item_id).await {
                     Ok(d) => Some(d),
@@ -3761,11 +4303,20 @@ fn main() -> Result<()> {
                         purge_deleted_item(&state_purge, &ww3, &item_id);
                         return;
                     }
-                    Err(e) => { warn!("item_play get_item_detail({item_id}): {e:#}"); None }
+                    Err(e) => {
+                        warn!("item_play get_item_detail({item_id}): {e:#}");
+                        None
+                    }
                 };
-                let item_type = detail.as_ref().map(|i| i.item_type.clone()).unwrap_or_default();
+                let item_type = detail
+                    .as_ref()
+                    .map(|i| i.item_type.clone())
+                    .unwrap_or_default();
                 let series_id = detail.as_ref().and_then(|i| i.series_id.clone());
-                let title     = detail.as_ref().map(|i| i.display_name()).unwrap_or_else(|| item_id.clone());
+                let title = detail
+                    .as_ref()
+                    .map(|i| i.display_name())
+                    .unwrap_or_else(|| item_id.clone());
                 let video_info = detail.as_ref().and_then(|i| i.video_stream_info());
                 config.start_position_secs = detail.and_then(|i| i.resume_position_secs());
 
@@ -3790,9 +4341,21 @@ fn main() -> Result<()> {
                 }
 
                 let _ = slint::invoke_from_event_loop(move || {
-                    start_playback(play_url, item_id, &item_type, title, config, client,
-                                   series_id, None, &video3b, &ww3, &rth3,
-                                   &state_play, video_info);
+                    start_playback(
+                        play_url,
+                        item_id,
+                        &item_type,
+                        title,
+                        config,
+                        client,
+                        series_id,
+                        None,
+                        &video3b,
+                        &ww3,
+                        &rth3,
+                        &state_play,
+                        video_info,
+                    );
                 });
             });
         });
@@ -3800,9 +4363,9 @@ fn main() -> Result<()> {
 
     // ── lazy library grid ─────────────────────────────────────────────────────
     {
-        let state_ol  = Arc::clone(&state);
-        let ww_ol     = window.as_weak();
-        let rth_ol    = rt.handle().clone();
+        let state_ol = Arc::clone(&state);
+        let ww_ol = window.as_weak();
+        let rth_ol = rt.handle().clone();
         AppState::get(&window).on_open_library(move |nav| {
             // Synchronously initialise sort/filter/query for this library type before any async work.
             {
@@ -3831,7 +4394,8 @@ fn main() -> Result<()> {
                     g.set_library_back_focused(false);
                     g.set_library_has_filters(nav != 3 && nav != 4);
                     if nav == 4 {
-                        let music_view = state_ol.lock().unwrap().config.active().library_music_view as i32;
+                        let music_view =
+                            state_ol.lock().unwrap().config.active().library_music_view as i32;
                         g.set_library_music_view(music_view);
                     }
                     browse::refresh_library_display(&w);
@@ -3844,8 +4408,8 @@ fn main() -> Result<()> {
     // ── music library view toggle (Artists ↔ Albums) ─────────────────────────
     {
         let state_mv = Arc::clone(&state);
-        let ww_mv    = window.as_weak();
-        let rth_mv   = rt.handle().clone();
+        let ww_mv = window.as_weak();
+        let rth_mv = rt.handle().clone();
         AppState::get(&window).on_library_music_view_changed(move |view| {
             {
                 let mut s = state_mv.lock().unwrap();
@@ -3872,17 +4436,19 @@ fn main() -> Result<()> {
             let (need_fetch, already_fetched) = {
                 let s = state_mv.lock().unwrap();
                 match view {
-                    1 => (!s.albums_fetched,    s.albums_fetched),
+                    1 => (!s.albums_fetched, s.albums_fetched),
                     2 => (!s.playlists_fetched, s.playlists_fetched),
-                    _ => (!s.artists_fetched,   s.artists_fetched),
+                    _ => (!s.artists_fetched, s.artists_fetched),
                 }
             };
             let _ = already_fetched; // suppress unused warning
             if need_fetch {
                 let state_f = Arc::clone(&state_mv);
-                let ww_f    = ww_mv.clone();
-                let ww_f2   = ww_mv.clone();
-                let Some(client) = state_mv.lock().unwrap().client.as_ref().map(Arc::clone) else { return };
+                let ww_f = ww_mv.clone();
+                let ww_f2 = ww_mv.clone();
+                let Some(client) = state_mv.lock().unwrap().client.as_ref().map(Arc::clone) else {
+                    return;
+                };
                 let client2 = Arc::clone(&client);
                 let rth_spawn = rth_mv.clone();
                 rth_mv.spawn(async move {
@@ -3890,55 +4456,97 @@ fn main() -> Result<()> {
                     if view == 2 {
                         match client.get_all_playlists().await {
                             Ok(playlists) => {
-                                { let mut s = state_f.lock().unwrap(); s.all_playlists = playlists.clone(); s.playlists_fetched = true; }
+                                {
+                                    let mut s = state_f.lock().unwrap();
+                                    s.all_playlists = playlists.clone();
+                                    s.playlists_fetched = true;
+                                }
                                 save_playlists_cache(&user_id, &playlists);
                                 let playlists2 = playlists.clone();
                                 let ww_p = ww_f.clone();
                                 let _ = slint::invoke_from_event_loop(move || {
                                     if let Some(w) = ww_p.upgrade() {
-                                        AppState::get(&w).set_all_playlists(items_to_model(&playlists2, &std::collections::HashSet::new()));
-                                        if AppState::get(&w).get_show_library() && AppState::get(&w).get_library_music_view() == 2 {
+                                        AppState::get(&w).set_all_playlists(items_to_model(
+                                            &playlists2,
+                                            &std::collections::HashSet::new(),
+                                        ));
+                                        if AppState::get(&w).get_show_library()
+                                            && AppState::get(&w).get_library_music_view() == 2
+                                        {
                                             browse::refresh_library_display(&w);
                                         }
                                     }
                                 });
-                                spawn_playlists_poster_loading(client2, playlists, ww_f2, rth_spawn.clone());
+                                spawn_playlists_poster_loading(
+                                    client2,
+                                    playlists,
+                                    ww_f2,
+                                    rth_spawn.clone(),
+                                );
                             }
                             Err(e) => warn!("music view playlists fetch: {:#}", e),
                         }
                     } else if view == 1 {
                         match client.get_all_albums().await {
                             Ok(albums) => {
-                                { let mut s = state_f.lock().unwrap(); s.all_albums = albums.clone(); s.albums_fetched = true; }
+                                {
+                                    let mut s = state_f.lock().unwrap();
+                                    s.all_albums = albums.clone();
+                                    s.albums_fetched = true;
+                                }
                                 save_albums_cache(&user_id, &albums);
                                 let albums2 = albums.clone();
                                 let _ = slint::invoke_from_event_loop(move || {
                                     if let Some(w) = ww_f.upgrade() {
-                                        AppState::get(&w).set_all_albums(items_to_model(&albums2, &std::collections::HashSet::new()));
-                                        if AppState::get(&w).get_show_library() && AppState::get(&w).get_library_music_view() == 1 {
+                                        AppState::get(&w).set_all_albums(items_to_model(
+                                            &albums2,
+                                            &std::collections::HashSet::new(),
+                                        ));
+                                        if AppState::get(&w).get_show_library()
+                                            && AppState::get(&w).get_library_music_view() == 1
+                                        {
                                             browse::refresh_library_display(&w);
                                         }
                                     }
                                 });
-                                spawn_albums_poster_loading(client2, albums, ww_f2, rth_spawn.clone());
+                                spawn_albums_poster_loading(
+                                    client2,
+                                    albums,
+                                    ww_f2,
+                                    rth_spawn.clone(),
+                                );
                             }
                             Err(e) => warn!("music view albums fetch: {:#}", e),
                         }
                     } else {
                         match client.get_album_artists().await {
                             Ok(artists) => {
-                                { let mut s = state_f.lock().unwrap(); s.all_artists = artists.clone(); s.artists_fetched = true; }
+                                {
+                                    let mut s = state_f.lock().unwrap();
+                                    s.all_artists = artists.clone();
+                                    s.artists_fetched = true;
+                                }
                                 save_artists_cache(&user_id, &artists);
                                 let artists2 = artists.clone();
                                 let _ = slint::invoke_from_event_loop(move || {
                                     if let Some(w) = ww_f.upgrade() {
-                                        AppState::get(&w).set_all_artists(items_to_model(&artists2, &std::collections::HashSet::new()));
-                                        if AppState::get(&w).get_show_library() && AppState::get(&w).get_library_music_view() == 0 {
+                                        AppState::get(&w).set_all_artists(items_to_model(
+                                            &artists2,
+                                            &std::collections::HashSet::new(),
+                                        ));
+                                        if AppState::get(&w).get_show_library()
+                                            && AppState::get(&w).get_library_music_view() == 0
+                                        {
                                             browse::refresh_library_display(&w);
                                         }
                                     }
                                 });
-                                spawn_artists_poster_loading(client2, artists, ww_f2, rth_spawn.clone());
+                                spawn_artists_poster_loading(
+                                    client2,
+                                    artists,
+                                    ww_f2,
+                                    rth_spawn.clone(),
+                                );
                             }
                             Err(e) => warn!("music view artists fetch: {:#}", e),
                         }
@@ -3950,91 +4558,136 @@ fn main() -> Result<()> {
 
     // ── detail page ───────────────────────────────────────────────────────────
     {
-        let state2    = Arc::clone(&state);
-        let ww        = window.as_weak();
+        let state2 = Arc::clone(&state);
+        let ww = window.as_weak();
         let rt_handle = rt.handle().clone();
-        AppState::get(&window).on_open_detail(move |id, item_type| {
-            match item_type.as_str() {
-                "MusicArtist" => {
-                    let title = {
-                        let s = state2.lock().unwrap();
-                        s.all_artists.iter()
-                            .find(|a| a.id == id.as_str())
-                            .map(|a| a.display_name())
-                            .unwrap_or_else(|| id.to_string())
-                    };
-                    artist::open_artist_screen(id.to_string(), title, Arc::clone(&state2), ww.clone(), rt_handle.clone());
-                }
-                "MusicAlbum" => {
-                    let title = {
-                        let s = state2.lock().unwrap();
-                        s.all_albums.iter()
-                            .find(|a| a.id == id.as_str())
-                            .map(|a| a.display_name())
-                            .unwrap_or_else(|| id.to_string())
-                    };
-                    album::open_album_screen(id.to_string(), title, Arc::clone(&state2), ww.clone(), rt_handle.clone());
-                }
-                "Playlist" => {
-                    let title = {
-                        let s = state2.lock().unwrap();
-                        s.all_playlists.iter()
-                            .find(|p| p.id == id.as_str())
-                            .map(|p| p.name.clone())
-                            .unwrap_or_else(|| id.to_string())
-                    };
-                    album::open_playlist_screen(id.to_string(), title, Arc::clone(&state2), ww.clone(), rt_handle.clone());
-                }
-                _ => {
-                    detail::open_detail(id.to_string(), item_type.to_string(), Arc::clone(&state2), ww.clone(), rt_handle.clone());
-                }
+        AppState::get(&window).on_open_detail(move |id, item_type| match item_type.as_str() {
+            "MusicArtist" => {
+                let title = {
+                    let s = state2.lock().unwrap();
+                    s.all_artists
+                        .iter()
+                        .find(|a| a.id == id.as_str())
+                        .map(|a| a.display_name())
+                        .unwrap_or_else(|| id.to_string())
+                };
+                artist::open_artist_screen(
+                    id.to_string(),
+                    title,
+                    Arc::clone(&state2),
+                    ww.clone(),
+                    rt_handle.clone(),
+                );
+            }
+            "MusicAlbum" => {
+                let title = {
+                    let s = state2.lock().unwrap();
+                    s.all_albums
+                        .iter()
+                        .find(|a| a.id == id.as_str())
+                        .map(|a| a.display_name())
+                        .unwrap_or_else(|| id.to_string())
+                };
+                album::open_album_screen(
+                    id.to_string(),
+                    title,
+                    Arc::clone(&state2),
+                    ww.clone(),
+                    rt_handle.clone(),
+                );
+            }
+            "Playlist" => {
+                let title = {
+                    let s = state2.lock().unwrap();
+                    s.all_playlists
+                        .iter()
+                        .find(|p| p.id == id.as_str())
+                        .map(|p| p.name.clone())
+                        .unwrap_or_else(|| id.to_string())
+                };
+                album::open_playlist_screen(
+                    id.to_string(),
+                    title,
+                    Arc::clone(&state2),
+                    ww.clone(),
+                    rt_handle.clone(),
+                );
+            }
+            _ => {
+                detail::open_detail(
+                    id.to_string(),
+                    item_type.to_string(),
+                    Arc::clone(&state2),
+                    ww.clone(),
+                    rt_handle.clone(),
+                );
             }
         });
     }
     // ── collection screen ─────────────────────────────────────────────────────
     {
         let state_col = Arc::clone(&state);
-        let ww        = window.as_weak();
+        let ww = window.as_weak();
         let rt_handle = rt.handle().clone();
         AppState::get(&window).on_open_collection(move |id, title| {
-            collection::open_collection_screen(id.to_string(), title.to_string(), Arc::clone(&state_col), ww.clone(), rt_handle.clone());
+            collection::open_collection_screen(
+                id.to_string(),
+                title.to_string(),
+                Arc::clone(&state_col),
+                ww.clone(),
+                rt_handle.clone(),
+            );
         });
     }
     // ── artist screen ─────────────────────────────────────────────────────────
     {
         let state_art = Arc::clone(&state);
-        let ww        = window.as_weak();
+        let ww = window.as_weak();
         let rt_handle = rt.handle().clone();
         AppState::get(&window).on_open_artist(move |id, title| {
-            artist::open_artist_screen(id.to_string(), title.to_string(), Arc::clone(&state_art), ww.clone(), rt_handle.clone());
+            artist::open_artist_screen(
+                id.to_string(),
+                title.to_string(),
+                Arc::clone(&state_art),
+                ww.clone(),
+                rt_handle.clone(),
+            );
         });
     }
     {
         let ww_art = window.as_weak();
         AppState::get(&window).on_close_artist(move || {
-            if let Some(w) = ww_art.upgrade() { AppState::get(&w).set_show_artist(false); }
+            if let Some(w) = ww_art.upgrade() {
+                AppState::get(&w).set_show_artist(false);
+            }
         });
     }
     {
         let state_taf = Arc::clone(&state);
-        let ww_taf    = window.as_weak();
+        let ww_taf = window.as_weak();
         // Capture the runtime handle — Handle::current() panics on the Slint
         // event-loop thread because main() never enters the Tokio runtime.
-        let rt_taf    = rt.handle().clone();
+        let rt_taf = rt.handle().clone();
         AppState::get(&window).on_toggle_artist_fav(move || {
             let Some(w) = ww_taf.upgrade() else { return };
-            let g       = AppState::get(&w);
-            let id      = g.get_artist_id().to_string();
+            let g = AppState::get(&w);
+            let id = g.get_artist_id().to_string();
             let new_fav = !g.get_artist_is_favorite();
             g.set_artist_is_favorite(new_fav);
             let s = state_taf.lock().unwrap();
-            let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
+            let Some(client) = s.client.as_ref().map(Arc::clone) else {
+                return;
+            };
             let ww3 = ww_taf.clone();
             drop(s);
             let rth = rt_taf.clone();
             let state_rf = Arc::clone(&state_taf);
             rt_taf.spawn(async move {
-                let result = if new_fav { client.set_favorite(&id).await } else { client.unset_favorite(&id).await };
+                let result = if new_fav {
+                    client.set_favorite(&id).await
+                } else {
+                    client.unset_favorite(&id).await
+                };
                 if let Err(e) = result {
                     warn!("toggle_artist_fav: {e}");
                     crate::show_toast(ww3, format!("Favourite error: {e}"));
@@ -4044,7 +4697,12 @@ fn main() -> Result<()> {
                 let id2 = id.clone();
                 let _ = slint::invoke_from_event_loop(move || {
                     if let Some(w) = ww4.upgrade() {
-                        crate::context_menu::update_card_in_all_models(&w, &id2, None, Some(new_fav));
+                        crate::context_menu::update_card_in_all_models(
+                            &w,
+                            &id2,
+                            None,
+                            Some(new_fav),
+                        );
                     }
                 });
                 crate::home::refresh_favorites(client, ww3, rth, state_rf);
@@ -4054,13 +4712,15 @@ fn main() -> Result<()> {
     {
         let state_paa = Arc::clone(&state);
         let video_paa = Arc::clone(&video);
-        let ww_paa    = window.as_weak();
-        let rt_paa    = rt.handle().clone();
+        let ww_paa = window.as_weak();
+        let rt_paa = rt.handle().clone();
         AppState::get(&window).on_play_artist_all(move || {
             let Some(w) = ww_paa.upgrade() else { return };
-            let g       = AppState::get(&w);
-            let albums  = g.get_artist_albums();
-            if albums.row_count() == 0 { return }
+            let g = AppState::get(&w);
+            let albums = g.get_artist_albums();
+            if albums.row_count() == 0 {
+                return;
+            }
 
             let album_ids: Vec<String> = (0..albums.row_count())
                 .filter_map(|i| albums.row_data(i))
@@ -4069,13 +4729,15 @@ fn main() -> Result<()> {
             let artist = g.get_artist_title().to_string();
 
             let s = state_paa.lock().unwrap();
-            let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
-            let mut config   = s.player_config();
+            let Some(client) = s.client.as_ref().map(Arc::clone) else {
+                return;
+            };
+            let mut config = s.player_config();
             config.start_position_secs = None;
             drop(s);
 
             let video2 = Arc::clone(&video_paa);
-            let ww3    = ww_paa.clone();
+            let ww3 = ww_paa.clone();
             let state3 = Arc::clone(&state_paa);
 
             rt_paa.spawn(async move {
@@ -4083,10 +4745,14 @@ fn main() -> Result<()> {
                 let mut all_tracks: Vec<(String, String, String)> = Vec::new();
                 for album_id in &album_ids {
                     if let Ok(tracks) = client.get_album_tracks(album_id).await {
-                        for t in tracks { all_tracks.push((t.id, t.name, album_id.clone())); }
+                        for t in tracks {
+                            all_tracks.push((t.id, t.name, album_id.clone()));
+                        }
                     }
                 }
-                if all_tracks.is_empty() { return }
+                if all_tracks.is_empty() {
+                    return;
+                }
 
                 let (first_id, first_title, first_alb_id) = all_tracks[0].clone();
                 let first_url = client.direct_play_url(&first_id);
@@ -4102,10 +4768,10 @@ fn main() -> Result<()> {
                         vs.shuffle_order.clear();
                         for (id, title, alb_id) in &all_tracks {
                             vs.playlist.push(crate::playback::QueueItem {
-                                id:         id.clone(),
-                                item_type:  "Audio".into(),
-                                series_id:  None,
-                                title:      title.clone(),
+                                id: id.clone(),
+                                item_type: "Audio".into(),
+                                series_id: None,
+                                title: title.clone(),
                                 audio_meta: Some((artist.clone(), alb_id.clone())),
                             });
                         }
@@ -4114,9 +4780,21 @@ fn main() -> Result<()> {
                             push_queue_display(&vs, &AppState::get(&w));
                         }
                     }
-                    start_playback(first_url, first_id, "Audio", first_title, config, client,
-                                   None, Some((artist, first_alb_id)),
-                                   &video2, &ww3, &rt3, &state3, None);
+                    start_playback(
+                        first_url,
+                        first_id,
+                        "Audio",
+                        first_title,
+                        config,
+                        client,
+                        None,
+                        Some((artist, first_alb_id)),
+                        &video2,
+                        &ww3,
+                        &rt3,
+                        &state3,
+                        None,
+                    );
                 });
             });
         });
@@ -4124,22 +4802,30 @@ fn main() -> Result<()> {
     // ── album screen ──────────────────────────────────────────────────────────
     {
         let state_alb = Arc::clone(&state);
-        let ww        = window.as_weak();
+        let ww = window.as_weak();
         let rt_handle = rt.handle().clone();
         AppState::get(&window).on_open_album(move |id, title| {
-            album::open_album_screen(id.to_string(), title.to_string(), Arc::clone(&state_alb), ww.clone(), rt_handle.clone());
+            album::open_album_screen(
+                id.to_string(),
+                title.to_string(),
+                Arc::clone(&state_alb),
+                ww.clone(),
+                rt_handle.clone(),
+            );
         });
     }
     {
         let ww_ca = window.as_weak();
         AppState::get(&window).on_close_album(move || {
-            if let Some(w) = ww_ca.upgrade() { AppState::get(&w).set_show_album(false); }
+            if let Some(w) = ww_ca.upgrade() {
+                AppState::get(&w).set_show_album(false);
+            }
         });
     }
     {
-        let state_pt  = Arc::clone(&state);
-        let video_pt  = Arc::clone(&video);
-        let ww        = window.as_weak();
+        let state_pt = Arc::clone(&state);
+        let video_pt = Arc::clone(&video);
+        let ww = window.as_weak();
         let rt_handle = rt.handle().clone();
         AppState::get(&window).on_play_album_track(move |track_id| {
             // Spotify-style: Enter on a track plays the WHOLE album/playlist
@@ -4147,17 +4833,21 @@ fn main() -> Result<()> {
             // the rest follows (gapless applies). Was: single track only.
             let track_id = track_id.to_string();
             let Some(w) = ww.upgrade() else { return };
-            let g        = AppState::get(&w);
-            let tracks   = g.get_album_tracks();
-            let count    = tracks.row_count();
-            if count == 0 { return }
+            let g = AppState::get(&w);
+            let tracks = g.get_album_tracks();
+            let count = tracks.row_count();
+            if count == 0 {
+                return;
+            }
             let s = state_pt.lock().unwrap();
-            let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
+            let Some(client) = s.client.as_ref().map(Arc::clone) else {
+                return;
+            };
             let mut config = s.player_config();
             drop(s);
             config.start_position_secs = None;
             let album_id = g.get_album_id().to_string();
-            let artist   = g.get_album_artist().to_string();
+            let artist = g.get_album_artist().to_string();
             let mut start_idx = 0usize;
             {
                 let mut vs = video_pt.lock().unwrap();
@@ -4166,14 +4856,24 @@ fn main() -> Result<()> {
                 vs.shuffle_order.clear();
                 for i in 0..count {
                     if let Some(t) = tracks.row_data(i) {
-                        if t.id.as_str() == track_id { start_idx = i; }
-                        let t_art = if t.artist.is_empty()   { artist.clone() }   else { t.artist.to_string() };
-                        let t_alb = if t.album_id.is_empty() { album_id.clone() } else { t.album_id.to_string() };
+                        if t.id.as_str() == track_id {
+                            start_idx = i;
+                        }
+                        let t_art = if t.artist.is_empty() {
+                            artist.clone()
+                        } else {
+                            t.artist.to_string()
+                        };
+                        let t_alb = if t.album_id.is_empty() {
+                            album_id.clone()
+                        } else {
+                            t.album_id.to_string()
+                        };
                         vs.playlist.push(crate::playback::QueueItem {
-                            id:         t.id.to_string(),
-                            item_type:  "Audio".into(),
-                            series_id:  None,
-                            title:      t.title.to_string(),
+                            id: t.id.to_string(),
+                            item_type: "Audio".into(),
+                            series_id: None,
+                            title: t.title.to_string(),
                             audio_meta: Some((t_art, t_alb)),
                         });
                     }
@@ -4183,29 +4883,57 @@ fn main() -> Result<()> {
                 push_queue_display(&vs, &g);
             }
             if let Some(t) = tracks.row_data(start_idx) {
-                let url   = client.direct_play_url(&track_id);
-                let t_art = if t.artist.is_empty()   { artist }   else { t.artist.to_string() };
-                let t_alb = if t.album_id.is_empty() { album_id } else { t.album_id.to_string() };
-                start_playback(url, track_id, "Audio", t.title.to_string(), config, client,
-                               None, Some((t_art, t_alb)), &video_pt, &ww, &rt_handle,
-                               &state_pt, None);
+                let url = client.direct_play_url(&track_id);
+                let t_art = if t.artist.is_empty() {
+                    artist
+                } else {
+                    t.artist.to_string()
+                };
+                let t_alb = if t.album_id.is_empty() {
+                    album_id
+                } else {
+                    t.album_id.to_string()
+                };
+                start_playback(
+                    url,
+                    track_id,
+                    "Audio",
+                    t.title.to_string(),
+                    config,
+                    client,
+                    None,
+                    Some((t_art, t_alb)),
+                    &video_pt,
+                    &ww,
+                    &rt_handle,
+                    &state_pt,
+                    None,
+                );
             }
         });
     }
     {
         let state_pr = Arc::clone(&state);
-        let ww_pr    = window.as_weak();
-        let rt_pr    = rt.handle().clone();
+        let ww_pr = window.as_weak();
+        let rt_pr = rt.handle().clone();
         AppState::get(&window).on_playlist_remove_entry(move |idx| {
             let Some(w) = ww_pr.upgrade() else { return };
             let g = AppState::get(&w);
-            if !g.get_album_is_playlist() { return; }
-            let Some(t) = g.get_album_tracks().row_data(idx as usize) else { return };
+            if !g.get_album_is_playlist() {
+                return;
+            }
+            let Some(t) = g.get_album_tracks().row_data(idx as usize) else {
+                return;
+            };
             let entry_id = t.entry_id.to_string();
-            if entry_id.is_empty() { return; }
+            if entry_id.is_empty() {
+                return;
+            }
             let playlist_id = g.get_album_id().to_string();
             let s = state_pr.lock().unwrap();
-            let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
+            let Some(client) = s.client.as_ref().map(Arc::clone) else {
+                return;
+            };
             drop(s);
             let ww2 = ww_pr.clone();
             let state_pr2 = Arc::clone(&state_pr);
@@ -4222,18 +4950,26 @@ fn main() -> Result<()> {
                 // by navigating away and back) hits the cache and shows the
                 // just-removed track again until an unrelated WS event or the
                 // ambient refresh happens to correct it.
-                state_pr2.lock().unwrap().container_tracks_cache.remove(&playlist_id);
+                state_pr2
+                    .lock()
+                    .unwrap()
+                    .container_tracks_cache
+                    .remove(&playlist_id);
                 let _ = slint::invoke_from_event_loop(move || {
                     let Some(w) = ww2.upgrade() else { return };
                     let g = AppState::get(&w);
                     // Only mutate if the same playlist is still open.
-                    if !g.get_album_is_playlist() || g.get_album_id().as_str() != playlist_id { return; }
+                    if !g.get_album_is_playlist() || g.get_album_id().as_str() != playlist_id {
+                        return;
+                    }
                     let model = g.get_album_tracks();
                     let mut kept: Vec<crate::TrackItem> = (0..model.row_count())
                         .filter_map(|i| model.row_data(i))
                         .filter(|t| t.entry_id.as_str() != entry_id)
                         .collect();
-                    for (i, t) in kept.iter_mut().enumerate() { t.track_number = (i + 1) as i32; }
+                    for (i, t) in kept.iter_mut().enumerate() {
+                        t.track_number = (i + 1) as i32;
+                    }
                     let len = kept.len() as i32;
                     g.set_album_tracks(slint::ModelRc::new(slint::VecModel::from(kept)));
                     if g.get_album_focused_track() >= len && len > 0 {
@@ -4245,22 +4981,28 @@ fn main() -> Result<()> {
     }
     {
         let state_tf = Arc::clone(&state);
-        let ww_tf    = window.as_weak();
-        let rt_tf    = rt.handle().clone();
+        let ww_tf = window.as_weak();
+        let rt_tf = rt.handle().clone();
         AppState::get(&window).on_toggle_album_fav(move || {
             let Some(w) = ww_tf.upgrade() else { return };
-            let g        = AppState::get(&w);
-            let id       = g.get_album_id().to_string();
-            let new_fav  = !g.get_album_is_favorite();
+            let g = AppState::get(&w);
+            let id = g.get_album_id().to_string();
+            let new_fav = !g.get_album_is_favorite();
             g.set_album_is_favorite(new_fav);
             let s = state_tf.lock().unwrap();
-            let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
+            let Some(client) = s.client.as_ref().map(Arc::clone) else {
+                return;
+            };
             let ww3 = ww_tf.clone();
             drop(s);
             let rth = rt_tf.clone();
             let state_rf = Arc::clone(&state_tf);
             rt_tf.spawn(async move {
-                let result = if new_fav { client.set_favorite(&id).await } else { client.unset_favorite(&id).await };
+                let result = if new_fav {
+                    client.set_favorite(&id).await
+                } else {
+                    client.unset_favorite(&id).await
+                };
                 if let Err(e) = result {
                     warn!("toggle_album_fav: {e}");
                     crate::show_toast(ww3, format!("Favourite error: {e}"));
@@ -4270,7 +5012,12 @@ fn main() -> Result<()> {
                 let id2 = id.clone();
                 let _ = slint::invoke_from_event_loop(move || {
                     if let Some(w) = ww4.upgrade() {
-                        crate::context_menu::update_card_in_all_models(&w, &id2, None, Some(new_fav));
+                        crate::context_menu::update_card_in_all_models(
+                            &w,
+                            &id2,
+                            None,
+                            Some(new_fav),
+                        );
                     }
                 });
                 crate::home::refresh_favorites(client, ww3, rth, state_rf);
@@ -4279,20 +5026,26 @@ fn main() -> Result<()> {
     }
     {
         let state_tp = Arc::clone(&state);
-        let ww_tp    = window.as_weak();
-        let rt_tp    = rt.handle().clone();
+        let ww_tp = window.as_weak();
+        let rt_tp = rt.handle().clone();
         AppState::get(&window).on_toggle_album_played(move || {
             let Some(w) = ww_tp.upgrade() else { return };
-            let g          = AppState::get(&w);
-            let id         = g.get_album_id().to_string();
+            let g = AppState::get(&w);
+            let id = g.get_album_id().to_string();
             let new_played = !g.get_album_has_played();
             g.set_album_has_played(new_played);
             let s = state_tp.lock().unwrap();
-            let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
+            let Some(client) = s.client.as_ref().map(Arc::clone) else {
+                return;
+            };
             let ww3 = ww_tp.clone();
             drop(s);
             rt_tp.spawn(async move {
-                let result = if new_played { client.mark_played(&id).await } else { client.mark_unplayed(&id).await };
+                let result = if new_played {
+                    client.mark_played(&id).await
+                } else {
+                    client.mark_unplayed(&id).await
+                };
                 if let Err(e) = result {
                     warn!("toggle_album_played: {e}");
                     crate::show_toast(ww3, format!("Played error: {e}"));
@@ -4311,10 +5064,10 @@ fn main() -> Result<()> {
         });
     }
     {
-        let video_ms  = Arc::clone(&video);
-        let ww_ms     = window.as_weak();
-        let rt_ms     = rt.handle().clone();
-        let state_ms  = Arc::clone(&state);
+        let video_ms = Arc::clone(&video);
+        let ww_ms = window.as_weak();
+        let rt_ms = rt.handle().clone();
+        let state_ms = Arc::clone(&state);
         AppState::get(&window).on_music_bar_stop(move || {
             crate::playback::do_stop_playback(&video_ms, &ww_ms, &rt_ms, &state_ms);
         });
@@ -4325,7 +5078,9 @@ fn main() -> Result<()> {
             let vs = video_msk.lock().unwrap();
             if let Some(p) = vs.player.as_ref() {
                 let dur = p.get_duration();
-                if dur > 0.0 { p.seek_to(ratio as f64 * dur); }
+                if dur > 0.0 {
+                    p.seek_to(ratio as f64 * dur);
+                }
             }
         });
     }
@@ -4334,22 +5089,33 @@ fn main() -> Result<()> {
         AppState::get(&window).on_music_bar_seek_rel(move |secs| {
             let vs = video_msr.lock().unwrap();
             if let Some(p) = vs.player.as_ref() {
-                if secs >= 0.0 { p.seek_forward(secs as f64); }
-                else           { p.seek_backward(-secs as f64); }
+                if secs >= 0.0 {
+                    p.seek_forward(secs as f64);
+                } else {
+                    p.seek_backward(-secs as f64);
+                }
             }
         });
     }
     {
         let state_mo = Arc::clone(&state);
-        let ww_mo    = window.as_weak();
-        let rt_mo    = rt.handle().clone();
+        let ww_mo = window.as_weak();
+        let rt_mo = rt.handle().clone();
         AppState::get(&window).on_music_bar_open_album(move || {
             let Some(w) = ww_mo.upgrade() else { return };
-            let g       = AppState::get(&w);
-            let id      = g.get_music_bar_album_id().to_string();
-            if id.is_empty() { return }
-            let title   = "".to_string(); // open_album_screen fetches the real title
-            album::open_album_screen(id, title, Arc::clone(&state_mo), ww_mo.clone(), rt_mo.clone());
+            let g = AppState::get(&w);
+            let id = g.get_music_bar_album_id().to_string();
+            if id.is_empty() {
+                return;
+            }
+            let title = "".to_string(); // open_album_screen fetches the real title
+            album::open_album_screen(
+                id,
+                title,
+                Arc::clone(&state_mo),
+                ww_mo.clone(),
+                rt_mo.clone(),
+            );
         });
     }
     {
@@ -4388,7 +5154,12 @@ fn main() -> Result<()> {
             g.set_queue_panel_cursor(0);
             let items = g.get_queue_items();
             for i in 0..items.row_count() {
-                if let Some(e) = items.row_data(i) && e.is_current { g.set_queue_panel_cursor(i as i32); break; }
+                if let Some(e) = items.row_data(i)
+                    && e.is_current
+                {
+                    g.set_queue_panel_cursor(i as i32);
+                    break;
+                }
             }
             g.set_show_queue_panel(true);
             w.invoke_grab_keyboard_focus();
@@ -4397,20 +5168,24 @@ fn main() -> Result<()> {
     {
         let state_pa = Arc::clone(&state);
         let video_pa = Arc::clone(&video);
-        let ww_pa    = window.as_weak();
-        let rt_pa    = rt.handle().clone();
+        let ww_pa = window.as_weak();
+        let rt_pa = rt.handle().clone();
         AppState::get(&window).on_play_album_all(move || {
             let Some(w) = ww_pa.upgrade() else { return };
-            let g        = AppState::get(&w);
-            let tracks   = g.get_album_tracks();
-            let count    = tracks.row_count();
-            if count == 0 { return }
-            let s        = state_pa.lock().unwrap();
-            let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
-            let mut config   = s.player_config();
+            let g = AppState::get(&w);
+            let tracks = g.get_album_tracks();
+            let count = tracks.row_count();
+            if count == 0 {
+                return;
+            }
+            let s = state_pa.lock().unwrap();
+            let Some(client) = s.client.as_ref().map(Arc::clone) else {
+                return;
+            };
+            let mut config = s.player_config();
             drop(s);
             let album_id = g.get_album_id().to_string();
-            let artist   = g.get_album_artist().to_string();
+            let artist = g.get_album_artist().to_string();
             // Populate the full playlist (all tracks) before starting track 0.
             {
                 let mut vs = video_pa.lock().unwrap();
@@ -4422,13 +5197,21 @@ fn main() -> Result<()> {
                     if let Some(t) = tracks.row_data(i) {
                         // Playlist rows carry their own artist + owning album id
                         // (music-bar art); album rows fall back to screen context.
-                        let t_art = if t.artist.is_empty()   { artist.clone() }   else { t.artist.to_string() };
-                        let t_alb = if t.album_id.is_empty() { album_id.clone() } else { t.album_id.to_string() };
+                        let t_art = if t.artist.is_empty() {
+                            artist.clone()
+                        } else {
+                            t.artist.to_string()
+                        };
+                        let t_alb = if t.album_id.is_empty() {
+                            album_id.clone()
+                        } else {
+                            t.album_id.to_string()
+                        };
                         vs.playlist.push(crate::playback::QueueItem {
-                            id:         t.id.to_string(),
-                            item_type:  "Audio".into(),
-                            series_id:  None,
-                            title:      t.title.to_string(),
+                            id: t.id.to_string(),
+                            item_type: "Audio".into(),
+                            series_id: None,
+                            title: t.title.to_string(),
                             audio_meta: Some((t_art, t_alb)),
                         });
                     }
@@ -4437,74 +5220,108 @@ fn main() -> Result<()> {
                 push_queue_display(&vs, &g);
             }
             if let Some(t) = tracks.row_data(0) {
-                let track_id  = t.id.to_string();
-                let title     = t.title.to_string();
-                let url       = client.direct_play_url(&track_id);
-                let t_art = if t.artist.is_empty()   { artist }   else { t.artist.to_string() };
-                let t_alb = if t.album_id.is_empty() { album_id } else { t.album_id.to_string() };
+                let track_id = t.id.to_string();
+                let title = t.title.to_string();
+                let url = client.direct_play_url(&track_id);
+                let t_art = if t.artist.is_empty() {
+                    artist
+                } else {
+                    t.artist.to_string()
+                };
+                let t_alb = if t.album_id.is_empty() {
+                    album_id
+                } else {
+                    t.album_id.to_string()
+                };
                 let audio_meta = Some((t_art, t_alb));
                 config.start_position_secs = None;
-                start_playback(url, track_id, "Audio", title, config, client,
-                               None, audio_meta, &video_pa, &ww_pa, &rt_pa,
-                               &state_pa, None);
+                start_playback(
+                    url, track_id, "Audio", title, config, client, None, audio_meta, &video_pa,
+                    &ww_pa, &rt_pa, &state_pa, None,
+                );
             }
         });
     }
     {
-        let state_pd  = Arc::clone(&state);
-        let ww        = window.as_weak();
-        let video_pd  = Arc::clone(&video);
+        let state_pd = Arc::clone(&state);
+        let ww = window.as_weak();
+        let video_pd = Arc::clone(&video);
         let rt_handle = rt.handle().clone();
         AppState::get(&window).on_play_detail(move || {
             let Some(w) = ww.upgrade() else { return };
             let g = AppState::get(&w);
             let id = g.get_detail_id().to_string();
-            if id.is_empty() || g.get_detail_loading() { return }
-            let item_type  = g.get_detail_item_type().to_string();
-            let series_id  = g.get_detail_series_id().to_string();
-            let series_id  = if series_id.is_empty() { None } else { Some(series_id) };
-            let title      = g.get_detail_title().to_string();
+            if id.is_empty() || g.get_detail_loading() {
+                return;
+            }
+            let item_type = g.get_detail_item_type().to_string();
+            let series_id = g.get_detail_series_id().to_string();
+            let series_id = if series_id.is_empty() {
+                None
+            } else {
+                Some(series_id)
+            };
+            let title = g.get_detail_title().to_string();
             // Flag that this play came from the detail page so start_playback keeps it
             // alive (hidden by !is-playing condition) and reset_playback_ui restores it.
             video_pd.lock().unwrap().from_detail = true;
             let s = state_pd.lock().unwrap();
-            let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
+            let Some(client) = s.client.as_ref().map(Arc::clone) else {
+                return;
+            };
             let mut config = s.player_config();
             config.start_position_secs = None;
             drop(s);
             let play_url = client.direct_play_url(&id);
             info!("play_detail: {}", id);
-            start_playback(play_url, id, &item_type, title, config, client,
-                           series_id, None, &video_pd, &ww, &rt_handle,
-                           &state_pd, None);
+            start_playback(
+                play_url, id, &item_type, title, config, client, series_id, None, &video_pd, &ww,
+                &rt_handle, &state_pd, None,
+            );
         });
     }
     {
-        let state_rd  = Arc::clone(&state);
-        let ww        = window.as_weak();
-        let video_rd  = Arc::clone(&video);
+        let state_rd = Arc::clone(&state);
+        let ww = window.as_weak();
+        let video_rd = Arc::clone(&video);
         let rt_handle = rt.handle().clone();
         AppState::get(&window).on_resume_detail(move || {
             let Some(w) = ww.upgrade() else { return };
             let g = AppState::get(&w);
             let id = g.get_detail_id().to_string();
-            if id.is_empty() || g.get_detail_loading() { return }
-            let item_type  = g.get_detail_item_type().to_string();
-            let series_id  = g.get_detail_series_id().to_string();
-            let series_id  = if series_id.is_empty() { None } else { Some(series_id) };
-            let title      = g.get_detail_title().to_string();
+            if id.is_empty() || g.get_detail_loading() {
+                return;
+            }
+            let item_type = g.get_detail_item_type().to_string();
+            let series_id = g.get_detail_series_id().to_string();
+            let series_id = if series_id.is_empty() {
+                None
+            } else {
+                Some(series_id)
+            };
+            let title = g.get_detail_title().to_string();
             let resume_pos = g.get_detail_resume_secs();
             video_rd.lock().unwrap().from_detail = true;
             let s = state_rd.lock().unwrap();
-            let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
+            let Some(client) = s.client.as_ref().map(Arc::clone) else {
+                return;
+            };
             let mut config = s.player_config();
-            config.start_position_secs = if resume_pos > 0.0 { Some(resume_pos as f64) } else { None };
+            config.start_position_secs = if resume_pos > 0.0 {
+                Some(resume_pos as f64)
+            } else {
+                None
+            };
             drop(s);
             let play_url = client.direct_play_url(&id);
-            info!("resume_detail: {} from {:?}s", id, config.start_position_secs);
-            start_playback(play_url, id, &item_type, title, config, client,
-                           series_id, None, &video_rd, &ww, &rt_handle,
-                           &state_rd, None);
+            info!(
+                "resume_detail: {} from {:?}s",
+                id, config.start_position_secs
+            );
+            start_playback(
+                play_url, id, &item_type, title, config, client, series_id, None, &video_rd, &ww,
+                &rt_handle, &state_rd, None,
+            );
         });
     }
     {
@@ -4522,35 +5339,52 @@ fn main() -> Result<()> {
     // ── series drill-down ─────────────────────────────────────────────────────
     {
         let state_os = Arc::clone(&state);
-        let ww_os    = window.as_weak();
-        let rth_os   = rt.handle().clone();
+        let ww_os = window.as_weak();
+        let rth_os = rt.handle().clone();
         AppState::get(&window).on_open_series(move |id| {
-            open_series_screen(id.to_string(), state_os.clone(), ww_os.clone(), rth_os.clone());
+            open_series_screen(
+                id.to_string(),
+                state_os.clone(),
+                ww_os.clone(),
+                rth_os.clone(),
+            );
         });
     }
     {
         let state_ss = Arc::clone(&state);
-        let ww_ss    = window.as_weak();
-        let rth_ss   = rt.handle().clone();
+        let ww_ss = window.as_weak();
+        let rth_ss = rt.handle().clone();
         AppState::get(&window).on_series_select_season(move |idx| {
             let idx = idx as usize;
             let mut s = state_ss.lock().unwrap();
-            let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
-            let series_id  = s.series_open_id.clone();
-            let Some(season_id) = s.series_season_ids.get(idx).cloned() else { return };
+            let Some(client) = s.client.as_ref().map(Arc::clone) else {
+                return;
+            };
+            let series_id = s.series_open_id.clone();
+            let Some(season_id) = s.series_season_ids.get(idx).cloned() else {
+                return;
+            };
 
             // Cache hit — we're on the UI thread (Slint callback), set directly.
             if let Some(cached) = s.series_episode_cache.get(&season_id).cloned() {
                 s.series_episode_items = cached.clone();
                 drop(s);
-                if let Some(w) = ww_ss.upgrade() && AppState::get(&w).get_series_id().as_str() == series_id {
+                if let Some(w) = ww_ss.upgrade()
+                    && AppState::get(&w).get_series_id().as_str() == series_id
+                {
                     let cards: Vec<CardItem> = cached.iter().map(ep_to_card).collect();
                     let g = AppState::get(&w);
                     g.set_series_episode_cards(ModelRc::new(VecModel::from(cards)));
                     g.set_series_focused_ep(0);
                     g.set_series_loading(false);
                 }
-                spawn_episode_thumb_loading(client, cached, series_id, ww_ss.clone(), rth_ss.clone());
+                spawn_episode_thumb_loading(
+                    client,
+                    cached,
+                    series_id,
+                    ww_ss.clone(),
+                    rth_ss.clone(),
+                );
                 return;
             }
 
@@ -4566,28 +5400,41 @@ fn main() -> Result<()> {
                 g.set_series_focused_ep(0);
             }
             let state_ss2 = state_ss.clone();
-            let ww_ss2    = ww_ss.clone();
-            let ww_ss3    = ww_ss.clone();
-            let rth_ss2   = rth_ss.clone();
-            let sid2      = series_id.clone();
+            let ww_ss2 = ww_ss.clone();
+            let ww_ss3 = ww_ss.clone();
+            let rth_ss2 = rth_ss.clone();
+            let sid2 = series_id.clone();
             rth_ss.spawn(async move {
-                let eps = client.get_season_episodes(&sid2, &season_id).await.unwrap_or_else(|e| {
-                    warn!("get_season_episodes {} {}: {:#}", sid2, season_id, e);
-                    vec![]
-                });
-                debug!("series {} season {} — {} episode(s)", sid2, season_id, eps.len());
+                let eps = client
+                    .get_season_episodes(&sid2, &season_id)
+                    .await
+                    .unwrap_or_else(|e| {
+                        warn!("get_season_episodes {} {}: {:#}", sid2, season_id, e);
+                        vec![]
+                    });
+                debug!(
+                    "series {} season {} — {} episode(s)",
+                    sid2,
+                    season_id,
+                    eps.len()
+                );
                 {
                     let mut s = state_ss2.lock().unwrap();
-                    if s.series_season_generation != generation { return; }
+                    if s.series_season_generation != generation {
+                        return;
+                    }
                     s.series_episode_items = eps.clone();
-                    s.series_episode_cache.insert(season_id.clone(), eps.clone());
+                    s.series_episode_cache
+                        .insert(season_id.clone(), eps.clone());
                 }
                 // Pass Vec<MediaItem> (Send) and build Vec<CardItem> (!Send) inside the closure.
                 let eps_send = eps.clone();
                 let sid3 = sid2.clone();
                 let _ = slint::invoke_from_event_loop(move || {
                     let Some(w) = ww_ss2.upgrade() else { return };
-                    if AppState::get(&w).get_series_id().as_str() != sid3 { return; }
+                    if AppState::get(&w).get_series_id().as_str() != sid3 {
+                        return;
+                    }
                     let cards: Vec<CardItem> = eps_send.iter().map(ep_to_card).collect();
                     AppState::get(&w).set_series_episode_cards(ModelRc::new(VecModel::from(cards)));
                     AppState::get(&w).set_series_loading(false);
@@ -4599,15 +5446,19 @@ fn main() -> Result<()> {
     {
         let state_pe = Arc::clone(&state);
         let video_pe = Arc::clone(&video);
-        let ww_pe    = window.as_weak();
-        let rth_pe   = rt.handle().clone();
+        let ww_pe = window.as_weak();
+        let rth_pe = rt.handle().clone();
         AppState::get(&window).on_play_series_episode(move |id| {
             let id = id.to_string();
-            let s  = state_pe.lock().unwrap();
-            let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
+            let s = state_pe.lock().unwrap();
+            let Some(client) = s.client.as_ref().map(Arc::clone) else {
+                return;
+            };
             let ep_item = s.series_episode_items.iter().find(|i| i.id == id).cloned();
             let mut config = s.player_config();
-            let series_id = ep_item.as_ref().and_then(|i| i.series_id.clone())
+            let series_id = ep_item
+                .as_ref()
+                .and_then(|i| i.series_id.clone())
                 .or_else(|| Some(s.series_open_id.clone()).filter(|sid| !sid.is_empty()));
             drop(s);
             // Set restore flags synchronously on the UI thread so reset_playback_ui always
@@ -4622,31 +5473,37 @@ fn main() -> Result<()> {
                 g.set_playback_from_season(was_season);
                 video_pe.lock().unwrap().from_series = true;
             }
-            let play_url  = client.direct_play_url(&id);
+            let play_url = client.direct_play_url(&id);
             // series_episode_items comes from get_series_episodes (Fields=MediaStreams),
             // so this is usually already known; the detail fetch below is the fallback.
             let ep_video_info = ep_item.as_ref().and_then(|i| i.video_stream_info());
-            let title     = ep_item.map(|i| i.display_name()).unwrap_or_else(|| id.clone());
+            let title = ep_item
+                .map(|i| i.display_name())
+                .unwrap_or_else(|| id.clone());
             let video_pe2 = Arc::clone(&video_pe);
-            let ww_pe2    = ww_pe.clone();
-            let rth_pe2   = rth_pe.clone();
+            let ww_pe2 = ww_pe.clone();
+            let rth_pe2 = rth_pe.clone();
             let state_pe2 = Arc::clone(&state_pe);
             info!("play_series_episode: {}", id);
             rth_pe.spawn(async move {
-                let detail     = client.get_item_detail(&id).await.ok();
-                let video_info = detail.as_ref().and_then(|i| i.video_stream_info()).or(ep_video_info);
+                let detail = client.get_item_detail(&id).await.ok();
+                let video_info = detail
+                    .as_ref()
+                    .and_then(|i| i.video_stream_info())
+                    .or(ep_video_info);
                 config.start_position_secs = detail.and_then(|i| i.resume_position_secs());
                 let _ = slint::invoke_from_event_loop(move || {
-                    start_playback(play_url, id, "Episode", title, config, client,
-                                   series_id, None, &video_pe2, &ww_pe2, &rth_pe2,
-                                   &state_pe2, video_info);
+                    start_playback(
+                        play_url, id, "Episode", title, config, client, series_id, None,
+                        &video_pe2, &ww_pe2, &rth_pe2, &state_pe2, video_info,
+                    );
                 });
             });
         });
     }
     {
         let state_cs = Arc::clone(&state);
-        let ww_cs    = window.as_weak();
+        let ww_cs = window.as_weak();
         AppState::get(&window).on_close_series(move || {
             debug!("close_series");
             if let Some(w) = ww_cs.upgrade() {
@@ -4673,10 +5530,16 @@ fn main() -> Result<()> {
     // ── season detail ─────────────────────────────────────────────────────────
     {
         let state_osd = Arc::clone(&state);
-        let ww_osd    = window.as_weak();
-        let rth_osd   = rt.handle().clone();
+        let ww_osd = window.as_weak();
+        let rth_osd = rt.handle().clone();
         AppState::get(&window).on_open_season_detail(move |season_id, series_id| {
-            season::open_season_screen(season_id.to_string(), series_id.to_string(), state_osd.clone(), ww_osd.clone(), rth_osd.clone());
+            season::open_season_screen(
+                season_id.to_string(),
+                series_id.to_string(),
+                state_osd.clone(),
+                ww_osd.clone(),
+                rth_osd.clone(),
+            );
         });
     }
     {
@@ -4699,21 +5562,29 @@ fn main() -> Result<()> {
     // ── person screen ─────────────────────────────────────────────────────────
     {
         let state2 = Arc::clone(&state);
-        let ww2    = window.as_weak();
-        let rt2    = rt.handle().clone();
+        let ww2 = window.as_weak();
+        let rt2 = rt.handle().clone();
         AppState::get(&window).on_open_person(move |id, name| {
             person::open_person_screen(
-                id.to_string(), name.to_string(), Arc::clone(&state2), ww2.clone(), rt2.clone(),
+                id.to_string(),
+                name.to_string(),
+                Arc::clone(&state2),
+                ww2.clone(),
+                rt2.clone(),
             );
         });
     }
     {
         let state2 = Arc::clone(&state);
-        let ww2    = window.as_weak();
-        let rt2    = rt.handle().clone();
+        let ww2 = window.as_weak();
+        let rt2 = rt.handle().clone();
         AppState::get(&window).on_open_discover_person(move |tmdb_id, name| {
             person::open_person_from_discover(
-                tmdb_id.to_string(), name.to_string(), Arc::clone(&state2), ww2.clone(), rt2.clone(),
+                tmdb_id.to_string(),
+                name.to_string(),
+                Arc::clone(&state2),
+                ww2.clone(),
+                rt2.clone(),
             );
         });
     }
@@ -4729,25 +5600,38 @@ fn main() -> Result<()> {
     // ── season fav / played toggles ───────────────────────────────────────────
     {
         let state2 = Arc::clone(&state);
-        let ww2    = window.as_weak();
-        let rt2    = rt.handle().clone();
+        let ww2 = window.as_weak();
+        let rt2 = rt.handle().clone();
         AppState::get(&window).on_toggle_season_fav(move || {
             let Some(w) = ww2.upgrade() else { return };
-            let id      = AppState::get(&w).get_season_id().to_string();
+            let id = AppState::get(&w).get_season_id().to_string();
             let cur_fav = AppState::get(&w).get_season_is_favorite();
-            let s  = state2.lock().unwrap();
-            let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
+            let s = state2.lock().unwrap();
+            let Some(client) = s.client.as_ref().map(Arc::clone) else {
+                return;
+            };
             drop(s);
-            let ww3    = ww2.clone();
+            let ww3 = ww2.clone();
             let state3 = Arc::clone(&state2);
             rt2.spawn(async move {
-                let result = if cur_fav { client.unset_favorite(&id).await }
-                             else       { client.set_favorite(&id).await };
-                if let Err(e) = result { warn!("toggle-season-fav: {e}"); return; }
+                let result = if cur_fav {
+                    client.unset_favorite(&id).await
+                } else {
+                    client.set_favorite(&id).await
+                };
+                if let Err(e) = result {
+                    warn!("toggle-season-fav: {e}");
+                    return;
+                }
                 let new_fav = !cur_fav;
-                state3.lock().unwrap().update_item_user_state(&id, None, Some(new_fav));
+                state3
+                    .lock()
+                    .unwrap()
+                    .update_item_user_state(&id, None, Some(new_fav));
                 let _ = slint::invoke_from_event_loop(move || {
-                    if let Some(w) = ww3.upgrade() && AppState::get(&w).get_season_id().as_str() == id {
+                    if let Some(w) = ww3.upgrade()
+                        && AppState::get(&w).get_season_id().as_str() == id
+                    {
                         AppState::get(&w).set_season_is_favorite(new_fav);
                     }
                 });
@@ -4756,26 +5640,37 @@ fn main() -> Result<()> {
     }
     {
         let state2 = Arc::clone(&state);
-        let ww2    = window.as_weak();
-        let rt2    = rt.handle().clone();
+        let ww2 = window.as_weak();
+        let rt2 = rt.handle().clone();
         AppState::get(&window).on_toggle_season_played(move || {
             let Some(w) = ww2.upgrade() else { return };
-            let id       = AppState::get(&w).get_season_id().to_string();
+            let id = AppState::get(&w).get_season_id().to_string();
             let cur_play = AppState::get(&w).get_season_has_played();
             // Capture the parent series_id so the series Next Up row can be refreshed.
-            let sid      = AppState::get(&w).get_series_id().to_string();
-            let s  = state2.lock().unwrap();
-            let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
+            let sid = AppState::get(&w).get_series_id().to_string();
+            let s = state2.lock().unwrap();
+            let Some(client) = s.client.as_ref().map(Arc::clone) else {
+                return;
+            };
             drop(s);
-            let ww3    = ww2.clone();
+            let ww3 = ww2.clone();
             let state3 = Arc::clone(&state2);
-            let rt3    = rt2.clone();
+            let rt3 = rt2.clone();
             rt2.spawn(async move {
-                let result = if cur_play { client.mark_unplayed(&id).await }
-                             else        { client.mark_played(&id).await };
-                if let Err(e) = result { warn!("toggle-season-played: {e}"); return; }
+                let result = if cur_play {
+                    client.mark_unplayed(&id).await
+                } else {
+                    client.mark_played(&id).await
+                };
+                if let Err(e) = result {
+                    warn!("toggle-season-played: {e}");
+                    return;
+                }
                 let new_play = !cur_play;
-                state3.lock().unwrap().update_item_user_state(&id, Some(new_play), None);
+                state3
+                    .lock()
+                    .unwrap()
+                    .update_item_user_state(&id, Some(new_play), None);
                 let client2 = Arc::clone(&client);
                 let _ = slint::invoke_from_event_loop(move || {
                     if let Some(w) = ww3.upgrade() {
@@ -4794,7 +5689,7 @@ fn main() -> Result<()> {
     // ── Up Next banner: cancel (Skip button) ─────────────────────────────────
     {
         let video_ca = Arc::clone(&video);
-        let ww_ca    = window.as_weak();
+        let ww_ca = window.as_weak();
         AppState::get(&window).on_cancel_auto_advance(move || {
             video_ca.lock().unwrap().next_ep_pending = None;
             if let Some(w) = ww_ca.upgrade() {
@@ -4807,34 +5702,56 @@ fn main() -> Result<()> {
     {
         let state_pn = Arc::clone(&state);
         let video_pn = Arc::clone(&video);
-        let ww_pn    = window.as_weak();
-        let rt_pn    = rt.handle().clone();
+        let ww_pn = window.as_weak();
+        let rt_pn = rt.handle().clone();
         AppState::get(&window).on_play_next_ep(move || {
             let next = video_pn.lock().unwrap().next_ep_pending.take();
-            let Some(next) = next else { return; };
+            let Some(next) = next else {
+                return;
+            };
             let config = state_pn.lock().unwrap().player_config();
-            let cli    = state_pn.lock().unwrap().client.as_ref().map(Arc::clone);
-            let Some(cli) = cli else { return; };
-            let url        = cli.direct_play_url(&next.id);
-            let title      = next.display_name();
-            let ep_id      = next.id.clone();
-            let series_id  = next.series_id.clone();
+            let cli = state_pn.lock().unwrap().client.as_ref().map(Arc::clone);
+            let Some(cli) = cli else {
+                return;
+            };
+            let url = cli.direct_play_url(&next.id);
+            let title = next.display_name();
+            let ep_id = next.id.clone();
+            let series_id = next.series_id.clone();
             let video_info = next.video_stream_info();
             if let Some(w) = ww_pn.upgrade() {
                 AppState::get(&w).set_show_next_ep_banner(false);
             }
-            start_playback(url, ep_id, "Episode", title, config, cli,
-                           series_id, None, &video_pn, &ww_pn, &rt_pn,
-                           &state_pn, video_info);
+            start_playback(
+                url, ep_id, "Episode", title, config, cli, series_id, None, &video_pn, &ww_pn,
+                &rt_pn, &state_pn, video_info,
+            );
         });
     }
 
     // ── player controls ───────────────────────────────────────────────────────
-    controls::wire_controls(&window, Arc::clone(&video), Arc::clone(&state), Arc::clone(&controls_show), Arc::clone(&seek_suppress), rt.handle().clone());
+    controls::wire_controls(
+        &window,
+        Arc::clone(&video),
+        Arc::clone(&state),
+        Arc::clone(&controls_show),
+        Arc::clone(&seek_suppress),
+        rt.handle().clone(),
+    );
 
     // ── context menu + queue ──────────────────────────────────────────────────
-    context_menu::wire_context_menu(&window, Arc::clone(&state), Arc::clone(&video), rt.handle().clone());
-    context_menu::wire_queue_callbacks(&window, Arc::clone(&state), Arc::clone(&video), rt.handle().clone());
+    context_menu::wire_context_menu(
+        &window,
+        Arc::clone(&state),
+        Arc::clone(&video),
+        rt.handle().clone(),
+    );
+    context_menu::wire_queue_callbacks(
+        &window,
+        Arc::clone(&state),
+        Arc::clone(&video),
+        rt.handle().clone(),
+    );
     context_menu::wire_playlist_picker(&window, Arc::clone(&state), rt.handle().clone());
 
     // ── Seerr integration ──────────────────────────────────────────────────────
@@ -4845,8 +5762,8 @@ fn main() -> Result<()> {
     {
         let video_qp = Arc::clone(&video);
         let state_qp = Arc::clone(&state);
-        let ww_qp    = window.as_weak();
-        let rt_qp    = rt.handle().clone();
+        let ww_qp = window.as_weak();
+        let rt_qp = rt.handle().clone();
         AppState::get(&window).on_queue_prev_track(move || {
             let (item, should_seek_start) = {
                 let mut vs = video_qp.lock().unwrap();
@@ -4858,19 +5775,35 @@ fn main() -> Result<()> {
             match item {
                 Some(qi) => {
                     let s = state_qp.lock().unwrap();
-                    let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
+                    let Some(client) = s.client.as_ref().map(Arc::clone) else {
+                        return;
+                    };
                     let mut config = s.player_config();
                     config.start_position_secs = None;
                     drop(s);
                     let url = client.direct_play_url(&qi.id);
-                    let am  = qi.audio_meta.clone();
-                    start_playback(url, qi.id.clone(), &qi.item_type, qi.title.clone(),
-                                   config, client, qi.series_id.clone(), am,
-                                   &video_qp, &ww_qp, &rt_qp, &state_qp, None);
+                    let am = qi.audio_meta.clone();
+                    start_playback(
+                        url,
+                        qi.id.clone(),
+                        &qi.item_type,
+                        qi.title.clone(),
+                        config,
+                        client,
+                        qi.series_id.clone(),
+                        am,
+                        &video_qp,
+                        &ww_qp,
+                        &rt_qp,
+                        &state_qp,
+                        None,
+                    );
                 }
                 None if should_seek_start => {
                     // pos >= 2s and no prev: restart current track from 0
-                    if let Some(p) = video_qp.lock().unwrap().player.as_ref() { p.seek_to(0.0) }
+                    if let Some(p) = video_qp.lock().unwrap().player.as_ref() {
+                        p.seek_to(0.0)
+                    }
                 }
                 None => {} // already at start, nothing to do
             }
@@ -4879,8 +5812,8 @@ fn main() -> Result<()> {
     {
         let video_qn = Arc::clone(&video);
         let state_qn = Arc::clone(&state);
-        let ww_qn    = window.as_weak();
-        let rt_qn    = rt.handle().clone();
+        let ww_qn = window.as_weak();
+        let rt_qn = rt.handle().clone();
         AppState::get(&window).on_queue_next_track(move || {
             let item = {
                 let mut vs = video_qn.lock().unwrap();
@@ -4888,21 +5821,35 @@ fn main() -> Result<()> {
             };
             if let Some(qi) = item {
                 let s = state_qn.lock().unwrap();
-                let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
+                let Some(client) = s.client.as_ref().map(Arc::clone) else {
+                    return;
+                };
                 let mut config = s.player_config();
                 config.start_position_secs = None;
                 drop(s);
                 let url = client.direct_play_url(&qi.id);
-                let am  = qi.audio_meta.clone();
-                start_playback(url, qi.id.clone(), &qi.item_type, qi.title.clone(),
-                               config, client, qi.series_id.clone(), am,
-                               &video_qn, &ww_qn, &rt_qn, &state_qn, None);
+                let am = qi.audio_meta.clone();
+                start_playback(
+                    url,
+                    qi.id.clone(),
+                    &qi.item_type,
+                    qi.title.clone(),
+                    config,
+                    client,
+                    qi.series_id.clone(),
+                    am,
+                    &video_qn,
+                    &ww_qn,
+                    &rt_qn,
+                    &state_qn,
+                    None,
+                );
             }
         });
     }
     {
         let video_ts = Arc::clone(&video);
-        let ww_ts    = window.as_weak();
+        let ww_ts = window.as_weak();
         AppState::get(&window).on_toggle_shuffle(move || {
             let shuffled = {
                 let mut vs = video_ts.lock().unwrap();
@@ -4918,7 +5865,7 @@ fn main() -> Result<()> {
     }
     {
         let video_cr = Arc::clone(&video);
-        let ww_cr    = window.as_weak();
+        let ww_cr = window.as_weak();
         AppState::get(&window).on_cycle_repeat(move || {
             use crate::playback::RepeatMode;
             let next_mode = {
@@ -4942,8 +5889,8 @@ fn main() -> Result<()> {
     {
         let video_rq = Arc::clone(&video);
         let state_rq = Arc::clone(&state);
-        let ww_rq    = window.as_weak();
-        let rt_rq    = rt.handle().clone();
+        let ww_rq = window.as_weak();
+        let rt_rq = rt.handle().clone();
         AppState::get(&window).on_refresh_queue_display(move || {
             let Some(w) = ww_rq.upgrade() else { return };
             push_queue_display(&video_rq.lock().unwrap(), &AppState::get(&w));
@@ -4957,13 +5904,15 @@ fn main() -> Result<()> {
     {
         let video_qj = Arc::clone(&video);
         let state_qj = Arc::clone(&state);
-        let ww_qj    = window.as_weak();
-        let rt_qj    = rt.handle().clone();
+        let ww_qj = window.as_weak();
+        let rt_qj = rt.handle().clone();
         AppState::get(&window).on_queue_jump(move |idx| {
             // idx is QueueEntry.index: the UNDERLYING position — 0..playlist.len()
             // are playlist tracks, after that context-menu queue items (CR10-6);
             // -1 is the synthetic now-playing row (already playing — nothing to do).
-            if idx < 0 { return; }
+            if idx < 0 {
+                return;
+            }
             let item = {
                 let mut vs = video_qj.lock().unwrap();
                 let idx = idx as usize;
@@ -4972,28 +5921,48 @@ fn main() -> Result<()> {
                     vs.playlist[idx].clone()
                 } else {
                     let qidx = idx - vs.playlist.len();
-                    if qidx >= vs.queue.len() { return }
+                    if qidx >= vs.queue.len() {
+                        return;
+                    }
                     vs.queue.remove(qidx)
                 }
             };
             let s = state_qj.lock().unwrap();
-            let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
+            let Some(client) = s.client.as_ref().map(Arc::clone) else {
+                return;
+            };
             let mut config = s.player_config();
             config.start_position_secs = None;
             drop(s);
             let url = client.direct_play_url(&item.id);
-            let am  = item.audio_meta.clone();
-            if let Some(w) = ww_qj.upgrade() { AppState::get(&w).set_show_queue_panel(false); }
-            start_playback(url, item.id.clone(), &item.item_type, item.title.clone(),
-                           config, client, item.series_id.clone(), am,
-                           &video_qj, &ww_qj, &rt_qj, &state_qj, None);
+            let am = item.audio_meta.clone();
+            if let Some(w) = ww_qj.upgrade() {
+                AppState::get(&w).set_show_queue_panel(false);
+            }
+            start_playback(
+                url,
+                item.id.clone(),
+                &item.item_type,
+                item.title.clone(),
+                config,
+                client,
+                item.series_id.clone(),
+                am,
+                &video_qj,
+                &ww_qj,
+                &rt_qj,
+                &state_qj,
+                None,
+            );
         });
     }
     {
         let video_qr = Arc::clone(&video);
-        let ww_qr    = window.as_weak();
+        let ww_qr = window.as_weak();
         AppState::get(&window).on_queue_remove(move |idx| {
-            if idx < 0 { return; } // synthetic now-playing row
+            if idx < 0 {
+                return;
+            } // synthetic now-playing row
             let Some(w) = ww_qr.upgrade() else { return };
             let g = AppState::get(&w);
             {
@@ -5002,7 +5971,9 @@ fn main() -> Result<()> {
                 // The currently-playing row can't be removed — the track keeps
                 // playing regardless, and removing it shifted the is-current
                 // highlight onto the wrong row (CR10-17).
-                if !vs.playlist.is_empty() && idx == vs.playlist_index { return; }
+                if !vs.playlist.is_empty() && idx == vs.playlist_index {
+                    return;
+                }
                 if idx < vs.playlist.len() {
                     vs.playlist.remove(idx);
                     // Keep playlist_index valid after removal
@@ -5016,7 +5987,9 @@ fn main() -> Result<()> {
                 } else {
                     // Context-menu queue row (CR10-6)
                     let qidx = idx - vs.playlist.len();
-                    if qidx >= vs.queue.len() { return; }
+                    if qidx >= vs.queue.len() {
+                        return;
+                    }
                     vs.queue.remove(qidx);
                 }
                 crate::playback::invalidate_preload(&mut vs);
@@ -5024,14 +5997,18 @@ fn main() -> Result<()> {
             }
             // Snap cursor if it's past the new end
             let len = g.get_queue_items().row_count() as i32;
-            let c   = g.get_queue_panel_cursor();
-            if c >= len && len > 0 { g.set_queue_panel_cursor(len - 1); }
-            if len == 0 { g.set_show_queue_panel(false); }
+            let c = g.get_queue_panel_cursor();
+            if c >= len && len > 0 {
+                g.set_queue_panel_cursor(len - 1);
+            }
+            if len == 0 {
+                g.set_show_queue_panel(false);
+            }
         });
     }
     {
         let video_qc = Arc::clone(&video);
-        let ww_qc    = window.as_weak();
+        let ww_qc = window.as_weak();
         AppState::get(&window).on_queue_clear(move || {
             let Some(w) = ww_qc.upgrade() else { return };
             let g = AppState::get(&w);
@@ -5063,23 +6040,34 @@ fn main() -> Result<()> {
     // ── detail page: toggle-fav / toggle-played ───────────────────────────────
     {
         let state2 = Arc::clone(&state);
-        let ww2    = window.as_weak();
-        let rt2    = rt.handle().clone();
+        let ww2 = window.as_weak();
+        let rt2 = rt.handle().clone();
         AppState::get(&window).on_toggle_detail_fav(move || {
             let Some(w) = ww2.upgrade() else { return };
-            let id      = AppState::get(&w).get_detail_id().to_string();
+            let id = AppState::get(&w).get_detail_id().to_string();
             let cur_fav = AppState::get(&w).get_detail_is_favorite();
-            let s  = state2.lock().unwrap();
-            let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
+            let s = state2.lock().unwrap();
+            let Some(client) = s.client.as_ref().map(Arc::clone) else {
+                return;
+            };
             drop(s);
-            let ww3    = ww2.clone();
+            let ww3 = ww2.clone();
             let state3 = Arc::clone(&state2);
             rt2.spawn(async move {
-                let result = if cur_fav { client.unset_favorite(&id).await }
-                             else       { client.set_favorite(&id).await };
-                if let Err(e) = result { warn!("toggle-detail-fav: {e}"); return; }
+                let result = if cur_fav {
+                    client.unset_favorite(&id).await
+                } else {
+                    client.set_favorite(&id).await
+                };
+                if let Err(e) = result {
+                    warn!("toggle-detail-fav: {e}");
+                    return;
+                }
                 let new_fav = !cur_fav;
-                state3.lock().unwrap().update_item_user_state(&id, None, Some(new_fav));
+                state3
+                    .lock()
+                    .unwrap()
+                    .update_item_user_state(&id, None, Some(new_fav));
                 let ww4 = ww3.clone();
                 let _ = slint::invoke_from_event_loop(move || {
                     if let Some(w) = ww4.upgrade() {
@@ -5096,26 +6084,37 @@ fn main() -> Result<()> {
     }
     {
         let state2 = Arc::clone(&state);
-        let ww2    = window.as_weak();
-        let rt2    = rt.handle().clone();
+        let ww2 = window.as_weak();
+        let rt2 = rt.handle().clone();
         AppState::get(&window).on_toggle_detail_played(move || {
             let Some(w) = ww2.upgrade() else { return };
-            let id       = AppState::get(&w).get_detail_id().to_string();
+            let id = AppState::get(&w).get_detail_id().to_string();
             let cur_play = AppState::get(&w).get_detail_has_played();
             // Capture series_id now (episode detail only); empty for movies.
-            let sid      = AppState::get(&w).get_detail_series_id().to_string();
-            let s  = state2.lock().unwrap();
-            let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
+            let sid = AppState::get(&w).get_detail_series_id().to_string();
+            let s = state2.lock().unwrap();
+            let Some(client) = s.client.as_ref().map(Arc::clone) else {
+                return;
+            };
             drop(s);
-            let ww3    = ww2.clone();
+            let ww3 = ww2.clone();
             let state3 = Arc::clone(&state2);
-            let rt3    = rt2.clone();
+            let rt3 = rt2.clone();
             rt2.spawn(async move {
-                let result = if cur_play { client.mark_unplayed(&id).await }
-                             else        { client.mark_played(&id).await };
-                if let Err(e) = result { warn!("toggle-detail-played: {e}"); return; }
+                let result = if cur_play {
+                    client.mark_unplayed(&id).await
+                } else {
+                    client.mark_played(&id).await
+                };
+                if let Err(e) = result {
+                    warn!("toggle-detail-played: {e}");
+                    return;
+                }
                 let new_play = !cur_play;
-                state3.lock().unwrap().update_item_user_state(&id, Some(new_play), None);
+                state3
+                    .lock()
+                    .unwrap()
+                    .update_item_user_state(&id, Some(new_play), None);
                 let client2 = Arc::clone(&client);
                 let _ = slint::invoke_from_event_loop(move || {
                     if let Some(w) = ww3.upgrade() {
@@ -5123,9 +6122,16 @@ fn main() -> Result<()> {
                             AppState::get(&w).set_detail_has_played(new_play);
                         }
                         context_menu::update_card_in_all_models(&w, &id, Some(new_play), None);
-                        if new_play { context_menu::remove_from_dynamic_rows(&w, &id); }
+                        if new_play {
+                            context_menu::remove_from_dynamic_rows(&w, &id);
+                        }
                         if !sid.is_empty() {
-                            crate::series::refresh_series_next_up(sid.clone(), client2, ww3.clone(), rt3);
+                            crate::series::refresh_series_next_up(
+                                sid.clone(),
+                                client2,
+                                ww3.clone(),
+                                rt3,
+                            );
                             let delta = if new_play { -1 } else { 1 };
                             context_menu::update_series_unplayed_count(&w, &sid, delta);
                         }
@@ -5136,24 +6142,35 @@ fn main() -> Result<()> {
     }
     {
         let state2 = Arc::clone(&state);
-        let ww2    = window.as_weak();
-        let rt2    = rt.handle().clone();
+        let ww2 = window.as_weak();
+        let rt2 = rt.handle().clone();
         AppState::get(&window).on_toggle_series_played(move || {
             let Some(w) = ww2.upgrade() else { return };
-            let id       = AppState::get(&w).get_series_id().to_string();
+            let id = AppState::get(&w).get_series_id().to_string();
             let cur_play = AppState::get(&w).get_series_has_played();
-            let s  = state2.lock().unwrap();
-            let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
+            let s = state2.lock().unwrap();
+            let Some(client) = s.client.as_ref().map(Arc::clone) else {
+                return;
+            };
             drop(s);
-            let ww3    = ww2.clone();
+            let ww3 = ww2.clone();
             let state3 = Arc::clone(&state2);
-            let rt3    = rt2.clone();
+            let rt3 = rt2.clone();
             rt2.spawn(async move {
-                let result = if cur_play { client.mark_unplayed(&id).await }
-                             else        { client.mark_played(&id).await };
-                if let Err(e) = result { warn!("toggle-series-played: {e}"); return; }
+                let result = if cur_play {
+                    client.mark_unplayed(&id).await
+                } else {
+                    client.mark_played(&id).await
+                };
+                if let Err(e) = result {
+                    warn!("toggle-series-played: {e}");
+                    return;
+                }
                 let new_play = !cur_play;
-                state3.lock().unwrap().update_item_user_state(&id, Some(new_play), None);
+                state3
+                    .lock()
+                    .unwrap()
+                    .update_item_user_state(&id, Some(new_play), None);
                 let client2 = Arc::clone(&client);
                 let _ = slint::invoke_from_event_loop(move || {
                     if let Some(w) = ww3.upgrade() {
@@ -5161,10 +6178,17 @@ fn main() -> Result<()> {
                             AppState::get(&w).set_series_has_played(new_play);
                         }
                         context_menu::update_card_in_all_models(&w, &id, Some(new_play), None);
-                        if new_play { context_menu::remove_from_dynamic_rows(&w, &id); }
+                        if new_play {
+                            context_menu::remove_from_dynamic_rows(&w, &id);
+                        }
                         // Refresh the series Next Up row (mark-played → clears it;
                         // mark-unplayed → re-fetches first unwatched episode).
-                        crate::series::refresh_series_next_up(id.clone(), client2, ww3.clone(), rt3);
+                        crate::series::refresh_series_next_up(
+                            id.clone(),
+                            client2,
+                            ww3.clone(),
+                            rt3,
+                        );
                     }
                 });
             });
@@ -5172,23 +6196,34 @@ fn main() -> Result<()> {
     }
     {
         let state2 = Arc::clone(&state);
-        let ww2    = window.as_weak();
-        let rt2    = rt.handle().clone();
+        let ww2 = window.as_weak();
+        let rt2 = rt.handle().clone();
         AppState::get(&window).on_toggle_series_fav(move || {
             let Some(w) = ww2.upgrade() else { return };
-            let id      = AppState::get(&w).get_series_id().to_string();
+            let id = AppState::get(&w).get_series_id().to_string();
             let cur_fav = AppState::get(&w).get_series_is_favorite();
-            let s  = state2.lock().unwrap();
-            let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
+            let s = state2.lock().unwrap();
+            let Some(client) = s.client.as_ref().map(Arc::clone) else {
+                return;
+            };
             drop(s);
-            let ww3    = ww2.clone();
+            let ww3 = ww2.clone();
             let state3 = Arc::clone(&state2);
             rt2.spawn(async move {
-                let result = if cur_fav { client.unset_favorite(&id).await }
-                             else       { client.set_favorite(&id).await };
-                if let Err(e) = result { warn!("toggle-series-fav: {e}"); return; }
+                let result = if cur_fav {
+                    client.unset_favorite(&id).await
+                } else {
+                    client.set_favorite(&id).await
+                };
+                if let Err(e) = result {
+                    warn!("toggle-series-fav: {e}");
+                    return;
+                }
                 let new_fav = !cur_fav;
-                state3.lock().unwrap().update_item_user_state(&id, None, Some(new_fav));
+                state3
+                    .lock()
+                    .unwrap()
+                    .update_item_user_state(&id, None, Some(new_fav));
                 let ww4 = ww3.clone();
                 let _ = slint::invoke_from_event_loop(move || {
                     if let Some(w) = ww4.upgrade() {
@@ -5205,27 +6240,35 @@ fn main() -> Result<()> {
     }
     {
         let state2 = Arc::clone(&state);
-        let ww2    = window.as_weak();
-        let rt2    = rt.handle().clone();
+        let ww2 = window.as_weak();
+        let rt2 = rt.handle().clone();
         AppState::get(&window).on_toggle_collection_fav(move || {
             let Some(w) = ww2.upgrade() else { return };
-            let id      = AppState::get(&w).get_collection_id().to_string();
+            let id = AppState::get(&w).get_collection_id().to_string();
             let cur_fav = AppState::get(&w).get_collection_is_favorite();
-            let s  = state2.lock().unwrap();
-            let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
+            let s = state2.lock().unwrap();
+            let Some(client) = s.client.as_ref().map(Arc::clone) else {
+                return;
+            };
             drop(s);
-            let ww3    = ww2.clone();
+            let ww3 = ww2.clone();
             let state3 = Arc::clone(&state2);
             rt2.spawn(async move {
-                let result = if cur_fav { client.unset_favorite(&id).await }
-                             else       { client.set_favorite(&id).await };
+                let result = if cur_fav {
+                    client.unset_favorite(&id).await
+                } else {
+                    client.set_favorite(&id).await
+                };
                 if let Err(e) = result {
                     warn!("toggle-collection-fav: {e}");
                     crate::show_toast(ww3.clone(), format!("Favourite error: {e}"));
                     return;
                 }
                 let new_fav = !cur_fav;
-                state3.lock().unwrap().update_item_user_state(&id, None, Some(new_fav));
+                state3
+                    .lock()
+                    .unwrap()
+                    .update_item_user_state(&id, None, Some(new_fav));
                 let _ = slint::invoke_from_event_loop(move || {
                     if let Some(w) = ww3.upgrade() {
                         if AppState::get(&w).get_collection_id().as_str() == id {
@@ -5239,23 +6282,34 @@ fn main() -> Result<()> {
     }
     {
         let state2 = Arc::clone(&state);
-        let ww2    = window.as_weak();
-        let rt2    = rt.handle().clone();
+        let ww2 = window.as_weak();
+        let rt2 = rt.handle().clone();
         AppState::get(&window).on_toggle_collection_played(move || {
             let Some(w) = ww2.upgrade() else { return };
-            let id       = AppState::get(&w).get_collection_id().to_string();
+            let id = AppState::get(&w).get_collection_id().to_string();
             let cur_play = AppState::get(&w).get_collection_has_played();
-            let s  = state2.lock().unwrap();
-            let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
+            let s = state2.lock().unwrap();
+            let Some(client) = s.client.as_ref().map(Arc::clone) else {
+                return;
+            };
             drop(s);
-            let ww3    = ww2.clone();
+            let ww3 = ww2.clone();
             let state3 = Arc::clone(&state2);
             rt2.spawn(async move {
-                let result = if cur_play { client.mark_unplayed(&id).await }
-                             else        { client.mark_played(&id).await };
-                if let Err(e) = result { warn!("toggle-collection-played: {e}"); return; }
+                let result = if cur_play {
+                    client.mark_unplayed(&id).await
+                } else {
+                    client.mark_played(&id).await
+                };
+                if let Err(e) = result {
+                    warn!("toggle-collection-played: {e}");
+                    return;
+                }
                 let new_play = !cur_play;
-                state3.lock().unwrap().update_item_user_state(&id, Some(new_play), None);
+                state3
+                    .lock()
+                    .unwrap()
+                    .update_item_user_state(&id, Some(new_play), None);
                 let _ = slint::invoke_from_event_loop(move || {
                     if let Some(w) = ww3.upgrade() {
                         if AppState::get(&w).get_collection_id().as_str() == id {
@@ -5282,37 +6336,42 @@ fn main() -> Result<()> {
     // Rust callback needed).
     {
         let state2 = Arc::clone(&state);
-        let ww2    = window.as_weak();
-        let rt2    = rt.handle().clone();
+        let ww2 = window.as_weak();
+        let rt2 = rt.handle().clone();
         AppState::get(&window).on_collection_blocklist_confirm(move || {
             let Some(w) = ww2.upgrade() else { return };
             let id = AppState::get(&w).get_collection_id().to_string();
             AppState::get(&w).set_collection_blocklist_confirm_open(false);
-            collection::resolve_and_blocklist_collection(id, Arc::clone(&state2), ww2.clone(), rt2.clone());
+            collection::resolve_and_blocklist_collection(
+                id,
+                Arc::clone(&state2),
+                ww2.clone(),
+                rt2.clone(),
+            );
         });
     }
 
     // ── Manage Blocklist screen (2026-08-06, Seerr Blocklist support) ────────
     {
         let state2 = Arc::clone(&state);
-        let ww2    = window.as_weak();
-        let rt2    = rt.handle().clone();
+        let ww2 = window.as_weak();
+        let rt2 = rt.handle().clone();
         AppState::get(&window).on_open_blocklist(move || {
             blocklist::open_blocklist_screen(Arc::clone(&state2), ww2.clone(), rt2.clone());
         });
     }
     {
         let state2 = Arc::clone(&state);
-        let ww2    = window.as_weak();
-        let rt2    = rt.handle().clone();
+        let ww2 = window.as_weak();
+        let rt2 = rt.handle().clone();
         AppState::get(&window).on_blocklist_load_more(move || {
             blocklist::load_more_blocklist(Arc::clone(&state2), ww2.clone(), rt2.clone());
         });
     }
     {
         let state2 = Arc::clone(&state);
-        let ww2    = window.as_weak();
-        let rt2    = rt.handle().clone();
+        let ww2 = window.as_weak();
+        let rt2 = rt.handle().clone();
         AppState::get(&window).on_blocklist_remove_item(move |index| {
             blocklist::remove_blocklist_row(Arc::clone(&state2), ww2.clone(), rt2.clone(), index);
         });
@@ -5320,39 +6379,57 @@ fn main() -> Result<()> {
 
     // ── audio device list: fetch once at startup ─────────────────────────────
     {
-        let state_ad  = Arc::clone(&state);
-        let ww_ad     = window.as_weak();
+        let state_ad = Arc::clone(&state);
+        let ww_ad = window.as_weak();
         let (cfg_device, cfg_pt_device) = {
             let s = state.lock().unwrap();
-            (s.config.device.audio_device.clone(), s.config.device.audio_device_passthrough.clone())
+            (
+                s.config.device.audio_device.clone(),
+                s.config.device.audio_device_passthrough.clone(),
+            )
         };
         rt.spawn(async move {
-            let devices = tokio::task::spawn_blocking(fetch_audio_devices).await.unwrap_or_default();
+            let devices = tokio::task::spawn_blocking(fetch_audio_devices)
+                .await
+                .unwrap_or_default();
             state_ad.lock().unwrap().audio_devices = devices.clone();
-            let display: Vec<slint::SharedString> = devices.iter()
+            let display: Vec<slint::SharedString> = devices
+                .iter()
                 .map(|(_, d)| slint::SharedString::from(d.as_str()))
                 .collect();
-            let desc = devices.iter()
+            let desc = devices
+                .iter()
                 .find(|(n, _)| n.as_str() == cfg_device.as_str())
                 .map(|(_, d)| d.as_str())
-                .unwrap_or(if cfg_device.is_empty() { "" } else { cfg_device.as_str() })
+                .unwrap_or(if cfg_device.is_empty() {
+                    ""
+                } else {
+                    cfg_device.as_str()
+                })
                 .to_string();
-            let pt_desc = devices.iter()
+            let pt_desc = devices
+                .iter()
                 .find(|(n, _)| n.as_str() == cfg_pt_device.as_str())
                 .map(|(_, d)| d.as_str())
-                .unwrap_or(if cfg_pt_device.is_empty() { "" } else { cfg_pt_device.as_str() })
+                .unwrap_or(if cfg_pt_device.is_empty() {
+                    ""
+                } else {
+                    cfg_pt_device.as_str()
+                })
                 .to_string();
             let _ = slint::invoke_from_event_loop(move || {
                 if let Some(w) = ww_ad.upgrade() {
                     let g = AppState::get(&w);
-                    g.set_settings_audio_device_display(
-                        slint::ModelRc::new(slint::VecModel::from(display)),
-                    );
+                    g.set_settings_audio_device_display(slint::ModelRc::new(
+                        slint::VecModel::from(display),
+                    ));
                     if !desc.is_empty() {
                         g.set_settings_audio_device_desc(slint::SharedString::from(desc.as_str()));
                     }
                     if !pt_desc.is_empty() {
-                        g.set_settings_passthrough_device_desc(slint::SharedString::from(pt_desc.as_str()));
+                        g.set_settings_passthrough_device_desc(slint::SharedString::from(
+                            pt_desc.as_str(),
+                        ));
                     }
                 }
             });
@@ -5362,11 +6439,12 @@ fn main() -> Result<()> {
     // ── audio device selected callback ────────────────────────────────────────
     {
         let state_ad = Arc::clone(&state);
-        let ww_ad    = window.as_weak();
+        let ww_ad = window.as_weak();
         AppState::get(&window).on_audio_device_selected(move |desc| {
             let name = {
                 let s = state_ad.lock().unwrap();
-                s.audio_devices.iter()
+                s.audio_devices
+                    .iter()
                     .find(|(_, d)| d.as_str() == desc.as_str())
                     .map(|(n, _)| n.clone())
                     .unwrap_or_else(|| "auto".to_string())
@@ -5375,7 +6453,11 @@ fn main() -> Result<()> {
                 let g = AppState::get(&w);
                 g.set_settings_audio_device(slint::SharedString::from(name.as_str()));
                 let pt = g.get_settings_passthrough_device().to_string();
-                let effective = if pt.is_empty() { name.as_str() } else { pt.as_str() };
+                let effective = if pt.is_empty() {
+                    name.as_str()
+                } else {
+                    pt.as_str()
+                };
                 g.set_settings_device_is_pipewire(pipewire_fix::is_pipewire_device(effective));
                 g.set_settings_audio_device_desc(desc);
                 g.invoke_settings_changed();
@@ -5386,11 +6468,12 @@ fn main() -> Result<()> {
     // ── passthrough device selected callback ─────────────────────────────────
     {
         let state_pd = Arc::clone(&state);
-        let ww_pd    = window.as_weak();
+        let ww_pd = window.as_weak();
         AppState::get(&window).on_passthrough_device_selected(move |desc| {
             let name = {
                 let s = state_pd.lock().unwrap();
-                s.audio_devices.iter()
+                s.audio_devices
+                    .iter()
                     .find(|(_, d)| d.as_str() == desc.as_str())
                     .map(|(n, _)| n.clone())
                     .unwrap_or_else(|| "auto".to_string())
@@ -5424,24 +6507,28 @@ fn main() -> Result<()> {
     // can safely lag behind by however long fc-list takes.
     {
         let state_fd = Arc::clone(&state);
-        let ww_fd    = window.as_weak();
+        let ww_fd = window.as_weak();
         let cfg_font = state.lock().unwrap().config.device.ui_font_family.clone();
         rt.spawn(async move {
-            let fonts = tokio::task::spawn_blocking(fetch_system_fonts).await.unwrap_or_default();
+            let fonts = tokio::task::spawn_blocking(fetch_system_fonts)
+                .await
+                .unwrap_or_default();
             state_fd.lock().unwrap().system_fonts = fonts.clone();
-            let display: Vec<slint::SharedString> = fonts.iter()
+            let display: Vec<slint::SharedString> = fonts
+                .iter()
                 .map(|(_, d)| slint::SharedString::from(d.as_str()))
                 .collect();
-            let desc = fonts.iter()
+            let desc = fonts
+                .iter()
                 .find(|(v, _)| v.as_str() == cfg_font.as_str())
                 .map(|(_, d)| d.clone())
                 .unwrap_or_else(|| "Inter (Fjord default)".to_string());
             let _ = slint::invoke_from_event_loop(move || {
                 if let Some(w) = ww_fd.upgrade() {
                     let g = AppState::get(&w);
-                    g.set_settings_font_family_display(
-                        slint::ModelRc::new(slint::VecModel::from(display)),
-                    );
+                    g.set_settings_font_family_display(slint::ModelRc::new(slint::VecModel::from(
+                        display,
+                    )));
                     g.set_settings_font_family_desc(slint::SharedString::from(desc.as_str()));
                 }
             });
@@ -5451,11 +6538,12 @@ fn main() -> Result<()> {
     // ── font family selected callback ─────────────────────────────────────────
     {
         let state_ff = Arc::clone(&state);
-        let ww_ff    = window.as_weak();
+        let ww_ff = window.as_weak();
         AppState::get(&window).on_font_family_selected(move |desc| {
             let value = {
                 let s = state_ff.lock().unwrap();
-                s.system_fonts.iter()
+                s.system_fonts
+                    .iter()
                     .find(|(_, d)| d.as_str() == desc.as_str())
                     .map(|(v, _)| v.clone())
                     .unwrap_or_else(|| "Inter".to_string())
@@ -5501,17 +6589,26 @@ fn main() -> Result<()> {
     // narrow AND not guaranteed to contain anything the actual display
     // supports.
     {
-        let ww_ds     = window.as_weak();
-        let rt_ds     = rt.handle().clone();
-        let state_ds  = Arc::clone(&state);
-        let cfg_ds    = state.lock().unwrap().config.device.display_sync_screen_name.clone();
-        let cfg_ds2   = cfg_ds.clone();
+        let ww_ds = window.as_weak();
+        let rt_ds = rt.handle().clone();
+        let state_ds = Arc::clone(&state);
+        let cfg_ds = state
+            .lock()
+            .unwrap()
+            .config
+            .device
+            .display_sync_screen_name
+            .clone();
+        let cfg_ds2 = cfg_ds.clone();
         rt.spawn(async move {
             let mut outputs = tokio::task::spawn_blocking(display_sync::list_outputs_with_priority)
                 .await
                 .unwrap_or_default();
             outputs.sort_by_key(|(_, priority, _)| *priority);
-            debug!("display_sync: kscreen-doctor reports {} enabled+connected output(s): {outputs:?}", outputs.len());
+            debug!(
+                "display_sync: kscreen-doctor reports {} enabled+connected output(s): {outputs:?}",
+                outputs.len()
+            );
             let names: Vec<String> = outputs.iter().map(|(n, ..)| n.clone()).collect();
             let lookup: Vec<(String, String)> = outputs
                 .into_iter()
@@ -5520,7 +6617,11 @@ fn main() -> Result<()> {
                         Some(f) => format!("{name} — {f}"),
                         None => name.clone(),
                     };
-                    let label = if priority == 1 { format!("{base} (Primary)") } else { base };
+                    let label = if priority == 1 {
+                        format!("{base} (Primary)")
+                    } else {
+                        base
+                    };
                     (name, label)
                 })
                 .collect();
@@ -5532,23 +6633,33 @@ fn main() -> Result<()> {
             } else {
                 None
             };
-            debug!("display_sync: effective screen for the startup modes fetch: {effective_screen:?}");
+            debug!(
+                "display_sync: effective screen for the startup modes fetch: {effective_screen:?}"
+            );
             let ww_ds_evt = ww_ds.clone();
             let _ = slint::invoke_from_event_loop(move || {
                 if let Some(w) = ww_ds_evt.upgrade() {
                     let g = AppState::get(&w);
-                    let display: Vec<slint::SharedString> =
-                        lookup.iter().map(|(_, label)| slint::SharedString::from(label.as_str())).collect();
-                    g.set_settings_display_sync_screen_options(
-                        slint::ModelRc::new(slint::VecModel::from(display)),
-                    );
-                    if let Some((_, label)) = lookup.iter().find(|(n, _)| n.as_str() == cfg_ds2.as_str()) {
-                        g.set_settings_display_sync_screen_desc(slint::SharedString::from(label.as_str()));
+                    let display: Vec<slint::SharedString> = lookup
+                        .iter()
+                        .map(|(_, label)| slint::SharedString::from(label.as_str()))
+                        .collect();
+                    g.set_settings_display_sync_screen_options(slint::ModelRc::new(
+                        slint::VecModel::from(display),
+                    ));
+                    if let Some((_, label)) =
+                        lookup.iter().find(|(n, _)| n.as_str() == cfg_ds2.as_str())
+                    {
+                        g.set_settings_display_sync_screen_desc(slint::SharedString::from(
+                            label.as_str(),
+                        ));
                     }
                     if cfg_ds2.is_empty() && names.len() == 1 {
                         g.set_settings_display_sync_screen_name(ss(&names[0]));
                         if let Some((_, label)) = lookup.first() {
-                            g.set_settings_display_sync_screen_desc(slint::SharedString::from(label.as_str()));
+                            g.set_settings_display_sync_screen_desc(slint::SharedString::from(
+                                label.as_str(),
+                            ));
                         }
                         g.invoke_settings_changed();
                     }
@@ -5570,13 +6681,14 @@ fn main() -> Result<()> {
     // output — the previous output's own supported modes are meaningless
     // for a different display.
     {
-        let ww_dss    = window.as_weak();
-        let rt_dss    = rt.handle().clone();
+        let ww_dss = window.as_weak();
+        let rt_dss = rt.handle().clone();
         let state_dss = Arc::clone(&state);
         AppState::get(&window).on_display_sync_screen_selected(move |desc| {
             let name = {
                 let s = state_dss.lock().unwrap();
-                s.display_sync_outputs.iter()
+                s.display_sync_outputs
+                    .iter()
                     .find(|(_, label)| label.as_str() == desc.as_str())
                     .map(|(n, _)| n.clone())
                     .unwrap_or_else(|| desc.to_string())
@@ -5625,7 +6737,7 @@ fn main() -> Result<()> {
     // below persist it via read_settings_from_window + save_config.
     {
         let state_dp = Arc::clone(&state);
-        let ww_dp    = window.as_weak();
+        let ww_dp = window.as_weak();
         AppState::get(&window).on_default_profile_selected(move |desc| {
             let Some(w) = ww_dp.upgrade() else { return };
             let g = AppState::get(&w);
@@ -5638,9 +6750,15 @@ fn main() -> Result<()> {
                 // documented "duplicate display label" edge case picking a
                 // same-named profile under a DIFFERENT account by mistake.
                 let account_id = s.config.device.default_account_id.clone();
-                s.config.profiles.iter()
+                s.config
+                    .profiles
+                    .iter()
                     .find(|p| {
-                        let label = if p.display_name.is_empty() { p.user_id.as_str() } else { p.display_name.as_str() };
+                        let label = if p.display_name.is_empty() {
+                            p.user_id.as_str()
+                        } else {
+                            p.display_name.as_str()
+                        };
                         label == desc.as_str() && profile::account_root_id(p) == account_id
                     })
                     .map(|p| p.user_id.clone())
@@ -5658,17 +6776,26 @@ fn main() -> Result<()> {
     // root_id via group_into_accounts.
     {
         let state_da = Arc::clone(&state);
-        let ww_da    = window.as_weak();
+        let ww_da = window.as_weak();
         AppState::get(&window).on_default_account_selected(move |desc| {
             let Some(w) = ww_da.upgrade() else { return };
             let g = AppState::get(&w);
             let root_id = {
                 let s = state_da.lock().unwrap();
-                profile::group_into_accounts(&s.config.profiles).into_iter()
+                profile::group_into_accounts(&s.config.profiles)
+                    .into_iter()
                     .find(|a| {
-                        let label = a.profiles.first().map(|p| {
-                            if p.display_name.is_empty() { p.user_id.clone() } else { p.display_name.clone() }
-                        }).unwrap_or_default();
+                        let label = a
+                            .profiles
+                            .first()
+                            .map(|p| {
+                                if p.display_name.is_empty() {
+                                    p.user_id.clone()
+                                } else {
+                                    p.display_name.clone()
+                                }
+                            })
+                            .unwrap_or_default();
                         label == desc.as_str()
                     })
                     .map(|a| a.root_id)
@@ -5706,13 +6833,21 @@ fn main() -> Result<()> {
     // still-actually-current value rather than a value that didn't take.
     {
         let state_sr = Arc::clone(&state);
-        let ww_sr    = window.as_weak();
-        let rt_sr    = rt.handle().clone();
+        let ww_sr = window.as_weak();
+        let rt_sr = rt.handle().clone();
         AppState::get(&window).on_streaming_region_selected(move |desc| {
             let (client, code) = {
                 let s = state_sr.lock().unwrap();
-                let Some(client) = s.seerr_client.clone() else { return };
-                let Some((code, _)) = s.seerr_regions.iter().find(|(_, d)| d.as_str() == desc.as_str()) else { return };
+                let Some(client) = s.seerr_client.clone() else {
+                    return;
+                };
+                let Some((code, _)) = s
+                    .seerr_regions
+                    .iter()
+                    .find(|(_, d)| d.as_str() == desc.as_str())
+                else {
+                    return;
+                };
                 (client, code.clone())
             };
             let state2 = Arc::clone(&state_sr);
@@ -5746,13 +6881,21 @@ fn main() -> Result<()> {
     // (region codes are shared between the two settings) for the code lookup.
     {
         let state_dr = Arc::clone(&state);
-        let ww_dr    = window.as_weak();
-        let rt_dr    = rt.handle().clone();
+        let ww_dr = window.as_weak();
+        let rt_dr = rt.handle().clone();
         AppState::get(&window).on_discover_region_selected(move |desc| {
             let (client, code) = {
                 let s = state_dr.lock().unwrap();
-                let Some(client) = s.seerr_client.clone() else { return };
-                let Some((code, _)) = s.seerr_regions.iter().find(|(_, d)| d.as_str() == desc.as_str()) else { return };
+                let Some(client) = s.seerr_client.clone() else {
+                    return;
+                };
+                let Some((code, _)) = s
+                    .seerr_regions
+                    .iter()
+                    .find(|(_, d)| d.as_str() == desc.as_str())
+                else {
+                    return;
+                };
                 (client, code.clone())
             };
             let state2 = Arc::clone(&state_dr);
@@ -5786,16 +6929,24 @@ fn main() -> Result<()> {
     // fallback applies server-side (see UserGeneralSettings' doc comment).
     {
         let state_dl = Arc::clone(&state);
-        let ww_dl    = window.as_weak();
-        let rt_dl    = rt.handle().clone();
+        let ww_dl = window.as_weak();
+        let rt_dl = rt.handle().clone();
         AppState::get(&window).on_display_language_selected(move |desc| {
             let (client, code) = {
                 let s = state_dl.lock().unwrap();
-                let Some(client) = s.seerr_client.clone() else { return };
+                let Some(client) = s.seerr_client.clone() else {
+                    return;
+                };
                 let code = if desc.as_str() == "Default (English)" {
                     String::new()
                 } else {
-                    let Some((code, _)) = s.seerr_languages.iter().find(|(_, d)| d.as_str() == desc.as_str()) else { return };
+                    let Some((code, _)) = s
+                        .seerr_languages
+                        .iter()
+                        .find(|(_, d)| d.as_str() == desc.as_str())
+                    else {
+                        return;
+                    };
                     code.clone()
                 };
                 (client, code)
@@ -5833,16 +6984,24 @@ fn main() -> Result<()> {
     // (see spawn_seerr_settings_fetch's doc comment).
     {
         let state_dg = Arc::clone(&state);
-        let ww_dg    = window.as_weak();
-        let rt_dg    = rt.handle().clone();
+        let ww_dg = window.as_weak();
+        let rt_dg = rt.handle().clone();
         AppState::get(&window).on_discover_language_selected(move |desc| {
             let (client, code) = {
                 let s = state_dg.lock().unwrap();
-                let Some(client) = s.seerr_client.clone() else { return };
+                let Some(client) = s.seerr_client.clone() else {
+                    return;
+                };
                 let code = if desc.as_str() == "Default (All Languages)" {
                     "all".to_string()
                 } else {
-                    let Some((code, _)) = s.seerr_languages.iter().find(|(_, d)| d.as_str() == desc.as_str()) else { return };
+                    let Some((code, _)) = s
+                        .seerr_languages
+                        .iter()
+                        .find(|(_, d)| d.as_str() == desc.as_str())
+                    else {
+                        return;
+                    };
                     code.clone()
                 };
                 (client, code)
@@ -5880,9 +7039,11 @@ fn main() -> Result<()> {
     // above, so no gating on seerr_enabled/seerr_connected here.
     {
         let state_yt = Arc::clone(&state);
-        let ww_yt    = window.as_weak();
+        let ww_yt = window.as_weak();
         rt.spawn(async move {
-            let available = tokio::task::spawn_blocking(detect_yt_dlp).await.unwrap_or(false);
+            let available = tokio::task::spawn_blocking(detect_yt_dlp)
+                .await
+                .unwrap_or(false);
             state_yt.lock().unwrap().yt_dlp_available = available;
             let _ = slint::invoke_from_event_loop(move || {
                 if let Some(w) = ww_yt.upgrade() {
@@ -5901,13 +7062,15 @@ fn main() -> Result<()> {
     {
         let state_pt = Arc::clone(&state);
         let video_pt = Arc::clone(&video);
-        let ww_pt    = window.as_weak();
-        let rt_pt    = rt.handle().clone();
+        let ww_pt = window.as_weak();
+        let rt_pt = rt.handle().clone();
         AppState::get(&window).on_play_trailer(move || {
             let Some(w) = ww_pt.upgrade() else { return };
             let g = AppState::get(&w);
             let url = g.get_request_detail_trailer_url().to_string();
-            if url.is_empty() { return; }
+            if url.is_empty() {
+                return;
+            }
             let title = format!("Trailer — {}", g.get_request_detail_title());
             let (mut config, quality) = {
                 let s = state_pt.lock().unwrap();
@@ -5921,19 +7084,28 @@ fn main() -> Result<()> {
 
     // ── settings changed ──────────────────────────────────────────────────────
     {
-        let state      = Arc::clone(&state);
-        let video      = Arc::clone(&video);
+        let state = Arc::clone(&state);
+        let video = Arc::clone(&video);
         let window_weak = window.as_weak();
-        let rt_handle  = rt.handle().clone();
+        let rt_handle = rt.handle().clone();
         AppState::get(&window).on_settings_changed(move || {
-            let Some(w) = window_weak.upgrade() else { return; };
+            let Some(w) = window_weak.upgrade() else {
+                return;
+            };
             let mut s = state.lock().unwrap();
             // Diagnostics (2026-10-08, a Slint panic right after a settings
             // change on the HTPC): which settings this change touched.
             let before = settings_snapshot(&s.config);
             read_settings_from_window(&w, &mut s);
             let changed = settings_diff(&before, &settings_snapshot(&s.config));
-            debug!("settings changed: {}", if changed.is_empty() { "nothing".to_string() } else { changed.join(", ") });
+            debug!(
+                "settings changed: {}",
+                if changed.is_empty() {
+                    "nothing".to_string()
+                } else {
+                    changed.join(", ")
+                }
+            );
             // Live-reflect the seerr-enabled toggle: rebuild seerr_client
             // (build_seerr_client already returns None when seerr_enabled
             // is false, so this both tears it down on disable and rebuilds
@@ -5951,21 +7123,31 @@ fn main() -> Result<()> {
             let irq_enable = s.config.device.audio_spdif
                 && s.config.device.alsa_irq_scheduling
                 && pipewire_fix::is_pipewire_device(
-                    if s.config.device.audio_device_passthrough.is_empty() { &s.config.device.audio_device }
-                    else { &s.config.device.audio_device_passthrough });
+                    if s.config.device.audio_device_passthrough.is_empty() {
+                        &s.config.device.audio_device
+                    } else {
+                        &s.config.device.audio_device_passthrough
+                    },
+                );
             // Subtitle appearance applies live to a currently-playing video —
             // no restart needed, mirrors the existing sub-delay/audio-delay
             // live-adjust UX. See fjord-player's Player::set_sub_style.
-            let sub_scale        = s.config.active().sub_scale_pct as f64 / 100.0;
-            let sub_pos          = s.config.active().sub_pos_pct as i64;
-            let sub_respect_ass  = s.config.active().sub_respect_ass_styling;
-            let sub_color        = sub_color_hex(&s.config.active().sub_color).to_string();
-            let sub_background   = s.config.active().sub_background;
+            let sub_scale = s.config.active().sub_scale_pct as f64 / 100.0;
+            let sub_pos = s.config.active().sub_pos_pct as i64;
+            let sub_respect_ass = s.config.active().sub_respect_ass_styling;
+            let sub_color = sub_color_hex(&s.config.active().sub_color).to_string();
+            let sub_background = s.config.active().sub_background;
             let cfg = s.config.clone();
             drop(s);
             save_config(&cfg);
             if let Some(p) = video.lock().unwrap().player.as_ref() {
-                p.set_sub_style(sub_scale, sub_pos, sub_respect_ass, &sub_color, sub_background);
+                p.set_sub_style(
+                    sub_scale,
+                    sub_pos,
+                    sub_respect_ass,
+                    &sub_color,
+                    sub_background,
+                );
             }
             w.window().set_fullscreen(launch_fs);
             rt_handle.spawn_blocking(move || pipewire_fix::apply_alsa_irq_scheduling(irq_enable));
@@ -5977,9 +7159,11 @@ fn main() -> Result<()> {
     {
         let window_weak = window.as_weak();
         AppState::get(&window).on_dropdown_pick(move || {
-            let Some(w) = window_weak.upgrade() else { return; };
+            let Some(w) = window_weak.upgrade() else {
+                return;
+            };
             let g = AppState::get(&w);
-            let sf     = g.get_settings_focused();
+            let sf = g.get_settings_focused();
             let cursor = g.get_settings_dropdown_cursor();
             crate::settings::apply_dropdown_selection(sf.as_str(), cursor, &g);
             g.set_settings_dropdown_open(false);
@@ -5989,7 +7173,9 @@ fn main() -> Result<()> {
         // Settings one right above.
         let window_weak2 = window.as_weak();
         AppState::get(&window).on_profile_edit_dropdown_pick(move || {
-            let Some(w) = window_weak2.upgrade() else { return; };
+            let Some(w) = window_weak2.upgrade() else {
+                return;
+            };
             let g = AppState::get(&w);
             let cursor = g.get_profile_edit_dropdown_cursor();
             crate::profile_edit::apply_profile_edit_dropdown_selection(&g, cursor);
@@ -6004,7 +7190,9 @@ fn main() -> Result<()> {
     {
         let window_weak = window.as_weak();
         AppState::get(&window).on_settings_row_focused(move |key| {
-            let Some(w) = window_weak.upgrade() else { return; };
+            let Some(w) = window_weak.upgrade() else {
+                return;
+            };
             let g = AppState::get(&w);
             crate::settings::row_focused(&g, key.as_str());
         });
@@ -6023,10 +7211,10 @@ fn main() -> Result<()> {
 
     // ── sign-out ──────────────────────────────────────────────────────────────
     {
-        let state       = Arc::clone(&state);
-        let video_so    = Arc::clone(&video);
+        let state = Arc::clone(&state);
+        let video_so = Arc::clone(&video);
         let window_weak = window.as_weak();
-        let rth_so      = rt.handle().clone();
+        let rth_so = rt.handle().clone();
         AppState::get(&window).on_sign_out(move || {
             reset_session_state(&video_so, &window_weak, &rth_so, &state);
 
@@ -6077,8 +7265,16 @@ fn main() -> Result<()> {
             // background after the save (2026-10-09 security review: their
             // tokens used to stay valid indefinitely).
             let device_id = s.config.device.device_id.clone();
-            let to_log_out: Vec<(String, String, String)> = s.config.profiles.iter()
-                .filter(|p| !signed_out_user_id.is_empty() && forgotten(p) && !p.token.is_empty() && !p.server_url.is_empty())
+            let to_log_out: Vec<(String, String, String)> = s
+                .config
+                .profiles
+                .iter()
+                .filter(|p| {
+                    !signed_out_user_id.is_empty()
+                        && forgotten(p)
+                        && !p.token.is_empty()
+                        && !p.server_url.is_empty()
+                })
                 .map(|p| (p.server_url.clone(), p.user_id.clone(), p.token.clone()))
                 .collect();
             s.config.profiles.retain(|p| !forgotten(p));
@@ -6087,7 +7283,9 @@ fn main() -> Result<()> {
                 // (see Config::active()/active_mut()'s own doc comments) — signing
                 // out of the only known profile needs a fresh blank entry to keep
                 // that invariant true, not leave the Vec empty.
-                s.config.profiles.push(crate::config::ProfileSettings::default());
+                s.config
+                    .profiles
+                    .push(crate::config::ProfileSettings::default());
             }
             s.config.active_profile_id.clear();
             let cfg_to_save = s.config.clone();
@@ -6117,18 +7315,24 @@ fn main() -> Result<()> {
             // single-account steady-state case (that one's "1 account" is
             // the SAME account every normal launch, not a leftover from
             // just having removed a different one).
-            let any_accounts_remain = !profile::group_into_accounts(&cfg_to_save.profiles).is_empty();
+            let any_accounts_remain =
+                !profile::group_into_accounts(&cfg_to_save.profiles).is_empty();
             drop(s);
             save_config(&cfg_to_save);
             for (server_url, user_id, token) in to_log_out {
                 let device_id = device_id.clone();
                 rth_so.spawn(async move {
-                    let client = url::Url::parse(&server_url).map_err(anyhow::Error::from)
-                        .and_then(|url| JellyfinClient::new(url, user_id.clone(), token, device_id));
+                    let client = url::Url::parse(&server_url)
+                        .map_err(anyhow::Error::from)
+                        .and_then(|url| {
+                            JellyfinClient::new(url, user_id.clone(), token, device_id)
+                        });
                     match client {
                         Ok(c) => match c.logout().await {
                             Ok(()) => info!("sign-out: ended the server session of {user_id}"),
-                            Err(e) => warn!("sign-out: couldn't end the server session of {user_id}: {e:#}"),
+                            Err(e) => warn!(
+                                "sign-out: couldn't end the server session of {user_id}: {e:#}"
+                            ),
                         },
                         Err(e) => warn!("sign-out: no client for {user_id}: {e:#}"),
                     }
@@ -6157,14 +7361,18 @@ fn main() -> Result<()> {
         });
     }
 
-    AppState::get(&window).on_quit(|| { slint::quit_event_loop().ok(); });
+    AppState::get(&window).on_quit(|| {
+        slint::quit_event_loop().ok();
+    });
 
     // ── library prewarm (Phase 104) ──────────────────────────────────────────
     {
         let state = Arc::clone(&state);
         let rt_handle = rt.handle().clone();
         AppState::get(&window).on_prewarm_metadata(move || {
-            let Some(client) = state.lock().unwrap().client.as_ref().map(Arc::clone) else { return };
+            let Some(client) = state.lock().unwrap().client.as_ref().map(Arc::clone) else {
+                return;
+            };
             prewarm::spawn_metadata_prewarm(client, Arc::clone(&state), rt_handle.clone());
         });
     }
@@ -6172,20 +7380,24 @@ fn main() -> Result<()> {
         let state = Arc::clone(&state);
         let rt_handle = rt.handle().clone();
         AppState::get(&window).on_prewarm_images(move || {
-            let Some(client) = state.lock().unwrap().client.as_ref().map(Arc::clone) else { return };
+            let Some(client) = state.lock().unwrap().client.as_ref().map(Arc::clone) else {
+                return;
+            };
             prewarm::spawn_image_prewarm(client, Arc::clone(&state), rt_handle.clone());
         });
     }
 
     // ── keyboard dispatch ────────────────────────────────────────────────────
     {
-        let state2  = Arc::clone(&state);
+        let state2 = Arc::clone(&state);
         let video2k = Arc::clone(&video);
-        let ww      = window.as_weak();
-        let rt2     = rt.handle().clone();
-        let clock2  = activity_clock.clone();
+        let ww = window.as_weak();
+        let rt2 = rt.handle().clone();
+        let clock2 = activity_clock.clone();
         AppState::get(&window).on_handle_key(move |key, shift, ctrl, repeat| {
-            let Some(w) = ww.upgrade() else { return false; };
+            let Some(w) = ww.upgrade() else {
+                return false;
+            };
             // Any key resets the Now Playing idle-auto-open countdown.
             video2k.lock().unwrap().music_idle_ticks = 0;
             // Any key also resets the Bonfire idle-lock clock (Phase 4,
@@ -6199,9 +7411,11 @@ fn main() -> Result<()> {
     // ── keybinding reset ─────────────────────────────────────────────────────
     {
         let state2 = Arc::clone(&state);
-        let ww     = window.as_weak();
+        let ww = window.as_weak();
         AppState::get(&window).on_keybinding_reset_defaults(move || {
-            let Some(w) = ww.upgrade() else { return; };
+            let Some(w) = ww.upgrade() else {
+                return;
+            };
             info!("keybindings: reset to defaults");
             {
                 let mut st = state2.lock().unwrap();
@@ -6221,12 +7435,17 @@ fn main() -> Result<()> {
     // these same callbacks rather than duplicating the apply/discard logic.
     {
         let state_kc = Arc::clone(&state);
-        let ww_kc    = window.as_weak();
+        let ww_kc = window.as_weak();
         AppState::get(&window).on_keybinding_collision_confirmed(move || {
-            let Some(w) = ww_kc.upgrade() else { return; };
+            let Some(w) = ww_kc.upgrade() else {
+                return;
+            };
             let pending = state_kc.lock().unwrap().pending_keybind_rebind.take();
             if let Some(p) = pending {
-                info!("keybindings: collision confirmed, reassigning {:?}", p.combo);
+                info!(
+                    "keybindings: collision confirmed, reassigning {:?}",
+                    p.combo
+                );
                 keys::apply_rebind(p.fi, p.combo, &state_kc, &w);
             }
             AppState::get(&w).set_show_keybinding_collision_confirm(false);
@@ -6234,9 +7453,11 @@ fn main() -> Result<()> {
     }
     {
         let state_kc2 = Arc::clone(&state);
-        let ww_kc2    = window.as_weak();
+        let ww_kc2 = window.as_weak();
         AppState::get(&window).on_keybinding_collision_cancelled(move || {
-            let Some(w) = ww_kc2.upgrade() else { return; };
+            let Some(w) = ww_kc2.upgrade() else {
+                return;
+            };
             debug!("keybindings: collision cancelled");
             state_kc2.lock().unwrap().pending_keybind_rebind = None;
             AppState::get(&w).set_show_keybinding_collision_confirm(false);
@@ -6249,7 +7470,9 @@ fn main() -> Result<()> {
     {
         let ww = window.as_weak();
         AppState::get(&window).on_refocus(move || {
-            if let Some(w) = ww.upgrade() { w.invoke_grab_keyboard_focus(); }
+            if let Some(w) = ww.upgrade() {
+                w.invoke_grab_keyboard_focus();
+            }
         });
     }
 
@@ -6260,9 +7483,9 @@ fn main() -> Result<()> {
     // confirmed against the real Slint 1.16.1 compiler source). No screen or
     // field knowledge here — reusable by every future screen this keyboard
     // gets wired into, not just Login.
-    AppState::get(&window).on_onscreen_keyboard_trim_last(|s: slint::SharedString| -> slint::SharedString {
-        trim_last_grapheme(&s).into()
-    });
+    AppState::get(&window).on_onscreen_keyboard_trim_last(
+        |s: slint::SharedString| -> slint::SharedString { trim_last_grapheme(&s).into() },
+    );
     AppState::get(&window).on_onscreen_keyboard_byte_len(|s: slint::SharedString| -> i32 {
         // Real UTF-8 byte length — LineEdit::set-selection-offsets operates
         // on byte offsets (confirmed against the core TextInput
@@ -6311,11 +7534,24 @@ mod settings_diff_tests {
 
     #[test]
     fn names_changes_and_hides_text_values() {
-        let before = [json!({"separate_video_surface": true, "cache_secs": 60, "hwdec": "auto"}), json!({"seerr_key": "a"})];
-        let after  = [json!({"separate_video_surface": false, "cache_secs": 60, "hwdec": "nvdec"}), json!({"seerr_key": "b"})];
+        let before = [
+            json!({"separate_video_surface": true, "cache_secs": 60, "hwdec": "auto"}),
+            json!({"seerr_key": "a"}),
+        ];
+        let after = [
+            json!({"separate_video_surface": false, "cache_secs": 60, "hwdec": "nvdec"}),
+            json!({"seerr_key": "b"}),
+        ];
         let d = settings_diff(&before, &after);
         // serde_json orders keys alphabetically.
-        assert_eq!(d, vec!["hwdec (changed)", "separate_video_surface: true → false", "seerr_key (changed)"]);
+        assert_eq!(
+            d,
+            vec![
+                "hwdec (changed)",
+                "separate_video_surface: true → false",
+                "seerr_key (changed)"
+            ]
+        );
         assert!(settings_diff(&before, &before).is_empty());
     }
 }
@@ -6326,7 +7562,10 @@ mod strip_html_tests {
 
     #[test]
     fn plain_text_passes_through_unchanged() {
-        assert_eq!(strip_html_to_text("A regular overview, no markup."), "A regular overview, no markup.");
+        assert_eq!(
+            strip_html_to_text("A regular overview, no markup."),
+            "A regular overview, no markup."
+        );
     }
 
     #[test]
@@ -6368,14 +7607,23 @@ mod text_cursor_tests {
         assert_eq!(insert_at_grapheme("", 0, "a"), ("a".to_string(), 1));
         assert_eq!(insert_at_grapheme("ab", 99, "c"), ("abc".to_string(), 3));
         // A combining accent merges with the letter before it.
-        assert_eq!(insert_at_grapheme("cafe", 4, "\u{301}"), ("cafe\u{301}".to_string(), 4));
+        assert_eq!(
+            insert_at_grapheme("cafe", 4, "\u{301}"),
+            ("cafe\u{301}".to_string(), 4)
+        );
     }
 
     #[test]
     fn backspace_and_delete_work_by_grapheme() {
-        assert_eq!(delete_before_grapheme("hexllo", 3), ("hello".to_string(), 2));
+        assert_eq!(
+            delete_before_grapheme("hexllo", 3),
+            ("hello".to_string(), 2)
+        );
         assert_eq!(delete_before_grapheme("abc", 0), ("abc".to_string(), 0));
-        assert_eq!(delete_before_grapheme("cafe\u{301}", 4), ("caf".to_string(), 3));
+        assert_eq!(
+            delete_before_grapheme("cafe\u{301}", 4),
+            ("caf".to_string(), 3)
+        );
         assert_eq!(delete_at_grapheme("hexllo", 2), "hello");
         assert_eq!(delete_at_grapheme("abc", 3), "abc");
         assert_eq!(grapheme_count("cafe\u{301}"), 4);
