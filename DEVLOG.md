@@ -6641,3 +6641,891 @@ Above `#[test]`:
 //   upsert_media_item  replace-by-id-if-present-else-append; WS delta-sync merge helper
 // ─────────────────────────────────────────────────────────────────────────────
 ```
+
+#### `crates/fjord-app/src/playback/timer.rs`
+
+Above `let mut credits_mark_played: Option<(String, Arc<JellyfinClient>, bool, Option<i64>)> = None;`:
+```
+// Some((item_id, client, mark_played)) — dispatched after the lock
+// releases below, same deferred pattern as banner_trigger/gapless_commit.
+// mark_played=true fires POST PlayedItems the moment credits are
+// reached (CR10-13 originally removed this outright since it stuck
+// even after the user cancelled the banner and kept watching — this
+// brings it back with the missing half: mark_played=false fires
+// DELETE PlayedItems if the user then rewinds past credits_start
+// during the same playback, so a Skip-and-rewind self-corrects
+// instead of leaving a stale played mark).
+// 4th field: Some(ticks) on a revert (mark_played=false) only — the
+// real position at the moment of revert, immediately re-reported
+// after the DELETE so the server isn't left showing position=0 for
+// up to ~10s until the next ordinary progress tick (which is itself
+// suppressed for the whole time credits_auto_marked_played is true,
+// see the progress-report gate below). Without this, ws.rs's own
+// UserDataChanged handling briefly reads position=0 + unplayed and
+// treats it as an untouched item, dropping it from Continue
+// Watching for that window even though a rewatch is actively
+// happening. None for the mark=true case — mark_played's own POST
+// already sets position=0 server-side, which is what we want then.
+```
+
+Above `let (live_pos, live_dur): (Option<f64>, Option<f64>) = match vs.player.as_ref() {`:
+```
+// Single shared position/duration read for this tick. Chapter
+// tracking, the skip-segment check, the Up Next banner check, and
+// the gapless preload check below each used to call mpv's
+// get_position()/get_duration() (an FFI round-trip into libmpv)
+// independently, every 16ms, for the entire duration of any
+// video/track — up to 4 redundant reads/tick of the exact same
+// values (CR11-10: the gapless check was added after this was
+// first deduped and missed the shared read since it lives outside
+// the `if vs.player.is_some()` block below). One read, reused by all.
+```
+
+Above `if let (Some(pos), Some(start), Some(p)) = (live_pos, vs.play_start, vs.player.as_ref()) {`:
+```
+// Stall auto-recovery: certain audio-device handoffs (e.g. SPDIF
+// passthrough taking over from a device PipeWire hasn't released
+// yet — see Phase 84) and real network outages (2026-08-09, see
+// CLAUDE.md's Playback resilience section for the real HTPC log
+// this generalizes from) can leave mpv fully loaded, unpaused,
+// and rendering, but never actually advancing playback position.
+//
+// Generalized 2026-08-09 from a fixed "is position back near the
+// ORIGINAL start-of-playback value" check to a rolling "hasn't
+// position moved at all in the last 5s" check — the old check
+// only ever caught a genuine mid-video stall by the coincidence
+// of mpv's own demuxer resetting position toward 0 after that
+// specific outage; a stall that instead freezes at whatever
+// nonzero position playback had already reached would never
+// have tripped it at all. 5s is a judgment call (not a measured
+// threshold) — long enough to clear normal decoder/hwdec startup
+// (~2s for 4K HEVC in practice), short enough not to leave a
+// genuinely stuck video sitting frozen for long. Excludes
+// paused-for-cache (legitimate slow network buffering also
+// shows no position progress without touching mpv's user-facing
+// "pause" property — reloading during a real buffer stall would
+// make it worse, not better).
+//
+// Recovery itself changed from a same-connection `seek_backward`
+// to a full stream reload (tear down + start_playback again for
+// the same item at the last known-good position) — a relative
+// seek only nudges a connection mpv may have already abandoned
+// (confirmed live: the seek immediately produced a false EOF
+// instead of recovering), while a reload opens a genuinely new
+// HTTP connection, the only thing that can actually succeed once
+// the network is back. Capped at MAX_STALL_RELOAD_ATTEMPTS_HEALTHY/_UNHEALTHY via
+// stall_reload_attempts_for (keyed by item id so it persists
+// across a same-item reload, unlike nearly everything else
+// reset_video_state_for_playback resets on every start_playback
+// call) — past the cap this gives up and stops cleanly instead
+// of retrying forever against a server that's still down.
+```
+
+Above `let is_seek_jump = vs.stall_last_tick_pos.is_some_and(|prev| (pos - prev).abs() >= 2.0);`:
+```
+// Real bug fix, 2026-08-11, confirmed from a real HTPC log:
+// a seek (either direction) is a deliberate position
+// discontinuity, not evidence of a stall — but the
+// forward-only check below left stall_last_progress_pos
+// stranded at a stale, higher value after any BACKWARD
+// seek, since normal post-seek playback then had to
+// re-climb back past that old high-water mark before it
+// ever counted as "progress" again. A single-tick jump
+// far larger than 16ms of normal 1x playback could ever
+// produce (also covers a gapless track transition, a
+// chapter/skip-segment jump) unconditionally resets the
+// baseline to the new position instead.
+```
+
+Above `if is_seek_jump || is_paused || buffering`:
+```
+// Second real bug fix, 2026-08-11, same root cause as the
+// seek one above, confirmed from a real HTPC log the very
+// next day: pausing for a while and then resuming falsely
+// triggered this exact "stalled" path — is_stalled itself
+// already correctly excludes a paused/buffering tick, but
+// that only suppresses the ALARM, not the CLOCK — the
+// checkpoint went stale for the whole pause (position
+// legitimately doesn't move while paused, so the
+// pos-advanced-by-1s branch below never re-arms it), so
+// stalled_for read the full pause duration on the very
+// first tick after unpausing, past the 5s threshold
+// immediately. Confirmed live: paused for ~3 minutes,
+// resumed, 26ms later "stalled: 180.9s with no progress"
+// fired and reloaded the stream. Keeping the checkpoint
+// continuously fresh while paused/buffering (matching
+// is_stalled's own exclusion) means the clock always
+// reads ~0 the instant either condition lifts, exactly
+// like a seek.
+```
+
+Above `if !vs.current_is_audio`:
+```
+// Diagnostic (2026-07-29): a real HTPC session played audio
+// only, forever, on a video item — mpv's own track list showed
+// the video track as selected, but no VideoReconfig event ever
+// fired and hwdec-current/codec/width/height all stayed empty/0
+// (confirmed via the mpv event log, not assumed). A second
+// attempt with a fresh Player worked normally, so this can't be
+// reproduced on demand or on the AMD dev machine. Rather than
+// guess at a fix blind, this just makes the next occurrence
+// loud and immediately diagnosable: fires once, 5s in (past
+// normal 4K HEVC hwdec startup, same judgment call as the
+// stall-recovery threshold above), only for genuine video
+// items (current_is_audio would legitimately never fire
+// VideoReconfig). See CLAUDE.md's Known platform issues.
+// Timed from FileLoaded, not from Play (2026-10-04): a file
+// that's still opening (slow server, stall reloads) has no
+// video yet by definition, and the old Play-based timer fired
+// this warning on every slow open in the HTPC logs.
+```
+
+Above `let hdr_target = if vs.video_on_subsurface {`:
+```
+// hdr branch, Stage 3 (2026-09-14) — one-shot Wayland
+// color-management negotiation trigger. Fires the instant
+// VideoReconfig has genuinely happened (not gated by the 5s
+// delay above, which is watching for an *absence* — this
+// reacts to a real, already-arrived event as soon as
+// possible instead). `state_timer`'s own brief nested lock
+// here mirrors the identical shape already used a few lines
+// up in this same closure and again below for
+// remembered_tracks.
+//
+// display_sync (2026-09-18) split this into two mutually
+// exclusive branches, Branch A (below, unchanged from the
+// pre-display_sync shape apart from one new `!display_sync_
+// enabled` term) and Branch B (further down). This is
+// deliberate, not an arbitrary refactor: folding display_
+// sync's own `loaded_ok` timing requirement (needed because
+// estimated-vf-fps isn't safe to read the instant
+// VideoReconfig fires — see query_video_dimensions' own doc
+// comment) into a single merged condition would delay HDR's
+// own negotiation by ~2s even with display_sync completely
+// disabled, the shipped default — a real regression to
+// already-shipped, already-working behavior for the
+// overwhelmingly common case. With the toggle off, Branch A
+// is the *only* branch that can ever run, byte-for-byte
+// identical to before this feature existed.
+// HDR Stage 5: tag the video subsurface (not the window) when
+// this player renders there, so the UI stays sRGB.
+```
+
+Above `if !vs.current_is_audio && display_sync_enabled && vs.display_presynced`:
+```
+// Branch B — display_sync enabled: settle the physical
+// display's mode/HDR/WCG BEFORE HDR Stage 3 ever negotiates,
+// so the two heavyweight Wayland/DRM operations (a live
+// connector mode-set and a color-management surface
+// negotiation) never race each other — see CLAUDE.md's own
+// display_sync section for the exact class of bug (between
+// an external script and mpv, originally) this ordering
+// avoids reintroducing between two of Fjord's own
+// subsystems. Both one-shot flags are claimed synchronously,
+// in this tick, the instant this condition is true — BEFORE
+// spawning anything — so the ~180 ticks display_sync's own
+// 3s settle can take never re-satisfy this same trigger and
+// spawn a redundant, concurrent sync_to_source/maybe_negotiate
+// call. Only the actual hdr::maybe_negotiate call itself is
+// deferred, to the tail of the spawned continuation, which
+// re-checks playback_generation first — the established
+// staleness-guard pattern this file already uses for the
+// natural-EOF fallback-advance branch — so a stopped/
+// replaced item during the settle can never have its stale
+// metadata wrongly applied to whatever's playing by then.
+// Display already switched for this item before load (the
+// normal case since display-mode-prefetch): negotiate HDR the
+// moment mpv knows the video's format, like Branch A — live-
+// reported 2026-10-06 ("looks weird at first then it gets
+// HDR"): waiting for Branch B's 2 s post-load check below
+// showed ~1.6 s of SDR output on a TV already in HDR mode.
+// Branch B still runs its correction check at that point,
+// just without negotiating again.
+```
+
+Above `if !vs.current_is_audio && !vs.hdr_output_applied && crate::hdr::is_active() {`:
+```
+// hdr branch, Stage 4 (2026-09-16) — the other half of Stage
+// 3's trigger above: once THIS item's own negotiation has
+// been confirmed Active (not just attempted), tell mpv to
+// actually emit real PQ/BT.2020 pixel values instead of its
+// own tone-mapped-to-SDR defaults. No notification exists
+// out of the isolated HDR worker thread, so this polls the
+// same way the stats overlay already does, just gated to
+// apply exactly once per item via hdr_output_applied — reset
+// to false in reset_video_state_for_playback alongside
+// hdr_negotiation_attempted, which combined with
+// hdr::send_command's own synchronous Idle-reset on Unset is
+// what guarantees a stale Active status from a just-torn-
+// down previous item can never be wrongly applied here to a
+// brand new item's Player before ITS OWN negotiation has
+// even started.
+```
+
+Above `if vs.skip_timed_paused_since.is_none() {`:
+```
+// 2026-08-14, real bug fix, live-reported ("if you pause
+// the video after the up next timer have started it dont
+// paus the timer so when it runs out it starts the next
+// video"): this branch runs off the tick's own live_pos
+// read, which is refreshed every 16ms regardless of mpv's
+// pause state — so the elapsed()-since-shown_at countdown
+// below kept counting down in real wall-clock time even
+// while genuinely paused, auto-skipping mid-pause. Freeze:
+// don't touch skip_timed_shown_at or the displayed number
+// while paused, just remember when the pause started.
+```
+
+Above `vs.next_ep_banner_shown = false;`:
+```
+// Also un-latch the trigger guard: without this, watching
+// forward through the credits point a second time after
+// this rewind can never re-fire the block above (it's
+// gated on !next_ep_banner_shown, which was never reset
+// anywhere else once a rewind reverts the mark) — the
+// episode would end up genuinely unplayed if the user then
+// stops before literal mpv EOF, exactly what this whole
+// feature exists to prevent. Re-showing the Up Next banner
+// on a second pass through the credits window is correct,
+// expected behavior, not a regression of the "once per
+// episode" comment above (written before rewind-tracking
+// existed) — the banner now fires once per un-reverted
+// pass, mirroring credits_auto_marked_played exactly.
+```
+
+Above `debug!("seek_acc: executing debounced seek of {pending:+.1}s");`:
+```
+// Debug logging added 2026-08-28 — this
+// execution point previously logged
+// nothing at all, the other half of the
+// keyboard-seek observability gap on_seek_acc's
+// own new logging closes; together the two
+// confirm whether a keyboard seek both
+// accumulated AND actually reached mpv.
+```
+
+#### `crates/fjord-app/src/playback/timer.rs`
+
+Above `let Some(current_id) = current_item_id else { return; };`:
+```
+// Resolve directly against the series' ordered episode list rather
+// than trusting /Shows/NextUp — see resolve_true_next_episode's doc
+// comment for why (CR10-13 originally worked around only one of its
+// two failure modes; a real HTPC log later showed the second one:
+// NextUp suggesting a rewatch once this same episode's
+// credits-trigger mark-played had already landed server-side).
+```
+
+Above `let mut remaining_secs = credits_secs as f64;`:
+```
+// Count down credits_secs → 0 in real (unpaused) seconds, polling every
+// 250 ms both for cancellation and for pause state. When credits_secs
+// == 0 (always-skip mode), the loop body never executes.
+//
+// 2026-08-14, real bug fix, live-reported ("if you pause the video
+// after the up next timer have started it dont paus the timer so when
+// it runs out it starts the next video"): the original loop slept a
+// flat 1s per iteration and always decremented, with no pause check at
+// all — pausing during the banner's countdown didn't stop it, and it
+// would auto-advance to the next episode while the user was still
+// paused on the current one. Rewritten to accumulate wall-clock delta
+// only while NOT paused (checked every 250ms via the same lock scope
+// that already reads player/pending/generation), so a pause genuinely
+// freezes the countdown until playback resumes — same fix shape as the
+// ask-timed skip-segment countdown just above.
+```
+
+Above `let display_sync_gen = video_timer.lock().unwrap().playback_generation;`:
+```
+// display_sync: genuinely ambiguous here whether anything is
+// about to start next — the actual decision resolves up to 3
+// different ways further down this same `if finished` block
+// (synchronously with nothing next, a same-tick deferred
+// start_playback, or a fully async Jellyfin round trip via
+// resolve_true_next_episode). Rather than hook a precise "did we
+// decide not to advance" check at each of those points (one of
+// which can't know its own answer yet), capture
+// playback_generation now — bumped only by a genuine new-item-
+// start (start_playback/play_trailer/the gapless track-commit
+// path), never by tear_down_player itself — and let a deferred
+// check decide once every path has had time to resolve.
+```
+
+Above `let premature = live_dur_at_eof > 0.0 && live_dur_at_eof - live_pos_at_eof > 60.0;`:
+```
+// Duration guard: a genuine natural end always lands with position
+// at (or very near) the real duration — mpv doesn't stop mid-stream
+// on its own. An EOF arriving far short of that is a symptom of a
+// broken stream (a stall-recovery reload hitting a dead connection,
+// or any other future cause), not the video actually finishing, so
+// it must never be treated as one — no mark-played, no advance to
+// the next episode/track. 60s is a deliberately generous margin —
+// see CLAUDE.md's Playback resilience section for the real HTPC log
+// (EOF at 0.0s of a ~1500s episode) that prompted this.
+```
+
+Above `let Some(next) = resolve_true_next_episode(&cli, &sid, &current_id).await else { return; };`:
+```
+// Resolve against the ordered episode list, not /Shows/NextUp
+// — see resolve_true_next_episode's doc comment. By the time
+// natural EOF reaches this fallback, the credits-trigger's own
+// mark_played call (if this was the last episode) has almost
+// certainly already landed server-side, so NextUp is exactly as
+// likely here to suggest a rewatch instead of correctly
+// reporting "no next episode" — confirmed live via a real HTPC
+// log where the last episode of a series restarted itself
+// straight after finishing.
+```
+
+#### `crates/fjord-app/src/playback/timer.rs` — file header (TOC)
+```
+// ── fjord-app · playback/timer.rs ─────────────────────────────────────────
+//   wire_mpv_timer          16 ms timer: position (also updates music-bar-pos/elapsed/total when is-audio-playing), stats,
+//                           skip segment (4 modes: always-skip/ask/ask-timed/never-skip),
+//                           Up Next banner trigger (credits mode: always-skip/ask/never-skip) + configurable countdown
+//                           (the spawned countdown task itself polls pause state every 250ms and only
+//                           consumes real elapsed time while unpaused, 2026-08-14 — see its own doc comment);
+//                           natural-end fallback: if EOF beats next-up fetch (always-skip race), respawns fetch;
+//                           gapless preload reuses the tick's single live_pos/live_dur read (CR11-10) and backs
+//                           off gapless_retry_cooldown ticks after a failed append_gapless (CR11-12);
+//                           track auto-select checks state.remembered_tracks for the playing series first
+//                           (a manual S/A panel pick from controls.rs, already a raw mpv lang code) before
+//                           falling back to Config.sub_lang/sub_lang2/audio_lang, same matching logic either way;
+//                           video-init diagnostic (2026-07-29, video_init_checked): warns once at 5s if a
+//                           video item has no VideoReconfig yet — see Player::has_seen_video_reconfig
+//                           stall recovery (2026-08-09): rolling "no progress in STALL_SECS (5 s)" check —
+//                           FIRST_OPEN_STALL_SECS (15 s) for an item's first open before FileLoaded
+//                           (2026-10-08, server disk spin-up; logged once via stall_grace_logged) — (not tied to
+//                           the original start position — generalized from a real HTPC network-outage
+//                           log), reloads the same item fresh (new connection) at the last known-good
+//                           position, capped at MAX_STALL_RELOAD_ATTEMPTS_HEALTHY/_UNHEALTHY (2026-08-28:
+//                           split by FjordState.ws_connected/-last_keepalive_at's own live connection-
+//                           health signal — patient when the WS proves the server's reachable, e.g. a
+//                           slow-to-wake library drive; fast-fail when it doesn't); playback-stalled drives a
+//                           "Reconnecting…" overlay distinct from buffering-active. Duration guard on
+//                           natural end (`premature`): an EOF landing far short of the real duration is
+//                           never treated as a genuine finish — no mark-played, no advance to next
+//                           episode/track, clean stop + toast instead (catches a reload attempt itself
+//                           hitting a dead connection, or any other future spurious-EOF cause)
+//   loaded_since/loaded_ok  (wire_mpv_timer) time since mpv's first FileLoaded — decoder log, chapters,
+//                           tracks, display-sync Branch B and the skip-segment check key off it, not
+//                           (2026-10-06: when the display was switched before load — display_presynced —
+//                           Track auto-selection runs at FileLoaded itself (2026-10-06): selecting a
+//                           track mid-play made mpv drop its read-ahead and pause on 4K HDR films
+//                           HDR is negotiated at the first VideoReconfig; Branch B then only re-checks the mode)
+//                           play_start (before FileLoaded, time-pos reads a fake 0)
+// ─────────────────────────────────────────────────────────────────────────────
+```
+
+#### `crates/fjord-app/src/playback/mod.rs`
+
+Above `#[derive(Clone, Copy)]`:
+```
+// ── SkipFadeAudio ────────────────────────────────────────────────────────────
+// The audio-side companion to `pending_skip_seek`'s visual fade-to-black
+// (2026-08-11, direct follow-up request after the video-only version
+// shipped: "why muting pcm culd it no just be a fade out fade in?" /
+// "mebey it will be better to mute during the fade in fade out"). Spans
+// BOTH halves of the transition — fade-out approaching the seek AND
+// fade-in after it — unlike `pending_skip_seek`, which is cleared the
+// instant the seek itself fires (halfway through this window). Armed by
+// `arm_skip_fade` at the same three sites that arm `pending_skip_seek`;
+// processed every tick in `wire_mpv_timer`, reusing that same tick's
+// live-computed fade duration so both halves can never drift out of sync
+// with the video side or with a live settings change mid-fade.
+//
+// Two genuinely different mechanisms depending on the audio path, decided
+// once at arm time (audio-passthrough-active can change independently of a
+// fade in progress, but re-checking it mid-ramp would mean switching
+// mechanisms partway through, which is worse than picking one and
+// committing):
+//   - PCM: a real volume ramp — ORIG_VOLUME → 0 during fade-out, 0 →
+//     ORIG_VOLUME during fade-in — mirroring the visual effect exactly.
+//   - SPDIF passthrough: volume can't be ramped at all (see
+//     Player::set_volume's own doc comment — touching sample values on a
+//     raw compressed bitstream corrupts the encoded frames, the same
+//     reason Volume Up/Down already skip themselves here). Mute is the
+//     closest available analog — binary, held for the WHOLE transition
+//     window rather than toggled at the seek instant, so the receiver sees
+//     silence-then-resume instead of a raw content-to-content splice.
+//     Genuinely untested against real SPDIF hardware/AVR relock behavior —
+//     see CLAUDE.md's own note on this. User-disableable independent of
+//     everything else (Settings → Audio → Passthrough → "Mute during skip
+//     fade", `Config.device.skip_fade_mute_passthrough`, default on) —
+//     `arm_skip_fade` simply never arms this struct at all when passthrough
+//     is active and the setting is off, since there's nothing else for it
+//     to do in that case (video fade still runs regardless, via
+//     `pending_skip_seek`, which `arm_skip_fade` always arms unconditionally).
+```
+
+Above `if passthrough && !g.get_settings_skip_fade_mute_passthrough() {`:
+```
+// Settings → Audio → Passthrough → "Mute during skip fade" (2026-08-11
+// follow-up: "add a setting for mute during fade for audio passthrou so
+// i only can turn off that and not the video fade"). Gates ONLY the
+// passthrough mute — the video fade above is already armed unconditionally,
+// and the PCM ramp below never even reaches this check. When passthrough
+// is active and the user has turned this off, there's nothing left for
+// the audio-fade mechanism to do at all (no ramp possible on a raw
+// bitstream, mute explicitly declined), so skip_fade_audio is simply
+// never armed — passthrough audio is left completely untouched.
+```
+
+Above `pub wide_color_fbo: bool,`:
+```
+// hdr branch, Stage 4 (2026-09-16): does THIS item's FBO/render pipeline
+// use the widened GL_RGB10_A2 format instead of today's plain 8-bit
+// RGBA? Set once, in reset_video_state_for_playback, from the "HDR
+// passthrough" Settings toggle — deliberately NOT from per-item source
+// eligibility, which can't be known this early (create_fbo() runs
+// before mpv has decoded anything, well before VideoReconfig). See
+// create_fbo's own doc comment for the full reasoning.
+```
+
+Above `pub display_sync_attempted: bool,`:
+```
+// display_sync feature (2026-09-18) — Branch B's own one-shot guard,
+// paired with hdr_negotiation_attempted: Branch B claims BOTH flags
+// together, synchronously, the instant its own trigger condition is
+// true (before spawning anything) — see wire_mpv_timer's own display_sync
+// hook for why this ordering matters (a race this project has already
+// been bitten by once for a very similar reason, see hdr_output_applied's
+// own doc comment above).
+```
+
+Above `pub pending_skip_seek: Option<(f64, Instant)>,`:
+```
+// A decided-but-deliberately-delayed skip-segment seek (seek_target_secs,
+// armed_at) — 2026-08-11, direct request ("make intro skip etc more
+// gradual, it feels instant and jarring"). All three skip paths (auto
+// always-skip, ask-timed countdown expiry, manual "Skip" confirm) call
+// arm_skip_fade (sets this + skip_fade_audio below) instead of seeking
+// immediately, and flip AppState.skip-fade-active to start player.slint's
+// own fade-to-black. wire_mpv_timer checks this every tick and fires the
+// real seek once armed_at has aged past Config.device.skip_fade_ms ×
+// the same settings-animation-speed multiplier the Slint side's own
+// `animate` block uses — so the two can't drift out of sync, and a user
+// with either set to 0/0% gets back today's effectively-instant seek for
+// free, no separate opt-out needed.
+```
+
+Above `pub skip_timed_paused_since: Option<Instant>,`:
+```
+// 2026-08-14: Some(t) from the moment the ask-timed overlay is first
+// observed paused; taken (and its duration folded into skip_timed_shown_at)
+// the moment it's observed unpaused again — see the pause-freeze fix in
+// wire_mpv_timer's ask-timed branch for the full story (a paused video
+// must not let this wall-clock countdown keep expiring in the background).
+```
+
+Above `pub stall_last_progress_pos: f64,`:
+```
+// Stall auto-recovery (see wire_mpv_timer) — rolling "has position
+// genuinely advanced recently" tracking, generalized 2026-08-09 from a
+// fixed start-of-playback baseline so a stall anywhere mid-video is
+// caught, not just one that happens to land back near position 0.
+```
+
+Above `pub stall_last_tick_pos: Option<f64>,`:
+```
+// The position observed on the PREVIOUS tick (regardless of whether it
+// counted as "progress") — 2026-08-11, real bug fix: distinct from
+// stall_last_progress_pos, which only ever advances on FORWARD motion.
+// Used to detect a seek (or any other deliberate position
+// discontinuity — a gapless track transition, a chapter/skip-segment
+// jump) so the stall baseline can be reset to the new position
+// immediately, in either direction. Without this, seeking BACKWARD
+// left stall_last_progress_pos stranded at the higher pre-seek value,
+// which normal post-seek forward playback could take a long time (or
+// never, for a big-enough seek) to re-exceed — meaning the very next
+// few seconds of completely healthy playback after any backward seek
+// could look identical to a genuine stall. Confirmed live from a real
+// HTPC log: a seek to 1228.4s followed 4.65s later by "stalled: 5.0s
+// with no progress at 1232.57s" — position had genuinely advanced
+// ~4.2s in that window, i.e. normal 1x playback, not a stall at all.
+```
+
+Above `pub stall_reload_attempts_for: Option<(String, u32)>,`:
+```
+// (item_id, attempts_so_far) — NOT reset by reset_video_state_for_playback
+// (unlike nearly every other field there) since a reload calls
+// start_playback again for the SAME item and this counter must persist
+// across that to make the retry cap actually bind; reads as "0
+// attempts" the instant a genuinely different item starts, since the
+// id no longer matches. It IS forgiven — cleared back to no-attempts —
+// once stall_last_reload_at shows sustained genuinely-healthy playback
+// (see wire_mpv_timer) for a while after the last reload/give-up, so
+// two stalls early in a long video don't permanently disable recovery
+// for the rest of it, potentially hours later, long after whatever
+// caused them is gone. A server that's genuinely, permanently down
+// never earns this forgiveness, since playback re-stalls almost
+// immediately after every reload — the cooldown only ever completes
+// after real, sustained, non-stalled progress.
+```
+
+Above `let ticks = if vs.credits_auto_marked_played {`:
+```
+// If the credits-trigger already explicitly marked this episode played
+// (POST PlayedItems, position reset to 0 server-side) and it was never
+// reverted by a rewind past the trigger point, report ticks=0 here instead
+// of the raw position. Every teardown path (stop/replaced/natural-end/quit)
+// funnels through this one function and otherwise unconditionally reports
+// the real mpv position — which, for an episode that was watched past
+// credits but never reached literal mpv EOF, is nonzero and re-adds a
+// resume point on the server the instant this call lands, undoing the
+// mark moments after it succeeded and making Jellyfin's IsResumable filter
+// (what Continue Watching queries) match again. Confirmed live via a real
+// fjord.log: WS showed played=true position_ticks=0 right after the
+// credits-trigger mark, then played=true position_ticks=2917s (nonzero)
+// seconds later once the user stopped — the stop report clobbering it.
+```
+
+Above `{`:
+```
+// User-initiated stop keeps the playlist and queue (Phase 56): the panel
+// stays reachable via `q` while idle and Enter resumes from it. Clear All
+// in the panel (or sign-out) is how the queue is emptied.
+//
+// Dispatched via invoke_from_event_loop rather than a direct
+// window_weak.upgrade() — real bug, found 2026-08-17 while chasing "the
+// ui still shows the old profile for 1-3s after switching". Every OTHER
+// caller of this function (on_stop_playback, on_music_bar_stop, the
+// stall-recovery give-up path in wire_mpv_timer) already runs on the
+// Slint UI thread — a Slint callback handler or a Timer.triggered
+// closure — where a direct upgrade() succeeds. reset_session_state's
+// own call, though, happens from inside switch_to_profile's
+// rt.spawn(async move {...}), a Tokio WORKER thread.
+// `Weak::upgrade()` checks `std::thread::current().id()` against the
+// window-owning thread and returns `None` silently (no panic, nothing
+// logged) on any other thread — confirmed directly from i-slint-core's
+// vendored source — so this block was a no-op on that one path: the
+// playback UI (queue panel, controls overlay) never actually got torn
+// down mid-switch, only during sign-out (a direct UI-thread Slint
+// callback). reset_session_state's own equivalent block (main.rs) had
+// the identical bug and is fixed the same way.
+```
+
+Above `fn reset_video_state_for_playback(`:
+```
+// ── reset_video_state_for_playback ────────────────────────────────────────────
+// The common "fresh playback baseline" reset — chapters, stall-recovery
+// detection, screensaver inhibitor, skip/OSD countdowns, gapless preload —
+// shared by `start_playback` and `play_trailer` (Watch Trailer) so the two
+// can never drift out of sync. Extracted rather than duplicated: this is
+// exactly the class of "many small fields, easy to miss one" state this
+// project has been bitten by before (e.g. the unplayed-count/provider_ids
+// field-threading lessons in CLAUDE.md) — a hand-written second copy would
+// silently stop tracking whatever `start_playback`'s own block grows next.
+// Each caller sets its own `item_id`/`playing_series_id`/`client` afterward,
+// since those are exactly the fields that differ (a trailer has none of
+// them — see `play_trailer`'s own doc comment).
+```
+
+Above `vs.play_start = None;`:
+```
+// play_start is deliberately NOT stamped here anymore (display-mode-
+// prefetch, 2026-09-25) — every caller now stamps it itself, at the
+// moment decode is actually about to be requested: immediately, for the
+// non-deferred path, or once display_sync's own pre-decode mode-switch
+// has resolved, for the deferred path. Every play_start-gated consumer
+// in this file already treats None as "not started yet" — see
+// start_playback's own eligible/non-eligible branches and play_trailer.
+// It MUST be cleared here, though: left alone it kept the PREVIOUS item's
+// timestamp, so during the display-sync wait every play_start-gated check
+// (chapter poll, decoder log, no-VideoReconfig warning, stall watchdog,
+// first-frame log) ran against the old item's clock — seen live on the
+// HTPC: the chapter poll gave up before the file was even loaded.
+```
+
+#### `crates/fjord-app/src/playback/mod.rs`
+
+Above `state: &Arc<Mutex<FjordState>>,`:
+```
+// display-mode-prefetch (2026-09-25) — needed to read
+// Config.device.display_sync_enabled and to call sync_before_load's own
+// FjordState-backed cache. Already in scope at every real call site
+// (every one of them already locks state to build `config` via
+// s.player_config() right before calling this function).
+```
+
+Above `let (same_item_live, keep_presync) = {`:
+```
+// display-mode-prefetch: replacing a LIVE player for this same item (the
+// stall-recovery reload, or re-picking what's already playing) — the
+// display is already in this item's mode, so skip the pre-decode wait.
+// Without this, a stall reload during a network outage would first wait
+// on an item-detail fetch that is likely to hang (up to the 20 s cap).
+// keep_presync: the display is still in this item's mode after such a
+// reload (a replace-in-place never reverts it), so HDR can still be
+// negotiated at the first VideoReconfig — without this, a slow first open
+// (stall reloads) brought back the late mid-playback HDR switch (HTPC,
+// 2026-10-06: "like the video is loaded 2 times").
+```
+
+Above `{`:
+```
+// Subtitle/audio language preferences go to mpv BEFORE the
+// file loads, so it enables those tracks itself from the first
+// byte — the auto-select at FileLoaded then only corrects a
+// different pick (2026-10-06: switching tracks after reading
+// started made mpv drop and re-read its buffer).
+```
+
+Above `let eligible = !is_audio && !same_item_live && {`:
+```
+// display-mode-prefetch (2026-09-25) — Audio never
+// participates (no display-mode concept for music). When
+// eligible, defer pending_load_url/play_start until the
+// spawned task below has settled the display's mode/HDR/WCG
+// ahead of decode; otherwise behave exactly as before this
+// feature existed (immediate load, play_start stamped now).
+```
+
+Above `pub(crate) fn play_trailer(`:
+```
+// ── play_trailer ──────────────────────────────────────────────────────────────
+// Watch Trailer (Discover / RequestDetailScreen only — see CLAUDE.md's Seerr
+// integration section for the full design). A deliberately separate, minimal
+// path rather than routing a fake item through `start_playback`: that
+// function is woven through Jellyfin session reporting (report_playback_
+// start/progress/stopped, Episode intro/credits fetch, series auto-advance)
+// which needs a real `Arc<JellyfinClient>` to even call — there's no "skip
+// reporting" flag to pass, and a fake item_id would still generate real,
+// unnecessary network traffic and log noise against the user's own Jellyfin
+// server. Instead: `vs.client`/`vs.item_id`/`vs.playing_series_id` are left
+// `None` — the mechanism (not a special case) that makes
+// report_playback_progress and the series up-next/auto-advance/credits-
+// mark-played block in wire_mpv_timer skip themselves for this session, the
+// same way they already do for any other client-less state. Reuses
+// `reset_video_state_for_playback` for everything else (screensaver
+// inhibit, chapters, stall-recovery baseline, OSD countdowns) so it can't
+// drift out of sync with `start_playback`'s own reset logic.
+```
+
+#### `crates/fjord-app/src/playback/mod.rs` — file header (TOC)
+```
+// ── fjord-app · playback/mod.rs ─────────────────────────────────────────────
+//   Submodules (re-exported here, so callers keep using crate::playback::*):
+//     queue    playlist/queue stepping, repeat/shuffle, resolve_true_next_episode (+ its tests)
+//     inhibit  screensaver / KDE power / systemd sleep inhibitors
+//     tracks   track list model, time formatting, apply_audio_track
+//     render   wire_rendering_notifier + FBO helpers (GL thread)
+//     stall    stall-recovery budget + next_stall_step
+//     timer    wire_mpv_timer (16 ms tick)
+//     take_repeat_all_ring_next  the queue, head plays) — natural end, gapless peek/commit and ⏭ Next
+//   VideoState              mpv Player + MpvRenderCtx, GL FBOs, playback metadata
+//                           is_trailer/trailer_url (2026-10-04): Watch Trailer session flags
+//                           playlist: Vec<QueueItem> — ordered track list for album/artist playback
+//                           playlist_index: usize — currently-playing position in playlist
+//                           shuffle: bool, shuffle_order: Vec<usize> — shuffled play order
+//                           repeat_mode: RepeatMode
+//                           queue: Vec<QueueItem> — context-menu enqueue (plays after playlist ends)
+//                           current_is_audio: bool — set in start_playback; gates natural-end
+//                             advance by media class (audio→audio, video→video only)
+//                           now_playing: Option<QueueItem> — snapshot for the queue panel's
+//                             synthetic now-playing row (off-list plays)
+//                           from_detail/from_series/from_season: bool — set before start_playback by
+//                             on_play_detail/on_resume_detail / on_play_series_episode; read+cleared in
+//                             start_playback to prevent hiding the originating screen; reset_playback_ui
+//                             restores show_detail / show_series / show_season on stop
+//                           playback_generation: u64 counter incremented each start_playback;
+//                             episode timestamps task (Intro Skipper v2+) guards stale generation
+//                           skip_segment_handled: true after always-skip seeked or user dismissed timed
+//                           skip_timed_shown_at: Instant when ask-timed overlay first appeared
+//                           skip_timed_prompt_secs: configured countdown for current ask-timed segment
+//                           skip_timed_paused_since: Some(t) while paused during the ask-timed
+//                             countdown (2026-08-14) — freezes the displayed number and folds the
+//                             paused duration into skip_timed_shown_at on resume, so a pause
+//                             genuinely stops the countdown instead of it expiring in the background
+//                           credits_start: trigger point for Up Next banner (Intro Skipper Credits)
+//                           next_ep_banner_shown: guard — fires once per episode
+//                           credits_auto_marked_played: true once the credits-trigger POSTs
+//                             PlayedItems for the current episode (fires alongside the Up Next
+//                             banner/auto-advance, whenever skip_credits_mode != never-skip);
+//                             DELETEs PlayedItems again if playback rewinds back past the
+//                             trigger point during the same episode (Skip-and-rewind self-corrects
+//                             instead of leaving a stale played mark) — see credits_mark_played
+//                             in wire_mpv_timer's 16 ms tick
+//                           credits_mark_threshold: the exact position that actually fired the
+//                             trigger above (credits_start OR the dur-30s fallback, whichever was
+//                             crossed first) — the rewind-revert check compares against THIS, not
+//                             a freshly-recomputed credits_start/dur-30, since those two can (and
+//                             do, for short end-credits) disagree about which one actually fired.
+//                             A revert also clears next_ep_pending + signals the UI to hide the Up
+//                             Next banner (hide_next_ep_banner, deferred-dispatched like everything
+//                             else in wire_mpv_timer) — without this an in-flight countdown task
+//                             kept running untouched and could still auto-advance on its original
+//                             schedule despite the revert
+//                           next_ep_pending: next MediaItem; taken by natural-end, Play Now, or cancelled
+//                           chapters: Vec<(start_secs, title)> from chapter-list; loaded after 2 s
+//                           chapter_osd_ticks: countdown to hide chapter-name OSD (125 = ~2 s)
+//                           delay_osd_ticks: countdown to hide sub/audio delay OSD (125 = ~2 s)
+//   chapter entries         chapter-entries ([TrackEntry] id=index, label="M:SS  Title") + current-chapter
+//                           populated when chapters load; current-chapter tracked in 16 ms timer
+//   tear_down_player        capture ticks, drop render_ctx then player (mpv invariant), return stop data;
+//                           reports ticks=0 instead of the raw position when credits_auto_marked_played
+//                           is still true, so the subsequent report_playback_stopped call (every teardown
+//                           path funnels through here) can't re-add a resume point that undoes the mark
+//   tear_down_player        frees a subsurface player's render context on the subsurface's own GL
+//                           context (video_surface::free_render_ctx) before the Player goes
+//   do_stop_playback        user stop: tear down, KEEP playlist+queue (idle queue panel), reset UI, stop report, home refresh;
+//                           gained a `state: &Arc<Mutex<FjordState>>` param (2026-07-20) so its
+//                           post-stop push_home_data call can pass the current
+//                           jellyfin_watchlist_ids snapshot (real bug fix, see config.rs's own
+//                           doc comment on that field) — same reason wire_mpv_timer's natural-
+//                           end push_home_data call site gained an equivalent state_home clone
+//   reset_playback_ui       clear all player UI state incl. buffering + seek-hover + seek-dragging + skip overlays
+//   quit_cleanup            synchronous stop report + screensaver release called after window.run() exits
+//   reset_playback_ui       (also clears video-surface-active first — window opaque before the next frame)
+//   reset_playback_ui       clear all player UI state incl. is-audio-playing + music-bar fields + show-now-playing + buffering + skip overlays
+//   start_playback          stop-report previous item first (CR-3), then open URL in mpv; audio_meta: Option<(artist, album_art_id)> drives music bar;
+//                           item_type=="Audio" → is-audio-playing=true (music bar, no fullscreen player); generation guards stale writes; show_toast on failure;
+//                           playlist+queue always survive (Phase 56) — playing music = insert at top of queue;
+//                           display-mode-prefetch (2026-09-25): with display sync on (non-Audio), holds back
+//                           pending_load_url/play_start and spawns a task that switches the display first
+//                           (display_sync::sync_before_load, 20 s cap), then releases the load; video_info
+//                           param (from MediaStreams) skips the fallback item-detail fetch when known;
+//                           skipped when replacing a live player for the SAME item (stall reload); a stop
+//                           mid-switch reverts the display from inside the task
+//   prestart_still_current  that task's staleness check — generation unchanged AND vs.player still set
+//                           (Stop doesn't bump the generation)
+//   reset_video_state_for_playback  shared "fresh playback baseline" reset (screensaver inhibit,
+//                           chapters, stall-recovery, skip/OSD countdowns) — extracted so
+//                           start_playback and play_trailer can't drift out of sync; each caller
+//                           sets its own item_id/playing_series_id/client afterward
+//   play_trailer            Watch Trailer (Discover only; refuses URLs failing discover::trailer_url_allowed)
+//                           — deliberately NOT start_playback with a
+//                           fake item: that function needs a real Arc<JellyfinClient> to even call
+//                           its Jellyfin reporting. Leaves vs.client/item_id/playing_series_id at
+//                           None — the same mechanism (not a special case) that already makes
+//                           report_playback_progress and series auto-advance skip themselves for
+//                           any client-less session; reuses reset_video_state_for_playback for
+//                           everything else
+//                           (2026-10-04: sets is_trailer; display sync skips trailers unless
+//                           device.display_sync_trailers; a failed open closes with "Trailer unavailable")
+// ─────────────────────────────────────────────────────────────────────────────
+```
+
+#### `crates/fjord-app/src/playback/render.rs`
+
+Above `if vs.render_ctx.is_some()`:
+```
+// Fire the deferred loadfile the moment a URL is actually
+// pending, same GL thread as render_ctx creation itself.
+// Deliberately NOT nested inside the render_ctx-creation
+// arm above anymore (display-mode-prefetch, 2026-09-25):
+// that used to be a one-shot check that only ever ran on
+// the very first tick after Player::new(), so a
+// pending_load_url set LATER by an async task (display_
+// sync's own pre-decode mode-switch wait) would never be
+// consumed at all — Player::load() silently skipped
+// forever, not just delayed. Checking on every tick once
+// render_ctx already exists preserves the original
+// VO-init-race-fix invariant (render_ctx must exist
+// before load() is called) just as well, since render_ctx
+// is never torn down once created — by the time any
+// later tick finds pending_load_url == Some, render_ctx
+// is already guaranteed to exist.
+```
+
+Above `if !vs.first_frame_logged && vs.play_start.is_some() {`:
+```
+// display-mode-prefetch (2026-09-25): ctx.render()
+// runs every tick regardless of whether a file has
+// actually been loaded — mpv renders idle/blank
+// frames the whole time a deferred pending_load_url
+// wait is in flight. Without the play_start guard,
+// this one-shot log (and flag) would fire on that
+// first idle tick instead of the real first frame,
+// permanently losing the log line this feature
+// most wants intact to verify — play_start stays
+// None throughout the deferred wait (see its own
+// relocated-stamp doc comment above).
+```
+
+Above `fn color_rgb` (create_fbo's comment, separated from it; a trimmed doc is back on create_fbo):
+```
+// hdr branch, Stage 4 (2026-09-16): `wide` selects GL_RGB10_A2 (10-bit per
+// channel, packed into the same 32 bits/pixel as today's plain 8-bit RGBA —
+// genuinely zero GPU-memory cost, and exactly matches HDR10's own native
+// mastering precision) instead of today's GL_RGBA/GL_UNSIGNED_BYTE. Decided
+// once per item by the caller from VideoState.wide_color_fbo (itself set
+// from the "HDR passthrough" Settings toggle alone, not per-item source
+// eligibility — see that field's own doc comment for why: this function
+// runs before mpv has decoded anything, well before source eligibility
+// could possibly be known). Confirmed both formats are fully compatible
+// with Slint's BorrowedOpenGLTextureBuilder, which only requires a 4-channel
+// GL_RGBA-ordered *format* (a different GL parameter than *internal
+// format*/storage precision) and never touches the texture's own storage —
+// zero Slint-side changes needed either way.
+```
+
+#### `crates/fjord-app/src/playback/stall.rs`
+
+Above `const MAX_STALL_RELOAD_ATTEMPTS_HEALTHY: u32 = 7; // (7+1) × 5s ≈ 40s`:
+```
+// Cap on stall-triggered stream reloads per item (see the stall-recovery
+// check inside wire_mpv_timer) — past this, a still-broken connection stops
+// retrying and playback stops cleanly instead of looping forever.
+//
+// Split into two budgets, 2026-08-28, per a real HTPC log investigation +
+// a direct user follow-up question. The original single 2-attempt budget
+// gives up after ~15s total ((2+1) reload cycles × the 5s stall threshold
+// below) — measured exactly from a real incident where a library drive
+// that had spun down took longer than that to wake and start serving
+// reads, so every one of 3 straight attempts hit an identical dead stream
+// (StartFile, then literally nothing — no FileLoaded event ever arrived)
+// before the cap was hit and playback stopped with the "lost connection"
+// toast; a manual retry moments later worked instantly once the drive had
+// finished waking on its own, unrelated to anything a reload itself does
+// differently. A reload doesn't actually help a slow-spin-up stall the way
+// it helps a genuinely dropped connection (mpv's own read is blocked on
+// the SERVER's disk I/O, not a broken client connection) — what actually
+// fixes it is just enough elapsed time.
+//
+// Simply raising the cap for everyone would mean a GENUINELY dead
+// connection also waits the full extended budget before being reported,
+// which is a real cost when it's true network failure — the user's own
+// direct follow-up ("is there not another way to detect a genuine
+// connection issue... wuld it not hit that when the library wuld
+// refreshe") pointed at exactly the right existing signal: the
+// WebSocket's own already-continuously-running 30s keep-alive is a live,
+// independent proof that the Jellyfin SERVER itself is reachable, whether
+// or not any particular file's own stream is currently stuck (see
+// FjordState.ws_connected/ws_last_keepalive_at's own doc comment). When
+// that signal says the connection is healthy, a stall is far more likely
+// to be a local/server-side resource being slow (the drive-wake case) than
+// a real outage, so the LONG budget applies; when it's stale or the socket
+// is down, the connection itself may genuinely be the problem, so the
+// ORIGINAL short budget applies instead — a real outage is still reported
+// in ~15s, not held up for 40, while a healthy-connection stall gets the
+// patience an unrelated slow resource deserves.
+```
+
+#### `crates/fjord-app/src/playback/queue.rs`
+
+Above `pub(crate) async fn resolve_true_next_episode(`:
+```
+// Resolve the TRUE next episode after `current_id` within `series_id`. Prefers
+// /Shows/NextUp's own answer when it's verifiably forward of the current
+// episode — this preserves NextUp's server-side watched-state awareness (e.g.
+// correctly skipping an episode already watched from another client, which a
+// blind current-position+1 rule would miss) — and only falls back to strict
+// position+1 when NextUp's answer fails that check. NextUp is unreliable right
+// at an episode boundary in two different ways this validates against: (1)
+// shortly before Jellyfin has processed a stop/played report for the current
+// episode, it still returns the CURRENT episode itself as "next up" (CR10-13's
+// original motivation for a same-id fallback); (2) once a series is FULLY
+// watched — including, after the credits-trigger auto-mark (see
+// credits_auto_marked_played above), an episode marked played well before
+// natural EOF — NextUp can fall back to a "start over"/rewatch suggestion
+// (observed live: the just-finished episode itself) instead of returning
+// nothing. Both previously caused the LAST episode of a series to reach
+// natural end and then immediately auto-restart something instead of just
+// stopping, confirmed via a real HTPC log; both are caught here since a
+// same-id or earlier-episode suggestion has a position that isn't strictly
+// greater than the current episode's. (Earlier version of this function
+// dropped NextUp entirely rather than validating it — simpler, but throws
+// away the skip-ahead case above for scenarios this codebase hadn't yet hit
+// in testing; found in review and switched to this validated-hint form.)
+```

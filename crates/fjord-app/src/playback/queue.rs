@@ -4,6 +4,7 @@
 //   repeat_one_target       Repeat One replays now_playing (the song actually playing), with or without a
 //                           playlist — used by natural end, the gapless peek, and commit_natural_next
 //   repeat_all_ring /       Repeat All with no album playlist: the queue is a ring (ended song → back of
+//     take_repeat_all_ring_next  the queue, head plays) — natural end, gapless peek/commit and ⏭ Next
 //   upcoming_count          queue-count definition: playlist tracks after current + queue items
 //   playlist_prev/_next, peek_natural_next/commit_natural_next, invalidate_preload,
 //   rebuild_shuffle_order/toggle_shuffle, shuffle_indices — playlist + queue stepping
@@ -316,28 +317,13 @@ pub(crate) fn playlist_next(vs: &mut VideoState) -> Option<QueueItem> {
     }
 }
 
-// Resolve the TRUE next episode after `current_id` within `series_id`. Prefers
-// /Shows/NextUp's own answer when it's verifiably forward of the current
-// episode — this preserves NextUp's server-side watched-state awareness (e.g.
-// correctly skipping an episode already watched from another client, which a
-// blind current-position+1 rule would miss) — and only falls back to strict
-// position+1 when NextUp's answer fails that check. NextUp is unreliable right
-// at an episode boundary in two different ways this validates against: (1)
-// shortly before Jellyfin has processed a stop/played report for the current
-// episode, it still returns the CURRENT episode itself as "next up" (CR10-13's
-// original motivation for a same-id fallback); (2) once a series is FULLY
-// watched — including, after the credits-trigger auto-mark (see
-// credits_auto_marked_played above), an episode marked played well before
-// natural EOF — NextUp can fall back to a "start over"/rewatch suggestion
-// (observed live: the just-finished episode itself) instead of returning
-// nothing. Both previously caused the LAST episode of a series to reach
-// natural end and then immediately auto-restart something instead of just
-// stopping, confirmed via a real HTPC log; both are caught here since a
-// same-id or earlier-episode suggestion has a position that isn't strictly
-// greater than the current episode's. (Earlier version of this function
-// dropped NextUp entirely rather than validating it — simpler, but throws
-// away the skip-ahead case above for scenarios this codebase hadn't yet hit
-// in testing; found in review and switched to this validated-hint form.)
+// The TRUE next episode after `current_id` in `series_id`. /Shows/NextUp's answer is
+// used when it's strictly forward of the current episode (it knows watched state —
+// e.g. skips an episode already watched elsewhere); otherwise strict position + 1.
+// NextUp is unreliable at an episode boundary: before the stop/played report lands
+// it returns the CURRENT episode, and once the series is fully watched (including
+// after the credits mark) it suggests a rewatch — both made a series' last episode
+// restart itself. A same-id or earlier suggestion fails the forward check.
 pub(crate) async fn resolve_true_next_episode(
     cli: &JellyfinClient,
     series_id: &str,

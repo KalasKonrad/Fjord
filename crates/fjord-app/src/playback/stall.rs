@@ -5,42 +5,14 @@
 // ─────────────────────────────────────────────────────────────────────────────
 use super::*;
 
-// Cap on stall-triggered stream reloads per item (see the stall-recovery
-// check inside wire_mpv_timer) — past this, a still-broken connection stops
-// retrying and playback stops cleanly instead of looping forever.
-//
-// Split into two budgets, 2026-08-28, per a real HTPC log investigation +
-// a direct user follow-up question. The original single 2-attempt budget
-// gives up after ~15s total ((2+1) reload cycles × the 5s stall threshold
-// below) — measured exactly from a real incident where a library drive
-// that had spun down took longer than that to wake and start serving
-// reads, so every one of 3 straight attempts hit an identical dead stream
-// (StartFile, then literally nothing — no FileLoaded event ever arrived)
-// before the cap was hit and playback stopped with the "lost connection"
-// toast; a manual retry moments later worked instantly once the drive had
-// finished waking on its own, unrelated to anything a reload itself does
-// differently. A reload doesn't actually help a slow-spin-up stall the way
-// it helps a genuinely dropped connection (mpv's own read is blocked on
-// the SERVER's disk I/O, not a broken client connection) — what actually
-// fixes it is just enough elapsed time.
-//
-// Simply raising the cap for everyone would mean a GENUINELY dead
-// connection also waits the full extended budget before being reported,
-// which is a real cost when it's true network failure — the user's own
-// direct follow-up ("is there not another way to detect a genuine
-// connection issue... wuld it not hit that when the library wuld
-// refreshe") pointed at exactly the right existing signal: the
-// WebSocket's own already-continuously-running 30s keep-alive is a live,
-// independent proof that the Jellyfin SERVER itself is reachable, whether
-// or not any particular file's own stream is currently stuck (see
-// FjordState.ws_connected/ws_last_keepalive_at's own doc comment). When
-// that signal says the connection is healthy, a stall is far more likely
-// to be a local/server-side resource being slow (the drive-wake case) than
-// a real outage, so the LONG budget applies; when it's stale or the socket
-// is down, the connection itself may genuinely be the problem, so the
-// ORIGINAL short budget applies instead — a real outage is still reported
-// in ~15s, not held up for 40, while a healthy-connection stall gets the
-// patience an unrelated slow resource deserves.
+// Cap on stall-triggered reloads per item (wire_mpv_timer's stall check); past it,
+// playback stops cleanly instead of looping. Two budgets, chosen by connection health
+// (FjordState.ws_connected / ws_last_keepalive_at — the WebSocket's 30 s keep-alive
+// proves the server is reachable whatever one stream is doing):
+// - healthy → long budget (~40 s): the stall is most likely a slow server resource,
+//   e.g. a library drive waking up — a reload doesn't help, time does;
+// - unknown/down → the original short budget (~15 s): a real outage is reported fast.
+// Background: DEVLOG → "Playback resilience".
 const MAX_STALL_RELOAD_ATTEMPTS_HEALTHY: u32 = 7; // (7+1) × 5s ≈ 40s
 const MAX_STALL_RELOAD_ATTEMPTS_UNHEALTHY: u32 = 2; // (2+1) × 5s = 15s, the original budget
 pub(crate) const STALL_GIVE_UP_TOAST: &str = "Playback stopped — lost connection to server";
