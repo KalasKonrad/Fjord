@@ -32,6 +32,9 @@
 //                      keyboard, 2026-08-22, rolled out to every text-entry surface as of
 //                      2026-08-23 — see app_state.slint's own show-onscreen-keyboard doc
 //                      comment for the full design)
+//   open_onscreen_keyboard  the one Rust way to open the on-screen keyboard; false (nothing
+//                      changed) when Settings → UI has it off — the caller then does its own Enter
+//                      action (2026-10-10)
 //   handle_key         router: show-onscreen-keyboard gate (Bonfire Phase 3 — checked before
 //   caret_key          Left/Right/Home/End → text_field caret for the drawn fields (Discover/Browse/
 //                      Library search, new-playlist name — Right still creates when the caret is
@@ -2069,10 +2072,9 @@ pub(crate) fn handle_key(
                         g.set_bonfire_leave_confirm_focused(0);
                         g.set_show_bonfire_leave_confirm(true);
                     } else if zone == join_base {
-                        g.set_onscreen_keyboard_target("bonfire-group-join-code".into());
-                        g.set_onscreen_keyboard_cursor(g.get_onscreen_keyboard_done_cursor());
-                        g.set_show_onscreen_keyboard(true);
-                        window.invoke_grab_keyboard_focus();
+                        if open_onscreen_keyboard(&g, "bonfire-group-join-code") {
+                            window.invoke_grab_keyboard_focus();
+                        }
                     } else {
                         // zone == join_base + 1: Join button.
                         g.invoke_bonfire_group_join_code_submit();
@@ -2951,6 +2953,21 @@ pub(crate) fn handle_key(
     }
 }
 
+/// Opens the on-screen keyboard for `target` — unless Settings → UI has it turned
+/// off: then nothing changes and `false` comes back, so the caller keeps its own
+/// Enter behaviour (an opened-but-undrawn keyboard used to swallow focus, 2026-10-10).
+/// Slint's twin: `AppState.open-onscreen-keyboard`.
+pub(crate) fn open_onscreen_keyboard(g: &crate::AppState, target: &str) -> bool {
+    if !g.get_settings_onscreen_keyboard_enabled() {
+        debug!("onscreen-kb: not opened for {target} (turned off in Settings)");
+        return false;
+    }
+    g.set_onscreen_keyboard_target(target.into());
+    g.set_onscreen_keyboard_cursor(g.get_onscreen_keyboard_done_cursor());
+    g.set_show_onscreen_keyboard(true);
+    true
+}
+
 // ── On-screen alphanumeric keyboard: cursor math ─────────────────────────────
 // Nearest-column mapping across QwertyKeyboard's irregular row widths
 // (10/9/9/3) — Up/Down land on whichever key sits geometrically closest,
@@ -3728,9 +3745,7 @@ fn handle_library_search(key: &str, ctrl: bool, window: &crate::MainWindow) -> b
         // AppState.refocus() call needed — this field never held native
         // Slint focus to release.
         k if k == key::RETURN => {
-            g.set_onscreen_keyboard_target("library-search".into());
-            g.set_onscreen_keyboard_cursor(g.get_onscreen_keyboard_done_cursor());
-            g.set_show_onscreen_keyboard(true);
+            open_onscreen_keyboard(&g, "library-search");
             true
         }
         k if k == key::BACKSPACE => {
@@ -3786,9 +3801,7 @@ fn handle_browse_search(key: &str, ctrl: bool, window: &crate::MainWindow) -> bo
         // job Enter used to. No AppState.refocus() call needed — this
         // field never held native Slint focus to release.
         k if k == key::RETURN => {
-            g.set_onscreen_keyboard_target("browse-search".into());
-            g.set_onscreen_keyboard_cursor(g.get_onscreen_keyboard_done_cursor());
-            g.set_show_onscreen_keyboard(true);
+            open_onscreen_keyboard(&g, "browse-search");
             true
         }
         k if k == key::BACKSPACE => {
@@ -3844,9 +3857,7 @@ fn handle_discover_search(key: &str, ctrl: bool, window: &crate::MainWindow) -> 
         // Slint focus to release in the first place (it's a hand-drawn
         // Text, not a LineEdit).
         k if k == key::RETURN => {
-            g.set_onscreen_keyboard_target("discover-search".into());
-            g.set_onscreen_keyboard_cursor(g.get_onscreen_keyboard_done_cursor());
-            g.set_show_onscreen_keyboard(true);
+            open_onscreen_keyboard(&g, "discover-search");
             true
         }
         k if k == key::BACKSPACE => {
@@ -3932,9 +3943,7 @@ fn handle_playlist_picker(key: &str, ctrl: bool, window: &crate::MainWindow) -> 
             // create, since Done should keep meaning "just close the
             // keyboard" everywhere, consistent with every other screen.
             k if k == key::RETURN => {
-                g.set_onscreen_keyboard_target("playlist-picker-name".into());
-                g.set_onscreen_keyboard_cursor(g.get_onscreen_keyboard_done_cursor());
-                g.set_show_onscreen_keyboard(true);
+                open_onscreen_keyboard(&g, "playlist-picker-name");
                 true
             }
             // Right still means "create" — but only with the caret at the
@@ -4000,9 +4009,7 @@ fn handle_playlist_picker(key: &str, ctrl: bool, window: &crate::MainWindow) -> 
                 // keyboard now open together on the very first Enter.
                 g.set_playlist_picker_name("".into());
                 g.set_playlist_picker_naming(true);
-                g.set_onscreen_keyboard_target("playlist-picker-name".into());
-                g.set_onscreen_keyboard_cursor(g.get_onscreen_keyboard_done_cursor());
-                g.set_show_onscreen_keyboard(true);
+                open_onscreen_keyboard(&g, "playlist-picker-name");
             } else {
                 g.invoke_playlist_picker_select(c - 1);
             }

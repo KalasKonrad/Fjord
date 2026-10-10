@@ -12,6 +12,10 @@
 //                       (seerr_auth.rs) which closes this screen. Errors stay
 //                       on-screen (mirrors LoginScreen), not a toast.
 //
+//   On-screen keyboard turned off in Settings (2026-10-10): Enter in the URL field
+//   moves to the sign-in method's first field (zone 2), user/email → password
+//   (zone 3), and the last field presses that method's Save / Sign In.
+//
 //   Full D-pad keyboard navigation + on-screen alphanumeric keyboard,
 //                       (2026-10-05: on-screen keys edit at the keyboard's caret — onscreen-keyboard-edit)
 //   2026-08-23 — this screen had ZERO keyboard nav before (pure mouse +
@@ -389,10 +393,13 @@ export component ConnectSeerrScreen inherits Rectangle {
                             return accept;
                         }
                         if event.text == "\u{000a}" {
-                            AppState.onscreen-keyboard-target = "connect-seerr-url";
-                            AppState.onscreen-keyboard-cursor = AppState.onscreen-keyboard-done-cursor;
-                            AppState.show-onscreen-keyboard = true;
-                            AppState.refocus();
+                            // On-screen keyboard off in Settings: Enter moves on to the sign-in method's first field.
+                            if !AppState.open-onscreen-keyboard("connect-seerr-url") {
+                                // The chosen method's first field (its local zone mirror focuses
+                                // it); Quick Connect's zone 2 is its Get Code button.
+                                AppState.connect-seerr-zone = 2;
+                                if AppState.connect-seerr-method == 2 { AppState.refocus(); }
+                            }
                             return accept;
                         }
                         return reject;
@@ -481,10 +488,10 @@ export component ConnectSeerrScreen inherits Rectangle {
                                 return accept;
                             }
                             if event.text == "\u{000a}" {
-                                AppState.onscreen-keyboard-target = "connect-seerr-key";
-                                AppState.onscreen-keyboard-cursor = AppState.onscreen-keyboard-done-cursor;
-                                AppState.show-onscreen-keyboard = true;
-                                AppState.refocus();
+                                // On-screen keyboard off in Settings: Enter presses Save.
+                                if !AppState.open-onscreen-keyboard("connect-seerr-key") {
+                                    if !AppState.connect-seerr-busy { AppState.connect-seerr-api-key(url-input.text, key-input.text); }
+                                }
                                 return accept;
                             }
                             return reject;
@@ -578,10 +585,10 @@ export component ConnectSeerrScreen inherits Rectangle {
                                 return accept;
                             }
                             if event.text == "\u{000a}" {
-                                AppState.onscreen-keyboard-target = "connect-seerr-jf-user";
-                                AppState.onscreen-keyboard-cursor = AppState.onscreen-keyboard-done-cursor;
-                                AppState.show-onscreen-keyboard = true;
-                                AppState.refocus();
+                                // On-screen keyboard off in Settings: Enter moves on to Password.
+                                if !AppState.open-onscreen-keyboard("connect-seerr-jf-user") {
+                                    AppState.connect-seerr-zone = 3;
+                                }
                                 return accept;
                             }
                             return reject;
@@ -625,10 +632,10 @@ export component ConnectSeerrScreen inherits Rectangle {
                                 return accept;
                             }
                             if event.text == "\u{000a}" {
-                                AppState.onscreen-keyboard-target = "connect-seerr-jf-pass";
-                                AppState.onscreen-keyboard-cursor = AppState.onscreen-keyboard-done-cursor;
-                                AppState.show-onscreen-keyboard = true;
-                                AppState.refocus();
+                                // On-screen keyboard off in Settings: Enter presses Sign In.
+                                if !AppState.open-onscreen-keyboard("connect-seerr-jf-pass") {
+                                    if !AppState.connect-seerr-busy { AppState.connect-seerr-jellyfin(url-input.text, jf-user.text, jf-pass.text); }
+                                }
                                 return accept;
                             }
                             return reject;
@@ -778,10 +785,10 @@ export component ConnectSeerrScreen inherits Rectangle {
                                 return accept;
                             }
                             if event.text == "\u{000a}" {
-                                AppState.onscreen-keyboard-target = "connect-seerr-local-email";
-                                AppState.onscreen-keyboard-cursor = AppState.onscreen-keyboard-done-cursor;
-                                AppState.show-onscreen-keyboard = true;
-                                AppState.refocus();
+                                // On-screen keyboard off in Settings: Enter moves on to Password.
+                                if !AppState.open-onscreen-keyboard("connect-seerr-local-email") {
+                                    AppState.connect-seerr-zone = 3;
+                                }
                                 return accept;
                             }
                             return reject;
@@ -825,10 +832,10 @@ export component ConnectSeerrScreen inherits Rectangle {
                                 return accept;
                             }
                             if event.text == "\u{000a}" {
-                                AppState.onscreen-keyboard-target = "connect-seerr-local-pass";
-                                AppState.onscreen-keyboard-cursor = AppState.onscreen-keyboard-done-cursor;
-                                AppState.show-onscreen-keyboard = true;
-                                AppState.refocus();
+                                // On-screen keyboard off in Settings: Enter presses Sign In.
+                                if !AppState.open-onscreen-keyboard("connect-seerr-local-pass") {
+                                    if !AppState.connect-seerr-busy { AppState.connect-seerr-local(url-input.text, local-email.text, local-pass.text); }
+                                }
                                 return accept;
                             }
                             return reject;

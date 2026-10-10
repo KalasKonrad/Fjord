@@ -156,7 +156,9 @@ Needs `mpv`/libmpv (`pacman -S mpv`). Optional at runtime: `yt-dlp` (trailers), 
   edit them only through `text_field::DrawnField` (insert/backspace/delete/move) and draw them with
   `AppState.caret-text`. On-screen-keyboard edits of LineEdits go through `onscreen-keyboard-edit`.
 - The on-screen-keyboard gate in `keys.rs` swallows everything but Ctrl+Q while open: every close path must
-  clear `show-onscreen-keyboard` (use choke points like `close_login_screen`).
+  clear `show-onscreen-keyboard` (use choke points like `close_login_screen`). Open it **only** through
+  `AppState.open-onscreen-keyboard(target)` / `keys::open_onscreen_keyboard` — they honour Settings' off
+  switch; on `false` the caller does its own Enter action (next field / submit).
 - Clickable elements get the `PressPulse` border flash (`kb-activate-pulse`); focus rings use `Theme.focus-border`.
 
 ### Screens, animation, glyphs

@@ -1087,9 +1087,10 @@ pub(crate) fn handle_key_profile_edit(raw_key: &str, g: &AppState) -> bool {
                     _ => "profile-edit-allowed-tags", // 6
                 };
                 debug!("profile-edit: zone={zone} opening onscreen keyboard target={target}");
-                g.set_onscreen_keyboard_target(target.into());
-                g.set_onscreen_keyboard_cursor(g.get_onscreen_keyboard_done_cursor());
-                g.set_show_onscreen_keyboard(true);
+                if !crate::keys::open_onscreen_keyboard(g, target) {
+                    // Keyboard off in Settings: Enter starts typing in the field itself.
+                    g.set_profile_edit_text_editing(true);
+                }
             }
             key::UP => {
                 if let Some(p) = prev_zone() {
