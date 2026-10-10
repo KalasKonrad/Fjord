@@ -164,17 +164,17 @@ fn populate_browse_async(
     ww:        slint::Weak<MainWindow>,
     state:     Arc<Mutex<FjordState>>,
     query:     String,
-    gen:       Arc<AtomicU64>,
+    generation:       Arc<AtomicU64>,
     rt_handle: &tokio::runtime::Handle,
 ) {
-    let my_gen = gen.fetch_add(1, Ordering::Relaxed) + 1;
+    let my_gen = generation.fetch_add(1, Ordering::Relaxed) + 1;
     let started = std::time::Instant::now();
 
     let all: Vec<_> = {
         let lock = state.lock().unwrap();
         lock.all_movies.iter().chain(lock.all_series.iter()).cloned().collect()
     };
-    debug!("populate_browse_async: gen={my_gen} starting with {} source item(s) (query={query:?})", all.len());
+    debug!("populate_browse_async: generation={my_gen} starting with {} source item(s) (query={query:?})", all.len());
 
     let is_full_list = query.is_empty();
     rt_handle.spawn(async move {
@@ -189,9 +189,9 @@ fn populate_browse_async(
         let names = display_names(&filtered);
 
         slint::invoke_from_event_loop(move || {
-            debug!("populate_browse_async: gen={my_gen} landed after {:.3}s, current_gen={} (stale={})",
-                started.elapsed().as_secs_f64(), gen.load(Ordering::Relaxed), gen.load(Ordering::Relaxed) != my_gen);
-            if gen.load(Ordering::Relaxed) != my_gen { return; }
+            debug!("populate_browse_async: generation={my_gen} landed after {:.3}s, current_gen={} (stale={})",
+                started.elapsed().as_secs_f64(), generation.load(Ordering::Relaxed), generation.load(Ordering::Relaxed) != my_gen);
+            if generation.load(Ordering::Relaxed) != my_gen { return; }
             {
                 let mut s = state.lock().unwrap();
                 s.filtered_items = filtered;
@@ -220,11 +220,11 @@ pub(crate) fn wire_browse(
     // ── Browse list: client-side filter over all_movies + all_series ─────────
     {
         let state     = Arc::clone(&state);
-        let gen       = Arc::clone(&browse_gen);
+        let generation       = Arc::clone(&browse_gen);
         let rt        = rt_handle.clone();
         let ww        = window.as_weak();
         AppState::get(window).on_filter_changed(move |query| {
-            populate_browse_async(ww.clone(), Arc::clone(&state), query.to_string(), Arc::clone(&gen), &rt);
+            populate_browse_async(ww.clone(), Arc::clone(&state), query.to_string(), Arc::clone(&generation), &rt);
         });
     }
     // ── Browse search: keyboard-driven append / backspace / clear ────────────
@@ -260,7 +260,7 @@ pub(crate) fn wire_browse(
     }
     {
         let state     = Arc::clone(&state);
-        let gen       = Arc::clone(&browse_gen);
+        let generation       = Arc::clone(&browse_gen);
         let rt        = rt_handle.clone();
         let ww        = window.as_weak();
         AppState::get(window).on_browse_search_clear(move || {
@@ -291,7 +291,7 @@ pub(crate) fn wire_browse(
             // check above handles every arrival after that.
             let ww2 = ww.clone();
             let state2 = Arc::clone(&state);
-            let gen2 = Arc::clone(&gen);
+            let gen2 = Arc::clone(&generation);
             let rt2 = rt.clone();
             rt.spawn(async move {
                 tokio::time::sleep(std::time::Duration::from_millis(120)).await;
