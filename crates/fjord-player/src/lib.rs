@@ -4,6 +4,6 @@
 // ─────────────────────────────────────────────────────────────────────────────
 pub mod mpv;
 pub use mpv::{
-    redact_api_key, MpvRenderCtx, Player, PlayerConfig, PollResult, SourceHdrMetadata, StatsData,
-    TrackInfo,
+    MpvRenderCtx, Player, PlayerConfig, PollResult, SourceHdrMetadata, StatsData, TrackInfo,
+    redact_api_key,
 };

@@ -161,27 +161,32 @@
 //                           hitting a dead connection, or any other future spurious-EOF cause)
 // ─────────────────────────────────────────────────────────────────────────────
 use std::num::NonZeroU32;
-use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use chrono::Local;
 
-use fjord_api::{models::{MediaItem, Segment}, JellyfinClient};
+use fjord_api::{
+    JellyfinClient,
+    models::{MediaItem, Segment},
+};
 use fjord_player::{MpvRenderCtx, Player, PlayerConfig, PollResult, TrackInfo};
-use slint::{ComponentHandle, Global, LogicalPosition, ModelRc, SharedString, VecModel};
 use slint::platform::WindowEvent;
+use slint::{ComponentHandle, Global, LogicalPosition, ModelRc, SharedString, VecModel};
 use tracing::{debug, error, info, warn};
 
+use crate::AppState;
+use crate::MainWindow;
+use crate::TrackEntry;
 use crate::config::FjordState;
 use crate::home::{fetch_home_data, home_data_sections, push_home_data};
 use crate::poster::spawn_poster_loading;
-use crate::AppState;
 use crate::stats::update_stats_window;
-use crate::MainWindow;
-use crate::TrackEntry;
 
-fn ss(s: &str) -> SharedString { SharedString::from(s) }
+fn ss(s: &str) -> SharedString {
+    SharedString::from(s)
+}
 
 // ── screensaver + display inhibitor ──────────────────────────────────────────
 
@@ -190,23 +195,34 @@ fn ss(s: &str) -> SharedString { SharedString::from(s) }
 // (e.g. not running under KDE, or busctl absent).
 #[derive(Default)]
 pub(crate) struct PlaybackCookies {
-    freedesktop:   Option<u32>,
-    kde_power:     Option<u32>,
+    freedesktop: Option<u32>,
+    kde_power: Option<u32>,
     // systemd-logind inhibitor (idle + sleep) held open as a child process.
     // Covers sleep/suspend on GNOME, XFCE, and any systemd-based DE that is
     // not KDE (KDE sleep is already covered by kde_power above).
     systemd_child: Option<std::process::Child>,
 }
 
-
 fn busctl_inhibit(service: &str, path: &str, interface: &str, label: &str) -> Option<u32> {
     let out = std::process::Command::new("busctl")
-        .args(["call", "--session", service, path, interface, "Inhibit", "ss",
-               "Fjord", "Video playback"])
+        .args([
+            "call",
+            "--session",
+            service,
+            path,
+            interface,
+            "Inhibit",
+            "ss",
+            "Fjord",
+            "Video playback",
+        ])
         .output()
         .ok()?;
     let stdout = String::from_utf8_lossy(&out.stdout);
-    let cookie = stdout.trim().strip_prefix("u ").and_then(|s| s.parse().ok());
+    let cookie = stdout
+        .trim()
+        .strip_prefix("u ")
+        .and_then(|s| s.parse().ok());
     if let Some(c) = cookie {
         info!("{} inhibited (cookie={})", label, c);
     } else {
@@ -217,8 +233,16 @@ fn busctl_inhibit(service: &str, path: &str, interface: &str, label: &str) -> Op
 
 fn busctl_uninhibit(service: &str, path: &str, interface: &str, cookie: u32, label: &str) {
     let _ = std::process::Command::new("busctl")
-        .args(["call", "--session", service, path, interface, "UnInhibit", "u",
-               &cookie.to_string()])
+        .args([
+            "call",
+            "--session",
+            service,
+            path,
+            interface,
+            "UnInhibit",
+            "u",
+            &cookie.to_string(),
+        ])
         .status();
     info!("{} uninhibited (cookie={})", label, cookie);
 }
@@ -228,14 +252,26 @@ fn inhibit_systemd_sleep() -> Option<std::process::Child> {
     // Blocks idle + sleep on any systemd-based DE (GNOME, XFCE, Cinnamon, …).
     // KDE sleep is already covered by the KDE PowerManagement inhibitor above.
     match std::process::Command::new("systemd-inhibit")
-        .args(["--what=idle:sleep", "--who=Fjord", "--why=Video playback", "--mode=block",
-               "sleep", "infinity"])
+        .args([
+            "--what=idle:sleep",
+            "--who=Fjord",
+            "--why=Video playback",
+            "--mode=block",
+            "sleep",
+            "infinity",
+        ])
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .spawn()
     {
-        Ok(child) => { info!("systemd sleep inhibited (pid={})", child.id()); Some(child) }
-        Err(e)    => { debug!("systemd-inhibit unavailable: {}", e); None }
+        Ok(child) => {
+            info!("systemd sleep inhibited (pid={})", child.id());
+            Some(child)
+        }
+        Err(e) => {
+            debug!("systemd-inhibit unavailable: {}", e);
+            None
+        }
     }
 }
 
@@ -263,7 +299,8 @@ fn uninhibit_screensaver(mut cookies: PlaybackCookies) {
             "org.freedesktop.ScreenSaver",
             "/org/freedesktop/ScreenSaver",
             "org.freedesktop.ScreenSaver",
-            c, "ScreenSaver",
+            c,
+            "ScreenSaver",
         );
     }
     if let Some(c) = cookies.kde_power {
@@ -271,7 +308,8 @@ fn uninhibit_screensaver(mut cookies: PlaybackCookies) {
             "org.kde.PowerManagement",
             "/org/kde/PowerManagement/Inhibit",
             "org.kde.PowerManagement.Inhibition",
-            c, "KDE PowerManagement",
+            c,
+            "KDE PowerManagement",
         );
     }
     if let Some(mut child) = cookies.systemd_child.take() {
@@ -294,10 +332,10 @@ pub(crate) enum RepeatMode {
 
 #[derive(Clone, Debug)]
 pub(crate) struct QueueItem {
-    pub id:         String,
-    pub item_type:  String,
-    pub series_id:  Option<String>,
-    pub title:      String,
+    pub id: String,
+    pub item_type: String,
+    pub series_id: Option<String>,
+    pub title: String,
     pub audio_meta: Option<(String, String)>, // (artist, album_art_id)
 }
 
@@ -317,14 +355,18 @@ pub(crate) fn upcoming_count(vs: &VideoState) -> i32 {
 // LCG Fisher-Yates shuffle of 0..n into a Vec<usize>.
 pub(crate) fn shuffle_indices(n: usize) -> Vec<usize> {
     let mut indices: Vec<usize> = (0..n).collect();
-    if n <= 1 { return indices; }
+    if n <= 1 {
+        return indices;
+    }
     let seed = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.subsec_nanos() as u64)
         .unwrap_or(12345);
     let mut rng = seed;
     for i in (1..n).rev() {
-        rng = rng.wrapping_mul(6364136223846793005u64).wrapping_add(1442695040888963407u64);
+        rng = rng
+            .wrapping_mul(6364136223846793005u64)
+            .wrapping_add(1442695040888963407u64);
         let j = (rng >> 33) as usize % (i + 1);
         indices.swap(i, j);
     }
@@ -368,9 +410,9 @@ pub(crate) fn shuffle_indices(n: usize) -> Vec<usize> {
 //     `pending_skip_seek`, which `arm_skip_fade` always arms unconditionally).
 #[derive(Clone, Copy)]
 struct SkipFadeAudio {
-    armed_at:     Instant,
-    passthrough:  bool,
-    orig_volume:  f64,  // meaningful only when !passthrough
+    armed_at: Instant,
+    passthrough: bool,
+    orig_volume: f64, // meaningful only when !passthrough
 }
 
 /// Arms both halves of the skip-segment fade (video via `pending_skip_seek`,
@@ -398,12 +440,16 @@ pub(crate) fn arm_skip_fade(vs: &mut VideoState, g: &crate::AppState<'_>, seg_en
         return;
     }
     let orig_volume = vs.player.as_ref().map(|p| p.get_volume()).unwrap_or(100.0);
-    vs.skip_fade_audio = Some(SkipFadeAudio { armed_at, passthrough, orig_volume });
+    vs.skip_fade_audio = Some(SkipFadeAudio {
+        armed_at,
+        passthrough,
+        orig_volume,
+    });
 }
 
 // ── VideoState ────────────────────────────────────────────────────────────────
 pub(crate) struct VideoState {
-    pub player:     Option<Player>,
+    pub player: Option<Player>,
     // Set by reset_video_state_for_playback whenever a fresh Player is
     // stored, alongside it — the actual mpv `loadfile` for this URL hasn't
     // been issued yet (Player::new() only builds the mpv core, deliberately
@@ -419,16 +465,16 @@ pub(crate) struct VideoState {
     // down player (tear_down_player drops `player`/`render_ctx` first).
     pub pending_load_url: Option<String>,
     pub render_ctx: Option<MpvRenderCtx>,
-    pub fbos:       [u32; 2],
-    pub textures:   [u32; 2],
-    pub fbo_w:      u32,
-    pub fbo_h:      u32,
-    pub back:       usize,
-    pub item_id:          Option<String>,
+    pub fbos: [u32; 2],
+    pub textures: [u32; 2],
+    pub fbo_w: u32,
+    pub fbo_h: u32,
+    pub back: usize,
+    pub item_id: Option<String>,
     pub playing_series_id: Option<String>,
-    pub client:           Option<Arc<JellyfinClient>>,
-    pub play_start:     Option<Instant>,
-    pub decoder_logged:     bool,
+    pub client: Option<Arc<JellyfinClient>>,
+    pub play_start: Option<Instant>,
+    pub decoder_logged: bool,
     // One-shot guard for the video-never-initialized diagnostic (2026-07-29,
     // see Player::has_seen_video_reconfig's doc comment) — fires once at 5s,
     // independent of decoder_logged's own 2s snapshot, since normal 4K HEVC
@@ -478,21 +524,21 @@ pub(crate) struct VideoState {
     // completed, 2026-10-06): HDR is then negotiated at the first
     // VideoReconfig instead of waiting for Branch B's post-decode check.
     pub display_presynced: bool,
-    pub tracks_loaded:      bool,
-    pub pos_tick:           u32,
-    pub controls_idle_ticks:  u32,
-    pub seek_pending_secs:    f64,  // accumulated keyboard seek; executed after debounce
-    pub seek_pending_ticks:   u32,  // countdown to execution; 0 = idle
-    pub intro_timestamps:      Option<Segment>,
-    pub recap_timestamps:      Option<Segment>,
-    pub preview_timestamps:    Option<Segment>,
+    pub tracks_loaded: bool,
+    pub pos_tick: u32,
+    pub controls_idle_ticks: u32,
+    pub seek_pending_secs: f64, // accumulated keyboard seek; executed after debounce
+    pub seek_pending_ticks: u32, // countdown to execution; 0 = idle
+    pub intro_timestamps: Option<Segment>,
+    pub recap_timestamps: Option<Segment>,
+    pub preview_timestamps: Option<Segment>,
     pub commercial_timestamps: Option<Segment>,
-    pub intro_skip_shown:      bool,
-    pub recap_skip_shown:      bool,
-    pub preview_skip_shown:    bool,
+    pub intro_skip_shown: bool,
+    pub recap_skip_shown: bool,
+    pub preview_skip_shown: bool,
     pub commercial_skip_shown: bool,
-    pub skip_segment_end:      Option<f64>,    // seek target for the currently-shown skip prompt
-    pub skip_segment_handled:  bool,           // true after always-skip seeked or user dismissed timed
+    pub skip_segment_end: Option<f64>, // seek target for the currently-shown skip prompt
+    pub skip_segment_handled: bool,    // true after always-skip seeked or user dismissed timed
     // A decided-but-deliberately-delayed skip-segment seek (seek_target_secs,
     // armed_at) — 2026-08-11, direct request ("make intro skip etc more
     // gradual, it feels instant and jarring"). All three skip paths (auto
@@ -505,43 +551,43 @@ pub(crate) struct VideoState {
     // `animate` block uses — so the two can't drift out of sync, and a user
     // with either set to 0/0% gets back today's effectively-instant seek for
     // free, no separate opt-out needed.
-    pub pending_skip_seek:     Option<(f64, Instant)>,
+    pub pending_skip_seek: Option<(f64, Instant)>,
     // Audio-side companion — see SkipFadeAudio's own doc comment for the
     // full design (volume ramp for PCM, mute for SPDIF passthrough).
-    skip_fade_audio:           Option<SkipFadeAudio>,
-    pub skip_timed_shown_at:   Option<Instant>, // when ask-timed overlay first appeared
-    pub skip_timed_prompt_secs: u32,           // configured secs for current ask-timed segment
+    skip_fade_audio: Option<SkipFadeAudio>,
+    pub skip_timed_shown_at: Option<Instant>, // when ask-timed overlay first appeared
+    pub skip_timed_prompt_secs: u32,          // configured secs for current ask-timed segment
     // 2026-08-14: Some(t) from the moment the ask-timed overlay is first
     // observed paused; taken (and its duration folded into skip_timed_shown_at)
     // the moment it's observed unpaused again — see the pause-freeze fix in
     // wire_mpv_timer's ask-timed branch for the full story (a paused video
     // must not let this wall-clock countdown keep expiring in the background).
     pub skip_timed_paused_since: Option<Instant>,
-    pub credits_start:         Option<f64>,    // Up Next banner trigger (Credits.start)
-    pub next_ep_banner_shown:  bool,           // prevents re-trigger within same episode
-    pub credits_auto_marked_played: bool,      // true after the credits-trigger auto-mark-played fires;
-                                                // watched for a rewind past credits_mark_threshold to auto-revert
-    pub credits_mark_threshold: Option<f64>,   // the position that actually fired the trigger above —
-                                                // credits_start or the dur-30s fallback, whichever fired first
-    pub next_ep_pending:     Option<MediaItem>, // set by countdown task; taken by natural-end or Play Now
-    pub playback_generation: u64,              // incremented on each start_playback; guards stale async writes
-    pub last_known_pos_ticks: i64,            // last successfully-read position (ticks); fallback for tear_down
-    pub from_detail:         bool,             // set by on_play_detail/on_resume_detail; cleared in start_playback
-    pub from_series:         bool,             // set by on_play_series_episode; cleared in start_playback
-    pub from_season:         bool,             // set alongside from_series when show-season was also true
-    pub did_render:          bool,
+    pub credits_start: Option<f64>, // Up Next banner trigger (Credits.start)
+    pub next_ep_banner_shown: bool, // prevents re-trigger within same episode
+    pub credits_auto_marked_played: bool, // true after the credits-trigger auto-mark-played fires;
+    // watched for a rewind past credits_mark_threshold to auto-revert
+    pub credits_mark_threshold: Option<f64>, // the position that actually fired the trigger above —
+    // credits_start or the dur-30s fallback, whichever fired first
+    pub next_ep_pending: Option<MediaItem>, // set by countdown task; taken by natural-end or Play Now
+    pub playback_generation: u64, // incremented on each start_playback; guards stale async writes
+    pub last_known_pos_ticks: i64, // last successfully-read position (ticks); fallback for tear_down
+    pub from_detail: bool, // set by on_play_detail/on_resume_detail; cleared in start_playback
+    pub from_series: bool, // set by on_play_series_episode; cleared in start_playback
+    pub from_season: bool, // set alongside from_series when show-season was also true
+    pub did_render: bool,
     // Logged once per Player::new — distinguishes "render context created"
     // (just means the C object exists) from "a frame actually made it to the
     // screen", so a stall between the two (e.g. mpv waiting on a slow-to-open
     // audio device) is visible in the log instead of looking identical to a
     // normal fast start.
-    pub first_frame_logged:  bool,
+    pub first_frame_logged: bool,
     // Stall auto-recovery (see wire_mpv_timer) — rolling "has position
     // genuinely advanced recently" tracking, generalized 2026-08-09 from a
     // fixed start-of-playback baseline so a stall anywhere mid-video is
     // caught, not just one that happens to land back near position 0.
     pub stall_last_progress_pos: f64,
-    pub stall_last_progress_at:  Option<Instant>,
+    pub stall_last_progress_at: Option<Instant>,
     // The position observed on the PREVIOUS tick (regardless of whether it
     // counted as "progress") — 2026-08-11, real bug fix: distinct from
     // stall_last_progress_pos, which only ever advances on FORWARD motion.
@@ -577,52 +623,52 @@ pub(crate) struct VideoState {
     /// "Still opening — first-open grace" already logged for this player
     /// (2026-10-08; see FIRST_OPEN_STALL_SECS).
     pub stall_grace_logged: bool,
-    pub screensaver_cookie:  PlaybackCookies,
-    pub chapters:              Vec<(f64, String)>, // chapter list; loaded ~2 s after playback start
-    pub chapters_loaded:       bool,               // true once chapter poll succeeded or timed out
-    pub chapter_load_attempts: u32,                // retry counter while count==0 (max 30)
-    pub chapter_osd_ticks:     u32,                // countdown to hide chapter OSD; 125 ≈ 2 s
-    pub delay_osd_ticks:       u32,                // countdown to hide sub/audio delay OSD; 125 ≈ 2 s
+    pub screensaver_cookie: PlaybackCookies,
+    pub chapters: Vec<(f64, String)>, // chapter list; loaded ~2 s after playback start
+    pub chapters_loaded: bool,        // true once chapter poll succeeded or timed out
+    pub chapter_load_attempts: u32,   // retry counter while count==0 (max 30)
+    pub chapter_osd_ticks: u32,       // countdown to hide chapter OSD; 125 ≈ 2 s
+    pub delay_osd_ticks: u32,         // countdown to hide sub/audio delay OSD; 125 ≈ 2 s
     // Playlist: ordered track list for album/artist playback (includes currently-playing item).
     // playlist_index is the index of the currently-playing item.
-    pub playlist:              Vec<QueueItem>,
-    pub playlist_index:        usize,
-    pub shuffle:               bool,
-    pub shuffle_order:         Vec<usize>,  // pre-shuffled permutation of 0..playlist.len()
-    pub repeat_mode:           RepeatMode,
+    pub playlist: Vec<QueueItem>,
+    pub playlist_index: usize,
+    pub shuffle: bool,
+    pub shuffle_order: Vec<usize>, // pre-shuffled permutation of 0..playlist.len()
+    pub repeat_mode: RepeatMode,
     // Context-menu queue: items enqueued via "Add to Queue" / "Play Next"; play after playlist.
-    pub queue:                 Vec<QueueItem>,
+    pub queue: Vec<QueueItem>,
     // True when the current item is Audio; drives the class-gated natural-end
     // advance (audio only follows audio, video only follows video).
-    pub current_is_audio:      bool,
+    pub current_is_audio: bool,
     // A Watch Trailer session (play_trailer) — no Jellyfin item, so no
     // stall reloads; a failed open closes the player with a toast instead,
     // and display sync only runs for it when Settings says so (2026-10-04).
     // `trailer_url` is the YouTube link, to mark it unplayable on failure.
-    pub is_trailer:            bool,
-    pub trailer_url:           Option<String>,
+    pub is_trailer: bool,
+    pub trailer_url: Option<String>,
     // HDR Stage 5 (2026-10-05): this player's render context lives on the
     // video subsurface's GL context (decided once, at render-context
     // creation — see wire_rendering_notifier); and the spot last logged.
-    pub video_on_subsurface:   bool,
-    pub video_spot_logged:     Option<crate::video_surface::Spot>,
-    pub video_spot_waits:      u8,
+    pub video_on_subsurface: bool,
+    pub video_spot_logged: Option<crate::video_surface::Spot>,
+    pub video_spot_waits: u8,
     pub startup_snapshot_ticks: u32,
     // Snapshot of the currently-playing item, set in start_playback. Used by
     // push_queue_display to render a synthetic now-playing row when the current
     // play is not the playlist row at playlist_index (queue jump, single track).
-    pub now_playing:           Option<QueueItem>,
+    pub now_playing: Option<QueueItem>,
     // Idle ticks (16 ms each) since the fullscreen Now Playing screen was last
     // open — drives the auto-open feature. Pinned to 0 while the screen IS
     // open (any close path then needs a fresh idle window before re-firing).
-    pub music_idle_ticks:      u32,
+    pub music_idle_ticks: u32,
     // Lyrics for the current Audio track (populated by get_lyrics; None = no/unknown lyrics).
-    pub lyrics:                Option<Vec<(u64, String)>>,
-    pub lyrics_available:      bool,
+    pub lyrics: Option<Vec<(u64, String)>>,
+    pub lyrics_available: bool,
     // Gapless: the QueueItem appended into mpv's playlist for a seamless
     // transition. Set by the timer's preload check; consumed on TrackChanged;
     // dropped (with Player::cancel_pending) whenever the upcoming order changes.
-    pub preloaded_next:        Option<QueueItem>,
+    pub preloaded_next: Option<QueueItem>,
     // CR11-12: ticks left before retrying a failed append_gapless. Without this,
     // a failure (mpv command error) retried the identical peek+append every 16ms
     // for the whole "within 12s of end" window — up to ~750 wasted IPC calls.
@@ -633,11 +679,19 @@ pub(crate) struct VideoState {
 impl Default for VideoState {
     fn default() -> Self {
         Self {
-            player: None, pending_load_url: None, render_ctx: None,
-            fbos: [0; 2], textures: [0; 2],
-            fbo_w: 0, fbo_h: 0, back: 0,
-            item_id: None, playing_series_id: None, client: None,
-            play_start: None, decoder_logged: false,
+            player: None,
+            pending_load_url: None,
+            render_ctx: None,
+            fbos: [0; 2],
+            textures: [0; 2],
+            fbo_w: 0,
+            fbo_h: 0,
+            back: 0,
+            item_id: None,
+            playing_series_id: None,
+            client: None,
+            play_start: None,
+            decoder_logged: false,
             video_init_checked: false,
             hdr_negotiation_attempted: false,
             wide_color_fbo: false,
@@ -645,30 +699,67 @@ impl Default for VideoState {
             display_sync_attempted: false,
             display_sync_prestart_active: false,
             display_presynced: false,
-            tracks_loaded: false, pos_tick: 0,
+            tracks_loaded: false,
+            pos_tick: 0,
             controls_idle_ticks: 0,
-            seek_pending_secs: 0.0, seek_pending_ticks: 0,
-            intro_timestamps: None, recap_timestamps: None,
-            preview_timestamps: None, commercial_timestamps: None,
-            intro_skip_shown: false, recap_skip_shown: false,
-            preview_skip_shown: false, commercial_skip_shown: false,
+            seek_pending_secs: 0.0,
+            seek_pending_ticks: 0,
+            intro_timestamps: None,
+            recap_timestamps: None,
+            preview_timestamps: None,
+            commercial_timestamps: None,
+            intro_skip_shown: false,
+            recap_skip_shown: false,
+            preview_skip_shown: false,
+            commercial_skip_shown: false,
             skip_segment_end: None,
-            skip_segment_handled: false, pending_skip_seek: None, skip_fade_audio: None,
-            skip_timed_shown_at: None, skip_timed_prompt_secs: 8, skip_timed_paused_since: None,
-            credits_start: None, next_ep_banner_shown: false, credits_auto_marked_played: false, credits_mark_threshold: None, next_ep_pending: None,
-            playback_generation: 0, last_known_pos_ticks: 0,
-            from_detail: false, from_series: false, from_season: false,
-            did_render: false, first_frame_logged: false,
-            stall_last_progress_pos: 0.0, stall_last_progress_at: None, stall_last_tick_pos: None,
-            stall_reload_attempts_for: None, stall_last_reload_at: None, stall_grace_logged: false,
+            skip_segment_handled: false,
+            pending_skip_seek: None,
+            skip_fade_audio: None,
+            skip_timed_shown_at: None,
+            skip_timed_prompt_secs: 8,
+            skip_timed_paused_since: None,
+            credits_start: None,
+            next_ep_banner_shown: false,
+            credits_auto_marked_played: false,
+            credits_mark_threshold: None,
+            next_ep_pending: None,
+            playback_generation: 0,
+            last_known_pos_ticks: 0,
+            from_detail: false,
+            from_series: false,
+            from_season: false,
+            did_render: false,
+            first_frame_logged: false,
+            stall_last_progress_pos: 0.0,
+            stall_last_progress_at: None,
+            stall_last_tick_pos: None,
+            stall_reload_attempts_for: None,
+            stall_last_reload_at: None,
+            stall_grace_logged: false,
             screensaver_cookie: PlaybackCookies::default(),
-            chapters: Vec::new(), chapters_loaded: false,
-            chapter_load_attempts: 0, chapter_osd_ticks: 0, delay_osd_ticks: 0,
-            playlist: Vec::new(), playlist_index: 0,
-            shuffle: false, shuffle_order: Vec::new(), repeat_mode: RepeatMode::Off,
-            queue: Vec::new(), current_is_audio: false, is_trailer: false, trailer_url: None, video_on_subsurface: false, video_spot_logged: None, video_spot_waits: 0, startup_snapshot_ticks: 0, now_playing: None,
+            chapters: Vec::new(),
+            chapters_loaded: false,
+            chapter_load_attempts: 0,
+            chapter_osd_ticks: 0,
+            delay_osd_ticks: 0,
+            playlist: Vec::new(),
+            playlist_index: 0,
+            shuffle: false,
+            shuffle_order: Vec::new(),
+            repeat_mode: RepeatMode::Off,
+            queue: Vec::new(),
+            current_is_audio: false,
+            is_trailer: false,
+            trailer_url: None,
+            video_on_subsurface: false,
+            video_spot_logged: None,
+            video_spot_waits: 0,
+            startup_snapshot_ticks: 0,
+            now_playing: None,
             music_idle_ticks: 0,
-            lyrics: None, lyrics_available: false,
+            lyrics: None,
+            lyrics_available: false,
             preloaded_next: None,
             gapless_retry_cooldown: 0,
         }
@@ -677,7 +768,9 @@ impl Default for VideoState {
 
 // ── fmt_secs ──────────────────────────────────────────────────────────────────
 pub(crate) fn fmt_secs(secs: f64) -> SharedString {
-    if secs <= 0.0 { return "0:00".into(); }
+    if secs <= 0.0 {
+        return "0:00".into();
+    }
     let s = secs as u64;
     let h = s / 3600;
     let m = (s % 3600) / 60;
@@ -691,7 +784,9 @@ pub(crate) fn fmt_secs(secs: f64) -> SharedString {
 
 // ── fmt_ends_at ───────────────────────────────────────────────────────────────
 pub(crate) fn fmt_ends_at(remaining_secs: f64) -> SharedString {
-    if remaining_secs <= 0.0 { return "".into(); }
+    if remaining_secs <= 0.0 {
+        return "".into();
+    }
     let ends = Local::now() + chrono::Duration::seconds(remaining_secs as i64);
     SharedString::from(ends.format("%H:%M").to_string().as_str())
 }
@@ -699,20 +794,33 @@ pub(crate) fn fmt_ends_at(remaining_secs: f64) -> SharedString {
 // ── sub_lang_code ────────────────────────────────────────────────────────────
 fn sub_lang_code(name: &str) -> &str {
     match name {
-        "English"    => "en", "German"     => "de", "French"     => "fr",
-        "Japanese"   => "ja", "Spanish"    => "es", "Italian"    => "it",
-        "Portuguese" => "pt", "Russian"    => "ru", "Korean"     => "ko",
-        "Chinese"    => "zh", "Dutch"      => "nl", "Swedish"    => "sv",
-        "Polish"     => "pl", "Czech"      => "cs", "Arabic"     => "ar",
-        "Turkish"    => "tr", "Finnish"    => "fi", "Danish"     => "da",
-        "Norwegian"  => "no",
-        _            => "",
+        "English" => "en",
+        "German" => "de",
+        "French" => "fr",
+        "Japanese" => "ja",
+        "Spanish" => "es",
+        "Italian" => "it",
+        "Portuguese" => "pt",
+        "Russian" => "ru",
+        "Korean" => "ko",
+        "Chinese" => "zh",
+        "Dutch" => "nl",
+        "Swedish" => "sv",
+        "Polish" => "pl",
+        "Czech" => "cs",
+        "Arabic" => "ar",
+        "Turkish" => "tr",
+        "Finnish" => "fi",
+        "Danish" => "da",
+        "Norwegian" => "no",
+        _ => "",
     }
 }
 
 // ── build_track_model ─────────────────────────────────────────────────────────
 pub(crate) fn build_track_model(tracks: &[TrackInfo], kind: &str) -> ModelRc<TrackEntry> {
-    let entries: Vec<TrackEntry> = tracks.iter()
+    let entries: Vec<TrackEntry> = tracks
+        .iter()
         .filter(|t| t.track_type == kind)
         .map(|t| {
             let mut label = String::new();
@@ -728,24 +836,35 @@ pub(crate) fn build_track_model(tracks: &[TrackInfo], kind: &str) -> ModelRc<Tra
             } else {
                 String::new()
             };
-            if !title.is_empty() { label.push_str(&title); }
+            if !title.is_empty() {
+                label.push_str(&title);
+            }
 
             // Append type tag for subtitle tracks when the flag is set but the
             // title doesn't already contain a hint (avoids "English (SDH) [SDH]").
             if kind == "sub" {
                 let title_lower = title.to_ascii_lowercase();
-                if t.hearing_impaired && !title_lower.contains("sdh") && !title_lower.contains("hearing") {
-                    if !label.is_empty() { label.push(' '); }
+                if t.hearing_impaired
+                    && !title_lower.contains("sdh")
+                    && !title_lower.contains("hearing")
+                {
+                    if !label.is_empty() {
+                        label.push(' ');
+                    }
                     label.push_str("[SDH]");
                 } else if t.forced && !title_lower.contains("forced") {
-                    if !label.is_empty() { label.push(' '); }
+                    if !label.is_empty() {
+                        label.push(' ');
+                    }
                     label.push_str("[Forced]");
                 }
             }
 
             // Language code after title.
             if !t.lang.is_empty() {
-                if !label.is_empty() { label.push(' '); }
+                if !label.is_empty() {
+                    label.push(' ');
+                }
                 label.push_str(&t.lang);
             }
 
@@ -753,8 +872,13 @@ pub(crate) fn build_track_model(tracks: &[TrackInfo], kind: &str) -> ModelRc<Tra
             if !t.codec.is_empty() {
                 label.push_str(&format!(" ({})", t.codec));
             }
-            if label.is_empty() { label = format!("Track {}", t.id); }
-            TrackEntry { id: t.id as i32, label: label.into() }
+            if label.is_empty() {
+                label = format!("Track {}", t.id);
+            }
+            TrackEntry {
+                id: t.id as i32,
+                label: label.into(),
+            }
         })
         .collect();
     ModelRc::new(VecModel::from(entries))
@@ -775,7 +899,11 @@ pub(crate) fn build_track_model(tracks: &[TrackInfo], kind: &str) -> ModelRc<Tra
 // zero Slint-side changes needed either way.
 /// A Slint colour as GL clear-colour floats (alpha ignored).
 fn color_rgb(c: slint::Color) -> [f32; 3] {
-    [c.red() as f32 / 255.0, c.green() as f32 / 255.0, c.blue() as f32 / 255.0]
+    [
+        c.red() as f32 / 255.0,
+        c.green() as f32 / 255.0,
+        c.blue() as f32 / 255.0,
+    ]
 }
 
 pub(crate) unsafe fn create_fbo(w: u32, h: u32, wide: bool) -> Option<(u32, u32)> {
@@ -786,15 +914,27 @@ pub(crate) unsafe fn create_fbo(w: u32, h: u32, wide: bool) -> Option<(u32, u32)
         gl::BindTexture(gl::TEXTURE_2D, tex);
         if wide {
             gl::TexImage2D(
-                gl::TEXTURE_2D, 0, gl::RGB10_A2 as i32,
-                w as i32, h as i32, 0,
-                gl::RGBA, gl::UNSIGNED_INT_2_10_10_10_REV, std::ptr::null(),
+                gl::TEXTURE_2D,
+                0,
+                gl::RGB10_A2 as i32,
+                w as i32,
+                h as i32,
+                0,
+                gl::RGBA,
+                gl::UNSIGNED_INT_2_10_10_10_REV,
+                std::ptr::null(),
             );
         } else {
             gl::TexImage2D(
-                gl::TEXTURE_2D, 0, gl::RGBA as i32,
-                w as i32, h as i32, 0,
-                gl::RGBA, gl::UNSIGNED_BYTE, std::ptr::null(),
+                gl::TEXTURE_2D,
+                0,
+                gl::RGBA as i32,
+                w as i32,
+                h as i32,
+                0,
+                gl::RGBA,
+                gl::UNSIGNED_BYTE,
+                std::ptr::null(),
             );
         }
         gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::LINEAR as i32);
@@ -804,7 +944,13 @@ pub(crate) unsafe fn create_fbo(w: u32, h: u32, wide: bool) -> Option<(u32, u32)
         let mut fbo = 0u32;
         gl::GenFramebuffers(1, &mut fbo);
         gl::BindFramebuffer(gl::FRAMEBUFFER, fbo);
-        gl::FramebufferTexture2D(gl::FRAMEBUFFER, gl::COLOR_ATTACHMENT0, gl::TEXTURE_2D, tex, 0);
+        gl::FramebufferTexture2D(
+            gl::FRAMEBUFFER,
+            gl::COLOR_ATTACHMENT0,
+            gl::TEXTURE_2D,
+            tex,
+            0,
+        );
         let status = gl::CheckFramebufferStatus(gl::FRAMEBUFFER);
         gl::BindFramebuffer(gl::FRAMEBUFFER, 0);
 
@@ -821,8 +967,12 @@ pub(crate) unsafe fn create_fbo(w: u32, h: u32, wide: bool) -> Option<(u32, u32)
 pub(crate) unsafe fn delete_fbo(fbo: u32, tex: u32) {
     // SAFETY: the caller's GL context is current (this fn's contract).
     unsafe {
-        if fbo != 0 { gl::DeleteFramebuffers(1, &fbo); }
-        if tex != 0 { gl::DeleteTextures(1, &tex); }
+        if fbo != 0 {
+            gl::DeleteFramebuffers(1, &fbo);
+        }
+        if tex != 0 {
+            gl::DeleteTextures(1, &tex);
+        }
     }
 }
 
@@ -832,17 +982,28 @@ pub(crate) unsafe fn delete_fbo(fbo: u32, tex: u32) {
 // Returns (item_id, client, screensaver_cookie, final_ticks) so the caller
 // can send the stop report and release the screensaver inhibitor.
 // Call this every time playback ends — normal finish, user stop, or replacement.
-pub(crate) fn tear_down_player(vs: &mut VideoState)
-    -> (Option<String>, Option<Arc<JellyfinClient>>, PlaybackCookies, i64)
-{
+pub(crate) fn tear_down_player(
+    vs: &mut VideoState,
+) -> (
+    Option<String>,
+    Option<Arc<JellyfinClient>>,
+    PlaybackCookies,
+    i64,
+) {
     vs.preloaded_next = None; // player is going away — pending gapless entry with it
     // get_position() returns 0.0 (via unwrap_or) if time-pos is not yet available
     // (file still loading).  Fall back to the last successfully-read position so
     // a stop-in-first-second doesn't send ticks=0 and wipe the Jellyfin resume point.
-    let raw_ticks = vs.player.as_ref()
+    let raw_ticks = vs
+        .player
+        .as_ref()
         .map(|p| (p.get_position() * 10_000_000.0) as i64)
         .unwrap_or(0);
-    let ticks = if raw_ticks > 0 { raw_ticks } else { vs.last_known_pos_ticks };
+    let ticks = if raw_ticks > 0 {
+        raw_ticks
+    } else {
+        vs.last_known_pos_ticks
+    };
     // If the credits-trigger already explicitly marked this episode played
     // (POST PlayedItems, position reset to 0 server-side) and it was never
     // reverted by a rewind past the trigger point, report ticks=0 here instead
@@ -856,9 +1017,13 @@ pub(crate) fn tear_down_player(vs: &mut VideoState)
     // fjord.log: WS showed played=true position_ticks=0 right after the
     // credits-trigger mark, then played=true position_ticks=2917s (nonzero)
     // seconds later once the user stopped — the stop report clobbering it.
-    let ticks = if vs.credits_auto_marked_played { 0 } else { ticks };
+    let ticks = if vs.credits_auto_marked_played {
+        0
+    } else {
+        ticks
+    };
     vs.credits_auto_marked_played = false;
-    vs.credits_mark_threshold     = None;
+    vs.credits_mark_threshold = None;
     // A render context made on the video subsurface's own GL context must be
     // freed on it (HDR Stage 5) — mpv requires its GL context for that, and
     // before the Player (mpv core) goes.
@@ -869,8 +1034,8 @@ pub(crate) fn tear_down_player(vs: &mut VideoState)
         vs.video_on_subsurface = false;
     }
     vs.video_spot_logged = None;
-    vs.render_ctx      = None;
-    vs.player          = None;
+    vs.render_ctx = None;
+    vs.player = None;
     vs.pending_load_url = None;
     // display-mode-prefetch: a stop during the pre-decode wait must also
     // drop the "Loading…" spinner signal — the deferred task bails without
@@ -885,7 +1050,12 @@ pub(crate) fn tear_down_player(vs: &mut VideoState)
     // for why that reset must be unconditional too). Cheap no-op if the
     // worker was never spawned (X11) or nothing was ever set.
     crate::hdr::send_command(crate::hdr::HdrCommand::Unset);
-    (vs.item_id.take(), vs.client.take(), std::mem::take(&mut vs.screensaver_cookie), ticks)
+    (
+        vs.item_id.take(),
+        vs.client.take(),
+        std::mem::take(&mut vs.screensaver_cookie),
+        ticks,
+    )
 }
 
 // ── quit_cleanup ──────────────────────────────────────────────────────────────
@@ -898,23 +1068,37 @@ pub(crate) fn quit_cleanup(
     rt: &tokio::runtime::Runtime,
     state: &Arc<Mutex<FjordState>>,
 ) {
-    let (dropped, dec_dropped) = video.lock().unwrap().player.as_ref()
-        .map(|p| p.get_drop_counts()).unwrap_or((0, 0));
-    info!("playback stats at quit: frame-drops={} decoder-drops={}", dropped, dec_dropped);
+    let (dropped, dec_dropped) = video
+        .lock()
+        .unwrap()
+        .player
+        .as_ref()
+        .map(|p| p.get_drop_counts())
+        .unwrap_or((0, 0));
+    info!(
+        "playback stats at quit: frame-drops={} decoder-drops={}",
+        dropped, dec_dropped
+    );
     let (item_id, client, ss_cookie, final_ticks) = tear_down_player(&mut video.lock().unwrap());
     uninhibit_screensaver(ss_cookie);
     if let (Some(id), Some(cli)) = (item_id, client) {
-        info!("quit: sending stop report for {} at {:.1}s", id, final_ticks as f64 / 10_000_000.0);
+        info!(
+            "quit: sending stop report for {} at {:.1}s",
+            id,
+            final_ticks as f64 / 10_000_000.0
+        );
         // Bound the wait — the HTTP client's own timeout is 30 s, and an
         // unreachable server must not stall app exit that long (CR10-16).
         rt.block_on(async move {
             match tokio::time::timeout(
                 std::time::Duration::from_secs(5),
                 cli.report_playback_stopped(&id, final_ticks),
-            ).await {
-                Ok(Ok(()))  => {}
-                Ok(Err(e))  => warn!("report_playback_stopped (quit) failed: {e}"),
-                Err(_)      => warn!("report_playback_stopped (quit) timed out after 5 s"),
+            )
+            .await
+            {
+                Ok(Ok(())) => {}
+                Ok(Err(e)) => warn!("report_playback_stopped (quit) failed: {e}"),
+                Err(_) => warn!("report_playback_stopped (quit) timed out after 5 s"),
             }
         });
     }
@@ -930,8 +1114,12 @@ pub(crate) fn quit_cleanup(
     // this session, so this costs nothing for the overwhelmingly common case.
     let state2 = Arc::clone(state);
     rt.block_on(async move {
-        if tokio::time::timeout(std::time::Duration::from_secs(5), crate::display_sync::revert_to_default(state2))
-            .await.is_err()
+        if tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            crate::display_sync::revert_to_default(state2),
+        )
+        .await
+        .is_err()
         {
             warn!("display_sync: revert_to_default (quit) timed out after 5 s");
         }
@@ -1017,14 +1205,22 @@ pub(crate) fn reset_playback_ui(w: &MainWindow) {
 // refresh home. Does NOT auto-advance — callers that want auto-advance (the
 // natural end-of-file path in wire_mpv_timer) handle it after this returns.
 pub(crate) fn do_stop_playback(
-    video:       &Arc<Mutex<VideoState>>,
+    video: &Arc<Mutex<VideoState>>,
     window_weak: &slint::Weak<MainWindow>,
-    rt_handle:   &tokio::runtime::Handle,
-    state:       &Arc<Mutex<FjordState>>,
+    rt_handle: &tokio::runtime::Handle,
+    state: &Arc<Mutex<FjordState>>,
 ) {
-    let (dropped, dec_dropped) = video.lock().unwrap().player.as_ref()
-        .map(|p| p.get_drop_counts()).unwrap_or((0, 0));
-    info!("playback stopped: frame-drops={} decoder-drops={}", dropped, dec_dropped);
+    let (dropped, dec_dropped) = video
+        .lock()
+        .unwrap()
+        .player
+        .as_ref()
+        .map(|p| p.get_drop_counts())
+        .unwrap_or((0, 0));
+    info!(
+        "playback stopped: frame-drops={} decoder-drops={}",
+        dropped, dec_dropped
+    );
     let (item_id, client, ss_cookie, final_ticks) = tear_down_player(&mut video.lock().unwrap());
     uninhibit_screensaver(ss_cookie);
 
@@ -1072,19 +1268,21 @@ pub(crate) fn do_stop_playback(
     // Stop report then home refresh, sequenced so the home fetch happens after Jellyfin
     // has processed the stop — prevents the stopped item reappearing in continue-watching.
     if let (Some(id), Some(cli)) = (item_id, client) {
-        let ww    = window_weak.clone();
-        let rth   = rt_handle.clone();
+        let ww = window_weak.clone();
+        let rth = rt_handle.clone();
         let state = Arc::clone(state);
         rt_handle.spawn(async move {
             if let Err(e) = cli.report_playback_stopped(&id, final_ticks).await {
                 warn!("report_playback_stopped failed: {e}");
             }
             let home_data = fetch_home_data(&cli, true).await;
-            let sections  = home_data_sections(&home_data);
+            let sections = home_data_sections(&home_data);
             let ww2 = ww.clone();
             let watchlist = state.lock().unwrap().jellyfin_watchlist_ids.clone();
             let _ = slint::invoke_from_event_loop(move || {
-                if let Some(w) = ww2.upgrade() { push_home_data(&w, &home_data, &watchlist); }
+                if let Some(w) = ww2.upgrade() {
+                    push_home_data(&w, &home_data, &watchlist);
+                }
             });
             spawn_poster_loading(cli, sections, ww, rth, state);
         });
@@ -1103,15 +1301,21 @@ pub(crate) fn do_stop_playback(
 // Each caller sets its own `item_id`/`playing_series_id`/`client` afterward,
 // since those are exactly the fields that differ (a trailer has none of
 // them — see `play_trailer`'s own doc comment).
-fn reset_video_state_for_playback(vs: &mut VideoState, player: Player, config: &PlayerConfig, is_episode: bool, url: &str) {
-    vs.player                = Some(player);
+fn reset_video_state_for_playback(
+    vs: &mut VideoState,
+    player: Player,
+    config: &PlayerConfig,
+    is_episode: bool,
+    url: &str,
+) {
+    vs.player = Some(player);
     // Deliberately NOT loaded yet — Player::new() only builds the mpv core.
     // The actual loadfile is deferred until wire_rendering_notifier's
     // BeforeRendering handler has confirmed a render context exists for
     // THIS player (same-thread, race-free ordering) — see Player::load()'s
     // own doc comment and CLAUDE.md's Known platform issues for the real
     // HTPC bug (audio-only-forever, black screen) this fixes at the root.
-    vs.pending_load_url      = Some(url.to_string());
+    vs.pending_load_url = Some(url.to_string());
     // play_start is deliberately NOT stamped here anymore (display-mode-
     // prefetch, 2026-09-25) — every caller now stamps it itself, at the
     // moment decode is actually about to be requested: immediately, for the
@@ -1124,40 +1328,41 @@ fn reset_video_state_for_playback(vs: &mut VideoState, player: Player, config: &
     // (chapter poll, decoder log, no-VideoReconfig warning, stall watchdog,
     // first-frame log) ran against the old item's clock — seen live on the
     // HTPC: the chapter poll gave up before the file was even loaded.
-    vs.play_start            = None;
-    vs.first_frame_logged    = false;
+    vs.play_start = None;
+    vs.first_frame_logged = false;
     vs.startup_snapshot_ticks = 0;
-    vs.is_trailer            = false; // play_trailer sets these after this reset
-    vs.trailer_url           = None;
+    vs.is_trailer = false; // play_trailer sets these after this reset
+    vs.trailer_url = None;
     vs.stall_last_progress_pos = config.start_position_secs.unwrap_or(0.0);
-    vs.stall_last_progress_at  = None; // re-armed on the first tick after this player starts
+    vs.stall_last_progress_at = None; // re-armed on the first tick after this player starts
     // A fresh player means the very first tick has nothing meaningful to
     // compare against — without this, it would compare the new player's
     // start position against a completely unrelated leftover value from
     // whatever was playing (or being seeked in) right before this reset.
-    vs.stall_last_tick_pos    = None;
-    vs.stall_grace_logged     = false;
+    vs.stall_last_tick_pos = None;
+    vs.stall_grace_logged = false;
     // stall_reload_attempts_for/stall_last_reload_at deliberately NOT reset
     // here — see their own doc comment on VideoState for why they must
     // survive a same-item reload.
-    vs.decoder_logged        = false;
-    vs.video_init_checked    = false;
+    vs.decoder_logged = false;
+    vs.video_init_checked = false;
     vs.hdr_negotiation_attempted = false;
     // hdr branch, Stage 4: decided once, here, from the Settings toggle
     // alone — see wide_color_fbo's own VideoState doc comment for why this
     // can't be conditioned on per-item source eligibility instead.
-    vs.wide_color_fbo        = config.target_colorspace_hint;
-    vs.hdr_output_applied    = false;
+    vs.wide_color_fbo = config.target_colorspace_hint;
+    vs.hdr_output_applied = false;
     vs.display_sync_attempted = false;
     vs.display_sync_prestart_active = false;
     vs.display_presynced = false;
-    vs.tracks_loaded         = false;
-    vs.pos_tick              = 0;
-    vs.controls_idle_ticks   = 0;
+    vs.tracks_loaded = false;
+    vs.pos_tick = 0;
+    vs.controls_idle_ticks = 0;
     // Seeded with the start position, not 0: a stop (or stall reload) before
     // mpv ever reports a position — e.g. during display_sync's pre-decode
     // wait — would otherwise report 0 to Jellyfin and wipe the resume point.
-    vs.last_known_pos_ticks  = config.start_position_secs
+    vs.last_known_pos_ticks = config
+        .start_position_secs
         .map(|s| (s * 10_000_000.0) as i64)
         .unwrap_or(0);
     // For Episodes: intro_timestamps/intro_skip_shown/credits_start were reset
@@ -1174,31 +1379,31 @@ fn reset_video_state_for_playback(vs: &mut VideoState, player: Player, config: &
         vs.preview_skip_shown = false;
         vs.commercial_skip_shown = false;
         vs.skip_segment_end = None;
-        vs.credits_start    = None;
+        vs.credits_start = None;
     }
-    vs.skip_segment_handled   = false;
-    vs.pending_skip_seek      = None;
+    vs.skip_segment_handled = false;
+    vs.pending_skip_seek = None;
     // A fresh player has its own fresh volume/mute state (whatever was
     // ramping/muted on the OLD one is gone the instant it's dropped, right
     // above) — no explicit unmute/un-ramp call needed on it, just clear the
     // Rust-side tracking so a stale snapshot doesn't apply to the new one.
-    vs.skip_fade_audio        = None;
-    vs.skip_timed_shown_at    = None;
+    vs.skip_fade_audio = None;
+    vs.skip_timed_shown_at = None;
     vs.skip_timed_prompt_secs = 8;
     vs.skip_timed_paused_since = None;
-    vs.next_ep_banner_shown  = false;
+    vs.next_ep_banner_shown = false;
     vs.credits_auto_marked_played = false;
     vs.credits_mark_threshold = None;
-    vs.next_ep_pending       = None;
-    vs.screensaver_cookie    = inhibit_screensaver();
-    vs.chapters              = Vec::new();
-    vs.chapters_loaded       = false;
+    vs.next_ep_pending = None;
+    vs.screensaver_cookie = inhibit_screensaver();
+    vs.chapters = Vec::new();
+    vs.chapters_loaded = false;
     vs.chapter_load_attempts = 0;
-    vs.chapter_osd_ticks     = 0;
-    vs.delay_osd_ticks       = 0;
-    vs.lyrics                = None;
-    vs.lyrics_available      = false;
-    vs.preloaded_next        = None; // fresh player — no pending entry
+    vs.chapter_osd_ticks = 0;
+    vs.delay_osd_ticks = 0;
+    vs.lyrics = None;
+    vs.lyrics_available = false;
+    vs.preloaded_next = None; // fresh player — no pending entry
 }
 
 /// display-mode-prefetch: is the deferred pre-decode task spawned by
@@ -1217,33 +1422,37 @@ fn prestart_still_current(video: &Arc<Mutex<VideoState>>, my_gen: u64) -> bool {
 // behavior change, so the arg count is accepted rather than "fixed".
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn start_playback(
-    url:         String,
-    item_id:     String,
-    item_type:   &str,
-    title:       String,
-    config:      PlayerConfig,
-    client:      Arc<JellyfinClient>,
-    series_id:   Option<String>,
+    url: String,
+    item_id: String,
+    item_type: &str,
+    title: String,
+    config: PlayerConfig,
+    client: Arc<JellyfinClient>,
+    series_id: Option<String>,
     // (artist, album_art_id) — populated for Audio items; drives the music bar
-    audio_meta:  Option<(String, String)>,
-    video:       &Arc<Mutex<VideoState>>,
+    audio_meta: Option<(String, String)>,
+    video: &Arc<Mutex<VideoState>>,
     window_weak: &slint::Weak<MainWindow>,
-    rt_handle:   &tokio::runtime::Handle,
+    rt_handle: &tokio::runtime::Handle,
     // display-mode-prefetch (2026-09-25) — needed to read
     // Config.device.display_sync_enabled and to call sync_before_load's own
     // FjordState-backed cache. Already in scope at every real call site
     // (every one of them already locks state to build `config` via
     // s.player_config() right before calling this function).
-    state:       &Arc<Mutex<FjordState>>,
+    state: &Arc<Mutex<FjordState>>,
     // Already-known width/fps/is_hdr for THIS item, when the caller happens
     // to have a MediaItem with Fields=MediaStreams on hand (avoids a
     // redundant fetch); None falls back to an internal item_detail_cache
     // lookup / fresh fetch inside the deferred-load task below. Either way,
     // has no effect at all unless display_sync is enabled and item_type
     // isn't Audio.
-    video_info:  Option<fjord_api::models::VideoStreamInfo>,
+    video_info: Option<fjord_api::models::VideoStreamInfo>,
 ) {
-    info!("starting playback: {} — {}", item_id, fjord_player::redact_api_key(&url));
+    info!(
+        "starting playback: {} — {}",
+        item_id,
+        fjord_player::redact_api_key(&url)
+    );
 
     // Route audio output by content type: music always plays PCM on the normal
     // device (no audio-spdif options); video uses the dedicated passthrough
@@ -1251,8 +1460,7 @@ pub(crate) fn start_playback(
     let mut config = config;
     if item_type == "Audio" {
         config.audio_spdif_formats.clear();
-    } else if !config.audio_spdif_formats.is_empty()
-        && !config.audio_device_passthrough.is_empty()
+    } else if !config.audio_spdif_formats.is_empty() && !config.audio_device_passthrough.is_empty()
     {
         config.audio_device = config.audio_device_passthrough.clone();
     }
@@ -1269,14 +1477,18 @@ pub(crate) fn start_playback(
     // can restore the correct screen on stop.
     let (from_detail, from_series) = {
         let mut vs = video.lock().unwrap();
-        let fd = vs.from_detail;  vs.from_detail = false;
-        let fs = vs.from_series;  vs.from_series = false;
+        let fd = vs.from_detail;
+        vs.from_detail = false;
+        let fs = vs.from_series;
+        vs.from_series = false;
         vs.from_season = false;
         (fd, fs)
     };
     if let Some(w) = window_weak.upgrade() {
         let g = AppState::get(&w);
-        if !from_detail { g.set_show_detail(false); }
+        if !from_detail {
+            g.set_show_detail(false);
+        }
         // Series/season have no inline-video slot — always hide.
         // on_play_series_episode already set playback_from_series/season directly on the
         // UI thread; only clear them when this is NOT a series play (from_series = false
@@ -1299,10 +1511,10 @@ pub(crate) fn start_playback(
         let mut vs = video.lock().unwrap();
         vs.current_is_audio = item_type == "Audio";
         vs.now_playing = Some(QueueItem {
-            id:         item_id.clone(),
-            item_type:  item_type.to_string(),
-            series_id:  series_id.clone(),
-            title:      title.clone(),
+            id: item_id.clone(),
+            item_type: item_type.to_string(),
+            series_id: series_id.clone(),
+            title: title.clone(),
             audio_meta: audio_meta.clone(),
         });
     }
@@ -1321,39 +1533,54 @@ pub(crate) fn start_playback(
             vs.preview_skip_shown = false;
             vs.commercial_skip_shown = false;
             vs.skip_segment_end = None;
-            vs.credits_start    = None;
+            vs.credits_start = None;
         }
 
         // Intro + credits timestamps (Intro Skipper v2+: single call returns both)
-        let client_ts  = Arc::clone(&client);
-        let video_ts   = Arc::clone(video);
+        let client_ts = Arc::clone(&client);
+        let video_ts = Arc::clone(video);
         let item_id_ts = item_id.clone();
         rt_handle.spawn(async move {
             match client_ts.get_episode_timestamps(&item_id_ts).await {
                 Ok(Some(ts)) => {
                     let mut vs = video_ts.lock().unwrap();
                     if vs.playback_generation != my_gen {
-                        debug!("episode timestamps for {} arrived late — discarding", item_id_ts);
+                        debug!(
+                            "episode timestamps for {} arrived late — discarding",
+                            item_id_ts
+                        );
                         return;
                     }
                     let mut any = false;
                     if ts.introduction.valid() {
-                        info!("intro: start={:.1}s end={:.1}s", ts.introduction.start, ts.introduction.end);
+                        info!(
+                            "intro: start={:.1}s end={:.1}s",
+                            ts.introduction.start, ts.introduction.end
+                        );
                         vs.intro_timestamps = Some(ts.introduction.clone());
                         any = true;
                     }
                     if ts.recap.valid() {
-                        info!("recap: start={:.1}s end={:.1}s", ts.recap.start, ts.recap.end);
+                        info!(
+                            "recap: start={:.1}s end={:.1}s",
+                            ts.recap.start, ts.recap.end
+                        );
                         vs.recap_timestamps = Some(ts.recap.clone());
                         any = true;
                     }
                     if ts.preview.valid() {
-                        info!("preview: start={:.1}s end={:.1}s", ts.preview.start, ts.preview.end);
+                        info!(
+                            "preview: start={:.1}s end={:.1}s",
+                            ts.preview.start, ts.preview.end
+                        );
                         vs.preview_timestamps = Some(ts.preview.clone());
                         any = true;
                     }
                     if ts.commercial.valid() {
-                        info!("commercial: start={:.1}s end={:.1}s", ts.commercial.start, ts.commercial.end);
+                        info!(
+                            "commercial: start={:.1}s end={:.1}s",
+                            ts.commercial.start, ts.commercial.end
+                        );
                         vs.commercial_timestamps = Some(ts.commercial.clone());
                         any = true;
                     }
@@ -1363,11 +1590,17 @@ pub(crate) fn start_playback(
                         any = true;
                     }
                     if !any {
-                        info!("no segments for {} (plugin absent or episode not analyzed)", item_id_ts);
+                        info!(
+                            "no segments for {} (plugin absent or episode not analyzed)",
+                            item_id_ts
+                        );
                     }
                 }
-                Ok(None) => info!("no episode timestamps for {} (plugin absent or episode not analyzed)", item_id_ts),
-                Err(e)   => warn!("episode timestamps fetch failed: {:#}", e),
+                Ok(None) => info!(
+                    "no episode timestamps for {} (plugin absent or episode not analyzed)",
+                    item_id_ts
+                ),
+                Err(e) => warn!("episode timestamps fetch failed: {:#}", e),
             }
         });
     }
@@ -1388,12 +1621,19 @@ pub(crate) fn start_playback(
         (same, same && vs.display_presynced)
     };
 
-    let (dropped, dec_dropped) = video.lock().unwrap().player.as_ref()
-        .map(|p| p.get_drop_counts()).unwrap_or((0, 0));
-    info!("playback replaced: frame-drops={} decoder-drops={}", dropped, dec_dropped);
-    let (prev_item_id, prev_client, prev_cookie, prev_ticks) = {
-        tear_down_player(&mut video.lock().unwrap())
-    };
+    let (dropped, dec_dropped) = video
+        .lock()
+        .unwrap()
+        .player
+        .as_ref()
+        .map(|p| p.get_drop_counts())
+        .unwrap_or((0, 0));
+    info!(
+        "playback replaced: frame-drops={} decoder-drops={}",
+        dropped, dec_dropped
+    );
+    let (prev_item_id, prev_client, prev_cookie, prev_ticks) =
+        { tear_down_player(&mut video.lock().unwrap()) };
     uninhibit_screensaver(prev_cookie);
     if let (Some(id), Some(cli)) = (prev_item_id, prev_client) {
         rt_handle.spawn(async move {
@@ -1405,7 +1645,7 @@ pub(crate) fn start_playback(
 
     // Send start report only after the previous stop has been dispatched (CR-3).
     {
-        let client2  = Arc::clone(&client);
+        let client2 = Arc::clone(&client);
         let item_id2 = item_id.clone();
         rt_handle.spawn(async move {
             if let Err(e) = client2.report_playback_start(&item_id2).await {
@@ -1416,19 +1656,25 @@ pub(crate) fn start_playback(
 
     let client_art = Arc::clone(&client);
     let item_id_art = item_id.clone();
-    let is_audio    = item_type == "Audio";
+    let is_audio = item_type == "Audio";
     // display-mode-prefetch: cloned here, BEFORE the scoped block below moves
     // the originals into vs.client/vs.item_id — mirrors client_art/item_id_art
     // immediately above for the identical reason.
-    let client_ds  = Arc::clone(&client);
+    let client_ds = Arc::clone(&client);
     let item_id_ds = item_id.clone();
-    let url_ds     = url.clone();
+    let url_ds = url.clone();
 
     match Player::new(&config) {
         Ok(player) => {
             let eligible = {
                 let mut vs = video.lock().unwrap();
-                reset_video_state_for_playback(&mut vs, player, &config, item_type == "Episode", &url);
+                reset_video_state_for_playback(
+                    &mut vs,
+                    player,
+                    &config,
+                    item_type == "Episode",
+                    &url,
+                );
                 vs.display_presynced = keep_presync;
                 // Subtitle/audio language preferences go to mpv BEFORE the
                 // file loads, so it enables those tracks itself from the first
@@ -1438,26 +1684,33 @@ pub(crate) fn start_playback(
                 {
                     let s = state.lock().unwrap();
                     let a = s.config.active();
-                    let remembered = series_id.as_ref().and_then(|id| s.remembered_tracks.get(id));
+                    let remembered = series_id
+                        .as_ref()
+                        .and_then(|id| s.remembered_tracks.get(id));
                     let mut slang: Vec<String> = Vec::new();
                     if let Some(l) = remembered.and_then(|r| r.sub_lang.clone()) {
                         slang.push(l.to_ascii_lowercase());
                     }
                     for name in [a.sub_lang.as_str(), a.sub_lang2.as_str()] {
                         let code = sub_lang_code(name);
-                        if !code.is_empty() && !slang.iter().any(|c| c == code) { slang.push(code.to_string()); }
+                        if !code.is_empty() && !slang.iter().any(|c| c == code) {
+                            slang.push(code.to_string());
+                        }
                     }
                     let alang: Vec<String> = match remembered.and_then(|r| r.audio_lang.clone()) {
                         Some(l) => vec![l.to_ascii_lowercase()],
-                        None => Some(sub_lang_code(&a.audio_lang)).filter(|c| !c.is_empty()).map(|c| vec![c.to_string()]).unwrap_or_default(),
+                        None => Some(sub_lang_code(&a.audio_lang))
+                            .filter(|c| !c.is_empty())
+                            .map(|c| vec![c.to_string()])
+                            .unwrap_or_default(),
                     };
                     if let Some(p) = vs.player.as_ref() {
                         p.set_track_preferences(&slang, &alang, a.sub_enabled);
                     }
                 }
-                vs.item_id           = Some(item_id);
+                vs.item_id = Some(item_id);
                 vs.playing_series_id = series_id;
-                vs.client            = Some(client);
+                vs.client = Some(client);
 
                 // display-mode-prefetch (2026-09-25) — Audio never
                 // participates (no display-mode concept for music). When
@@ -1611,7 +1864,9 @@ pub(crate) fn start_playback(
                     g.set_lyrics_lines(ModelRc::new(VecModel::<crate::LyricEntry>::default()));
                     // The ♪ button (slot 9) un-renders while lyrics-available is
                     // false — move focus off it so it can't sit on a hidden button.
-                    if g.get_music_bar_focused() == 9 { g.set_music_bar_focused(8); }
+                    if g.get_music_bar_focused() == 9 {
+                        g.set_music_bar_focused(8);
+                    }
                 } else {
                     // Video: fullscreen player as before.
                     g.set_is_audio_playing(false);
@@ -1624,16 +1879,23 @@ pub(crate) fn start_playback(
             }
             // For audio tracks: fetch album art for music bar (and player background).
             if is_audio {
-                let ww_art  = window_weak.clone();
+                let ww_art = window_weak.clone();
                 let vid_art = Arc::clone(video);
-                let art_id  = audio_meta.as_ref().map(|(_, i)| i.clone()).unwrap_or_else(|| item_id_art.clone());
+                let art_id = audio_meta
+                    .as_ref()
+                    .map(|(_, i)| i.clone())
+                    .unwrap_or_else(|| item_id_art.clone());
                 rt_handle.spawn(async move {
-                    if let Some(bytes) = crate::poster::fetch_poster_cached(&client_art, &art_id).await
-                        && let Some(spb) = crate::poster::decode_poster_buffer(&bytes) {
+                    if let Some(bytes) =
+                        crate::poster::fetch_poster_cached(&client_art, &art_id).await
+                        && let Some(spb) = crate::poster::decode_poster_buffer(&bytes)
+                    {
                         let _ = slint::invoke_from_event_loop(move || {
                             // Generation guard: on fast track skips the previous
                             // track's cover could land on the new track's bar.
-                            if vid_art.lock().unwrap().playback_generation != my_gen { return; }
+                            if vid_art.lock().unwrap().playback_generation != my_gen {
+                                return;
+                            }
                             if let Some(w) = ww_art.upgrade() {
                                 let g = AppState::get(&w);
                                 if g.get_is_audio_playing() {
@@ -1646,10 +1908,17 @@ pub(crate) fn start_playback(
                 });
 
                 // Fetch lyrics (Jellyfin 10.9+; gracefully absent when 404).
-                let client_lyr  = Arc::clone(video.lock().unwrap().client.as_ref().expect("client just set"));
+                let client_lyr = Arc::clone(
+                    video
+                        .lock()
+                        .unwrap()
+                        .client
+                        .as_ref()
+                        .expect("client just set"),
+                );
                 let item_id_lyr = item_id_art.clone();
-                let video_lyr   = Arc::clone(video);
-                let ww_lyr      = window_weak.clone();
+                let video_lyr = Arc::clone(video);
+                let ww_lyr = window_weak.clone();
                 rt_handle.spawn(async move {
                     match client_lyr.get_lyrics(&item_id_lyr).await {
                         Ok(Some(lines)) => {
@@ -1658,22 +1927,27 @@ pub(crate) fn start_playback(
                             // slip between them and get the old track's lyrics.
                             {
                                 let mut vs = video_lyr.lock().unwrap();
-                                if vs.playback_generation != my_gen { return; }
-                                vs.lyrics           = Some(lines.clone());
+                                if vs.playback_generation != my_gen {
+                                    return;
+                                }
+                                vs.lyrics = Some(lines.clone());
                                 vs.lyrics_available = true;
                             }
                             let vid_ui = Arc::clone(&video_lyr);
                             let _ = slint::invoke_from_event_loop(move || {
                                 // Same guard for the UI push (is-audio-playing alone
                                 // can't tell one track from the next).
-                                if vid_ui.lock().unwrap().playback_generation != my_gen { return; }
+                                if vid_ui.lock().unwrap().playback_generation != my_gen {
+                                    return;
+                                }
                                 if let Some(w) = ww_lyr.upgrade() {
                                     let g = AppState::get(&w);
                                     if g.get_is_audio_playing() {
                                         use slint::{ModelRc, VecModel};
-                                        let entries: Vec<crate::LyricEntry> = lines.into_iter()
+                                        let entries: Vec<crate::LyricEntry> = lines
+                                            .into_iter()
                                             .map(|(ms, text)| crate::LyricEntry {
-                                                text:     text.as_str().into(),
+                                                text: text.as_str().into(),
                                                 start_ms: ms as i32,
                                             })
                                             .collect();
@@ -1685,7 +1959,10 @@ pub(crate) fn start_playback(
                             });
                         }
                         Ok(None) => {
-                            debug!("no lyrics for {} (not found or server too old)", item_id_lyr);
+                            debug!(
+                                "no lyrics for {} (not found or server too old)",
+                                item_id_lyr
+                            );
                         }
                         Err(e) => {
                             debug!("lyrics fetch failed for {}: {:#}", item_id_lyr, e);
@@ -1700,16 +1977,19 @@ pub(crate) fn start_playback(
             // can't leave stale segment data for a subsequent play.
             {
                 let mut vs = video.lock().unwrap();
-                vs.intro_timestamps      = None;
-                vs.recap_timestamps      = None;
-                vs.preview_timestamps    = None;
+                vs.intro_timestamps = None;
+                vs.recap_timestamps = None;
+                vs.preview_timestamps = None;
                 vs.commercial_timestamps = None;
-                vs.credits_start         = None;
+                vs.credits_start = None;
             }
             if let Some(w) = window_weak.upgrade() {
                 reset_playback_ui(&w);
             }
-            crate::show_toast(window_weak.clone(), "Couldn't start playback — check your server connection".to_string());
+            crate::show_toast(
+                window_weak.clone(),
+                "Couldn't start playback — check your server connection".to_string(),
+            );
         }
     }
 }
@@ -1732,12 +2012,12 @@ pub(crate) fn start_playback(
 // inhibit, chapters, stall-recovery baseline, OSD countdowns) so it can't
 // drift out of sync with `start_playback`'s own reset logic.
 pub(crate) fn play_trailer(
-    url:         String,
-    title:       String,
-    config:      PlayerConfig,
-    video:       &Arc<Mutex<VideoState>>,
+    url: String,
+    title: String,
+    config: PlayerConfig,
+    video: &Arc<Mutex<VideoState>>,
     window_weak: &slint::Weak<MainWindow>,
-    rt_handle:   &tokio::runtime::Handle,
+    rt_handle: &tokio::runtime::Handle,
 ) {
     info!("playing trailer: {}", fjord_player::redact_api_key(&url));
     // Server-provided URL: only https YouTube reaches mpv (2026-10-09
@@ -1753,12 +2033,19 @@ pub(crate) fn play_trailer(
         vs.playback_generation = vs.playback_generation.wrapping_add(1);
     }
 
-    let (dropped, dec_dropped) = video.lock().unwrap().player.as_ref()
-        .map(|p| p.get_drop_counts()).unwrap_or((0, 0));
-    info!("playback replaced (trailer): frame-drops={} decoder-drops={}", dropped, dec_dropped);
-    let (prev_item_id, prev_client, prev_cookie, prev_ticks) = {
-        tear_down_player(&mut video.lock().unwrap())
-    };
+    let (dropped, dec_dropped) = video
+        .lock()
+        .unwrap()
+        .player
+        .as_ref()
+        .map(|p| p.get_drop_counts())
+        .unwrap_or((0, 0));
+    info!(
+        "playback replaced (trailer): frame-drops={} decoder-drops={}",
+        dropped, dec_dropped
+    );
+    let (prev_item_id, prev_client, prev_cookie, prev_ticks) =
+        { tear_down_player(&mut video.lock().unwrap()) };
     uninhibit_screensaver(prev_cookie);
     if let (Some(id), Some(cli)) = (prev_item_id, prev_client) {
         rt_handle.spawn(async move {
@@ -1773,11 +2060,11 @@ pub(crate) fn play_trailer(
             {
                 let mut vs = video.lock().unwrap();
                 reset_video_state_for_playback(&mut vs, player, &config, false, &url);
-                vs.item_id           = None;
+                vs.item_id = None;
                 vs.playing_series_id = None;
-                vs.client            = None;
-                vs.is_trailer        = true;
-                vs.trailer_url       = Some(url.clone());
+                vs.client = None;
+                vs.is_trailer = true;
+                vs.trailer_url = Some(url.clone());
                 // Trailers have no video_info/Jellyfin item, so they never
                 // go through start_playback's own deferred-load path — stamp
                 // play_start immediately here, matching today's exact
@@ -1802,7 +2089,10 @@ pub(crate) fn play_trailer(
             if let Some(w) = window_weak.upgrade() {
                 reset_playback_ui(&w);
             }
-            crate::show_toast(window_weak.clone(), "Couldn't play trailer — is yt-dlp installed?".to_string());
+            crate::show_toast(
+                window_weak.clone(),
+                "Couldn't play trailer — is yt-dlp installed?".to_string(),
+            );
         }
     }
 }
@@ -1814,25 +2104,35 @@ pub(crate) fn play_trailer(
 // Returns Some(QueueItem) if a new item should start; None if nothing to do.
 
 pub(crate) fn playlist_prev(vs: &mut VideoState) -> Option<QueueItem> {
-    if vs.playlist.is_empty() { return None; }
+    if vs.playlist.is_empty() {
+        return None;
+    }
     let pos = vs.player.as_ref().map(|p| p.get_position()).unwrap_or(0.0);
     // Deep into the track: restart it (caller seeks to 0 on None).
-    if pos >= 2.0 { return None; }
+    if pos >= 2.0 {
+        return None;
+    }
     if vs.shuffle && !vs.shuffle_order.is_empty() {
         // "Has a previous track" must be judged in SHUFFLE order — the old
         // playlist_index > 0 gate meant prev did nothing whenever the current
         // track happened to be playlist index 0, regardless of its shuffle
         // position; and shuffle position 0 restarted the track via a full
         // start_playback instead of a seek.
-        let cur_pos = vs.shuffle_order.iter()
+        let cur_pos = vs
+            .shuffle_order
+            .iter()
             .position(|&i| i == vs.playlist_index)
             .unwrap_or(0);
-        if cur_pos == 0 { return None; } // first shuffled track — nothing to go back to
+        if cur_pos == 0 {
+            return None;
+        } // first shuffled track — nothing to go back to
         let prev_idx = vs.shuffle_order[cur_pos - 1];
         vs.playlist_index = prev_idx;
         Some(vs.playlist[prev_idx].clone())
     } else {
-        if vs.playlist_index == 0 { return None; } // first track — nothing to go back to
+        if vs.playlist_index == 0 {
+            return None;
+        } // first track — nothing to go back to
         vs.playlist_index -= 1;
         Some(vs.playlist[vs.playlist_index].clone())
     }
@@ -1843,12 +2143,16 @@ pub(crate) fn playlist_prev(vs: &mut VideoState) -> Option<QueueItem> {
 // playlist_next, which is the ⏭ button and always moves on).
 fn natural_next_index(vs: &VideoState) -> Option<usize> {
     let len = vs.playlist.len();
-    if len == 0 { return None; }
+    if len == 0 {
+        return None;
+    }
     match vs.repeat_mode {
         RepeatMode::One => Some(vs.playlist_index),
         RepeatMode::Off | RepeatMode::All => {
             if vs.shuffle && !vs.shuffle_order.is_empty() {
-                let cur_pos = vs.shuffle_order.iter()
+                let cur_pos = vs
+                    .shuffle_order
+                    .iter()
                     .position(|&i| i == vs.playlist_index)
                     .unwrap_or(0);
                 match vs.repeat_mode {
@@ -1859,7 +2163,13 @@ fn natural_next_index(vs: &VideoState) -> Option<usize> {
             } else {
                 let next = vs.playlist_index + 1;
                 match vs.repeat_mode {
-                    RepeatMode::Off => if next < len { Some(next) } else { None },
+                    RepeatMode::Off => {
+                        if next < len {
+                            Some(next)
+                        } else {
+                            None
+                        }
+                    }
                     RepeatMode::All => Some(next % len),
                     RepeatMode::One => unreachable!(),
                 }
@@ -1900,44 +2210,71 @@ fn take_repeat_all_ring_next(vs: &mut VideoState) -> Option<QueueItem> {
     if let Some(np) = vs.now_playing.clone().filter(|q| q.item_type == "Audio") {
         vs.queue.push(np);
     }
-    if vs.queue.is_empty() { None } else { Some(vs.queue.remove(0)) }
+    if vs.queue.is_empty() {
+        None
+    } else {
+        Some(vs.queue.remove(0))
+    }
 }
 
 // Non-mutating preview of what natural end will play (class-gated like the
 // timer's advance). Used by the gapless preload check.
 pub(crate) fn peek_natural_next(vs: &VideoState) -> Option<QueueItem> {
-    if let Some(q) = repeat_one_target(vs) { return Some(q); }
+    if let Some(q) = repeat_one_target(vs) {
+        return Some(q);
+    }
     if repeat_all_ring(vs) {
-        return vs.queue.first().cloned()
+        return vs
+            .queue
+            .first()
+            .cloned()
             .or_else(|| vs.now_playing.clone().filter(|q| q.item_type == "Audio"));
     }
     let ended_audio = vs.current_is_audio;
-    let queue_head_matches = vs.queue.first()
+    let queue_head_matches = vs
+        .queue
+        .first()
         .map(|q| (q.item_type == "Audio") == ended_audio)
         .unwrap_or(false);
     if ended_audio && !vs.playlist.is_empty() {
         if let Some(i) = natural_next_index(vs) {
             return vs.playlist.get(i).cloned();
         }
-        return if queue_head_matches { vs.queue.first().cloned() } else { None };
+        return if queue_head_matches {
+            vs.queue.first().cloned()
+        } else {
+            None
+        };
     }
-    if queue_head_matches { vs.queue.first().cloned() } else { None }
+    if queue_head_matches {
+        vs.queue.first().cloned()
+    } else {
+        None
+    }
 }
 
 // Advance the bookkeeping to match the entry mpv just started gaplessly.
 fn commit_natural_next(vs: &mut VideoState, qi: &QueueItem) {
     // Repeat One replayed the same song: playlist position and queue unchanged.
-    if repeat_one_target(vs).is_some_and(|q| q.id == qi.id) { return; }
+    if repeat_one_target(vs).is_some_and(|q| q.id == qi.id) {
+        return;
+    }
     if repeat_all_ring(vs) {
         let next = take_repeat_all_ring_next(vs);
         if next.as_ref().map(|q| q.id.as_str()) != Some(qi.id.as_str()) {
-            warn!("gapless: repeat-all ring head {:?} != preloaded {}", next.map(|q| q.id), qi.id);
+            warn!(
+                "gapless: repeat-all ring head {:?} != preloaded {}",
+                next.map(|q| q.id),
+                qi.id
+            );
         }
         return;
     }
-    if vs.current_is_audio && !vs.playlist.is_empty()
+    if vs.current_is_audio
+        && !vs.playlist.is_empty()
         && let Some(i) = natural_next_index(vs)
-        && vs.playlist.get(i).map(|q| q.id == qi.id).unwrap_or(false) {
+        && vs.playlist.get(i).map(|q| q.id == qi.id).unwrap_or(false)
+    {
         vs.playlist_index = i;
         return;
     }
@@ -1949,14 +2286,20 @@ fn commit_natural_next(vs: &mut VideoState, qi: &QueueItem) {
 // Drop the gapless-preloaded entry — call whenever the upcoming order changes
 // (shuffle/repeat toggles, queue edits). The next preload check re-peeks.
 pub(crate) fn invalidate_preload(vs: &mut VideoState) {
-    if vs.preloaded_next.take().is_some() && let Some(p) = vs.player.as_mut() { p.cancel_pending(); }
+    if vs.preloaded_next.take().is_some()
+        && let Some(p) = vs.player.as_mut()
+    {
+        p.cancel_pending();
+    }
 }
 
 pub(crate) fn playlist_next(vs: &mut VideoState) -> Option<QueueItem> {
     let len = vs.playlist.len();
     if len > 0 {
         let next_idx = if vs.shuffle && !vs.shuffle_order.is_empty() {
-            let cur_pos = vs.shuffle_order.iter()
+            let cur_pos = vs
+                .shuffle_order
+                .iter()
                 .position(|&i| i == vs.playlist_index)
                 .unwrap_or(0);
             let next_pos = cur_pos + 1;
@@ -1967,7 +2310,13 @@ pub(crate) fn playlist_next(vs: &mut VideoState) -> Option<QueueItem> {
         } else {
             let next = vs.playlist_index + 1;
             match vs.repeat_mode {
-                RepeatMode::Off => if next < len { Some(next) } else { None },
+                RepeatMode::Off => {
+                    if next < len {
+                        Some(next)
+                    } else {
+                        None
+                    }
+                }
                 RepeatMode::All | RepeatMode::One => Some(next % len),
             }
         };
@@ -1980,8 +2329,14 @@ pub(crate) fn playlist_next(vs: &mut VideoState) -> Option<QueueItem> {
         // so queued items never played after an album finished.
     }
     // ⏭ under Repeat All with no album playlist: keep the skipped song in the loop.
-    if repeat_all_ring(vs) { return take_repeat_all_ring_next(vs); }
-    if vs.queue.is_empty() { None } else { Some(vs.queue.remove(0)) }
+    if repeat_all_ring(vs) {
+        return take_repeat_all_ring_next(vs);
+    }
+    if vs.queue.is_empty() {
+        None
+    } else {
+        Some(vs.queue.remove(0))
+    }
 }
 
 // Resolve the TRUE next episode after `current_id` within `series_id`. Prefers
@@ -2015,7 +2370,11 @@ async fn resolve_true_next_episode(
     let cur_pos = eps.iter().position(|e| e.id == current_id)?;
 
     if let Ok(Some(next)) = cli.get_next_up_for_series(series_id).await
-        && eps.iter().position(|e| e.id == next.id).is_some_and(|p| p > cur_pos) {
+        && eps
+            .iter()
+            .position(|e| e.id == next.id)
+            .is_some_and(|p| p > cur_pos)
+    {
         return Some(next);
     }
     eps.into_iter().nth(cur_pos + 1)
@@ -2032,7 +2391,11 @@ pub(crate) fn rebuild_shuffle_order(vs: &mut VideoState) {
         return;
     }
     vs.shuffle_order = shuffle_indices(vs.playlist.len());
-    if let Some(pos) = vs.shuffle_order.iter().position(|&i| i == vs.playlist_index) {
+    if let Some(pos) = vs
+        .shuffle_order
+        .iter()
+        .position(|&i| i == vs.playlist_index)
+    {
         vs.shuffle_order.swap(0, pos);
     }
 }
@@ -2044,11 +2407,8 @@ pub(crate) fn toggle_shuffle(vs: &mut VideoState) {
 }
 
 // ── wire_rendering_notifier ───────────────────────────────────────────────────
-pub(crate) fn wire_rendering_notifier(
-    window: &MainWindow,
-    video:  Arc<Mutex<VideoState>>,
-) {
-    let video_rn  = video;
+pub(crate) fn wire_rendering_notifier(window: &MainWindow, video: Arc<Mutex<VideoState>>) {
+    let video_rn = video;
     let window_rn = window.as_weak();
 
     window.window().set_rendering_notifier({
@@ -2383,10 +2743,10 @@ pub(crate) fn wire_rendering_notifier(
 // is_audio block — keep the two in sync when changing music-bar behaviour.
 // `my_gen` guards the async art/lyrics pushes against later track changes.
 fn apply_audio_track(
-    video:  &Arc<Mutex<VideoState>>,
-    ww:     &slint::Weak<MainWindow>,
-    rt:     &tokio::runtime::Handle,
-    qi:     &QueueItem,
+    video: &Arc<Mutex<VideoState>>,
+    ww: &slint::Weak<MainWindow>,
+    rt: &tokio::runtime::Handle,
+    qi: &QueueItem,
     my_gen: u64,
 ) {
     let (artist, art_id) = qi.audio_meta.clone().unwrap_or_default();
@@ -2403,22 +2763,31 @@ fn apply_audio_track(
         g.set_show_lyrics(false);
         g.set_lyrics_active_idx(-1);
         g.set_lyrics_lines(ModelRc::new(VecModel::<crate::LyricEntry>::default()));
-        if g.get_music_bar_focused() == 9 { g.set_music_bar_focused(8); }
+        if g.get_music_bar_focused() == 9 {
+            g.set_music_bar_focused(8);
+        }
     }
     let client = video.lock().unwrap().client.as_ref().map(Arc::clone);
     let Some(client) = client else { return };
 
     // Album art (generation-guarded)
     {
-        let ww_art   = ww.clone();
-        let vid_art  = Arc::clone(video);
-        let art_fetch = if art_id.is_empty() { qi.id.clone() } else { art_id };
-        let cli_art  = Arc::clone(&client);
+        let ww_art = ww.clone();
+        let vid_art = Arc::clone(video);
+        let art_fetch = if art_id.is_empty() {
+            qi.id.clone()
+        } else {
+            art_id
+        };
+        let cli_art = Arc::clone(&client);
         rt.spawn(async move {
             if let Some(bytes) = crate::poster::fetch_poster_cached(&cli_art, &art_fetch).await
-                && let Some(spb) = crate::poster::decode_poster_buffer(&bytes) {
+                && let Some(spb) = crate::poster::decode_poster_buffer(&bytes)
+            {
                 let _ = slint::invoke_from_event_loop(move || {
-                    if vid_art.lock().unwrap().playback_generation != my_gen { return; }
+                    if vid_art.lock().unwrap().playback_generation != my_gen {
+                        return;
+                    }
                     if let Some(w) = ww_art.upgrade() {
                         let g = AppState::get(&w);
                         if g.get_is_audio_playing() {
@@ -2432,26 +2801,31 @@ fn apply_audio_track(
     }
     // Lyrics (generation-guarded, single lock scope)
     {
-        let ww_lyr    = ww.clone();
+        let ww_lyr = ww.clone();
         let video_lyr = Arc::clone(video);
-        let id_lyr    = qi.id.clone();
+        let id_lyr = qi.id.clone();
         rt.spawn(async move {
             if let Ok(Some(lines)) = client.get_lyrics(&id_lyr).await {
                 {
                     let mut vs = video_lyr.lock().unwrap();
-                    if vs.playback_generation != my_gen { return; }
-                    vs.lyrics           = Some(lines.clone());
+                    if vs.playback_generation != my_gen {
+                        return;
+                    }
+                    vs.lyrics = Some(lines.clone());
                     vs.lyrics_available = true;
                 }
                 let vid_ui = Arc::clone(&video_lyr);
                 let _ = slint::invoke_from_event_loop(move || {
-                    if vid_ui.lock().unwrap().playback_generation != my_gen { return; }
+                    if vid_ui.lock().unwrap().playback_generation != my_gen {
+                        return;
+                    }
                     if let Some(w) = ww_lyr.upgrade() {
                         let g = AppState::get(&w);
                         if g.get_is_audio_playing() {
-                            let entries: Vec<crate::LyricEntry> = lines.into_iter()
+                            let entries: Vec<crate::LyricEntry> = lines
+                                .into_iter()
                                 .map(|(ms, text)| crate::LyricEntry {
-                                    text:     text.as_str().into(),
+                                    text: text.as_str().into(),
                                     start_ms: ms as i32,
                                 })
                                 .collect();
@@ -2502,9 +2876,9 @@ fn apply_audio_track(
 // ORIGINAL short budget applies instead — a real outage is still reported
 // in ~15s, not held up for 40, while a healthy-connection stall gets the
 // patience an unrelated slow resource deserves.
-const MAX_STALL_RELOAD_ATTEMPTS_HEALTHY:   u32 = 7;  // (7+1) × 5s ≈ 40s
-const MAX_STALL_RELOAD_ATTEMPTS_UNHEALTHY: u32 = 2;  // (2+1) × 5s = 15s, the original budget
-const STALL_GIVE_UP_TOAST:  &str = "Playback stopped — lost connection to server";
+const MAX_STALL_RELOAD_ATTEMPTS_HEALTHY: u32 = 7; // (7+1) × 5s ≈ 40s
+const MAX_STALL_RELOAD_ATTEMPTS_UNHEALTHY: u32 = 2; // (2+1) × 5s = 15s, the original budget
+const STALL_GIVE_UP_TOAST: &str = "Playback stopped — lost connection to server";
 /// Seconds without progress before a reload, normally.
 const STALL_SECS: f64 = 5.0;
 /// The same for an item's FIRST open while mpv hasn't reached FileLoaded yet
@@ -2513,7 +2887,7 @@ const STALL_SECS: f64 = 5.0;
 /// that was about to succeed. Reloads after that use STALL_SECS again, so a
 /// server that's really down still gives up about as fast as before.
 const FIRST_OPEN_STALL_SECS: f64 = 15.0;
-const FAILED_OPEN_TOAST:    &str = "Couldn't play this — the file wouldn't open";
+const FAILED_OPEN_TOAST: &str = "Couldn't play this — the file wouldn't open";
 const TRAILER_FAILED_TOAST: &str = "Trailer unavailable";
 
 /// One step of stall recovery for the current item, shared by the stall
@@ -2537,11 +2911,17 @@ fn next_stall_step(vs: &mut VideoState, connection_likely_healthy: bool, why: &s
         _ => 0,
     };
     if attempts >= max_attempts {
-        warn!("{why} — giving up after {max_attempts} reload attempt(s) (connection_likely_healthy={connection_likely_healthy})");
+        warn!(
+            "{why} — giving up after {max_attempts} reload attempt(s) (connection_likely_healthy={connection_likely_healthy})"
+        );
         vs.stall_last_reload_at = Some(Instant::now());
         return StallStep::GiveUp;
     }
-    let (Some(item_id), Some(cli), Some(np)) = (vs.item_id.clone(), vs.client.clone(), vs.now_playing.clone()) else {
+    let (Some(item_id), Some(cli), Some(np)) = (
+        vs.item_id.clone(),
+        vs.client.clone(),
+        vs.now_playing.clone(),
+    ) else {
         return StallStep::NotReloadable;
     };
     warn!(
@@ -2559,16 +2939,16 @@ fn next_stall_step(vs: &mut VideoState, connection_likely_healthy: bool, why: &s
 }
 
 pub(crate) fn wire_mpv_timer(
-    window_weak:    slint::Weak<MainWindow>,
-    video:          Arc<Mutex<VideoState>>,
-    state:          Arc<Mutex<FjordState>>,
-    rt_handle:      tokio::runtime::Handle,
-    controls_show:  Arc<AtomicBool>,
-    seek_suppress:  Arc<AtomicU32>,
+    window_weak: slint::Weak<MainWindow>,
+    video: Arc<Mutex<VideoState>>,
+    state: Arc<Mutex<FjordState>>,
+    rt_handle: tokio::runtime::Handle,
+    controls_show: Arc<AtomicBool>,
+    seek_suppress: Arc<AtomicU32>,
 ) -> slint::Timer {
-    let video_timer  = video;
+    let video_timer = video;
     let window_timer = window_weak;
-    let state_timer  = state;
+    let state_timer = state;
 
     let timer = slint::Timer::default();
     timer.start(slint::TimerMode::Repeated, Duration::from_millis(16), move || {
@@ -4341,13 +4721,22 @@ mod tests {
     use super::*;
 
     fn song(id: &str) -> QueueItem {
-        QueueItem { id: id.into(), item_type: "Audio".into(), series_id: None,
-                    title: id.into(), audio_meta: None }
+        QueueItem {
+            id: id.into(),
+            item_type: "Audio".into(),
+            series_id: None,
+            title: id.into(),
+            audio_meta: None,
+        }
     }
 
     fn playing(id: &str, repeat: RepeatMode) -> VideoState {
-        VideoState { current_is_audio: true, now_playing: Some(song(id)),
-                     repeat_mode: repeat, ..Default::default() }
+        VideoState {
+            current_is_audio: true,
+            now_playing: Some(song(id)),
+            repeat_mode: repeat,
+            ..Default::default()
+        }
     }
 
     #[test]
@@ -4406,11 +4795,13 @@ mod tests {
     fn repeat_all_ring_loops_the_whole_queued_set() {
         let mut vs = playing("a", RepeatMode::All);
         vs.queue = vec![song("b"), song("c")];
-        let order: Vec<String> = (0..6).map(|_| {
-            let q = take_repeat_all_ring_next(&mut vs).unwrap();
-            vs.now_playing = Some(q.clone());
-            q.id
-        }).collect();
+        let order: Vec<String> = (0..6)
+            .map(|_| {
+                let q = take_repeat_all_ring_next(&mut vs).unwrap();
+                vs.now_playing = Some(q.clone());
+                q.id
+            })
+            .collect();
         assert_eq!(order, ["b", "c", "a", "b", "c", "a"]);
     }
 
@@ -4419,7 +4810,10 @@ mod tests {
         let mut vs = playing("a", RepeatMode::All);
         vs.queue = vec![song("b")];
         commit_natural_next(&mut vs, &song("b"));
-        assert_eq!(vs.queue.iter().map(|q| q.id.as_str()).collect::<Vec<_>>(), ["a"]);
+        assert_eq!(
+            vs.queue.iter().map(|q| q.id.as_str()).collect::<Vec<_>>(),
+            ["a"]
+        );
     }
 
     #[test]
@@ -4427,13 +4821,19 @@ mod tests {
         let mut vs = playing("a", RepeatMode::All);
         vs.queue = vec![song("b")];
         assert_eq!(playlist_next(&mut vs).map(|q| q.id), Some("b".into()));
-        assert_eq!(vs.queue.iter().map(|q| q.id.as_str()).collect::<Vec<_>>(), ["a"]);
+        assert_eq!(
+            vs.queue.iter().map(|q| q.id.as_str()).collect::<Vec<_>>(),
+            ["a"]
+        );
     }
 
     #[test]
     fn repeat_all_ring_stops_at_a_queued_video() {
         let mut vs = playing("a", RepeatMode::All);
-        vs.queue = vec![QueueItem { item_type: "Movie".into(), ..song("m") }];
+        vs.queue = vec![QueueItem {
+            item_type: "Movie".into(),
+            ..song("m")
+        }];
         assert!(!repeat_all_ring(&vs));
         assert!(peek_natural_next(&vs).is_none());
     }

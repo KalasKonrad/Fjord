@@ -166,7 +166,7 @@
 use std::sync::Arc;
 use std::time::Instant;
 
-use fjord_api::{models::MediaItem, JellyfinClient};
+use fjord_api::{JellyfinClient, models::MediaItem};
 use fjord_player::PlayerConfig;
 use serde::{Deserialize, Serialize};
 
@@ -179,11 +179,11 @@ use crate::keys::{Keybindings, default_keybindings};
 // both map to "" — meaning "don't touch sub-color at all", not "set to white".
 pub(crate) fn sub_color_hex(name: &str) -> &str {
     match name {
-        "White"  => "#FFFFFF",
+        "White" => "#FFFFFF",
         "Yellow" => "#FFFF00",
-        "Cyan"   => "#00FFFF",
-        "Green"  => "#00FF00",
-        _        => "",
+        "Cyan" => "#00FFFF",
+        "Green" => "#00FF00",
+        _ => "",
     }
 }
 
@@ -199,58 +199,109 @@ pub(crate) fn sub_color_hex(name: &str) -> &str {
 /// value from before this dropdown was reworded) passes through unchanged.
 pub(crate) fn vf_mpv_value(display: &str) -> String {
     match display {
-        "auto: nv12/p010"          => String::new(),
+        "auto: nv12/p010" => String::new(),
         "auto: yuv420p/yuv420p10le" => "auto".to_string(),
-        other                        => other.to_string(),
+        other => other.to_string(),
     }
 }
 
-pub(crate) fn default_audio_channels() -> String { "auto-safe".into() }
-fn default_gapless() -> bool { true }
-fn default_skip_fade_mute_passthrough() -> bool { true }
-fn default_now_playing_auto_open() -> bool { true }
-fn default_hwdec()        -> String { "auto".into()       }
-pub(crate) fn default_video_sync()   -> String { "audio".into()      }
-pub(crate) fn default_tscale()       -> String { "oversample".into() }
-pub(crate) fn default_tone_mapping() -> String { "auto".into()       }
-fn default_true()                    -> bool   { true                }
-fn default_deinterlace()             -> String { "no".into()         }
-fn default_vf()                      -> String { "auto: nv12/p010".into() }
-fn default_skip_mode()               -> String { "ask".into()        }
-fn default_log_level()               -> String { "info".into()       }
-fn default_skip_secs()               -> u32    { 8                   }
-fn default_credits_secs()            -> u32    { 30                  }
-fn default_seek_step()               -> u32    { 10                  }
-fn default_seek_step_long()          -> u32    { 30                  }
+pub(crate) fn default_audio_channels() -> String {
+    "auto-safe".into()
+}
+fn default_gapless() -> bool {
+    true
+}
+fn default_skip_fade_mute_passthrough() -> bool {
+    true
+}
+fn default_now_playing_auto_open() -> bool {
+    true
+}
+fn default_hwdec() -> String {
+    "auto".into()
+}
+pub(crate) fn default_video_sync() -> String {
+    "audio".into()
+}
+pub(crate) fn default_tscale() -> String {
+    "oversample".into()
+}
+pub(crate) fn default_tone_mapping() -> String {
+    "auto".into()
+}
+fn default_true() -> bool {
+    true
+}
+fn default_deinterlace() -> String {
+    "no".into()
+}
+fn default_vf() -> String {
+    "auto: nv12/p010".into()
+}
+fn default_skip_mode() -> String {
+    "ask".into()
+}
+fn default_log_level() -> String {
+    "info".into()
+}
+fn default_skip_secs() -> u32 {
+    8
+}
+fn default_credits_secs() -> u32 {
+    30
+}
+fn default_seek_step() -> u32 {
+    10
+}
+fn default_seek_step_long() -> u32 {
+    30
+}
 // Base duration (ms) of the skip-segment fade-to-black, before the
 // settings-animation-speed multiplier is applied — matches the literal
 // value this replaced (playback.rs's old hardcoded SKIP_FADE_MS const).
-fn default_skip_fade_ms()            -> u32    { 200                 }
-fn default_sub_pct()                 -> u32    { 100                 }
-fn default_speed_pct()               -> u32    { 100                 }
+fn default_skip_fade_ms() -> u32 {
+    200
+}
+fn default_sub_pct() -> u32 {
+    100
+}
+fn default_speed_pct() -> u32 {
+    100
+}
 // "Inter" = Fjord's own bundled default text font; "" = system default (no
 // font-family override at all); anything else = that system font by name.
-fn default_ui_font_family()          -> String { "Inter".into()      }
-fn default_cache_secs()              -> u32    { 60                  }
-fn default_cache_max_mb()            -> u32    { 500                 }
+fn default_ui_font_family() -> String {
+    "Inter".into()
+}
+fn default_cache_secs() -> u32 {
+    60
+}
+fn default_cache_max_mb() -> u32 {
+    500
+}
 // Display-ready values stored directly in Config, same idiom as
 // Config.sub_color/SUB_COLOR_MODEL ("White"/"Yellow" are both the stored
 // value and the display string) — translated to an mpv ytdl-format string
 // only at point of use (main.rs::trailer_ytdl_format), not here. Caps
 // yt-dlp's resolution selection for Watch Trailer playback
 // (Settings → Integrations → Trailer Quality).
-fn default_trailer_quality()         -> String { "1080p".into()      }
+fn default_trailer_quality() -> String {
+    "1080p".into()
+}
 
 // Migrate old bool (false/true) stored by earlier versions to "no"/"yes".
 // Option<> wrapper accepts JSON null without error (maps to "no").
 fn deser_deinterlace<'de, D: serde::Deserializer<'de>>(d: D) -> Result<String, D::Error> {
     #[derive(serde::Deserialize)]
     #[serde(untagged)]
-    enum BoolOrStr { Bool(bool), Str(String) }
+    enum BoolOrStr {
+        Bool(bool),
+        Str(String),
+    }
     Ok(match Option::<BoolOrStr>::deserialize(d)? {
         Some(BoolOrStr::Bool(b)) => if b { "yes" } else { "no" }.into(),
-        Some(BoolOrStr::Str(s))  => s,
-        None                     => "no".into(),
+        Some(BoolOrStr::Str(s)) => s,
+        None => "no".into(),
     })
 }
 
@@ -264,10 +315,11 @@ fn deser_deinterlace<'de, D: serde::Deserializer<'de>>(d: D) -> Result<String, D
 // `format=...` values are unchanged by the reword and pass through as-is.
 fn deser_vf<'de, D: serde::Deserializer<'de>>(d: D) -> Result<String, D::Error> {
     Ok(match String::deserialize(d)?.as_str() {
-        ""      => "auto: nv12/p010",
-        "auto"  => "auto: yuv420p/yuv420p10le",
-        other   => return Ok(other.to_string()),
-    }.into())
+        "" => "auto: nv12/p010",
+        "auto" => "auto: yuv420p/yuv420p10le",
+        other => return Ok(other.to_string()),
+    }
+    .into())
 }
 
 // ── Config: device-scoped vs profile-scoped split (Bonfire Phase 1) ──────────
@@ -310,38 +362,59 @@ fn deser_vf<'de, D: serde::Deserializer<'de>>(d: D) -> Result<String, D::Error> 
 
 #[derive(Clone, Serialize, Deserialize)]
 pub(crate) struct DeviceConfig {
-    #[serde(default)] pub device_id: String,
+    #[serde(default)]
+    pub device_id: String,
 
-    #[serde(default)]                         pub audio_spdif:           bool,
-    #[serde(default = "default_true")]        pub spdif_ac3:             bool,
-    #[serde(default = "default_true")]        pub spdif_eac3:            bool,
-    #[serde(default = "default_true")]        pub spdif_dts:             bool,
-    #[serde(default = "default_true")]        pub spdif_dts_hd:          bool,
-    #[serde(default = "default_true")]        pub spdif_truehd:          bool,
-    #[serde(default = "default_hwdec")]       pub hwdec:                 String,
+    #[serde(default)]
+    pub audio_spdif: bool,
+    #[serde(default = "default_true")]
+    pub spdif_ac3: bool,
+    #[serde(default = "default_true")]
+    pub spdif_eac3: bool,
+    #[serde(default = "default_true")]
+    pub spdif_dts: bool,
+    #[serde(default = "default_true")]
+    pub spdif_dts_hd: bool,
+    #[serde(default = "default_true")]
+    pub spdif_truehd: bool,
+    #[serde(default = "default_hwdec")]
+    pub hwdec: String,
     #[serde(default = "default_vf", deserialize_with = "deser_vf")]
-                                               pub vf:                    String,
-    #[serde(default = "default_video_sync")]  pub video_sync:            String,
-    #[serde(default)]                         pub opengl_early_flush:    bool,
-    #[serde(default)]                         pub video_latency_hacks:   bool,
-    #[serde(default)]                         pub interpolation:         bool,
-    #[serde(default = "default_tscale")]      pub tscale:                String,
-    #[serde(default = "default_tone_mapping")]pub tone_mapping:          String,
-    #[serde(default)]                         pub target_colorspace_hint:bool,
+    pub vf: String,
+    #[serde(default = "default_video_sync")]
+    pub video_sync: String,
+    #[serde(default)]
+    pub opengl_early_flush: bool,
+    #[serde(default)]
+    pub video_latency_hacks: bool,
+    #[serde(default)]
+    pub interpolation: bool,
+    #[serde(default = "default_tscale")]
+    pub tscale: String,
+    #[serde(default = "default_tone_mapping")]
+    pub tone_mapping: String,
+    #[serde(default)]
+    pub target_colorspace_hint: bool,
     // HDR Stage 5 (2026-10-05): video on its own Wayland subsurface (keeps
     // menus/OSD in correct colours with HDR passthrough). Default on; off =
     // the old in-window path, for platforms where it performs better.
-    #[serde(default = "default_true")]        pub separate_video_surface: bool,
+    #[serde(default = "default_true")]
+    pub separate_video_surface: bool,
     // 10-bit video plane (2026-10-08): Fjord's own GBM/dmabuf buffers for the
     // subsurface. Opt-in (was automatic where EGL has no 10-bit window, until
     // NVIDIA's source showed Pascal sends 8 bpc over HDMI anyway). Read once
     // per run when the subsurface is set up.
-    #[serde(default)]                         pub video_own_buffers:     bool,
+    #[serde(default)]
+    pub video_own_buffers: bool,
     // Test aid (2026-10-08): mpv dither-depth=no, to compare 8- vs 10-bit
     // output on a gradient (dithering hides the difference).
-    #[serde(default)]                         pub video_dither_off:      bool,
-    #[serde(default = "default_deinterlace", deserialize_with = "deser_deinterlace")]
-                                              pub deinterlace:           String,
+    #[serde(default)]
+    pub video_dither_off: bool,
+    #[serde(
+        default = "default_deinterlace",
+        deserialize_with = "deser_deinterlace"
+    )]
+    pub deinterlace: String,
     // ── Network cache (Settings → Player → Buffering) ───────────────────────
     // cache_secs sets mpv's `cache-secs` directly (0 = mpv's own default,
     // which is enormous — ~3.6M seconds per the real mpv manual — so in
@@ -359,11 +432,16 @@ pub(crate) struct DeviceConfig {
     // instead of leaving mpv's small 150 MiB stock default in place, which
     // would be the most RESTRICTIVE choice on the row, the opposite of
     // unlimited), for a user who wants cache_secs alone to govern.
-    #[serde(default = "default_cache_secs")]   pub cache_secs:            u32,
-    #[serde(default = "default_cache_max_mb")] pub cache_max_mb:          u32,
-    #[serde(default)]                         pub video_behind:          bool,
-    #[serde(default)]                         pub launch_fullscreen:     bool,
-    #[serde(default)]                         pub audio_device:          String,
+    #[serde(default = "default_cache_secs")]
+    pub cache_secs: u32,
+    #[serde(default = "default_cache_max_mb")]
+    pub cache_max_mb: u32,
+    #[serde(default)]
+    pub video_behind: bool,
+    #[serde(default)]
+    pub launch_fullscreen: bool,
+    #[serde(default)]
+    pub audio_device: String,
     // Separate output for video while SPDIF passthrough is on ("" = same as
     // audio_device). Music always plays on audio_device.
     #[serde(default)]
@@ -377,7 +455,8 @@ pub(crate) struct DeviceConfig {
     // instance so album transitions have no gap. Kill switch in Settings→Audio.
     #[serde(default = "default_gapless")]
     pub gapless_audio: bool,
-    #[serde(default)]                         pub alsa_irq_scheduling:   bool,
+    #[serde(default)]
+    pub alsa_irq_scheduling: bool,
     // Whether the skip-segment fade (see skip_fade_ms below) mutes audio for
     // its whole duration when SPDIF passthrough is active — the closest
     // available analog to a fade there, since a raw bitstream can't be
@@ -391,11 +470,14 @@ pub(crate) struct DeviceConfig {
 
     // ── Log level for fjord.log ("error"|"warn"|"info"|"debug") — read once at
     // startup before the tracing subscriber is built; changes apply on next launch.
-    #[serde(default = "default_log_level")] pub log_level: String,
+    #[serde(default = "default_log_level")]
+    pub log_level: String,
 
     // ── Player seek step (Settings → Player → Seeking) ──────────────────────
-    #[serde(default = "default_seek_step")]      pub seek_step_secs:      u32,
-    #[serde(default = "default_seek_step_long")] pub seek_step_long_secs: u32,
+    #[serde(default = "default_seek_step")]
+    pub seek_step_secs: u32,
+    #[serde(default = "default_seek_step_long")]
+    pub seek_step_long_secs: u32,
 
     // ── Skip-segment fade-to-black duration (Settings → Player → Seeking,
     // appended alongside seek_step for the same "no natural home, append at
@@ -404,18 +486,22 @@ pub(crate) struct DeviceConfig {
     // Closer to "how this screen/setup feels" than personal viewer taste
     // (same reasoning already applied to seek_step_secs), so device- not
     // profile-scoped.
-    #[serde(default = "default_skip_fade_ms")] pub skip_fade_ms: u32,
+    #[serde(default = "default_skip_fade_ms")]
+    pub skip_fade_ms: u32,
 
     // ── UI animation speed (Settings → UI) — multiplier percentages, 100 = mpv/
     // widgets.slint's original hand-tuned durations unchanged. Scroll is kept
     // separate from general Animation since it's a throughput property (how
     // fast you can move through content), not decoration.
-    #[serde(default = "default_speed_pct")] pub scroll_speed_pct:    u32,
-    #[serde(default = "default_speed_pct")] pub animation_speed_pct: u32,
+    #[serde(default = "default_speed_pct")]
+    pub scroll_speed_pct: u32,
+    #[serde(default = "default_speed_pct")]
+    pub animation_speed_pct: u32,
 
     // ── Text font (Settings → UI) — "Inter" (bundled default), "" (system
     // default, no override), or any other font family installed on the host.
-    #[serde(default = "default_ui_font_family")] pub ui_font_family: String,
+    #[serde(default = "default_ui_font_family")]
+    pub ui_font_family: String,
 
     // ── On-screen alphanumeric keyboard (Settings → UI, 2026-08-27, direct
     // request) — Fjord must be installable and fully usable on a box with
@@ -431,14 +517,17 @@ pub(crate) struct DeviceConfig {
     // which runs before every other input tier and unconditionally
     // consumes any key — can't turn into a silent, no-visible-cause
     // lockout the way a mount-condition-only fix could).
-    #[serde(default = "default_true")] pub onscreen_keyboard_enabled: bool,
+    #[serde(default = "default_true")]
+    pub onscreen_keyboard_enabled: bool,
 
     // ── Bonfire profile-picker launch policy (Phase 1, not yet wired to a
     // Settings row or the picker screen in this commit) — "always_ask" |
     // "remember_last" | "default". default_profile_id is that profile's
     // user_id, meaningful only when launch_policy == "default".
-    #[serde(default = "default_launch_policy")] pub launch_policy: String,
-    #[serde(default)] pub default_profile_id: String,
+    #[serde(default = "default_launch_policy")]
+    pub launch_policy: String,
+    #[serde(default)]
+    pub default_profile_id: String,
 
     // ── Account-tier picker (2026-08-14) — the identical launch-policy
     // shape one level up, mirroring launch_policy/default_profile_id
@@ -448,8 +537,10 @@ pub(crate) struct DeviceConfig {
     // count) — a single-account install (every existing one, today) never
     // reads either of these. default_account_id is that account's own
     // root user_id (the master's, or a standalone plain profile's own).
-    #[serde(default = "default_launch_policy")] pub account_launch_policy: String,
-    #[serde(default)] pub default_account_id: String,
+    #[serde(default = "default_launch_policy")]
+    pub account_launch_policy: String,
+    #[serde(default)]
+    pub default_account_id: String,
 
     // ── display_sync (2026-09-18) — native resolution/refresh-rate/HDR/WCG
     // matching to source, replacing the external `media_display_sync`
@@ -459,7 +550,8 @@ pub(crate) struct DeviceConfig {
     // off by default — see `display_sync.rs`'s own module doc comment and
     // CLAUDE.md's dated section for the full design, including the real
     // ordering fix this needed against the pre-existing HDR Stage 3 hook.
-    #[serde(default)] pub display_sync_enabled: bool,
+    #[serde(default)]
+    pub display_sync_enabled: bool,
     // Not auto-detected at runtime — only auto-pre-filled once, at startup,
     // while still empty (`main.rs`'s `display_sync::list_output_names()`
     // fetch, only when it returns exactly one candidate); stored and used as
@@ -468,40 +560,51 @@ pub(crate) struct DeviceConfig {
     // "first enabled+connected output" heuristic picks wrong the moment
     // there's a second output). Editable any time via Settings' own dynamic
     // dropdown, which always shows every currently connected output.
-    #[serde(default)] pub display_sync_screen_name: String,
-    #[serde(default = "default_display_sync_resolution")] pub display_sync_default_resolution: String,
-    #[serde(default = "default_display_sync_hz")]         pub display_sync_default_hz: String,
+    #[serde(default)]
+    pub display_sync_screen_name: String,
+    #[serde(default = "default_display_sync_resolution")]
+    pub display_sync_default_resolution: String,
+    #[serde(default = "default_display_sync_hz")]
+    pub display_sync_default_hz: String,
     // Always applied alongside every mode switch, matching the proven
     // external script's own `run_kscreen` — dropping this would leave KDE's
     // desktop scale wherever it was for the previous resolution, a real,
     // visible regression versus what the script already does today.
-    #[serde(default = "default_scale")] pub display_sync_scale_4k: String,
-    #[serde(default = "default_scale")] pub display_sync_scale_1080p: String,
+    #[serde(default = "default_scale")]
+    pub display_sync_scale_4k: String,
+    #[serde(default = "default_scale")]
+    pub display_sync_scale_1080p: String,
     // When false, resolution is always pinned to display_sync_default_resolution
     // (never switches to 4K regardless of source width) and only refresh
     // rate varies by cadence — see display_sync::compute_target_mode's own
     // doc comment for why this is defined as "pinned," not "leave whatever
     // KDE is currently at alone" (the latter has no mechanism behind it).
-    #[serde(default = "default_true")] pub display_sync_sync_resolution: bool,
+    #[serde(default = "default_true")]
+    pub display_sync_sync_resolution: bool,
     // When false, refresh rate stays pinned to display_sync_default_hz and
     // only resolution varies (4K vs. the configured default).
-    #[serde(default = "default_true")] pub display_sync_sync_refresh_rate: bool,
+    #[serde(default = "default_true")]
+    pub display_sync_sync_refresh_rate: bool,
     // "fallback" (default, matches the proven script exactly — 4K content
     // at a non-film/NTSC/PAL framerate drops to the default 1080p
     // resolution@59.94) or "stay_4k" (pick the closest supported Hz at 4K
     // instead). Only consulted when display_sync_sync_resolution is true.
-    #[serde(default = "default_4k_odd_fps_mode")] pub display_sync_4k_odd_fps_mode: String,
+    #[serde(default = "default_4k_odd_fps_mode")]
+    pub display_sync_4k_odd_fps_mode: String,
     // "yes" (HDR on exactly when the source is HDR) | "no" (never) |
     // "always". No "manual" value — display_sync_enabled=false already IS
     // "never touch HDR/WCG", making a 4th value redundant.
-    #[serde(default = "default_display_sync_hdr_mode")] pub display_sync_hdr_mode: String,
+    #[serde(default = "default_display_sync_hdr_mode")]
+    pub display_sync_hdr_mode: String,
     // "auto" (follows HDR state, matching the proven script's own default) |
     // "yes" | "no".
-    #[serde(default = "default_display_sync_wcg_mode")] pub display_sync_wcg_mode: String,
+    #[serde(default = "default_display_sync_wcg_mode")]
+    pub display_sync_wcg_mode: String,
     // Whether Watch Trailer also switches the display (2026-10-04, user
     // request: off by default — a YouTube trailer isn't worth a mode switch
     // and a TV resync, and it often comes in an odd 4K/24p format).
-    #[serde(default)] pub display_sync_trailers: bool,
+    #[serde(default)]
+    pub display_sync_trailers: bool,
 }
 
 impl Default for DeviceConfig {
@@ -509,22 +612,40 @@ impl Default for DeviceConfig {
         Self {
             device_id: String::new(),
             audio_spdif: false,
-            spdif_ac3: true, spdif_eac3: true, spdif_dts: true, spdif_dts_hd: true, spdif_truehd: true,
-            hwdec: default_hwdec(), vf: "auto: nv12/p010".into(), video_sync: default_video_sync(),
-            opengl_early_flush: false, video_latency_hacks: false,
-            interpolation: false, tscale: default_tscale(), tone_mapping: default_tone_mapping(),
-            target_colorspace_hint: false, separate_video_surface: true, video_own_buffers: false,
-            video_dither_off: false, deinterlace: "no".into(),
-            cache_secs: default_cache_secs(), cache_max_mb: default_cache_max_mb(),
-            video_behind: false, launch_fullscreen: false,
-            audio_device: String::new(), audio_device_passthrough: String::new(),
+            spdif_ac3: true,
+            spdif_eac3: true,
+            spdif_dts: true,
+            spdif_dts_hd: true,
+            spdif_truehd: true,
+            hwdec: default_hwdec(),
+            vf: "auto: nv12/p010".into(),
+            video_sync: default_video_sync(),
+            opengl_early_flush: false,
+            video_latency_hacks: false,
+            interpolation: false,
+            tscale: default_tscale(),
+            tone_mapping: default_tone_mapping(),
+            target_colorspace_hint: false,
+            separate_video_surface: true,
+            video_own_buffers: false,
+            video_dither_off: false,
+            deinterlace: "no".into(),
+            cache_secs: default_cache_secs(),
+            cache_max_mb: default_cache_max_mb(),
+            video_behind: false,
+            launch_fullscreen: false,
+            audio_device: String::new(),
+            audio_device_passthrough: String::new(),
             audio_channels: default_audio_channels(),
-            gapless_audio: true, alsa_irq_scheduling: false,
+            gapless_audio: true,
+            alsa_irq_scheduling: false,
             skip_fade_mute_passthrough: default_skip_fade_mute_passthrough(),
             log_level: default_log_level(),
-            seek_step_secs: default_seek_step(), seek_step_long_secs: default_seek_step_long(),
+            seek_step_secs: default_seek_step(),
+            seek_step_long_secs: default_seek_step_long(),
             skip_fade_ms: default_skip_fade_ms(),
-            scroll_speed_pct: 100, animation_speed_pct: 100,
+            scroll_speed_pct: 100,
+            animation_speed_pct: 100,
             ui_font_family: default_ui_font_family(),
             onscreen_keyboard_enabled: true,
             launch_policy: default_launch_policy(),
@@ -547,39 +668,61 @@ impl Default for DeviceConfig {
     }
 }
 
-fn default_launch_policy() -> String { "always_ask".into() }
-fn default_display_sync_resolution() -> String { "1920x1080".into() }
-fn default_display_sync_hz()         -> String { "59.94".into() }
-fn default_scale()                   -> String { "1.0".into() }
-fn default_4k_odd_fps_mode()         -> String { "fallback".into() }
-fn default_display_sync_hdr_mode()   -> String { "yes".into() }
-fn default_display_sync_wcg_mode()   -> String { "auto".into() }
+fn default_launch_policy() -> String {
+    "always_ask".into()
+}
+fn default_display_sync_resolution() -> String {
+    "1920x1080".into()
+}
+fn default_display_sync_hz() -> String {
+    "59.94".into()
+}
+fn default_scale() -> String {
+    "1.0".into()
+}
+fn default_4k_odd_fps_mode() -> String {
+    "fallback".into()
+}
+fn default_display_sync_hdr_mode() -> String {
+    "yes".into()
+}
+fn default_display_sync_wcg_mode() -> String {
+    "auto".into()
+}
 
 #[derive(Clone, Serialize, Deserialize)]
 pub(crate) struct ProfileSettings {
     // The profile's identity — a Jellyfin user id. Doubles as the key
     // `Config.active_profile_id` matches against; see `Config::active()`.
-    #[serde(default)] pub user_id:    String,
-    #[serde(default)] pub server_url: String,
-    #[serde(default)] pub token:      String,
+    #[serde(default)]
+    pub user_id: String,
+    #[serde(default)]
+    pub server_url: String,
+    #[serde(default)]
+    pub token: String,
 
     // ── Profile identity (Bonfire Phase 1, step 6, 2026-08-09) — ProfilePickerScreen's
     // own avatar tile. display_name/avatar_initial default to the Jellyfin username's
     // own first letter on a normal/append login (profile.rs); a real Bonfire sub-profile
     // gets these overwritten from the plugin's own /list response the next time
     // sync_bonfire_subprofiles runs (after every successful master login).
-    #[serde(default)] pub display_name:   String,
+    #[serde(default)]
+    pub display_name: String,
     // Hex string ("#4a90d9"), not a Slint `color` — this struct has to stay
     // plain-serde-serializable; profile.rs parses it (or picks a deterministic
     // fallback when empty) when building the Slint-facing ProfileTile.
-    #[serde(default)] pub avatar_color:   String,
-    #[serde(default)] pub avatar_initial: String,
+    #[serde(default)]
+    pub avatar_color: String,
+    #[serde(default)]
+    pub avatar_initial: String,
     // True once discovered via a real bonfire_list_profiles() response — never
     // true for a profile that only ever came from do_login/append (normal
     // sign-in has no way to know it's talking to a Bonfire sub-profile; only
     // the MASTER's own /list call can tell us that).
-    #[serde(default)] pub is_bonfire:     bool,
-    #[serde(default)] pub master_user_id: String,
+    #[serde(default)]
+    pub is_bonfire: bool,
+    #[serde(default)]
+    pub master_user_id: String,
     // Bonfire Phase 5 (cross-household groups, 2026-08-29) — true only for
     // an `/list` entry representing ANOTHER master's own account (Bonfire's
     // `is_master: true`), reached because the calling master joined or owns
@@ -590,7 +733,8 @@ pub(crate) struct ProfileSettings {
     // to itself instead of reading `master_user_id` at all; the calling
     // master that discovered it is recorded separately, in `synced_via`,
     // for `switch_to_profile`'s own auth lookup and for prune-scoping.
-    #[serde(default)] pub is_group_account: bool,
+    #[serde(default)]
+    pub is_group_account: bool,
     // Bonfire Phase 5 — which of *my own* saved master accounts' `/list`
     // call most recently reported this entry. For a genuine sub-profile
     // this coincides with `master_user_id` (both are the calling master's
@@ -601,10 +745,12 @@ pub(crate) struct ProfileSettings {
     // a switch INTO a group account with (there's no independently-stored
     // token for someone else's account — the switch is always authenticated
     // via whichever of my own accounts joined/owns the group).
-    #[serde(default)] pub synced_via: String,
+    #[serde(default)]
+    pub synced_via: String,
     // Cached from the same /list response — may go stale between syncs, same
     // caveat as every other cached-until-next-refresh field in this app.
-    #[serde(default)] pub has_pin:        bool,
+    #[serde(default)]
+    pub has_pin: bool,
     // Bonfire Phase 4 (inactivity auto-lock, 2026-08-29) — minutes of
     // idleness before this profile is force-locked back to the Profile
     // Picker; 0 = disabled, matching Bonfire's own real API semantics
@@ -615,7 +761,8 @@ pub(crate) struct ProfileSettings {
     // (sync_bonfire_subprofiles, ProfileEditScreen's self-edit save path).
     // Only ever acted on when has_pin is also true — see
     // main.rs::wire_idle_lock_timer.
-    #[serde(default)] pub lockout_minutes: i64,
+    #[serde(default)]
+    pub lockout_minutes: i64,
     // Bonfire Phase 5 follow-up (2026-08-31, live-reported: "but what i
     // shuld still be able to switch to a bonfire master profile with out
     // needing to switch 'accaunt' thats whats bonfire grouping is for?") —
@@ -630,7 +777,8 @@ pub(crate) struct ProfileSettings {
     // this field existed while ALSO recording the linkage here. Used by
     // profile.rs::linked_account_roots to build extra "{name}'s Bonfire"
     // sections directly into ProfilePickerScreen — see open_profile_picker.
-    #[serde(default)] pub bonfire_linked_roots: Vec<String>,
+    #[serde(default)]
+    pub bonfire_linked_roots: Vec<String>,
     // Account-tier picker (2026-08-14, live-reported design feedback: "if
     // there is no bonfire on the other server everyone can use that
     // accaunt as the session is saved... mabey add a setting to remember
@@ -655,27 +803,38 @@ pub(crate) struct ProfileSettings {
     // checkbox on LoginScreen at Add-Account time (also the very first
     // login) — see should_show_picker_at_startup's own doc comment for
     // where this is actually enforced.
-    #[serde(default = "default_true")] pub remember_login: bool,
+    #[serde(default = "default_true")]
+    pub remember_login: bool,
 
-    #[serde(default = "default_true")]         pub sub_enabled:           bool,
-    #[serde(default)]                         pub sub_lang:              String,
-    #[serde(default)]                         pub sub_lang2:             String,
-    #[serde(default)]                         pub sub_type:              String,
+    #[serde(default = "default_true")]
+    pub sub_enabled: bool,
+    #[serde(default)]
+    pub sub_lang: String,
+    #[serde(default)]
+    pub sub_lang2: String,
+    #[serde(default)]
+    pub sub_type: String,
     // ── Subtitle appearance — see the mpv sub-ass-override note on
     // sub_respect_ass_styling below; scale/pos apply to ASS subtitles
     // unconditionally (mpv's own default), color/background do not.
-    #[serde(default = "default_sub_pct")]     pub sub_scale_pct:         u32,
-    #[serde(default = "default_sub_pct")]     pub sub_pos_pct:           u32,
+    #[serde(default = "default_sub_pct")]
+    pub sub_scale_pct: u32,
+    #[serde(default = "default_sub_pct")]
+    pub sub_pos_pct: u32,
     // true (default) = don't touch mpv's sub-ass-override (its own default,
     // "scale" tier — embedded ASS styling is respected); false = force it,
     // so sub_color/sub_background below also apply to ASS-styled subtitles.
-    #[serde(default = "default_true")]        pub sub_respect_ass_styling: bool,
+    #[serde(default = "default_true")]
+    pub sub_respect_ass_styling: bool,
     // Display name from a static preset table ("" | "White" | "Yellow" | ...),
     // NOT a raw mpv color string — mirrors sub_lang storing a display name
     // that's translated to an mpv value at point of use.
-    #[serde(default)]                         pub sub_color:             String,
-    #[serde(default)]                         pub sub_background:        bool,
-    #[serde(default)]                         pub audio_lang:            String,
+    #[serde(default)]
+    pub sub_color: String,
+    #[serde(default)]
+    pub sub_background: bool,
+    #[serde(default)]
+    pub audio_lang: String,
     // Auto-open the fullscreen Now Playing screen after ~30 s idle while music
     // plays. Fixed threshold in v1 — only the on/off is a setting. Profile-
     // scoped (2026-08-08, Bonfire Phase 1): pure per-viewer UX preference,
@@ -686,27 +845,44 @@ pub(crate) struct ProfileSettings {
     // ── Intro Skipper skip modes ─────────────────────────────────────────────
     // "always-skip" | "ask" | "ask-timed" | "never-skip"  (Intro/Recap/Preview/Commercial)
     // "always-skip" | "ask" | "never-skip"                 (Credits)
-    #[serde(default = "default_skip_mode")] pub skip_intro_mode:      String,
-    #[serde(default = "default_skip_secs")] pub skip_intro_secs:      u32,
-    #[serde(default = "default_skip_mode")] pub skip_recap_mode:      String,
-    #[serde(default = "default_skip_secs")] pub skip_recap_secs:      u32,
-    #[serde(default = "default_skip_mode")] pub skip_preview_mode:    String,
-    #[serde(default = "default_skip_secs")] pub skip_preview_secs:    u32,
-    #[serde(default = "default_skip_mode")] pub skip_commercial_mode: String,
-    #[serde(default = "default_skip_secs")] pub skip_commercial_secs: u32,
-    #[serde(default = "default_skip_mode")]    pub skip_credits_mode:    String,
-    #[serde(default = "default_credits_secs")] pub skip_credits_secs:    u32,
+    #[serde(default = "default_skip_mode")]
+    pub skip_intro_mode: String,
+    #[serde(default = "default_skip_secs")]
+    pub skip_intro_secs: u32,
+    #[serde(default = "default_skip_mode")]
+    pub skip_recap_mode: String,
+    #[serde(default = "default_skip_secs")]
+    pub skip_recap_secs: u32,
+    #[serde(default = "default_skip_mode")]
+    pub skip_preview_mode: String,
+    #[serde(default = "default_skip_secs")]
+    pub skip_preview_secs: u32,
+    #[serde(default = "default_skip_mode")]
+    pub skip_commercial_mode: String,
+    #[serde(default = "default_skip_secs")]
+    pub skip_commercial_secs: u32,
+    #[serde(default = "default_skip_mode")]
+    pub skip_credits_mode: String,
+    #[serde(default = "default_credits_secs")]
+    pub skip_credits_secs: u32,
 
     // ── Library sort (0=NameAZ 1=NameZA 2=YearDesc 3=YearAsc 4=Random) ─────────
-    #[serde(default)] pub library_movies_sort:       u8,
-    #[serde(default)] pub library_series_sort:       u8,
-    #[serde(default)] pub library_collections_sort:  u8,
-    #[serde(default)] pub library_artists_sort:      u8,
-    #[serde(default)] pub library_albums_sort:       u8,
-    #[serde(default)] pub library_playlists_sort:    u8,
+    #[serde(default)]
+    pub library_movies_sort: u8,
+    #[serde(default)]
+    pub library_series_sort: u8,
+    #[serde(default)]
+    pub library_collections_sort: u8,
+    #[serde(default)]
+    pub library_artists_sort: u8,
+    #[serde(default)]
+    pub library_albums_sort: u8,
+    #[serde(default)]
+    pub library_playlists_sort: u8,
 
     // ── Music library view (0=Artists, 1=Albums, 2=Playlists) ────────────────
-    #[serde(default)] pub library_music_view:        u8,
+    #[serde(default)]
+    pub library_music_view: u8,
 
     // ── Seerr integration (Settings → Integrations) — cleared on sign-out
     // alongside server_url/user_id/token. seerr_auth_method is purely
@@ -714,16 +890,22 @@ pub(crate) struct ProfileSettings {
     // seerr_api_key is populated only when method == "apikey",
     // seerr_session_cookie for the other three methods. Both encrypted at
     // rest — see secrets.rs and load_config/save_config above.
-    #[serde(default)] pub seerr_enabled:         bool,
-    #[serde(default)] pub seerr_url:              String,
-    #[serde(default)] pub seerr_auth_method:      String,
-    #[serde(default)] pub seerr_api_key:          String,
-    #[serde(default)] pub seerr_session_cookie:   String,
+    #[serde(default)]
+    pub seerr_enabled: bool,
+    #[serde(default)]
+    pub seerr_url: String,
+    #[serde(default)]
+    pub seerr_auth_method: String,
+    #[serde(default)]
+    pub seerr_api_key: String,
+    #[serde(default)]
+    pub seerr_session_cookie: String,
 
     // ── Watch Trailer (Discover request-detail screen) ───────────────────────
     // "Best"|"1080p"|"720p"|"480p" — display-ready, mapped to an mpv
     // ytdl-format string by main.rs::trailer_ytdl_format.
-    #[serde(default = "default_trailer_quality")] pub trailer_quality: String,
+    #[serde(default = "default_trailer_quality")]
+    pub trailer_quality: String,
 
     // ── Discover filters (2026-07-18) ─────────────────────────────────────
     // "" / empty Vec / 0 all mean "no filter set" for their respective field,
@@ -751,12 +933,18 @@ pub(crate) struct ProfileSettings {
     // cleared on sign-out" note: these now reset to blank while no profile
     // is active and are restored when that profile is switched back to,
     // since Discover filters really are personal taste.
-    #[serde(default)] pub discover_filter_type:          String,
-    #[serde(default)] pub discover_filter_genre_names:   Vec<String>,
-    #[serde(default)] pub discover_filter_sort:           String,
-    #[serde(default)] pub discover_filter_min_rating:     f32,
-    #[serde(default)] pub discover_filter_min_year:       u32,
-    #[serde(default)] pub discover_filter_provider_ids:   Vec<i64>,
+    #[serde(default)]
+    pub discover_filter_type: String,
+    #[serde(default)]
+    pub discover_filter_genre_names: Vec<String>,
+    #[serde(default)]
+    pub discover_filter_sort: String,
+    #[serde(default)]
+    pub discover_filter_min_rating: f32,
+    #[serde(default)]
+    pub discover_filter_min_year: u32,
+    #[serde(default)]
+    pub discover_filter_provider_ids: Vec<i64>,
 
     // ── Request Options "remember last choice" (2026-08-12) ──────────────────
     // Direct request, matching Seerr's own web UI behavior ("seerr always
@@ -779,53 +967,73 @@ pub(crate) struct ProfileSettings {
     // remembered before. Profile/tag ids that no longer exist on the server
     // (config changed) are simply not found when re-applied, falling back
     // to Default/unselected for that one row — no explicit migration needed.
-    #[serde(default)] pub request_pref_movie: RequestPreference,
-    #[serde(default)] pub request_pref_tv:    RequestPreference,
+    #[serde(default)]
+    pub request_pref_movie: RequestPreference,
+    #[serde(default)]
+    pub request_pref_tv: RequestPreference,
 }
 
 #[derive(Serialize, Deserialize, Clone, Default)]
 pub(crate) struct RequestPreference {
-    #[serde(default)] pub want_4k:        bool,
+    #[serde(default)]
+    pub want_4k: bool,
     // 0 = the synthetic "Default" row (no profile override) — same
     // convention request_detail_selected_profile_id already uses.
-    #[serde(default)] pub profile_id_2k:  i32,
-    #[serde(default)] pub profile_id_4k:  i32,
-    #[serde(default)] pub tag_ids_2k:     Vec<i64>,
-    #[serde(default)] pub tag_ids_4k:     Vec<i64>,
+    #[serde(default)]
+    pub profile_id_2k: i32,
+    #[serde(default)]
+    pub profile_id_4k: i32,
+    #[serde(default)]
+    pub tag_ids_2k: Vec<i64>,
+    #[serde(default)]
+    pub tag_ids_4k: Vec<i64>,
 }
 
 impl Default for ProfileSettings {
     fn default() -> Self {
         Self {
-            user_id: String::new(), server_url: String::new(), token: String::new(),
-            display_name: String::new(), avatar_color: String::new(), avatar_initial: String::new(),
-            is_bonfire: false, master_user_id: String::new(), has_pin: false,
-            is_group_account: false, synced_via: String::new(),
+            user_id: String::new(),
+            server_url: String::new(),
+            token: String::new(),
+            display_name: String::new(),
+            avatar_color: String::new(),
+            avatar_initial: String::new(),
+            is_bonfire: false,
+            master_user_id: String::new(),
+            has_pin: false,
+            is_group_account: false,
+            synced_via: String::new(),
             lockout_minutes: 0,
             bonfire_linked_roots: Vec::new(),
             remember_login: true,
-            sub_enabled: true, sub_lang: String::new(), sub_lang2: String::new(),
-            sub_type: String::new(), audio_lang: String::new(),
-            sub_scale_pct: 100, sub_pos_pct: 100, sub_respect_ass_styling: true,
-            sub_color: String::new(), sub_background: false,
+            sub_enabled: true,
+            sub_lang: String::new(),
+            sub_lang2: String::new(),
+            sub_type: String::new(),
+            audio_lang: String::new(),
+            sub_scale_pct: 100,
+            sub_pos_pct: 100,
+            sub_respect_ass_styling: true,
+            sub_color: String::new(),
+            sub_background: false,
             now_playing_auto_open: true,
-            skip_intro_mode:      default_skip_mode(),
-            skip_intro_secs:      8,
-            skip_recap_mode:      default_skip_mode(),
-            skip_recap_secs:      8,
-            skip_preview_mode:    default_skip_mode(),
-            skip_preview_secs:    8,
+            skip_intro_mode: default_skip_mode(),
+            skip_intro_secs: 8,
+            skip_recap_mode: default_skip_mode(),
+            skip_recap_secs: 8,
+            skip_preview_mode: default_skip_mode(),
+            skip_preview_secs: 8,
             skip_commercial_mode: default_skip_mode(),
             skip_commercial_secs: 8,
-            skip_credits_mode:    default_skip_mode(),
-            skip_credits_secs:    30,
-            library_movies_sort:       0,
-            library_series_sort:       0,
-            library_collections_sort:  0,
-            library_artists_sort:      0,
-            library_albums_sort:       0,
-            library_playlists_sort:    0,
-            library_music_view:        0,
+            skip_credits_mode: default_skip_mode(),
+            skip_credits_secs: 30,
+            library_movies_sort: 0,
+            library_series_sort: 0,
+            library_collections_sort: 0,
+            library_artists_sort: 0,
+            library_albums_sort: 0,
+            library_playlists_sort: 0,
+            library_music_view: 0,
             seerr_enabled: false,
             seerr_url: String::new(),
             seerr_auth_method: String::new(),
@@ -865,7 +1073,11 @@ impl Config {
     }
     pub fn active_mut(&mut self) -> &mut ProfileSettings {
         let id = self.active_profile_id.clone();
-        let pos = self.profiles.iter().position(|p| p.user_id == id).unwrap_or(0);
+        let pos = self
+            .profiles
+            .iter()
+            .position(|p| p.user_id == id)
+            .unwrap_or(0);
         self.profiles.get_mut(pos)
             .expect("Config.profiles is never empty — enforced by Config::default() and load_config's migration")
     }
@@ -891,45 +1103,77 @@ impl Default for Config {
 #[derive(Deserialize)]
 struct LegacyConfig {
     pub server_url: String,
-    pub user_id:    String,
-    pub token:      String,
-    #[serde(default)] pub device_id: String,
+    pub user_id: String,
+    pub token: String,
+    #[serde(default)]
+    pub device_id: String,
 
-    #[serde(default)]                         pub audio_spdif:           bool,
-    #[serde(default = "default_true")]        pub spdif_ac3:             bool,
-    #[serde(default = "default_true")]        pub spdif_eac3:            bool,
-    #[serde(default = "default_true")]        pub spdif_dts:             bool,
-    #[serde(default = "default_true")]        pub spdif_dts_hd:          bool,
-    #[serde(default = "default_true")]        pub spdif_truehd:          bool,
-    #[serde(default = "default_hwdec")]       pub hwdec:                 String,
+    #[serde(default)]
+    pub audio_spdif: bool,
+    #[serde(default = "default_true")]
+    pub spdif_ac3: bool,
+    #[serde(default = "default_true")]
+    pub spdif_eac3: bool,
+    #[serde(default = "default_true")]
+    pub spdif_dts: bool,
+    #[serde(default = "default_true")]
+    pub spdif_dts_hd: bool,
+    #[serde(default = "default_true")]
+    pub spdif_truehd: bool,
+    #[serde(default = "default_hwdec")]
+    pub hwdec: String,
     #[serde(default = "default_vf", deserialize_with = "deser_vf")]
-                                               pub vf:                    String,
-    #[serde(default = "default_video_sync")]  pub video_sync:            String,
-    #[serde(default)]                         pub opengl_early_flush:    bool,
-    #[serde(default)]                         pub video_latency_hacks:   bool,
-    #[serde(default)]                         pub interpolation:         bool,
-    #[serde(default = "default_tscale")]      pub tscale:                String,
-    #[serde(default = "default_tone_mapping")]pub tone_mapping:          String,
-    #[serde(default)]                         pub target_colorspace_hint:bool,
-    #[serde(default = "default_deinterlace", deserialize_with = "deser_deinterlace")]
-                                              pub deinterlace:           String,
+    pub vf: String,
+    #[serde(default = "default_video_sync")]
+    pub video_sync: String,
+    #[serde(default)]
+    pub opengl_early_flush: bool,
+    #[serde(default)]
+    pub video_latency_hacks: bool,
+    #[serde(default)]
+    pub interpolation: bool,
+    #[serde(default = "default_tscale")]
+    pub tscale: String,
+    #[serde(default = "default_tone_mapping")]
+    pub tone_mapping: String,
+    #[serde(default)]
+    pub target_colorspace_hint: bool,
+    #[serde(
+        default = "default_deinterlace",
+        deserialize_with = "deser_deinterlace"
+    )]
+    pub deinterlace: String,
     // Kept only so an old-shape file still deserializes cleanly — deliberately
     // no longer read by migrate_legacy_config, see its own comment.
     #[allow(dead_code)]
-    #[serde(default)]                         pub cache_size_mb:         u32,
-    #[serde(default)]                         pub video_behind:          bool,
-    #[serde(default)]                         pub launch_fullscreen:     bool,
-    #[serde(default = "default_true")]         pub sub_enabled:           bool,
-    #[serde(default)]                         pub sub_lang:              String,
-    #[serde(default)]                         pub sub_lang2:             String,
-    #[serde(default)]                         pub sub_type:              String,
-    #[serde(default = "default_sub_pct")]     pub sub_scale_pct:         u32,
-    #[serde(default = "default_sub_pct")]     pub sub_pos_pct:           u32,
-    #[serde(default = "default_true")]        pub sub_respect_ass_styling: bool,
-    #[serde(default)]                         pub sub_color:             String,
-    #[serde(default)]                         pub sub_background:        bool,
-    #[serde(default)]                         pub audio_lang:            String,
-    #[serde(default)]                         pub audio_device:          String,
+    #[serde(default)]
+    pub cache_size_mb: u32,
+    #[serde(default)]
+    pub video_behind: bool,
+    #[serde(default)]
+    pub launch_fullscreen: bool,
+    #[serde(default = "default_true")]
+    pub sub_enabled: bool,
+    #[serde(default)]
+    pub sub_lang: String,
+    #[serde(default)]
+    pub sub_lang2: String,
+    #[serde(default)]
+    pub sub_type: String,
+    #[serde(default = "default_sub_pct")]
+    pub sub_scale_pct: u32,
+    #[serde(default = "default_sub_pct")]
+    pub sub_pos_pct: u32,
+    #[serde(default = "default_true")]
+    pub sub_respect_ass_styling: bool,
+    #[serde(default)]
+    pub sub_color: String,
+    #[serde(default)]
+    pub sub_background: bool,
+    #[serde(default)]
+    pub audio_lang: String,
+    #[serde(default)]
+    pub audio_device: String,
     #[serde(default)]
     pub audio_device_passthrough: String,
     #[serde(default = "default_audio_channels")]
@@ -938,51 +1182,87 @@ struct LegacyConfig {
     pub gapless_audio: bool,
     #[serde(default = "default_now_playing_auto_open")]
     pub now_playing_auto_open: bool,
-    #[serde(default)]                         pub alsa_irq_scheduling:   bool,
+    #[serde(default)]
+    pub alsa_irq_scheduling: bool,
 
-    #[serde(default = "default_skip_mode")] pub skip_intro_mode:      String,
-    #[serde(default = "default_skip_secs")] pub skip_intro_secs:      u32,
-    #[serde(default = "default_skip_mode")] pub skip_recap_mode:      String,
-    #[serde(default = "default_skip_secs")] pub skip_recap_secs:      u32,
-    #[serde(default = "default_skip_mode")] pub skip_preview_mode:    String,
-    #[serde(default = "default_skip_secs")] pub skip_preview_secs:    u32,
-    #[serde(default = "default_skip_mode")] pub skip_commercial_mode: String,
-    #[serde(default = "default_skip_secs")] pub skip_commercial_secs: u32,
-    #[serde(default = "default_skip_mode")]    pub skip_credits_mode:    String,
-    #[serde(default = "default_credits_secs")] pub skip_credits_secs:    u32,
+    #[serde(default = "default_skip_mode")]
+    pub skip_intro_mode: String,
+    #[serde(default = "default_skip_secs")]
+    pub skip_intro_secs: u32,
+    #[serde(default = "default_skip_mode")]
+    pub skip_recap_mode: String,
+    #[serde(default = "default_skip_secs")]
+    pub skip_recap_secs: u32,
+    #[serde(default = "default_skip_mode")]
+    pub skip_preview_mode: String,
+    #[serde(default = "default_skip_secs")]
+    pub skip_preview_secs: u32,
+    #[serde(default = "default_skip_mode")]
+    pub skip_commercial_mode: String,
+    #[serde(default = "default_skip_secs")]
+    pub skip_commercial_secs: u32,
+    #[serde(default = "default_skip_mode")]
+    pub skip_credits_mode: String,
+    #[serde(default = "default_credits_secs")]
+    pub skip_credits_secs: u32,
 
-    #[serde(default)] pub library_movies_sort:       u8,
-    #[serde(default)] pub library_series_sort:       u8,
-    #[serde(default)] pub library_collections_sort:  u8,
-    #[serde(default)] pub library_artists_sort:      u8,
-    #[serde(default)] pub library_albums_sort:       u8,
-    #[serde(default)] pub library_playlists_sort:    u8,
-    #[serde(default)] pub library_music_view:        u8,
+    #[serde(default)]
+    pub library_movies_sort: u8,
+    #[serde(default)]
+    pub library_series_sort: u8,
+    #[serde(default)]
+    pub library_collections_sort: u8,
+    #[serde(default)]
+    pub library_artists_sort: u8,
+    #[serde(default)]
+    pub library_albums_sort: u8,
+    #[serde(default)]
+    pub library_playlists_sort: u8,
+    #[serde(default)]
+    pub library_music_view: u8,
 
-    #[serde(default = "default_log_level")] pub log_level: String,
+    #[serde(default = "default_log_level")]
+    pub log_level: String,
 
-    #[serde(default = "default_seek_step")]      pub seek_step_secs:      u32,
-    #[serde(default = "default_seek_step_long")] pub seek_step_long_secs: u32,
+    #[serde(default = "default_seek_step")]
+    pub seek_step_secs: u32,
+    #[serde(default = "default_seek_step_long")]
+    pub seek_step_long_secs: u32,
 
-    #[serde(default = "default_speed_pct")] pub scroll_speed_pct:    u32,
-    #[serde(default = "default_speed_pct")] pub animation_speed_pct: u32,
+    #[serde(default = "default_speed_pct")]
+    pub scroll_speed_pct: u32,
+    #[serde(default = "default_speed_pct")]
+    pub animation_speed_pct: u32,
 
-    #[serde(default = "default_ui_font_family")] pub ui_font_family: String,
+    #[serde(default = "default_ui_font_family")]
+    pub ui_font_family: String,
 
-    #[serde(default)] pub seerr_enabled:         bool,
-    #[serde(default)] pub seerr_url:              String,
-    #[serde(default)] pub seerr_auth_method:      String,
-    #[serde(default)] pub seerr_api_key:          String,
-    #[serde(default)] pub seerr_session_cookie:   String,
+    #[serde(default)]
+    pub seerr_enabled: bool,
+    #[serde(default)]
+    pub seerr_url: String,
+    #[serde(default)]
+    pub seerr_auth_method: String,
+    #[serde(default)]
+    pub seerr_api_key: String,
+    #[serde(default)]
+    pub seerr_session_cookie: String,
 
-    #[serde(default = "default_trailer_quality")] pub trailer_quality: String,
+    #[serde(default = "default_trailer_quality")]
+    pub trailer_quality: String,
 
-    #[serde(default)] pub discover_filter_type:          String,
-    #[serde(default)] pub discover_filter_genre_names:   Vec<String>,
-    #[serde(default)] pub discover_filter_sort:           String,
-    #[serde(default)] pub discover_filter_min_rating:     f32,
-    #[serde(default)] pub discover_filter_min_year:       u32,
-    #[serde(default)] pub discover_filter_provider_ids:   Vec<i64>,
+    #[serde(default)]
+    pub discover_filter_type: String,
+    #[serde(default)]
+    pub discover_filter_genre_names: Vec<String>,
+    #[serde(default)]
+    pub discover_filter_sort: String,
+    #[serde(default)]
+    pub discover_filter_min_rating: f32,
+    #[serde(default)]
+    pub discover_filter_min_year: u32,
+    #[serde(default)]
+    pub discover_filter_provider_ids: Vec<i64>,
 }
 
 /// Splits an old flat `LegacyConfig` into the new `DeviceConfig` +
@@ -993,33 +1273,50 @@ fn migrate_legacy_config(l: LegacyConfig) -> Config {
     let device = DeviceConfig {
         device_id: l.device_id,
         audio_spdif: l.audio_spdif,
-        spdif_ac3: l.spdif_ac3, spdif_eac3: l.spdif_eac3, spdif_dts: l.spdif_dts,
-        spdif_dts_hd: l.spdif_dts_hd, spdif_truehd: l.spdif_truehd,
-        hwdec: l.hwdec, vf: l.vf, video_sync: l.video_sync,
-        opengl_early_flush: l.opengl_early_flush, video_latency_hacks: l.video_latency_hacks,
-        interpolation: l.interpolation, tscale: l.tscale, tone_mapping: l.tone_mapping,
-        target_colorspace_hint: l.target_colorspace_hint, separate_video_surface: true, video_own_buffers: false,
-        video_dither_off: false, deinterlace: l.deinterlace,
+        spdif_ac3: l.spdif_ac3,
+        spdif_eac3: l.spdif_eac3,
+        spdif_dts: l.spdif_dts,
+        spdif_dts_hd: l.spdif_dts_hd,
+        spdif_truehd: l.spdif_truehd,
+        hwdec: l.hwdec,
+        vf: l.vf,
+        video_sync: l.video_sync,
+        opengl_early_flush: l.opengl_early_flush,
+        video_latency_hacks: l.video_latency_hacks,
+        interpolation: l.interpolation,
+        tscale: l.tscale,
+        tone_mapping: l.tone_mapping,
+        target_colorspace_hint: l.target_colorspace_hint,
+        separate_video_surface: true,
+        video_own_buffers: false,
+        video_dither_off: false,
+        deinterlace: l.deinterlace,
         // l.cache_size_mb deliberately dropped, not migrated — it was a
         // broken setting (see the doc comment on DeviceConfig's own
         // cache_secs/cache_max_mb fields) that only ever adjusted an mpv
         // option that rarely bound in practice, so there's no real user
         // intent worth preserving from it; every migrated install just
         // gets the new, actually-functional defaults instead.
-        cache_secs: default_cache_secs(), cache_max_mb: default_cache_max_mb(),
-        video_behind: l.video_behind, launch_fullscreen: l.launch_fullscreen,
-        audio_device: l.audio_device, audio_device_passthrough: l.audio_device_passthrough,
-        audio_channels: l.audio_channels, gapless_audio: l.gapless_audio,
+        cache_secs: default_cache_secs(),
+        cache_max_mb: default_cache_max_mb(),
+        video_behind: l.video_behind,
+        launch_fullscreen: l.launch_fullscreen,
+        audio_device: l.audio_device,
+        audio_device_passthrough: l.audio_device_passthrough,
+        audio_channels: l.audio_channels,
+        gapless_audio: l.gapless_audio,
         alsa_irq_scheduling: l.alsa_irq_scheduling,
         // No legacy equivalent — same treatment as skip_fade_ms just below.
         skip_fade_mute_passthrough: default_skip_fade_mute_passthrough(),
         log_level: l.log_level,
-        seek_step_secs: l.seek_step_secs, seek_step_long_secs: l.seek_step_long_secs,
+        seek_step_secs: l.seek_step_secs,
+        seek_step_long_secs: l.seek_step_long_secs,
         // No legacy equivalent — skip-fade shipped after the last flat
         // config.json shape, same treatment as launch_policy/
         // default_profile_id just below.
         skip_fade_ms: default_skip_fade_ms(),
-        scroll_speed_pct: l.scroll_speed_pct, animation_speed_pct: l.animation_speed_pct,
+        scroll_speed_pct: l.scroll_speed_pct,
+        animation_speed_pct: l.animation_speed_pct,
         ui_font_family: l.ui_font_family,
         // No legacy equivalent — this feature shipped well after the last
         // flat config.json shape, same treatment as skip_fade_ms/
@@ -1048,18 +1345,25 @@ fn migrate_legacy_config(l: LegacyConfig) -> Config {
         display_sync_trailers: false,
     };
     let profile = ProfileSettings {
-        user_id: l.user_id, server_url: l.server_url, token: l.token,
+        user_id: l.user_id,
+        server_url: l.server_url,
+        token: l.token,
         // A pre-Bonfire flat config has no identity/avatar concept at all —
         // profile.rs's own tile-building already falls back gracefully
         // (empty display_name/avatar_initial derive from user_id) for
         // exactly this case, so leaving these blank here is correct, not
         // a gap to fill in.
-        display_name: String::new(), avatar_color: String::new(), avatar_initial: String::new(),
-        is_bonfire: false, master_user_id: String::new(), has_pin: false,
+        display_name: String::new(),
+        avatar_color: String::new(),
+        avatar_initial: String::new(),
+        is_bonfire: false,
+        master_user_id: String::new(),
+        has_pin: false,
         // No legacy equivalent — Bonfire Phase 5 (cross-household groups)
         // shipped well after the last flat config.json shape; a pre-Bonfire
         // flat config has no group concept at all, so both are inert.
-        is_group_account: false, synced_via: String::new(),
+        is_group_account: false,
+        synced_via: String::new(),
         // No legacy equivalent — Bonfire's own lockoutMinutes field shipped
         // well after the last flat config.json shape, same treatment as
         // has_pin/is_bonfire above. A pre-Bonfire flat config has no PIN
@@ -1070,22 +1374,39 @@ fn migrate_legacy_config(l: LegacyConfig) -> Config {
         // well after the last flat config.json shape; nothing to migrate.
         bonfire_linked_roots: Vec::new(),
         remember_login: true,
-        sub_enabled: l.sub_enabled, sub_lang: l.sub_lang, sub_lang2: l.sub_lang2, sub_type: l.sub_type,
-        sub_scale_pct: l.sub_scale_pct, sub_pos_pct: l.sub_pos_pct,
+        sub_enabled: l.sub_enabled,
+        sub_lang: l.sub_lang,
+        sub_lang2: l.sub_lang2,
+        sub_type: l.sub_type,
+        sub_scale_pct: l.sub_scale_pct,
+        sub_pos_pct: l.sub_pos_pct,
         sub_respect_ass_styling: l.sub_respect_ass_styling,
-        sub_color: l.sub_color, sub_background: l.sub_background,
-        audio_lang: l.audio_lang, now_playing_auto_open: l.now_playing_auto_open,
-        skip_intro_mode: l.skip_intro_mode, skip_intro_secs: l.skip_intro_secs,
-        skip_recap_mode: l.skip_recap_mode, skip_recap_secs: l.skip_recap_secs,
-        skip_preview_mode: l.skip_preview_mode, skip_preview_secs: l.skip_preview_secs,
-        skip_commercial_mode: l.skip_commercial_mode, skip_commercial_secs: l.skip_commercial_secs,
-        skip_credits_mode: l.skip_credits_mode, skip_credits_secs: l.skip_credits_secs,
-        library_movies_sort: l.library_movies_sort, library_series_sort: l.library_series_sort,
-        library_collections_sort: l.library_collections_sort, library_artists_sort: l.library_artists_sort,
-        library_albums_sort: l.library_albums_sort, library_playlists_sort: l.library_playlists_sort,
+        sub_color: l.sub_color,
+        sub_background: l.sub_background,
+        audio_lang: l.audio_lang,
+        now_playing_auto_open: l.now_playing_auto_open,
+        skip_intro_mode: l.skip_intro_mode,
+        skip_intro_secs: l.skip_intro_secs,
+        skip_recap_mode: l.skip_recap_mode,
+        skip_recap_secs: l.skip_recap_secs,
+        skip_preview_mode: l.skip_preview_mode,
+        skip_preview_secs: l.skip_preview_secs,
+        skip_commercial_mode: l.skip_commercial_mode,
+        skip_commercial_secs: l.skip_commercial_secs,
+        skip_credits_mode: l.skip_credits_mode,
+        skip_credits_secs: l.skip_credits_secs,
+        library_movies_sort: l.library_movies_sort,
+        library_series_sort: l.library_series_sort,
+        library_collections_sort: l.library_collections_sort,
+        library_artists_sort: l.library_artists_sort,
+        library_albums_sort: l.library_albums_sort,
+        library_playlists_sort: l.library_playlists_sort,
         library_music_view: l.library_music_view,
-        seerr_enabled: l.seerr_enabled, seerr_url: l.seerr_url, seerr_auth_method: l.seerr_auth_method,
-        seerr_api_key: l.seerr_api_key, seerr_session_cookie: l.seerr_session_cookie,
+        seerr_enabled: l.seerr_enabled,
+        seerr_url: l.seerr_url,
+        seerr_auth_method: l.seerr_auth_method,
+        seerr_api_key: l.seerr_api_key,
+        seerr_session_cookie: l.seerr_session_cookie,
         trailer_quality: l.trailer_quality,
         discover_filter_type: l.discover_filter_type,
         discover_filter_genre_names: l.discover_filter_genre_names,
@@ -1100,7 +1421,11 @@ fn migrate_legacy_config(l: LegacyConfig) -> Config {
         request_pref_tv: RequestPreference::default(),
     };
     let active_profile_id = profile.user_id.clone();
-    Config { device, profiles: vec![profile], active_profile_id }
+    Config {
+        device,
+        profiles: vec![profile],
+        active_profile_id,
+    }
 }
 
 fn home_dir() -> std::path::PathBuf {
@@ -1159,7 +1484,13 @@ pub(crate) fn backdrop_cache_path(item_id: &str) -> Option<std::path::PathBuf> {
 // file's own module-header comment for the full "why explicit, not
 // resolved internally" reasoning.
 pub(crate) fn screen_caches_path(user_id: &str) -> Option<std::path::PathBuf> {
-    Some(xdg_cache_base().join("fjord").join("profiles").join(safe_cache_name(user_id)?).join("screen_caches.json"))
+    Some(
+        xdg_cache_base()
+            .join("fjord")
+            .join("profiles")
+            .join(safe_cache_name(user_id)?)
+            .join("screen_caches.json"),
+    )
 }
 
 /// One-time migration for existing installs: if this profile's namespaced
@@ -1175,16 +1506,26 @@ pub(crate) fn screen_caches_path(user_id: &str) -> Option<std::path::PathBuf> {
 /// `Path::exists` checks — no separate "ran once" flag needed.
 pub(crate) fn migrate_flat_caches_to_profile(user_id: &str) {
     const CACHE_FILES: &[&str] = &[
-        "home.json", "movies.json", "series.json", "collections.json",
-        "artists.json", "albums.json", "playlists.json", "screen_caches.json",
+        "home.json",
+        "movies.json",
+        "series.json",
+        "collections.json",
+        "artists.json",
+        "albums.json",
+        "playlists.json",
+        "screen_caches.json",
     ];
-    let Some(user_id) = safe_cache_name(user_id) else { return };
+    let Some(user_id) = safe_cache_name(user_id) else {
+        return;
+    };
     let old_base = xdg_cache_base().join("fjord");
-    let new_dir  = old_base.join("profiles").join(user_id);
+    let new_dir = old_base.join("profiles").join(user_id);
     for filename in CACHE_FILES {
         let old_path = old_base.join(filename);
         let new_path = new_dir.join(filename);
-        if new_path.exists() || !old_path.exists() { continue; }
+        if new_path.exists() || !old_path.exists() {
+            continue;
+        }
         if std::fs::create_dir_all(&new_dir).is_ok() {
             let _ = std::fs::rename(&old_path, &new_path);
         }
@@ -1203,15 +1544,22 @@ pub(crate) fn discover_poster_cache_dir() -> std::path::PathBuf {
 /// are built from TMDB's numeric ids; checked anyway, see safe_cache_name).
 pub(crate) fn discover_poster_cache_path(key: &str) -> Option<std::path::PathBuf> {
     let ok = (1..=64).contains(&key.len())
-        && key.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-');
+        && key
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-');
     ok.then(|| discover_poster_cache_dir().join(key))
 }
 
 pub(crate) fn fmt_resume_label(secs: f64) -> String {
     let s = secs as u64;
-    let h = s / 3600; let m = (s % 3600) / 60; let s = s % 60;
-    if h > 0 { format!("Resume from {}:{:02}:{:02}", h, m, s) }
-    else { format!("Resume from {}:{:02}", m, s) }
+    let h = s / 3600;
+    let m = (s % 3600) / 60;
+    let s = s % 60;
+    if h > 0 {
+        format!("Resume from {}:{:02}:{:02}", h, m, s)
+    } else {
+        format!("Resume from {}:{:02}", m, s)
+    }
 }
 
 // Config's on-disk `token`/`seerr_api_key`/`seerr_session_cookie` are
@@ -1292,7 +1640,10 @@ fn repair_bonfire_profile_corruption(profiles: &mut [ProfileSettings]) -> bool {
     let mut repaired = false;
     for p in profiles.iter_mut() {
         if p.is_bonfire && p.master_user_id == p.user_id {
-            tracing::warn!("load_config: repairing self-referencing Bonfire profile entry ({})", p.user_id);
+            tracing::warn!(
+                "load_config: repairing self-referencing Bonfire profile entry ({})",
+                p.user_id
+            );
             p.is_bonfire = false;
             p.master_user_id.clear();
             repaired = true;
@@ -1300,16 +1651,27 @@ fn repair_bonfire_profile_corruption(profiles: &mut [ProfileSettings]) -> bool {
     }
     let snapshot = profiles.to_vec();
     for p in profiles.iter_mut() {
-        if !p.is_bonfire || p.master_user_id.is_empty() { continue; }
-        let Some(direct_master) = snapshot.iter().find(|m| m.user_id == p.master_user_id) else { continue };
-        if !direct_master.is_bonfire { continue; } // already correct — master is a genuine root
+        if !p.is_bonfire || p.master_user_id.is_empty() {
+            continue;
+        }
+        let Some(direct_master) = snapshot.iter().find(|m| m.user_id == p.master_user_id) else {
+            continue;
+        };
+        if !direct_master.is_bonfire {
+            continue;
+        } // already correct — master is a genuine root
         let mut chain: Vec<&str> = vec![p.user_id.as_str(), direct_master.user_id.as_str()];
         let mut cursor = direct_master;
         let mut resolved = None;
         let mut cycle_includes_self = false;
         for _ in 0..5 {
-            let Some(next) = snapshot.iter().find(|m| m.user_id == cursor.master_user_id) else { break };
-            if !next.is_bonfire { resolved = Some(next.user_id.clone()); break; }
+            let Some(next) = snapshot.iter().find(|m| m.user_id == cursor.master_user_id) else {
+                break;
+            };
+            if !next.is_bonfire {
+                resolved = Some(next.user_id.clone());
+                break;
+            }
             if chain.contains(&next.user_id.as_str()) {
                 cycle_includes_self = next.user_id == p.user_id;
                 break;
@@ -1320,14 +1682,17 @@ fn repair_bonfire_profile_corruption(profiles: &mut [ProfileSettings]) -> bool {
         if let Some(real_master) = resolved {
             tracing::warn!(
                 "load_config: repairing Bonfire profile {} — was reparented under sub-profile {}, restoring real master {}",
-                p.user_id, p.master_user_id, real_master
+                p.user_id,
+                p.master_user_id,
+                real_master
             );
             p.master_user_id = real_master;
             repaired = true;
         } else if cycle_includes_self {
             tracing::warn!(
                 "load_config: profile {} is part of a Bonfire master_user_id CYCLE (master {}) with no real root reachable — demoting to a standalone account; the real household tree self-heals on the true master's next genuine login",
-                p.user_id, p.master_user_id
+                p.user_id,
+                p.master_user_id
             );
             p.is_bonfire = false;
             p.master_user_id.clear();
@@ -1391,7 +1756,9 @@ pub(crate) fn save_config(cfg: &Config) {
     static SAVE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
     let _save_guard = SAVE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let path = config_path();
-    if let Some(parent) = path.parent() { let _ = std::fs::create_dir_all(parent); }
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
     // Encrypt a copy for the on-disk form — `cfg` itself (and every other
     // reader of it in memory) stays plaintext.
     let mut on_disk = cfg.clone();
@@ -1417,10 +1784,14 @@ pub(crate) fn save_config(cfg: &Config) {
             match write_private(&tmp, json.as_bytes()) {
                 Ok(()) => {
                     if let Err(e) = std::fs::rename(&tmp, &path) {
-                        tracing::error!("save_config: rename {tmp:?} -> {path:?} failed: {e:#} — settings NOT saved");
+                        tracing::error!(
+                            "save_config: rename {tmp:?} -> {path:?} failed: {e:#} — settings NOT saved"
+                        );
                     }
                 }
-                Err(e) => tracing::error!("save_config: write to {tmp:?} failed: {e:#} — settings NOT saved"),
+                Err(e) => tracing::error!(
+                    "save_config: write to {tmp:?} failed: {e:#} — settings NOT saved"
+                ),
             }
         }
         Err(e) => tracing::error!("save_config: serialization failed: {e:#} — settings NOT saved"),
@@ -1466,12 +1837,12 @@ fn set_owner_only_permissions(_path: &std::path::Path) {}
 /// which are independently refreshed per library type.
 #[derive(Serialize, Deserialize)]
 pub(crate) struct ScreenCachesFile {
-    pub item_detail:        BoundedCache<MediaItem>,
-    pub similar_items:      BoundedCache<Vec<MediaItem>>,
-    pub boxset_items:       BoundedCache<Vec<MediaItem>>,
-    pub artist_albums:      BoundedCache<Vec<MediaItem>>,
+    pub item_detail: BoundedCache<MediaItem>,
+    pub similar_items: BoundedCache<Vec<MediaItem>>,
+    pub boxset_items: BoundedCache<Vec<MediaItem>>,
+    pub artist_albums: BoundedCache<Vec<MediaItem>>,
     pub person_filmography: BoundedCache<Vec<MediaItem>>,
-    pub container_tracks:   BoundedCache<Vec<MediaItem>>,
+    pub container_tracks: BoundedCache<Vec<MediaItem>>,
     // Jellyfin person id -> TMDB person id, `None` meaning "already tried,
     // no confident match" (worth persisting since a miss still costs a
     // real fuzzy name-search fallback — Person "Other Work" row, 2026-07-29,
@@ -1504,20 +1875,22 @@ pub(crate) fn save_screen_caches(state: &Arc<std::sync::Mutex<FjordState>>, user
     let file = {
         let s = state.lock().unwrap();
         ScreenCachesFile {
-            item_detail:        s.item_detail_cache.clone(),
-            similar_items:      s.similar_items_cache.clone(),
-            boxset_items:       s.boxset_items_cache.clone(),
-            artist_albums:      s.artist_albums_cache.clone(),
+            item_detail: s.item_detail_cache.clone(),
+            similar_items: s.similar_items_cache.clone(),
+            boxset_items: s.boxset_items_cache.clone(),
+            artist_albums: s.artist_albums_cache.clone(),
             person_filmography: s.person_filmography_cache.clone(),
-            container_tracks:   s.container_tracks_cache.clone(),
-            person_tmdb_id:     s.person_tmdb_id_cache.clone(),
+            container_tracks: s.container_tracks_cache.clone(),
+            person_tmdb_id: s.person_tmdb_id_cache.clone(),
         }
     };
     let Some(path) = screen_caches_path(user_id) else {
         tracing::warn!("save_screen_caches: not a valid user id for a cache folder — not saved");
         return;
     };
-    if let Some(parent) = path.parent() { let _ = std::fs::create_dir_all(parent); }
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
     // 2026-08-28 logging audit — same silent-failure shape save_config had
     // (this file can reach ~1.3MB after a library prewarm, and this runs
     // on a 60s repeating timer for the whole session).
@@ -1527,7 +1900,9 @@ pub(crate) fn save_screen_caches(state: &Arc<std::sync::Mutex<FjordState>>, user
             match std::fs::write(&tmp, &json) {
                 Ok(()) => {
                     if let Err(e) = std::fs::rename(&tmp, &path) {
-                        tracing::error!("save_screen_caches: rename {tmp:?} -> {path:?} failed: {e:#}");
+                        tracing::error!(
+                            "save_screen_caches: rename {tmp:?} -> {path:?} failed: {e:#}"
+                        );
                     }
                 }
                 Err(e) => tracing::error!("save_screen_caches: write to {tmp:?} failed: {e:#}"),
@@ -1538,14 +1913,21 @@ pub(crate) fn save_screen_caches(state: &Arc<std::sync::Mutex<FjordState>>, user
 }
 
 pub(crate) fn ensure_device_id(cfg: &mut Config) {
-    if !cfg.device.device_id.is_empty() { return; }
+    if !cfg.device.device_id.is_empty() {
+        return;
+    }
     cfg.device.device_id = std::fs::read_to_string("/proc/sys/kernel/random/uuid")
         .unwrap_or_default()
         .trim()
         .to_string();
     if cfg.device.device_id.is_empty() {
-        cfg.device.device_id = format!("fjord-{:016x}", std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_nanos());
+        cfg.device.device_id = format!(
+            "fjord-{:016x}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos()
+        );
     }
     save_config(cfg);
     tracing::info!("generated device id: {}", cfg.device.device_id);
@@ -1571,7 +1953,9 @@ pub(crate) fn load_keybindings() -> Keybindings {
 /// Save the full effective keybindings to `~/.config/fjord/keybindings.json`.
 pub(crate) fn save_keybindings(kb: &Keybindings) {
     let path = keybindings_path();
-    if let Some(parent) = path.parent() { let _ = std::fs::create_dir_all(parent); }
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
     // 2026-08-28 logging audit — same silent-failure shape save_config
     // had: a rebind that silently failed to persist would read as "my
     // rebind didn't save" with nothing in the log to explain why.
@@ -1587,7 +1971,9 @@ pub(crate) fn save_keybindings(kb: &Keybindings) {
 
 // ── screen-open caches (Part 2 of the loading-consolidation plan) ────────────
 
-fn default_cap() -> usize { 40 }
+fn default_cap() -> usize {
+    40
+}
 
 /// FIFO cache: at most `cap` entries, oldest evicted first. Used to skip the
 /// network round-trip for screen-open fetches (get_item_detail /
@@ -1635,10 +2021,10 @@ fn default_cap() -> usize { 40 }
 /// "shared reference" semantic being lost on a round trip through JSON).
 #[derive(Serialize, Deserialize, Clone, Default)]
 struct BoundedCacheInner<V> {
-    map:   std::collections::HashMap<String, V>,
+    map: std::collections::HashMap<String, V>,
     order: std::collections::VecDeque<String>,
     #[serde(default = "default_cap")]
-    cap:   usize,
+    cap: usize,
 }
 
 // `transparent`: without it, this would serialize as `{"inner": {...}}`
@@ -1659,7 +2045,13 @@ pub(crate) struct BoundedCache<V> {
 
 impl<V: Clone> BoundedCache<V> {
     pub(crate) fn new(cap: usize) -> Self {
-        Self { inner: std::sync::Arc::new(BoundedCacheInner { map: Default::default(), order: Default::default(), cap }) }
+        Self {
+            inner: std::sync::Arc::new(BoundedCacheInner {
+                map: Default::default(),
+                order: Default::default(),
+                cap,
+            }),
+        }
     }
     pub(crate) fn get(&self, key: &str) -> Option<V> {
         self.inner.map.get(key).cloned()
@@ -1676,7 +2068,9 @@ impl<V: Clone> BoundedCache<V> {
         let inner = std::sync::Arc::make_mut(&mut self.inner);
         if !inner.map.contains_key(&key) {
             inner.order.push_back(key.clone());
-            if inner.order.len() > inner.cap && let Some(oldest) = inner.order.pop_front() {
+            if inner.order.len() > inner.cap
+                && let Some(oldest) = inner.order.pop_front()
+            {
                 inner.map.remove(&oldest);
             }
         }
@@ -1714,7 +2108,12 @@ impl<V: Clone> BoundedCache<V> {
     /// prewarmed library would repeat the prewarm's full cost on every login.
     pub(crate) fn recent_keys(&self, n: usize) -> Vec<String> {
         let len = self.inner.order.len();
-        self.inner.order.iter().skip(len.saturating_sub(n)).cloned().collect()
+        self.inner
+            .order
+            .iter()
+            .skip(len.saturating_sub(n))
+            .cloned()
+            .collect()
     }
 }
 
@@ -1727,33 +2126,33 @@ impl<V: Clone> BoundedCache<V> {
 #[derive(Default, Clone)]
 pub(crate) struct RememberedTracks {
     pub audio_lang: Option<String>,
-    pub sub_lang:   Option<String>,
+    pub sub_lang: Option<String>,
 }
 
 // ── app state (library + settings) ───────────────────────────────────────────
 
 pub(crate) struct FjordState {
-    pub config:               Config,          // authoritative settings + auth; saved on change
-    pub client:               Option<Arc<JellyfinClient>>,
+    pub config: Config, // authoritative settings + auth; saved on change
+    pub client: Option<Arc<JellyfinClient>>,
     // PIN digits typed so far in ProfilePickerScreen's PIN-entry sub-state
     // (Bonfire Phase 1, step 6, 2026-08-09) — deliberately never round-tripped
     // through a Slint string property (see AppState.profile-pin-len's own
     // doc comment in app_state.slint); cleared on every fresh PIN-entry open
     // and on a successful/failed switch attempt alike.
-    pub profile_pin_buffer:   String,
+    pub profile_pin_buffer: String,
     // Same discipline, for ProfileEditScreen's two PIN pads (Bonfire Phase
     // 2, 2026-08-09) — the profile's own new/changed PIN, and the
     // household master's own confirmation PIN. Two separate buffers, not
     // one reused for both: they're semantically different values (one
     // profile's new PIN vs. the account authorizing the change), and
     // conflating them would risk sending the wrong one to Bonfire's API.
-    pub profile_edit_pin_buffer:        String,
+    pub profile_edit_pin_buffer: String,
     pub profile_edit_master_pin_buffer: String,
     // The last bonfire_list_profiles() result ManageProfilesScreen showed —
     // kept around purely so selecting a tile can resolve back to the full
     // BonfireProfile (parental rating, tags, enabled libraries, etc.) it
     // needs to pre-fill ProfileEditScreen with, without a second fetch.
-    pub manage_profiles_cache:          Vec<fjord_api::models::BonfireProfile>,
+    pub manage_profiles_cache: Vec<fjord_api::models::BonfireProfile>,
     // LAN-bypass PIN staleness fix (2026-09-04) — session-only, never
     // persisted. `ProfileSettings.has_pin` (the persisted field) is only
     // ever as fresh as the last sync_bonfire_subprofiles run; Bonfire's
@@ -1768,7 +2167,7 @@ pub(crate) struct FjordState {
     // decision that has a live client available prefers this over the
     // persisted has_pin, falling back to it when no live value has been
     // captured yet (e.g. the very first picker before any sync has run).
-    pub live_requires_pin:              std::collections::HashMap<String, bool>,
+    pub live_requires_pin: std::collections::HashMap<String, bool>,
     // Plugin names installed on the server (Bonfire Phase 1, 2026-08-09) —
     // fetched once per login/auto-login (GET /Plugins) alongside the
     // existing home-data/series/system-info join. Two consumers: Bonfire's
@@ -1779,20 +2178,20 @@ pub(crate) struct FjordState {
     // couldn't be verified against a real server in this sandboxed
     // environment, unlike most other API surfaces this project checks
     // directly. Session-scoped, cleared by reset_session_state.
-    pub available_plugins:    std::collections::HashSet<String>,
-    pub keybindings:          Keybindings,
-    pub all_movies:           Vec<MediaItem>,
-    pub all_series:           Vec<MediaItem>,
-    pub all_collections:      Vec<MediaItem>,
-    pub all_artists:          Vec<MediaItem>,
-    pub all_albums:           Vec<MediaItem>,
-    pub all_playlists:        Vec<MediaItem>,
-    pub movies_fetched:       bool,
-    pub collections_fetched:  bool,
-    pub artists_fetched:      bool,
-    pub albums_fetched:       bool,
-    pub playlists_fetched:    bool,
-    pub filtered_items:       Vec<MediaItem>,
+    pub available_plugins: std::collections::HashSet<String>,
+    pub keybindings: Keybindings,
+    pub all_movies: Vec<MediaItem>,
+    pub all_series: Vec<MediaItem>,
+    pub all_collections: Vec<MediaItem>,
+    pub all_artists: Vec<MediaItem>,
+    pub all_albums: Vec<MediaItem>,
+    pub all_playlists: Vec<MediaItem>,
+    pub movies_fetched: bool,
+    pub collections_fetched: bool,
+    pub artists_fetched: bool,
+    pub albums_fetched: bool,
+    pub playlists_fetched: bool,
+    pub filtered_items: Vec<MediaItem>,
     // True once the unfiltered (query="") Browse All list has been built this
     // session — mirrors movies_fetched/discover_landing_fetched's own "fetch
     // once, not on every arrival" shape. Real gap this closes: sidebar_nav
@@ -1802,24 +2201,24 @@ pub(crate) struct FjordState {
     // Invalidated (not by this flag directly, but the same effect) whenever
     // all_movies/all_series change via a WS LibraryChanged event, so the list
     // doesn't go stale for the rest of the session — see ws.rs.
-    pub browse_populated:     bool,
-    pub series_open_id:         String,
-    pub series_season_ids:      Vec<String>,
-    pub series_episode_items:   Vec<MediaItem>,
-    pub series_episode_cache:   std::collections::HashMap<String, Vec<MediaItem>>,
+    pub browse_populated: bool,
+    pub series_open_id: String,
+    pub series_season_ids: Vec<String>,
+    pub series_episode_items: Vec<MediaItem>,
+    pub series_episode_cache: std::collections::HashMap<String, Vec<MediaItem>>,
     pub series_season_generation: u64,
-    pub last_nw_mov_refresh:    Option<Instant>,
-    pub last_nw_tv_refresh:   Option<Instant>,
-    pub audio_devices:        Vec<(String, String)>,  // (mpv name, description)
-    pub display_sync_outputs: Vec<(String, String)>,  // (kscreen-doctor connector name, display label incl. "(Primary)")
-    pub system_fonts:         Vec<(String, String)>,  // (value, display) — see fetch_system_fonts
-    pub movie_collections:    std::collections::HashMap<String, (String, String)>, // movie_id → (boxset_id, boxset_name)
+    pub last_nw_mov_refresh: Option<Instant>,
+    pub last_nw_tv_refresh: Option<Instant>,
+    pub audio_devices: Vec<(String, String)>, // (mpv name, description)
+    pub display_sync_outputs: Vec<(String, String)>, // (kscreen-doctor connector name, display label incl. "(Primary)")
+    pub system_fonts: Vec<(String, String)>,         // (value, display) — see fetch_system_fonts
+    pub movie_collections: std::collections::HashMap<String, (String, String)>, // movie_id → (boxset_id, boxset_name)
     // Per-series audio/subtitle language remembered from a manual S/A panel
     // pick (controls.rs::on_commit_panel_selection writes; playback.rs's
     // track auto-select reads, preferring it over Config.sub_lang/audio_lang
     // for that series only). In-memory only — session-scoped like
     // series_episode_cache, not persisted to disk; cleared on sign-out.
-    pub remembered_tracks:    std::collections::HashMap<String, RememberedTracks>,
+    pub remembered_tracks: std::collections::HashMap<String, RememberedTracks>,
     // A rebind capture (Key Bindings screen) that collided with an existing
     // binding for a DIFFERENT action, awaiting the user's confirm/cancel on
     // the resulting dialog (2026-08-08) — keys.rs::rebind_action/
@@ -1827,7 +2226,7 @@ pub(crate) struct FjordState {
     // never persisted (the collision is resolved or abandoned within the
     // same session before it would ever matter).
     pub pending_keybind_rebind: Option<crate::keys::PendingKeybindRebind>,
-    pub ws_abort:             Option<tokio::task::AbortHandle>, // abort to stop the WS reconnect loop on sign-out
+    pub ws_abort: Option<tokio::task::AbortHandle>, // abort to stop the WS reconnect loop on sign-out
     // Live connection-health signal (2026-08-28, direct user question:
     // "is there not another way to detect if there is a genuine
     // connection issue" — prompted by the stall-recovery retry-budget
@@ -1846,16 +2245,16 @@ pub(crate) struct FjordState {
     // connect and false the instant the read loop exits/errors (before
     // the reconnect attempt); ws_last_keepalive_at is stamped on every
     // successful keep-alive ack.
-    pub ws_connected:         bool,
+    pub ws_connected: bool,
     pub ws_last_keepalive_at: Option<Instant>,
     // Screen-open caches (Part 2, see BoundedCache doc comment above). Keyed by
     // item id (or the relevant container id — boxset/artist/person/album/playlist).
-    pub item_detail_cache:        BoundedCache<MediaItem>,       // get_item_detail — shared by all 7 screens
-    pub similar_items_cache:      BoundedCache<Vec<MediaItem>>,  // get_similar_items — detail.rs + series.rs
-    pub boxset_items_cache:       BoundedCache<Vec<MediaItem>>,  // get_boxset_items — detail.rs + collection.rs
-    pub artist_albums_cache:      BoundedCache<Vec<MediaItem>>,  // get_artist_albums — artist.rs
-    pub person_filmography_cache: BoundedCache<Vec<MediaItem>>,  // get_person_filmography — person.rs
-    pub container_tracks_cache:   BoundedCache<Vec<MediaItem>>,  // get_album_tracks / get_playlist_items — album.rs
+    pub item_detail_cache: BoundedCache<MediaItem>, // get_item_detail — shared by all 7 screens
+    pub similar_items_cache: BoundedCache<Vec<MediaItem>>, // get_similar_items — detail.rs + series.rs
+    pub boxset_items_cache: BoundedCache<Vec<MediaItem>>, // get_boxset_items — detail.rs + collection.rs
+    pub artist_albums_cache: BoundedCache<Vec<MediaItem>>, // get_artist_albums — artist.rs
+    pub person_filmography_cache: BoundedCache<Vec<MediaItem>>, // get_person_filmography — person.rs
+    pub container_tracks_cache: BoundedCache<Vec<MediaItem>>, // get_album_tracks / get_playlist_items — album.rs
     // Jellyfin person id -> TMDB person id (None = already tried, no match) —
     // Person "Other Work" row, 2026-07-29 (Deep Seerr integration). Persisted
     // via ScreenCachesFile (see its own doc comment) unlike the session-only
@@ -1870,7 +2269,8 @@ pub(crate) struct FjordState {
     // Keeps poster_path alongside each meta (same shape `build_filtered_metas`
     // returns) so a same-session cache hit can still re-fetch/redisplay
     // posters, not just the text data.
-    pub person_other_work_cache: BoundedCache<Vec<(crate::discover::DiscoverCardMeta, Option<String>)>>,
+    pub person_other_work_cache:
+        BoundedCache<Vec<(crate::discover::DiscoverCardMeta, Option<String>)>>,
     // TMDB person id (as string) -> matching LOCAL Jellyfin Person id, if any
     // (None = searched, no confident match) — 2026-08-13, opening person
     // detail from a Discover-sourced cast member (RequestDetailScreen's
@@ -1899,13 +2299,13 @@ pub(crate) struct FjordState {
     // AppState-updating timer (main.rs::wire_prewarm_progress_timer), written
     // by prewarm.rs's two spawn_*_prewarm functions.
     pub prewarm_metadata_running: bool,
-    pub prewarm_metadata_total:   usize,
-    pub prewarm_metadata_done:    usize,
+    pub prewarm_metadata_total: usize,
+    pub prewarm_metadata_done: usize,
     pub prewarm_metadata_summary: String,
-    pub prewarm_image_running:    bool,
-    pub prewarm_image_total:      usize,
-    pub prewarm_image_done:       usize,
-    pub prewarm_image_summary:    String,
+    pub prewarm_image_running: bool,
+    pub prewarm_image_total: usize,
+    pub prewarm_image_done: usize,
+    pub prewarm_image_summary: String,
     // Seerr integration (Settings → Integrations, discover.rs) — built from
     // Config.seerr_* at startup (if enabled + a valid cookie/key is present)
     // and rebuilt after every successful ConnectSeerrScreen flow. None means
@@ -1963,7 +2363,8 @@ pub(crate) struct FjordState {
     // cap (a much older request might still show stale until it ages into
     // that window) - a deliberate, cheap tradeoff over a full uncapped
     // GET /request sweep, confirmed with the user before implementing.
-    pub discover_known_requests: std::collections::HashMap<(&'static str, String), crate::discover::KnownRequest>,
+    pub discover_known_requests:
+        std::collections::HashMap<(&'static str, String), crate::discover::KnownRequest>,
     // Watchlist + Release Calendar (2026-07-18). discover_watchlist_ids
     // mirrors discover_known_requests' own (item_type, tmdb-id) key shape —
     // populated by ensure_discover_watchlist/refresh_watchlist, consulted
@@ -2166,18 +2567,32 @@ impl FjordState {
     pub(crate) fn new() -> Self {
         Self {
             config: Config::default(),
-            client: None, available_plugins: std::collections::HashSet::new(),
+            client: None,
+            available_plugins: std::collections::HashSet::new(),
             profile_pin_buffer: String::new(),
-            profile_edit_pin_buffer: String::new(), profile_edit_master_pin_buffer: String::new(),
+            profile_edit_pin_buffer: String::new(),
+            profile_edit_master_pin_buffer: String::new(),
             manage_profiles_cache: vec![],
             live_requires_pin: std::collections::HashMap::new(),
             keybindings: load_keybindings(),
-            all_movies: vec![], all_series: vec![], all_collections: vec![], all_artists: vec![], all_albums: vec![],
+            all_movies: vec![],
+            all_series: vec![],
+            all_collections: vec![],
+            all_artists: vec![],
+            all_albums: vec![],
             all_playlists: vec![],
-            movies_fetched: false, collections_fetched: false, artists_fetched: false, albums_fetched: false,
-            playlists_fetched: false, filtered_items: vec![], browse_populated: false,
-            series_open_id: String::new(), series_season_ids: vec![], series_episode_items: vec![],
-            series_episode_cache: std::collections::HashMap::new(), series_season_generation: 0,
+            movies_fetched: false,
+            collections_fetched: false,
+            artists_fetched: false,
+            albums_fetched: false,
+            playlists_fetched: false,
+            filtered_items: vec![],
+            browse_populated: false,
+            series_open_id: String::new(),
+            series_season_ids: vec![],
+            series_episode_items: vec![],
+            series_episode_cache: std::collections::HashMap::new(),
+            series_season_generation: 0,
             last_nw_mov_refresh: None,
             last_nw_tv_refresh: None,
             audio_devices: vec![],
@@ -2187,25 +2602,26 @@ impl FjordState {
             remembered_tracks: std::collections::HashMap::new(),
             pending_keybind_rebind: None,
             ws_abort: None,
-            ws_connected: false, ws_last_keepalive_at: None,
-            item_detail_cache:        BoundedCache::new(40),
-            similar_items_cache:      BoundedCache::new(40),
-            boxset_items_cache:       BoundedCache::new(40),
-            artist_albums_cache:      BoundedCache::new(40),
+            ws_connected: false,
+            ws_last_keepalive_at: None,
+            item_detail_cache: BoundedCache::new(40),
+            similar_items_cache: BoundedCache::new(40),
+            boxset_items_cache: BoundedCache::new(40),
+            artist_albums_cache: BoundedCache::new(40),
             person_filmography_cache: BoundedCache::new(40),
-            container_tracks_cache:   BoundedCache::new(40),
-            person_tmdb_id_cache:       BoundedCache::new(100),
-            person_other_work_cache:    BoundedCache::new(40),
+            container_tracks_cache: BoundedCache::new(40),
+            person_tmdb_id_cache: BoundedCache::new(100),
+            person_other_work_cache: BoundedCache::new(40),
             local_person_by_tmdb_cache: BoundedCache::new(100),
             person_discover_resolving: None,
             prewarm_metadata_running: false,
-            prewarm_metadata_total:   0,
-            prewarm_metadata_done:    0,
+            prewarm_metadata_total: 0,
+            prewarm_metadata_done: 0,
             prewarm_metadata_summary: String::new(),
-            prewarm_image_running:    false,
-            prewarm_image_total:      0,
-            prewarm_image_done:       0,
-            prewarm_image_summary:    String::new(),
+            prewarm_image_running: false,
+            prewarm_image_total: 0,
+            prewarm_image_done: 0,
+            prewarm_image_summary: String::new(),
             seerr_client: None,
             discover_landing_fetched: false,
             discover_search_page: 0,
@@ -2252,65 +2668,94 @@ impl FjordState {
     }
 
     pub(crate) fn player_config(&self) -> PlayerConfig {
-        let c  = &self.config.device;
+        let c = &self.config.device;
         let cp = self.config.active();
         PlayerConfig {
-            audio_device:            c.audio_device.clone(),
+            audio_device: c.audio_device.clone(),
             audio_device_passthrough: c.audio_device_passthrough.clone(),
-            audio_channels:           c.audio_channels.clone(),
-            audio_spdif_formats:    if c.audio_spdif {
-                                        let mut f = Vec::new();
-                                        if c.spdif_ac3    { f.push("ac3"); }
-                                        if c.spdif_eac3   { f.push("eac3"); }
-                                        if c.spdif_dts    { f.push("dts"); }
-                                        if c.spdif_dts_hd { f.push("dts-hd"); }
-                                        if c.spdif_truehd { f.push("truehd"); }
-                                        f.join(",")
-                                    } else { String::new() },
-            hwdec:                  c.hwdec.clone(),
-            vf:                     vf_mpv_value(&c.vf),
-            video_sync:             c.video_sync.clone(),
-            opengl_early_flush:     c.opengl_early_flush,
-            video_latency_hacks:    c.video_latency_hacks,
-            dither_off:             c.video_dither_off,
-            interpolation:          c.interpolation,
-            tscale:                 c.tscale.clone(),
-            tone_mapping:           c.tone_mapping.clone(),
+            audio_channels: c.audio_channels.clone(),
+            audio_spdif_formats: if c.audio_spdif {
+                let mut f = Vec::new();
+                if c.spdif_ac3 {
+                    f.push("ac3");
+                }
+                if c.spdif_eac3 {
+                    f.push("eac3");
+                }
+                if c.spdif_dts {
+                    f.push("dts");
+                }
+                if c.spdif_dts_hd {
+                    f.push("dts-hd");
+                }
+                if c.spdif_truehd {
+                    f.push("truehd");
+                }
+                f.join(",")
+            } else {
+                String::new()
+            },
+            hwdec: c.hwdec.clone(),
+            vf: vf_mpv_value(&c.vf),
+            video_sync: c.video_sync.clone(),
+            opengl_early_flush: c.opengl_early_flush,
+            video_latency_hacks: c.video_latency_hacks,
+            dither_off: c.video_dither_off,
+            interpolation: c.interpolation,
+            tscale: c.tscale.clone(),
+            tone_mapping: c.tone_mapping.clone(),
             target_colorspace_hint: c.target_colorspace_hint,
-            deinterlace:            c.deinterlace.clone(),
-            cache_secs:             c.cache_secs,
-            cache_max_mb:           c.cache_max_mb,
-            start_position_secs:    None,
-            sub_scale:              cp.sub_scale_pct as f64 / 100.0,
-            sub_pos:                cp.sub_pos_pct as i64,
+            deinterlace: c.deinterlace.clone(),
+            cache_secs: c.cache_secs,
+            cache_max_mb: c.cache_max_mb,
+            start_position_secs: None,
+            sub_scale: cp.sub_scale_pct as f64 / 100.0,
+            sub_pos: cp.sub_pos_pct as i64,
             sub_respect_ass_styling: cp.sub_respect_ass_styling,
-            sub_color:              sub_color_hex(&cp.sub_color).to_string(),
-            sub_background:         cp.sub_background,
-            ytdl_format:            None, // trailer-only; set by the caller (main.rs) when playing one
+            sub_color: sub_color_hex(&cp.sub_color).to_string(),
+            sub_background: cp.sub_background,
+            ytdl_format: None, // trailer-only; set by the caller (main.rs) when playing one
         }
     }
 
     // Update user state (played / is_favorite) in all canonical Rust-side vecs.
     // Call this before patching Slint models so any model rebuild reads correct data.
-    pub(crate) fn update_item_user_state(&mut self, id: &str, played: Option<bool>, fav: Option<bool>) {
+    pub(crate) fn update_item_user_state(
+        &mut self,
+        id: &str,
+        played: Option<bool>,
+        fav: Option<bool>,
+    ) {
         let patch = |item: &mut MediaItem| {
             if item.id == id {
-                if let Some(p) = played { item.user_data.played      = p; }
-                if let Some(f) = fav    { item.user_data.is_favorite = f; }
+                if let Some(p) = played {
+                    item.user_data.played = p;
+                }
+                if let Some(f) = fav {
+                    item.user_data.is_favorite = f;
+                }
             }
         };
         for list in [
-            &mut self.all_movies, &mut self.all_series, &mut self.all_collections,
-            &mut self.all_artists, &mut self.all_albums, &mut self.all_playlists,
-            &mut self.filtered_items, &mut self.series_episode_items,
+            &mut self.all_movies,
+            &mut self.all_series,
+            &mut self.all_collections,
+            &mut self.all_artists,
+            &mut self.all_albums,
+            &mut self.all_playlists,
+            &mut self.filtered_items,
+            &mut self.series_episode_items,
         ] {
-            for item in list.iter_mut() { patch(item); }
+            for item in list.iter_mut() {
+                patch(item);
+            }
         }
         for eps in self.series_episode_cache.values_mut() {
-            for item in eps.iter_mut() { patch(item); }
+            for item in eps.iter_mut() {
+                patch(item);
+            }
         }
     }
-
 }
 
 /// Replace-if-present-else-append by id. Used by the WS LibraryChanged/UserDataChanged
@@ -2318,7 +2763,7 @@ impl FjordState {
 pub(crate) fn upsert_media_item(list: &mut Vec<MediaItem>, item: MediaItem) {
     match list.iter_mut().find(|i| i.id == item.id) {
         Some(existing) => *existing = item,
-        None           => list.push(item),
+        None => list.push(item),
     }
 }
 
@@ -2337,28 +2782,53 @@ mod tests {
         std::fs::write(&p, b"old").unwrap();
         std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o644)).unwrap();
         write_private(&p, b"new").unwrap();
-        assert_eq!(std::fs::metadata(&p).unwrap().permissions().mode() & 0o777, 0o600);
+        assert_eq!(
+            std::fs::metadata(&p).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
         assert_eq!(std::fs::read(&p).unwrap(), b"new");
         let fresh = dir.join("fresh.json");
         write_private(&fresh, b"x").unwrap();
-        assert_eq!(std::fs::metadata(&fresh).unwrap().permissions().mode() & 0o777, 0o600);
+        assert_eq!(
+            std::fs::metadata(&fresh).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn cache_names_must_be_jellyfin_ids() {
-        assert_eq!(safe_cache_name("91aecc28b97a57839f4836ba15b6e04b"), Some("91aecc28b97a57839f4836ba15b6e04b"));
-        assert_eq!(safe_cache_name("91AECC28B97A57839F4836BA15B6E04B"), Some("91AECC28B97A57839F4836BA15B6E04B"));
+        assert_eq!(
+            safe_cache_name("91aecc28b97a57839f4836ba15b6e04b"),
+            Some("91aecc28b97a57839f4836ba15b6e04b")
+        );
+        assert_eq!(
+            safe_cache_name("91AECC28B97A57839F4836BA15B6E04B"),
+            Some("91AECC28B97A57839F4836BA15B6E04B")
+        );
         for bad in [
-            "", "../../.bashrc", "/home/user/.config/autostart/x.desktop", "a/b",
+            "",
+            "../../.bashrc",
+            "/home/user/.config/autostart/x.desktop",
+            "a/b",
             "91aecc28-b97a-5783-9f48-36ba15b6e04b", // dashed GUID form
-            "91aecc28b97a57839f4836ba15b6e04", "91aecc28b97a57839f4836ba15b6e04bb", "91aecc28b97a57839f4836ba15b6e04g",
-            "..\\..\\x", "91aecc28b97a57839f4836ba15b6e0/.",
+            "91aecc28b97a57839f4836ba15b6e04",
+            "91aecc28b97a57839f4836ba15b6e04bb",
+            "91aecc28b97a57839f4836ba15b6e04g",
+            "..\\..\\x",
+            "91aecc28b97a57839f4836ba15b6e0/.",
         ] {
             assert_eq!(safe_cache_name(bad), None, "{bad:?}");
-            assert!(poster_cache_path(bad).is_none() && backdrop_cache_path(bad).is_none(), "{bad:?}");
+            assert!(
+                poster_cache_path(bad).is_none() && backdrop_cache_path(bad).is_none(),
+                "{bad:?}"
+            );
         }
-        assert!(poster_cache_path("91aecc28b97a57839f4836ba15b6e04b").unwrap().ends_with("posters/91aecc28b97a57839f4836ba15b6e04b"));
+        assert!(
+            poster_cache_path("91aecc28b97a57839f4836ba15b6e04b")
+                .unwrap()
+                .ends_with("posters/91aecc28b97a57839f4836ba15b6e04b")
+        );
         // Discover keys: lowercase, digits, dashes only.
         assert!(discover_poster_cache_path("movie-12345").is_some());
         assert!(discover_poster_cache_path("season-missing-1399-2").is_some());
@@ -2395,10 +2865,34 @@ mod tests {
     #[test]
     fn repairs_bonfire_master_user_id_cycle() {
         let mut profiles = vec![
-            ProfileSettings { user_id: "root".into(), display_name: "Root".into(), is_bonfire: true, master_user_id: "sub-a".into(), ..Default::default() },
-            ProfileSettings { user_id: "sub-a".into(), display_name: "SubA".into(), is_bonfire: true, master_user_id: "root".into(), ..Default::default() },
-            ProfileSettings { user_id: "sub-b".into(), display_name: "SubB".into(), is_bonfire: true, master_user_id: "sub-a".into(), ..Default::default() },
-            ProfileSettings { user_id: "other".into(), display_name: "Other".into(), is_bonfire: false, master_user_id: "".into(), ..Default::default() },
+            ProfileSettings {
+                user_id: "root".into(),
+                display_name: "Root".into(),
+                is_bonfire: true,
+                master_user_id: "sub-a".into(),
+                ..Default::default()
+            },
+            ProfileSettings {
+                user_id: "sub-a".into(),
+                display_name: "SubA".into(),
+                is_bonfire: true,
+                master_user_id: "root".into(),
+                ..Default::default()
+            },
+            ProfileSettings {
+                user_id: "sub-b".into(),
+                display_name: "SubB".into(),
+                is_bonfire: true,
+                master_user_id: "sub-a".into(),
+                ..Default::default()
+            },
+            ProfileSettings {
+                user_id: "other".into(),
+                display_name: "Other".into(),
+                is_bonfire: false,
+                master_user_id: "".into(),
+                ..Default::default()
+            },
         ];
         assert!(repair_bonfire_profile_corruption(&mut profiles));
         let find = |id: &str| profiles.iter().find(|p| p.user_id == id).unwrap();
@@ -2429,15 +2923,30 @@ mod tests {
     #[test]
     fn leaves_group_account_entries_untouched() {
         let mut profiles = vec![
-            ProfileSettings { user_id: "me".into(), display_name: "Me".into(), is_bonfire: false, ..Default::default() },
             ProfileSettings {
-                user_id: "friend-master".into(), display_name: "Friend".into(),
-                is_bonfire: true, is_group_account: true, master_user_id: String::new(),
-                synced_via: "me".into(), ..Default::default()
+                user_id: "me".into(),
+                display_name: "Me".into(),
+                is_bonfire: false,
+                ..Default::default()
+            },
+            ProfileSettings {
+                user_id: "friend-master".into(),
+                display_name: "Friend".into(),
+                is_bonfire: true,
+                is_group_account: true,
+                master_user_id: String::new(),
+                synced_via: "me".into(),
+                ..Default::default()
             },
             // A genuine sub-profile of "me", for good measure — confirms the
             // repair pass still treats it normally alongside a group account.
-            ProfileSettings { user_id: "kid".into(), display_name: "Kid".into(), is_bonfire: true, master_user_id: "me".into(), ..Default::default() },
+            ProfileSettings {
+                user_id: "kid".into(),
+                display_name: "Kid".into(),
+                is_bonfire: true,
+                master_user_id: "me".into(),
+                ..Default::default()
+            },
         ];
         assert!(!repair_bonfire_profile_corruption(&mut profiles));
         let find = |id: &str| profiles.iter().find(|p| p.user_id == id).unwrap();

@@ -7,5 +7,5 @@ use serde::Deserialize;
 #[serde(rename_all = "PascalCase")]
 pub struct SystemInfo {
     pub server_name: String,
-    pub version:     String,
+    pub version: String,
 }

@@ -64,14 +64,20 @@ pub struct BonfireProfile {
     // exactly what surfaced this whole struct's casing bug in the first
     // place, see this file's own header comment). Currently unread anywhere
     // in fjord-app, so 0 for a sub-profile is harmless.
-    #[serde(default)] pub max_sub_profiles: i64,
-    #[serde(default)] pub enabled_folders: Vec<String>,
-    #[serde(default)] pub blocked_tags: Vec<String>,
-    #[serde(default)] pub allowed_tags: Vec<String>,
+    #[serde(default)]
+    pub max_sub_profiles: i64,
+    #[serde(default)]
+    pub enabled_folders: Vec<String>,
+    #[serde(default)]
+    pub blocked_tags: Vec<String>,
+    #[serde(default)]
+    pub allowed_tags: Vec<String>,
     pub bypass_pin_on_local_network: bool,
-    #[serde(default)] pub allowed_device_ids: Vec<String>,
+    #[serde(default)]
+    pub allowed_device_ids: Vec<String>,
     pub is_bonfire: bool,
-    #[serde(default)] pub profile_image: String,
+    #[serde(default)]
+    pub profile_image: String,
     pub master_user_id: String,
 }
 
@@ -94,18 +100,29 @@ pub struct SwitchResult {
 #[serde(rename_all = "PascalCase")]
 pub struct CreateProfileRequest {
     pub profile_name: String,
-    #[serde(skip_serializing_if = "Option::is_none")] pub pin: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")] pub avatar_color: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")] pub max_parental_rating: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")] pub enabled_folders: Option<Vec<String>>,
-    #[serde(skip_serializing_if = "Option::is_none")] pub blocked_tags: Option<Vec<String>>,
-    #[serde(skip_serializing_if = "Option::is_none")] pub allowed_tags: Option<Vec<String>>,
-    #[serde(skip_serializing_if = "Option::is_none")] pub lockout_minutes: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pin: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub avatar_color: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_parental_rating: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub enabled_folders: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub blocked_tags: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub allowed_tags: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lockout_minutes: Option<i64>,
     // Required only when the caller (a master profile) itself has a PIN set.
-    #[serde(skip_serializing_if = "Option::is_none")] pub master_pin: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")] pub bypass_pin_on_local_network: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")] pub allowed_device_ids: Option<Vec<String>>,
-    #[serde(skip_serializing_if = "Option::is_none")] pub profile_image: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub master_pin: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bypass_pin_on_local_network: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub allowed_device_ids: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub profile_image: Option<String>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -124,17 +141,28 @@ pub struct CreateProfileResult {
 pub struct UpdateProfileRequest {
     pub profile_id: String,
     pub profile_name: String,
-    #[serde(skip_serializing_if = "Option::is_none")] pub pin: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")] pub avatar_color: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")] pub max_parental_rating: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")] pub enabled_folders: Option<Vec<String>>,
-    #[serde(skip_serializing_if = "Option::is_none")] pub blocked_tags: Option<Vec<String>>,
-    #[serde(skip_serializing_if = "Option::is_none")] pub allowed_tags: Option<Vec<String>>,
-    #[serde(skip_serializing_if = "Option::is_none")] pub lockout_minutes: Option<i64>,
-    #[serde(skip_serializing_if = "Option::is_none")] pub master_pin: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")] pub bypass_pin_on_local_network: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")] pub allowed_device_ids: Option<Vec<String>>,
-    #[serde(skip_serializing_if = "Option::is_none")] pub profile_image: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pin: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub avatar_color: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_parental_rating: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub enabled_folders: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub blocked_tags: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub allowed_tags: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lockout_minutes: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub master_pin: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bypass_pin_on_local_network: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub allowed_device_ids: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub profile_image: Option<String>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -168,11 +196,15 @@ pub struct BonfireGroupMember {
 #[serde(rename_all = "PascalCase")]
 pub struct BonfireGroupStatus {
     pub is_owner: bool,
-    #[serde(default)] pub owned_code: Option<String>,
-    #[serde(default)] pub owned_members: Vec<BonfireGroupMember>,
+    #[serde(default)]
+    pub owned_code: Option<String>,
+    #[serde(default)]
+    pub owned_members: Vec<BonfireGroupMember>,
     pub is_member: bool,
-    #[serde(default)] pub joined_owner_name: Option<String>,
-    #[serde(default)] pub joined_owner_id: Option<String>,
+    #[serde(default)]
+    pub joined_owner_name: Option<String>,
+    #[serde(default)]
+    pub joined_owner_id: Option<String>,
     pub hide_my_sub_profiles_from_others: bool,
     pub hide_others_sub_profiles_from_me: bool,
     // Live-verified 2026-08-29 against a real server (an is_owner:true,
@@ -184,9 +216,12 @@ pub struct BonfireGroupStatus {
     // BonfireProfile.max_sub_profiles above). Fjord had never actually
     // called this endpoint before Phase 5 shipped, so this was the first
     // real exercise of it.
-    #[serde(default)] pub allow_household_lan_bypass: bool,
-    #[serde(default)] pub is_administrator: bool,
-    #[serde(default)] pub has_pin: bool,
+    #[serde(default)]
+    pub allow_household_lan_bypass: bool,
+    #[serde(default)]
+    pub is_administrator: bool,
+    #[serde(default)]
+    pub has_pin: bool,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -194,7 +229,8 @@ pub struct BonfireGroupStatus {
 pub struct BonfireGroupInfo {
     pub group_id: String,
     pub bonfire_code: String,
-    #[serde(default)] pub members: Vec<BonfireGroupMember>,
+    #[serde(default)]
+    pub members: Vec<BonfireGroupMember>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -213,7 +249,8 @@ pub struct BonfireJoinResult {
 #[serde(rename_all = "PascalCase")]
 pub struct BonfirePreferences {
     pub switcher_mode: String,
-    #[serde(default)] pub master_user_id: String,
+    #[serde(default)]
+    pub master_user_id: String,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -223,10 +260,12 @@ pub struct AdminMasterUser {
     pub profile_name: String,
     pub requires_pin: bool,
     pub max_profiles: i64,
-    #[serde(default)] pub limit_override: Option<i64>,
+    #[serde(default)]
+    pub limit_override: Option<i64>,
     // Real field, confirmed present on the wire (Controllers/ProfilesController.cs's
     // GetAdminMappings) but previously discarded — Bonfire Phase 6 (2026-09-04).
-    #[serde(default)] pub profile_image: Option<String>,
+    #[serde(default)]
+    pub profile_image: Option<String>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -237,21 +276,28 @@ pub struct AdminSubProfile {
     pub master_name: String,
     pub master_user_id: String,
     pub requires_pin: bool,
-    #[serde(default)] pub profile_image: Option<String>,
+    #[serde(default)]
+    pub profile_image: Option<String>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
 #[serde(rename_all = "PascalCase")]
 pub struct AdminMappings {
-    #[serde(default)] pub master_users: Vec<AdminMasterUser>,
-    #[serde(default)] pub sub_profiles: Vec<AdminSubProfile>,
+    #[serde(default)]
+    pub master_users: Vec<AdminMasterUser>,
+    #[serde(default)]
+    pub sub_profiles: Vec<AdminSubProfile>,
     pub injection_succeeded: bool,
     pub is_version_stale: bool,
-    #[serde(default)] pub index_path: String,
-    #[serde(default)] pub failure_reason: Option<String>,
-    #[serde(default)] pub service_account: Option<String>,
+    #[serde(default)]
+    pub index_path: String,
+    #[serde(default)]
+    pub failure_reason: Option<String>,
+    #[serde(default)]
+    pub service_account: Option<String>,
     pub is_windows: bool,
-    #[serde(default)] pub plugin_version: String,
+    #[serde(default)]
+    pub plugin_version: String,
 }
 
 #[derive(Deserialize, Debug, Clone)]

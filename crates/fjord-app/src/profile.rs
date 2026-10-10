@@ -155,16 +155,18 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::{Result, anyhow, bail};
 use slint::{ComponentHandle, Model, ModelRc, SharedString, VecModel};
 use tracing::{debug, warn};
 
-use slint::Global;
-use crate::config::{save_config, FjordState, ProfileSettings};
+use crate::config::{FjordState, ProfileSettings, save_config};
 use crate::playback::VideoState;
 use crate::{AppState, MainWindow, ProfileSection, ProfileTile};
+use slint::Global;
 
-fn ss(s: &str) -> SharedString { SharedString::from(s) }
+fn ss(s: &str) -> SharedString {
+    SharedString::from(s)
+}
 
 /// Real bug, live-reported 2026-08-15 ("no keybord navigation worked" on
 /// the account/profile picker): both picker screens can be opened directly
@@ -188,7 +190,9 @@ fn ss(s: &str) -> SharedString { SharedString::from(s) }
 pub(crate) fn grab_focus_deferred(window: &MainWindow) {
     let ww = window.as_weak();
     let _ = slint::invoke_from_event_loop(move || {
-        if let Some(w) = ww.upgrade() { w.invoke_grab_keyboard_focus(); }
+        if let Some(w) = ww.upgrade() {
+            w.invoke_grab_keyboard_focus();
+        }
     });
 }
 
@@ -196,7 +200,9 @@ pub(crate) fn grab_focus_deferred(window: &MainWindow) {
 // live avatar-preview swatch from whichever palette color the user picked.
 pub(crate) fn parse_hex_color(s: &str) -> Option<slint::Color> {
     let s = s.trim().trim_start_matches('#');
-    if s.len() != 6 { return None; }
+    if s.len() != 6 {
+        return None;
+    }
     let r = u8::from_str_radix(&s[0..2], 16).ok()?;
     let g = u8::from_str_radix(&s[2..4], 16).ok()?;
     let b = u8::from_str_radix(&s[4..6], 16).ok()?;
@@ -210,12 +216,24 @@ pub(crate) fn parse_hex_color(s: &str) -> Option<slint::Color> {
 /// "string"). Deterministic, not random, so the same profile keeps the same
 /// color across sessions without needing to persist a randomly-picked one.
 pub(crate) fn avatar_color_for(hex: &str, seed: &str) -> slint::Color {
-    if !hex.is_empty() && let Some(c) = parse_hex_color(hex) { return c; }
+    if !hex.is_empty()
+        && let Some(c) = parse_hex_color(hex)
+    {
+        return c;
+    }
     const PALETTE: [(u8, u8, u8); 8] = [
-        (0x4a, 0x90, 0xd9), (0xd9, 0x4a, 0x6b), (0x4a, 0xd9, 0x8e), (0xd9, 0xa0, 0x4a),
-        (0x9a, 0x4a, 0xd9), (0x4a, 0xc9, 0xd9), (0xd9, 0xd9, 0x4a), (0xd9, 0x6b, 0x4a),
+        (0x4a, 0x90, 0xd9),
+        (0xd9, 0x4a, 0x6b),
+        (0x4a, 0xd9, 0x8e),
+        (0xd9, 0xa0, 0x4a),
+        (0x9a, 0x4a, 0xd9),
+        (0x4a, 0xc9, 0xd9),
+        (0xd9, 0xd9, 0x4a),
+        (0xd9, 0x6b, 0x4a),
     ];
-    let hash: u32 = seed.bytes().fold(0u32, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u32));
+    let hash: u32 = seed
+        .bytes()
+        .fold(0u32, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u32));
     let (r, g, b) = PALETTE[(hash as usize) % PALETTE.len()];
     slint::Color::from_rgb_u8(r, g, b)
 }
@@ -233,12 +251,12 @@ pub(crate) fn avatar_color_for(hex: &str, seed: &str) -> slint::Color {
 pub(crate) struct AccountGroup {
     /// The grouping key — the root profile's own `user_id`. Also what
     /// `DeviceConfig.default_account_id` stores.
-    pub root_id:    String,
+    pub root_id: String,
     pub server_url: String,
     /// Root first (guaranteed present — see `account_root_id`'s own doc
     /// comment for why an orphan sub-profile can't happen), sub-profiles
     /// after in encounter order.
-    pub profiles:   Vec<ProfileSettings>,
+    pub profiles: Vec<ProfileSettings>,
 }
 
 /// The account a profile belongs to — its own `user_id` if it IS an
@@ -251,7 +269,11 @@ pub(crate) struct AccountGroup {
 /// sub-profiles after a successful MASTER login, so there's no path to an
 /// orphan sub-profile with no root in the list.
 pub(crate) fn account_root_id(p: &ProfileSettings) -> &str {
-    if p.is_bonfire && !p.is_group_account { &p.master_user_id } else { &p.user_id }
+    if p.is_bonfire && !p.is_group_account {
+        &p.master_user_id
+    } else {
+        &p.user_id
+    }
 }
 
 /// True when this session genuinely has independent master-level authority
@@ -281,33 +303,42 @@ pub(crate) fn group_into_accounts(profiles: &[ProfileSettings]) -> Vec<AccountGr
     let mut groups: HashMap<String, Vec<ProfileSettings>> = HashMap::new();
     for p in profiles.iter().filter(|p| !p.user_id.is_empty()) {
         let key = account_root_id(p).to_string();
-        if !groups.contains_key(&key) { order.push(key.clone()); }
+        if !groups.contains_key(&key) {
+            order.push(key.clone());
+        }
         groups.entry(key).or_default().push(p.clone());
     }
-    order.into_iter().filter_map(|key| {
-        let mut members = groups.remove(&key)?;
-        // Real bug, live-reported 2026-08-31 ("but what i shuld still be
-        // able to switch to a bonfire master profile with out needing to
-        // switch 'accaunt'..."), caught by an independent review pass
-        // while designing the fix — this used to be
-        // `sort_by_key(|p| p.is_bonfire)` ("root first"), which is WRONG
-        // for a household whose root was never independently logged into:
-        // in that case the root's own `is_bonfire` is `true` too (a group
-        // account), so every member of the household shares the identical
-        // sort key and a stable sort can't guarantee the root lands first
-        // — whichever entry the sync loop happened to insert first wins.
-        // Not merely cosmetic: `should_show_picker_at_startup`'s own
-        // single-known-account guard reads `.profiles.first()` to decide
-        // whether a resolved account is a group account that must never
-        // silently auto-resume — if `.first()` returns a sub-profile
-        // instead of the real root, that guard is defeated and a foreign
-        // Bonfire-linked master could auto-login at startup with no PIN.
-        // `is_true_master(p)` — "is this entry its own account's root" —
-        // is the correct key; `!is_true_master(p)` sorts root first.
-        members.sort_by_key(|p| !is_true_master(p));
-        let server_url = members.first()?.server_url.clone();
-        Some(AccountGroup { root_id: key, server_url, profiles: members })
-    }).collect()
+    order
+        .into_iter()
+        .filter_map(|key| {
+            let mut members = groups.remove(&key)?;
+            // Real bug, live-reported 2026-08-31 ("but what i shuld still be
+            // able to switch to a bonfire master profile with out needing to
+            // switch 'accaunt'..."), caught by an independent review pass
+            // while designing the fix — this used to be
+            // `sort_by_key(|p| p.is_bonfire)` ("root first"), which is WRONG
+            // for a household whose root was never independently logged into:
+            // in that case the root's own `is_bonfire` is `true` too (a group
+            // account), so every member of the household shares the identical
+            // sort key and a stable sort can't guarantee the root lands first
+            // — whichever entry the sync loop happened to insert first wins.
+            // Not merely cosmetic: `should_show_picker_at_startup`'s own
+            // single-known-account guard reads `.profiles.first()` to decide
+            // whether a resolved account is a group account that must never
+            // silently auto-resume — if `.first()` returns a sub-profile
+            // instead of the real root, that guard is defeated and a foreign
+            // Bonfire-linked master could auto-login at startup with no PIN.
+            // `is_true_master(p)` — "is this entry its own account's root" —
+            // is the correct key; `!is_true_master(p)` sorts root first.
+            members.sort_by_key(|p| !is_true_master(p));
+            let server_url = members.first()?.server_url.clone();
+            Some(AccountGroup {
+                root_id: key,
+                server_url,
+                profiles: members,
+            })
+        })
+        .collect()
 }
 
 /// `ProfileSettings` -> `AccountTile` (theme.slint) for the account-tier
@@ -316,23 +347,34 @@ pub(crate) fn group_into_accounts(profiles: &[ProfileSettings]) -> Vec<AccountGr
 /// ("N profiles" when > 1, hidden at exactly 1 by the Slint side).
 pub(crate) fn build_account_tile(group: &AccountGroup) -> crate::AccountTile {
     let root = group.profiles.first();
-    let display_name = root.map(|p| {
-        if p.display_name.is_empty() { p.user_id.clone() } else { p.display_name.clone() }
-    }).unwrap_or_default();
-    let avatar_initial = root.and_then(|p| {
-        if p.avatar_initial.is_empty() {
-            display_name.chars().next().map(|c| c.to_uppercase().to_string())
-        } else {
-            Some(p.avatar_initial.clone())
-        }
-    }).unwrap_or_default();
+    let display_name = root
+        .map(|p| {
+            if p.display_name.is_empty() {
+                p.user_id.clone()
+            } else {
+                p.display_name.clone()
+            }
+        })
+        .unwrap_or_default();
+    let avatar_initial = root
+        .and_then(|p| {
+            if p.avatar_initial.is_empty() {
+                display_name
+                    .chars()
+                    .next()
+                    .map(|c| c.to_uppercase().to_string())
+            } else {
+                Some(p.avatar_initial.clone())
+            }
+        })
+        .unwrap_or_default();
     let avatar_color_src = root.map(|p| p.avatar_color.as_str()).unwrap_or("");
     crate::AccountTile {
-        root_id:       ss(&group.root_id),
-        display_name:  ss(&display_name),
-        avatar_color:  avatar_color_for(avatar_color_src, &group.root_id),
+        root_id: ss(&group.root_id),
+        display_name: ss(&display_name),
+        avatar_color: avatar_color_for(avatar_color_src, &group.root_id),
         avatar_initial: ss(&avatar_initial),
-        server_url:    ss(&group.server_url),
+        server_url: ss(&group.server_url),
         profile_count: group.profiles.len() as i32,
         is_group_account: root.is_some_and(|p| p.is_group_account),
         // Scoped to profile_count == 1 — see AccountTile.has_pin's own doc
@@ -345,32 +387,40 @@ pub(crate) fn build_account_tile(group: &AccountGroup) -> crate::AccountTile {
 }
 
 pub(crate) fn build_tile(p: &ProfileSettings) -> ProfileTile {
-    let display_name = if p.display_name.is_empty() { p.user_id.clone() } else { p.display_name.clone() };
+    let display_name = if p.display_name.is_empty() {
+        p.user_id.clone()
+    } else {
+        p.display_name.clone()
+    };
     let avatar_initial = if p.avatar_initial.is_empty() {
-        display_name.chars().next().map(|c| c.to_uppercase().to_string()).unwrap_or_default()
+        display_name
+            .chars()
+            .next()
+            .map(|c| c.to_uppercase().to_string())
+            .unwrap_or_default()
     } else {
         p.avatar_initial.clone()
     };
     ProfileTile {
-        user_id:        ss(&p.user_id),
-        display_name:   ss(&display_name),
-        avatar_color:   avatar_color_for(&p.avatar_color, &p.user_id),
+        user_id: ss(&p.user_id),
+        display_name: ss(&display_name),
+        avatar_color: avatar_color_for(&p.avatar_color, &p.user_id),
         avatar_initial: ss(&avatar_initial),
-        has_pin:        p.has_pin,
+        has_pin: p.has_pin,
         // requires-pin mirrors has-pin here — this app has no way to know
         // Bonfire's own bypassPinOnLocalNetwork verdict without asking the
         // server (requires-pin is what the real API response would set that
         // to; local data only ever has has-pin). Worth revisiting once a
         // live refresh path exists — see open_profile_picker's own doc
         // comment for why that isn't built yet.
-        requires_pin:   p.has_pin,
-        is_bonfire:      p.is_bonfire,
+        requires_pin: p.has_pin,
+        is_bonfire: p.is_bonfire,
         // Same underlying bug as group_into_accounts' own sort-key fix
         // above, on the Slint side: the master-ring condition used to
         // read `!tile.is-bonfire`, which never renders on a "pure" group
         // account's own root (its is_bonfire is also true) — is_true_master
         // is the correct "is this tile its section's own root" check.
-        is_root:        is_true_master(p),
+        is_root: is_true_master(p),
     }
 }
 
@@ -387,7 +437,11 @@ pub(crate) fn build_tile(p: &ProfileSettings) -> ProfileTile {
 /// limitation those other dynamic dropdowns already have.
 pub(crate) fn refresh_profile_settings_dropdown(g: &AppState<'_>, cfg: &crate::config::Config) {
     fn label(p: &ProfileSettings) -> String {
-        if p.display_name.is_empty() { p.user_id.clone() } else { p.display_name.clone() }
+        if p.display_name.is_empty() {
+            p.user_id.clone()
+        } else {
+            p.display_name.clone()
+        }
     }
     // Real bug, live-questioned 2026-08-17 ("shuld ev[e]ry accaunt be able
     // [to set a Default Profile] ... shuld it not just be for the default
@@ -423,11 +477,15 @@ pub(crate) fn refresh_profile_settings_dropdown(g: &AppState<'_>, cfg: &crate::c
     } else {
         cfg.device.default_account_id.clone()
     };
-    let labels: Vec<SharedString> = cfg.profiles.iter()
+    let labels: Vec<SharedString> = cfg
+        .profiles
+        .iter()
         .filter(|p| !p.user_id.is_empty() && account_root_id(p) == account_id)
         .map(|p| ss(&label(p)))
         .collect();
-    let current = cfg.profiles.iter()
+    let current = cfg
+        .profiles
+        .iter()
         .find(|p| p.user_id == cfg.device.default_profile_id)
         .map(label)
         .unwrap_or_default();
@@ -443,12 +501,19 @@ pub(crate) fn refresh_profile_settings_dropdown(g: &AppState<'_>, cfg: &crate::c
 pub(crate) fn refresh_account_settings_dropdown(g: &AppState<'_>, cfg: &crate::config::Config) {
     fn label(group: &AccountGroup) -> String {
         let root = group.profiles.first();
-        root.map(|p| if p.display_name.is_empty() { p.user_id.clone() } else { p.display_name.clone() })
-            .unwrap_or_default()
+        root.map(|p| {
+            if p.display_name.is_empty() {
+                p.user_id.clone()
+            } else {
+                p.display_name.clone()
+            }
+        })
+        .unwrap_or_default()
     }
     let accounts = group_into_accounts(&cfg.profiles);
     let labels: Vec<SharedString> = accounts.iter().map(|a| ss(&label(a))).collect();
-    let current = accounts.iter()
+    let current = accounts
+        .iter()
         .find(|a| a.root_id == cfg.device.default_account_id)
         .map(label)
         .unwrap_or_default();
@@ -547,21 +612,36 @@ pub(crate) fn should_show_picker_at_startup(cfg: &mut crate::config::Config) -> 
     // that fix — "never auto-resume" should hold structurally, not just
     // because every other removal path happens to be correct today.
     let account = if accounts.len() < 2 {
-        accounts.into_iter()
+        accounts
+            .into_iter()
             .next()
             .filter(|a| !a.profiles.first().is_some_and(|r| r.is_group_account))
     } else {
         match cfg.device.account_launch_policy.as_str() {
-            "remember_last" => accounts.into_iter()
-                .find(|a| a.profiles.iter().any(|p| p.user_id == cfg.active_profile_id))
-                .filter(|a| a.profiles.iter().find(|p| p.user_id == a.root_id)
-                    .is_some_and(|r| !r.token.is_empty() && !r.is_group_account)),
+            "remember_last" => accounts
+                .into_iter()
+                .find(|a| {
+                    a.profiles
+                        .iter()
+                        .any(|p| p.user_id == cfg.active_profile_id)
+                })
+                .filter(|a| {
+                    a.profiles
+                        .iter()
+                        .find(|p| p.user_id == a.root_id)
+                        .is_some_and(|r| !r.token.is_empty() && !r.is_group_account)
+                }),
             "default" => {
                 let target = cfg.device.default_account_id.clone();
-                accounts.into_iter()
+                accounts
+                    .into_iter()
                     .find(|a| a.root_id == target)
-                    .filter(|a| a.profiles.iter().find(|p| p.user_id == a.root_id)
-                        .is_some_and(|r| !r.token.is_empty() && !r.is_group_account))
+                    .filter(|a| {
+                        a.profiles
+                            .iter()
+                            .find(|p| p.user_id == a.root_id)
+                            .is_some_and(|r| !r.token.is_empty() && !r.is_group_account)
+                    })
             }
             // "always_ask" and any unrecognized value fail safe to asking.
             _ => None,
@@ -571,7 +651,11 @@ pub(crate) fn should_show_picker_at_startup(cfg: &mut crate::config::Config) -> 
         return StartupGate::ShowAccountPicker;
     };
 
-    let Some(root) = account.profiles.iter().find(|p| p.user_id == account.root_id) else {
+    let Some(root) = account
+        .profiles
+        .iter()
+        .find(|p| p.user_id == account.root_id)
+    else {
         // Structurally shouldn't happen (see AccountGroup's own doc comment)
         // but fail safe to the account picker rather than a panic/unwrap.
         return StartupGate::ShowAccountPicker;
@@ -592,27 +676,50 @@ pub(crate) fn should_show_picker_at_startup(cfg: &mut crate::config::Config) -> 
     // to just this account's own members.
     if account.profiles.len() < 2 {
         if root.has_pin {
-            return StartupGate::ShowProfilePickerPin(account.root_id.clone(), root.user_id.clone());
+            return StartupGate::ShowProfilePickerPin(
+                account.root_id.clone(),
+                root.user_id.clone(),
+            );
         }
         cfg.active_profile_id = root.user_id.clone();
         return StartupGate::AutoLogin;
     }
     match cfg.device.launch_policy.as_str() {
         "remember_last" => {
-            let target = account.profiles.iter().find(|p| p.user_id == cfg.active_profile_id).cloned();
+            let target = account
+                .profiles
+                .iter()
+                .find(|p| p.user_id == cfg.active_profile_id)
+                .cloned();
             match target {
-                Some(t) if t.token.is_empty() => StartupGate::ShowProfilePicker(account.root_id.clone()),
-                Some(t) if t.has_pin => StartupGate::ShowProfilePickerPin(account.root_id.clone(), t.user_id),
-                Some(t) => { cfg.active_profile_id = t.user_id.clone(); StartupGate::AutoLogin }
+                Some(t) if t.token.is_empty() => {
+                    StartupGate::ShowProfilePicker(account.root_id.clone())
+                }
+                Some(t) if t.has_pin => {
+                    StartupGate::ShowProfilePickerPin(account.root_id.clone(), t.user_id)
+                }
+                Some(t) => {
+                    cfg.active_profile_id = t.user_id.clone();
+                    StartupGate::AutoLogin
+                }
                 None => StartupGate::ShowProfilePicker(account.root_id.clone()),
             }
         }
         "default" => {
             let target_id = cfg.device.default_profile_id.clone();
-            let target = account.profiles.iter().find(|p| p.user_id == target_id && !p.token.is_empty()).cloned();
+            let target = account
+                .profiles
+                .iter()
+                .find(|p| p.user_id == target_id && !p.token.is_empty())
+                .cloned();
             match target {
-                Some(t) if t.has_pin => StartupGate::ShowProfilePickerPin(account.root_id.clone(), t.user_id),
-                Some(t) => { cfg.active_profile_id = t.user_id.clone(); StartupGate::AutoLogin }
+                Some(t) if t.has_pin => {
+                    StartupGate::ShowProfilePickerPin(account.root_id.clone(), t.user_id)
+                }
+                Some(t) => {
+                    cfg.active_profile_id = t.user_id.clone();
+                    StartupGate::AutoLogin
+                }
                 None => StartupGate::ShowProfilePicker(account.root_id.clone()),
             }
         }
@@ -675,12 +782,16 @@ pub(crate) fn should_show_picker_at_startup(cfg: &mut crate::config::Config) -> 
 /// Account Picker) finds an empty/default list — nobody else's session
 /// ever populates it locally — so no extra sections are ever incorrectly
 /// attached to an unrelated account's own picker.
-pub(crate) fn linked_account_roots(cfg: &crate::config::Config, account_root_id: &str) -> Vec<String> {
+pub(crate) fn linked_account_roots(
+    cfg: &crate::config::Config,
+    account_root_id: &str,
+) -> Vec<String> {
     let Some(root) = cfg.profiles.iter().find(|p| p.user_id == account_root_id) else {
         return Vec::new();
     };
     let accounts = group_into_accounts(&cfg.profiles);
-    root.bonfire_linked_roots.iter()
+    root.bonfire_linked_roots
+        .iter()
         .filter(|id| accounts.iter().any(|a| &a.root_id == *id))
         .cloned()
         .collect()
@@ -698,7 +809,10 @@ pub(crate) fn linked_account_roots(cfg: &crate::config::Config, account_root_id:
 /// section total (preserves the original unlabeled look); once there's a
 /// second section, section 0's own header becomes `"Your Bonfire"`,
 /// matching Bonfire's own reference "Who's Watching?" screen wording.
-fn build_profile_sections(cfg: &crate::config::Config, account_root_id: &str) -> Vec<ProfileSection> {
+fn build_profile_sections(
+    cfg: &crate::config::Config,
+    account_root_id: &str,
+) -> Vec<ProfileSection> {
     let accounts = group_into_accounts(&cfg.profiles);
     let Some(primary) = accounts.iter().find(|a| a.root_id == account_root_id) else {
         return Vec::new();
@@ -706,24 +820,44 @@ fn build_profile_sections(cfg: &crate::config::Config, account_root_id: &str) ->
     let mut groups: Vec<(String, &AccountGroup)> = vec![(String::new(), primary)];
     for id in linked_account_roots(cfg, account_root_id) {
         if let Some(a) = accounts.iter().find(|a| a.root_id == id) {
-            let name = a.profiles.first().map(|p| {
-                if p.display_name.is_empty() { p.user_id.clone() } else { p.display_name.clone() }
-            }).unwrap_or_default();
+            let name = a
+                .profiles
+                .first()
+                .map(|p| {
+                    if p.display_name.is_empty() {
+                        p.user_id.clone()
+                    } else {
+                        p.display_name.clone()
+                    }
+                })
+                .unwrap_or_default();
             groups.push((format!("{name}'s Bonfire"), a));
         }
     }
     let multi = groups.len() > 1;
-    groups.into_iter().enumerate().map(|(i, (mut header, group))| {
-        if multi && i == 0 { header = "Your Bonfire".to_string(); }
-        ProfileSection {
-            header: ss(&header),
-            tiles: ModelRc::new(VecModel::from(group.profiles.iter().map(build_tile).collect::<Vec<_>>())),
-        }
-    }).collect()
+    groups
+        .into_iter()
+        .enumerate()
+        .map(|(i, (mut header, group))| {
+            if multi && i == 0 {
+                header = "Your Bonfire".to_string();
+            }
+            ProfileSection {
+                header: ss(&header),
+                tiles: ModelRc::new(VecModel::from(
+                    group.profiles.iter().map(build_tile).collect::<Vec<_>>(),
+                )),
+            }
+        })
+        .collect()
 }
 
 pub(crate) fn open_profile_picker(
-    state: &Arc<Mutex<FjordState>>, window: &MainWindow, cancelable: bool, via_account_picker: bool, account_root_id: &str,
+    state: &Arc<Mutex<FjordState>>,
+    window: &MainWindow,
+    cancelable: bool,
+    via_account_picker: bool,
+    account_root_id: &str,
 ) {
     let sections: Vec<ProfileSection> = {
         let s = state.lock().unwrap();
@@ -733,10 +867,18 @@ pub(crate) fn open_profile_picker(
     tracing::debug!(
         "open_profile_picker(account_root_id={account_root_id}): {} section(s) — {}",
         sections.len(),
-        sections.iter().map(|sec| {
-            let header = if sec.header.is_empty() { "<unlabeled>" } else { sec.header.as_str() };
-            format!("{header}({} tile(s))", sec.tiles.row_count())
-        }).collect::<Vec<_>>().join(", "),
+        sections
+            .iter()
+            .map(|sec| {
+                let header = if sec.header.is_empty() {
+                    "<unlabeled>"
+                } else {
+                    sec.header.as_str()
+                };
+                format!("{header}({} tile(s))", sec.tiles.row_count())
+            })
+            .collect::<Vec<_>>()
+            .join(", "),
     );
     let g = AppState::get(window);
     g.set_profile_picker_sections(ModelRc::new(VecModel::from(sections)));
@@ -745,7 +887,11 @@ pub(crate) fn open_profile_picker(
     g.set_profile_picker_error(ss(""));
     g.set_profile_picker_loading(false);
     g.set_profile_picker_cancelable(cancelable);
-    g.set_profile_picker_back_mode(ss(if via_account_picker || !cancelable { "accounts" } else { "cancel" }));
+    g.set_profile_picker_back_mode(ss(if via_account_picker || !cancelable {
+        "accounts"
+    } else {
+        "cancel"
+    }));
     g.set_profile_picker_account_root_id(ss(account_root_id));
     g.set_profile_picker_back_focused(false);
     g.set_profile_picker_quit_focused(false);
@@ -772,11 +918,20 @@ pub(crate) fn open_profile_picker(
 /// specific tile by id rather than just an index. Returns `None` if the id
 /// isn't present in any section (e.g. it was pruned since the section list
 /// was built).
-fn find_profile_tile_position(sections: &ModelRc<ProfileSection>, user_id: &str) -> Option<(i32, i32)> {
+fn find_profile_tile_position(
+    sections: &ModelRc<ProfileSection>,
+    user_id: &str,
+) -> Option<(i32, i32)> {
     for s in 0..sections.row_count() {
-        let Some(section) = sections.row_data(s) else { continue };
+        let Some(section) = sections.row_data(s) else {
+            continue;
+        };
         for i in 0..section.tiles.row_count() {
-            if section.tiles.row_data(i).is_some_and(|t| t.user_id == user_id) {
+            if section
+                .tiles
+                .row_data(i)
+                .is_some_and(|t| t.user_id == user_id)
+            {
                 return Some((s as i32, i as i32));
             }
         }
@@ -785,12 +940,19 @@ fn find_profile_tile_position(sections: &ModelRc<ProfileSection>, user_id: &str)
 }
 
 pub(crate) fn open_profile_picker_with_pin(
-    state: &Arc<Mutex<FjordState>>, window: &MainWindow, account_root_id: &str, user_id: &str,
+    state: &Arc<Mutex<FjordState>>,
+    window: &MainWindow,
+    account_root_id: &str,
+    user_id: &str,
 ) {
     open_profile_picker(state, window, false, false, account_root_id);
     let target = {
         let s = state.lock().unwrap();
-        s.config.profiles.iter().find(|p| p.user_id == user_id).cloned()
+        s.config
+            .profiles
+            .iter()
+            .find(|p| p.user_id == user_id)
+            .cloned()
     };
     let Some(target) = target else { return };
     let g = AppState::get(window);
@@ -799,7 +961,9 @@ pub(crate) fn open_profile_picker_with_pin(
     // practice (nothing today can target a linked household's profile
     // through the PIN-entry path yet), but the search itself is written to
     // stay correct once it can.
-    if let Some((section, cursor)) = find_profile_tile_position(&g.get_profile_picker_sections(), user_id) {
+    if let Some((section, cursor)) =
+        find_profile_tile_position(&g.get_profile_picker_sections(), user_id)
+    {
         g.set_profile_picker_section(section);
         g.set_profile_picker_cursor(cursor);
     }
@@ -835,10 +999,10 @@ pub(crate) fn open_profile_picker_with_pin(
 /// documents once, elsewhere).
 pub(crate) fn wire_idle_lock_timer(
     window_weak: slint::Weak<MainWindow>,
-    state:       Arc<Mutex<FjordState>>,
-    video:       Arc<Mutex<VideoState>>,
-    rt_handle:   tokio::runtime::Handle,
-    clock:       crate::activity::ActivityClock,
+    state: Arc<Mutex<FjordState>>,
+    video: Arc<Mutex<VideoState>>,
+    rt_handle: tokio::runtime::Handle,
+    clock: crate::activity::ActivityClock,
 ) -> slint::Timer {
     let timer = slint::Timer::default();
     timer.start(slint::TimerMode::Repeated, std::time::Duration::from_secs(15), move || {
@@ -963,7 +1127,8 @@ pub(crate) fn sidebar_profile_menu_rows(cfg: &crate::config::Config) -> Vec<&'st
     let mut rows = Vec::with_capacity(6);
     let accounts = group_into_accounts(&cfg.profiles);
     let current_root = account_root_id(cfg.active());
-    let current_profile_count = accounts.iter()
+    let current_profile_count = accounts
+        .iter()
         .find(|a| a.root_id == current_root)
         .map(|a| a.profiles.len())
         .unwrap_or(1);
@@ -1005,7 +1170,7 @@ pub(crate) fn on_open_sidebar_profile_menu(state: &Arc<Mutex<FjordState>>, windo
     let g = AppState::get(window);
     let rows = sidebar_profile_menu_rows(&state.lock().unwrap().config);
     g.set_sidebar_profile_menu_rows(ModelRc::new(VecModel::from(
-        rows.into_iter().map(ss).collect::<Vec<_>>()
+        rows.into_iter().map(ss).collect::<Vec<_>>(),
     )));
     g.set_sidebar_profile_menu_focused(0);
     g.set_show_sidebar_profile_menu(true);
@@ -1015,20 +1180,25 @@ pub(crate) fn on_open_sidebar_profile_menu(state: &Arc<Mutex<FjordState>>, windo
 /// the picker; the actual teardown-then-switch (which does need it) already
 /// happens inside `switch_to_profile` once a target tile is picked.
 pub(crate) fn on_sidebar_profile_menu_action(
-    idx:    i32,
-    state:  &Arc<Mutex<FjordState>>,
+    idx: i32,
+    state: &Arc<Mutex<FjordState>>,
     window: &MainWindow,
-    rt:     &tokio::runtime::Handle,
+    rt: &tokio::runtime::Handle,
 ) {
     let g = AppState::get(window);
     let rows = sidebar_profile_menu_rows(&state.lock().unwrap().config);
-    let Some(&label) = rows.get(idx as usize) else { return };
+    let Some(&label) = rows.get(idx as usize) else {
+        return;
+    };
     g.set_show_sidebar_profile_menu(false);
     match label {
         "Switch Profile" => {
             let (root_id, client) = {
                 let s = state.lock().unwrap();
-                (account_root_id(s.config.active()).to_string(), s.client.clone())
+                (
+                    account_root_id(s.config.active()).to_string(),
+                    s.client.clone(),
+                )
             };
             // via_account_picker=false — reached straight from a live
             // session, never through the account tier (see
@@ -1097,7 +1267,10 @@ pub(crate) fn on_sidebar_profile_menu_action(
 /// such an account is ever opened (it can't auto-resolve at startup by
 /// definition). Returns the root's own `(server_url, display_name)` when
 /// a forced re-login is required, `None` when the switch may proceed.
-fn account_requires_login<'a>(cfg: &'a crate::config::Config, account_root_id: &str) -> Option<&'a ProfileSettings> {
+fn account_requires_login<'a>(
+    cfg: &'a crate::config::Config,
+    account_root_id: &str,
+) -> Option<&'a ProfileSettings> {
     let root = cfg.profiles.iter().find(|p| p.user_id == account_root_id)?;
     // Bonfire Phase 5: a group account can never trigger this — there is no
     // independent password for it to re-check in the first place (Fjord
@@ -1110,7 +1283,9 @@ fn account_requires_login<'a>(cfg: &'a crate::config::Config, account_root_id: &
     // active `cfg.active_mut()` in that state) would otherwise force a
     // real-password `RequireLogin` next time, which Fjord has no way to
     // satisfy for it at all.
-    if root.is_group_account { return None; }
+    if root.is_group_account {
+        return None;
+    }
     (!root.remember_login).then_some(root)
 }
 
@@ -1151,7 +1326,10 @@ fn already_active_account(state: &Arc<Mutex<FjordState>>, account_root: &str) ->
 /// same as the startup gate's own RequireLogin arm, so `do_login`'s
 /// non-append branch updates the right entry on a successful re-login.
 fn require_login_for_account(
-    state: &Arc<Mutex<FjordState>>, window: &MainWindow, account_root_id: &str, root: &ProfileSettings,
+    state: &Arc<Mutex<FjordState>>,
+    window: &MainWindow,
+    account_root_id: &str,
+    root: &ProfileSettings,
 ) {
     let (server_url, username) = (root.server_url.clone(), root.display_name.clone());
     state.lock().unwrap().config.active_profile_id = account_root_id.to_string();
@@ -1178,27 +1356,41 @@ pub(crate) fn on_profile_picker_select(
     // Guard against a second concurrent switch attempt from an impatient
     // repeat press while one is already in flight — see profile-picker-loading's
     // own doc comment in app_state.slint for the live report this closes.
-    if g.get_profile_picker_loading() { return; }
+    if g.get_profile_picker_loading() {
+        return;
+    }
     let target = {
         let s = state.lock().unwrap();
-        s.config.profiles.iter().find(|p| p.user_id == user_id.as_str()).cloned()
+        s.config
+            .profiles
+            .iter()
+            .find(|p| p.user_id == user_id.as_str())
+            .cloned()
     };
     let Some(target) = target else {
         g.set_profile_picker_error(ss("That profile is no longer available"));
         return;
     };
     let account_root = account_root_id(&target).to_string();
-    if !already_active_account(state, &account_root) && let Some(root) = {
-        let s = state.lock().unwrap();
-        account_requires_login(&s.config, &account_root).cloned()
-    } {
+    if !already_active_account(state, &account_root)
+        && let Some(root) = {
+            let s = state.lock().unwrap();
+            account_requires_login(&s.config, &account_root).cloned()
+        }
+    {
         require_login_for_account(state, window, &account_root, &root);
         return;
     }
     // LAN-bypass PIN staleness fix (2026-09-04) — prefer the live,
     // freshly-synced requires_pin over the persisted has_pin whenever a
     // live value has been captured for this exact profile.
-    let requires_pin = state.lock().unwrap().live_requires_pin.get(target.user_id.as_str()).copied().unwrap_or(target.has_pin);
+    let requires_pin = state
+        .lock()
+        .unwrap()
+        .live_requires_pin
+        .get(target.user_id.as_str())
+        .copied()
+        .unwrap_or(target.has_pin);
     if requires_pin {
         g.set_profile_pin_target_id(user_id.clone());
         g.set_profile_pin_target_name(ss(&target.display_name.clone()));
@@ -1210,7 +1402,14 @@ pub(crate) fn on_profile_picker_select(
         g.set_show_profile_pin_entry(true);
     } else {
         g.set_profile_picker_loading(true);
-        switch_to_profile(Arc::clone(state), Arc::clone(video), window.as_weak(), rt.clone(), user_id.to_string(), None);
+        switch_to_profile(
+            Arc::clone(state),
+            Arc::clone(video),
+            window.as_weak(),
+            rt.clone(),
+            user_id.to_string(),
+            None,
+        );
     }
 }
 
@@ -1220,10 +1419,17 @@ pub(crate) fn on_profile_picker_select(
 /// `should_show_picker_at_startup`); it's still reachable mid-session via
 /// the sidebar's "Switch Profile" action even with just 1 known account,
 /// so there's always a way back to it once a second one exists.
-pub(crate) fn open_account_picker(state: &Arc<Mutex<FjordState>>, window: &MainWindow, cancelable: bool) {
+pub(crate) fn open_account_picker(
+    state: &Arc<Mutex<FjordState>>,
+    window: &MainWindow,
+    cancelable: bool,
+) {
     let accounts: Vec<crate::AccountTile> = {
         let s = state.lock().unwrap();
-        group_into_accounts(&s.config.profiles).iter().map(build_account_tile).collect()
+        group_into_accounts(&s.config.profiles)
+            .iter()
+            .map(build_account_tile)
+            .collect()
     };
     // Debug logging added 2026-08-30, live-reported ("i cant switch to
     // profiles from the bonfire groupe" / "tests profiles from antons
@@ -1234,9 +1440,14 @@ pub(crate) fn open_account_picker(state: &Arc<Mutex<FjordState>>, window: &MainW
     tracing::debug!(
         "open_account_picker: {} account(s) — {}",
         accounts.len(),
-        accounts.iter()
-            .map(|a| format!("{}(root={}, n={})", a.display_name, a.root_id, a.profile_count))
-            .collect::<Vec<_>>().join(", "),
+        accounts
+            .iter()
+            .map(|a| format!(
+                "{}(root={}, n={})",
+                a.display_name, a.root_id, a.profile_count
+            ))
+            .collect::<Vec<_>>()
+            .join(", "),
     );
     let g = AppState::get(window);
     g.set_account_picker_accounts(ModelRc::new(VecModel::from(accounts)));
@@ -1272,45 +1483,78 @@ pub(crate) fn open_account_picker(state: &Arc<Mutex<FjordState>>, window: &MainW
 /// forced-login account shows Login immediately, never the PIN modal and
 /// never the profile-tier picker.
 pub(crate) fn on_account_picker_select(
-    state: &Arc<Mutex<FjordState>>, video: &Arc<Mutex<VideoState>>, window: &MainWindow,
-    rt: &tokio::runtime::Handle, root_id: SharedString,
+    state: &Arc<Mutex<FjordState>>,
+    video: &Arc<Mutex<VideoState>>,
+    window: &MainWindow,
+    rt: &tokio::runtime::Handle,
+    root_id: SharedString,
 ) {
     let g = AppState::get(window);
-    if g.get_account_picker_loading() { return; }
+    if g.get_account_picker_loading() {
+        return;
+    }
     debug!("on_account_picker_select(root_id={root_id}): clicked");
     let group = {
         let s = state.lock().unwrap();
-        group_into_accounts(&s.config.profiles).into_iter().find(|a| a.root_id == root_id.as_str())
+        group_into_accounts(&s.config.profiles)
+            .into_iter()
+            .find(|a| a.root_id == root_id.as_str())
     };
     let Some(group) = group else {
         debug!("on_account_picker_select({root_id}): no matching account group found");
         g.set_account_picker_error(ss("That account is no longer available"));
         return;
     };
-    if !already_active_account(state, &group.root_id) && let Some(root) = {
-        let s = state.lock().unwrap();
-        account_requires_login(&s.config, &group.root_id).cloned()
-    } {
+    if !already_active_account(state, &group.root_id)
+        && let Some(root) = {
+            let s = state.lock().unwrap();
+            account_requires_login(&s.config, &group.root_id).cloned()
+        }
+    {
         debug!("on_account_picker_select({root_id}): remember_login==false, requiring fresh login");
         require_login_for_account(state, window, &group.root_id, &root);
         return;
     }
-    debug!("on_account_picker_select({root_id}): {} profile(s) in group", group.profiles.len());
+    debug!(
+        "on_account_picker_select({root_id}): {} profile(s) in group",
+        group.profiles.len()
+    );
     if group.profiles.len() < 2 {
-        let Some(root) = group.profiles.into_iter().next() else { return };
+        let Some(root) = group.profiles.into_iter().next() else {
+            return;
+        };
         // LAN-bypass PIN staleness fix (2026-09-04) — same prefer-live shape
         // as on_profile_picker_select above.
-        let requires_pin = state.lock().unwrap().live_requires_pin.get(root.user_id.as_str()).copied().unwrap_or(root.has_pin);
+        let requires_pin = state
+            .lock()
+            .unwrap()
+            .live_requires_pin
+            .get(root.user_id.as_str())
+            .copied()
+            .unwrap_or(root.has_pin);
         if requires_pin {
             open_profile_picker_with_pin(state, window, &root.user_id, &root.user_id);
         } else {
             g.set_account_picker_loading(true);
-            switch_to_profile(Arc::clone(state), Arc::clone(video), window.as_weak(), rt.clone(), root.user_id, None);
+            switch_to_profile(
+                Arc::clone(state),
+                Arc::clone(video),
+                window.as_weak(),
+                rt.clone(),
+                root.user_id,
+                None,
+            );
         }
     } else {
         // via_account_picker=true — this IS the account tier, so Back
         // should genuinely return here, not skip past it.
-        open_profile_picker(state, window, g.get_account_picker_cancelable(), true, &group.root_id);
+        open_profile_picker(
+            state,
+            window,
+            g.get_account_picker_cancelable(),
+            true,
+            &group.root_id,
+        );
     }
 }
 
@@ -1395,17 +1639,29 @@ pub(crate) fn on_profile_pin_key(
             // repeated Enter on the keypad's own confirm key while a switch
             // triggered by an earlier confirm is still in flight must not
             // fire a second one.
-            if g.get_profile_picker_loading() { return; }
+            if g.get_profile_picker_loading() {
+                return;
+            }
             let (target_id, pin) = {
                 let s = state.lock().unwrap();
-                (g.get_profile_pin_target_id().to_string(), s.profile_pin_buffer.clone())
+                (
+                    g.get_profile_pin_target_id().to_string(),
+                    s.profile_pin_buffer.clone(),
+                )
             };
             if pin.is_empty() {
                 g.set_profile_pin_error(ss("Enter your PIN first"));
                 return;
             }
             g.set_profile_picker_loading(true);
-            switch_to_profile(Arc::clone(state), Arc::clone(video), window.as_weak(), rt.clone(), target_id, Some(pin));
+            switch_to_profile(
+                Arc::clone(state),
+                Arc::clone(video),
+                window.as_weak(),
+                rt.clone(),
+                target_id,
+                Some(pin),
+            );
         }
         digit if digit.len() == 1 && digit.chars().next().is_some_and(|c| c.is_ascii_digit()) => {
             let mut s = state.lock().unwrap();
@@ -1424,10 +1680,10 @@ pub(crate) fn on_profile_pin_key(
 /// Bonfire sub-profile) never leaves the user stranded with no active
 /// session at all.
 pub(crate) fn switch_to_profile(
-    state:  Arc<Mutex<FjordState>>,
-    video:  Arc<Mutex<VideoState>>,
-    ww:     slint::Weak<MainWindow>,
-    rt:     tokio::runtime::Handle,
+    state: Arc<Mutex<FjordState>>,
+    video: Arc<Mutex<VideoState>>,
+    ww: slint::Weak<MainWindow>,
+    rt: tokio::runtime::Handle,
     target_user_id: String,
     pin: Option<String>,
 ) {
@@ -1662,23 +1918,37 @@ pub(crate) fn switch_to_profile(
 /// the pointless client construction + network round trip), not a
 /// correctness requirement.
 pub(crate) fn sync_all_known_accounts_in_background(
-    state:  &Arc<Mutex<FjordState>>,
+    state: &Arc<Mutex<FjordState>>,
     window: &MainWindow,
-    rt:     &tokio::runtime::Handle,
+    rt: &tokio::runtime::Handle,
 ) {
     let (device_id, accounts) = {
         let s = state.lock().unwrap();
-        let accounts: Vec<(String, String, String)> = s.config.profiles.iter()
+        let accounts: Vec<(String, String, String)> = s
+            .config
+            .profiles
+            .iter()
             .filter(|p| is_true_master(p) && !p.token.is_empty() && !p.server_url.is_empty())
             .map(|p| (p.user_id.clone(), p.server_url.clone(), p.token.clone()))
             .collect();
         (s.config.device.device_id.clone(), accounts)
     };
     for (user_id, server_url, token) in accounts {
-        let Ok(url) = url::Url::parse(&server_url) else { continue };
-        let Ok(client) = fjord_api::JellyfinClient::new(url, user_id.clone(), token, device_id.clone()) else { continue };
+        let Ok(url) = url::Url::parse(&server_url) else {
+            continue;
+        };
+        let Ok(client) =
+            fjord_api::JellyfinClient::new(url, user_id.clone(), token, device_id.clone())
+        else {
+            continue;
+        };
         tracing::debug!("sync_all_known_accounts_in_background: syncing {user_id}");
-        sync_bonfire_subprofiles(Arc::new(client), Arc::clone(state), rt.clone(), window.as_weak());
+        sync_bonfire_subprofiles(
+            Arc::new(client),
+            Arc::clone(state),
+            rt.clone(),
+            window.as_weak(),
+        );
     }
 }
 
@@ -1732,8 +2002,8 @@ pub(crate) fn sync_all_known_accounts_in_background(
 /// no longer needs a full session restart to catch up with the server.
 pub(crate) fn sync_bonfire_subprofiles(
     client: Arc<fjord_api::JellyfinClient>,
-    state:  Arc<Mutex<FjordState>>,
-    rt:     tokio::runtime::Handle,
+    state: Arc<Mutex<FjordState>>,
+    rt: tokio::runtime::Handle,
     window: slint::Weak<MainWindow>,
 ) {
     rt.spawn(async move {
@@ -2099,14 +2369,22 @@ fn push_bonfire_group_status(g: &AppState<'_>, status: &fjord_api::models::Bonfi
     // undiagnosable from a log alone the first time this was live-tested.
     debug!(
         "bonfire_group: status is_owner={} is_member={} owned_code={:?} owned_members={} joined_owner={:?}",
-        status.is_owner, status.is_member, status.owned_code,
-        status.owned_members.len(), status.joined_owner_name,
+        status.is_owner,
+        status.is_member,
+        status.owned_code,
+        status.owned_members.len(),
+        status.joined_owner_name,
     );
     g.set_bonfire_group_is_owner(status.is_owner);
     g.set_bonfire_group_is_member(status.is_member);
     g.set_bonfire_group_owned_code(ss(status.owned_code.as_deref().unwrap_or("")));
-    let members: Vec<crate::BonfireGroupMemberTile> = status.owned_members.iter()
-        .map(|m| crate::BonfireGroupMemberTile { user_id: ss(&m.user_id), username: ss(&m.username) })
+    let members: Vec<crate::BonfireGroupMemberTile> = status
+        .owned_members
+        .iter()
+        .map(|m| crate::BonfireGroupMemberTile {
+            user_id: ss(&m.user_id),
+            username: ss(&m.username),
+        })
         .collect();
     g.set_bonfire_group_owned_members(ModelRc::new(VecModel::from(members)));
     g.set_bonfire_group_joined_owner_name(ss(status.joined_owner_name.as_deref().unwrap_or("")));
@@ -2124,13 +2402,17 @@ fn push_bonfire_group_status(g: &AppState<'_>, status: &fjord_api::models::Bonfi
 /// already-running Tokio task, so there's no ambient "current runtime" to
 /// spawn onto without one.
 fn refresh_bonfire_group_status(
-    client: Arc<fjord_api::JellyfinClient>, state: Arc<Mutex<FjordState>>,
-    window: slint::Weak<MainWindow>, rt: &tokio::runtime::Handle,
+    client: Arc<fjord_api::JellyfinClient>,
+    state: Arc<Mutex<FjordState>>,
+    window: slint::Weak<MainWindow>,
+    rt: &tokio::runtime::Handle,
 ) {
     rt.spawn(async move {
         match client.bonfire_status().await {
             Ok(status) => {
-                if !crate::session_current(&state, &client) { return; }
+                if !crate::session_current(&state, &client) {
+                    return;
+                }
                 let _ = slint::invoke_from_event_loop(move || {
                     let Some(w) = window.upgrade() else { return };
                     let g = AppState::get(&w);
@@ -2160,14 +2442,21 @@ fn refresh_bonfire_group_status(
 /// the background (fire-and-forget, matching the sidebar's own "Switch
 /// Profile"/"Switch Account" precedent) so a newly-joined member's account
 /// is discoverable without needing a full session restart.
-pub(crate) fn open_bonfire_group_screen(state: &Arc<Mutex<FjordState>>, window: &MainWindow, rt: &tokio::runtime::Handle) {
+pub(crate) fn open_bonfire_group_screen(
+    state: &Arc<Mutex<FjordState>>,
+    window: &MainWindow,
+    rt: &tokio::runtime::Handle,
+) {
     let g = AppState::get(window);
     let (client, is_master) = {
         let s = state.lock().unwrap();
         (s.client.clone(), is_true_master(s.config.active()))
     };
     if !is_master {
-        crate::show_toast(window.as_weak(), "Only a master account can manage a Bonfire group".to_string());
+        crate::show_toast(
+            window.as_weak(),
+            "Only a master account can manage a Bonfire group".to_string(),
+        );
         return;
     }
     let Some(client) = client else { return };
@@ -2178,11 +2467,20 @@ pub(crate) fn open_bonfire_group_screen(state: &Arc<Mutex<FjordState>>, window: 
     g.set_show_bonfire_group(true);
     window.invoke_grab_keyboard_focus();
 
-    sync_bonfire_subprofiles(Arc::clone(&client), Arc::clone(state), rt.clone(), window.as_weak());
+    sync_bonfire_subprofiles(
+        Arc::clone(&client),
+        Arc::clone(state),
+        rt.clone(),
+        window.as_weak(),
+    );
     refresh_bonfire_group_status(client, Arc::clone(state), window.as_weak(), rt);
 }
 
-pub(crate) fn on_bonfire_group_generate(state: &Arc<Mutex<FjordState>>, window: &MainWindow, rt: &tokio::runtime::Handle) {
+pub(crate) fn on_bonfire_group_generate(
+    state: &Arc<Mutex<FjordState>>,
+    window: &MainWindow,
+    rt: &tokio::runtime::Handle,
+) {
     let g = AppState::get(window);
     let client = state.lock().unwrap().client.clone();
     let Some(client) = client else { return };
@@ -2212,10 +2510,17 @@ pub(crate) fn on_bonfire_group_generate(state: &Arc<Mutex<FjordState>>, window: 
 /// minutes," distinct from the 5-in-15-min switch/PIN limit that helper
 /// already exists for) — it's generic, just checks for a 429 status, so
 /// it's directly reusable with no changes.
-pub(crate) fn on_bonfire_group_join_submit(state: &Arc<Mutex<FjordState>>, window: &MainWindow, rt: &tokio::runtime::Handle) {
+pub(crate) fn on_bonfire_group_join_submit(
+    state: &Arc<Mutex<FjordState>>,
+    window: &MainWindow,
+    rt: &tokio::runtime::Handle,
+) {
     let g = AppState::get(window);
     let code = g.get_bonfire_group_join_code().to_string().to_uppercase();
-    debug!("bonfire_group: join submit, code={code:?} (len={})", code.len());
+    debug!(
+        "bonfire_group: join submit, code={code:?} (len={})",
+        code.len()
+    );
     if code.is_empty() {
         debug!("bonfire_group: join submit — empty code, no-op");
         return;
@@ -2231,9 +2536,16 @@ pub(crate) fn on_bonfire_group_join_submit(state: &Arc<Mutex<FjordState>>, windo
             Ok(_result) => {
                 let ww2 = ww.clone();
                 let _ = slint::invoke_from_event_loop(move || {
-                    if let Some(w) = ww2.upgrade() { AppState::get(&w).set_bonfire_group_join_code(ss("")); }
+                    if let Some(w) = ww2.upgrade() {
+                        AppState::get(&w).set_bonfire_group_join_code(ss(""));
+                    }
                 });
-                sync_bonfire_subprofiles(Arc::clone(&client), Arc::clone(&state2), rt2.clone(), ww.clone());
+                sync_bonfire_subprofiles(
+                    Arc::clone(&client),
+                    Arc::clone(&state2),
+                    rt2.clone(),
+                    ww.clone(),
+                );
                 refresh_bonfire_group_status(client, state2, ww, &rt2);
             }
             Err(e) => {
@@ -2254,7 +2566,12 @@ pub(crate) fn on_bonfire_group_join_submit(state: &Arc<Mutex<FjordState>>, windo
     });
 }
 
-pub(crate) fn on_bonfire_group_kick(state: &Arc<Mutex<FjordState>>, window: &MainWindow, rt: &tokio::runtime::Handle, member_id: SharedString) {
+pub(crate) fn on_bonfire_group_kick(
+    state: &Arc<Mutex<FjordState>>,
+    window: &MainWindow,
+    rt: &tokio::runtime::Handle,
+    member_id: SharedString,
+) {
     let g = AppState::get(window);
     let client = state.lock().unwrap().client.clone();
     let Some(client) = client else { return };
@@ -2269,7 +2586,12 @@ pub(crate) fn on_bonfire_group_kick(state: &Arc<Mutex<FjordState>>, window: &Mai
                 // The kicked member's account should disappear from the
                 // caller's own next /list view too, per the docs' "each
                 // other's" bidirectional framing.
-                sync_bonfire_subprofiles(Arc::clone(&client), Arc::clone(&state2), rt2.clone(), ww.clone());
+                sync_bonfire_subprofiles(
+                    Arc::clone(&client),
+                    Arc::clone(&state2),
+                    rt2.clone(),
+                    ww.clone(),
+                );
                 refresh_bonfire_group_status(client, state2, ww, &rt2);
             }
             Err(e) => {
@@ -2286,7 +2608,11 @@ pub(crate) fn on_bonfire_group_kick(state: &Arc<Mutex<FjordState>>, window: &Mai
     });
 }
 
-pub(crate) fn on_bonfire_group_leave(state: &Arc<Mutex<FjordState>>, window: &MainWindow, rt: &tokio::runtime::Handle) {
+pub(crate) fn on_bonfire_group_leave(
+    state: &Arc<Mutex<FjordState>>,
+    window: &MainWindow,
+    rt: &tokio::runtime::Handle,
+) {
     let g = AppState::get(window);
     let client = state.lock().unwrap().client.clone();
     let Some(client) = client else { return };
@@ -2300,7 +2626,12 @@ pub(crate) fn on_bonfire_group_leave(state: &Arc<Mutex<FjordState>>, window: &Ma
             // — sync_bonfire_subprofiles's own prune step (scoped via
             // synced_via) handles this once /list no longer reports it.
             Ok(()) => {
-                sync_bonfire_subprofiles(Arc::clone(&client), Arc::clone(&state2), rt2.clone(), ww.clone());
+                sync_bonfire_subprofiles(
+                    Arc::clone(&client),
+                    Arc::clone(&state2),
+                    rt2.clone(),
+                    ww.clone(),
+                );
                 refresh_bonfire_group_status(client, state2, ww, &rt2);
             }
             Err(e) => {
@@ -2317,7 +2648,11 @@ pub(crate) fn on_bonfire_group_leave(state: &Arc<Mutex<FjordState>>, window: &Ma
     });
 }
 
-pub(crate) fn on_bonfire_group_delete(state: &Arc<Mutex<FjordState>>, window: &MainWindow, rt: &tokio::runtime::Handle) {
+pub(crate) fn on_bonfire_group_delete(
+    state: &Arc<Mutex<FjordState>>,
+    window: &MainWindow,
+    rt: &tokio::runtime::Handle,
+) {
     let g = AppState::get(window);
     let client = state.lock().unwrap().client.clone();
     let Some(client) = client else { return };
@@ -2328,7 +2663,12 @@ pub(crate) fn on_bonfire_group_delete(state: &Arc<Mutex<FjordState>>, window: &M
     rt.spawn(async move {
         match client.bonfire_delete_group().await {
             Ok(()) => {
-                sync_bonfire_subprofiles(Arc::clone(&client), Arc::clone(&state2), rt2.clone(), ww.clone());
+                sync_bonfire_subprofiles(
+                    Arc::clone(&client),
+                    Arc::clone(&state2),
+                    rt2.clone(),
+                    ww.clone(),
+                );
                 refresh_bonfire_group_status(client, state2, ww, &rt2);
             }
             Err(e) => {
@@ -2352,19 +2692,28 @@ pub(crate) fn on_bonfire_group_delete(state: &Arc<Mutex<FjordState>>, window: &M
 /// already confirmed the real risk. Always sends the full trio, matching
 /// `bonfire_settings`'s own request shape.
 pub(crate) fn on_bonfire_group_settings_changed(
-    state: &Arc<Mutex<FjordState>>, window: &MainWindow, rt: &tokio::runtime::Handle,
-    hide_my: bool, hide_others: bool, allow_lan_bypass: bool,
+    state: &Arc<Mutex<FjordState>>,
+    window: &MainWindow,
+    rt: &tokio::runtime::Handle,
+    hide_my: bool,
+    hide_others: bool,
+    allow_lan_bypass: bool,
 ) {
     let g = AppState::get(window);
     let client = state.lock().unwrap().client.clone();
     let Some(client) = client else { return };
     let ww = window.as_weak();
     rt.spawn(async move {
-        if let Err(e) = client.bonfire_settings(hide_my, hide_others, Some(allow_lan_bypass)).await {
+        if let Err(e) = client
+            .bonfire_settings(hide_my, hide_others, Some(allow_lan_bypass))
+            .await
+        {
             warn!("bonfire_settings: {e:#}");
             let msg = format!("Couldn't save group settings: {e:#}");
             let _ = slint::invoke_from_event_loop(move || {
-                if let Some(w) = ww.upgrade() { AppState::get(&w).set_bonfire_group_error(ss(&msg)); }
+                if let Some(w) = ww.upgrade() {
+                    AppState::get(&w).set_bonfire_group_error(ss(&msg));
+                }
             });
         }
     });
@@ -2428,7 +2777,11 @@ pub(crate) fn existing_bonfire_group_zones(g: &AppState<'_>) -> Vec<i32> {
     } else {
         1
     };
-    let join_count = if g.get_bonfire_group_is_member() { 1 } else { 2 };
+    let join_count = if g.get_bonfire_group_is_member() {
+        1
+    } else {
+        2
+    };
     (0..host_count + join_count + 3).collect()
 }
 
@@ -2466,7 +2819,9 @@ pub(crate) fn on_remember_login_toggle(state: &Arc<Mutex<FjordState>>, window: &
         let username = {
             let s = state.lock().unwrap();
             let root_id = account_root_id(s.config.active()).to_string();
-            s.config.profiles.iter()
+            s.config
+                .profiles
+                .iter()
                 .find(|p| p.user_id == root_id)
                 .map(|p| p.display_name.clone())
                 .unwrap_or_default()
@@ -2486,9 +2841,9 @@ pub(crate) fn on_remember_login_toggle(state: &Arc<Mutex<FjordState>>, window: &
 /// success, flips remember_login back on for that root entry; on failure
 /// (wrong password, unreachable server), shows an error and leaves it off.
 pub(crate) fn on_remember_login_confirm(
-    state:    &Arc<Mutex<FjordState>>,
-    window:   &MainWindow,
-    rt:       &tokio::runtime::Handle,
+    state: &Arc<Mutex<FjordState>>,
+    window: &MainWindow,
+    rt: &tokio::runtime::Handle,
     password: SharedString,
 ) {
     let g = AppState::get(window);
@@ -2500,15 +2855,23 @@ pub(crate) fn on_remember_login_confirm(
         let Some(root) = s.config.profiles.iter().find(|p| p.user_id == root_id) else {
             return;
         };
-        (root_id, root.server_url.clone(), root.display_name.clone(), s.config.device.device_id.clone())
+        (
+            root_id,
+            root.server_url.clone(),
+            root.display_name.clone(),
+            s.config.device.device_id.clone(),
+        )
     };
-    let ww     = window.as_weak();
+    let ww = window.as_weak();
     let state2 = Arc::clone(state);
     rt.spawn(async move {
         // Matches do_login's own client construction exactly — see its doc
         // comment for why a bare default reqwest::Client (no timeout) is
         // avoided.
-        let login_http = match reqwest::Client::builder().timeout(std::time::Duration::from_secs(30)).build() {
+        let login_http = match reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .build()
+        {
             Ok(c) => c,
             Err(e) => {
                 warn!("remember_login confirm: building http client failed: {e:#}");
@@ -2521,11 +2884,20 @@ pub(crate) fn on_remember_login_confirm(
                 return;
             }
         };
-        match crate::auth::authenticate_with_fallback(&login_http, &server, &username, &password, &device_id).await {
+        match crate::auth::authenticate_with_fallback(
+            &login_http,
+            &server,
+            &username,
+            &password,
+            &device_id,
+        )
+        .await
+        {
             Ok(_) => {
                 let cfg = {
                     let mut s = state2.lock().unwrap();
-                    if let Some(root) = s.config.profiles.iter_mut().find(|p| p.user_id == root_id) {
+                    if let Some(root) = s.config.profiles.iter_mut().find(|p| p.user_id == root_id)
+                    {
                         root.remember_login = true;
                     }
                     s.config.clone()

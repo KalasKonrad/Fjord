@@ -40,20 +40,22 @@ use slint::SharedString;
 use tracing::{error, info, warn};
 use url::Url;
 
-use slint::Global;
 use crate::AppState;
-use crate::seerr_auth;
-use crate::config::{FjordState, save_config, ensure_device_id, load_screen_caches};
-use crate::home::{
-    fetch_home_data, fetch_movie_collections, home_data_sections, load_home_cache, load_series_cache,
-    push_home_data, push_home_data_preserving_posters, refresh_row_preserving_posters,
-    save_home_cache, save_series_cache,
-};
-use crate::{apply_settings_to_window, items_to_model, ws};
-use crate::poster::{spawn_poster_loading, spawn_series_poster_loading};
 use crate::MainWindow;
+use crate::config::{FjordState, ensure_device_id, load_screen_caches, save_config};
+use crate::home::{
+    fetch_home_data, fetch_movie_collections, home_data_sections, load_home_cache,
+    load_series_cache, push_home_data, push_home_data_preserving_posters,
+    refresh_row_preserving_posters, save_home_cache, save_series_cache,
+};
+use crate::poster::{spawn_poster_loading, spawn_series_poster_loading};
+use crate::seerr_auth;
+use crate::{apply_settings_to_window, items_to_model, ws};
+use slint::Global;
 
-fn ss(s: &str) -> SharedString { SharedString::from(s) }
+fn ss(s: &str) -> SharedString {
+    SharedString::from(s)
+}
 
 /// Candidate server URLs to try, in order, from raw user-typed input.
 /// Live-reported 2026-08-14: the LoginScreen's address field required an
@@ -83,10 +85,20 @@ pub(crate) fn fell_back_to_http(typed: &str, resolved: &Url) -> bool {
 /// No silent plain HTTP (2026-10-09 security review): one toast + a log
 /// line when `what` ("Jellyfin"/"Seerr") was reached only over http://
 /// after https didn't answer. Settings shows "not encrypted" permanently.
-pub(crate) fn note_if_http_fallback(ww: &slint::Weak<crate::MainWindow>, what: &str, typed: &str, resolved: &Url) {
+pub(crate) fn note_if_http_fallback(
+    ww: &slint::Weak<crate::MainWindow>,
+    what: &str,
+    typed: &str,
+    resolved: &Url,
+) {
     if fell_back_to_http(typed, resolved) {
-        warn!("{what}: {typed} didn't answer over https — connected over unencrypted http ({resolved})");
-        crate::show_toast(ww.clone(), format!("{what}: connected without encryption — the server didn't answer over https"));
+        warn!(
+            "{what}: {typed} didn't answer over https — connected over unencrypted http ({resolved})"
+        );
+        crate::show_toast(
+            ww.clone(),
+            format!("{what}: connected without encryption — the server didn't answer over https"),
+        );
     }
 }
 
@@ -119,7 +131,8 @@ pub(crate) fn candidate_server_urls(input: &str) -> Vec<String> {
 /// real, already-reached error. `is_connect()`/`is_timeout()` only return
 /// true for failures that never got a response back at all.
 pub(crate) fn is_connectivity_failure(e: &anyhow::Error) -> bool {
-    e.downcast_ref::<reqwest::Error>().is_some_and(|re| re.is_connect() || re.is_timeout())
+    e.downcast_ref::<reqwest::Error>()
+        .is_some_and(|re| re.is_connect() || re.is_timeout())
 }
 
 /// Tries each of `candidate_server_urls`'s candidates in order, moving on
@@ -130,10 +143,10 @@ pub(crate) fn is_connectivity_failure(e: &anyhow::Error) -> bool {
 /// different scheme would never fix a wrong password, and would just
 /// double the wait before showing the real error.
 pub(crate) async fn authenticate_with_fallback(
-    http:      &reqwest::Client,
-    server:    &str,
-    user:      &str,
-    pass:      &str,
+    http: &reqwest::Client,
+    server: &str,
+    user: &str,
+    pass: &str,
     device_id: &str,
 ) -> Result<(Url, fjord_api::models::AuthResponse)> {
     let candidates = candidate_server_urls(server);
@@ -167,23 +180,25 @@ pub(crate) struct LoginOptions {
     /// Account" tile) — keep every existing profile intact and add this
     /// one alongside them, rather than overwriting whichever profile is
     /// currently active.
-    pub append:   bool,
+    pub append: bool,
     /// 2026-08-14, the account/profile redesign — persisted onto the
     /// resulting `ProfileSettings.remember_login`.
     pub remember: bool,
 }
 
 pub(crate) fn do_login(
-    server:      String,
-    user:        String,
-    pass:        String,
-    opts:        LoginOptions,
-    state:       Arc<Mutex<FjordState>>,
+    server: String,
+    user: String,
+    pass: String,
+    opts: LoginOptions,
+    state: Arc<Mutex<FjordState>>,
     window_weak: slint::Weak<MainWindow>,
-    rt_handle:   tokio::runtime::Handle,
+    rt_handle: tokio::runtime::Handle,
 ) {
     let LoginOptions { append, remember } = opts;
-    if let Some(w) = window_weak.upgrade() { AppState::get(&w).set_status(ss("Connecting…")); }
+    if let Some(w) = window_weak.upgrade() {
+        AppState::get(&w).set_status(ss("Connecting…"));
+    }
 
     let rt_handle_sp = rt_handle.clone();
     rt_handle.spawn(async move {
@@ -205,8 +220,13 @@ pub(crate) fn do_login(
             // "try to figure it out," not "reject it." See
             // authenticate_with_fallback's own doc comment for the exact rule.
             let (server_url, auth) = authenticate_with_fallback(
-                &login_http, &server, &user, &pass, &cfg.device.device_id,
-            ).await?;
+                &login_http,
+                &server,
+                &user,
+                &pass,
+                &cfg.device.device_id,
+            )
+            .await?;
             info!("authenticated as {}", auth.user.name);
             note_if_http_fallback(&window_weak, "Jellyfin", &server, &server_url);
             // `append` (Bonfire Phase 1, step 6, 2026-08-09 — the picker's own
@@ -221,7 +241,7 @@ pub(crate) fn do_login(
             if append {
                 if let Some(p) = cfg.profiles.iter_mut().find(|p| p.user_id == auth.user.id) {
                     p.server_url = server_url.to_string();
-                    p.token      = auth.access_token.clone();
+                    p.token = auth.access_token.clone();
                     // Real bug fix, 2026-08-14, live-reported ("on an old login
                     // the profilename is just random letters and numbers instead
                     // of the profile name"): a blank display_name (every
@@ -231,7 +251,9 @@ pub(crate) fn do_login(
                     // real Jellyfin username while we have it, same as the
                     // brand-new-entry branch below already does via
                     // ..Default::default() + this explicit set.
-                    if p.display_name.is_empty() { p.display_name = auth.user.name.clone(); }
+                    if p.display_name.is_empty() {
+                        p.display_name = auth.user.name.clone();
+                    }
                     // 2026-08-14, the account/profile redesign — "remember
                     // this login" is a per-attempt choice, so a re-login
                     // (this branch: the profile was already known, e.g. its
@@ -258,7 +280,7 @@ pub(crate) fn do_login(
                     // onto an already-known entry unconditionally restores it
                     // to a plain independent account, regardless of whatever
                     // Bonfire-discovery state it previously carried.
-                    p.is_bonfire      = false;
+                    p.is_bonfire = false;
                     p.is_group_account = false;
                     p.master_user_id.clear();
                     p.synced_via.clear();
@@ -273,8 +295,8 @@ pub(crate) fn do_login(
                 } else {
                     cfg.profiles.push(crate::config::ProfileSettings {
                         server_url: server_url.to_string(),
-                        user_id:    auth.user.id.clone(),
-                        token:      auth.access_token.clone(),
+                        user_id: auth.user.id.clone(),
+                        token: auth.access_token.clone(),
                         display_name: auth.user.name.clone(),
                         remember_login: remember,
                         ..Default::default()
@@ -283,9 +305,11 @@ pub(crate) fn do_login(
             } else {
                 let p = cfg.active_mut();
                 p.server_url = server_url.to_string();
-                p.user_id    = auth.user.id.clone();
-                p.token      = auth.access_token.clone();
-                if p.display_name.is_empty() { p.display_name = auth.user.name.clone(); }
+                p.user_id = auth.user.id.clone();
+                p.token = auth.access_token.clone();
+                if p.display_name.is_empty() {
+                    p.display_name = auth.user.name.clone();
+                }
                 p.remember_login = remember;
                 // Same fix as the append-existing-entry branch above, for
                 // the identical reason — a plain (non-append) sign-in can
@@ -294,7 +318,7 @@ pub(crate) fn do_login(
                 // path, or a RequireLogin re-prompt against one), and a real
                 // successful direct login is equally proof of independent
                 // access here.
-                p.is_bonfire      = false;
+                p.is_bonfire = false;
                 p.is_group_account = false;
                 p.master_user_id.clear();
                 p.synced_via.clear();
@@ -308,18 +332,33 @@ pub(crate) fn do_login(
             save_config(&cfg);
 
             let client = Arc::new(JellyfinClient::new(
-                server_url.clone(), auth.user.id, auth.access_token.clone(), cfg.device.device_id.clone(),
+                server_url.clone(),
+                auth.user.id,
+                auth.access_token.clone(),
+                cfg.device.device_id.clone(),
             )?);
 
-            finish_session_setup(client, cfg, user_id, server_url, state, window_weak.clone(), rt_handle).await;
+            finish_session_setup(
+                client,
+                cfg,
+                user_id,
+                server_url,
+                state,
+                window_weak.clone(),
+                rt_handle,
+            )
+            .await;
             Ok(())
-        }.await;
+        }
+        .await;
 
         if let Err(e) = result {
             error!("login failed: {:#}", e);
             let msg = format!("{:#}", e);
             let _ = slint::invoke_from_event_loop(move || {
-                if let Some(w) = window_weak.upgrade() { AppState::get(&w).set_status(ss(&msg)); }
+                if let Some(w) = window_weak.upgrade() {
+                    AppState::get(&w).set_status(ss(&msg));
+                }
             });
         }
     });
@@ -342,13 +381,13 @@ pub(crate) fn do_login(
 // in place; a profile switch finds-or-creates a different profiles[] entry
 // instead) — everything from here on is identical either way.
 pub(crate) async fn finish_session_setup(
-    client:      Arc<JellyfinClient>,
-    cfg:         crate::config::Config,
-    user_id:     String,
-    server_url:  Url,
-    state:       Arc<Mutex<FjordState>>,
+    client: Arc<JellyfinClient>,
+    cfg: crate::config::Config,
+    user_id: String,
+    server_url: Url,
+    state: Arc<Mutex<FjordState>>,
     window_weak: slint::Weak<MainWindow>,
-    rt_handle:   tokio::runtime::Handle,
+    rt_handle: tokio::runtime::Handle,
 ) {
     // Real bug, live-reported 2026-08-14 with a screenshot ("the settings
     // etc do not seams to be diffferent for different profiles" — Seerr
@@ -393,7 +432,11 @@ pub(crate) async fn finish_session_setup(
         s.config = cfg;
         s.client = Some(Arc::clone(&client));
         s.seerr_client = seerr_auth::build_seerr_client(s.config.active());
-        (s.seerr_client.clone(), s.config.active().seerr_url.clone(), s.config.clone())
+        (
+            s.seerr_client.clone(),
+            s.config.active().seerr_url.clone(),
+            s.config.clone(),
+        )
     };
     // Real gap, live-reported with a video (2026-08-21) — "the profile that
     // is highlighted is blank for several seconds after you have switched
@@ -423,11 +466,21 @@ pub(crate) async fn finish_session_setup(
         if let Ok(base_url) = Url::parse(&seerr_url) {
             seerr_auth::spawn_refresh_seerr_version(base_url, window_weak.clone(), &rt_handle);
         }
-        crate::spawn_seerr_settings_fetch(sc, Arc::clone(&state), window_weak.clone(), rt_handle.clone());
+        crate::spawn_seerr_settings_fetch(
+            sc,
+            Arc::clone(&state),
+            window_weak.clone(),
+            rt_handle.clone(),
+        );
     }
     // Bonfire Phase 6 (2026-09-04) — Jellyfin-specific, not Seerr-specific,
     // so unconditional regardless of whether Seerr is even connected.
-    crate::spawn_jellyfin_admin_check(Arc::clone(&client), Arc::clone(&state), window_weak.clone(), rt_handle.clone());
+    crate::spawn_jellyfin_admin_check(
+        Arc::clone(&client),
+        Arc::clone(&state),
+        window_weak.clone(),
+        rt_handle.clone(),
+    );
 
     // Warm start (2026-08-14, direct follow-up during a live HTPC test:
     // "still takes some time to 'login'" — from a real Bonfire switch, not
@@ -465,42 +518,62 @@ pub(crate) async fn finish_session_setup(
     // would block whatever thread is running this async fn for however
     // long that takes.
     let user_id_sc = user_id.clone();
-    if let Some(file) = tokio::task::spawn_blocking(move || load_screen_caches(&user_id_sc)).await.ok().flatten() {
+    if let Some(file) = tokio::task::spawn_blocking(move || load_screen_caches(&user_id_sc))
+        .await
+        .ok()
+        .flatten()
+    {
         let mut s = state.lock().unwrap();
-        s.item_detail_cache        = file.item_detail;
-        s.similar_items_cache      = file.similar_items;
-        s.boxset_items_cache       = file.boxset_items;
-        s.artist_albums_cache      = file.artist_albums;
+        s.item_detail_cache = file.item_detail;
+        s.similar_items_cache = file.similar_items;
+        s.boxset_items_cache = file.boxset_items;
+        s.artist_albums_cache = file.artist_albums;
         s.person_filmography_cache = file.person_filmography;
-        s.container_tracks_cache   = file.container_tracks;
-        s.person_tmdb_id_cache     = file.person_tmdb_id;
+        s.container_tracks_cache = file.container_tracks;
+        s.person_tmdb_id_cache = file.person_tmdb_id;
     }
 
     let watchlist_warm = state.lock().unwrap().jellyfin_watchlist_ids.clone();
-    let cached_home   = load_home_cache(&user_id);
+    let cached_home = load_home_cache(&user_id);
     let cached_series = load_series_cache(&user_id);
     let warm_started = cached_home.is_some() || cached_series.is_some();
     if warm_started {
         if let Some(hd) = &cached_home {
             let sections = home_data_sections(hd);
-            spawn_poster_loading(Arc::clone(&client), sections, window_weak.clone(), rt_handle.clone(), Arc::clone(&state));
+            spawn_poster_loading(
+                Arc::clone(&client),
+                sections,
+                window_weak.clone(),
+                rt_handle.clone(),
+                Arc::clone(&state),
+            );
         }
         if let Some(series) = &cached_series {
-            spawn_series_poster_loading(Arc::clone(&client), series.clone(), window_weak.clone(), rt_handle.clone(), Arc::clone(&state));
+            spawn_series_poster_loading(
+                Arc::clone(&client),
+                series.clone(),
+                window_weak.clone(),
+                rt_handle.clone(),
+                Arc::clone(&state),
+            );
             state.lock().unwrap().all_series = series.clone();
         }
         // HomeData has no Clone derive — move the originals into the closure
         // directly instead (warm_started, captured above, is all the outer
         // scope needs afterward; neither is read again out here).
-        let server_str_warm  = server_url.to_string();
-        let ww_warm    = window_weak.clone();
+        let server_str_warm = server_url.to_string();
+        let ww_warm = window_weak.clone();
         let state_warm = Arc::clone(&state);
         let _ = slint::invoke_from_event_loop(move || {
             let Some(w) = ww_warm.upgrade() else { return };
             let g = AppState::get(&w);
             crate::set_server_url_ui(&g, &server_str_warm);
-            if let Some(hd) = &cached_home { push_home_data(&w, hd, &watchlist_warm); }
-            if let Some(series) = &cached_series { g.set_all_series(items_to_model(series, &watchlist_warm)); }
+            if let Some(hd) = &cached_home {
+                push_home_data(&w, hd, &watchlist_warm);
+            }
+            if let Some(series) = &cached_series {
+                g.set_all_series(items_to_model(series, &watchlist_warm));
+            }
             // Real bug fix, 2026-08-14 — see this function's own top-of-body
             // comment. state.config was already hoisted to the new profile
             // above, so this correctly reflects it from the very first paint.
@@ -525,20 +598,34 @@ pub(crate) async fn finish_session_setup(
     // below fetches and patches them in separately, without blocking this
     // join at all.
     let (home_data, series_res, sysinfo_res, plugins_res) = tokio::join!(
-        crate::timed("fetch_home_data (all rows)", fetch_home_data(&client, false)),
-        crate::timed("get_all_series",              client.get_all_series()),
-        crate::timed("get_system_info",             client.get_system_info()),
-        crate::timed("get_plugins",                 client.get_plugins()),
+        crate::timed(
+            "fetch_home_data (all rows)",
+            fetch_home_data(&client, false)
+        ),
+        crate::timed("get_all_series", client.get_all_series()),
+        crate::timed("get_system_info", client.get_system_info()),
+        crate::timed("get_plugins", client.get_plugins()),
     );
 
-    let series = series_res.unwrap_or_else(|e| { warn!("get_all_series: {:#}", e); vec![] });
+    let series = series_res.unwrap_or_else(|e| {
+        warn!("get_all_series: {:#}", e);
+        vec![]
+    });
     info!("loaded {} series", series.len());
     let (srv_name, srv_ver) = sysinfo_res
         .map(|i| (i.server_name, i.version))
-        .unwrap_or_else(|e| { warn!("get_system_info: {:#}", e); (String::new(), String::new()) });
+        .unwrap_or_else(|e| {
+            warn!("get_system_info: {:#}", e);
+            (String::new(), String::new())
+        });
     let plugins: std::collections::HashSet<String> = plugins_res
-        .unwrap_or_else(|e| { warn!("get_plugins: {:#}", e); vec![] })
-        .into_iter().map(|p| p.name).collect();
+        .unwrap_or_else(|e| {
+            warn!("get_plugins: {:#}", e);
+            vec![]
+        })
+        .into_iter()
+        .map(|p| p.name)
+        .collect();
     {
         let mut s = state.lock().unwrap();
         // config/client already set at the top of this function (see the
@@ -552,7 +639,12 @@ pub(crate) async fn finish_session_setup(
     // get_plugins()/bonfire_list_profiles() both already degrade gracefully
     // when the plugin isn't installed, so this costs nothing extra for the
     // overwhelming majority of servers that don't have it.
-    crate::profile::sync_bonfire_subprofiles(Arc::clone(&client), Arc::clone(&state), rt_handle.clone(), window_weak.clone());
+    crate::profile::sync_bonfire_subprofiles(
+        Arc::clone(&client),
+        Arc::clone(&state),
+        rt_handle.clone(),
+        window_weak.clone(),
+    );
 
     // Real bug, live-reported 2026-08-21 ("if i close fjord it still shows
     // the old cache before it reloads from the server") — this function
@@ -570,12 +662,12 @@ pub(crate) async fn finish_session_setup(
     // from a genuine cold auto-login, however old that was.
     save_home_cache(&user_id, &home_data);
     save_series_cache(&user_id, &series);
-    let sections        = home_data_sections(&home_data);
-    let series2         = series.clone();
-    let server_str      = server_url.to_string();
-    let ww              = window_weak.clone();
-    let ww_poster       = window_weak.clone();
-    let ww_series       = window_weak.clone();
+    let sections = home_data_sections(&home_data);
+    let series2 = series.clone();
+    let server_str = server_url.to_string();
+    let ww = window_weak.clone();
+    let ww_poster = window_weak.clone();
+    let ww_series = window_weak.clone();
     let rt_handle_inner = rt_handle.clone();
     // Fresh session — no prior CardItem rows for these to carry an existing
     // on_watchlist forward from, so the persisted set has to be read
@@ -606,7 +698,10 @@ pub(crate) async fn finish_session_setup(
             // this function's own warm-start comment above).
             if warm_started {
                 push_home_data_preserving_posters(&w, &home_data);
-                g.set_all_series(refresh_row_preserving_posters(&g.get_all_series(), &series2));
+                g.set_all_series(refresh_row_preserving_posters(
+                    &g.get_all_series(),
+                    &series2,
+                ));
             } else {
                 push_home_data(&w, &home_data, &watchlist);
                 g.set_all_series(items_to_model(&series2, &watchlist));
@@ -630,16 +725,33 @@ pub(crate) async fn finish_session_setup(
             w.invoke_grab_keyboard_focus();
         }
     });
-    let client2      = Arc::clone(&client);
-    let client3      = Arc::clone(&client);
-    let client4      = Arc::clone(&client);
-    let client5      = Arc::clone(&client);
-    let state_coll   = state.clone();
-    let state_ws     = state.clone();
-    let ws_abort = ws::start_websocket(client4, Arc::clone(&state_ws), window_weak.clone(), rt_handle_inner.clone());
+    let client2 = Arc::clone(&client);
+    let client3 = Arc::clone(&client);
+    let client4 = Arc::clone(&client);
+    let client5 = Arc::clone(&client);
+    let state_coll = state.clone();
+    let state_ws = state.clone();
+    let ws_abort = ws::start_websocket(
+        client4,
+        Arc::clone(&state_ws),
+        window_weak.clone(),
+        rt_handle_inner.clone(),
+    );
     state_ws.lock().unwrap().ws_abort = Some(ws_abort);
-    spawn_poster_loading(client, sections, ww_poster, rt_handle_inner.clone(), Arc::clone(&state));
-    spawn_series_poster_loading(client2, series, ww_series, rt_handle_inner.clone(), Arc::clone(&state));
+    spawn_poster_loading(
+        client,
+        sections,
+        ww_poster,
+        rt_handle_inner.clone(),
+        Arc::clone(&state),
+    );
+    spawn_series_poster_loading(
+        client2,
+        series,
+        ww_series,
+        rt_handle_inner.clone(),
+        Arc::clone(&state),
+    );
     rt_handle_inner.spawn(async move {
         let map = fetch_movie_collections(&client3).await;
         state_coll.lock().unwrap().movie_collections = map;
@@ -660,22 +772,38 @@ pub(crate) async fn finish_session_setup(
 /// checked before writing anything, matching every other background patch
 /// in this codebase.
 fn spawn_not_watched_rows(
-    client:      Arc<JellyfinClient>,
-    state:       Arc<Mutex<FjordState>>,
+    client: Arc<JellyfinClient>,
+    state: Arc<Mutex<FjordState>>,
     window_weak: slint::Weak<MainWindow>,
-    rt_handle:   &tokio::runtime::Handle,
+    rt_handle: &tokio::runtime::Handle,
 ) {
     rt_handle.spawn(async move {
         let (nwm, nwt) = tokio::join!(
-            crate::timed("not_watched_movies (deferred)", client.get_unwatched(Some("Movie"))),
-            crate::timed("not_watched_tv (deferred)",      client.get_unwatched(Some("Series"))),
+            crate::timed(
+                "not_watched_movies (deferred)",
+                client.get_unwatched(Some("Movie"))
+            ),
+            crate::timed(
+                "not_watched_tv (deferred)",
+                client.get_unwatched(Some("Series"))
+            ),
         );
-        let not_watched_movies = nwm.unwrap_or_else(|e| { warn!("not_watched_movies: {:#}", e); vec![] });
-        let not_watched_tv     = nwt.unwrap_or_else(|e| { warn!("not_watched_tv: {:#}", e);     vec![] });
+        let not_watched_movies = nwm.unwrap_or_else(|e| {
+            warn!("not_watched_movies: {:#}", e);
+            vec![]
+        });
+        let not_watched_tv = nwt.unwrap_or_else(|e| {
+            warn!("not_watched_tv: {:#}", e);
+            vec![]
+        });
         let watchlist = state.lock().unwrap().jellyfin_watchlist_ids.clone();
         let _ = slint::invoke_from_event_loop(move || {
-            let Some(w) = window_weak.upgrade() else { return };
-            if !crate::session_current(&state, &client) { return; }
+            let Some(w) = window_weak.upgrade() else {
+                return;
+            };
+            if !crate::session_current(&state, &client) {
+                return;
+            }
             let g = AppState::get(&w);
             g.set_not_watched_movies(items_to_model(&not_watched_movies, &watchlist));
             g.set_not_watched_tv(items_to_model(&not_watched_tv, &watchlist));
@@ -703,7 +831,10 @@ mod tests {
     fn bare_host_tries_https_then_http() {
         assert_eq!(
             candidate_server_urls("jellyfin.example.com"),
-            vec!["https://jellyfin.example.com", "http://jellyfin.example.com"],
+            vec![
+                "https://jellyfin.example.com",
+                "http://jellyfin.example.com"
+            ],
         );
     }
 
@@ -717,25 +848,40 @@ mod tests {
 
     #[test]
     fn explicit_https_is_not_second_guessed() {
-        assert_eq!(candidate_server_urls("https://jellyfin.example.com"), vec!["https://jellyfin.example.com"]);
+        assert_eq!(
+            candidate_server_urls("https://jellyfin.example.com"),
+            vec!["https://jellyfin.example.com"]
+        );
     }
 
     #[test]
     fn explicit_http_is_not_second_guessed() {
-        assert_eq!(candidate_server_urls("http://jellyfin.example.com"), vec!["http://jellyfin.example.com"]);
+        assert_eq!(
+            candidate_server_urls("http://jellyfin.example.com"),
+            vec!["http://jellyfin.example.com"]
+        );
     }
 
     #[test]
     fn explicit_scheme_is_case_insensitive() {
-        assert_eq!(candidate_server_urls("HTTPS://jellyfin.example.com"), vec!["HTTPS://jellyfin.example.com"]);
-        assert_eq!(candidate_server_urls("HTTP://jellyfin.example.com"), vec!["HTTP://jellyfin.example.com"]);
+        assert_eq!(
+            candidate_server_urls("HTTPS://jellyfin.example.com"),
+            vec!["HTTPS://jellyfin.example.com"]
+        );
+        assert_eq!(
+            candidate_server_urls("HTTP://jellyfin.example.com"),
+            vec!["HTTP://jellyfin.example.com"]
+        );
     }
 
     #[test]
     fn whitespace_is_trimmed() {
         assert_eq!(
             candidate_server_urls("  jellyfin.example.com  "),
-            vec!["https://jellyfin.example.com", "http://jellyfin.example.com"],
+            vec![
+                "https://jellyfin.example.com",
+                "http://jellyfin.example.com"
+            ],
         );
     }
 }

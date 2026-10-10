@@ -45,9 +45,11 @@ use tracing::warn;
 use crate::config::FjordState;
 use crate::keys::Action;
 use crate::profile::avatar_color_for;
-use crate::{show_toast, AppState, BonfireAdminRow, BonfireAuditRow, MainWindow};
+use crate::{AppState, BonfireAdminRow, BonfireAuditRow, MainWindow, show_toast};
 
-fn ss(s: &str) -> SharedString { SharedString::from(s) }
+fn ss(s: &str) -> SharedString {
+    SharedString::from(s)
+}
 
 /// Profile-limit stepper's own value sequence — a small fixed range plus
 /// the -1 ("use the server's own default") sentinel at both ends, so Enter
@@ -55,7 +57,9 @@ fn ss(s: &str) -> SharedString { SharedString::from(s) }
 /// needed. Real per-master caps observed in this project's own prior
 /// Bonfire research have all been small (5 is the plugin's own documented
 /// default), so 20 is a generous ceiling, not a tight one.
-const LIMIT_STEPS: [i32; 21] = [-1, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20];
+const LIMIT_STEPS: [i32; 21] = [
+    -1, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
+];
 
 fn next_limit_step(current: i32) -> i32 {
     let idx = LIMIT_STEPS.iter().position(|&v| v == current).unwrap_or(0);
@@ -74,7 +78,12 @@ fn next_limit_step(current: i32) -> i32 {
 fn build_admin_rows(mappings: &fjord_api::models::AdminMappings) -> Vec<BonfireAdminRow> {
     let mut rows = Vec::new();
     for m in &mappings.master_users {
-        let initial = m.profile_name.chars().next().map(|c| c.to_uppercase().to_string()).unwrap_or_default();
+        let initial = m
+            .profile_name
+            .chars()
+            .next()
+            .map(|c| c.to_uppercase().to_string())
+            .unwrap_or_default();
         rows.push(BonfireAdminRow {
             is_master: true,
             profile_user_id: ss(&m.profile_user_id),
@@ -84,8 +93,17 @@ fn build_admin_rows(mappings: &fjord_api::models::AdminMappings) -> Vec<BonfireA
             requires_pin: m.requires_pin,
             max_profiles: m.limit_override.map(|v| v as i32).unwrap_or(-1),
         });
-        for sp in mappings.sub_profiles.iter().filter(|sp| sp.master_user_id == m.profile_user_id) {
-            let sp_initial = sp.profile_name.chars().next().map(|c| c.to_uppercase().to_string()).unwrap_or_default();
+        for sp in mappings
+            .sub_profiles
+            .iter()
+            .filter(|sp| sp.master_user_id == m.profile_user_id)
+        {
+            let sp_initial = sp
+                .profile_name
+                .chars()
+                .next()
+                .map(|c| c.to_uppercase().to_string())
+                .unwrap_or_default();
             rows.push(BonfireAdminRow {
                 is_master: false,
                 profile_user_id: ss(&sp.profile_user_id),
@@ -112,9 +130,9 @@ fn audit_entry_to_row(e: fjord_api::models::AuditLogEntry) -> BonfireAuditRow {
 }
 
 pub(crate) fn open_bonfire_admin_screen(
-    state:  &Arc<Mutex<FjordState>>,
+    state: &Arc<Mutex<FjordState>>,
     window: &MainWindow,
-    rt:     &tokio::runtime::Handle,
+    rt: &tokio::runtime::Handle,
 ) {
     let g = AppState::get(window);
     let (client, is_admin) = {
@@ -122,7 +140,10 @@ pub(crate) fn open_bonfire_admin_screen(
         (s.client.clone(), s.jellyfin_is_server_admin)
     };
     if !is_admin {
-        show_toast(window.as_weak(), "Only a Jellyfin server administrator can view this".to_string());
+        show_toast(
+            window.as_weak(),
+            "Only a Jellyfin server administrator can view this".to_string(),
+        );
         return;
     }
     let Some(client) = client else { return };
@@ -173,17 +194,26 @@ pub(crate) fn open_bonfire_admin_screen(
 /// everything, sorted newest-first, server-side) — cached for the rest of
 /// this screen-open's lifetime once fetched, not re-fetched on every tab
 /// switch back to it.
-fn ensure_audit_logs(state: &Arc<Mutex<FjordState>>, window: &MainWindow, rt: &tokio::runtime::Handle) {
+fn ensure_audit_logs(
+    state: &Arc<Mutex<FjordState>>,
+    window: &MainWindow,
+    rt: &tokio::runtime::Handle,
+) {
     let g = AppState::get(window);
-    if g.get_bonfire_admin_audit_fetched() { return; }
-    let Some(client) = state.lock().unwrap().client.clone() else { return };
+    if g.get_bonfire_admin_audit_fetched() {
+        return;
+    }
+    let Some(client) = state.lock().unwrap().client.clone() else {
+        return;
+    };
     g.set_bonfire_admin_audit_fetched(true); // set eagerly — a failed fetch shouldn't retry every tab switch
     g.set_bonfire_admin_loading(true);
     let ww = window.as_weak();
     rt.spawn(async move {
         match client.bonfire_admin_audit_logs().await {
             Ok(entries) => {
-                let rows: Vec<BonfireAuditRow> = entries.into_iter().map(audit_entry_to_row).collect();
+                let rows: Vec<BonfireAuditRow> =
+                    entries.into_iter().map(audit_entry_to_row).collect();
                 let _ = slint::invoke_from_event_loop(move || {
                     if let Some(w) = ww.upgrade() {
                         let g = AppState::get(&w);
@@ -207,14 +237,28 @@ fn ensure_audit_logs(state: &Arc<Mutex<FjordState>>, window: &MainWindow, rt: &t
     });
 }
 
-pub(crate) fn on_bonfire_admin_tab_selected(state: &Arc<Mutex<FjordState>>, window: &MainWindow, rt: &tokio::runtime::Handle, new_tab: i32) {
+pub(crate) fn on_bonfire_admin_tab_selected(
+    state: &Arc<Mutex<FjordState>>,
+    window: &MainWindow,
+    rt: &tokio::runtime::Handle,
+    new_tab: i32,
+) {
     let g = AppState::get(window);
     g.set_bonfire_admin_tab(new_tab);
-    if new_tab == 1 { ensure_audit_logs(state, window, rt); }
+    if new_tab == 1 {
+        ensure_audit_logs(state, window, rt);
+    }
 }
 
-pub(crate) fn on_bonfire_admin_reset_pin(state: &Arc<Mutex<FjordState>>, window: &MainWindow, rt: &tokio::runtime::Handle, profile_id: SharedString) {
-    let Some(client) = state.lock().unwrap().client.clone() else { return };
+pub(crate) fn on_bonfire_admin_reset_pin(
+    state: &Arc<Mutex<FjordState>>,
+    window: &MainWindow,
+    rt: &tokio::runtime::Handle,
+    profile_id: SharedString,
+) {
+    let Some(client) = state.lock().unwrap().client.clone() else {
+        return;
+    };
     let ww = window.as_weak();
     let profile_id_owned = profile_id.to_string();
     rt.spawn(async move {
@@ -225,7 +269,9 @@ pub(crate) fn on_bonfire_admin_reset_pin(state: &Arc<Mutex<FjordState>>, window:
                         let g = AppState::get(&w);
                         let model = g.get_bonfire_admin_rows();
                         for i in 0..model.row_count() {
-                            if let Some(mut row) = model.row_data(i) && row.profile_user_id == profile_id_owned {
+                            if let Some(mut row) = model.row_data(i)
+                                && row.profile_user_id == profile_id_owned
+                            {
                                 row.requires_pin = false;
                                 model.set_row_data(i, row);
                                 break;
@@ -244,20 +290,37 @@ pub(crate) fn on_bonfire_admin_reset_pin(state: &Arc<Mutex<FjordState>>, window:
     });
 }
 
-pub(crate) fn on_bonfire_admin_set_limit(state: &Arc<Mutex<FjordState>>, window: &MainWindow, rt: &tokio::runtime::Handle, user_id: SharedString, new_value: i32) {
-    let Some(client) = state.lock().unwrap().client.clone() else { return };
+pub(crate) fn on_bonfire_admin_set_limit(
+    state: &Arc<Mutex<FjordState>>,
+    window: &MainWindow,
+    rt: &tokio::runtime::Handle,
+    user_id: SharedString,
+    new_value: i32,
+) {
+    let Some(client) = state.lock().unwrap().client.clone() else {
+        return;
+    };
     let ww = window.as_weak();
     let user_id_owned = user_id.to_string();
-    let max_profiles = if new_value < 0 { None } else { Some(new_value as u32) };
+    let max_profiles = if new_value < 0 {
+        None
+    } else {
+        Some(new_value as u32)
+    };
     rt.spawn(async move {
-        match client.bonfire_admin_set_profile_limit(&user_id_owned, max_profiles).await {
+        match client
+            .bonfire_admin_set_profile_limit(&user_id_owned, max_profiles)
+            .await
+        {
             Ok(()) => {
                 let _ = slint::invoke_from_event_loop(move || {
                     if let Some(w) = ww.upgrade() {
                         let g = AppState::get(&w);
                         let model = g.get_bonfire_admin_rows();
                         for i in 0..model.row_count() {
-                            if let Some(mut row) = model.row_data(i) && row.profile_user_id == user_id_owned {
+                            if let Some(mut row) = model.row_data(i)
+                                && row.profile_user_id == user_id_owned
+                            {
                                 row.max_profiles = new_value;
                                 model.set_row_data(i, row);
                                 break;
@@ -280,7 +343,12 @@ pub(crate) fn on_bonfire_admin_set_limit(state: &Arc<Mutex<FjordState>>, window:
 /// a keyboard Confirm (`handle_key`'s col-1 arm) and a mouse click on the
 /// stepper control (`bonfire_admin.slint`), so the two input paths can
 /// never disagree on what "next" means for a given row.
-pub(crate) fn on_bonfire_admin_cycle_limit(state: &Arc<Mutex<FjordState>>, window: &MainWindow, rt: &tokio::runtime::Handle, user_id: SharedString) {
+pub(crate) fn on_bonfire_admin_cycle_limit(
+    state: &Arc<Mutex<FjordState>>,
+    window: &MainWindow,
+    rt: &tokio::runtime::Handle,
+    user_id: SharedString,
+) {
     let g = AppState::get(window);
     let model = g.get_bonfire_admin_rows();
     let current = (0..model.row_count())
@@ -292,8 +360,11 @@ pub(crate) fn on_bonfire_admin_cycle_limit(state: &Arc<Mutex<FjordState>>, windo
 }
 
 fn active_rows_len(g: &AppState) -> i32 {
-    if g.get_bonfire_admin_tab() == 0 { g.get_bonfire_admin_rows().row_count() as i32 }
-    else { g.get_bonfire_admin_audit_rows().row_count() as i32 }
+    if g.get_bonfire_admin_tab() == 0 {
+        g.get_bonfire_admin_rows().row_count() as i32
+    } else {
+        g.get_bonfire_admin_audit_rows().row_count() as i32
+    }
 }
 
 /// The column a freshly-focused Mappings row should land on — 0 (Reset
@@ -308,8 +379,16 @@ fn active_rows_len(g: &AppState) -> i32 {
 /// default to column 0 (Reset PIN, hidden on that row) and show no focus
 /// ring anywhere at all, since the limit stepper only lights for column 1.
 fn default_col_for_row(g: &AppState, idx: i32) -> i32 {
-    let Some(row) = g.get_bonfire_admin_rows().row_data(idx.max(0) as usize) else { return 0 };
-    if row.requires_pin { 0 } else if row.is_master { 1 } else { 0 }
+    let Some(row) = g.get_bonfire_admin_rows().row_data(idx.max(0) as usize) else {
+        return 0;
+    };
+    if row.requires_pin {
+        0
+    } else if row.is_master {
+        1
+    } else {
+        0
+    }
 }
 
 /// Dispatched via `AppMode::BonfireAdmin` in `keys.rs`'s own `match mode`
@@ -328,13 +407,17 @@ pub(crate) fn handle_key(action: &Action, g: &AppState) -> bool {
     if g.get_show_bonfire_admin_reset_confirm() {
         return match action {
             Action::Left | Action::Right => {
-                g.set_bonfire_admin_reset_confirm_focused(1 - g.get_bonfire_admin_reset_confirm_focused());
+                g.set_bonfire_admin_reset_confirm_focused(
+                    1 - g.get_bonfire_admin_reset_confirm_focused(),
+                );
                 true
             }
             Action::Confirm => {
                 let do_reset = g.get_bonfire_admin_reset_confirm_focused() == 1;
                 g.set_show_bonfire_admin_reset_confirm(false);
-                if do_reset { g.invoke_bonfire_admin_reset_pin(g.get_bonfire_admin_reset_confirm_target()); }
+                if do_reset {
+                    g.invoke_bonfire_admin_reset_pin(g.get_bonfire_admin_reset_confirm_target());
+                }
                 true
             }
             Action::Back => {
@@ -428,13 +511,17 @@ pub(crate) fn handle_key(action: &Action, g: &AppState) -> bool {
         // false there too.
         Action::Left | Action::Right if tab == 0 => {
             if let Some(row) = g.get_bonfire_admin_rows().row_data(focused as usize)
-                && row.is_master && row.requires_pin {
+                && row.is_master
+                && row.requires_pin
+            {
                 g.set_bonfire_admin_col(1 - g.get_bonfire_admin_col());
             }
             true
         }
         Action::Confirm if tab == 0 => {
-            let Some(row) = g.get_bonfire_admin_rows().row_data(focused as usize) else { return true };
+            let Some(row) = g.get_bonfire_admin_rows().row_data(focused as usize) else {
+                return true;
+            };
             let col = g.get_bonfire_admin_col();
             // Explicit per-action guards, not just a col check — col is
             // always pre-set correctly by default_col_for_row on every

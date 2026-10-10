@@ -490,12 +490,14 @@ use slint::{ComponentHandle, Global, Model, ModelRc, VecModel, Weak};
 
 use tracing::{debug, info, warn};
 
-use crate::config::{discover_poster_cache_path, save_config, ProfileSettings, RequestPreference, FjordState};
+use crate::config::{
+    FjordState, ProfileSettings, RequestPreference, discover_poster_cache_path, save_config,
+};
 use crate::keys::Action;
 use crate::poster::decode_poster_buffer;
 use crate::{
-    show_toast, spawn_movies_list_fetch, AppState, CardItem, CastMember, GenreItem, MainWindow, ProfileItem,
-    ProviderItem, SeasonItem, StreamingProvider, TagItem,
+    AppState, CardItem, CastMember, GenreItem, MainWindow, ProfileItem, ProviderItem, SeasonItem,
+    StreamingProvider, TagItem, show_toast, spawn_movies_list_fetch,
 };
 
 pub(crate) const TMDB_POSTER_BASE: &str = "https://image.tmdb.org/t/p/w500";
@@ -646,7 +648,11 @@ fn known_requests_from_row(
         .map(|(m, _)| {
             (
                 (m.item_type, m.id.clone()),
-                KnownRequest { request_id: m.request_id.clone(), pending: m.request_pending, mine: m.request_mine },
+                KnownRequest {
+                    request_id: m.request_id.clone(),
+                    pending: m.request_pending,
+                    mine: m.request_mine,
+                },
             )
         })
         .collect()
@@ -658,7 +664,10 @@ fn known_requests_from_row(
 /// see `FjordState.discover_known_requests`'s own doc comment for the full
 /// story. A no-op (leaves the meta's zeroed defaults) when the item isn't in
 /// the cache, same as before this fix existed.
-fn patch_known_request_state(meta: &mut DiscoverCardMeta, known: &std::collections::HashMap<(&'static str, String), KnownRequest>) {
+fn patch_known_request_state(
+    meta: &mut DiscoverCardMeta,
+    known: &std::collections::HashMap<(&'static str, String), KnownRequest>,
+) {
     if let Some(k) = known.get(&(meta.item_type, meta.id.clone())) {
         meta.request_id = k.request_id.clone();
         meta.request_pending = k.pending;
@@ -669,7 +678,10 @@ fn patch_known_request_state(meta: &mut DiscoverCardMeta, known: &std::collectio
 /// `on_watchlist` counterpart to `patch_known_request_state` above — same
 /// shape, consulting `FjordState.discover_watchlist_ids` instead. Watchlist
 /// + Release Calendar, 2026-07-18.
-fn patch_watchlist_state(meta: &mut DiscoverCardMeta, watchlist_ids: &std::collections::HashSet<(&'static str, String)>) {
+fn patch_watchlist_state(
+    meta: &mut DiscoverCardMeta,
+    watchlist_ids: &std::collections::HashSet<(&'static str, String)>,
+) {
     meta.on_watchlist = watchlist_ids.contains(&(meta.item_type, meta.id.clone()));
 }
 
@@ -695,7 +707,11 @@ fn search_result_to_meta(r: &SearchResult) -> Option<DiscoverCardMeta> {
     }
     Some(DiscoverCardMeta {
         id: r.id.to_string(),
-        item_type: if r.media_type == "movie" { "DiscoverMovie" } else { "DiscoverTv" },
+        item_type: if r.media_type == "movie" {
+            "DiscoverMovie"
+        } else {
+            "DiscoverTv"
+        },
         title: r.display_title().to_string(),
         subtitle: r.year().unwrap_or("").to_string(),
         year: r.year().and_then(|y| y.parse().ok()).unwrap_or(0),
@@ -728,14 +744,20 @@ pub(crate) fn build_person_credit_metas(
     let mut seen = std::collections::HashSet::new();
     let mut out = Vec::new();
     for c in &credits.cast {
-        let Some(mt) = c.media_type.as_deref() else { continue };
+        let Some(mt) = c.media_type.as_deref() else {
+            continue;
+        };
         if mt != "movie" && mt != "tv" {
             continue;
         }
         if !seen.insert((mt, c.id)) {
             continue;
         }
-        let item_type = if mt == "movie" { "DiscoverMovie" } else { "DiscoverTv" };
+        let item_type = if mt == "movie" {
+            "DiscoverMovie"
+        } else {
+            "DiscoverTv"
+        };
         let year_str = c.year().unwrap_or("");
         out.push((
             DiscoverCardMeta {
@@ -760,14 +782,20 @@ pub(crate) fn build_person_credit_metas(
         ));
     }
     for c in &credits.crew {
-        let Some(mt) = c.media_type.as_deref() else { continue };
+        let Some(mt) = c.media_type.as_deref() else {
+            continue;
+        };
         if mt != "movie" && mt != "tv" {
             continue;
         }
         if !seen.insert((mt, c.id)) {
             continue;
         }
-        let item_type = if mt == "movie" { "DiscoverMovie" } else { "DiscoverTv" };
+        let item_type = if mt == "movie" {
+            "DiscoverMovie"
+        } else {
+            "DiscoverTv"
+        };
         let year_str = c.year().unwrap_or("");
         out.push((
             DiscoverCardMeta {
@@ -814,11 +842,18 @@ pub(crate) async fn resolve_and_fetch_discovery_row(
     state: &Arc<Mutex<FjordState>>,
     items: Vec<(DiscoverCardMeta, Option<String>)>,
     cap: usize,
-) -> Vec<(DiscoverCardMeta, Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>)> {
+) -> Vec<(
+    DiscoverCardMeta,
+    Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>,
+)> {
     let mut filtered: Vec<(DiscoverCardMeta, Option<String>)> = items
         .into_iter()
         .filter(|(m, _)| {
-            let media_type = if m.item_type == "DiscoverMovie" { "movie" } else { "tv" };
+            let media_type = if m.item_type == "DiscoverMovie" {
+                "movie"
+            } else {
+                "tv"
+            };
             find_local_item(state, media_type, &m.id).is_none()
         })
         .collect();
@@ -826,7 +861,10 @@ pub(crate) async fn resolve_and_fetch_discovery_row(
 
     let (known, watchlist) = {
         let s = state.lock().unwrap();
-        (s.discover_known_requests.clone(), s.discover_watchlist_ids.clone())
+        (
+            s.discover_known_requests.clone(),
+            s.discover_watchlist_ids.clone(),
+        )
     };
     for (meta, _) in &mut filtered {
         patch_known_request_state(meta, &known);
@@ -836,32 +874,50 @@ pub(crate) async fn resolve_and_fetch_discovery_row(
     if filtered.is_empty() {
         return Vec::new();
     }
-    let Ok(http) = reqwest::Client::builder().timeout(Duration::from_secs(30)).build() else {
+    let Ok(http) = reqwest::Client::builder()
+        .timeout(Duration::from_secs(30))
+        .build()
+    else {
         return filtered.into_iter().map(|(m, _)| (m, None)).collect();
     };
     let sem = Arc::new(tokio::sync::Semaphore::new(8));
     let mut set = tokio::task::JoinSet::new();
     for (idx, (_, poster_path)) in filtered.iter().enumerate() {
-        let Some(path) = poster_path.clone() else { continue };
+        let Some(path) = poster_path.clone() else {
+            continue;
+        };
         let http = http.clone();
         let sem = Arc::clone(&sem);
         let item_type = filtered[idx].0.item_type;
         let id = filtered[idx].0.id.clone();
         set.spawn(async move {
             let _permit = sem.acquire_owned().await.ok();
-            let cache_key = format!("{}-{}", if item_type == "DiscoverMovie" { "movie" } else { "tv" }, id);
+            let cache_key = format!(
+                "{}-{}",
+                if item_type == "DiscoverMovie" {
+                    "movie"
+                } else {
+                    "tv"
+                },
+                id
+            );
             let bytes = fetch_tmdb_image(&http, TMDB_POSTER_BASE, &path, &cache_key).await?;
             let buf = decode_poster_buffer(&bytes)?;
             Some((idx, buf))
         });
     }
-    let mut bufs: Vec<Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>> = vec![None; filtered.len()];
+    let mut bufs: Vec<Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>> =
+        vec![None; filtered.len()];
     while let Some(res) = set.join_next().await {
         if let Ok(Some((idx, buf))) = res {
             bufs[idx] = Some(buf);
         }
     }
-    filtered.into_iter().zip(bufs).map(|((m, _), buf)| (m, buf)).collect()
+    filtered
+        .into_iter()
+        .zip(bufs)
+        .map(|((m, _), buf)| (m, buf))
+        .collect()
 }
 
 /// UI-thread-only: builds the final `Vec<CardItem>` from
@@ -869,7 +925,10 @@ pub(crate) async fn resolve_and_fetch_discovery_row(
 /// `invoke_from_event_loop`, never off-thread (`CardItem` carries a
 /// `slint::Image` field, `!Send` regardless of whether it's populated).
 pub(crate) fn discover_cards_from(
-    items: Vec<(DiscoverCardMeta, Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>)>,
+    items: Vec<(
+        DiscoverCardMeta,
+        Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>,
+    )>,
 ) -> Vec<CardItem> {
     items
         .into_iter()
@@ -909,21 +968,41 @@ pub(crate) fn handle_seerr_error(
     if is_session_auth && is_401(e) {
         warn!("seerr: {context}: session expired (401) — resetting connection: {e:#}");
         crate::seerr_auth::clear_connection(state, ww);
-        show_toast(ww.clone(), "Seerr session expired — reconnect in Settings".into());
+        show_toast(
+            ww.clone(),
+            "Seerr session expired — reconnect in Settings".into(),
+        );
     } else {
         warn!("seerr: {context}: {e:#}");
         show_toast(ww.clone(), format!("{context}: {e}"));
     }
 }
 
-pub(crate) async fn fetch_tmdb_image(http: &reqwest::Client, base: &str, path: &str, cache_key: &str) -> Option<Vec<u8>> {
+pub(crate) async fn fetch_tmdb_image(
+    http: &reqwest::Client,
+    base: &str,
+    path: &str,
+    cache_key: &str,
+) -> Option<Vec<u8>> {
     // None for a key that isn't a safe file name: fetched, not cached.
     let cache_path = discover_poster_cache_path(cache_key);
-    if let Some(p) = &cache_path && let Ok(bytes) = tokio::fs::read(p).await {
+    if let Some(p) = &cache_path
+        && let Ok(bytes) = tokio::fs::read(p).await
+    {
         return Some(bytes);
     }
     let url = format!("{base}{path}");
-    let bytes = http.get(&url).send().await.ok()?.error_for_status().ok()?.bytes().await.ok()?.to_vec();
+    let bytes = http
+        .get(&url)
+        .send()
+        .await
+        .ok()?
+        .error_for_status()
+        .ok()?
+        .bytes()
+        .await
+        .ok()?
+        .to_vec();
     // Only real images reach the disk (poster::is_image).
     if !crate::poster::is_image(&bytes) {
         return None;
@@ -982,7 +1061,12 @@ async fn fetch_and_patch_posters(
     if poster_jobs.is_empty() {
         return;
     }
-    let Ok(http) = reqwest::Client::builder().timeout(Duration::from_secs(30)).build() else { return };
+    let Ok(http) = reqwest::Client::builder()
+        .timeout(Duration::from_secs(30))
+        .build()
+    else {
+        return;
+    };
     let sem = Arc::new(tokio::sync::Semaphore::new(8));
     let mut set = tokio::task::JoinSet::new();
     for (idx, item_type, tmdb_id, poster_path) in poster_jobs {
@@ -990,7 +1074,15 @@ async fn fetch_and_patch_posters(
         let sem = Arc::clone(&sem);
         set.spawn(async move {
             let _permit = sem.acquire_owned().await.ok();
-            let cache_key = format!("{}-{}", if item_type == "DiscoverMovie" { "movie" } else { "tv" }, tmdb_id);
+            let cache_key = format!(
+                "{}-{}",
+                if item_type == "DiscoverMovie" {
+                    "movie"
+                } else {
+                    "tv"
+                },
+                tmdb_id
+            );
             let bytes = fetch_tmdb_image(&http, TMDB_POSTER_BASE, &poster_path, &cache_key).await?;
             let buf = decode_poster_buffer(&bytes)?;
             Some((idx, item_type, tmdb_id, buf))
@@ -1021,7 +1113,9 @@ async fn fetch_and_patch_posters(
     // "flashes" any more, so there is no longer a size/timing dial to get
     // right — every completed fetch just lands as soon as it's done.
     while let Some(res) = set.join_next().await {
-        let Ok(Some((idx, item_type, tmdb_id, buf))) = res else { continue };
+        let Ok(Some((idx, item_type, tmdb_id, buf))) = res else {
+            continue;
+        };
         if generation.load(Ordering::SeqCst) != my_gen {
             break; // a newer search superseded this one
         }
@@ -1030,7 +1124,9 @@ async fn fetch_and_patch_posters(
             let Some(w) = ww2.upgrade() else { return };
             let g = AppState::get(&w);
             let model = g.get_discover_results();
-            let Some(mut card) = model.row_data(idx) else { return };
+            let Some(mut card) = model.row_data(idx) else {
+                return;
+            };
             // Defensive: confirm the row at this index is still the same
             // item before patching, matching the id-match guard used
             // elsewhere in this codebase for in-place model patches.
@@ -1076,7 +1172,10 @@ pub(crate) fn spawn_discover_search(
         // found live: a search typed while (for whatever reason)
         // `seerr_client` was `None` produced literally no feedback at all.
         warn!("seerr: search dispatched with no seerr_client set — not connected?");
-        show_toast(ww, "Not connected to Seerr — check Settings → Integrations".into());
+        show_toast(
+            ww,
+            "Not connected to Seerr — check Settings → Integrations".into(),
+        );
         return;
     };
     let is_session_auth = client.is_session_auth();
@@ -1098,7 +1197,9 @@ pub(crate) fn spawn_discover_search(
     // closure or error branch ever clears it back to false.
     let ww_searching = ww.clone();
     let _ = slint::invoke_from_event_loop(move || {
-        if let Some(w) = ww_searching.upgrade() { AppState::get(&w).set_discover_searching(true); }
+        if let Some(w) = ww_searching.upgrade() {
+            AppState::get(&w).set_discover_searching(true);
+        }
     });
 
     rt.spawn(async move {
@@ -1113,7 +1214,9 @@ pub(crate) fn spawn_discover_search(
             Err(e) => {
                 let ww2 = ww.clone();
                 let _ = slint::invoke_from_event_loop(move || {
-                    if let Some(w) = ww2.upgrade() { AppState::get(&w).set_discover_searching(false); }
+                    if let Some(w) = ww2.upgrade() {
+                        AppState::get(&w).set_discover_searching(false);
+                    }
                 });
                 handle_seerr_error(&state, &ww, is_session_auth, "Seerr search failed", &e);
                 return;
@@ -1148,7 +1251,9 @@ pub(crate) fn spawn_discover_search(
         let mut metas: Vec<DiscoverCardMeta> = Vec::with_capacity(results.len());
         let mut poster_jobs: Vec<(usize, String, String, String)> = Vec::new();
         for r in &results {
-            let Some(m) = search_result_to_meta(r) else { continue };
+            let Some(m) = search_result_to_meta(r) else {
+                continue;
+            };
             if let Some(p) = r.poster_path.clone() {
                 poster_jobs.push((metas.len(), m.item_type.to_string(), m.id.clone(), p));
             }
@@ -1195,10 +1300,16 @@ pub(crate) fn spawn_discover_search(
                 // (id, item_type) across the swap, same pattern
                 // apply_search_filters already uses for its own re-filter.
                 let old = g.get_discover_results();
-                let old_posters: std::collections::HashMap<(String, String), (slint::Image, bool)> = (0..old.row_count())
-                    .filter_map(|i| old.row_data(i))
-                    .map(|c| ((c.id.to_string(), c.item_type.to_string()), (c.poster.clone(), c.has_poster)))
-                    .collect();
+                let old_posters: std::collections::HashMap<(String, String), (slint::Image, bool)> =
+                    (0..old.row_count())
+                        .filter_map(|i| old.row_data(i))
+                        .map(|c| {
+                            (
+                                (c.id.to_string(), c.item_type.to_string()),
+                                (c.poster.clone(), c.has_poster),
+                            )
+                        })
+                        .collect();
                 let cards: Vec<CardItem> = metas
                     .into_iter()
                     .map(|m| {
@@ -1270,9 +1381,15 @@ pub(crate) fn spawn_discover_search_more(
     let my_gen = generation.load(Ordering::SeqCst);
     let (client, next_page) = {
         let mut s = state.lock().unwrap();
-        if s.discover_search_loading_more { return; }
-        if s.discover_search_page == 0 || s.discover_search_page >= s.discover_search_total_pages { return; }
-        let Some(client) = s.seerr_client.clone() else { return };
+        if s.discover_search_loading_more {
+            return;
+        }
+        if s.discover_search_page == 0 || s.discover_search_page >= s.discover_search_total_pages {
+            return;
+        }
+        let Some(client) = s.seerr_client.clone() else {
+            return;
+        };
         s.discover_search_loading_more = true;
         (client, s.discover_search_page + 1)
     };
@@ -1285,7 +1402,10 @@ pub(crate) fn spawn_discover_search_more(
     // sleep even starts, so this fetch's `generation` check below (after the
     // network round trip) will already see the mismatch and bail before
     // ever using this offset.
-    let offset = ww.upgrade().map(|w| AppState::get(&w).get_discover_results().row_count()).unwrap_or(0);
+    let offset = ww
+        .upgrade()
+        .map(|w| AppState::get(&w).get_discover_results().row_count())
+        .unwrap_or(0);
 
     let state2 = Arc::clone(&state);
     rt.spawn(async move {
@@ -1309,9 +1429,16 @@ pub(crate) fn spawn_discover_search_more(
         let mut metas: Vec<DiscoverCardMeta> = Vec::with_capacity(results.len());
         let mut poster_jobs: Vec<(usize, String, String, String)> = Vec::new();
         for r in &results {
-            let Some(m) = search_result_to_meta(r) else { continue };
+            let Some(m) = search_result_to_meta(r) else {
+                continue;
+            };
             if let Some(p) = r.poster_path.clone() {
-                poster_jobs.push((offset + metas.len(), m.item_type.to_string(), m.id.clone(), p));
+                poster_jobs.push((
+                    offset + metas.len(),
+                    m.item_type.to_string(),
+                    m.id.clone(),
+                    p,
+                ));
             }
             metas.push(m);
         }
@@ -1340,7 +1467,10 @@ pub(crate) fn spawn_discover_search_more(
             if let Some(w) = ww_commit.upgrade() {
                 let g = AppState::get(&w);
                 let existing = g.get_discover_results();
-                let new_cards: Vec<CardItem> = metas.into_iter().map(DiscoverCardMeta::into_card_item).collect();
+                let new_cards: Vec<CardItem> = metas
+                    .into_iter()
+                    .map(DiscoverCardMeta::into_card_item)
+                    .collect();
                 // True incremental append (2026-08-02, real bug live-reported
                 // as "the grid flash several times" while searching): a page
                 // 2/3/4 auto-load only ever ADDS rows to what's already on
@@ -1359,7 +1489,9 @@ pub(crate) fn spawn_discover_search_more(
                 if let Some(vm) = existing.as_any().downcast_ref::<VecModel<CardItem>>() {
                     vm.extend(new_cards);
                 } else {
-                    let mut all: Vec<CardItem> = (0..existing.row_count()).filter_map(|i| existing.row_data(i)).collect();
+                    let mut all: Vec<CardItem> = (0..existing.row_count())
+                        .filter_map(|i| existing.row_data(i))
+                        .collect();
                     all.extend(new_cards);
                     g.set_discover_results(ModelRc::new(VecModel::from(all)));
                 }
@@ -1435,8 +1567,17 @@ fn landing_row_lens(g: &AppState) -> [i32; 9] {
 // on `entry` at both call sites in `fetch_requested_row`) rather than the
 // per-field signature these had before `request_id`/`request_pending`/
 // `request_mine` were added.
-fn movie_details_to_meta(tmdb_id: i64, d: &MovieDetails, entry: &RequestEntry) -> (DiscoverCardMeta, Option<String>) {
-    let year = d.release_date.as_deref().filter(|s| s.len() >= 4).map(|s| &s[..4]).unwrap_or("");
+fn movie_details_to_meta(
+    tmdb_id: i64,
+    d: &MovieDetails,
+    entry: &RequestEntry,
+) -> (DiscoverCardMeta, Option<String>) {
+    let year = d
+        .release_date
+        .as_deref()
+        .filter(|s| s.len() >= 4)
+        .map(|s| &s[..4])
+        .unwrap_or("");
     let meta = DiscoverCardMeta {
         id: tmdb_id.to_string(),
         item_type: "DiscoverMovie",
@@ -1458,8 +1599,17 @@ fn movie_details_to_meta(tmdb_id: i64, d: &MovieDetails, entry: &RequestEntry) -
     (meta, d.poster_path.clone())
 }
 
-fn tv_details_to_meta(tmdb_id: i64, d: &TvDetails, entry: &RequestEntry) -> (DiscoverCardMeta, Option<String>) {
-    let year = d.first_air_date.as_deref().filter(|s| s.len() >= 4).map(|s| &s[..4]).unwrap_or("");
+fn tv_details_to_meta(
+    tmdb_id: i64,
+    d: &TvDetails,
+    entry: &RequestEntry,
+) -> (DiscoverCardMeta, Option<String>) {
+    let year = d
+        .first_air_date
+        .as_deref()
+        .filter(|s| s.len() >= 4)
+        .map(|s| &s[..4])
+        .unwrap_or("");
     let meta = DiscoverCardMeta {
         id: tmdb_id.to_string(),
         item_type: "DiscoverTv",
@@ -1506,12 +1656,20 @@ fn tv_details_to_meta(tmdb_id: i64, d: &TvDetails, entry: &RequestEntry) -> (Dis
 /// still-watchlisted item would keep resurfacing here on every watchlist
 /// refresh regardless of `remove_card_from_all_models` having pulled it off
 /// screen a moment earlier.
-fn watchlist_movie_to_meta(tmdb_id: i64, d: &MovieDetails) -> Option<(DiscoverCardMeta, Option<String>)> {
+fn watchlist_movie_to_meta(
+    tmdb_id: i64,
+    d: &MovieDetails,
+) -> Option<(DiscoverCardMeta, Option<String>)> {
     let availability = availability_tag(d.media_info.as_ref().and_then(|mi| mi.status()));
     if availability == "blocklisted" {
         return None;
     }
-    let year = d.release_date.as_deref().filter(|s| s.len() >= 4).map(|s| &s[..4]).unwrap_or("");
+    let year = d
+        .release_date
+        .as_deref()
+        .filter(|s| s.len() >= 4)
+        .map(|s| &s[..4])
+        .unwrap_or("");
     let meta = DiscoverCardMeta {
         id: tmdb_id.to_string(),
         item_type: "DiscoverMovie",
@@ -1538,7 +1696,12 @@ fn watchlist_tv_to_meta(tmdb_id: i64, d: &TvDetails) -> Option<(DiscoverCardMeta
     if availability == "blocklisted" {
         return None;
     }
-    let year = d.first_air_date.as_deref().filter(|s| s.len() >= 4).map(|s| &s[..4]).unwrap_or("");
+    let year = d
+        .first_air_date
+        .as_deref()
+        .filter(|s| s.len() >= 4)
+        .map(|s| &s[..4])
+        .unwrap_or("");
     let meta = DiscoverCardMeta {
         id: tmdb_id.to_string(),
         item_type: "DiscoverTv",
@@ -1594,13 +1757,18 @@ struct RequestEntry {
 /// `MediaRequest` only ever describes its own tier and has no visibility
 /// into whether a sibling request exists for the other one.
 fn request_entry(
-    media_type: &'static str, r: &fjord_seerr::MediaRequest, dual_tier_tmdb_ids: &std::collections::HashSet<i64>,
+    media_type: &'static str,
+    r: &fjord_seerr::MediaRequest,
+    dual_tier_tmdb_ids: &std::collections::HashSet<i64>,
     my_user_id: Option<i64>,
 ) -> Option<RequestEntry> {
     let media = r.media.as_ref()?;
     let tmdb_id = media.tmdb_id?;
-    let (requested_status, other_status) =
-        if r.is4k { (media.status4k(), media.status()) } else { (media.status(), media.status4k()) };
+    let (requested_status, other_status) = if r.is4k {
+        (media.status4k(), media.status())
+    } else {
+        (media.status(), media.status4k())
+    };
     // A row reaching this function is, by construction, an active request
     // for this exact tier (requested_not_available's own filter guarantees
     // it) — but Seerr can still report that tier's own media status as
@@ -1624,11 +1792,18 @@ fn request_entry(
     // default keeps Edit/Cancel visible rather than silently hiding them;
     // a genuine ownership mismatch just 403s server-side, same as any
     // other stale-permission action in this app.
-    let mine = my_user_id.zip(r.requested_by.as_ref().map(|rb| rb.id)).map(|(mine, theirs)| mine == theirs).unwrap_or(true);
+    let mine = my_user_id
+        .zip(r.requested_by.as_ref().map(|rb| rb.id))
+        .map(|(mine, theirs)| mine == theirs)
+        .unwrap_or(true);
     debug!(
         "seerr: request_entry {media_type} tmdb={tmdb_id} request_id={} is4k={} status={} pending={} \
          requested_by={:?} my_user_id={my_user_id:?} mine={mine}",
-        r.id, r.is4k, r.status, r.is_pending(), r.requested_by.as_ref().map(|rb| rb.id),
+        r.id,
+        r.is4k,
+        r.status,
+        r.is_pending(),
+        r.requested_by.as_ref().map(|rb| rb.id),
     );
     Some(RequestEntry {
         media_type,
@@ -1657,7 +1832,9 @@ fn dual_tier_tmdb_ids(requests: &[fjord_seerr::MediaRequest]) -> std::collection
     let mut has_2k: HashSet<i64> = HashSet::new();
     let mut has_4k: HashSet<i64> = HashSet::new();
     for r in requests {
-        let Some(tmdb_id) = r.media.as_ref().and_then(|m| m.tmdb_id) else { continue };
+        let Some(tmdb_id) = r.media.as_ref().and_then(|m| m.tmdb_id) else {
+            continue;
+        };
         if r.is4k {
             has_4k.insert(tmdb_id);
         } else {
@@ -1675,7 +1852,10 @@ fn dual_tier_tmdb_ids(requests: &[fjord_seerr::MediaRequest]) -> std::collection
 /// `(meta, poster_path)` pairs so the caller can feed both the row's text
 /// content and its poster-fetch jobs, mirroring the other 5 rows exactly.
 /// Best-effort throughout: any failure just yields an empty/shorter row.
-async fn fetch_requested_row(client: &fjord_seerr::SeerrClient, my_user_id: Option<i64>) -> Vec<RequestedRowItem> {
+async fn fetch_requested_row(
+    client: &fjord_seerr::SeerrClient,
+    my_user_id: Option<i64>,
+) -> Vec<RequestedRowItem> {
     let (movies, tv) = match client.requested_not_available(15).await {
         Ok(v) => v,
         Err(e) => {
@@ -1688,23 +1868,35 @@ async fn fetch_requested_row(client: &fjord_seerr::SeerrClient, my_user_id: Opti
     let mut entries: Vec<RequestEntry> = movies
         .iter()
         .filter_map(|r| request_entry("movie", r, &dual_movie_ids, my_user_id))
-        .chain(tv.iter().filter_map(|r| request_entry("tv", r, &dual_tv_ids, my_user_id)))
+        .chain(
+            tv.iter()
+                .filter_map(|r| request_entry("tv", r, &dual_tv_ids, my_user_id)),
+        )
         .collect();
     entries.sort_by(|a, b| b.created_at.cmp(&a.created_at)); // newest requested first
     entries.truncate(20);
 
     let n = entries.len();
     let sem = Arc::new(tokio::sync::Semaphore::new(6));
-    let mut set: tokio::task::JoinSet<(usize, Option<RequestedRowItem>)> = tokio::task::JoinSet::new();
+    let mut set: tokio::task::JoinSet<(usize, Option<RequestedRowItem>)> =
+        tokio::task::JoinSet::new();
     for (idx, entry) in entries.into_iter().enumerate() {
         let client = client.clone();
         let sem = Arc::clone(&sem);
         set.spawn(async move {
             let _permit = sem.acquire_owned().await.ok();
             let item = if entry.media_type == "movie" {
-                client.get_movie(entry.tmdb_id).await.ok().map(|d| movie_details_to_meta(entry.tmdb_id, &d, &entry))
+                client
+                    .get_movie(entry.tmdb_id)
+                    .await
+                    .ok()
+                    .map(|d| movie_details_to_meta(entry.tmdb_id, &d, &entry))
             } else {
-                client.get_tv(entry.tmdb_id).await.ok().map(|d| tv_details_to_meta(entry.tmdb_id, &d, &entry))
+                client
+                    .get_tv(entry.tmdb_id)
+                    .await
+                    .ok()
+                    .map(|d| tv_details_to_meta(entry.tmdb_id, &d, &entry))
             };
             (idx, item)
         });
@@ -1730,10 +1922,16 @@ async fn fetch_requested_row(client: &fjord_seerr::SeerrClient, my_user_id: Opti
 /// session (`ensure_discover_landing`'s own guard). A full re-fetch of this
 /// one row (not all 6 — Trending/Popular/Upcoming didn't change) is cheap
 /// enough for an infrequent action like submitting a request.
-fn refresh_requested_row(state: Arc<Mutex<FjordState>>, ww: Weak<MainWindow>, rt: tokio::runtime::Handle) {
+fn refresh_requested_row(
+    state: Arc<Mutex<FjordState>>,
+    ww: Weak<MainWindow>,
+    rt: tokio::runtime::Handle,
+) {
     let (client, my_user_id) = {
         let s = state.lock().unwrap();
-        let Some(client) = s.seerr_client.clone() else { return };
+        let Some(client) = s.seerr_client.clone() else {
+            return;
+        };
         (client, s.seerr_user_id)
     };
     rt.spawn(async move {
@@ -1747,9 +1945,16 @@ fn refresh_requested_row(state: Arc<Mutex<FjordState>>, ww: Weak<MainWindow>, rt
         let poster_jobs: Vec<(usize, String, String, String)> = requested
             .iter()
             .enumerate()
-            .filter_map(|(idx, (m, poster_path))| poster_path.clone().map(|p| (idx, m.item_type.to_string(), m.id.clone(), p)))
+            .filter_map(|(idx, (m, poster_path))| {
+                poster_path
+                    .clone()
+                    .map(|p| (idx, m.item_type.to_string(), m.id.clone(), p))
+            })
             .collect();
-        debug!("seerr: refresh_requested_row -> {} card(s)", requested.len());
+        debug!(
+            "seerr: refresh_requested_row -> {} card(s)",
+            requested.len()
+        );
         // metas (not CardItem) crosses the thread boundary — CardItem carries
         // a slint::Image field and is `!Send` regardless of whether it's
         // populated (same reason ensure_discover_landing's own commit closure
@@ -1758,14 +1963,22 @@ fn refresh_requested_row(state: Arc<Mutex<FjordState>>, ww: Weak<MainWindow>, rt
         let ww2 = ww.clone();
         let _ = slint::invoke_from_event_loop(move || {
             if let Some(w) = ww2.upgrade() {
-                let cards: Vec<CardItem> = metas.into_iter().map(DiscoverCardMeta::into_card_item).collect();
+                let cards: Vec<CardItem> = metas
+                    .into_iter()
+                    .map(DiscoverCardMeta::into_card_item)
+                    .collect();
                 AppState::get(&w).set_discover_requested(ModelRc::new(VecModel::from(cards)));
             }
         });
         if poster_jobs.is_empty() {
             return;
         }
-        let Ok(http) = reqwest::Client::builder().timeout(Duration::from_secs(30)).build() else { return };
+        let Ok(http) = reqwest::Client::builder()
+            .timeout(Duration::from_secs(30))
+            .build()
+        else {
+            return;
+        };
         let sem = Arc::new(tokio::sync::Semaphore::new(8));
         let mut set = tokio::task::JoinSet::new();
         for (idx, item_type, tmdb_id, poster_path) in poster_jobs {
@@ -1773,20 +1986,33 @@ fn refresh_requested_row(state: Arc<Mutex<FjordState>>, ww: Weak<MainWindow>, rt
             let sem = Arc::clone(&sem);
             set.spawn(async move {
                 let _permit = sem.acquire_owned().await.ok();
-                let cache_key = format!("{}-{}", if item_type == "DiscoverMovie" { "movie" } else { "tv" }, tmdb_id);
-                let bytes = fetch_tmdb_image(&http, TMDB_POSTER_BASE, &poster_path, &cache_key).await?;
+                let cache_key = format!(
+                    "{}-{}",
+                    if item_type == "DiscoverMovie" {
+                        "movie"
+                    } else {
+                        "tv"
+                    },
+                    tmdb_id
+                );
+                let bytes =
+                    fetch_tmdb_image(&http, TMDB_POSTER_BASE, &poster_path, &cache_key).await?;
                 let buf = decode_poster_buffer(&bytes)?;
                 Some((idx, item_type, tmdb_id, buf))
             });
         }
         while let Some(res) = set.join_next().await {
-            let Ok(Some((idx, item_type, tmdb_id, buf))) = res else { continue };
+            let Ok(Some((idx, item_type, tmdb_id, buf))) = res else {
+                continue;
+            };
             let ww2 = ww.clone();
             let _ = slint::invoke_from_event_loop(move || {
                 let Some(w) = ww2.upgrade() else { return };
                 let g = AppState::get(&w);
                 let model = g.get_discover_requested();
-                let Some(mut card) = model.row_data(idx) else { return };
+                let Some(mut card) = model.row_data(idx) else {
+                    return;
+                };
                 if card.id.as_str() != tmdb_id || card.item_type.as_str() != item_type {
                     return; // row reshuffled since the fetch started — skip rather than mispatch
                 }
@@ -1817,25 +2043,39 @@ fn refresh_requested_row(state: Arc<Mutex<FjordState>>, ww: Weak<MainWindow>, rt
 /// every title. Reuses `discover_movies_filtered` (Discover Filters'
 /// existing machinery) with a canned preset rather than a new fetch shape.
 /// Watchlist + Release Calendar, 2026-07-18.
-async fn fetch_new_in_theaters(client: &fjord_seerr::SeerrClient) -> anyhow::Result<fjord_seerr::SearchResponse> {
+async fn fetch_new_in_theaters(
+    client: &fjord_seerr::SeerrClient,
+) -> anyhow::Result<fjord_seerr::SearchResponse> {
     let today = chrono::Local::now().date_naive();
     let six_weeks_ago = today - chrono::Duration::days(45);
     let filters = fjord_seerr::DiscoverFilters {
         sort: Some("popularity.desc"),
-        date_gte: Some(("primaryReleaseDateGte", six_weeks_ago.format("%Y-%m-%d").to_string())),
-        date_lte: Some(("primaryReleaseDateLte", today.format("%Y-%m-%d").to_string())),
+        date_gte: Some((
+            "primaryReleaseDateGte",
+            six_weeks_ago.format("%Y-%m-%d").to_string(),
+        )),
+        date_lte: Some((
+            "primaryReleaseDateLte",
+            today.format("%Y-%m-%d").to_string(),
+        )),
         ..Default::default()
     };
     client.discover_movies_filtered(1, &filters).await
 }
 
-pub(crate) fn ensure_discover_landing(state: Arc<Mutex<FjordState>>, ww: Weak<MainWindow>, rt: tokio::runtime::Handle) {
+pub(crate) fn ensure_discover_landing(
+    state: Arc<Mutex<FjordState>>,
+    ww: Weak<MainWindow>,
+    rt: tokio::runtime::Handle,
+) {
     let (client, my_user_id) = {
         let mut s = state.lock().unwrap();
         if s.discover_landing_fetched {
             return;
         }
-        let Some(client) = s.seerr_client.clone() else { return };
+        let Some(client) = s.seerr_client.clone() else {
+            return;
+        };
         s.discover_landing_fetched = true;
         (client, s.seerr_user_id)
     };
@@ -2093,12 +2333,24 @@ type CreditRow = (String, String, String, Option<String>);
 /// deduped by id in case someone appears in more than one bucket (e.g. an
 /// actor-director).
 fn build_cast_list(credits: &Option<fjord_seerr::Credits>) -> Vec<CreditRow> {
-    let Some(credits) = credits else { return Vec::new() };
+    let Some(credits) = credits else {
+        return Vec::new();
+    };
     let mut seen_ids: std::collections::HashSet<i64> = Default::default();
     let mut out: Vec<CreditRow> = Vec::new();
-    for c in credits.crew.iter().filter(|c| c.job.as_deref() == Some("Director")).take(2) {
+    for c in credits
+        .crew
+        .iter()
+        .filter(|c| c.job.as_deref() == Some("Director"))
+        .take(2)
+    {
         if seen_ids.insert(c.id) {
-            out.push((c.id.to_string(), c.name.clone(), "Director".to_string(), c.profile_path.clone()));
+            out.push((
+                c.id.to_string(),
+                c.name.clone(),
+                "Director".to_string(),
+                c.profile_path.clone(),
+            ));
         }
     }
     for c in credits
@@ -2108,7 +2360,12 @@ fn build_cast_list(credits: &Option<fjord_seerr::Credits>) -> Vec<CreditRow> {
         .take(3)
     {
         if seen_ids.insert(c.id) {
-            out.push((c.id.to_string(), c.name.clone(), "Writer".to_string(), c.profile_path.clone()));
+            out.push((
+                c.id.to_string(),
+                c.name.clone(),
+                "Writer".to_string(),
+                c.profile_path.clone(),
+            ));
         }
     }
     let mut cast_sorted: Vec<&fjord_seerr::Cast> = credits.cast.iter().collect();
@@ -2116,7 +2373,12 @@ fn build_cast_list(credits: &Option<fjord_seerr::Credits>) -> Vec<CreditRow> {
     for c in cast_sorted.into_iter().take(12) {
         if seen_ids.insert(c.id) {
             let role = c.character.clone().unwrap_or_default();
-            out.push((c.id.to_string(), c.name.clone(), role, c.profile_path.clone()));
+            out.push((
+                c.id.to_string(),
+                c.name.clone(),
+                role,
+                c.profile_path.clone(),
+            ));
         }
     }
     out
@@ -2139,7 +2401,9 @@ fn format_rating(vote_average: Option<f64>) -> String {
 // pub(crate) since 2026-08-06 (Seerr Blocklist support) — blocklist.rs
 // reuses it for the Manage Blocklist screen's "Blocklisted on <date>" line.
 pub(crate) fn format_date_pretty(iso: &str) -> String {
-    chrono::NaiveDate::parse_from_str(iso, "%Y-%m-%d").map(|d| d.format("%B %-d, %Y").to_string()).unwrap_or_default()
+    chrono::NaiveDate::parse_from_str(iso, "%Y-%m-%d")
+        .map(|d| d.format("%B %-d, %Y").to_string())
+        .unwrap_or_default()
 }
 
 /// TMDB's `original_language` is an ISO 639-1 code ("en", "ja", ...) with no
@@ -2150,12 +2414,24 @@ pub(crate) fn format_date_pretty(iso: &str) -> String {
 /// uppercased rather than silently blank.
 fn language_display_name(code: &str) -> String {
     match code {
-        "en" => "English".into(), "de" => "German".into(), "fr" => "French".into(),
-        "ja" => "Japanese".into(), "es" => "Spanish".into(), "it" => "Italian".into(),
-        "pt" => "Portuguese".into(), "ru" => "Russian".into(), "ko" => "Korean".into(),
-        "zh" => "Chinese".into(), "nl" => "Dutch".into(), "sv" => "Swedish".into(),
-        "pl" => "Polish".into(), "cs" => "Czech".into(), "ar" => "Arabic".into(),
-        "tr" => "Turkish".into(), "fi" => "Finnish".into(), "da" => "Danish".into(),
+        "en" => "English".into(),
+        "de" => "German".into(),
+        "fr" => "French".into(),
+        "ja" => "Japanese".into(),
+        "es" => "Spanish".into(),
+        "it" => "Italian".into(),
+        "pt" => "Portuguese".into(),
+        "ru" => "Russian".into(),
+        "ko" => "Korean".into(),
+        "zh" => "Chinese".into(),
+        "nl" => "Dutch".into(),
+        "sv" => "Swedish".into(),
+        "pl" => "Polish".into(),
+        "cs" => "Czech".into(),
+        "ar" => "Arabic".into(),
+        "tr" => "Turkish".into(),
+        "fi" => "Finnish".into(),
+        "da" => "Danish".into(),
         "no" => "Norwegian".into(),
         "" => String::new(),
         other => other.to_uppercase(),
@@ -2189,12 +2465,27 @@ type TagProfileItems = (Vec<TagItem>, Vec<ProfileItem>);
 /// explicit way to mean "don't send profileId at all," not just whatever
 /// happens to be focused first; if nothing real is configured, the whole
 /// list is cleared rather than showing just a lone Default entry.
-fn build_tag_profile_items(options: (Vec<fjord_seerr::Tag>, Vec<fjord_seerr::Profile>)) -> TagProfileItems {
+fn build_tag_profile_items(
+    options: (Vec<fjord_seerr::Tag>, Vec<fjord_seerr::Profile>),
+) -> TagProfileItems {
     let (tags, profiles) = options;
-    let tags = tags.into_iter().map(|t| TagItem { id: t.id as i32, label: t.label.as_str().into(), selected: false }).collect();
-    let mut profiles: Vec<ProfileItem> = std::iter::once(ProfileItem { id: 0, name: "Default".into() })
-        .chain(profiles.into_iter().map(|p| ProfileItem { id: p.id as i32, name: p.name.as_str().into() }))
+    let tags = tags
+        .into_iter()
+        .map(|t| TagItem {
+            id: t.id as i32,
+            label: t.label.as_str().into(),
+            selected: false,
+        })
         .collect();
+    let mut profiles: Vec<ProfileItem> = std::iter::once(ProfileItem {
+        id: 0,
+        name: "Default".into(),
+    })
+    .chain(profiles.into_iter().map(|p| ProfileItem {
+        id: p.id as i32,
+        name: p.name.as_str().into(),
+    }))
+    .collect();
     if profiles.len() == 1 {
         profiles.clear();
     }
@@ -2229,7 +2520,10 @@ type ProviderRow = (i64, String, Option<String>);
 /// this call is cheap and reliable enough, relative to everything else
 /// already required for Discover to work at all, that treating a failure
 /// differently from "not configured" isn't worth the extra state.
-async fn resolve_streaming_region(client: &fjord_seerr::SeerrClient, state: &Arc<Mutex<FjordState>>) -> String {
+async fn resolve_streaming_region(
+    client: &fjord_seerr::SeerrClient,
+    state: &Arc<Mutex<FjordState>>,
+) -> String {
     if let Some(region) = state.lock().unwrap().seerr_streaming_region.clone() {
         return region;
     }
@@ -2249,7 +2543,10 @@ async fn resolve_streaming_region(client: &fjord_seerr::SeerrClient, state: &Arc
 /// release-date display (`src/components/MovieDetails/index.tsx`) — not
 /// the same region as "Currently Streaming On", confirmed from Seerr's real
 /// source (Watchlist + Release Calendar, 2026-07-18).
-async fn resolve_discover_region(client: &fjord_seerr::SeerrClient, state: &Arc<Mutex<FjordState>>) -> String {
+async fn resolve_discover_region(
+    client: &fjord_seerr::SeerrClient,
+    state: &Arc<Mutex<FjordState>>,
+) -> String {
     if let Some(region) = state.lock().unwrap().seerr_discover_region.clone() {
         return region;
     }
@@ -2269,8 +2566,16 @@ async fn resolve_discover_region(client: &fjord_seerr::SeerrClient, state: &Arc<
 /// frontend filter exactly (`src/components/MovieDetails/index.tsx`:
 /// `releases?.filter((r) => r.type > 2 && r.type < 6)`, `uniqBy(..., 'type')`).
 /// TV has no equivalent (Watchlist + Release Calendar, 2026-07-18).
-fn release_dates_for_region(releases: &fjord_seerr::ReleaseDatesResult, region: &str) -> Vec<(i32, String)> {
-    let Some(entries) = releases.results.iter().find(|r| r.iso_3166_1 == region).map(|r| &r.release_dates) else {
+fn release_dates_for_region(
+    releases: &fjord_seerr::ReleaseDatesResult,
+    region: &str,
+) -> Vec<(i32, String)> {
+    let Some(entries) = releases
+        .results
+        .iter()
+        .find(|r| r.iso_3166_1 == region)
+        .map(|r| &r.release_dates)
+    else {
         return Vec::new();
     };
     let mut seen = std::collections::HashSet::new();
@@ -2305,7 +2610,9 @@ fn calendar_kind_for_release_type(t: i32) -> CalendarEntryKind {
 /// a "Coming Up" calendar has nothing to say about something already out.
 /// Watchlist + Release Calendar, 2026-07-18.
 pub(crate) async fn build_calendar_entries(state: Arc<Mutex<FjordState>>, ww: Weak<MainWindow>) {
-    let Some(client) = state.lock().unwrap().seerr_client.clone() else { return };
+    let Some(client) = state.lock().unwrap().seerr_client.clone() else {
+        return;
+    };
     // Real bug, live-reported 2026-07-19 ("the context menu still shows add
     // to watchlist when its already is in the watch list"): `on_watchlist`
     // needs to be known per-candidate here — `push_coming_up_row` builds its
@@ -2344,15 +2651,25 @@ pub(crate) async fn build_calendar_entries(state: Arc<Mutex<FjordState>>, ww: We
         // candidate count — a bounded-concurrency fetch of even a few
         // hundred shows just takes longer wall-clock time, it doesn't fail.
         const ONGOING_CAP: usize = 50;
-        let mut seen: std::collections::HashSet<(&'static str, String)> =
-            candidates.iter().map(|(t, id, _)| (*t, id.clone())).collect();
+        let mut seen: std::collections::HashSet<(&'static str, String)> = candidates
+            .iter()
+            .map(|(t, id, _)| (*t, id.clone()))
+            .collect();
         let mut ongoing_added = 0usize;
         for item in &s.all_series {
-            if ongoing_added >= ONGOING_CAP { break; }
-            if item.status.as_deref() != Some("Continuing") { continue; }
-            let Some(tmdb_id) = item.provider_ids.get("Tmdb") else { continue };
+            if ongoing_added >= ONGOING_CAP {
+                break;
+            }
+            if item.status.as_deref() != Some("Continuing") {
+                continue;
+            }
+            let Some(tmdb_id) = item.provider_ids.get("Tmdb") else {
+                continue;
+            };
             let key = ("DiscoverTv", tmdb_id.clone());
-            if !seen.insert(key.clone()) { continue; }
+            if !seen.insert(key.clone()) {
+                continue;
+            }
             candidates.push(("DiscoverTv", tmdb_id.clone(), watchlist_ids.contains(&key)));
             ongoing_added += 1;
         }
@@ -2373,7 +2690,9 @@ pub(crate) async fn build_calendar_entries(state: Arc<Mutex<FjordState>>, ww: We
     let sem = Arc::new(tokio::sync::Semaphore::new(6));
     let mut set: tokio::task::JoinSet<Vec<CalendarEntry>> = tokio::task::JoinSet::new();
     for (item_type, tmdb_id_str, on_watchlist) in candidates {
-        let Ok(tmdb_id) = tmdb_id_str.parse::<i64>() else { continue };
+        let Ok(tmdb_id) = tmdb_id_str.parse::<i64>() else {
+            continue;
+        };
         let client = client.clone();
         let sem = Arc::clone(&sem);
         let region = region.clone();
@@ -2382,20 +2701,32 @@ pub(crate) async fn build_calendar_entries(state: Arc<Mutex<FjordState>>, ww: We
             let mut entries = Vec::new();
             if item_type == "DiscoverMovie" {
                 let d = match client.get_movie(tmdb_id).await {
-                    Ok(d)  => d,
-                    Err(e) => { warn!("build_calendar_entries get_movie({tmdb_id}): {e:#}"); return entries; }
+                    Ok(d) => d,
+                    Err(e) => {
+                        warn!("build_calendar_entries get_movie({tmdb_id}): {e:#}");
+                        return entries;
+                    }
                 };
                 // Same "don't show this in Discover" rule as
                 // search_result_to_meta/watchlist_*_to_meta (2026-08-06) —
                 // blocklisting doesn't remove the title from the watchlist
                 // or an ongoing-series scan, so without this it would keep
                 // resurfacing here on every calendar refresh.
-                if availability_tag(d.media_info.as_ref().and_then(|mi| mi.status())) == "blocklisted" {
+                if availability_tag(d.media_info.as_ref().and_then(|mi| mi.status()))
+                    == "blocklisted"
+                {
                     return entries;
                 }
-                let Some(releases) = &d.releases else { return entries };
+                let Some(releases) = &d.releases else {
+                    return entries;
+                };
                 for (release_type, date_str) in release_dates_for_region(releases, &region) {
-                    let Ok(date) = chrono::NaiveDate::parse_from_str(&date_str[..date_str.len().min(10)], "%Y-%m-%d") else { continue };
+                    let Ok(date) = chrono::NaiveDate::parse_from_str(
+                        &date_str[..date_str.len().min(10)],
+                        "%Y-%m-%d",
+                    ) else {
+                        continue;
+                    };
                     entries.push(CalendarEntry {
                         date,
                         tmdb_id: tmdb_id.to_string(),
@@ -2409,15 +2740,26 @@ pub(crate) async fn build_calendar_entries(state: Arc<Mutex<FjordState>>, ww: We
                 }
             } else {
                 let d = match client.get_tv(tmdb_id).await {
-                    Ok(d)  => d,
-                    Err(e) => { warn!("build_calendar_entries get_tv({tmdb_id}): {e:#}"); return entries; }
+                    Ok(d) => d,
+                    Err(e) => {
+                        warn!("build_calendar_entries get_tv({tmdb_id}): {e:#}");
+                        return entries;
+                    }
                 };
-                if availability_tag(d.media_info.as_ref().and_then(|mi| mi.status())) == "blocklisted" {
+                if availability_tag(d.media_info.as_ref().and_then(|mi| mi.status()))
+                    == "blocklisted"
+                {
                     return entries;
                 }
-                let Some(next) = &d.next_episode_to_air else { return entries };
-                let Some(date_str) = &next.air_date else { return entries };
-                let Ok(date) = chrono::NaiveDate::parse_from_str(date_str, "%Y-%m-%d") else { return entries };
+                let Some(next) = &d.next_episode_to_air else {
+                    return entries;
+                };
+                let Some(date_str) = &next.air_date else {
+                    return entries;
+                };
+                let Ok(date) = chrono::NaiveDate::parse_from_str(date_str, "%Y-%m-%d") else {
+                    return entries;
+                };
                 let episode_label = match (next.season_number, next.episode_number, &next.name) {
                     (Some(s), Some(e), Some(name)) => Some(format!("S{s}E{e} — {name}")),
                     (Some(s), Some(e), None) => Some(format!("S{s}E{e}")),
@@ -2444,7 +2786,11 @@ pub(crate) async fn build_calendar_entries(state: Arc<Mutex<FjordState>>, ww: We
         }
     }
     all.sort_by_key(|e| e.date);
-    debug!("seerr: calendar -> {} entr{}", all.len(), if all.len() == 1 { "y" } else { "ies" });
+    debug!(
+        "seerr: calendar -> {} entr{}",
+        all.len(),
+        if all.len() == 1 { "y" } else { "ies" }
+    );
 
     state.lock().unwrap().discover_calendar_entries = all.clone();
     push_coming_up_row(&ww, &all);
@@ -2488,7 +2834,10 @@ fn calendar_entry_to_card(e: &CalendarEntry) -> CardItem {
         CalendarEntryKind::Physical => "Physical Release",
         CalendarEntryKind::Episode => "New Episode",
     };
-    let subtitle = e.episode_label.clone().unwrap_or_else(|| kind_label.to_string());
+    let subtitle = e
+        .episode_label
+        .clone()
+        .unwrap_or_else(|| kind_label.to_string());
     CardItem {
         id: e.tmdb_id.as_str().into(),
         item_type: e.item_type.into(),
@@ -2500,7 +2849,11 @@ fn calendar_entry_to_card(e: &CalendarEntry) -> CardItem {
 }
 
 fn push_coming_up_row(ww: &Weak<MainWindow>, entries: &[CalendarEntry]) {
-    let entries: Vec<CalendarEntry> = entries.iter().take(COMING_UP_PREVIEW_CAP).cloned().collect();
+    let entries: Vec<CalendarEntry> = entries
+        .iter()
+        .take(COMING_UP_PREVIEW_CAP)
+        .cloned()
+        .collect();
     let ww = ww.clone();
     let _ = slint::invoke_from_event_loop(move || {
         let Some(w) = ww.upgrade() else { return };
@@ -2513,8 +2866,16 @@ fn push_coming_up_row(ww: &Weak<MainWindow>, entries: &[CalendarEntry]) {
         // Calendar" card only makes sense on the Discover screen's own
         // landing row, which has a CalendarScreen to open).
         let mixed: Vec<CardItem> = entries.iter().map(calendar_entry_to_card).collect();
-        let movies: Vec<CardItem> = mixed.iter().filter(|c| c.item_type.as_str() == "DiscoverMovie").cloned().collect();
-        let tv: Vec<CardItem> = mixed.iter().filter(|c| c.item_type.as_str() == "DiscoverTv").cloned().collect();
+        let movies: Vec<CardItem> = mixed
+            .iter()
+            .filter(|c| c.item_type.as_str() == "DiscoverMovie")
+            .cloned()
+            .collect();
+        let tv: Vec<CardItem> = mixed
+            .iter()
+            .filter(|c| c.item_type.as_str() == "DiscoverTv")
+            .cloned()
+            .collect();
         let mut cards = mixed.clone();
         cards.push(CardItem {
             id: "".into(),
@@ -2531,12 +2892,27 @@ fn push_coming_up_row(ww: &Weak<MainWindow>, entries: &[CalendarEntry]) {
         });
         debug!(
             "seerr: push_coming_up_row -> {} card(s) (mixed={} movies={} tv={})",
-            cards.len(), mixed.len(), movies.len(), tv.len()
+            cards.len(),
+            mixed.len(),
+            movies.len(),
+            tv.len()
         );
-        g.set_discover_coming_up(crate::apply_cards_preserving_identity(&g.get_discover_coming_up(), cards));
-        g.set_discover_coming_up_mixed(crate::apply_cards_preserving_identity(&g.get_discover_coming_up_mixed(), mixed));
-        g.set_discover_coming_up_movies(crate::apply_cards_preserving_identity(&g.get_discover_coming_up_movies(), movies));
-        g.set_discover_coming_up_tv(crate::apply_cards_preserving_identity(&g.get_discover_coming_up_tv(), tv));
+        g.set_discover_coming_up(crate::apply_cards_preserving_identity(
+            &g.get_discover_coming_up(),
+            cards,
+        ));
+        g.set_discover_coming_up_mixed(crate::apply_cards_preserving_identity(
+            &g.get_discover_coming_up_mixed(),
+            mixed,
+        ));
+        g.set_discover_coming_up_movies(crate::apply_cards_preserving_identity(
+            &g.get_discover_coming_up_movies(),
+            movies,
+        ));
+        g.set_discover_coming_up_tv(crate::apply_cards_preserving_identity(
+            &g.get_discover_coming_up_tv(),
+            tv,
+        ));
     });
 }
 
@@ -2553,12 +2929,21 @@ async fn fetch_coming_up_posters(ww: Weak<MainWindow>, entries: &[CalendarEntry]
         .iter()
         .take(COMING_UP_PREVIEW_CAP)
         .enumerate()
-        .filter_map(|(idx, e)| e.poster_path.clone().map(|p| (idx, e.item_type.to_string(), e.tmdb_id.clone(), p)))
+        .filter_map(|(idx, e)| {
+            e.poster_path
+                .clone()
+                .map(|p| (idx, e.item_type.to_string(), e.tmdb_id.clone(), p))
+        })
         .collect();
     if poster_jobs.is_empty() {
         return;
     }
-    let Ok(http) = reqwest::Client::builder().timeout(Duration::from_secs(30)).build() else { return };
+    let Ok(http) = reqwest::Client::builder()
+        .timeout(Duration::from_secs(30))
+        .build()
+    else {
+        return;
+    };
     let sem = Arc::new(tokio::sync::Semaphore::new(8));
     let mut set = tokio::task::JoinSet::new();
     for (idx, item_type, tmdb_id, poster_path) in poster_jobs {
@@ -2566,14 +2951,24 @@ async fn fetch_coming_up_posters(ww: Weak<MainWindow>, entries: &[CalendarEntry]
         let sem = Arc::clone(&sem);
         set.spawn(async move {
             let _permit = sem.acquire_owned().await.ok();
-            let cache_key = format!("{}-{}", if item_type == "DiscoverMovie" { "movie" } else { "tv" }, tmdb_id);
+            let cache_key = format!(
+                "{}-{}",
+                if item_type == "DiscoverMovie" {
+                    "movie"
+                } else {
+                    "tv"
+                },
+                tmdb_id
+            );
             let bytes = fetch_tmdb_image(&http, TMDB_POSTER_BASE, &poster_path, &cache_key).await?;
             let buf = decode_poster_buffer(&bytes)?;
             Some((idx, item_type, tmdb_id, buf))
         });
     }
     while let Some(res) = set.join_next().await {
-        let Ok(Some((idx, item_type, tmdb_id, buf))) = res else { continue };
+        let Ok(Some((idx, item_type, tmdb_id, buf))) = res else {
+            continue;
+        };
         let ww2 = ww.clone();
         let _ = slint::invoke_from_event_loop(move || {
             let Some(w) = ww2.upgrade() else { return };
@@ -2583,7 +2978,9 @@ async fn fetch_coming_up_posters(ww: Weak<MainWindow>, entries: &[CalendarEntry]
             // never touches it).
             let model = g.get_discover_coming_up();
             if let Some(mut card) = model.row_data(idx)
-                && card.id.as_str() == tmdb_id && card.item_type.as_str() == item_type {
+                && card.id.as_str() == tmdb_id
+                && card.item_type.as_str() == item_type
+            {
                 card.poster = slint::Image::from_rgba8(buf.clone());
                 card.has_poster = true;
                 model.set_row_data(idx, card);
@@ -2592,10 +2989,16 @@ async fn fetch_coming_up_posters(ww: Weak<MainWindow>, entries: &[CalendarEntry]
             // lookup, not index — the same tmdb id can sit at a different
             // row index in discover-coming-up-mixed vs. its own type-
             // specific list, same reason fetch_watchlist_posters does this.
-            for model in [g.get_discover_coming_up_mixed(), g.get_discover_coming_up_movies(), g.get_discover_coming_up_tv()] {
+            for model in [
+                g.get_discover_coming_up_mixed(),
+                g.get_discover_coming_up_movies(),
+                g.get_discover_coming_up_tv(),
+            ] {
                 for i in 0..model.row_count() {
                     if let Some(mut card) = model.row_data(i)
-                        && card.id.as_str() == tmdb_id && card.item_type.as_str() == item_type {
+                        && card.id.as_str() == tmdb_id
+                        && card.item_type.as_str() == item_type
+                    {
                         card.poster = slint::Image::from_rgba8(buf.clone());
                         card.has_poster = true;
                         model.set_row_data(i, card);
@@ -2614,9 +3017,15 @@ async fn fetch_coming_up_posters(ww: Weak<MainWindow>, entries: &[CalendarEntry]
 /// no established locale precedent to follow either way).
 fn calendar_grid_dims(year: i32, month: u32) -> (i32, i32) {
     use chrono::Datelike;
-    let Some(first) = chrono::NaiveDate::from_ymd_opt(year, month, 1) else { return (0, 30) };
+    let Some(first) = chrono::NaiveDate::from_ymd_opt(year, month, 1) else {
+        return (0, 30);
+    };
     let leading = first.weekday().num_days_from_sunday() as i32;
-    let (next_year, next_month) = if month == 12 { (year + 1, 1) } else { (year, month + 1) };
+    let (next_year, next_month) = if month == 12 {
+        (year + 1, 1)
+    } else {
+        (year, month + 1)
+    };
     let total = chrono::NaiveDate::from_ymd_opt(next_year, next_month, 1)
         .map(|next| (next - first).num_days() as i32)
         .unwrap_or(30);
@@ -2645,9 +3054,14 @@ fn push_calendar_view(g: &AppState, s: &FjordState) {
             let day_entries: Vec<&CalendarEntry> = s
                 .discover_calendar_entries
                 .iter()
-                .filter(|e| e.date.year() == year && e.date.month() == month && e.date.day() as i32 == day)
+                .filter(|e| {
+                    e.date.year() == year && e.date.month() == month && e.date.day() as i32 == day
+                })
                 .collect();
-            let subtitle = day_entries.first().map(|e| e.title.clone()).unwrap_or_default();
+            let subtitle = day_entries
+                .first()
+                .map(|e| e.title.clone())
+                .unwrap_or_default();
             CardItem {
                 title: day.to_string().into(),
                 subtitle: subtitle.into(),
@@ -2677,7 +3091,10 @@ fn calendar_day_entries(s: &FjordState, year: i32, month: u32, day: i32) -> Vec<
                 CalendarEntryKind::Physical => "Physical Release",
                 CalendarEntryKind::Episode => "New Episode",
             };
-            let subtitle = e.episode_label.clone().unwrap_or_else(|| kind_label.to_string());
+            let subtitle = e
+                .episode_label
+                .clone()
+                .unwrap_or_else(|| kind_label.to_string());
             CardItem {
                 id: e.tmdb_id.as_str().into(),
                 item_type: e.item_type.into(),
@@ -2845,33 +3262,76 @@ pub(crate) fn handle_key_calendar_day_popup(action: &Action, g: &AppState) -> bo
 // media types, unlike genre) — never the display string, which is derived
 // fresh by the *_desc functions below every time it's needed.
 
-const SORT_KEYS: &[(&str, &str)] = &[("", "Popularity"), ("rating", "Rating"), ("newest", "Newest"), ("oldest", "Oldest")];
+const SORT_KEYS: &[(&str, &str)] = &[
+    ("", "Popularity"),
+    ("rating", "Rating"),
+    ("newest", "Newest"),
+    ("oldest", "Oldest"),
+];
 const RATING_BUCKETS: &[(&str, f32)] = &[("Any", 0.0), ("6+", 6.0), ("7+", 7.0), ("8+", 8.0)];
-const YEAR_BUCKETS: &[(&str, u32)] = &[("Any", 0), ("2000+", 2000), ("2010+", 2010), ("2015+", 2015), ("2020+", 2020)];
+const YEAR_BUCKETS: &[(&str, u32)] = &[
+    ("Any", 0),
+    ("2000+", 2000),
+    ("2010+", 2010),
+    ("2015+", 2015),
+    ("2020+", 2020),
+];
 
 fn discover_type_desc(key: &str) -> &'static str {
-    match key { "movie" => "Movies", "tv" => "TV", _ => "All" }
+    match key {
+        "movie" => "Movies",
+        "tv" => "TV",
+        _ => "All",
+    }
 }
 fn discover_type_key(desc: &str) -> &'static str {
-    match desc { "Movies" => "movie", "TV" => "tv", _ => "" }
+    match desc {
+        "Movies" => "movie",
+        "TV" => "tv",
+        _ => "",
+    }
 }
 fn discover_sort_desc(key: &str) -> &'static str {
-    SORT_KEYS.iter().find(|(k, _)| *k == key).map(|(_, d)| *d).unwrap_or("Popularity")
+    SORT_KEYS
+        .iter()
+        .find(|(k, _)| *k == key)
+        .map(|(_, d)| *d)
+        .unwrap_or("Popularity")
 }
 fn discover_sort_key(desc: &str) -> &'static str {
-    SORT_KEYS.iter().find(|(_, d)| *d == desc).map(|(k, _)| *k).unwrap_or("")
+    SORT_KEYS
+        .iter()
+        .find(|(_, d)| *d == desc)
+        .map(|(k, _)| *k)
+        .unwrap_or("")
 }
 fn discover_rating_desc(v: f32) -> &'static str {
-    RATING_BUCKETS.iter().find(|(_, r)| *r == v).map(|(d, _)| *d).unwrap_or("Any")
+    RATING_BUCKETS
+        .iter()
+        .find(|(_, r)| *r == v)
+        .map(|(d, _)| *d)
+        .unwrap_or("Any")
 }
 fn discover_rating_value(desc: &str) -> f32 {
-    RATING_BUCKETS.iter().find(|(d, _)| *d == desc).map(|(_, r)| *r).unwrap_or(0.0)
+    RATING_BUCKETS
+        .iter()
+        .find(|(d, _)| *d == desc)
+        .map(|(_, r)| *r)
+        .unwrap_or(0.0)
 }
 fn discover_year_desc(v: u32) -> &'static str {
-    YEAR_BUCKETS.iter().find(|(_, y)| *y == v).map(|(d, _)| *d).unwrap_or("Any")
+    YEAR_BUCKETS
+        .iter()
+        .find(|(_, y)| *y == v)
+        .map(|(d, _)| *d)
+        .unwrap_or("Any")
 }
 fn discover_year_value(desc: &str) -> u32 {
-    YEAR_BUCKETS.iter().find(|(d, _)| *d == desc).map(|(_, y)| *y).unwrap_or(0)
+    YEAR_BUCKETS
+        .iter()
+        .find(|(d, _)| *d == desc)
+        .map(|(_, y)| *y)
+        .unwrap_or(0)
 }
 
 /// Whether ANY of the 6 filter dimensions is set away from its default —
@@ -2909,13 +3369,25 @@ fn search_filters_active(cfg: &ProfileSettings) -> bool {
 fn tmdb_sort_value(key: &str, media_type: &str) -> Option<&'static str> {
     match key {
         "rating" => Some("vote_average.desc"),
-        "newest" => Some(if media_type == "movie" { "primary_release_date.desc" } else { "first_air_date.desc" }),
-        "oldest" => Some(if media_type == "movie" { "primary_release_date.asc" } else { "first_air_date.asc" }),
+        "newest" => Some(if media_type == "movie" {
+            "primary_release_date.desc"
+        } else {
+            "first_air_date.desc"
+        }),
+        "oldest" => Some(if media_type == "movie" {
+            "primary_release_date.asc"
+        } else {
+            "first_air_date.asc"
+        }),
         _ => None,
     }
 }
 fn tmdb_date_gte_key(media_type: &str) -> &'static str {
-    if media_type == "movie" { "primaryReleaseDateGte" } else { "firstAirDateGte" }
+    if media_type == "movie" {
+        "primaryReleaseDateGte"
+    } else {
+        "firstAirDateGte"
+    }
 }
 
 /// Resolves the current filter selections into a real `DiscoverFilters`
@@ -2925,16 +3397,28 @@ fn tmdb_date_gte_key(media_type: &str) -> &'static str {
 /// querying movies, is silently skipped rather than erroring — the same
 /// "gaps are fine" tolerance this codebase uses throughout for optional
 /// per-item data).
-fn build_discover_filters(s: &FjordState, media_type: &str, region: &str) -> fjord_seerr::DiscoverFilters {
+fn build_discover_filters(
+    s: &FjordState,
+    media_type: &str,
+    region: &str,
+) -> fjord_seerr::DiscoverFilters {
     let cfg = s.config.active();
-    let raw_genres: &[fjord_seerr::Genre] = if media_type == "movie" { &s.seerr_genres_movie } else { &s.seerr_genres_tv };
+    let raw_genres: &[fjord_seerr::Genre] = if media_type == "movie" {
+        &s.seerr_genres_movie
+    } else {
+        &s.seerr_genres_tv
+    };
     let genre_ids: Vec<i64> = cfg
         .discover_filter_genre_names
         .iter()
         .filter_map(|name| raw_genres.iter().find(|g| &g.name == name).map(|g| g.id))
         .collect();
     fjord_seerr::DiscoverFilters {
-        genre_ids: if genre_ids.is_empty() { None } else { Some(genre_ids) },
+        genre_ids: if genre_ids.is_empty() {
+            None
+        } else {
+            Some(genre_ids)
+        },
         provider_ids: if cfg.discover_filter_provider_ids.is_empty() {
             None
         } else {
@@ -2942,9 +3426,16 @@ fn build_discover_filters(s: &FjordState, media_type: &str, region: &str) -> fjo
         },
         watch_region: Some(region.to_string()),
         sort: tmdb_sort_value(&cfg.discover_filter_sort, media_type),
-        vote_average_gte: if cfg.discover_filter_min_rating > 0.0 { Some(cfg.discover_filter_min_rating) } else { None },
+        vote_average_gte: if cfg.discover_filter_min_rating > 0.0 {
+            Some(cfg.discover_filter_min_rating)
+        } else {
+            None
+        },
         date_gte: if cfg.discover_filter_min_year > 0 {
-            Some((tmdb_date_gte_key(media_type), format!("{}-01-01", cfg.discover_filter_min_year)))
+            Some((
+                tmdb_date_gte_key(media_type),
+                format!("{}-01-01", cfg.discover_filter_min_year),
+            ))
         } else {
             None
         },
@@ -2955,7 +3446,13 @@ fn build_discover_filters(s: &FjordState, media_type: &str, region: &str) -> fjo
 /// Merges a same-name genre from the movie and TV lists into one chip —
 /// see `GenreItem`'s own doc comment (theme.slint) for why both ids are
 /// tracked separately rather than assuming they match.
-fn push_or_merge_genre(items: &mut Vec<GenreItem>, name: &str, movie_id: Option<i64>, tv_id: Option<i64>, selected_names: &[String]) {
+fn push_or_merge_genre(
+    items: &mut Vec<GenreItem>,
+    name: &str,
+    movie_id: Option<i64>,
+    tv_id: Option<i64>,
+    selected_names: &[String],
+) {
     if let Some(existing) = items.iter_mut().find(|g| g.name.as_str() == name) {
         if let Some(id) = movie_id {
             existing.movie_id = id as i32;
@@ -3024,7 +3521,11 @@ fn build_provider_items(
     for list in sources {
         for p in list {
             if seen.insert(p.id) {
-                items.push(ProviderItem { id: p.id as i32, name: p.name.as_str().into(), selected: selected_ids.contains(&p.id) });
+                items.push(ProviderItem {
+                    id: p.id as i32,
+                    name: p.name.as_str().into(),
+                    selected: selected_ids.contains(&p.id),
+                });
             }
         }
     }
@@ -3082,20 +3583,30 @@ fn refresh_discover_filter_models(g: &AppState, s: &FjordState) {
 // pass-through a no-op instead of a fresh request every time.
 const SEERR_ADMIN_REFRESH_COOLDOWN: Duration = Duration::from_secs(60);
 
-fn refresh_seerr_admin_status(state: Arc<Mutex<FjordState>>, ww: Weak<MainWindow>, rt: tokio::runtime::Handle) {
+fn refresh_seerr_admin_status(
+    state: Arc<Mutex<FjordState>>,
+    ww: Weak<MainWindow>,
+    rt: tokio::runtime::Handle,
+) {
     let client = {
         let mut s = state.lock().unwrap();
-        if s.seerr_admin_last_refresh.is_some_and(|t| t.elapsed() < SEERR_ADMIN_REFRESH_COOLDOWN) {
+        if s.seerr_admin_last_refresh
+            .is_some_and(|t| t.elapsed() < SEERR_ADMIN_REFRESH_COOLDOWN)
+        {
             debug!("seerr: refresh_seerr_admin_status skipped, within cooldown");
             return;
         }
-        let Some(client) = s.seerr_client.clone() else { return };
+        let Some(client) = s.seerr_client.clone() else {
+            return;
+        };
         s.seerr_admin_last_refresh = Some(Instant::now());
         client
     };
     debug!("seerr: refresh_seerr_admin_status firing");
     rt.spawn(async move {
-        let Ok(user) = client.get_current_user().await else { return };
+        let Ok(user) = client.get_current_user().await else {
+            return;
+        };
         let (user_id, is_admin) = (Some(user.id), user.can_manage_requests());
         let can_manage_blocklist = user.can_manage_blocklist();
         {
@@ -3125,13 +3636,19 @@ fn refresh_seerr_admin_status(state: Arc<Mutex<FjordState>>, ww: Weak<MainWindow
 /// capped at 10 pages (200 items) so a pathological watchlist can't loop
 /// forever. Best-effort: a failed page just stops pagination early rather
 /// than erroring the whole fetch. Watchlist + Release Calendar, 2026-07-18.
-pub(crate) fn ensure_discover_watchlist(state: Arc<Mutex<FjordState>>, ww: Weak<MainWindow>, rt: tokio::runtime::Handle) {
+pub(crate) fn ensure_discover_watchlist(
+    state: Arc<Mutex<FjordState>>,
+    ww: Weak<MainWindow>,
+    rt: tokio::runtime::Handle,
+) {
     let client = {
         let mut s = state.lock().unwrap();
         if s.discover_watchlist_fetched {
             return;
         }
-        let Some(client) = s.seerr_client.clone() else { return };
+        let Some(client) = s.seerr_client.clone() else {
+            return;
+        };
         s.discover_watchlist_fetched = true;
         client
     };
@@ -3143,8 +3660,13 @@ pub(crate) fn ensure_discover_watchlist(state: Arc<Mutex<FjordState>>, ww: Weak<
 /// Shared by `ensure_discover_watchlist` and `refresh_watchlist` — fetches
 /// every page, stores the resulting id set, and triggers a calendar rebuild
 /// (the watchlist is one of the two sets `build_calendar_entries` unions).
-async fn fetch_and_store_watchlist(client: &fjord_seerr::SeerrClient, state: &Arc<Mutex<FjordState>>, ww: &Weak<MainWindow>) {
-    let mut ids: std::collections::HashSet<(&'static str, String)> = std::collections::HashSet::new();
+async fn fetch_and_store_watchlist(
+    client: &fjord_seerr::SeerrClient,
+    state: &Arc<Mutex<FjordState>>,
+    ww: &Weak<MainWindow>,
+) {
+    let mut ids: std::collections::HashSet<(&'static str, String)> =
+        std::collections::HashSet::new();
     let mut page = 1;
     loop {
         let resp = match client.get_watchlist(page).await {
@@ -3155,7 +3677,11 @@ async fn fetch_and_store_watchlist(client: &fjord_seerr::SeerrClient, state: &Ar
             }
         };
         for item in &resp.results {
-            let item_type = if item.media_type == "movie" { "DiscoverMovie" } else { "DiscoverTv" };
+            let item_type = if item.media_type == "movie" {
+                "DiscoverMovie"
+            } else {
+                "DiscoverTv"
+            };
             ids.insert((item_type, item.tmdb_id.to_string()));
         }
         if page >= resp.total_pages || page >= 10 {
@@ -3229,7 +3755,10 @@ async fn fetch_and_store_watchlist(client: &fjord_seerr::SeerrClient, state: &Ar
 /// watchlist fetch itself, early in startup) reliably runs BEFORE the
 /// library lists are populated, so `find_local_item` finds 0 matches on
 /// that pass and the star never appears without a second, later resolve.
-pub(crate) async fn resync_jellyfin_watchlist_stars(state: Arc<Mutex<FjordState>>, ww: Weak<MainWindow>) {
+pub(crate) async fn resync_jellyfin_watchlist_stars(
+    state: Arc<Mutex<FjordState>>,
+    ww: Weak<MainWindow>,
+) {
     // Generation guard (2026-07-22, code review finding) — see
     // FjordState.jellyfin_watchlist_resync_seq's own doc comment for the
     // race this prevents. Captured BEFORE the scan so any call that starts
@@ -3243,7 +3772,11 @@ pub(crate) async fn resync_jellyfin_watchlist_stars(state: Arc<Mutex<FjordState>
     let resolved: std::collections::HashSet<String> = ids
         .iter()
         .filter_map(|(item_type, tmdb_id)| {
-            let media_type = if *item_type == "DiscoverMovie" { "movie" } else { "tv" };
+            let media_type = if *item_type == "DiscoverMovie" {
+                "movie"
+            } else {
+                "tv"
+            };
             find_local_item(&state, media_type, tmdb_id).map(|(jellyfin_id, _)| jellyfin_id)
         })
         .collect();
@@ -3255,12 +3788,17 @@ pub(crate) async fn resync_jellyfin_watchlist_stars(state: Arc<Mutex<FjordState>
             // now would risk clobbering it with staler data. Skip outright
             // rather than racing: only the most-recently-started call ever
             // writes.
-            debug!("seerr: resync_jellyfin_watchlist_stars -> stale (newer resync started), discarding");
+            debug!(
+                "seerr: resync_jellyfin_watchlist_stars -> stale (newer resync started), discarding"
+            );
             return;
         }
         std::mem::replace(&mut s.jellyfin_watchlist_ids, resolved.clone())
     };
-    debug!("seerr: resync_jellyfin_watchlist_stars -> {} local match(es)", resolved.len());
+    debug!(
+        "seerr: resync_jellyfin_watchlist_stars -> {} local match(es)",
+        resolved.len()
+    );
     if resolved.is_empty() && previous.is_empty() {
         return;
     }
@@ -3298,17 +3836,28 @@ async fn populate_watchlist_rows(
     }
     let n = candidates.len();
     let sem = Arc::new(tokio::sync::Semaphore::new(6));
-    let mut set: tokio::task::JoinSet<(usize, Option<RequestedRowItem>)> = tokio::task::JoinSet::new();
+    let mut set: tokio::task::JoinSet<(usize, Option<RequestedRowItem>)> =
+        tokio::task::JoinSet::new();
     for (idx, (item_type, tmdb_id_str)) in candidates.into_iter().enumerate() {
-        let Ok(tmdb_id) = tmdb_id_str.parse::<i64>() else { continue };
+        let Ok(tmdb_id) = tmdb_id_str.parse::<i64>() else {
+            continue;
+        };
         let client = client.clone();
         let sem = Arc::clone(&sem);
         set.spawn(async move {
             let _permit = sem.acquire_owned().await.ok();
             let item = if item_type == "DiscoverMovie" {
-                client.get_movie(tmdb_id).await.ok().and_then(|d| watchlist_movie_to_meta(tmdb_id, &d))
+                client
+                    .get_movie(tmdb_id)
+                    .await
+                    .ok()
+                    .and_then(|d| watchlist_movie_to_meta(tmdb_id, &d))
             } else {
-                client.get_tv(tmdb_id).await.ok().and_then(|d| watchlist_tv_to_meta(tmdb_id, &d))
+                client
+                    .get_tv(tmdb_id)
+                    .await
+                    .ok()
+                    .and_then(|d| watchlist_tv_to_meta(tmdb_id, &d))
             };
             (idx, item)
         });
@@ -3356,7 +3905,7 @@ async fn populate_watchlist_rows(
 /// discarding its already-decoded `Image` handle just because one unrelated
 /// item was toggled.
 fn push_watchlist_rows(
-    ww:    &Weak<MainWindow>,
+    ww: &Weak<MainWindow>,
     state: &Arc<Mutex<FjordState>>,
     items: Vec<RequestedRowItem>,
 ) {
@@ -3380,17 +3929,42 @@ fn push_watchlist_rows(
     let state = Arc::clone(state);
     let _ = slint::invoke_from_event_loop(move || {
         let Some(w) = ww.upgrade() else { return };
-        if state.lock().unwrap().seerr_client.is_none() { return; }
+        if state.lock().unwrap().seerr_client.is_none() {
+            return;
+        }
         let g = AppState::get(&w);
-        let mixed: Vec<CardItem> = items.iter().map(|(m, _)| m.clone().into_card_item()).collect();
-        let movies: Vec<CardItem> =
-            items.iter().filter(|(m, _)| m.item_type == "DiscoverMovie").map(|(m, _)| m.clone().into_card_item()).collect();
-        let tv: Vec<CardItem> =
-            items.iter().filter(|(m, _)| m.item_type == "DiscoverTv").map(|(m, _)| m.clone().into_card_item()).collect();
-        debug!("seerr: push_watchlist_rows -> mixed={} movies={} tv={}", mixed.len(), movies.len(), tv.len());
-        g.set_discover_watchlist_mixed(crate::apply_cards_preserving_identity(&g.get_discover_watchlist_mixed(), mixed));
-        g.set_discover_watchlist_movies(crate::apply_cards_preserving_identity(&g.get_discover_watchlist_movies(), movies));
-        g.set_discover_watchlist_tv(crate::apply_cards_preserving_identity(&g.get_discover_watchlist_tv(), tv));
+        let mixed: Vec<CardItem> = items
+            .iter()
+            .map(|(m, _)| m.clone().into_card_item())
+            .collect();
+        let movies: Vec<CardItem> = items
+            .iter()
+            .filter(|(m, _)| m.item_type == "DiscoverMovie")
+            .map(|(m, _)| m.clone().into_card_item())
+            .collect();
+        let tv: Vec<CardItem> = items
+            .iter()
+            .filter(|(m, _)| m.item_type == "DiscoverTv")
+            .map(|(m, _)| m.clone().into_card_item())
+            .collect();
+        debug!(
+            "seerr: push_watchlist_rows -> mixed={} movies={} tv={}",
+            mixed.len(),
+            movies.len(),
+            tv.len()
+        );
+        g.set_discover_watchlist_mixed(crate::apply_cards_preserving_identity(
+            &g.get_discover_watchlist_mixed(),
+            mixed,
+        ));
+        g.set_discover_watchlist_movies(crate::apply_cards_preserving_identity(
+            &g.get_discover_watchlist_movies(),
+            movies,
+        ));
+        g.set_discover_watchlist_tv(crate::apply_cards_preserving_identity(
+            &g.get_discover_watchlist_tv(),
+            tv,
+        ));
     });
 }
 
@@ -3400,12 +3974,22 @@ fn push_watchlist_rows(
 /// Coming Up row's single-model index-based patch). Same bounded-
 /// concurrency fetch-then-patch shape as `fetch_coming_up_posters`.
 async fn fetch_watchlist_posters(ww: Weak<MainWindow>, items: &[RequestedRowItem]) {
-    let jobs: Vec<(String, String, String)> =
-        items.iter().filter_map(|(m, p)| p.clone().map(|p| (m.item_type.to_string(), m.id.clone(), p))).collect();
+    let jobs: Vec<(String, String, String)> = items
+        .iter()
+        .filter_map(|(m, p)| {
+            p.clone()
+                .map(|p| (m.item_type.to_string(), m.id.clone(), p))
+        })
+        .collect();
     if jobs.is_empty() {
         return;
     }
-    let Ok(http) = reqwest::Client::builder().timeout(Duration::from_secs(30)).build() else { return };
+    let Ok(http) = reqwest::Client::builder()
+        .timeout(Duration::from_secs(30))
+        .build()
+    else {
+        return;
+    };
     let sem = Arc::new(tokio::sync::Semaphore::new(8));
     let mut set = tokio::task::JoinSet::new();
     for (item_type, tmdb_id, poster_path) in jobs {
@@ -3413,22 +3997,38 @@ async fn fetch_watchlist_posters(ww: Weak<MainWindow>, items: &[RequestedRowItem
         let sem = Arc::clone(&sem);
         set.spawn(async move {
             let _permit = sem.acquire_owned().await.ok();
-            let cache_key = format!("{}-{}", if item_type == "DiscoverMovie" { "movie" } else { "tv" }, tmdb_id);
+            let cache_key = format!(
+                "{}-{}",
+                if item_type == "DiscoverMovie" {
+                    "movie"
+                } else {
+                    "tv"
+                },
+                tmdb_id
+            );
             let bytes = fetch_tmdb_image(&http, TMDB_POSTER_BASE, &poster_path, &cache_key).await?;
             let buf = decode_poster_buffer(&bytes)?;
             Some((item_type, tmdb_id, buf))
         });
     }
     while let Some(res) = set.join_next().await {
-        let Ok(Some((item_type, tmdb_id, buf))) = res else { continue };
+        let Ok(Some((item_type, tmdb_id, buf))) = res else {
+            continue;
+        };
         let ww2 = ww.clone();
         let _ = slint::invoke_from_event_loop(move || {
             let Some(w) = ww2.upgrade() else { return };
             let g = AppState::get(&w);
-            for model in [g.get_discover_watchlist_mixed(), g.get_discover_watchlist_movies(), g.get_discover_watchlist_tv()] {
+            for model in [
+                g.get_discover_watchlist_mixed(),
+                g.get_discover_watchlist_movies(),
+                g.get_discover_watchlist_tv(),
+            ] {
                 for i in 0..model.row_count() {
                     if let Some(mut card) = model.row_data(i)
-                        && card.id.as_str() == tmdb_id && card.item_type.as_str() == item_type {
+                        && card.id.as_str() == tmdb_id
+                        && card.item_type.as_str() == item_type
+                    {
                         card.poster = slint::Image::from_rgba8(buf.clone());
                         card.has_poster = true;
                         model.set_row_data(i, card);
@@ -3442,8 +4042,14 @@ async fn fetch_watchlist_posters(ww: Weak<MainWindow>, items: &[RequestedRowItem
 /// Re-fetches the full watchlist id set and rebuilds the calendar —
 /// called right after `discover_toggle_watchlist` succeeds, mirroring
 /// `refresh_requested_row`'s "cheap enough for an infrequent action" shape.
-pub(crate) fn refresh_watchlist(state: Arc<Mutex<FjordState>>, ww: Weak<MainWindow>, rt: tokio::runtime::Handle) {
-    let Some(client) = state.lock().unwrap().seerr_client.clone() else { return };
+pub(crate) fn refresh_watchlist(
+    state: Arc<Mutex<FjordState>>,
+    ww: Weak<MainWindow>,
+    rt: tokio::runtime::Handle,
+) {
+    let Some(client) = state.lock().unwrap().seerr_client.clone() else {
+        return;
+    };
     rt.spawn(async move {
         fetch_and_store_watchlist(&client, &state, &ww).await;
     });
@@ -3470,7 +4076,9 @@ pub(crate) fn ensure_discover_filter_options(
         if s.discover_filter_options_fetched {
             return;
         }
-        let Some(client) = s.seerr_client.clone() else { return };
+        let Some(client) = s.seerr_client.clone() else {
+            return;
+        };
         s.discover_filter_options_fetched = true;
         client
     };
@@ -3511,10 +4119,18 @@ pub(crate) fn ensure_discover_filter_options(
             let g = AppState::get(&w);
             let active = {
                 let s = state.lock().unwrap();
-                g.set_discover_filter_type_desc(discover_type_desc(&s.config.active().discover_filter_type).into());
-                g.set_discover_filter_sort_desc(discover_sort_desc(&s.config.active().discover_filter_sort).into());
-                g.set_discover_filter_rating_desc(discover_rating_desc(s.config.active().discover_filter_min_rating).into());
-                g.set_discover_filter_year_desc(discover_year_desc(s.config.active().discover_filter_min_year).into());
+                g.set_discover_filter_type_desc(
+                    discover_type_desc(&s.config.active().discover_filter_type).into(),
+                );
+                g.set_discover_filter_sort_desc(
+                    discover_sort_desc(&s.config.active().discover_filter_sort).into(),
+                );
+                g.set_discover_filter_rating_desc(
+                    discover_rating_desc(s.config.active().discover_filter_min_rating).into(),
+                );
+                g.set_discover_filter_year_desc(
+                    discover_year_desc(s.config.active().discover_filter_min_year).into(),
+                );
                 refresh_discover_filter_models(&g, &s);
                 discover_filters_active(s.config.active())
             };
@@ -3525,7 +4141,12 @@ pub(crate) fn ensure_discover_filter_options(
             // in-progress search query isn't persisted, but this fires
             // before the user could have typed anything new yet either way).
             if active && g.get_discover_query().as_str().is_empty() {
-                spawn_discover_filtered_browse(ww.clone(), Arc::clone(&state), Arc::clone(&generation), &rt2);
+                spawn_discover_filtered_browse(
+                    ww.clone(),
+                    Arc::clone(&state),
+                    Arc::clone(&generation),
+                    &rt2,
+                );
             }
         });
     });
@@ -3557,7 +4178,11 @@ pub(crate) fn apply_search_filters(state: &Arc<Mutex<FjordState>>, ww: &Weak<Mai
         return;
     }
     let cfg = s.config.active();
-    let genre_names: std::collections::HashSet<&str> = cfg.discover_filter_genre_names.iter().map(String::as_str).collect();
+    let genre_names: std::collections::HashSet<&str> = cfg
+        .discover_filter_genre_names
+        .iter()
+        .map(String::as_str)
+        .collect();
     // A search result's genre_ids come back in whichever id-space matches
     // its OWN media_type — resolve every selected NAME to every id it
     // could appear as (movie side or TV side) so matching works regardless
@@ -3585,7 +4210,11 @@ pub(crate) fn apply_search_filters(state: &Arc<Mutex<FjordState>>, ww: &Weak<Mai
         .cloned()
         .collect();
     match sort_key.as_str() {
-        "rating" => kept.sort_by(|a, b| b.vote_average.partial_cmp(&a.vote_average).unwrap_or(std::cmp::Ordering::Equal)),
+        "rating" => kept.sort_by(|a, b| {
+            b.vote_average
+                .partial_cmp(&a.vote_average)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        }),
         "newest" => kept.sort_by_key(|m| std::cmp::Reverse(m.year)),
         "oldest" => kept.sort_by_key(|m| m.year),
         _ => {} // Popularity — keep TMDB's own original relevance order
@@ -3593,9 +4222,15 @@ pub(crate) fn apply_search_filters(state: &Arc<Mutex<FjordState>>, ww: &Weak<Mai
     drop(s);
 
     let old = g.get_discover_results();
-    let old_posters: std::collections::HashMap<(String, String), (slint::Image, bool)> = (0..old.row_count())
+    let old_posters: std::collections::HashMap<(String, String), (slint::Image, bool)> = (0..old
+        .row_count())
         .filter_map(|i| old.row_data(i))
-        .map(|c| ((c.id.to_string(), c.item_type.to_string()), (c.poster.clone(), c.has_poster)))
+        .map(|c| {
+            (
+                (c.id.to_string(), c.item_type.to_string()),
+                (c.poster.clone(), c.has_poster),
+            )
+        })
         .collect();
     let cards: Vec<CardItem> = kept
         .into_iter()
@@ -3624,7 +4259,10 @@ pub(crate) fn apply_search_filters(state: &Arc<Mutex<FjordState>>, ww: &Weak<Mai
 pub(crate) type FilteredRowItem = (DiscoverCardMeta, Option<String>);
 
 pub(crate) fn build_filtered_metas(results: &[SearchResult]) -> Vec<FilteredRowItem> {
-    results.iter().filter_map(|r| search_result_to_meta(r).map(|m| (m, r.poster_path.clone()))).collect()
+    results
+        .iter()
+        .filter_map(|r| search_result_to_meta(r).map(|m| (m, r.poster_path.clone())))
+        .collect()
 }
 
 /// Merges movie + TV filtered-browse results into one grid for Type=All —
@@ -3642,14 +4280,26 @@ pub(crate) fn build_filtered_metas(results: &[SearchResult]) -> Vec<FilteredRowI
 /// function's own doc comment for the bug this fixes.
 fn sort_filtered_metas(items: &mut [FilteredRowItem], sort_key: &str) {
     match sort_key {
-        "rating" => items.sort_by(|a, b| b.0.vote_average.partial_cmp(&a.0.vote_average).unwrap_or(std::cmp::Ordering::Equal)),
+        "rating" => items.sort_by(|a, b| {
+            b.0.vote_average
+                .partial_cmp(&a.0.vote_average)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        }),
         "newest" => items.sort_by_key(|m| std::cmp::Reverse(m.0.year)),
         "oldest" => items.sort_by_key(|m| m.0.year),
-        _ => items.sort_by(|a, b| b.0.popularity.partial_cmp(&a.0.popularity).unwrap_or(std::cmp::Ordering::Equal)),
+        _ => items.sort_by(|a, b| {
+            b.0.popularity
+                .partial_cmp(&a.0.popularity)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        }),
     }
 }
 
-fn merge_filtered_metas(movie: Vec<FilteredRowItem>, tv: Vec<FilteredRowItem>, sort_key: &str) -> Vec<FilteredRowItem> {
+fn merge_filtered_metas(
+    movie: Vec<FilteredRowItem>,
+    tv: Vec<FilteredRowItem>,
+    sort_key: &str,
+) -> Vec<FilteredRowItem> {
     let mut merged: Vec<FilteredRowItem> = movie.into_iter().chain(tv).collect();
     sort_filtered_metas(&mut merged, sort_key);
     merged
@@ -3691,7 +4341,10 @@ pub(crate) fn spawn_discover_filtered_browse(
         let (type_key, sort_key) = {
             let s = state.lock().unwrap();
             let cp = s.config.active();
-            (cp.discover_filter_type.clone(), cp.discover_filter_sort.clone())
+            (
+                cp.discover_filter_type.clone(),
+                cp.discover_filter_sort.clone(),
+            )
         };
         let region = resolve_streaming_region(&client, &state).await;
         if generation.load(Ordering::SeqCst) != my_gen {
@@ -3701,11 +4354,26 @@ pub(crate) fn spawn_discover_filtered_browse(
         let want_tv = type_key != "movie";
         let (movie_filters, tv_filters) = {
             let s = state.lock().unwrap();
-            (build_discover_filters(&s, "movie", &region), build_discover_filters(&s, "tv", &region))
+            (
+                build_discover_filters(&s, "movie", &region),
+                build_discover_filters(&s, "tv", &region),
+            )
         };
         let (movie_res, tv_res) = tokio::join!(
-            async { if want_movie { Some(client.discover_movies_filtered(1, &movie_filters).await) } else { None } },
-            async { if want_tv { Some(client.discover_tv_filtered(1, &tv_filters).await) } else { None } },
+            async {
+                if want_movie {
+                    Some(client.discover_movies_filtered(1, &movie_filters).await)
+                } else {
+                    None
+                }
+            },
+            async {
+                if want_tv {
+                    Some(client.discover_tv_filtered(1, &tv_filters).await)
+                } else {
+                    None
+                }
+            },
         );
         if generation.load(Ordering::SeqCst) != my_gen {
             return; // a newer filter change / search already superseded this
@@ -3713,7 +4381,13 @@ pub(crate) fn spawn_discover_filtered_browse(
         let movie_resp = match movie_res {
             Some(Ok(r)) => Some(r),
             Some(Err(e)) => {
-                handle_seerr_error(&state, &ww, is_session_auth, "Discover filter (movies) failed", &e);
+                handle_seerr_error(
+                    &state,
+                    &ww,
+                    is_session_auth,
+                    "Discover filter (movies) failed",
+                    &e,
+                );
                 None
             }
             None => None,
@@ -3721,7 +4395,13 @@ pub(crate) fn spawn_discover_filtered_browse(
         let tv_resp = match tv_res {
             Some(Ok(r)) => Some(r),
             Some(Err(e)) => {
-                handle_seerr_error(&state, &ww, is_session_auth, "Discover filter (TV) failed", &e);
+                handle_seerr_error(
+                    &state,
+                    &ww,
+                    is_session_auth,
+                    "Discover filter (TV) failed",
+                    &e,
+                );
                 None
             }
             None => None,
@@ -3730,30 +4410,47 @@ pub(crate) fn spawn_discover_filtered_browse(
             return; // both wanted sides failed (error already surfaced above)
         }
 
-        let movie_metas = movie_resp.as_ref().map(|r| build_filtered_metas(&r.results)).unwrap_or_default();
-        let tv_metas = tv_resp.as_ref().map(|r| build_filtered_metas(&r.results)).unwrap_or_default();
+        let movie_metas = movie_resp
+            .as_ref()
+            .map(|r| build_filtered_metas(&r.results))
+            .unwrap_or_default();
+        let tv_metas = tv_resp
+            .as_ref()
+            .map(|r| build_filtered_metas(&r.results))
+            .unwrap_or_default();
         {
             let mut s = state.lock().unwrap();
             s.discover_filtered_page = 1;
-            s.discover_filtered_total_pages_movie = movie_resp.as_ref().map(|r| r.total_pages).unwrap_or(0);
-            s.discover_filtered_total_pages_tv = tv_resp.as_ref().map(|r| r.total_pages).unwrap_or(0);
+            s.discover_filtered_total_pages_movie =
+                movie_resp.as_ref().map(|r| r.total_pages).unwrap_or(0);
+            s.discover_filtered_total_pages_tv =
+                tv_resp.as_ref().map(|r| r.total_pages).unwrap_or(0);
             s.discover_filtered_loading_more = false;
         }
         let merged = merge_filtered_metas(movie_metas, tv_metas, &sort_key);
-        debug!("seerr: filtered-browse page 1 (type={type_key:?}) -> {} card(s)", merged.len());
+        debug!(
+            "seerr: filtered-browse page 1 (type={type_key:?}) -> {} card(s)",
+            merged.len()
+        );
         state.lock().unwrap().discover_filtered_metas = merged.clone();
 
         let poster_jobs: Vec<(usize, String, String, String)> = merged
             .iter()
             .enumerate()
-            .filter_map(|(i, (m, p))| p.clone().map(|p| (i, m.item_type.to_string(), m.id.clone(), p)))
+            .filter_map(|(i, (m, p))| {
+                p.clone()
+                    .map(|p| (i, m.item_type.to_string(), m.id.clone(), p))
+            })
             .collect();
 
         let ww_commit = ww.clone();
         let _ = slint::invoke_from_event_loop(move || {
             if let Some(w) = ww_commit.upgrade() {
                 let g = AppState::get(&w);
-                let cards: Vec<CardItem> = merged.into_iter().map(|(m, _)| m.into_card_item()).collect();
+                let cards: Vec<CardItem> = merged
+                    .into_iter()
+                    .map(|(m, _)| m.into_card_item())
+                    .collect();
                 g.set_discover_results(ModelRc::new(VecModel::from(cards)));
                 g.set_discover_focused(0);
                 g.set_discover_focused_row(0);
@@ -3788,13 +4485,22 @@ pub(crate) fn spawn_discover_filtered_browse_more(
         if s.discover_filtered_loading_more {
             return;
         }
-        let max_total = s.discover_filtered_total_pages_movie.max(s.discover_filtered_total_pages_tv);
+        let max_total = s
+            .discover_filtered_total_pages_movie
+            .max(s.discover_filtered_total_pages_tv);
         if s.discover_filtered_page == 0 || s.discover_filtered_page >= max_total {
             return;
         }
-        let Some(client) = s.seerr_client.clone() else { return };
+        let Some(client) = s.seerr_client.clone() else {
+            return;
+        };
         s.discover_filtered_loading_more = true;
-        (client, s.discover_filtered_page + 1, s.config.active().discover_filter_type.clone(), s.config.active().discover_filter_sort.clone())
+        (
+            client,
+            s.discover_filtered_page + 1,
+            s.config.active().discover_filter_type.clone(),
+            s.config.active().discover_filter_sort.clone(),
+        )
     };
     let is_session_auth = client.is_session_auth();
     // Ids that already have a decoded poster in the live model — used below
@@ -3804,11 +4510,17 @@ pub(crate) fn spawn_discover_filtered_browse_more(
     // HashSet<String> here (not the Image itself, which is !Send) is safe to
     // read from inside the async block below; the model can't be mutated
     // from off the UI thread regardless.
-    let known_poster_ids: std::collections::HashSet<String> = ww.upgrade().map(|w| {
-        let results = AppState::get(&w).get_discover_results();
-        (0..results.row_count()).filter_map(|i| results.row_data(i))
-            .filter(|c| c.has_poster).map(|c| c.id.to_string()).collect()
-    }).unwrap_or_default();
+    let known_poster_ids: std::collections::HashSet<String> = ww
+        .upgrade()
+        .map(|w| {
+            let results = AppState::get(&w).get_discover_results();
+            (0..results.row_count())
+                .filter_map(|i| results.row_data(i))
+                .filter(|c| c.has_poster)
+                .map(|c| c.id.to_string())
+                .collect()
+        })
+        .unwrap_or_default();
 
     let state2 = Arc::clone(&state);
     rt.spawn(async move {
@@ -3920,11 +4632,19 @@ pub(crate) fn spawn_discover_filtered_browse_more(
 /// out of `MovieDetails`/`TvDetails.watch_providers` — an empty result just
 /// means nothing streams there (or the title has no watch-provider data at
 /// all, common for less mainstream/older content), not an error.
-fn resolve_providers(providers: &[fjord_seerr::WatchProviderEntry], region: &str) -> Vec<ProviderRow> {
+fn resolve_providers(
+    providers: &[fjord_seerr::WatchProviderEntry],
+    region: &str,
+) -> Vec<ProviderRow> {
     providers
         .iter()
         .find(|p| p.iso_3166_1 == region)
-        .map(|p| p.flatrate.iter().map(|d| (d.id, d.name.clone(), d.logo_path.clone())).collect())
+        .map(|p| {
+            p.flatrate
+                .iter()
+                .map(|d| (d.id, d.name.clone(), d.logo_path.clone()))
+                .collect()
+        })
         .unwrap_or_default()
 }
 
@@ -3932,7 +4652,11 @@ fn resolve_providers(providers: &[fjord_seerr::WatchProviderEntry], region: &str
 /// countries' own doc comment in app_state.slint for why this is a single
 /// newline-joined string rather than a list model.
 fn format_countries(countries: &[fjord_seerr::ProductionCountry]) -> String {
-    countries.iter().map(|c| format!("{} {}", country_flag_emoji(&c.iso_3166_1), c.name)).collect::<Vec<_>>().join("\n")
+    countries
+        .iter()
+        .map(|c| format!("{} {}", country_flag_emoji(&c.iso_3166_1), c.name))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// The videos to offer as "Watch Trailer", best first: every `Trailer`, then
@@ -3949,11 +4673,16 @@ fn format_countries(countries: &[fjord_seerr::ProductionCountry]) -> String {
 /// a command), and other schemes would let mpv open local files or other
 /// protocols.
 pub(crate) fn trailer_url_allowed(url: &str) -> bool {
-    let Ok(u) = url::Url::parse(url) else { return false };
+    let Ok(u) = url::Url::parse(url) else {
+        return false;
+    };
     u.scheme() == "https"
         && u.username().is_empty()
         && u.password().is_none()
-        && matches!(u.host_str(), Some("www.youtube.com" | "youtube.com" | "m.youtube.com" | "youtu.be"))
+        && matches!(
+            u.host_str(),
+            Some("www.youtube.com" | "youtube.com" | "m.youtube.com" | "youtu.be")
+        )
 }
 
 fn trailer_candidates(videos: &[fjord_seerr::Video]) -> Vec<String> {
@@ -3961,7 +4690,10 @@ fn trailer_candidates(videos: &[fjord_seerr::Video]) -> Vec<String> {
     for kind in ["Trailer", "Teaser"] {
         for v in videos.iter().filter(|v| v.kind == kind) {
             if !trailer_url_allowed(&v.url) {
-                debug!("trailer candidate skipped (not an https YouTube URL): {:?}", v.url);
+                debug!(
+                    "trailer candidate skipped (not an https YouTube URL): {:?}",
+                    v.url
+                );
                 continue;
             }
             if !out.contains(&v.url) {
@@ -3995,9 +4727,18 @@ pub(crate) fn start_trailer_check(
     let (known_ok, all_known_bad, ytdl_format) = {
         let mut s = state.lock().unwrap();
         s.request_detail_trailers = candidates.clone();
-        let known_ok = candidates.iter().find(|c| s.trailer_playable.get(*c) == Some(&true)).cloned();
-        let all_known_bad = candidates.iter().all(|c| s.trailer_playable.get(c) == Some(&false));
-        (known_ok, all_known_bad, crate::trailer_ytdl_format(&s.config.active().trailer_quality))
+        let known_ok = candidates
+            .iter()
+            .find(|c| s.trailer_playable.get(*c) == Some(&true))
+            .cloned();
+        let all_known_bad = candidates
+            .iter()
+            .all(|c| s.trailer_playable.get(c) == Some(&false));
+        (
+            known_ok,
+            all_known_bad,
+            crate::trailer_ytdl_format(&s.config.active().trailer_quality),
+        )
     };
     if let Some(url) = known_ok {
         debug!("trailer check: cached playable {url}");
@@ -4006,7 +4747,11 @@ pub(crate) fn start_trailer_check(
         return;
     }
     if all_known_bad || !g.get_yt_dlp_available() {
-        debug!("trailer check: {} candidate(s), none playable (yt-dlp available={})", candidates.len(), g.get_yt_dlp_available());
+        debug!(
+            "trailer check: {} candidate(s), none playable (yt-dlp available={})",
+            candidates.len(),
+            g.get_yt_dlp_available()
+        );
         g.set_request_detail_trailer_url("".into());
         g.set_request_detail_trailer_state("none".into());
         fix_detail_btn_focus(&g);
@@ -4021,13 +4766,23 @@ pub(crate) fn start_trailer_check(
         let mut found: Option<String> = None;
         for url in &candidates {
             match state.lock().unwrap().trailer_playable.get(url) {
-                Some(true) => { found = Some(url.clone()); break; }
+                Some(true) => {
+                    found = Some(url.clone());
+                    break;
+                }
                 Some(false) => continue,
                 None => {}
             }
             let ok = trailer_plays(url, ytdl_format.as_deref()).await;
-            state.lock().unwrap().trailer_playable.insert(url.clone(), ok);
-            if ok { found = Some(url.clone()); break; }
+            state
+                .lock()
+                .unwrap()
+                .trailer_playable
+                .insert(url.clone(), ok);
+            if ok {
+                found = Some(url.clone());
+                break;
+            }
         }
         let _ = slint::invoke_from_event_loop(move || {
             let Some(w) = ww.upgrade() else { return };
@@ -4064,22 +4819,36 @@ async fn trailer_plays(url: &str, ytdl_format: Option<&str>) -> bool {
         cmd.args(["-f", f]);
     }
     // `--`: the URL can never be read as an option, whatever it contains.
-    cmd.arg("--").arg(url).kill_on_drop(true)
+    cmd.arg("--")
+        .arg(url)
+        .kill_on_drop(true)
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::piped());
     let started = std::time::Instant::now();
     match tokio::time::timeout(std::time::Duration::from_secs(20), cmd.output()).await {
         Ok(Ok(out)) if out.status.success() => {
-            debug!("trailer check: {url} plays ({:.1}s)", started.elapsed().as_secs_f64());
+            debug!(
+                "trailer check: {url} plays ({:.1}s)",
+                started.elapsed().as_secs_f64()
+            );
             true
         }
         Ok(Ok(out)) => {
             let err = String::from_utf8_lossy(&out.stderr);
-            info!("trailer check: {url} won't play: {}", err.trim().lines().last().unwrap_or(""));
+            info!(
+                "trailer check: {url} won't play: {}",
+                err.trim().lines().last().unwrap_or("")
+            );
             false
         }
-        Ok(Err(e)) => { warn!("trailer check: couldn't run yt-dlp: {e}"); false }
-        Err(_) => { info!("trailer check: {url} timed out after 20s"); false }
+        Ok(Err(e)) => {
+            warn!("trailer check: couldn't run yt-dlp: {e}");
+            false
+        }
+        Err(_) => {
+            info!("trailer check: {url} timed out after 20s");
+            false
+        }
     }
 }
 
@@ -4111,7 +4880,9 @@ pub(crate) fn mark_trailer_unplayable(
 /// from existing_detail_btn_slots (check pending/failed).
 fn fix_detail_btn_focus(g: &AppState) {
     let slots = existing_detail_btn_slots(g);
-    if !slots.contains(&g.get_request_detail_btn_focused()) && let Some(&first) = slots.first() {
+    if !slots.contains(&g.get_request_detail_btn_focused())
+        && let Some(&first) = slots.first()
+    {
         g.set_request_detail_btn_focused(first);
     }
 }
@@ -4176,7 +4947,10 @@ struct DetailFields {
 /// `MediaRequestStatus`'s own doc comment in fjord-seerr — no local const,
 /// matching the same raw-int style `requested_not_available` already uses
 /// for the identical check).
-fn tier_status_label(status: Option<MediaStatus>, request: Option<&fjord_seerr::MediaRequest>) -> String {
+fn tier_status_label(
+    status: Option<MediaStatus>,
+    request: Option<&fjord_seerr::MediaRequest>,
+) -> String {
     if status == Some(MediaStatus::Available) {
         return "Available".to_string();
     }
@@ -4216,7 +4990,10 @@ fn tier_status_label(status: Option<MediaStatus>, request: Option<&fjord_seerr::
 /// The one `MediaRequest` for a given tier, from `MediaInfo.requests`
 /// (only populated on the single-item detail endpoints — see its own doc
 /// comment in fjord-seerr).
-fn tier_request(mi: Option<&fjord_seerr::MediaInfo>, is4k: bool) -> Option<&fjord_seerr::MediaRequest> {
+fn tier_request(
+    mi: Option<&fjord_seerr::MediaInfo>,
+    is4k: bool,
+) -> Option<&fjord_seerr::MediaRequest> {
     mi?.requests.iter().find(|r| r.is4k == is4k)
 }
 
@@ -4247,9 +5024,14 @@ pub(crate) fn season_request_status(
     my_user_id: Option<i64>,
 ) -> Option<(String, String, bool, bool)> {
     let r = requests.iter().find(|r| {
-        (r.status == 1 || r.status == 2 || r.status == 5) && r.seasons.iter().any(|s| s.season_number == season_number)
+        (r.status == 1 || r.status == 2 || r.status == 5)
+            && r.seasons.iter().any(|s| s.season_number == season_number)
     })?;
-    let label = if r.status == 1 { "requested" } else { "processing" }; // 1=Pending, 2=Approved/5=Completed
+    let label = if r.status == 1 {
+        "requested"
+    } else {
+        "processing"
+    }; // 1=Pending, 2=Approved/5=Completed
     let mine = my_user_id
         .zip(r.requested_by.as_ref().map(|rb| rb.id))
         .map(|(mine, theirs)| mine == theirs)
@@ -4271,8 +5053,10 @@ fn pick_primary_request(
 ) -> (String, bool, bool) {
     match req_4k.or(req_2k) {
         Some(r) => {
-            let mine =
-                my_user_id.zip(r.requested_by.as_ref().map(|rb| rb.id)).map(|(mine, theirs)| mine == theirs).unwrap_or(true);
+            let mine = my_user_id
+                .zip(r.requested_by.as_ref().map(|rb| rb.id))
+                .map(|(mine, theirs)| mine == theirs)
+                .unwrap_or(true);
             (r.id.to_string(), r.is_pending(), mine)
         }
         None => (String::new(), false, false),
@@ -4280,20 +5064,36 @@ fn pick_primary_request(
 }
 
 fn movie_fields(d: MovieDetails, region: &str, my_user_id: Option<i64>) -> DetailFields {
-    let year = d.release_date.as_deref().filter(|s| s.len() >= 4).map(|s| &s[..4]).unwrap_or("");
-    let genres = d.genres.iter().map(|g| g.name.clone()).collect::<Vec<_>>().join(", ");
+    let year = d
+        .release_date
+        .as_deref()
+        .filter(|s| s.len() >= 4)
+        .map(|s| &s[..4])
+        .unwrap_or("");
+    let genres = d
+        .genres
+        .iter()
+        .map(|g| g.name.clone())
+        .collect::<Vec<_>>()
+        .join(", ");
     let cast = build_cast_list(&d.credits);
     let providers = resolve_providers(&d.watch_providers, region);
     let trailer_candidates = trailer_candidates(&d.related_videos);
     let req_2k = tier_request(d.media_info.as_ref(), false);
     let req_4k = tier_request(d.media_info.as_ref(), true);
     let status_label = tier_status_label(d.media_info.as_ref().and_then(|mi| mi.status()), req_2k);
-    let status4k_label = tier_status_label(d.media_info.as_ref().and_then(|mi| mi.status4k()), req_4k);
-    let (request_id, request_pending, request_mine) = pick_primary_request(req_2k, req_4k, my_user_id);
+    let status4k_label =
+        tier_status_label(d.media_info.as_ref().and_then(|mi| mi.status4k()), req_4k);
+    let (request_id, request_pending, request_mine) =
+        pick_primary_request(req_2k, req_4k, my_user_id);
     let availability = availability_tag(d.media_info.as_ref().and_then(|mi| mi.status()));
     DetailFields {
         title: d.title,
-        meta: if genres.is_empty() { year.to_string() } else { format!("{year} · {genres}") },
+        meta: if genres.is_empty() {
+            year.to_string()
+        } else {
+            format!("{year} · {genres}")
+        },
         overview: d.overview.unwrap_or_default(),
         rating: format_rating(d.vote_average),
         poster_path: d.poster_path,
@@ -4308,7 +5108,11 @@ fn movie_fields(d: MovieDetails, region: &str, my_user_id: Option<i64>) -> Detai
         cast,
         production_status: d.status,
         date_label: "Release Date",
-        date_value: d.release_date.as_deref().map(format_date_pretty).unwrap_or_default(),
+        date_value: d
+            .release_date
+            .as_deref()
+            .map(format_date_pretty)
+            .unwrap_or_default(),
         next_air_date: String::new(),
         original_language: language_display_name(&d.original_language),
         production_countries: format_countries(&d.production_countries),
@@ -4321,8 +5125,18 @@ fn movie_fields(d: MovieDetails, region: &str, my_user_id: Option<i64>) -> Detai
 }
 
 fn tv_fields(d: TvDetails, region: &str, my_user_id: Option<i64>) -> DetailFields {
-    let year = d.first_air_date.as_deref().filter(|s| s.len() >= 4).map(|s| &s[..4]).unwrap_or("");
-    let genres = d.genres.iter().map(|g| g.name.clone()).collect::<Vec<_>>().join(", ");
+    let year = d
+        .first_air_date
+        .as_deref()
+        .filter(|s| s.len() >= 4)
+        .map(|s| &s[..4])
+        .unwrap_or("");
+    let genres = d
+        .genres
+        .iter()
+        .map(|g| g.name.clone())
+        .collect::<Vec<_>>()
+        .join(", ");
     let cast = build_cast_list(&d.credits);
     let mut season_poster_paths = Vec::new();
     let seasons: Vec<SeasonRow> = d
@@ -4333,24 +5147,43 @@ fn tv_fields(d: TvDetails, region: &str, my_user_id: Option<i64>) -> DetailField
             if let Some(p) = &s.poster_path {
                 season_poster_paths.push((i, p.clone()));
             }
-            let name = if s.name.is_empty() { format!("Season {}", s.season_number) } else { s.name.clone() };
+            let name = if s.name.is_empty() {
+                format!("Season {}", s.season_number)
+            } else {
+                s.name.clone()
+            };
             (s.season_number as i32, name, s.episode_count as i32, true) // default all-checked, per plan decision 2
         })
         .collect();
     let providers = resolve_providers(&d.watch_providers, region);
-    let network = d.networks.iter().map(|n| n.name.clone()).collect::<Vec<_>>().join(", ");
-    let next_air_date =
-        d.next_episode_to_air.as_ref().and_then(|e| e.air_date.as_deref()).map(format_date_pretty).unwrap_or_default();
+    let network = d
+        .networks
+        .iter()
+        .map(|n| n.name.clone())
+        .collect::<Vec<_>>()
+        .join(", ");
+    let next_air_date = d
+        .next_episode_to_air
+        .as_ref()
+        .and_then(|e| e.air_date.as_deref())
+        .map(format_date_pretty)
+        .unwrap_or_default();
     let trailer_candidates = trailer_candidates(&d.related_videos);
     let req_2k = tier_request(d.media_info.as_ref(), false);
     let req_4k = tier_request(d.media_info.as_ref(), true);
     let status_label = tier_status_label(d.media_info.as_ref().and_then(|mi| mi.status()), req_2k);
-    let status4k_label = tier_status_label(d.media_info.as_ref().and_then(|mi| mi.status4k()), req_4k);
-    let (request_id, request_pending, request_mine) = pick_primary_request(req_2k, req_4k, my_user_id);
+    let status4k_label =
+        tier_status_label(d.media_info.as_ref().and_then(|mi| mi.status4k()), req_4k);
+    let (request_id, request_pending, request_mine) =
+        pick_primary_request(req_2k, req_4k, my_user_id);
     let availability = availability_tag(d.media_info.as_ref().and_then(|mi| mi.status()));
     DetailFields {
         title: d.name,
-        meta: if genres.is_empty() { year.to_string() } else { format!("{year} · {genres}") },
+        meta: if genres.is_empty() {
+            year.to_string()
+        } else {
+            format!("{year} · {genres}")
+        },
         overview: d.overview.unwrap_or_default(),
         rating: format_rating(d.vote_average),
         poster_path: d.poster_path,
@@ -4365,7 +5198,11 @@ fn tv_fields(d: TvDetails, region: &str, my_user_id: Option<i64>) -> DetailField
         cast,
         production_status: d.status,
         date_label: "First Air Date",
-        date_value: d.first_air_date.as_deref().map(format_date_pretty).unwrap_or_default(),
+        date_value: d
+            .first_air_date
+            .as_deref()
+            .map(format_date_pretty)
+            .unwrap_or_default(),
         next_air_date,
         original_language: language_display_name(&d.original_language),
         production_countries: format_countries(&d.production_countries),
@@ -4389,9 +5226,17 @@ fn tv_fields(d: TvDetails, region: &str, my_user_id: Option<i64>) -> DetailField
 /// see CLAUDE.md's Disk caches section) for a `ProviderIds["Tmdb"]` match.
 /// A miss (library not yet fetched, or genuinely not in the library) just
 /// falls through to the normal Seerr detail flow.
-pub(crate) fn find_local_item(state: &Arc<Mutex<FjordState>>, media_type: &str, tmdb_id_str: &str) -> Option<(String, String)> {
+pub(crate) fn find_local_item(
+    state: &Arc<Mutex<FjordState>>,
+    media_type: &str,
+    tmdb_id_str: &str,
+) -> Option<(String, String)> {
     let s = state.lock().unwrap();
-    let items = if media_type == "movie" { &s.all_movies } else { &s.all_series };
+    let items = if media_type == "movie" {
+        &s.all_movies
+    } else {
+        &s.all_series
+    };
     items
         .iter()
         .find(|m| m.provider_ids.get("Tmdb").map(String::as_str) == Some(tmdb_id_str))
@@ -4441,7 +5286,15 @@ pub(crate) fn open_discover_item(
     ww: Weak<MainWindow>,
     rt: tokio::runtime::Handle,
 ) {
-    open_discover_item_ex(media_type, tmdb_id_str, state, ww, rt, PostOpenAction::None, true);
+    open_discover_item_ex(
+        media_type,
+        tmdb_id_str,
+        state,
+        ww,
+        rt,
+        PostOpenAction::None,
+        true,
+    );
 }
 
 /// Series "Missing Seasons" row entry point (2026-07-29, Deep Seerr
@@ -4492,12 +5345,18 @@ fn open_discover_item_ex(
     post_action: PostOpenAction,
     check_local_library: bool,
 ) {
-    if check_local_library && let Some((id, item_type)) = find_local_item(&state, &media_type, &tmdb_id_str) {
+    if check_local_library
+        && let Some((id, item_type)) = find_local_item(&state, &media_type, &tmdb_id_str)
+    {
         crate::detail::open_detail(id, item_type, state, ww, rt);
         return;
     }
-    let Ok(tmdb_id) = tmdb_id_str.parse::<i64>() else { return };
-    let Some(client) = state.lock().unwrap().seerr_client.clone() else { return };
+    let Ok(tmdb_id) = tmdb_id_str.parse::<i64>() else {
+        return;
+    };
+    let Some(client) = state.lock().unwrap().seerr_client.clone() else {
+        return;
+    };
     let is_session_auth = client.is_session_auth();
 
     let generation = {
@@ -4562,7 +5421,9 @@ fn open_discover_item_ex(
         g.set_request_detail_original_language("".into());
         g.set_request_detail_production_countries("".into());
         g.set_request_detail_network("".into());
-        g.set_request_detail_providers(ModelRc::new(VecModel::from(Vec::<StreamingProvider>::new())));
+        g.set_request_detail_providers(ModelRc::new(VecModel::from(
+            Vec::<StreamingProvider>::new(),
+        )));
         g.set_request_detail_trailer_url("".into());
         g.set_request_detail_trailer_state("".into()); // set again once the fetch lands
         g.set_request_detail_btn_focused(0);
@@ -4623,9 +5484,15 @@ fn open_discover_item_ex(
         let (detail_result, options_result, editing_request_result) = tokio::join!(
             async {
                 if media_type2 == "movie" {
-                    client.get_movie(tmdb_id).await.map(|d| movie_fields(d, &region, my_user_id))
+                    client
+                        .get_movie(tmdb_id)
+                        .await
+                        .map(|d| movie_fields(d, &region, my_user_id))
                 } else {
-                    client.get_tv(tmdb_id).await.map(|d| tv_fields(d, &region, my_user_id))
+                    client
+                        .get_tv(tmdb_id)
+                        .await
+                        .map(|d| tv_fields(d, &region, my_user_id))
                 }
             },
             client.available_request_options_both_tiers(&media_type2),
@@ -4655,27 +5522,50 @@ fn open_discover_item_ex(
         // Best-effort: no tags/profiles configured, or no permission to read
         // /service/* on this account, are both "just don't show that
         // picker," not a reason to fail opening the item.
-        let ((tags, profiles), (tags_4k, profiles_4k)): (TagProfileItems, TagProfileItems) = match options_result {
-            Ok((regular, fourk)) => (build_tag_profile_items(regular), build_tag_profile_items(fourk)),
-            Err(e) => {
-                debug!("seerr: couldn't fetch tags/profiles for {media_type2}: {e:#}");
-                ((Vec::new(), Vec::new()), (Vec::new(), Vec::new()))
-            }
-        };
+        let ((tags, profiles), (tags_4k, profiles_4k)): (TagProfileItems, TagProfileItems) =
+            match options_result {
+                Ok((regular, fourk)) => (
+                    build_tag_profile_items(regular),
+                    build_tag_profile_items(fourk),
+                ),
+                Err(e) => {
+                    debug!("seerr: couldn't fetch tags/profiles for {media_type2}: {e:#}");
+                    ((Vec::new(), Vec::new()), (Vec::new(), Vec::new()))
+                }
+            };
 
-        let Ok(http) = reqwest::Client::builder().timeout(Duration::from_secs(30)).build() else { return };
-        let cache_prefix = if media_type2 == "movie" { "movie" } else { "tv" };
+        let Ok(http) = reqwest::Client::builder()
+            .timeout(Duration::from_secs(30))
+            .build()
+        else {
+            return;
+        };
+        let cache_prefix = if media_type2 == "movie" {
+            "movie"
+        } else {
+            "tv"
+        };
         let poster_buf = if let Some(p) = &fields.poster_path {
-            fetch_tmdb_image(&http, TMDB_POSTER_BASE, p, &format!("{cache_prefix}-{tmdb_id}"))
-                .await
-                .and_then(|b| decode_poster_buffer(&b))
+            fetch_tmdb_image(
+                &http,
+                TMDB_POSTER_BASE,
+                p,
+                &format!("{cache_prefix}-{tmdb_id}"),
+            )
+            .await
+            .and_then(|b| decode_poster_buffer(&b))
         } else {
             None
         };
         let backdrop_buf = if let Some(p) = &fields.backdrop_path {
-            fetch_tmdb_image(&http, TMDB_BACKDROP_BASE, p, &format!("{cache_prefix}-{tmdb_id}-bg"))
-                .await
-                .and_then(|b| crate::poster::decode_backdrop_buffer(&b))
+            fetch_tmdb_image(
+                &http,
+                TMDB_BACKDROP_BASE,
+                p,
+                &format!("{cache_prefix}-{tmdb_id}-bg"),
+            )
+            .await
+            .and_then(|b| crate::poster::decode_backdrop_buffer(&b))
         } else {
             None
         };
@@ -4685,16 +5575,26 @@ fn open_discover_item_ex(
         // pointed at TMDB instead. Fetched together so neither trickles in
         // after the page is already shown.
         let sem = Arc::new(tokio::sync::Semaphore::new(6));
-        let mut portrait_tasks: tokio::task::JoinSet<(usize, Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>)> =
-            tokio::task::JoinSet::new();
+        let mut portrait_tasks: tokio::task::JoinSet<(
+            usize,
+            Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>,
+        )> = tokio::task::JoinSet::new();
         for (idx, (_, _, _, profile_path)) in fields.cast.iter().enumerate() {
-            let Some(path) = profile_path.clone() else { continue };
+            let Some(path) = profile_path.clone() else {
+                continue;
+            };
             let http = http.clone();
             let sem = Arc::clone(&sem);
             let person_id = fields.cast[idx].0.clone();
             portrait_tasks.spawn(async move {
                 let _permit = sem.acquire_owned().await.ok();
-                let bytes = fetch_tmdb_image(&http, TMDB_PROFILE_BASE, &path, &format!("person-{person_id}")).await;
+                let bytes = fetch_tmdb_image(
+                    &http,
+                    TMDB_PROFILE_BASE,
+                    &path,
+                    &format!("person-{person_id}"),
+                )
+                .await;
                 (idx, bytes.as_deref().and_then(decode_poster_buffer))
             });
         }
@@ -4712,8 +5612,10 @@ fn open_discover_item_ex(
         // UI thread, or the whole closure fails to compile as `!Send`.
         let mut season_poster_bufs: Vec<Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>> =
             vec![None; fields.seasons.len()];
-        let mut season_tasks: tokio::task::JoinSet<(usize, Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>)> =
-            tokio::task::JoinSet::new();
+        let mut season_tasks: tokio::task::JoinSet<(
+            usize,
+            Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>,
+        )> = tokio::task::JoinSet::new();
         for (season_idx, path) in fields.season_poster_paths.clone() {
             let http = http.clone();
             let sem = Arc::clone(&sem);
@@ -4735,10 +5637,14 @@ fn open_discover_item_ex(
         // portraits/season posters above, small TMDB CDN icons.
         let mut provider_bufs: Vec<Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>> =
             vec![None; fields.providers.len()];
-        let mut provider_tasks: tokio::task::JoinSet<(usize, Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>)> =
-            tokio::task::JoinSet::new();
+        let mut provider_tasks: tokio::task::JoinSet<(
+            usize,
+            Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>,
+        )> = tokio::task::JoinSet::new();
         for (idx, (provider_id, _, logo_path)) in fields.providers.iter().enumerate() {
-            let Some(path) = logo_path.clone() else { continue };
+            let Some(path) = logo_path.clone() else {
+                continue;
+            };
             let http = http.clone();
             let sem = Arc::clone(&sem);
             let cache_key = format!("provider-{provider_id}");
@@ -4766,7 +5672,9 @@ fn open_discover_item_ex(
             // switch, but without this check this closure could still
             // silently repopulate the (now-hidden) screen's fields with
             // the OUTGOING Seerr connection's data.
-            if !crate::seerr_session_current(&state, &client) { return; }
+            if !crate::seerr_session_current(&state, &client) {
+                return;
+            }
             g.set_request_detail_title(fields.title.as_str().into());
             g.set_request_detail_meta(fields.meta.as_str().into());
             g.set_request_detail_overview(fields.overview.as_str().into());
@@ -4787,7 +5695,13 @@ fn open_discover_item_ex(
                         Some(b) => (slint::Image::from_rgba8(b), true),
                         None => (Default::default(), false),
                     };
-                    CastMember { id: id.as_str().into(), name: name.as_str().into(), role: role.as_str().into(), photo, has_photo }
+                    CastMember {
+                        id: id.as_str().into(),
+                        name: name.as_str().into(),
+                        role: role.as_str().into(),
+                        photo,
+                        has_photo,
+                    }
                 })
                 .collect();
             g.set_request_detail_cast(ModelRc::new(VecModel::from(cast)));
@@ -4800,7 +5714,14 @@ fn open_discover_item_ex(
                         Some(b) => (slint::Image::from_rgba8(b), true),
                         None => (Default::default(), false),
                     };
-                    SeasonItem { season_number, name: name.as_str().into(), episode_count, selected, poster, has_poster }
+                    SeasonItem {
+                        season_number,
+                        name: name.as_str().into(),
+                        episode_count,
+                        selected,
+                        poster,
+                        has_poster,
+                    }
                 })
                 .collect();
             g.set_request_detail_seasons(ModelRc::new(VecModel::from(seasons)));
@@ -4816,8 +5737,11 @@ fn open_discover_item_ex(
             // afterward, correctly taking precedence when that's the action.
             let remembered = {
                 let s = state.lock().unwrap();
-                if media_type2 == "movie" { s.config.active().request_pref_movie.clone() }
-                else { s.config.active().request_pref_tv.clone() }
+                if media_type2 == "movie" {
+                    s.config.active().request_pref_movie.clone()
+                } else {
+                    s.config.active().request_pref_tv.clone()
+                }
             };
             {
                 let model = g.get_request_detail_tags();
@@ -4856,11 +5780,22 @@ fn open_discover_item_ex(
                         Some(b) => (slint::Image::from_rgba8(b), true),
                         None => (Default::default(), false),
                     };
-                    StreamingProvider { id: id as i32, name: name.as_str().into(), logo, has_logo }
+                    StreamingProvider {
+                        id: id as i32,
+                        name: name.as_str().into(),
+                        logo,
+                        has_logo,
+                    }
                 })
                 .collect();
             g.set_request_detail_providers(ModelRc::new(VecModel::from(providers)));
-            start_trailer_check(&state, &ww, &rt_trailer, generation, fields.trailer_candidates);
+            start_trailer_check(
+                &state,
+                &ww,
+                &rt_trailer,
+                generation,
+                fields.trailer_candidates,
+            );
             if let Some(buf) = poster_buf {
                 g.set_request_detail_poster(slint::Image::from_rgba8(buf));
                 g.set_request_detail_has_poster(true);
@@ -4895,7 +5830,9 @@ fn open_discover_item_ex(
                             if r.is4k {
                                 set_quality(&g, true);
                             }
-                            g.set_request_detail_selected_profile_id(r.profile_id.unwrap_or(0) as i32);
+                            g.set_request_detail_selected_profile_id(
+                                r.profile_id.unwrap_or(0) as i32
+                            );
                             if let Some(tag_ids) = &r.tags {
                                 let model = g.get_request_detail_tags();
                                 for i in 0..model.row_count() {
@@ -4917,7 +5854,9 @@ fn open_discover_item_ex(
                                 }
                             }
                             g.set_request_options_editing(true);
-                            g.set_request_options_editing_request_id(id.to_string().as_str().into());
+                            g.set_request_options_editing_request_id(
+                                id.to_string().as_str().into(),
+                            );
                         }
                         Some(Err(e)) => {
                             warn!("seerr: couldn't fetch request {id} for editing: {e:#}");
@@ -4929,7 +5868,8 @@ fn open_discover_item_ex(
                     open_request_options_modal(&g);
                 }
                 PostOpenAction::OpenRequestOptionsPreselect(wanted_seasons) => {
-                    let wanted: std::collections::HashSet<u32> = wanted_seasons.into_iter().collect();
+                    let wanted: std::collections::HashSet<u32> =
+                        wanted_seasons.into_iter().collect();
                     let model = g.get_request_detail_seasons();
                     for i in 0..model.row_count() {
                         if let Some(mut s) = model.row_data(i) {
@@ -4944,13 +5884,24 @@ fn open_discover_item_ex(
     });
 }
 
-fn patch_discover_card_availability(g: &AppState, media_type: &str, tmdb_id: i64, availability: &str) {
-    let item_type = if media_type == "movie" { "DiscoverMovie" } else { "DiscoverTv" };
+fn patch_discover_card_availability(
+    g: &AppState,
+    media_type: &str,
+    tmdb_id: i64,
+    availability: &str,
+) {
+    let item_type = if media_type == "movie" {
+        "DiscoverMovie"
+    } else {
+        "DiscoverTv"
+    };
     let id_str = tmdb_id.to_string();
     let model = g.get_discover_results();
     for i in 0..model.row_count() {
         if let Some(mut card) = model.row_data(i)
-            && card.id.as_str() == id_str && card.item_type.as_str() == item_type {
+            && card.id.as_str() == id_str
+            && card.item_type.as_str() == item_type
+        {
             card.availability = availability.into();
             model.set_row_data(i, card);
             break;
@@ -4965,13 +5916,26 @@ fn patch_discover_card_availability(g: &AppState, media_type: &str, tmdb_id: i64
 /// 2026-07-18: submitting a request from the search grid left that same
 /// card's context menu still offering "Request" until the next full
 /// landing-row refresh, since only `availability` was ever patched here.
-fn patch_discover_card_request_state(g: &AppState, media_type: &str, tmdb_id: i64, request_id: &str, pending: bool, mine: bool) {
-    let item_type = if media_type == "movie" { "DiscoverMovie" } else { "DiscoverTv" };
+fn patch_discover_card_request_state(
+    g: &AppState,
+    media_type: &str,
+    tmdb_id: i64,
+    request_id: &str,
+    pending: bool,
+    mine: bool,
+) {
+    let item_type = if media_type == "movie" {
+        "DiscoverMovie"
+    } else {
+        "DiscoverTv"
+    };
     let id_str = tmdb_id.to_string();
     let model = g.get_discover_results();
     for i in 0..model.row_count() {
         if let Some(mut card) = model.row_data(i)
-            && card.id.as_str() == id_str && card.item_type.as_str() == item_type {
+            && card.id.as_str() == id_str
+            && card.item_type.as_str() == item_type
+        {
             card.request_id = request_id.into();
             card.request_pending = pending;
             card.request_mine = mine;
@@ -4999,20 +5963,40 @@ fn patch_discover_card_request_state(g: &AppState, media_type: &str, tmdb_id: i6
 /// second tuple element.
 type CardModelSlot = (ModelRc<CardItem>, Box<dyn Fn(&AppState, ModelRc<CardItem>)>);
 fn all_card_model_slots(g: &AppState) -> Vec<CardModelSlot> {
-    let mut v: Vec<CardModelSlot> =
-        vec![(g.get_discover_results(), Box::new(|g: &AppState, m| g.set_discover_results(m)))];
+    let mut v: Vec<CardModelSlot> = vec![(
+        g.get_discover_results(),
+        Box::new(|g: &AppState, m| g.set_discover_results(m)),
+    )];
     // Derived from landing_row_lens's own array length rather than a bare
     // literal repeated here — this exact "hardcoded row count drifts out of
     // sync with the real row count" gap was caught by an independent plan
     // review when the Watchlist row (8) was added, 2026-07-20.
     for row in 0..landing_row_lens(g).len() {
-        v.push((landing_row_get(g, row), Box::new(move |g: &AppState, m| landing_row_set(g, row, m))));
+        v.push((
+            landing_row_get(g, row),
+            Box::new(move |g: &AppState, m| landing_row_set(g, row, m)),
+        ));
     }
-    v.push((g.get_discover_watchlist_movies(), Box::new(|g: &AppState, m| g.set_discover_watchlist_movies(m))));
-    v.push((g.get_discover_watchlist_tv(), Box::new(|g: &AppState, m| g.set_discover_watchlist_tv(m))));
-    v.push((g.get_discover_coming_up_mixed(), Box::new(|g: &AppState, m| g.set_discover_coming_up_mixed(m))));
-    v.push((g.get_discover_coming_up_movies(), Box::new(|g: &AppState, m| g.set_discover_coming_up_movies(m))));
-    v.push((g.get_discover_coming_up_tv(), Box::new(|g: &AppState, m| g.set_discover_coming_up_tv(m))));
+    v.push((
+        g.get_discover_watchlist_movies(),
+        Box::new(|g: &AppState, m| g.set_discover_watchlist_movies(m)),
+    ));
+    v.push((
+        g.get_discover_watchlist_tv(),
+        Box::new(|g: &AppState, m| g.set_discover_watchlist_tv(m)),
+    ));
+    v.push((
+        g.get_discover_coming_up_mixed(),
+        Box::new(|g: &AppState, m| g.set_discover_coming_up_mixed(m)),
+    ));
+    v.push((
+        g.get_discover_coming_up_movies(),
+        Box::new(|g: &AppState, m| g.set_discover_coming_up_movies(m)),
+    ));
+    v.push((
+        g.get_discover_coming_up_tv(),
+        Box::new(|g: &AppState, m| g.set_discover_coming_up_tv(m)),
+    ));
     v
 }
 
@@ -5028,14 +6012,18 @@ fn patch_watchlist_on_all_models(g: &AppState, item_type: &str, tmdb_id: i64, on
     for (model, _) in all_card_model_slots(g) {
         for i in 0..model.row_count() {
             if let Some(mut card) = model.row_data(i)
-                && card.id.as_str() == id_str && card.item_type.as_str() == item_type {
+                && card.id.as_str() == id_str
+                && card.item_type.as_str() == item_type
+            {
                 card.on_watchlist = on_watchlist;
                 model.set_row_data(i, card);
                 patched += 1;
             }
         }
     }
-    debug!("seerr: patch_watchlist_on_all_models tmdb={tmdb_id} item_type={item_type} on_watchlist={on_watchlist} -> patched {patched} card(s)");
+    debug!(
+        "seerr: patch_watchlist_on_all_models tmdb={tmdb_id} item_type={item_type} on_watchlist={on_watchlist} -> patched {patched} card(s)"
+    );
 }
 
 /// Removes the matching card from every Discover-visible model (the full
@@ -5059,7 +6047,9 @@ fn remove_card_from_all_models(g: &AppState, item_type: &str, tmdb_id: i64) {
     for (model, set) in all_card_model_slots(g) {
         let hit: Vec<usize> = (0..model.row_count())
             .filter(|&i| {
-                model.row_data(i).is_some_and(|c| c.id.as_str() == id_str && c.item_type.as_str() == item_type)
+                model
+                    .row_data(i)
+                    .is_some_and(|c| c.id.as_str() == id_str && c.item_type.as_str() == item_type)
             })
             .collect();
         if hit.is_empty() {
@@ -5075,13 +6065,17 @@ fn remove_card_from_all_models(g: &AppState, item_type: &str, tmdb_id: i64) {
             // a VecModel elsewhere in this file, so this should never
             // actually trigger (same "should never trigger" idiom as
             // blocklist.rs's own remove-row fallback).
-            let kept: Vec<CardItem> =
-                (0..model.row_count()).filter(|i| !hit.contains(i)).filter_map(|i| model.row_data(i)).collect();
+            let kept: Vec<CardItem> = (0..model.row_count())
+                .filter(|i| !hit.contains(i))
+                .filter_map(|i| model.row_data(i))
+                .collect();
             removed += hit.len();
             set(g, ModelRc::new(VecModel::from(kept)));
         }
     }
-    debug!("seerr: remove_card_from_all_models tmdb={tmdb_id} item_type={item_type} -> removed {removed} card(s)");
+    debug!(
+        "seerr: remove_card_from_all_models tmdb={tmdb_id} item_type={item_type} -> removed {removed} card(s)"
+    );
 }
 
 /// Add/remove Blocklist — wired from the Discover context menu's Blocklist
@@ -5102,7 +6096,9 @@ pub(crate) fn discover_toggle_blocklist(
     title: String,
     adding: bool,
 ) {
-    debug!("seerr: discover_toggle_blocklist tmdb={tmdb_id} media_type={media_type} adding={adding}");
+    debug!(
+        "seerr: discover_toggle_blocklist tmdb={tmdb_id} media_type={media_type} adding={adding}"
+    );
     let (client, user_id) = {
         let s = state.lock().unwrap();
         let Some(client) = s.seerr_client.clone() else {
@@ -5113,7 +6109,11 @@ pub(crate) fn discover_toggle_blocklist(
         (client, s.seerr_user_id)
     };
     let is_session_auth = client.is_session_auth();
-    let item_type: &'static str = if media_type == "movie" { "DiscoverMovie" } else { "DiscoverTv" };
+    let item_type: &'static str = if media_type == "movie" {
+        "DiscoverMovie"
+    } else {
+        "DiscoverTv"
+    };
 
     rt.spawn(async move {
         let result = if adding {
@@ -5121,7 +6121,9 @@ pub(crate) fn discover_toggle_blocklist(
                 show_toast(ww.clone(), "Couldn't resolve your Seerr account".into());
                 return;
             };
-            client.add_blocklist(tmdb_id, &media_type, &title, user_id).await
+            client
+                .add_blocklist(tmdb_id, &media_type, &title, user_id)
+                .await
         } else {
             client.remove_blocklist(tmdb_id, &media_type).await
         };
@@ -5173,10 +6175,21 @@ pub(crate) fn discover_toggle_blocklist(
                 });
                 show_toast(
                     ww.clone(),
-                    if adding { "Added to Blocklist" } else { "Removed from Blocklist" }.into(),
+                    if adding {
+                        "Added to Blocklist"
+                    } else {
+                        "Removed from Blocklist"
+                    }
+                    .into(),
                 );
             }
-            Err(e) => handle_seerr_error(&state, &ww, is_session_auth, "Couldn't update blocklist", &e),
+            Err(e) => handle_seerr_error(
+                &state,
+                &ww,
+                is_session_auth,
+                "Couldn't update blocklist",
+                &e,
+            ),
         }
     });
 }
@@ -5200,13 +6213,19 @@ pub(crate) fn discover_toggle_watchlist(
     adding: bool,
     success_toast: Option<&'static str>,
 ) {
-    debug!("seerr: discover_toggle_watchlist tmdb={tmdb_id} media_type={media_type} adding={adding}");
+    debug!(
+        "seerr: discover_toggle_watchlist tmdb={tmdb_id} media_type={media_type} adding={adding}"
+    );
     let Some(client) = state.lock().unwrap().seerr_client.clone() else {
         show_toast(ww.clone(), "Not connected to Seerr".into());
         return;
     };
     let is_session_auth = client.is_session_auth();
-    let item_type: &'static str = if media_type == "movie" { "DiscoverMovie" } else { "DiscoverTv" };
+    let item_type: &'static str = if media_type == "movie" {
+        "DiscoverMovie"
+    } else {
+        "DiscoverTv"
+    };
     let rt2 = rt.clone();
 
     rt.spawn(async move {
@@ -5337,15 +6356,29 @@ fn read_current_request_preference(g: &AppState) -> RequestPreference {
             .collect()
     };
     let tag_ids_active = read_selected_ids(g.get_request_detail_tags());
-    let tag_ids_alt     = read_selected_ids(g.get_request_detail_tags_alt());
-    let profile_active  = g.get_request_detail_selected_profile_id();
-    let profile_alt     = g.get_request_detail_selected_profile_id_alt();
+    let tag_ids_alt = read_selected_ids(g.get_request_detail_tags_alt());
+    let profile_active = g.get_request_detail_selected_profile_id();
+    let profile_alt = g.get_request_detail_selected_profile_id_alt();
     // Each Vec/id is consumed exactly once — swap via tuple destructuring
     // rather than a ternary per field, which would need each value read
     // twice (Vec<i64> isn't Copy).
-    let (profile_id_2k, profile_id_4k) = if want_4k { (profile_alt, profile_active) } else { (profile_active, profile_alt) };
-    let (tag_ids_2k, tag_ids_4k) = if want_4k { (tag_ids_alt, tag_ids_active) } else { (tag_ids_active, tag_ids_alt) };
-    RequestPreference { want_4k, profile_id_2k, profile_id_4k, tag_ids_2k, tag_ids_4k }
+    let (profile_id_2k, profile_id_4k) = if want_4k {
+        (profile_alt, profile_active)
+    } else {
+        (profile_active, profile_alt)
+    };
+    let (tag_ids_2k, tag_ids_4k) = if want_4k {
+        (tag_ids_alt, tag_ids_active)
+    } else {
+        (tag_ids_active, tag_ids_alt)
+    };
+    RequestPreference {
+        want_4k,
+        profile_id_2k,
+        profile_id_4k,
+        tag_ids_2k,
+        tag_ids_4k,
+    }
 }
 
 /// Writes an already-snapshotted preference (`read_current_request_preference`,
@@ -5353,7 +6386,11 @@ fn read_current_request_preference(g: &AppState) -> RequestPreference {
 /// successful submit (`submit_request`/`submit_edit_request`), never on
 /// Cancel or an intermediate toggle — those shouldn't overwrite what's
 /// remembered.
-fn store_request_preference(state: &Arc<Mutex<FjordState>>, media_type: &str, pref: RequestPreference) {
+fn store_request_preference(
+    state: &Arc<Mutex<FjordState>>,
+    media_type: &str,
+    pref: RequestPreference,
+) {
     let cfg = {
         let mut s = state.lock().unwrap();
         let target = if media_type == "movie" {
@@ -5367,7 +6404,11 @@ fn store_request_preference(state: &Arc<Mutex<FjordState>>, media_type: &str, pr
     save_config(&cfg);
 }
 
-pub(crate) fn submit_request(state: Arc<Mutex<FjordState>>, ww: Weak<MainWindow>, rt: tokio::runtime::Handle) {
+pub(crate) fn submit_request(
+    state: Arc<Mutex<FjordState>>,
+    ww: Weak<MainWindow>,
+    rt: tokio::runtime::Handle,
+) {
     let Some(w) = ww.upgrade() else { return };
     let g = AppState::get(&w);
     // Guard against double-submitting the SAME tier that's currently
@@ -5376,8 +6417,11 @@ pub(crate) fn submit_request(state: Arc<Mutex<FjordState>>, ww: Weak<MainWindow>
     // used to blank out the whole Request flow, hiding 2K too — see
     // tier_status_label's own doc comment for the full story).
     let is_4k = g.get_request_detail_want_4k();
-    let tier_already_requested =
-        if is_4k { g.get_request_detail_status_4k().as_str() != "" } else { g.get_request_detail_status().as_str() != "" };
+    let tier_already_requested = if is_4k {
+        g.get_request_detail_status_4k().as_str() != ""
+    } else {
+        g.get_request_detail_status().as_str() != ""
+    };
     if g.get_request_detail_requesting() || tier_already_requested {
         return;
     }
@@ -5401,7 +6445,11 @@ pub(crate) fn submit_request(state: Arc<Mutex<FjordState>>, ww: Weak<MainWindow>
             show_toast(ww.clone(), "Select at least one season to request".into());
             return;
         }
-        Some(if selected.len() == total { SeasonsSelector::all() } else { SeasonsSelector::Numbers(selected) })
+        Some(if selected.len() == total {
+            SeasonsSelector::all()
+        } else {
+            SeasonsSelector::Numbers(selected)
+        })
     } else {
         None
     };
@@ -5441,7 +6489,16 @@ pub(crate) fn submit_request(state: Arc<Mutex<FjordState>>, ww: Weak<MainWindow>
 
     let rt2 = rt.clone();
     rt.spawn(async move {
-        let result = client.create_request(&media_type, tmdb_id, seasons_selector, is_4k, tag_ids, profile_id).await;
+        let result = client
+            .create_request(
+                &media_type,
+                tmdb_id,
+                seasons_selector,
+                is_4k,
+                tag_ids,
+                profile_id,
+            )
+            .await;
         match result {
             Ok(req) => {
                 store_request_preference(&state, &media_type, pref_snapshot);
@@ -5452,8 +6509,19 @@ pub(crate) fn submit_request(state: Arc<Mutex<FjordState>>, ww: Weak<MainWindow>
                 {
                     let mut s = state.lock().unwrap();
                     s.discover_known_requests.insert(
-                        (if media_type == "movie" { "DiscoverMovie" } else { "DiscoverTv" }, tmdb_id.to_string()),
-                        KnownRequest { request_id: request_id.clone(), pending, mine: true },
+                        (
+                            if media_type == "movie" {
+                                "DiscoverMovie"
+                            } else {
+                                "DiscoverTv"
+                            },
+                            tmdb_id.to_string(),
+                        ),
+                        KnownRequest {
+                            request_id: request_id.clone(),
+                            pending,
+                            mine: true,
+                        },
                     );
                 }
                 let _ = slint::invoke_from_event_loop(move || {
@@ -5472,7 +6540,14 @@ pub(crate) fn submit_request(state: Arc<Mutex<FjordState>>, ww: Weak<MainWindow>
                         patch_discover_card_availability(&g, &mt, tmdb_id, "requested");
                         // Real bug fixed 2026-07-18 — see
                         // patch_discover_card_request_state's own doc comment.
-                        patch_discover_card_request_state(&g, &mt, tmdb_id, &request_id, pending, true);
+                        patch_discover_card_request_state(
+                            &g,
+                            &mt,
+                            tmdb_id,
+                            &request_id,
+                            pending,
+                            true,
+                        );
                     }
                 });
                 if already_on_watchlist {
@@ -5481,8 +6556,13 @@ pub(crate) fn submit_request(state: Arc<Mutex<FjordState>>, ww: Weak<MainWindow>
                     // One toast once the auto-add lands; a failed add shows
                     // its own "Couldn't update watchlist" instead.
                     discover_toggle_watchlist(
-                        Arc::clone(&state), ww.clone(), rt2.clone(),
-                        tmdb_id, media_type.clone(), title_snapshot, true,
+                        Arc::clone(&state),
+                        ww.clone(),
+                        rt2.clone(),
+                        tmdb_id,
+                        media_type.clone(),
+                        title_snapshot,
+                        true,
                         Some("Requested — added to Watchlist"),
                     );
                 }
@@ -5496,7 +6576,9 @@ pub(crate) fn submit_request(state: Arc<Mutex<FjordState>>, ww: Weak<MainWindow>
             Err(e) => {
                 let ww2 = ww.clone();
                 let _ = slint::invoke_from_event_loop(move || {
-                    if let Some(w) = ww2.upgrade() { AppState::get(&w).set_request_detail_requesting(false); }
+                    if let Some(w) = ww2.upgrade() {
+                        AppState::get(&w).set_request_detail_requesting(false);
+                    }
                 });
                 handle_seerr_error(&state, &ww, is_session_auth, "Request failed", &e);
             }
@@ -5512,13 +6594,19 @@ pub(crate) fn submit_request(state: Arc<Mutex<FjordState>>, ww: Weak<MainWindow>
 /// source — see `SeerrClient::update_request`'s own doc comment), so it's
 /// never sent. No `status != ""` guard, unlike `submit_request` — an
 /// existing request obviously already has one.
-fn submit_edit_request(state: Arc<Mutex<FjordState>>, ww: Weak<MainWindow>, rt: tokio::runtime::Handle) {
+fn submit_edit_request(
+    state: Arc<Mutex<FjordState>>,
+    ww: Weak<MainWindow>,
+    rt: tokio::runtime::Handle,
+) {
     let Some(w) = ww.upgrade() else { return };
     let g = AppState::get(&w);
     if g.get_request_detail_requesting() {
         return;
     }
-    let Ok(request_id) = g.get_request_options_editing_request_id().parse::<i64>() else { return };
+    let Ok(request_id) = g.get_request_options_editing_request_id().parse::<i64>() else {
+        return;
+    };
     let Some(client) = state.lock().unwrap().seerr_client.clone() else {
         show_toast(ww.clone(), "Not connected to Seerr".into());
         return;
@@ -5538,7 +6626,11 @@ fn submit_edit_request(state: Arc<Mutex<FjordState>>, ww: Weak<MainWindow>, rt: 
             show_toast(ww.clone(), "Select at least one season".into());
             return;
         }
-        Some(if selected.len() == total { SeasonsSelector::all() } else { SeasonsSelector::Numbers(selected) })
+        Some(if selected.len() == total {
+            SeasonsSelector::all()
+        } else {
+            SeasonsSelector::Numbers(selected)
+        })
     } else {
         None
     };
@@ -5566,7 +6658,15 @@ fn submit_edit_request(state: Arc<Mutex<FjordState>>, ww: Weak<MainWindow>, rt: 
     drop(g);
 
     rt.spawn(async move {
-        let result = client.update_request(request_id, &media_type, seasons_selector, tag_ids, profile_id).await;
+        let result = client
+            .update_request(
+                request_id,
+                &media_type,
+                seasons_selector,
+                tag_ids,
+                profile_id,
+            )
+            .await;
         match result {
             Ok(()) => {
                 store_request_preference(&state, &media_type, pref_snapshot);
@@ -5584,7 +6684,9 @@ fn submit_edit_request(state: Arc<Mutex<FjordState>>, ww: Weak<MainWindow>, rt: 
             Err(e) => {
                 let ww2 = ww.clone();
                 let _ = slint::invoke_from_event_loop(move || {
-                    if let Some(w) = ww2.upgrade() { AppState::get(&w).set_request_detail_requesting(false); }
+                    if let Some(w) = ww2.upgrade() {
+                        AppState::get(&w).set_request_detail_requesting(false);
+                    }
                 });
                 handle_seerr_error(&state, &ww, is_session_auth, "Edit request failed", &e);
             }
@@ -5634,10 +6736,15 @@ fn discover_request_action(
             let mut s = state.lock().unwrap();
             if remove_on_success {
                 // cancel/decline: the request no longer exists.
-                s.discover_known_requests.retain(|_, k| k.request_id != req_key);
+                s.discover_known_requests
+                    .retain(|_, k| k.request_id != req_key);
             } else {
                 // approve: still exists, just no longer Pending.
-                if let Some(k) = s.discover_known_requests.values_mut().find(|k| k.request_id == req_key) {
+                if let Some(k) = s
+                    .discover_known_requests
+                    .values_mut()
+                    .find(|k| k.request_id == req_key)
+                {
                     k.pending = false;
                 }
             }
@@ -5665,7 +6772,8 @@ fn discover_request_action(
                         let results = g.get_discover_results();
                         for i in 0..results.row_count() {
                             if let Some(mut card) = results.row_data(i)
-                                && card.request_id.as_str() == request_id.to_string() {
+                                && card.request_id.as_str() == request_id.to_string()
+                            {
                                 card.request_id = "".into();
                                 card.request_pending = false;
                                 card.request_mine = false;
@@ -5681,7 +6789,8 @@ fn discover_request_action(
                         for model in [g.get_discover_requested(), g.get_discover_results()] {
                             for i in 0..model.row_count() {
                                 if let Some(mut card) = model.row_data(i)
-                                    && card.request_id.as_str() == request_id.to_string() {
+                                    && card.request_id.as_str() == request_id.to_string()
+                                {
                                     card.request_pending = false;
                                     model.set_row_data(i, card);
                                     break;
@@ -5697,7 +6806,9 @@ fn discover_request_action(
                     // "just refetch" approach. Otherwise the page would keep
                     // showing a request that no longer exists (Cancel) or a
                     // stale Pending/"Needs Approval" label (Approve/Decline).
-                    if g.get_show_request_detail() && g.get_request_detail_request_id().as_str() == request_id.to_string() {
+                    if g.get_show_request_detail()
+                        && g.get_request_detail_request_id().as_str() == request_id.to_string()
+                    {
                         let media_type = g.get_request_detail_media_type().to_string();
                         let tmdb_id = g.get_request_detail_tmdb_id().to_string();
                         open_discover_item(media_type, tmdb_id, state2, ww2.clone(), rt3);
@@ -5710,7 +6821,9 @@ fn discover_request_action(
                 };
                 show_toast(ww, format!("Request {verb}"));
             }
-            Err(e) => handle_seerr_error(&state, &ww, is_session_auth, "Couldn't update request", &e),
+            Err(e) => {
+                handle_seerr_error(&state, &ww, is_session_auth, "Couldn't update request", &e)
+            }
         }
     });
 }
@@ -5722,7 +6835,12 @@ fn discover_request_action(
 /// nothing extra (query empty, filters now all default — the landing rows
 /// are already loaded and untouched; the Slint side's own view switch just
 /// shows them again once `discover-results` is cleared).
-fn on_discover_filter_changed(state: &Arc<Mutex<FjordState>>, ww: &Weak<MainWindow>, generation: &Arc<AtomicU64>, rt: &tokio::runtime::Handle) {
+fn on_discover_filter_changed(
+    state: &Arc<Mutex<FjordState>>,
+    ww: &Weak<MainWindow>,
+    generation: &Arc<AtomicU64>,
+    rt: &tokio::runtime::Handle,
+) {
     let Some(w) = ww.upgrade() else { return };
     let g = AppState::get(&w);
     let (active, cfg) = {
@@ -5733,7 +6851,12 @@ fn on_discover_filter_changed(state: &Arc<Mutex<FjordState>>, ww: &Weak<MainWind
     g.set_discover_filters_active(active);
     if g.get_discover_query().as_str().is_empty() {
         if active {
-            spawn_discover_filtered_browse(ww.clone(), Arc::clone(state), Arc::clone(generation), rt);
+            spawn_discover_filtered_browse(
+                ww.clone(),
+                Arc::clone(state),
+                Arc::clone(generation),
+                rt,
+            );
         } else {
             g.set_discover_results(ModelRc::new(VecModel::from(Vec::<CardItem>::new())));
         }
@@ -5744,7 +6867,11 @@ fn on_discover_filter_changed(state: &Arc<Mutex<FjordState>>, ww: &Weak<MainWind
 
 // ── Wiring ───────────────────────────────────────────────────────────────────
 
-pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, rt: tokio::runtime::Handle) {
+pub(crate) fn wire_discover(
+    window: &MainWindow,
+    state: Arc<Mutex<FjordState>>,
+    rt: tokio::runtime::Handle,
+) {
     let g = AppState::get(window);
     let discover_gen = Arc::new(AtomicU64::new(0));
 
@@ -5774,7 +6901,12 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
             if nav == 6 {
                 ensure_discover_landing(Arc::clone(&state), ww.clone(), rt.clone());
                 spawn_movies_list_fetch(Arc::clone(&state), ww.clone(), rt.clone(), false);
-                ensure_discover_filter_options(Arc::clone(&state), ww.clone(), Arc::clone(&generation), rt.clone());
+                ensure_discover_filter_options(
+                    Arc::clone(&state),
+                    ww.clone(),
+                    Arc::clone(&generation),
+                    rt.clone(),
+                );
                 // Watchlist + Release Calendar, 2026-07-18 — same
                 // once-per-session guard shape as ensure_discover_landing.
                 ensure_discover_watchlist(Arc::clone(&state), ww.clone(), rt.clone());
@@ -5919,7 +7051,8 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
                 s.config.active_mut().discover_filter_min_rating = value;
             }
             if let Some(w) = ww.upgrade() {
-                AppState::get(&w).set_discover_filter_rating_desc(discover_rating_desc(value).into());
+                AppState::get(&w)
+                    .set_discover_filter_rating_desc(discover_rating_desc(value).into());
             }
             on_discover_filter_changed(&state, &ww, &generation, &rt);
         }
@@ -5957,7 +7090,9 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
             let Some(w) = ww.upgrade() else { return };
             let g = AppState::get(&w);
             let model = g.get_discover_filter_genres();
-            let Some(mut item) = model.row_data(idx as usize) else { return };
+            let Some(mut item) = model.row_data(idx as usize) else {
+                return;
+            };
             item.selected = !item.selected;
             model.set_row_data(idx as usize, item);
             let names: Vec<String> = (0..model.row_count())
@@ -5966,7 +7101,12 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
                 .map(|g| g.name.to_string())
                 .collect();
             g.set_discover_filter_genre_count(names.len() as i32);
-            state.lock().unwrap().config.active_mut().discover_filter_genre_names = names;
+            state
+                .lock()
+                .unwrap()
+                .config
+                .active_mut()
+                .discover_filter_genre_names = names;
             on_discover_filter_changed(&state, &ww, &generation, &rt);
         }
     });
@@ -5980,13 +7120,23 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
             let Some(w) = ww.upgrade() else { return };
             let g = AppState::get(&w);
             let model = g.get_discover_filter_providers();
-            let Some(mut item) = model.row_data(idx as usize) else { return };
+            let Some(mut item) = model.row_data(idx as usize) else {
+                return;
+            };
             item.selected = !item.selected;
             model.set_row_data(idx as usize, item);
-            let ids: Vec<i64> =
-                (0..model.row_count()).filter_map(|i| model.row_data(i)).filter(|p| p.selected).map(|p| p.id as i64).collect();
+            let ids: Vec<i64> = (0..model.row_count())
+                .filter_map(|i| model.row_data(i))
+                .filter(|p| p.selected)
+                .map(|p| p.id as i64)
+                .collect();
             g.set_discover_filter_provider_count(ids.len() as i32);
-            state.lock().unwrap().config.active_mut().discover_filter_provider_ids = ids;
+            state
+                .lock()
+                .unwrap()
+                .config
+                .active_mut()
+                .discover_filter_provider_ids = ids;
             on_discover_filter_changed(&state, &ww, &generation, &rt);
         }
     });
@@ -6065,7 +7215,13 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
                 g.set_discover_focused(0);
                 g.set_discover_focused_row(0);
             }
-            spawn_discover_search(ww.clone(), Arc::clone(&state), q, Arc::clone(&generation), &rt);
+            spawn_discover_search(
+                ww.clone(),
+                Arc::clone(&state),
+                q,
+                Arc::clone(&generation),
+                &rt,
+            );
         }
     });
     g.on_discover_search_backspace({
@@ -6077,7 +7233,13 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
             let Some(w) = ww.upgrade() else { return };
             let g = AppState::get(&w);
             if let Some(q) = crate::text_field::DISCOVER_SEARCH.backspace(&g) {
-                spawn_discover_search(ww.clone(), Arc::clone(&state), q, Arc::clone(&generation), &rt);
+                spawn_discover_search(
+                    ww.clone(),
+                    Arc::clone(&state),
+                    q,
+                    Arc::clone(&generation),
+                    &rt,
+                );
             }
         }
     });
@@ -6091,7 +7253,13 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
             let Some(w) = ww.upgrade() else { return };
             let g = AppState::get(&w);
             if let Some(q) = crate::text_field::DISCOVER_SEARCH.delete(&g) {
-                spawn_discover_search(ww.clone(), Arc::clone(&state), q, Arc::clone(&generation), &rt);
+                spawn_discover_search(
+                    ww.clone(),
+                    Arc::clone(&state),
+                    q,
+                    Arc::clone(&generation),
+                    &rt,
+                );
             }
         }
     });
@@ -6106,7 +7274,13 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
             g.set_discover_query("".into()); // caret: past the end = end, nothing to reset
             g.set_discover_focused(0);
             g.set_discover_focused_row(0);
-            spawn_discover_search(ww.clone(), Arc::clone(&state), String::new(), Arc::clone(&generation), &rt);
+            spawn_discover_search(
+                ww.clone(),
+                Arc::clone(&state),
+                String::new(),
+                Arc::clone(&generation),
+                &rt,
+            );
         }
     });
     g.on_discover_load_more({
@@ -6121,11 +7295,22 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
                 // Filtered-browse's own pagination (2026-07-18) — landing
                 // rows (no filters active) have nothing to load more of.
                 if discover_filters_active(state.lock().unwrap().config.active()) {
-                    spawn_discover_filtered_browse_more(ww.clone(), Arc::clone(&state), Arc::clone(&generation), &rt);
+                    spawn_discover_filtered_browse_more(
+                        ww.clone(),
+                        Arc::clone(&state),
+                        Arc::clone(&generation),
+                        &rt,
+                    );
                 }
                 return;
             }
-            spawn_discover_search_more(ww.clone(), Arc::clone(&state), query, Arc::clone(&generation), &rt);
+            spawn_discover_search_more(
+                ww.clone(),
+                Arc::clone(&state),
+                query,
+                Arc::clone(&generation),
+                &rt,
+            );
         }
     });
 
@@ -6134,7 +7319,13 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
         let ww = window.as_weak();
         let rt = rt.clone();
         move |media_type, tmdb_id| {
-            open_discover_item(media_type.to_string(), tmdb_id.to_string(), Arc::clone(&state), ww.clone(), rt.clone());
+            open_discover_item(
+                media_type.to_string(),
+                tmdb_id.to_string(),
+                Arc::clone(&state),
+                ww.clone(),
+                rt.clone(),
+            );
         }
     });
 
@@ -6150,7 +7341,13 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
         move |idx| {
             let Some(w) = ww.upgrade() else { return };
             let g = AppState::get(&w);
-            crate::series::activate_missing_season(&g, idx as usize, &state, ww.clone(), rt.clone());
+            crate::series::activate_missing_season(
+                &g,
+                idx as usize,
+                &state,
+                ww.clone(),
+                rt.clone(),
+            );
         }
     });
 
@@ -6273,10 +7470,20 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
         move || {
             let Some(w) = ww.upgrade() else { return };
             let g = AppState::get(&w);
-            let media_type = if g.get_context_menu_item_type().as_str() == "DiscoverMovie" { "movie" } else { "tv" };
+            let media_type = if g.get_context_menu_item_type().as_str() == "DiscoverMovie" {
+                "movie"
+            } else {
+                "tv"
+            };
             let tmdb_id = g.get_context_menu_item_id().to_string();
             g.set_show_context_menu(false);
-            open_discover_item(media_type.into(), tmdb_id, Arc::clone(&state), ww.clone(), rt.clone());
+            open_discover_item(
+                media_type.into(),
+                tmdb_id,
+                Arc::clone(&state),
+                ww.clone(),
+                rt.clone(),
+            );
         }
     });
 
@@ -6292,10 +7499,22 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
         move || {
             let Some(w) = ww.upgrade() else { return };
             let g = AppState::get(&w);
-            let media_type = if g.get_context_menu_item_type().as_str() == "DiscoverMovie" { "movie" } else { "tv" };
+            let media_type = if g.get_context_menu_item_type().as_str() == "DiscoverMovie" {
+                "movie"
+            } else {
+                "tv"
+            };
             let tmdb_id = g.get_context_menu_item_id().to_string();
             g.set_show_context_menu(false);
-            open_discover_item_ex(media_type.into(), tmdb_id, Arc::clone(&state), ww.clone(), rt.clone(), PostOpenAction::None, false);
+            open_discover_item_ex(
+                media_type.into(),
+                tmdb_id,
+                Arc::clone(&state),
+                ww.clone(),
+                rt.clone(),
+                PostOpenAction::None,
+                false,
+            );
         }
     });
 
@@ -6306,7 +7525,11 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
         move || {
             let Some(w) = ww.upgrade() else { return };
             let g = AppState::get(&w);
-            let media_type = if g.get_context_menu_item_type().as_str() == "DiscoverMovie" { "movie" } else { "tv" };
+            let media_type = if g.get_context_menu_item_type().as_str() == "DiscoverMovie" {
+                "movie"
+            } else {
+                "tv"
+            };
             let tmdb_id = g.get_context_menu_item_id().to_string();
             g.set_show_context_menu(false);
             open_discover_item_ex(
@@ -6328,8 +7551,14 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
         move || {
             let Some(w) = ww.upgrade() else { return };
             let g = AppState::get(&w);
-            let Ok(request_id) = g.get_context_menu_request_id().parse::<i64>() else { return };
-            let media_type = if g.get_context_menu_item_type().as_str() == "DiscoverMovie" { "movie" } else { "tv" };
+            let Ok(request_id) = g.get_context_menu_request_id().parse::<i64>() else {
+                return;
+            };
+            let media_type = if g.get_context_menu_item_type().as_str() == "DiscoverMovie" {
+                "movie"
+            } else {
+                "tv"
+            };
             let tmdb_id = g.get_context_menu_item_id().to_string();
             g.set_show_context_menu(false);
             open_discover_item_ex(
@@ -6349,7 +7578,9 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
         move || {
             let Some(w) = ww.upgrade() else { return };
             let g = AppState::get(&w);
-            let Ok(request_id) = g.get_context_menu_request_id().parse::<i64>() else { return };
+            let Ok(request_id) = g.get_context_menu_request_id().parse::<i64>() else {
+                return;
+            };
             g.set_show_context_menu(false);
             // Confirmation dialog, 2026-08-22 — see show-cancel-request-
             // confirm's own doc comment in app_state.slint. Cancel Request
@@ -6371,8 +7602,17 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
         move || {
             let Some(w) = ww.upgrade() else { return };
             let g = AppState::get(&w);
-            let Ok(request_id) = g.get_cancel_request_confirm_id().parse::<i64>() else { return };
-            discover_request_action(Arc::clone(&state), ww.clone(), rt.clone(), request_id, "cancel", true);
+            let Ok(request_id) = g.get_cancel_request_confirm_id().parse::<i64>() else {
+                return;
+            };
+            discover_request_action(
+                Arc::clone(&state),
+                ww.clone(),
+                rt.clone(),
+                request_id,
+                "cancel",
+                true,
+            );
         }
     });
 
@@ -6383,9 +7623,18 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
         move || {
             let Some(w) = ww.upgrade() else { return };
             let g = AppState::get(&w);
-            let Ok(request_id) = g.get_context_menu_request_id().parse::<i64>() else { return };
+            let Ok(request_id) = g.get_context_menu_request_id().parse::<i64>() else {
+                return;
+            };
             g.set_show_context_menu(false);
-            discover_request_action(Arc::clone(&state), ww.clone(), rt.clone(), request_id, "approve", false);
+            discover_request_action(
+                Arc::clone(&state),
+                ww.clone(),
+                rt.clone(),
+                request_id,
+                "approve",
+                false,
+            );
         }
     });
 
@@ -6396,9 +7645,18 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
         move || {
             let Some(w) = ww.upgrade() else { return };
             let g = AppState::get(&w);
-            let Ok(request_id) = g.get_context_menu_request_id().parse::<i64>() else { return };
+            let Ok(request_id) = g.get_context_menu_request_id().parse::<i64>() else {
+                return;
+            };
             g.set_show_context_menu(false);
-            discover_request_action(Arc::clone(&state), ww.clone(), rt.clone(), request_id, "decline", true);
+            discover_request_action(
+                Arc::clone(&state),
+                ww.clone(),
+                rt.clone(),
+                request_id,
+                "decline",
+                true,
+            );
         }
     });
 
@@ -6437,7 +7695,16 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
             let tmdb_id = g.get_request_detail_tmdb_id() as i64;
             let adding = !g.get_request_detail_on_watchlist();
             let title = g.get_request_detail_title().to_string();
-            discover_toggle_watchlist(Arc::clone(&state), ww.clone(), rt.clone(), tmdb_id, media_type, title, adding, None);
+            discover_toggle_watchlist(
+                Arc::clone(&state),
+                ww.clone(),
+                rt.clone(),
+                tmdb_id,
+                media_type,
+                title,
+                adding,
+                None,
+            );
         }
     });
 
@@ -6479,7 +7746,15 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
             let tmdb_id = g.get_request_detail_tmdb_id() as i64;
             let adding = g.get_request_detail_availability().as_str() != "blocklisted";
             let title = g.get_request_detail_title().to_string();
-            discover_toggle_blocklist(Arc::clone(&state), ww.clone(), rt.clone(), tmdb_id, media_type, title, adding);
+            discover_toggle_blocklist(
+                Arc::clone(&state),
+                ww.clone(),
+                rt.clone(),
+                tmdb_id,
+                media_type,
+                title,
+                adding,
+            );
         }
     });
 
@@ -6512,7 +7787,10 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
             let g = AppState::get(&w);
             let (mut y, mut m) = (g.get_calendar_year(), g.get_calendar_month());
             m -= 1;
-            if m < 1 { m = 12; y -= 1; }
+            if m < 1 {
+                m = 12;
+                y -= 1;
+            }
             g.set_calendar_year(y);
             g.set_calendar_month(m);
             g.set_calendar_cursor_row(0);
@@ -6529,7 +7807,10 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
             let g = AppState::get(&w);
             let (mut y, mut m) = (g.get_calendar_year(), g.get_calendar_month());
             m += 1;
-            if m > 12 { m = 1; y += 1; }
+            if m > 12 {
+                m = 1;
+                y += 1;
+            }
             g.set_calendar_year(y);
             g.set_calendar_month(m);
             g.set_calendar_cursor_row(0);
@@ -6561,12 +7842,24 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
         move |idx| {
             let Some(w) = ww.upgrade() else { return };
             let g = AppState::get(&w);
-            let Some(entry) = g.get_calendar_day_popup_entries().row_data(idx as usize) else { return };
+            let Some(entry) = g.get_calendar_day_popup_entries().row_data(idx as usize) else {
+                return;
+            };
             g.set_calendar_day_popup_cursor(idx);
-            let media_type = if entry.item_type.as_str() == "DiscoverMovie" { "movie" } else { "tv" };
+            let media_type = if entry.item_type.as_str() == "DiscoverMovie" {
+                "movie"
+            } else {
+                "tv"
+            };
             g.set_show_calendar_day_popup(false);
             g.set_show_calendar(false);
-            open_discover_item(media_type.into(), entry.id.to_string(), Arc::clone(&state), ww.clone(), rt.clone());
+            open_discover_item(
+                media_type.into(),
+                entry.id.to_string(),
+                Arc::clone(&state),
+                ww.clone(),
+                rt.clone(),
+            );
         }
     });
 }
@@ -6609,7 +7902,10 @@ fn open_discover_popup(g: &AppState, kind: &'static str) {
                 "year" => g.get_discover_filter_year_desc(),
                 _ => Default::default(),
             };
-            discover_popup_options(kind).iter().position(|&d| d == current.as_str()).unwrap_or(0)
+            discover_popup_options(kind)
+                .iter()
+                .position(|&d| d == current.as_str())
+                .unwrap_or(0)
         }
     };
     g.set_discover_popup_cursor(cursor as i32);
@@ -6643,8 +7939,11 @@ fn handle_key_discover_popup(action: &Action, g: &AppState) -> bool {
                     true
                 }
                 Action::Confirm => {
-                    let desc: slint::SharedString =
-                        options.get(g.get_discover_popup_cursor() as usize).copied().unwrap_or("").into();
+                    let desc: slint::SharedString = options
+                        .get(g.get_discover_popup_cursor() as usize)
+                        .copied()
+                        .unwrap_or("")
+                        .into();
                     match kind.as_str() {
                         "type" => g.invoke_discover_filter_type_selected(desc),
                         "sort" => g.invoke_discover_filter_sort_selected(desc),
@@ -6663,9 +7962,11 @@ fn handle_key_discover_popup(action: &Action, g: &AppState) -> bool {
             }
         }
         "genre" | "provider" => {
-            let count =
-                if kind == "genre" { g.get_discover_filter_genres().row_count() } else { g.get_discover_filter_providers().row_count() }
-                    as i32;
+            let count = if kind == "genre" {
+                g.get_discover_filter_genres().row_count()
+            } else {
+                g.get_discover_filter_providers().row_count()
+            } as i32;
             match action {
                 Action::Left => {
                     let c = g.get_discover_popup_cursor();
@@ -6797,8 +8098,14 @@ pub(crate) fn handle_key(action: &Action, g: &AppState) -> bool {
         // the results grid when there is one, the search field if neither
         // has anything to focus yet.
         return match action {
-            Action::Up => { crate::browse::sidebar_nav(g, -1); true }
-            Action::Down => { crate::browse::sidebar_nav(g, 1); true }
+            Action::Up => {
+                crate::browse::sidebar_nav(g, -1);
+                true
+            }
+            Action::Down => {
+                crate::browse::sidebar_nav(g, 1);
+                true
+            }
             Action::Right => {
                 if landing {
                     if let Some(first) = landing_row_lens(g).iter().position(|&n| n > 0) {
@@ -6831,7 +8138,10 @@ pub(crate) fn handle_key(action: &Action, g: &AppState) -> bool {
                 g.set_discover_filter_bar_active(true);
                 true
             }
-            Action::Back | Action::Left => { g.set_focused_section(-1); true }
+            Action::Back | Action::Left => {
+                g.set_focused_section(-1);
+                true
+            }
             _ => false,
         };
     }
@@ -6893,15 +8203,23 @@ pub(crate) fn handle_key(action: &Action, g: &AppState) -> bool {
         }
         Action::Confirm => {
             let f = g.get_discover_focused();
-            if f < count && let Some(card) = g.get_discover_results().row_data(f as usize) {
-                let media_type = if card.item_type.as_str() == "DiscoverMovie" { "movie" } else { "tv" };
+            if f < count
+                && let Some(card) = g.get_discover_results().row_data(f as usize)
+            {
+                let media_type = if card.item_type.as_str() == "DiscoverMovie" {
+                    "movie"
+                } else {
+                    "tv"
+                };
                 g.invoke_open_discover_item(media_type.into(), card.id);
             }
             true
         }
         Action::OpenContextMenu => {
             let f = g.get_discover_focused();
-            if f < count && let Some(card) = g.get_discover_results().row_data(f as usize) {
+            if f < count
+                && let Some(card) = g.get_discover_results().row_data(f as usize)
+            {
                 g.invoke_open_context_menu_discover(card);
             }
             true
@@ -6943,7 +8261,10 @@ fn handle_key_landing(action: &Action, g: &AppState, fs: i32) -> bool {
             if fs > 0 {
                 let nf = fs - 1;
                 g.set_focused_section(nf);
-                g.set_discover_landing_card(g.get_discover_landing_card().min((lens[nf as usize] - 1).max(0)));
+                g.set_discover_landing_card(
+                    g.get_discover_landing_card()
+                        .min((lens[nf as usize] - 1).max(0)),
+                );
             } else {
                 g.set_discover_filter_bar_active(true);
             }
@@ -6953,8 +8274,14 @@ fn handle_key_landing(action: &Action, g: &AppState, fs: i32) -> bool {
             if (fs as usize) + 1 < lens.len() {
                 let nf = fs + 1;
                 g.set_focused_section(nf);
-                g.set_discover_landing_card(g.get_discover_landing_card().min((lens[nf as usize] - 1).max(0)));
-                debug!("seerr: landing down fs={fs}->{nf} lens={lens:?} card={}", g.get_discover_landing_card());
+                g.set_discover_landing_card(
+                    g.get_discover_landing_card()
+                        .min((lens[nf as usize] - 1).max(0)),
+                );
+                debug!(
+                    "seerr: landing down fs={fs}->{nf} lens={lens:?} card={}",
+                    g.get_discover_landing_card()
+                );
                 true
             } else {
                 false // last row — let focus_bar_on_down handle it
@@ -6971,8 +8298,14 @@ fn handle_key_landing(action: &Action, g: &AppState, fs: i32) -> bool {
             // (Watchlist + Release Calendar, 2026-07-18).
             if fs as usize == LANDING_ROW_COMING_UP && c == count - 1 && count > 0 {
                 g.invoke_open_calendar();
-            } else if c < count && let Some(card) = landing_row_get(g, fs as usize).row_data(c as usize) {
-                let media_type = if card.item_type.as_str() == "DiscoverMovie" { "movie" } else { "tv" };
+            } else if c < count
+                && let Some(card) = landing_row_get(g, fs as usize).row_data(c as usize)
+            {
+                let media_type = if card.item_type.as_str() == "DiscoverMovie" {
+                    "movie"
+                } else {
+                    "tv"
+                };
                 g.invoke_open_discover_item(media_type.into(), card.id);
             }
             true
@@ -6985,7 +8318,9 @@ fn handle_key_landing(action: &Action, g: &AppState, fs: i32) -> bool {
             if fs as usize == LANDING_ROW_COMING_UP && c == count - 1 && count > 0 {
                 return true;
             }
-            if c < count && let Some(card) = landing_row_get(g, fs as usize).row_data(c as usize) {
+            if c < count
+                && let Some(card) = landing_row_get(g, fs as usize).row_data(c as usize)
+            {
                 g.invoke_open_context_menu_discover(card);
             }
             true
@@ -7029,7 +8364,9 @@ fn existing_zones(g: &AppState) -> Vec<i32> {
 /// that).
 fn existing_detail_btn_slots(g: &AppState) -> Vec<i32> {
     let mut slots = Vec::new();
-    if g.get_request_detail_status().as_str() == "" || g.get_request_detail_status_4k().as_str() == "" {
+    if g.get_request_detail_status().as_str() == ""
+        || g.get_request_detail_status_4k().as_str() == ""
+    {
         slots.push(0);
     }
     // Only once a trailer is known to play — while checking (or with none
@@ -7045,7 +8382,9 @@ fn existing_detail_btn_slots(g: &AppState) -> Vec<i32> {
     // eligibility exactly: never-touched or already-blocklisted, and the
     // connected account actually has MANAGE_BLOCKLIST.
     let availability = g.get_request_detail_availability();
-    if g.get_seerr_can_manage_blocklist() && (availability.as_str() == "" || availability.as_str() == "blocklisted") {
+    if g.get_seerr_can_manage_blocklist()
+        && (availability.as_str() == "" || availability.as_str() == "blocklisted")
+    {
         slots.push(4);
     }
     slots
@@ -7088,7 +8427,9 @@ pub(crate) fn handle_key_request_detail(action: &Action, g: &AppState) -> bool {
         1 => {
             return match action {
                 Action::Confirm => {
-                    g.set_request_detail_overview_expanded(!g.get_request_detail_overview_expanded());
+                    g.set_request_detail_overview_expanded(
+                        !g.get_request_detail_overview_expanded(),
+                    );
                     true
                 }
                 Action::Up => {
@@ -7119,12 +8460,16 @@ pub(crate) fn handle_key_request_detail(action: &Action, g: &AppState) -> bool {
             return match action {
                 Action::Left => {
                     let f = g.get_request_detail_focused_cast();
-                    if f > 0 { g.set_request_detail_focused_cast(f - 1); }
+                    if f > 0 {
+                        g.set_request_detail_focused_cast(f - 1);
+                    }
                     true
                 }
                 Action::Right => {
                     let f = g.get_request_detail_focused_cast();
-                    if f + 1 < count { g.set_request_detail_focused_cast(f + 1); }
+                    if f + 1 < count {
+                        g.set_request_detail_focused_cast(f + 1);
+                    }
                     true
                 }
                 Action::Confirm => {
@@ -7241,14 +8586,20 @@ pub(crate) fn handle_key_request_detail(action: &Action, g: &AppState) -> bool {
 fn existing_option_zones(g: &AppState) -> Vec<i32> {
     // Zone 0 (Quality) is hidden entirely while editing — see
     // request_detail.slint's own comment on the Quality section for why.
-    let mut zones = if g.get_request_options_editing() { Vec::new() } else { vec![0] };
+    let mut zones = if g.get_request_options_editing() {
+        Vec::new()
+    } else {
+        vec![0]
+    };
     if g.get_request_detail_profiles().row_count() > 0 {
         zones.push(1);
     }
     if g.get_request_detail_tags().row_count() > 0 {
         zones.push(2);
     }
-    if g.get_request_detail_media_type().as_str() == "tv" && g.get_request_detail_seasons().row_count() > 0 {
+    if g.get_request_detail_media_type().as_str() == "tv"
+        && g.get_request_detail_seasons().row_count() > 0
+    {
         zones.push(3);
     }
     zones.push(4);
@@ -7340,12 +8691,16 @@ pub(crate) fn handle_key_request_options(action: &Action, g: &AppState) -> bool 
             match action {
                 Action::Left => {
                     let f = g.get_request_detail_focused_profile();
-                    if f > 0 { g.set_request_detail_focused_profile(f - 1); }
+                    if f > 0 {
+                        g.set_request_detail_focused_profile(f - 1);
+                    }
                     true
                 }
                 Action::Right => {
                     let f = g.get_request_detail_focused_profile();
-                    if f + 1 < count { g.set_request_detail_focused_profile(f + 1); }
+                    if f + 1 < count {
+                        g.set_request_detail_focused_profile(f + 1);
+                    }
                     true
                 }
                 Action::Confirm => {
@@ -7356,7 +8711,9 @@ pub(crate) fn handle_key_request_options(action: &Action, g: &AppState) -> bool 
                     true
                 }
                 Action::Up => {
-                    if let Some(prev) = prev_zone() { g.set_request_options_zone(prev); }
+                    if let Some(prev) = prev_zone() {
+                        g.set_request_options_zone(prev);
+                    }
                     true
                 }
                 Action::Down => {
@@ -7374,12 +8731,16 @@ pub(crate) fn handle_key_request_options(action: &Action, g: &AppState) -> bool 
             match action {
                 Action::Left => {
                     let f = g.get_request_detail_focused_tag();
-                    if f > 0 { g.set_request_detail_focused_tag(f - 1); }
+                    if f > 0 {
+                        g.set_request_detail_focused_tag(f - 1);
+                    }
                     true
                 }
                 Action::Right => {
                     let f = g.get_request_detail_focused_tag();
-                    if f + 1 < count { g.set_request_detail_focused_tag(f + 1); }
+                    if f + 1 < count {
+                        g.set_request_detail_focused_tag(f + 1);
+                    }
                     true
                 }
                 Action::Confirm => {
@@ -7387,7 +8748,9 @@ pub(crate) fn handle_key_request_options(action: &Action, g: &AppState) -> bool 
                     true
                 }
                 Action::Up => {
-                    if let Some(prev) = prev_zone() { g.set_request_options_zone(prev); }
+                    if let Some(prev) = prev_zone() {
+                        g.set_request_options_zone(prev);
+                    }
                     true
                 }
                 Action::Down => {
@@ -7405,12 +8768,16 @@ pub(crate) fn handle_key_request_options(action: &Action, g: &AppState) -> bool 
             match action {
                 Action::Left => {
                     let f = g.get_request_detail_focused_season();
-                    if f > 0 { g.set_request_detail_focused_season(f - 1); }
+                    if f > 0 {
+                        g.set_request_detail_focused_season(f - 1);
+                    }
                     true
                 }
                 Action::Right => {
                     let f = g.get_request_detail_focused_season();
-                    if f + 1 < count { g.set_request_detail_focused_season(f + 1); }
+                    if f + 1 < count {
+                        g.set_request_detail_focused_season(f + 1);
+                    }
                     true
                 }
                 Action::Confirm => {
@@ -7418,11 +8785,15 @@ pub(crate) fn handle_key_request_options(action: &Action, g: &AppState) -> bool 
                     true
                 }
                 Action::Up => {
-                    if let Some(prev) = prev_zone() { g.set_request_options_zone(prev); }
+                    if let Some(prev) = prev_zone() {
+                        g.set_request_options_zone(prev);
+                    }
                     true
                 }
                 Action::Down => {
-                    if let Some(next) = next_zone() { g.set_request_options_zone(next); }
+                    if let Some(next) = next_zone() {
+                        g.set_request_options_zone(next);
+                    }
                     true
                 }
                 _ => true,
@@ -7440,7 +8811,9 @@ pub(crate) fn handle_key_request_options(action: &Action, g: &AppState) -> bool 
                 true
             }
             Action::Up => {
-                if let Some(prev) = prev_zone() { g.set_request_options_zone(prev); }
+                if let Some(prev) = prev_zone() {
+                    g.set_request_options_zone(prev);
+                }
                 true
             }
             Action::Confirm => {
@@ -7471,9 +8844,13 @@ mod tests {
             assert!(trailer_url_allowed(ok), "{ok}");
         }
         for bad in [
-            "--exec=touch /tmp/x", "-o /tmp/x", "",
-            "http://www.youtube.com/watch?v=x",          // not https
-            "file:///etc/passwd", "ytdl://x", "av://lavfi:sine",
+            "--exec=touch /tmp/x",
+            "-o /tmp/x",
+            "",
+            "http://www.youtube.com/watch?v=x", // not https
+            "file:///etc/passwd",
+            "ytdl://x",
+            "av://lavfi:sine",
             "https://evil.example/watch?v=x",
             "https://www.youtube.com.evil.example/watch?v=x",
             "https://user:pw@www.youtube.com/watch?v=x",

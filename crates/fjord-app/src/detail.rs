@@ -33,9 +33,12 @@ use slint::{Global, Model, ModelRc, VecModel};
 use tokio::task::JoinSet;
 use tracing::{debug, warn};
 
-use crate::config::{FjordState, fmt_resume_label};
 use crate::AppState;
-use crate::poster::{decode_backdrop_buffer, decode_poster_buffer, fetch_backdrop_cached_tagged, fetch_poster_cached, fetch_poster_cached_tagged};
+use crate::config::{FjordState, fmt_resume_label};
+use crate::poster::{
+    decode_backdrop_buffer, decode_poster_buffer, fetch_backdrop_cached_tagged,
+    fetch_poster_cached, fetch_poster_cached_tagged,
+};
 use crate::series::open_series_screen;
 use crate::{CardItem, CastMember, MainWindow};
 
@@ -45,13 +48,14 @@ use crate::{CardItem, CastMember, MainWindow};
 /// Returns one entry per item; `None` means no image or decode failed.
 pub(crate) async fn fetch_card_posters(
     client: &Arc<fjord_api::JellyfinClient>,
-    items:  &[fjord_api::models::MediaItem],
+    items: &[fjord_api::models::MediaItem],
 ) -> Vec<Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>> {
     let sem = Arc::new(tokio::sync::Semaphore::new(6));
-    let mut tasks: JoinSet<(usize, Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>)> = JoinSet::new();
+    let mut tasks: JoinSet<(usize, Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>)> =
+        JoinSet::new();
     for (idx, item) in items.iter().enumerate() {
-        let c   = client.clone();
-        let s   = sem.clone();
+        let c = client.clone();
+        let s = sem.clone();
         let iid = item.id.clone();
         let tag = item.primary_image_tag().map(str::to_string);
         tasks.spawn(async move {
@@ -62,7 +66,9 @@ pub(crate) async fn fetch_card_posters(
     }
     let mut bufs = vec![None; items.len()];
     while let Some(res) = tasks.join_next().await {
-        if let Ok((idx, buf)) = res { bufs[idx] = buf; }
+        if let Ok((idx, buf)) = res {
+            bufs[idx] = buf;
+        }
     }
     bufs
 }
@@ -70,38 +76,42 @@ pub(crate) async fn fetch_card_posters(
 /// Build `Vec<CardItem>` from items + pre-fetched pixel buffers. Call on the UI thread.
 pub(crate) fn items_to_cards(
     items: &[fjord_api::models::MediaItem],
-    bufs:  Vec<Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>>,
+    bufs: Vec<Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>>,
 ) -> Vec<CardItem> {
-    items.iter().zip(bufs).map(|(i, buf)| {
-        let mut c = CardItem {
-            id:             i.id.as_str().into(),
-            item_type:      i.item_type.as_str().into(),
-            series_id:      i.series_id.as_deref().unwrap_or("").into(),
-            title:          i.card_title().as_str().into(),
-            subtitle:       i.card_subtitle().as_str().into(),
-            year:           i.production_year.unwrap_or(0) as i32,
-            has_played:     i.user_data.played,
-            is_favorite:    i.user_data.is_favorite,
-            resume_pct:     i.resume_pct(),
-            unplayed_count: i.user_data.unplayed_item_count,
-            ..Default::default()
-        };
-        if let Some(spb) = buf {
-            c.poster     = slint::Image::from_rgba8(spb);
-            c.has_poster = true;
-        }
-        c
-    }).collect()
+    items
+        .iter()
+        .zip(bufs)
+        .map(|(i, buf)| {
+            let mut c = CardItem {
+                id: i.id.as_str().into(),
+                item_type: i.item_type.as_str().into(),
+                series_id: i.series_id.as_deref().unwrap_or("").into(),
+                title: i.card_title().as_str().into(),
+                subtitle: i.card_subtitle().as_str().into(),
+                year: i.production_year.unwrap_or(0) as i32,
+                has_played: i.user_data.played,
+                is_favorite: i.user_data.is_favorite,
+                resume_pct: i.resume_pct(),
+                unplayed_count: i.user_data.unplayed_item_count,
+                ..Default::default()
+            };
+            if let Some(spb) = buf {
+                c.poster = slint::Image::from_rgba8(spb);
+                c.has_poster = true;
+            }
+            c
+        })
+        .collect()
 }
 
 // ── DetailCtx — shared context for the three parallel fetch tasks ─────────────
 
 struct DetailCtx {
-    id:            String,
-    client:        Arc<fjord_api::JellyfinClient>,
-    ww:            slint::Weak<MainWindow>,
-    rt:            tokio::runtime::Handle,
-    state:         Arc<Mutex<FjordState>>,
+    id: String,
+    client: Arc<fjord_api::JellyfinClient>,
+    ww: slint::Weak<MainWindow>,
+    rt: tokio::runtime::Handle,
+    state: Arc<Mutex<FjordState>>,
     cached_detail: Option<fjord_api::models::MediaItem>,
     // Background staleness self-heal (real gap, live-reported): Jellyfin's
     // WebSocket only delivers LibraryChanged to the most-recently-connected
@@ -113,31 +123,31 @@ struct DetailCtx {
     // call) and patches fields in place without touching show-detail/
     // app-content-loading/app-loading-progress, which the first call already
     // handled.
-    revalidate:    bool,
+    revalidate: bool,
 }
 
 impl DetailCtx {
     fn spawn_main(&self) {
-        let id         = self.id.clone();
-        let client     = Arc::clone(&self.client);
-        let ww         = self.ww.clone();
-        let state      = Arc::clone(&self.state);
-        let rt         = self.rt.clone();
-        let cached     = self.cached_detail.clone();
+        let id = self.id.clone();
+        let client = Arc::clone(&self.client);
+        let ww = self.ww.clone();
+        let state = Arc::clone(&self.state);
+        let rt = self.rt.clone();
+        let cached = self.cached_detail.clone();
         let revalidate = self.revalidate;
         rt.spawn(async move {
             // Fetch metadata and poster in parallel; skip the network call for
             // metadata when a recent cached copy exists (Part 2 screen-open cache).
             let detail_fut = async {
-                if let Some(d) = cached { return Ok(d); }
+                if let Some(d) = cached {
+                    return Ok(d);
+                }
                 client.get_item_detail(&id).await
             };
-            let (detail_res, poster_bytes) = tokio::join!(
-                detail_fut,
-                fetch_poster_cached(&client, &id),
-            );
+            let (detail_res, poster_bytes) =
+                tokio::join!(detail_fut, fetch_poster_cached(&client, &id),);
             let detail = match detail_res {
-                Ok(d)  => d,
+                Ok(d) => d,
                 Err(e) => {
                     warn!("get_item_detail {}: {:#}", id, e);
                     if !revalidate {
@@ -159,67 +169,115 @@ impl DetailCtx {
             // session's cache — same guard class as main.rs::session_current's
             // own doc comment (CR11-2). Applies to both the original open and
             // a background revalidate call alike.
-            if !crate::session_current(&state, &client) { return; }
-            state.lock().unwrap().item_detail_cache.insert(id.clone(), detail.clone());
-            debug!("detail fetched: {} | genres={:?} | people={}", detail.name, detail.genres, detail.people.len());
+            if !crate::session_current(&state, &client) {
+                return;
+            }
+            state
+                .lock()
+                .unwrap()
+                .item_detail_cache
+                .insert(id.clone(), detail.clone());
+            debug!(
+                "detail fetched: {} | genres={:?} | people={}",
+                detail.name,
+                detail.genres,
+                detail.people.len()
+            );
 
             let backdrop_bytes = if detail.backdrop_image_tags.is_empty() {
                 None
             } else {
-                fetch_backdrop_cached_tagged(&client, &id, detail.backdrop_image_tags.first().map(String::as_str)).await
+                fetch_backdrop_cached_tagged(
+                    &client,
+                    &id,
+                    detail.backdrop_image_tags.first().map(String::as_str),
+                )
+                .await
             };
 
             // Build crew+cast as (id, name, role_label) — directors first, writers, then actors.
             // Vec<CastMember> is !Send because image is !Send so we carry raw tuples here.
             let mut seen_ids: std::collections::HashSet<String> = Default::default();
             let mut cast_data: Vec<(String, String, String)> = vec![];
-            for p in detail.people.iter().filter(|p| p.person_type == "Director").take(2) {
+            for p in detail
+                .people
+                .iter()
+                .filter(|p| p.person_type == "Director")
+                .take(2)
+            {
                 if seen_ids.insert(p.id.clone()) {
                     cast_data.push((p.id.clone(), p.name.clone(), "Director".to_string()));
                 }
             }
-            for p in detail.people.iter().filter(|p| p.person_type == "Writer").take(3) {
+            for p in detail
+                .people
+                .iter()
+                .filter(|p| p.person_type == "Writer")
+                .take(3)
+            {
                 if seen_ids.insert(p.id.clone()) {
                     cast_data.push((p.id.clone(), p.name.clone(), "Writer".to_string()));
                 }
             }
-            for p in detail.people.iter().filter(|p| p.person_type == "Actor" || p.person_type == "GuestStar").take(12) {
+            for p in detail
+                .people
+                .iter()
+                .filter(|p| p.person_type == "Actor" || p.person_type == "GuestStar")
+                .take(12)
+            {
                 if seen_ids.insert(p.id.clone()) {
                     cast_data.push((p.id.clone(), p.name.clone(), p.role.clone()));
                 }
             }
-            let person_ids: Vec<(usize, String)> = cast_data.iter()
+            let person_ids: Vec<(usize, String)> = cast_data
+                .iter()
                 .enumerate()
                 .filter(|(_, (pid, _, _))| !pid.is_empty())
                 .map(|(idx, (pid, _, _))| (idx, pid.clone()))
                 .collect();
 
             let tagline = detail.taglines.first().cloned().unwrap_or_default();
-            let studio  = detail.studios.first().map(|s| s.name.clone()).unwrap_or_default();
+            let studio = detail
+                .studios
+                .first()
+                .map(|s| s.name.clone())
+                .unwrap_or_default();
 
-            let resume_secs  = detail.resume_position_secs().unwrap_or(0.0);
+            let resume_secs = detail.resume_position_secs().unwrap_or(0.0);
             let runtime_secs = detail.run_time_ticks.unwrap_or(0) as f64 / 10_000_000.0;
-            let remaining    = if resume_secs > 0.0 { runtime_secs - resume_secs } else { runtime_secs };
-            let ends_str     = crate::playback::fmt_ends_at(remaining).to_string();
+            let remaining = if resume_secs > 0.0 {
+                runtime_secs - resume_secs
+            } else {
+                runtime_secs
+            };
+            let ends_str = crate::playback::fmt_ends_at(remaining).to_string();
 
             let mut meta_parts: Vec<String> = vec![];
-            if let Some(y) = detail.production_year { meta_parts.push(y.to_string()); }
-            if let Some(ref r) = detail.official_rating { meta_parts.push(r.clone()); }
-            if let Some(ref rt_str) = detail.runtime_string() { meta_parts.push(rt_str.clone()); }
+            if let Some(y) = detail.production_year {
+                meta_parts.push(y.to_string());
+            }
+            if let Some(ref r) = detail.official_rating {
+                meta_parts.push(r.clone());
+            }
+            if let Some(ref rt_str) = detail.runtime_string() {
+                meta_parts.push(rt_str.clone());
+            }
             let meta = meta_parts.join(" • ");
             // ends_str is shown below the action buttons, not in the meta chip row
 
-            let genres       = detail.genres.join(", ");
-            let overview     = crate::strip_html_to_text(detail.overview.clone().unwrap_or_default().trim());
-            let rating_label = detail.community_rating
+            let genres = detail.genres.join(", ");
+            let overview =
+                crate::strip_html_to_text(detail.overview.clone().unwrap_or_default().trim());
+            let rating_label = detail
+                .community_rating
                 .map(|r| format!("★ {:.1}", r))
                 .unwrap_or_default();
             let (series_label, series_id_for_detail) = if detail.item_type == "Episode" {
-                let s      = detail.parent_index_number.unwrap_or(0);
-                let e      = detail.index_number.unwrap_or(0);
+                let s = detail.parent_index_number.unwrap_or(0);
+                let e = detail.index_number.unwrap_or(0);
                 let series = detail.series_name.as_deref().unwrap_or("");
-                let label  = format!("{} — S{:02}E{:02}", series, s, e);
-                let sid    = detail.series_id.clone().unwrap_or_default();
+                let label = format!("{} — S{:02}E{:02}", series, s, e);
+                let sid = detail.series_id.clone().unwrap_or_default();
                 (label, sid)
             } else {
                 (String::new(), String::new())
@@ -232,19 +290,25 @@ impl DetailCtx {
                 let id_c = id.clone();
                 slint::invoke_from_event_loop(move || {
                     let Some(w) = ww2.upgrade() else { return };
-                    if AppState::get(&w).get_detail_id().as_str() != id_c { return; }
+                    if AppState::get(&w).get_detail_id().as_str() != id_c {
+                        return;
+                    }
                     AppState::get(&w).set_app_loading_progress(0.5);
-                }).ok();
+                })
+                .ok();
             }
 
             // Fetch all cast portraits before showing the page so they never trickle in.
             let sem = Arc::new(tokio::sync::Semaphore::new(6));
-            let mut portrait_tasks: JoinSet<(usize, Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>)> = JoinSet::new();
+            let mut portrait_tasks: JoinSet<(
+                usize,
+                Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>,
+            )> = JoinSet::new();
             for (model_idx, pid) in &person_ids {
-                let c2    = client.clone();
-                let s2    = sem.clone();
+                let c2 = client.clone();
+                let s2 = sem.clone();
                 let pid_c = pid.clone();
-                let midx  = *model_idx;
+                let midx = *model_idx;
                 portrait_tasks.spawn(async move {
                     let _permit = s2.acquire_owned().await.ok();
                     let bytes = fetch_poster_cached(&c2, &pid_c).await;
@@ -260,17 +324,21 @@ impl DetailCtx {
 
             // All data ready — show the detail page in a single event-loop call.
             let id_c = id.clone();
-            let ww2  = ww.clone();
+            let ww2 = ww.clone();
             slint::invoke_from_event_loop(move || {
                 let Some(w) = ww2.upgrade() else { return };
-                if AppState::get(&w).get_detail_id().as_str() != id_c { return; }
+                if AppState::get(&w).get_detail_id().as_str() != id_c {
+                    return;
+                }
                 // Session guard (Bonfire Phase 1, step 8 audit, 2026-08-09) —
                 // the id check above (helped by reset_session_state now
                 // clearing detail-id on a switch/sign-out) still leaves a
                 // coincidental same-id reopen under a NEW profile as a real
                 // gap, since the earlier session_current check further up
                 // this fn runs before this closure was even scheduled.
-                if !crate::session_current(&state, &client) { return; }
+                if !crate::session_current(&state, &client) {
+                    return;
+                }
                 let g = AppState::get(&w);
                 g.set_detail_title(detail.name.as_str().into());
                 g.set_detail_series_label(series_label.as_str().into());
@@ -285,7 +353,9 @@ impl DetailCtx {
                 g.set_detail_can_resume(resume_secs > 0.0);
                 g.set_detail_resume_label(fmt_resume_label(resume_secs).into());
                 // Build cast with portraits already fetched — no trickle-in.
-                let cast: Vec<CastMember> = cast_data.into_iter().zip(portrait_bufs)
+                let cast: Vec<CastMember> = cast_data
+                    .into_iter()
+                    .zip(portrait_bufs)
                     .map(|((cid, name, role), buf)| {
                         let (photo, has_photo) = if let Some(b) = buf {
                             (slint::Image::from_rgba8(b), true)
@@ -293,9 +363,9 @@ impl DetailCtx {
                             (Default::default(), false)
                         };
                         CastMember {
-                            id:        cid.as_str().into(),
-                            name:      name.as_str().into(),
-                            role:      role.as_str().into(),
+                            id: cid.as_str().into(),
+                            name: name.as_str().into(),
+                            role: role.as_str().into(),
                             photo,
                             has_photo,
                         }
@@ -308,11 +378,15 @@ impl DetailCtx {
                 g.set_detail_has_played(detail.user_data.played);
                 g.set_detail_resume_pct(detail.resume_pct());
                 g.set_detail_loading(false);
-                if let Some(bytes) = poster_bytes && let Some(buf) = decode_poster_buffer(&bytes) {
+                if let Some(bytes) = poster_bytes
+                    && let Some(buf) = decode_poster_buffer(&bytes)
+                {
                     g.set_detail_poster(slint::Image::from_rgba8(buf));
                     g.set_detail_has_poster(true);
                 }
-                if let Some(bytes) = backdrop_bytes && let Some(buf) = decode_backdrop_buffer(&bytes) {
+                if let Some(bytes) = backdrop_bytes
+                    && let Some(buf) = decode_backdrop_buffer(&bytes)
+                {
                     g.set_detail_backdrop(slint::Image::from_rgba8(buf));
                     g.set_detail_has_backdrop(true);
                 }
@@ -323,37 +397,51 @@ impl DetailCtx {
                     g.set_app_loading_progress(0.0);
                     w.invoke_grab_keyboard_focus();
                 }
-            }).ok();
+            })
+            .ok();
         });
     }
 
     fn spawn_similar(&self) {
-        let id     = self.id.clone();
+        let id = self.id.clone();
         let client = Arc::clone(&self.client);
-        let ww     = self.ww.clone();
-        let state  = Arc::clone(&self.state);
+        let ww = self.ww.clone();
+        let state = Arc::clone(&self.state);
         let cached = state.lock().unwrap().similar_items_cache.get(&id);
         let is_hit = cached.is_some();
-        let ww2    = self.ww.clone();
+        let ww2 = self.ww.clone();
         self.rt.spawn(async move {
             let similar = match cached {
                 Some(v) => v,
                 None => match client.get_similar_items(&id).await {
-                    Ok(v)  => v,
-                    Err(e) => { warn!("get_similar_items {}: {:#}", id, e); return; }
+                    Ok(v) => v,
+                    Err(e) => {
+                        warn!("get_similar_items {}: {:#}", id, e);
+                        return;
+                    }
                 },
             };
-            state.lock().unwrap().similar_items_cache.insert(id.clone(), similar.clone());
+            state
+                .lock()
+                .unwrap()
+                .similar_items_cache
+                .insert(id.clone(), similar.clone());
             if !similar.is_empty() {
                 let bufs = fetch_card_posters(&client, &similar).await;
                 let id_c = id.clone();
                 slint::invoke_from_event_loop(move || {
                     let Some(w) = ww.upgrade() else { return };
-                    if AppState::get(&w).get_detail_id().as_str() != id_c { return; }
+                    if AppState::get(&w).get_detail_id().as_str() != id_c {
+                        return;
+                    }
                     let g = AppState::get(&w);
                     let fresh = items_to_cards(&similar, bufs);
-                    g.set_detail_similar(crate::apply_cards_preserving_identity(&g.get_detail_similar(), fresh));
-                }).ok();
+                    g.set_detail_similar(crate::apply_cards_preserving_identity(
+                        &g.get_detail_similar(),
+                        fresh,
+                    ));
+                })
+                .ok();
             }
             // Cache-hit only: shown instantly above from cached data; silently
             // revalidate in the background and patch if it changed. Closes the
@@ -361,26 +449,38 @@ impl DetailCtx {
             // delivers LibraryChanged to the most-recently-connected client
             // (JELLYFIN.md).
             if is_hit && let Ok(fresh_similar) = client.get_similar_items(&id).await {
-                if !crate::session_current(&state, &client) { return; }
-                state.lock().unwrap().similar_items_cache.insert(id.clone(), fresh_similar.clone());
+                if !crate::session_current(&state, &client) {
+                    return;
+                }
+                state
+                    .lock()
+                    .unwrap()
+                    .similar_items_cache
+                    .insert(id.clone(), fresh_similar.clone());
                 let bufs = fetch_card_posters(&client, &fresh_similar).await;
                 let id_c = id.clone();
                 slint::invoke_from_event_loop(move || {
                     let Some(w) = ww2.upgrade() else { return };
-                    if AppState::get(&w).get_detail_id().as_str() != id_c { return; }
+                    if AppState::get(&w).get_detail_id().as_str() != id_c {
+                        return;
+                    }
                     let g = AppState::get(&w);
                     let fresh = items_to_cards(&fresh_similar, bufs);
-                    g.set_detail_similar(crate::apply_cards_preserving_identity(&g.get_detail_similar(), fresh));
-                }).ok();
+                    g.set_detail_similar(crate::apply_cards_preserving_identity(
+                        &g.get_detail_similar(),
+                        fresh,
+                    ));
+                })
+                .ok();
             }
         });
     }
 
     fn spawn_collection(&self) {
-        let id     = self.id.clone();
+        let id = self.id.clone();
         let client = Arc::clone(&self.client);
-        let ww     = self.ww.clone();
-        let state  = Arc::clone(&self.state);
+        let ww = self.ww.clone();
+        let state = Arc::clone(&self.state);
         self.rt.spawn(async move {
             // movie_collections is populated async after login; retry until the map is built.
             // Both facts (hit + is_empty) are read under a single lock hold to avoid the TOCTOU
@@ -390,59 +490,94 @@ impl DetailCtx {
                 loop {
                     let (result, map_empty) = {
                         let s = state.lock().unwrap();
-                        (s.movie_collections.get(&id).cloned(), s.movie_collections.is_empty())
+                        (
+                            s.movie_collections.get(&id).cloned(),
+                            s.movie_collections.is_empty(),
+                        )
                     };
-                    if let Some(bs) = result { break Some(bs); }
-                    if !map_empty || retries >= 10 { break None; }
+                    if let Some(bs) = result {
+                        break Some(bs);
+                    }
+                    if !map_empty || retries >= 10 {
+                        break None;
+                    }
                     retries += 1;
                     tokio::time::sleep(std::time::Duration::from_millis(500)).await;
                     // Bail early if the detail page moved on to a different item.
-                    if ww.upgrade().is_none_or(|w| AppState::get(&w).get_detail_id().as_str() != id) {
+                    if ww
+                        .upgrade()
+                        .is_none_or(|w| AppState::get(&w).get_detail_id().as_str() != id)
+                    {
                         break None;
                     }
                 }
             };
-            let Some((bs_id, bs_name)) = boxset else { return };
+            let Some((bs_id, bs_name)) = boxset else {
+                return;
+            };
             let cached = state.lock().unwrap().boxset_items_cache.get(&bs_id);
             let is_hit = cached.is_some();
             let items = match cached {
                 Some(v) => v,
                 None => match client.get_boxset_items(&bs_id).await {
-                    Ok(v)  => v,
-                    Err(e) => { warn!("get_boxset_items {}: {:#}", bs_id, e); return; }
+                    Ok(v) => v,
+                    Err(e) => {
+                        warn!("get_boxset_items {}: {:#}", bs_id, e);
+                        return;
+                    }
                 },
             };
-            state.lock().unwrap().boxset_items_cache.insert(bs_id.clone(), items.clone());
+            state
+                .lock()
+                .unwrap()
+                .boxset_items_cache
+                .insert(bs_id.clone(), items.clone());
             let items: Vec<_> = items.into_iter().filter(|i| i.id != id).collect();
             if !items.is_empty() {
-                let bufs  = fetch_card_posters(&client, &items).await;
-                let id_c  = id.clone();
+                let bufs = fetch_card_posters(&client, &items).await;
+                let id_c = id.clone();
                 let bs_name_c = bs_name.clone();
                 let ww2 = ww.clone();
                 let _ = slint::invoke_from_event_loop(move || {
                     let Some(w) = ww2.upgrade() else { return };
-                    if AppState::get(&w).get_detail_id().as_str() != id_c { return; }
+                    if AppState::get(&w).get_detail_id().as_str() != id_c {
+                        return;
+                    }
                     let g = AppState::get(&w);
                     g.set_detail_collection_title(bs_name_c.as_str().into());
                     let fresh = items_to_cards(&items, bufs);
-                    g.set_detail_collection(crate::apply_cards_preserving_identity(&g.get_detail_collection(), fresh));
+                    g.set_detail_collection(crate::apply_cards_preserving_identity(
+                        &g.get_detail_collection(),
+                        fresh,
+                    ));
                 });
             }
             // Cache-hit only: shown instantly above; silently revalidate and
             // patch if changed (see spawn_similar's identical comment above).
             if is_hit && let Ok(fresh_items) = client.get_boxset_items(&bs_id).await {
-                if !crate::session_current(&state, &client) { return; }
-                state.lock().unwrap().boxset_items_cache.insert(bs_id.clone(), fresh_items.clone());
+                if !crate::session_current(&state, &client) {
+                    return;
+                }
+                state
+                    .lock()
+                    .unwrap()
+                    .boxset_items_cache
+                    .insert(bs_id.clone(), fresh_items.clone());
                 let fresh_items: Vec<_> = fresh_items.into_iter().filter(|i| i.id != id).collect();
                 let bufs = fetch_card_posters(&client, &fresh_items).await;
                 let id_c = id.clone();
                 let _ = slint::invoke_from_event_loop(move || {
                     let Some(w) = ww.upgrade() else { return };
-                    if AppState::get(&w).get_detail_id().as_str() != id_c { return; }
+                    if AppState::get(&w).get_detail_id().as_str() != id_c {
+                        return;
+                    }
                     let g = AppState::get(&w);
                     g.set_detail_collection_title(bs_name.as_str().into());
                     let fresh = items_to_cards(&fresh_items, bufs);
-                    g.set_detail_collection(crate::apply_cards_preserving_identity(&g.get_detail_collection(), fresh));
+                    g.set_detail_collection(crate::apply_cards_preserving_identity(
+                        &g.get_detail_collection(),
+                        fresh,
+                    ));
                 });
             }
         });
@@ -457,10 +592,12 @@ impl DetailCtx {
     /// or this item has no resolvable TMDB id, same best-effort shape as
     /// every other row this pass adds.
     fn spawn_recommended(&self) {
-        let id    = self.id.clone();
+        let id = self.id.clone();
         let state = Arc::clone(&self.state);
-        let ww    = self.ww.clone();
-        let Some(seerr) = state.lock().unwrap().seerr_client.clone() else { return };
+        let ww = self.ww.clone();
+        let Some(seerr) = state.lock().unwrap().seerr_client.clone() else {
+            return;
+        };
         self.rt.spawn(async move {
             let resolved = {
                 let s = state.lock().unwrap();
@@ -490,14 +627,16 @@ impl DetailCtx {
 }
 
 pub(crate) fn open_detail(
-    id:        String,
+    id: String,
     item_type: String,
-    state:     Arc<Mutex<FjordState>>,
-    ww:        slint::Weak<MainWindow>,
+    state: Arc<Mutex<FjordState>>,
+    ww: slint::Weak<MainWindow>,
     rt_handle: tokio::runtime::Handle,
 ) {
     let s = state.lock().unwrap();
-    let Some(client) = s.client.as_ref().map(Arc::clone) else { return };
+    let Some(client) = s.client.as_ref().map(Arc::clone) else {
+        return;
+    };
 
     if item_type == "Series" {
         drop(s);
@@ -548,14 +687,30 @@ pub(crate) fn open_detail(
     }
 
     let is_detail_cache_hit = cached_detail.is_some();
-    let ctx = DetailCtx { id: id.clone(), client: Arc::clone(&client), ww: ww.clone(), rt: rt_handle.clone(), state: Arc::clone(&state), cached_detail, revalidate: false };
+    let ctx = DetailCtx {
+        id: id.clone(),
+        client: Arc::clone(&client),
+        ww: ww.clone(),
+        rt: rt_handle.clone(),
+        state: Arc::clone(&state),
+        cached_detail,
+        revalidate: false,
+    };
     ctx.spawn_main();
     ctx.spawn_similar();
     ctx.spawn_collection();
     ctx.spawn_recommended();
 
     if is_detail_cache_hit && crate::should_revalidate(&state, &id) {
-        let revalidate_ctx = DetailCtx { id, client, ww, rt: rt_handle, state, cached_detail: None, revalidate: true };
+        let revalidate_ctx = DetailCtx {
+            id,
+            client,
+            ww,
+            rt: rt_handle,
+            state,
+            cached_detail: None,
+            revalidate: true,
+        };
         revalidate_ctx.spawn_main();
     }
 }
@@ -566,23 +721,27 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
     use crate::keys::Action;
     let cast_len = g.get_detail_cast().row_count() as i32;
     let coll_len = g.get_detail_collection().row_count() as i32;
-    let sim_len  = g.get_detail_similar().row_count() as i32;
-    let rec_len  = g.get_detail_recommended().row_count() as i32;
-    let row      = g.get_detail_focused_row();
-    let bg       = g.get_has_background_player();
+    let sim_len = g.get_detail_similar().row_count() as i32;
+    let rec_len = g.get_detail_recommended().row_count() as i32;
+    let row = g.get_detail_focused_row();
+    let bg = g.get_has_background_player();
 
     let scroll_for = |r: i32| -> f32 {
-        const BASE: f32    = 600.0;
+        const BASE: f32 = 600.0;
         const SECTION: f32 = 280.0;
         match r {
             0 => 0.0,
             1 => BASE,
             2 => BASE + if cast_len > 0 { SECTION } else { 0.0 },
-            3 => BASE + if cast_len > 0 { SECTION } else { 0.0 }
-                      + if coll_len > 0 { SECTION } else { 0.0 },
-            4 => BASE + if cast_len > 0 { SECTION } else { 0.0 }
-                      + if coll_len > 0 { SECTION } else { 0.0 }
-                      + if sim_len > 0 { SECTION } else { 0.0 },
+            3 => {
+                BASE + if cast_len > 0 { SECTION } else { 0.0 }
+                    + if coll_len > 0 { SECTION } else { 0.0 }
+            }
+            4 => {
+                BASE + if cast_len > 0 { SECTION } else { 0.0 }
+                    + if coll_len > 0 { SECTION } else { 0.0 }
+                    + if sim_len > 0 { SECTION } else { 0.0 }
+            }
             _ => 0.0,
         }
     };
@@ -611,9 +770,15 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
             match row {
                 0 => {
                     match g.get_detail_focused_btn() {
-                        -1 => { return false; } // Back button — let focus_bar_on_up handle it
-                        5  => { g.set_detail_focused_btn(0); } // Overview → Play
-                        _  => { g.set_detail_focused_btn(-1); }
+                        -1 => {
+                            return false;
+                        } // Back button — let focus_bar_on_up handle it
+                        5 => {
+                            g.set_detail_focused_btn(0);
+                        } // Overview → Play
+                        _ => {
+                            g.set_detail_focused_btn(-1);
+                        }
                     }
                 }
                 1 => {
@@ -623,8 +788,12 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
                 }
                 2 => {
                     g.set_detail_collection_focused(-1);
-                    if cast_len > 0 { g.set_detail_focused_row(1); g.set_detail_cast_focused(0); }
-                    else             { g.set_detail_focused_row(0); }
+                    if cast_len > 0 {
+                        g.set_detail_focused_row(1);
+                        g.set_detail_cast_focused(0);
+                    } else {
+                        g.set_detail_focused_row(0);
+                    }
                     g.set_detail_scroll(scroll_for(g.get_detail_focused_row()));
                 }
                 3 => {
@@ -669,13 +838,17 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
                 0 if g.get_detail_focused_btn() == 5 => {
                     // Overview focused → proceed to content below (btn stays 5 so Up from cast returns here)
                     if cast_len > 0 {
-                        g.set_detail_focused_row(1); g.set_detail_cast_focused(0);
+                        g.set_detail_focused_row(1);
+                        g.set_detail_cast_focused(0);
                     } else if coll_len > 0 {
-                        g.set_detail_focused_row(2); g.set_detail_collection_focused(0);
+                        g.set_detail_focused_row(2);
+                        g.set_detail_collection_focused(0);
                     } else if sim_len > 0 {
-                        g.set_detail_focused_row(3); g.set_detail_similar_focused(0);
+                        g.set_detail_focused_row(3);
+                        g.set_detail_similar_focused(0);
                     } else if rec_len > 0 {
-                        g.set_detail_focused_row(4); g.set_detail_recommended_focused(0);
+                        g.set_detail_focused_row(4);
+                        g.set_detail_recommended_focused(0);
                     }
                 }
                 0 => {
@@ -683,13 +856,17 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
                     if has_ov {
                         g.set_detail_focused_btn(5);
                     } else if cast_len > 0 {
-                        g.set_detail_focused_row(1); g.set_detail_cast_focused(0);
+                        g.set_detail_focused_row(1);
+                        g.set_detail_cast_focused(0);
                     } else if coll_len > 0 {
-                        g.set_detail_focused_row(2); g.set_detail_collection_focused(0);
+                        g.set_detail_focused_row(2);
+                        g.set_detail_collection_focused(0);
                     } else if sim_len > 0 {
-                        g.set_detail_focused_row(3); g.set_detail_similar_focused(0);
+                        g.set_detail_focused_row(3);
+                        g.set_detail_similar_focused(0);
                     } else if rec_len > 0 {
-                        g.set_detail_focused_row(4); g.set_detail_recommended_focused(0);
+                        g.set_detail_focused_row(4);
+                        g.set_detail_recommended_focused(0);
                     } else {
                         g.set_detail_scroll(g.get_detail_scroll() + 120.0);
                     }
@@ -697,13 +874,16 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
                 1 => {
                     if coll_len > 0 {
                         g.set_detail_cast_focused(-1);
-                        g.set_detail_focused_row(2); g.set_detail_collection_focused(0);
+                        g.set_detail_focused_row(2);
+                        g.set_detail_collection_focused(0);
                     } else if sim_len > 0 {
                         g.set_detail_cast_focused(-1);
-                        g.set_detail_focused_row(3); g.set_detail_similar_focused(0);
+                        g.set_detail_focused_row(3);
+                        g.set_detail_similar_focused(0);
                     } else if rec_len > 0 {
                         g.set_detail_cast_focused(-1);
-                        g.set_detail_focused_row(4); g.set_detail_recommended_focused(0);
+                        g.set_detail_focused_row(4);
+                        g.set_detail_recommended_focused(0);
                     }
                     // else: nowhere to go; stay in cast row with current focus intact
                 }
@@ -737,17 +917,29 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
                     // Fixed slots: -1=Back, 0=Play, 1=Resume (cond), 2=Series (cond), 3=Fav, 4=Watched
                     // 5=Overview is reached via Down, not Left/Right
                     let cur = g.get_detail_focused_btn();
-                    if cur < 0 { return true; }
+                    if cur < 0 {
+                        return true;
+                    }
                     if cur == 5 {
                         // Overview focused: Left returns to Watched, Right is no-op
-                        if dir < 0 { g.set_detail_focused_btn(4); }
+                        if dir < 0 {
+                            g.set_detail_focused_btn(4);
+                        }
                         return true;
                     }
                     let has_resume = g.get_detail_can_resume();
                     let has_series = !g.get_detail_series_id().is_empty();
                     let mut next = (cur + dir).clamp(0, 4);
-                    if next == 1 && !has_resume { next = if dir > 0 { 2 } else { 0 }; }
-                    if next == 2 && !has_series { next = if dir > 0 { 3 } else { if has_resume { 1 } else { 0 } }; }
+                    if next == 1 && !has_resume {
+                        next = if dir > 0 { 2 } else { 0 };
+                    }
+                    if next == 2 && !has_series {
+                        next = if dir > 0 {
+                            3
+                        } else {
+                            if has_resume { 1 } else { 0 }
+                        };
+                    }
                     g.set_detail_focused_btn(next);
                 }
                 1 => {
@@ -776,7 +968,9 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
                     match g.get_detail_focused_btn() {
                         -1 => {
                             // Back button — same as Action::Back
-                            if g.get_has_background_player() { g.set_playback_from_detail(false); }
+                            if g.get_has_background_player() {
+                                g.set_playback_from_detail(false);
+                            }
                             g.set_detail_focused_row(0);
                             g.set_detail_cast_focused(-1);
                             g.set_detail_collection_focused(-1);
@@ -790,7 +984,9 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
                             g.set_detail_recommended(ModelRc::new(VecModel::<CardItem>::default()));
                             g.invoke_close_detail();
                         }
-                        1 if g.get_detail_can_resume() => { g.invoke_resume_detail(); }
+                        1 if g.get_detail_can_resume() => {
+                            g.invoke_resume_detail();
+                        }
                         2 if !g.get_detail_series_id().is_empty() => {
                             let sid = g.get_detail_series_id().to_string();
                             g.set_detail_focused_row(0);
@@ -803,15 +999,25 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
                             g.invoke_close_detail();
                             g.invoke_open_series(sid.as_str().into());
                         }
-                        3 => { g.invoke_toggle_detail_fav(); }
-                        4 => { g.invoke_toggle_detail_played(); }
-                        5 => { g.set_detail_overview_expanded(!g.get_detail_overview_expanded()); }
-                        _ => { g.invoke_play_detail(); }
+                        3 => {
+                            g.invoke_toggle_detail_fav();
+                        }
+                        4 => {
+                            g.invoke_toggle_detail_played();
+                        }
+                        5 => {
+                            g.set_detail_overview_expanded(!g.get_detail_overview_expanded());
+                        }
+                        _ => {
+                            g.invoke_play_detail();
+                        }
                     }
                 }
                 1 => {
                     let idx = g.get_detail_cast_focused();
-                    if idx >= 0 && let Some(c) = g.get_detail_cast().row_data(idx as usize) {
+                    if idx >= 0
+                        && let Some(c) = g.get_detail_cast().row_data(idx as usize)
+                    {
                         g.invoke_open_person(c.id, c.name);
                     }
                 }
@@ -833,7 +1039,11 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
                     let fi = g.get_detail_recommended_focused();
                     if fi >= 0 && fi < rec_len {
                         let card = g.get_detail_recommended().row_data(fi as usize).unwrap();
-                        let media_type = if card.item_type == "DiscoverMovie" { "movie" } else { "tv" };
+                        let media_type = if card.item_type == "DiscoverMovie" {
+                            "movie"
+                        } else {
+                            "tv"
+                        };
                         g.invoke_open_discover_item(media_type.into(), card.id);
                     }
                 }
@@ -848,8 +1058,14 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
                     if fi >= 0 && fi < coll_len {
                         let card = g.get_detail_collection().row_data(fi as usize).unwrap();
                         g.set_context_menu_title(card.title.clone());
-                        g.invoke_open_context_menu(card.id, card.has_played, card.is_favorite,
-                            card.resume_pct, card.item_type, card.series_id);
+                        g.invoke_open_context_menu(
+                            card.id,
+                            card.has_played,
+                            card.is_favorite,
+                            card.resume_pct,
+                            card.item_type,
+                            card.series_id,
+                        );
                     }
                 }
                 3 => {
@@ -857,8 +1073,14 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
                     if fi >= 0 && fi < sim_len {
                         let card = g.get_detail_similar().row_data(fi as usize).unwrap();
                         g.set_context_menu_title(card.title.clone());
-                        g.invoke_open_context_menu(card.id, card.has_played, card.is_favorite,
-                            card.resume_pct, card.item_type, card.series_id);
+                        g.invoke_open_context_menu(
+                            card.id,
+                            card.has_played,
+                            card.is_favorite,
+                            card.resume_pct,
+                            card.item_type,
+                            card.series_id,
+                        );
                     }
                 }
                 4 => {
@@ -873,12 +1095,21 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
             true
         }
         Action::ResumePlayer => {
-            if bg { g.invoke_resume_player(); }
-            else if g.get_detail_can_resume() { g.invoke_resume_detail(); }
+            if bg {
+                g.invoke_resume_player();
+            } else if g.get_detail_can_resume() {
+                g.invoke_resume_detail();
+            }
             true
         }
-        Action::Fullscreen => { g.invoke_toggle_fullscreen(); true }
-        Action::Quit       => { g.invoke_quit(); true }
-        _ => false
+        Action::Fullscreen => {
+            g.invoke_toggle_fullscreen();
+            true
+        }
+        Action::Quit => {
+            g.invoke_quit();
+            true
+        }
+        _ => false,
     }
 }

@@ -26,17 +26,17 @@
 //   modifier_text       a modifier for the log ("implicit" for INVALID)
 // ───────────────────────────────────────────────────────────────────────────
 
-use std::ffi::{c_void, CStr};
+use std::ffi::{CStr, c_void};
 use std::fs::File;
 use std::os::fd::{AsFd, AsRawFd, BorrowedFd, FromRawFd, OwnedFd};
 
-use anyhow::{anyhow, bail, Context as _, Result};
+use anyhow::{Context as _, Result, anyhow, bail};
 use glutin_egl_sys::egl;
 use glutin_egl_sys::egl::types::{EGLDisplay, EGLenum, EGLint};
 use tracing::debug;
 use wayland_backend::client::ObjectId;
-use wayland_client::protocol::wl_buffer::WlBuffer;
 use wayland_client::Proxy;
+use wayland_client::protocol::wl_buffer::WlBuffer;
 
 /// DRM fourcc of the 10-bit formats worth trying, best first, with names for the log.
 pub(crate) const TEN_BIT_FORMATS: [(u32, &str); 2] = [
@@ -62,18 +62,19 @@ const EGL_DRM_RENDER_NODE_FILE_EXT: EGLint = 0x3377;
 
 // ── GBM ───────────────────────────────────────────────────────────────────
 pub(crate) struct Gbm {
-    _lib:           &'static libloading::Library,
-    create_device:  unsafe extern "C" fn(i32) -> *mut c_void,
+    _lib: &'static libloading::Library,
+    create_device: unsafe extern "C" fn(i32) -> *mut c_void,
     device_destroy: unsafe extern "C" fn(*mut c_void),
-    is_supported:   unsafe extern "C" fn(*mut c_void, u32, u32) -> i32,
-    bo_create:      unsafe extern "C" fn(*mut c_void, u32, u32, u32, u32) -> *mut c_void,
-    bo_create_mods: unsafe extern "C" fn(*mut c_void, u32, u32, u32, *const u64, u32) -> *mut c_void,
+    is_supported: unsafe extern "C" fn(*mut c_void, u32, u32) -> i32,
+    bo_create: unsafe extern "C" fn(*mut c_void, u32, u32, u32, u32) -> *mut c_void,
+    bo_create_mods:
+        unsafe extern "C" fn(*mut c_void, u32, u32, u32, *const u64, u32) -> *mut c_void,
     bo_plane_count: unsafe extern "C" fn(*mut c_void) -> i32,
-    bo_plane_fd:    unsafe extern "C" fn(*mut c_void, i32) -> i32,
+    bo_plane_fd: unsafe extern "C" fn(*mut c_void, i32) -> i32,
     bo_plane_stride: unsafe extern "C" fn(*mut c_void, i32) -> u32,
     bo_plane_offset: unsafe extern "C" fn(*mut c_void, i32) -> u32,
-    bo_get_mod:     unsafe extern "C" fn(*mut c_void) -> u64,
-    bo_destroy:     unsafe extern "C" fn(*mut c_void),
+    bo_get_mod: unsafe extern "C" fn(*mut c_void) -> u64,
+    bo_destroy: unsafe extern "C" fn(*mut c_void),
 }
 
 /// Loaded once per process (leaked: needed for its whole life).
@@ -83,7 +84,11 @@ pub(crate) fn load_gbm() -> Result<&'static Gbm> {
     unsafe {
         let lib = libloading::Library::new("libgbm.so.1").context("loading libgbm.so.1")?;
         let lib: &'static libloading::Library = Box::leak(Box::new(lib));
-        macro_rules! sym { ($n:literal) => { *lib.get(concat!($n, "\0").as_bytes()).context($n)? } }
+        macro_rules! sym {
+            ($n:literal) => {
+                *lib.get(concat!($n, "\0").as_bytes()).context($n)?
+            };
+        }
         let gbm = Gbm {
             _lib: lib,
             create_device: sym!("gbm_create_device"),
@@ -113,7 +118,10 @@ pub(crate) fn render_node(egl: &egl::Egl, dpy: EGLDisplay) -> Option<String> {
         if egl.QueryDisplayAttribEXT(dpy, egl::DEVICE_EXT as EGLint, &mut dev) != egl::TRUE {
             return None;
         }
-        for name in [EGL_DRM_RENDER_NODE_FILE_EXT, egl::DRM_DEVICE_FILE_EXT as EGLint] {
+        for name in [
+            EGL_DRM_RENDER_NODE_FILE_EXT,
+            egl::DRM_DEVICE_FILE_EXT as EGLint,
+        ] {
             let p = egl.QueryDeviceStringEXT(dev as egl::types::EGLDeviceEXT, name);
             if !p.is_null() {
                 return Some(CStr::from_ptr(p).to_string_lossy().into_owned());
@@ -133,11 +141,20 @@ pub(crate) fn choose_format(
     gbm_supports: impl Fn(u32) -> bool,
 ) -> Option<(u32, &'static str, Vec<u64>)> {
     TEN_BIT_FORMATS.iter().find_map(|&(fourcc, name)| {
-        let advertised: Vec<Option<u64>> = kwin.iter().filter(|(f, _)| *f == fourcc).map(|(_, m)| *m).collect();
+        let advertised: Vec<Option<u64>> = kwin
+            .iter()
+            .filter(|(f, _)| *f == fourcc)
+            .map(|(_, m)| *m)
+            .collect();
         if advertised.is_empty() || !gbm_supports(fourcc) {
             return None;
         }
-        let mods: Vec<u64> = advertised.iter().flatten().copied().filter(|&m| m != DRM_FORMAT_MOD_INVALID).collect();
+        let mods: Vec<u64> = advertised
+            .iter()
+            .flatten()
+            .copied()
+            .filter(|&m| m != DRM_FORMAT_MOD_INVALID)
+            .collect();
         Some((fourcc, name, mods))
     })
 }
@@ -148,42 +165,46 @@ type TargetRbStorage = unsafe extern "system" fn(u32, *const c_void);
 /// One memory plane of a buffer, as linux-dmabuf's `add` and EGL's import
 /// want it.
 pub(crate) struct Plane<'a> {
-    pub fd:     BorrowedFd<'a>,
+    pub fd: BorrowedFd<'a>,
     pub offset: u32,
     pub stride: u32,
 }
 
 pub(crate) struct Buffer {
-    bo:       *mut c_void,
+    bo: *mut c_void,
     /// One per plane (kept open for the buffer's life).
-    fds:      Vec<OwnedFd>,
-    image:    egl::types::EGLImageKHR,
-    rb:       u32,
+    fds: Vec<OwnedFd>,
+    image: egl::types::EGLImageKHR,
+    rb: u32,
     pub(crate) fbo: u32,
-    pub(crate) wl:  WlBuffer,
-    busy:     bool,
+    pub(crate) wl: WlBuffer,
+    busy: bool,
     modifier: u64,
 }
 
 pub(crate) struct Swapchain {
-    egl:        &'static egl::Egl,
-    dpy:        EGLDisplay,
-    gbm:        &'static Gbm,
-    _node:      File,
-    dev:        *mut c_void,
+    egl: &'static egl::Egl,
+    dpy: EGLDisplay,
+    gbm: &'static Gbm,
+    _node: File,
+    dev: *mut c_void,
     pub(crate) fourcc: u32,
     pub(crate) format_name: &'static str,
-    modifiers:  Vec<u64>,
-    target_rb:  TargetRbStorage,
-    buffers:    Vec<Buffer>,
+    modifiers: Vec<u64>,
+    target_rb: TargetRbStorage,
+    buffers: Vec<Buffer>,
     /// Buffers of an earlier size, kept until KWin releases them.
-    retired:    Vec<Buffer>,
+    retired: Vec<Buffer>,
     pub(crate) size: (u32, u32),
 }
 
 impl Swapchain {
     /// GBM device on Slint's GPU + the format to use. No buffers yet.
-    pub(crate) fn new(egl: &'static egl::Egl, dpy: EGLDisplay, kwin: &[(u32, Option<u64>)]) -> Result<Self> {
+    pub(crate) fn new(
+        egl: &'static egl::Egl,
+        dpy: EGLDisplay,
+        kwin: &[(u32, Option<u64>)],
+    ) -> Result<Self> {
         if !egl.CreateImageKHR.is_loaded() || !egl.DestroyImageKHR.is_loaded() {
             bail!("EGL has no EGL_KHR_image_base");
         }
@@ -196,7 +217,10 @@ impl Swapchain {
         let target_rb: TargetRbStorage = unsafe { std::mem::transmute(f) };
         let gbm = load_gbm()?;
         let node = render_node(egl, dpy).unwrap_or_else(|| "/dev/dri/renderD128".into());
-        let file = std::fs::OpenOptions::new().read(true).write(true).open(&node)
+        let file = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(&node)
             .with_context(|| format!("opening {node}"))?;
         // Safety: a valid fd that outlives the device (kept in `_node`).
         let dev = unsafe { (gbm.create_device)(file.as_raw_fd()) };
@@ -204,16 +228,32 @@ impl Swapchain {
             bail!("gbm_create_device({node}) failed");
         }
         // Safety: dev is live.
-        let chosen = choose_format(kwin, |f| unsafe { (gbm.is_supported)(dev, f, GBM_BO_USE_RENDERING) } != 0);
+        let chosen = choose_format(
+            kwin,
+            |f| unsafe { (gbm.is_supported)(dev, f, GBM_BO_USE_RENDERING) } != 0,
+        );
         let Some((fourcc, format_name, modifiers)) = chosen else {
             // Safety: created above.
             unsafe { (gbm.device_destroy)(dev) };
             bail!("no 10-bit format both KWin and GBM ({node}) take");
         };
-        debug!("dmabuf plane: {format_name} on {node}, {} KWin modifier(s)", modifiers.len());
+        debug!(
+            "dmabuf plane: {format_name} on {node}, {} KWin modifier(s)",
+            modifiers.len()
+        );
         Ok(Swapchain {
-            egl, dpy, gbm, _node: file, dev, fourcc, format_name, modifiers, target_rb,
-            buffers: Vec::new(), retired: Vec::new(), size: (0, 0),
+            egl,
+            dpy,
+            gbm,
+            _node: file,
+            dev,
+            fourcc,
+            format_name,
+            modifiers,
+            target_rb,
+            buffers: Vec::new(),
+            retired: Vec::new(),
+            size: (0, 0),
         })
     }
 
@@ -247,18 +287,36 @@ impl Swapchain {
             if self.modifiers.is_empty() {
                 (self.gbm.bo_create)(self.dev, w, h, self.fourcc, GBM_BO_USE_RENDERING)
             } else {
-                (self.gbm.bo_create_mods)(self.dev, w, h, self.fourcc, self.modifiers.as_ptr(), self.modifiers.len() as u32)
+                (self.gbm.bo_create_mods)(
+                    self.dev,
+                    w,
+                    h,
+                    self.fourcc,
+                    self.modifiers.as_ptr(),
+                    self.modifiers.len() as u32,
+                )
             }
         };
         if bo.is_null() {
-            bail!("GBM couldn't allocate a {w}x{h} {} buffer", self.format_name);
+            bail!(
+                "GBM couldn't allocate a {w}x{h} {} buffer",
+                self.format_name
+            );
         }
-        let cleanup_bo = |e: anyhow::Error| { unsafe { (self.gbm.bo_destroy)(bo) }; e };
+        let cleanup_bo = |e: anyhow::Error| {
+            unsafe { (self.gbm.bo_destroy)(bo) };
+            e
+        };
         // Safety: bo is live.
-        let (plane_count, modifier) = unsafe { ((self.gbm.bo_plane_count)(bo), (self.gbm.bo_get_mod)(bo)) };
+        let (plane_count, modifier) =
+            unsafe { ((self.gbm.bo_plane_count)(bo), (self.gbm.bo_get_mod)(bo)) };
         // KWin advertised this format only with an implicit modifier: say so
         // (whatever GBM reports) — only advertised pairs may be sent.
-        let modifier = if self.modifiers.is_empty() { DRM_FORMAT_MOD_INVALID } else { modifier };
+        let modifier = if self.modifiers.is_empty() {
+            DRM_FORMAT_MOD_INVALID
+        } else {
+            modifier
+        };
         if !(1..=4).contains(&plane_count) {
             return Err(cleanup_bo(anyhow!("GBM buffer has {plane_count} planes")));
         }
@@ -267,7 +325,11 @@ impl Swapchain {
             // Safety: bo is live, i < its plane count; get_fd_for_plane
             // returns a new fd that we own.
             let (raw_fd, offset, stride) = unsafe {
-                ((self.gbm.bo_plane_fd)(bo, i), (self.gbm.bo_plane_offset)(bo, i), (self.gbm.bo_plane_stride)(bo, i))
+                (
+                    (self.gbm.bo_plane_fd)(bo, i),
+                    (self.gbm.bo_plane_offset)(bo, i),
+                    (self.gbm.bo_plane_stride)(bo, i),
+                )
             };
             if raw_fd < 0 {
                 return Err(cleanup_bo(anyhow!("gbm_bo_get_fd_for_plane({i}) failed")));
@@ -277,17 +339,26 @@ impl Swapchain {
             offsets.push(offset);
             strides.push(stride);
         }
-        let raw: Vec<(i32, u32, u32)> =
-            (0..fds.len()).map(|i| (fds[i].as_raw_fd(), offsets[i], strides[i])).collect();
+        let raw: Vec<(i32, u32, u32)> = (0..fds.len())
+            .map(|i| (fds[i].as_raw_fd(), offsets[i], strides[i]))
+            .collect();
         let attribs = import_attribs((w, h), self.fourcc, modifier, &raw);
         // Safety: EGL_EXT_image_dma_buf_import on a live display; the fds stay open.
         let image = unsafe {
-            self.egl.CreateImageKHR(self.dpy, egl::NO_CONTEXT, EGL_LINUX_DMA_BUF_EXT, std::ptr::null(), attribs.as_ptr())
+            self.egl.CreateImageKHR(
+                self.dpy,
+                egl::NO_CONTEXT,
+                EGL_LINUX_DMA_BUF_EXT,
+                std::ptr::null(),
+                attribs.as_ptr(),
+            )
         };
         if image == egl::NO_IMAGE_KHR {
             return Err(cleanup_bo(anyhow!(
                 "EGLImage import failed (0x{:x}; modifier {}, {} plane(s))",
-                unsafe { self.egl.GetError() }, modifier_text(modifier), fds.len(),
+                unsafe { self.egl.GetError() },
+                modifier_text(modifier),
+                fds.len(),
             )));
         }
         // Safety: our context is current (caller); image is live.
@@ -298,7 +369,12 @@ impl Swapchain {
             (self.target_rb)(gl::RENDERBUFFER, image);
             gl::GenFramebuffers(1, &mut fbo);
             gl::BindFramebuffer(gl::FRAMEBUFFER, fbo);
-            gl::FramebufferRenderbuffer(gl::FRAMEBUFFER, gl::COLOR_ATTACHMENT0, gl::RENDERBUFFER, rb);
+            gl::FramebufferRenderbuffer(
+                gl::FRAMEBUFFER,
+                gl::COLOR_ATTACHMENT0,
+                gl::RENDERBUFFER,
+                rb,
+            );
             let status = gl::CheckFramebufferStatus(gl::FRAMEBUFFER);
             gl::BindFramebuffer(gl::FRAMEBUFFER, 0);
             (rb, fbo, status)
@@ -310,15 +386,31 @@ impl Swapchain {
         };
         if status != gl::FRAMEBUFFER_COMPLETE {
             gl_cleanup();
-            return Err(cleanup_bo(anyhow!("framebuffer on the {} buffer incomplete (0x{status:x})", self.format_name)));
+            return Err(cleanup_bo(anyhow!(
+                "framebuffer on the {} buffer incomplete (0x{status:x})",
+                self.format_name
+            )));
         }
         let planes: Vec<Plane<'_>> = (0..fds.len())
-            .map(|i| Plane { fd: fds[i].as_fd(), offset: offsets[i], stride: strides[i] })
+            .map(|i| Plane {
+                fd: fds[i].as_fd(),
+                offset: offsets[i],
+                stride: strides[i],
+            })
             .collect();
         let made = make_wl(&planes, modifier);
         drop(planes);
         match made {
-            Ok(wl) => Ok(Buffer { bo, fds, image, rb, fbo, wl, busy: false, modifier }),
+            Ok(wl) => Ok(Buffer {
+                bo,
+                fds,
+                image,
+                rb,
+                fbo,
+                wl,
+                busy: false,
+                modifier,
+            }),
             Err(e) => {
                 gl_cleanup();
                 Err(cleanup_bo(e))
@@ -350,7 +442,9 @@ impl Swapchain {
 
     /// Frees retired buffers KWin no longer holds. Our GL context must be current.
     pub(crate) fn purge_retired(&mut self) {
-        let (gone, keep): (Vec<Buffer>, Vec<Buffer>) = std::mem::take(&mut self.retired).into_iter().partition(|b| !b.busy);
+        let (gone, keep): (Vec<Buffer>, Vec<Buffer>) = std::mem::take(&mut self.retired)
+            .into_iter()
+            .partition(|b| !b.busy);
         self.retired = keep;
         for b in gone {
             self.free(b);
@@ -359,7 +453,9 @@ impl Swapchain {
 
     /// The modifier GBM chose for the current buffers (for the log).
     pub(crate) fn modifier(&self) -> u64 {
-        self.buffers.first().map_or(DRM_FORMAT_MOD_INVALID, |b| b.modifier)
+        self.buffers
+            .first()
+            .map_or(DRM_FORMAT_MOD_INVALID, |b| b.modifier)
     }
 
     /// Memory planes per buffer (for the log).
@@ -381,7 +477,11 @@ impl Swapchain {
     /// Frees everything. Our GL context should be current (GL deletes are
     /// no-ops otherwise — only leaked GPU objects, never someone else's).
     pub(crate) fn destroy(mut self) {
-        let all: Vec<Buffer> = self.buffers.drain(..).chain(self.retired.drain(..)).collect();
+        let all: Vec<Buffer> = self
+            .buffers
+            .drain(..)
+            .chain(self.retired.drain(..))
+            .collect();
         for b in all {
             self.free(b);
         }
@@ -394,15 +494,31 @@ impl Swapchain {
 /// of `size` whose `planes` are (fd, offset, stride), NONE-terminated. The
 /// modifier goes on every plane (it describes the whole layout) unless it's
 /// DRM_FORMAT_MOD_INVALID (implicit).
-pub(crate) fn import_attribs((w, h): (u32, u32), fourcc: u32, modifier: u64, planes: &[(i32, u32, u32)]) -> Vec<EGLint> {
+pub(crate) fn import_attribs(
+    (w, h): (u32, u32),
+    fourcc: u32,
+    modifier: u64,
+    planes: &[(i32, u32, u32)],
+) -> Vec<EGLint> {
     let mut a = vec![
-        egl::WIDTH as EGLint, w as EGLint, egl::HEIGHT as EGLint, h as EGLint,
-        EGL_LINUX_DRM_FOURCC_EXT, fourcc as EGLint,
+        egl::WIDTH as EGLint,
+        w as EGLint,
+        egl::HEIGHT as EGLint,
+        h as EGLint,
+        EGL_LINUX_DRM_FOURCC_EXT,
+        fourcc as EGLint,
     ];
-    for (&(fd, offset, stride), [k_fd, k_off, k_pitch, k_lo, k_hi]) in planes.iter().zip(EGL_DMA_BUF_PLANE_ATTRS) {
+    for (&(fd, offset, stride), [k_fd, k_off, k_pitch, k_lo, k_hi]) in
+        planes.iter().zip(EGL_DMA_BUF_PLANE_ATTRS)
+    {
         a.extend([k_fd, fd, k_off, offset as EGLint, k_pitch, stride as EGLint]);
         if modifier != DRM_FORMAT_MOD_INVALID {
-            a.extend([k_lo, (modifier & 0xffff_ffff) as u32 as EGLint, k_hi, (modifier >> 32) as u32 as EGLint]);
+            a.extend([
+                k_lo,
+                (modifier & 0xffff_ffff) as u32 as EGLint,
+                k_hi,
+                (modifier >> 32) as u32 as EGLint,
+            ]);
         }
     }
     a.push(egl::NONE as EGLint);
@@ -411,7 +527,11 @@ pub(crate) fn import_attribs((w, h): (u32, u32), fourcc: u32, modifier: u64, pla
 
 /// For the log: a DRM format modifier in hex.
 pub(crate) fn modifier_text(m: u64) -> String {
-    if m == DRM_FORMAT_MOD_INVALID { "implicit".into() } else { format!("0x{m:x}") }
+    if m == DRM_FORMAT_MOD_INVALID {
+        "implicit".into()
+    } else {
+        format!("0x{m:x}")
+    }
 }
 
 #[cfg(test)]
@@ -424,7 +544,13 @@ mod tests {
 
     #[test]
     fn prefers_xrgb_but_takes_what_gbm_can_do() {
-        let kwin = vec![(XR30, Some(1)), (XR30, Some(2)), (XB30, Some(7)), (XB30, Some(DRM_FORMAT_MOD_INVALID)), (XR24, None)];
+        let kwin = vec![
+            (XR30, Some(1)),
+            (XR30, Some(2)),
+            (XB30, Some(7)),
+            (XB30, Some(DRM_FORMAT_MOD_INVALID)),
+            (XR24, None),
+        ];
         // Both possible → XRGB with its modifiers.
         let (f, name, mods) = choose_format(&kwin, |_| true).unwrap();
         assert_eq!((f, name, mods), (XR30, "XRGB2101010", vec![1, 2]));
@@ -434,7 +560,10 @@ mod tests {
         // KWin doesn't advertise it → not chosen even if GBM could.
         assert!(choose_format(&[(XR24, None)], |_| true).is_none());
         // Implicit-only advertisement → empty modifier list.
-        assert_eq!(choose_format(&[(XB30, None)], |_| true).unwrap().2, Vec::<u64>::new());
+        assert_eq!(
+            choose_format(&[(XB30, None)], |_| true).unwrap().2,
+            Vec::<u64>::new()
+        );
     }
 
     #[test]
@@ -444,18 +573,58 @@ mod tests {
         let a = import_attribs((1920, 1200), XR30, m, &[(7, 0, 7680), (8, 9_437_184, 256)]);
         let lo = (m & 0xffff_ffff) as u32 as EGLint;
         let hi = (m >> 32) as u32 as EGLint;
-        assert_eq!(a, vec![
-            egl::WIDTH as EGLint, 1920, egl::HEIGHT as EGLint, 1200, 0x3271, XR30 as EGLint,
-            0x3272, 7, 0x3273, 0, 0x3274, 7680, 0x3443, lo, 0x3444, hi,
-            0x3275, 8, 0x3276, 9_437_184, 0x3277, 256, 0x3445, lo, 0x3446, hi,
-            egl::NONE as EGLint,
-        ]);
+        assert_eq!(
+            a,
+            vec![
+                egl::WIDTH as EGLint,
+                1920,
+                egl::HEIGHT as EGLint,
+                1200,
+                0x3271,
+                XR30 as EGLint,
+                0x3272,
+                7,
+                0x3273,
+                0,
+                0x3274,
+                7680,
+                0x3443,
+                lo,
+                0x3444,
+                hi,
+                0x3275,
+                8,
+                0x3276,
+                9_437_184,
+                0x3277,
+                256,
+                0x3445,
+                lo,
+                0x3446,
+                hi,
+                egl::NONE as EGLint,
+            ]
+        );
         // Implicit modifier, one plane: no modifier attributes at all.
         let a = import_attribs((64, 64), XB30, DRM_FORMAT_MOD_INVALID, &[(3, 0, 256)]);
-        assert_eq!(a, vec![
-            egl::WIDTH as EGLint, 64, egl::HEIGHT as EGLint, 64, 0x3271, XB30 as EGLint,
-            0x3272, 3, 0x3273, 0, 0x3274, 256, egl::NONE as EGLint,
-        ]);
+        assert_eq!(
+            a,
+            vec![
+                egl::WIDTH as EGLint,
+                64,
+                egl::HEIGHT as EGLint,
+                64,
+                0x3271,
+                XB30 as EGLint,
+                0x3272,
+                3,
+                0x3273,
+                0,
+                0x3274,
+                256,
+                egl::NONE as EGLint,
+            ]
+        );
     }
 
     #[test]

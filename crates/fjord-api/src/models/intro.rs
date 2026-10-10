@@ -16,7 +16,9 @@ pub struct Segment {
 }
 
 impl Segment {
-    pub fn valid(&self) -> bool { self.end > 0.0 }
+    pub fn valid(&self) -> bool {
+        self.end > 0.0
+    }
 }
 
 /// Response from `GET /Episode/{id}/Timestamps` (Intro Skipper v2+ plugin).
@@ -69,8 +71,14 @@ mod tests {
 
     #[test]
     fn segment_valid_boundary() {
-        let zero    = Segment { start: 0.0, end: 0.0 };
-        let nonzero = Segment { start: 10.0, end: 92.5 };
+        let zero = Segment {
+            start: 0.0,
+            end: 0.0,
+        };
+        let nonzero = Segment {
+            start: 10.0,
+            end: 92.5,
+        };
         assert!(!zero.valid());
         assert!(nonzero.valid());
     }

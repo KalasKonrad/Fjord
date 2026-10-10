@@ -30,15 +30,17 @@ const PREWARM_CONCURRENCY: usize = 6;
 
 pub(crate) fn spawn_metadata_prewarm(
     client: Arc<JellyfinClient>,
-    state:  Arc<Mutex<FjordState>>,
-    rt:     tokio::runtime::Handle,
+    state: Arc<Mutex<FjordState>>,
+    rt: tokio::runtime::Handle,
 ) {
     {
         let mut s = state.lock().unwrap();
-        if s.prewarm_metadata_running { return; }
+        if s.prewarm_metadata_running {
+            return;
+        }
         s.prewarm_metadata_running = true;
-        s.prewarm_metadata_total   = 0;
-        s.prewarm_metadata_done    = 0;
+        s.prewarm_metadata_total = 0;
+        s.prewarm_metadata_done = 0;
         s.prewarm_metadata_summary = String::new();
     }
 
@@ -49,12 +51,30 @@ pub(crate) fn spawn_metadata_prewarm(
         let (movie_ids, series_ids, coll_ids, artist_ids, album_ids, playlist_ids) = {
             let s = state.lock().unwrap();
             (
-                s.all_movies.iter().map(|i| i.id.clone()).collect::<Vec<_>>(),
-                s.all_series.iter().map(|i| i.id.clone()).collect::<Vec<_>>(),
-                s.all_collections.iter().map(|i| i.id.clone()).collect::<Vec<_>>(),
-                s.all_artists.iter().map(|i| i.id.clone()).collect::<Vec<_>>(),
-                s.all_albums.iter().map(|i| i.id.clone()).collect::<Vec<_>>(),
-                s.all_playlists.iter().map(|i| i.id.clone()).collect::<Vec<_>>(),
+                s.all_movies
+                    .iter()
+                    .map(|i| i.id.clone())
+                    .collect::<Vec<_>>(),
+                s.all_series
+                    .iter()
+                    .map(|i| i.id.clone())
+                    .collect::<Vec<_>>(),
+                s.all_collections
+                    .iter()
+                    .map(|i| i.id.clone())
+                    .collect::<Vec<_>>(),
+                s.all_artists
+                    .iter()
+                    .map(|i| i.id.clone())
+                    .collect::<Vec<_>>(),
+                s.all_albums
+                    .iter()
+                    .map(|i| i.id.clone())
+                    .collect::<Vec<_>>(),
+                s.all_playlists
+                    .iter()
+                    .map(|i| i.id.clone())
+                    .collect::<Vec<_>>(),
             )
         };
         let mut top_ids: Vec<String> = Vec::new();
@@ -74,27 +94,39 @@ pub(crate) fn spawn_metadata_prewarm(
         {
             let mut s = state.lock().unwrap();
             s.prewarm_metadata_total = top_ids.len()
-                + coll_ids.len() + artist_ids.len() + album_ids.len() + playlist_ids.len()
-                + movie_ids.len() + series_ids.len();
+                + coll_ids.len()
+                + artist_ids.len()
+                + album_ids.len()
+                + playlist_ids.len()
+                + movie_ids.len()
+                + series_ids.len();
             s.item_detail_cache.set_cap(top_ids.len());
             s.boxset_items_cache.set_cap(coll_ids.len());
             s.artist_albums_cache.set_cap(artist_ids.len());
-            s.container_tracks_cache.set_cap(album_ids.len() + playlist_ids.len());
-            s.similar_items_cache.set_cap(movie_ids.len() + series_ids.len());
+            s.container_tracks_cache
+                .set_cap(album_ids.len() + playlist_ids.len());
+            s.similar_items_cache
+                .set_cap(movie_ids.len() + series_ids.len());
         }
 
         // ── Step 1: item_detail_cache for every top-level item, batched ──
         let mut req_top_detail = 0usize;
         let mut fetched_top: Vec<fjord_api::models::MediaItem> = Vec::new();
         for chunk in top_ids.chunks(200) {
-            if !crate::session_current(&state, &client) { return; }
+            if !crate::session_current(&state, &client) {
+                return;
+            }
             req_top_detail += 1;
             match client.get_items_by_ids_detailed(chunk).await {
                 Ok(items) => {
-                    if !crate::session_current(&state, &client) { return; }
+                    if !crate::session_current(&state, &client) {
+                        return;
+                    }
                     let n = items.len();
                     let mut s = state.lock().unwrap();
-                    for item in &items { s.item_detail_cache.insert(item.id.clone(), item.clone()); }
+                    for item in &items {
+                        s.item_detail_cache.insert(item.id.clone(), item.clone());
+                    }
                     s.prewarm_metadata_done += n;
                     fetched_top.extend(items);
                 }
@@ -107,7 +139,9 @@ pub(crate) fn spawn_metadata_prewarm(
         for item in &fetched_top {
             if matches!(item.item_type.as_str(), "Movie" | "Series") {
                 for p in &item.people {
-                    if !p.id.is_empty() { person_ids.insert(p.id.clone()); }
+                    if !p.id.is_empty() {
+                        person_ids.insert(p.id.clone());
+                    }
                 }
             }
         }
@@ -122,14 +156,20 @@ pub(crate) fn spawn_metadata_prewarm(
         }
         let mut req_person_detail = 0usize;
         for chunk in person_ids.chunks(200) {
-            if !crate::session_current(&state, &client) { return; }
+            if !crate::session_current(&state, &client) {
+                return;
+            }
             req_person_detail += 1;
             match client.get_items_by_ids_detailed(chunk).await {
                 Ok(items) => {
-                    if !crate::session_current(&state, &client) { return; }
+                    if !crate::session_current(&state, &client) {
+                        return;
+                    }
                     let n = items.len();
                     let mut s = state.lock().unwrap();
-                    for item in items { s.item_detail_cache.insert(item.id.clone(), item); }
+                    for item in items {
+                        s.item_detail_cache.insert(item.id.clone(), item);
+                    }
                     s.prewarm_metadata_done += n;
                 }
                 Err(e) => warn!("metadata prewarm: get_items_by_ids_detailed(persons): {e:#}"),
@@ -138,10 +178,10 @@ pub(crate) fn spawn_metadata_prewarm(
 
         // ── Step 3: relationship caches — no batch endpoint, rate-limited ──
         let req_person_film = person_count;
-        let req_boxset      = coll_ids.len();
-        let req_artist      = artist_ids.len();
-        let req_tracks      = album_ids.len() + playlist_ids.len();
-        let req_similar     = movie_ids.len() + series_ids.len();
+        let req_boxset = coll_ids.len();
+        let req_artist = artist_ids.len();
+        let req_tracks = album_ids.len() + playlist_ids.len();
+        let req_similar = movie_ids.len() + series_ids.len();
 
         let sem = Arc::new(tokio::sync::Semaphore::new(PREWARM_CONCURRENCY));
         let mut set = tokio::task::JoinSet::new();
@@ -150,10 +190,24 @@ pub(crate) fn spawn_metadata_prewarm(
             let (client, state, sem) = (client.clone(), Arc::clone(&state), Arc::clone(&sem));
             set.spawn(async move {
                 let _permit = sem.acquire_owned().await.ok();
-                if !crate::session_current(&state, &client) { return; }
+                if !crate::session_current(&state, &client) {
+                    return;
+                }
                 match client.get_person_filmography(&pid).await {
-                    Ok(v)  => { if crate::session_current(&state, &client) { state.lock().unwrap().person_filmography_cache.insert(pid, v); } }
-                    Err(e) => if crate::is_not_found(&e) { state.lock().unwrap().person_filmography_cache.remove(&pid); }
+                    Ok(v) => {
+                        if crate::session_current(&state, &client) {
+                            state
+                                .lock()
+                                .unwrap()
+                                .person_filmography_cache
+                                .insert(pid, v);
+                        }
+                    }
+                    Err(e) => {
+                        if crate::is_not_found(&e) {
+                            state.lock().unwrap().person_filmography_cache.remove(&pid);
+                        }
+                    }
                 }
                 state.lock().unwrap().prewarm_metadata_done += 1;
             });
@@ -162,10 +216,20 @@ pub(crate) fn spawn_metadata_prewarm(
             let (client, state, sem) = (client.clone(), Arc::clone(&state), Arc::clone(&sem));
             set.spawn(async move {
                 let _permit = sem.acquire_owned().await.ok();
-                if !crate::session_current(&state, &client) { return; }
+                if !crate::session_current(&state, &client) {
+                    return;
+                }
                 match client.get_boxset_items(&id).await {
-                    Ok(v)  => { if crate::session_current(&state, &client) { state.lock().unwrap().boxset_items_cache.insert(id, v); } }
-                    Err(e) => if crate::is_not_found(&e) { state.lock().unwrap().boxset_items_cache.remove(&id); }
+                    Ok(v) => {
+                        if crate::session_current(&state, &client) {
+                            state.lock().unwrap().boxset_items_cache.insert(id, v);
+                        }
+                    }
+                    Err(e) => {
+                        if crate::is_not_found(&e) {
+                            state.lock().unwrap().boxset_items_cache.remove(&id);
+                        }
+                    }
                 }
                 state.lock().unwrap().prewarm_metadata_done += 1;
             });
@@ -174,10 +238,20 @@ pub(crate) fn spawn_metadata_prewarm(
             let (client, state, sem) = (client.clone(), Arc::clone(&state), Arc::clone(&sem));
             set.spawn(async move {
                 let _permit = sem.acquire_owned().await.ok();
-                if !crate::session_current(&state, &client) { return; }
+                if !crate::session_current(&state, &client) {
+                    return;
+                }
                 match client.get_artist_albums(&id).await {
-                    Ok(v)  => { if crate::session_current(&state, &client) { state.lock().unwrap().artist_albums_cache.insert(id, v); } }
-                    Err(e) => if crate::is_not_found(&e) { state.lock().unwrap().artist_albums_cache.remove(&id); }
+                    Ok(v) => {
+                        if crate::session_current(&state, &client) {
+                            state.lock().unwrap().artist_albums_cache.insert(id, v);
+                        }
+                    }
+                    Err(e) => {
+                        if crate::is_not_found(&e) {
+                            state.lock().unwrap().artist_albums_cache.remove(&id);
+                        }
+                    }
                 }
                 state.lock().unwrap().prewarm_metadata_done += 1;
             });
@@ -186,10 +260,20 @@ pub(crate) fn spawn_metadata_prewarm(
             let (client, state, sem) = (client.clone(), Arc::clone(&state), Arc::clone(&sem));
             set.spawn(async move {
                 let _permit = sem.acquire_owned().await.ok();
-                if !crate::session_current(&state, &client) { return; }
+                if !crate::session_current(&state, &client) {
+                    return;
+                }
                 match client.get_album_tracks(&id).await {
-                    Ok(v)  => { if crate::session_current(&state, &client) { state.lock().unwrap().container_tracks_cache.insert(id, v); } }
-                    Err(e) => if crate::is_not_found(&e) { state.lock().unwrap().container_tracks_cache.remove(&id); }
+                    Ok(v) => {
+                        if crate::session_current(&state, &client) {
+                            state.lock().unwrap().container_tracks_cache.insert(id, v);
+                        }
+                    }
+                    Err(e) => {
+                        if crate::is_not_found(&e) {
+                            state.lock().unwrap().container_tracks_cache.remove(&id);
+                        }
+                    }
                 }
                 state.lock().unwrap().prewarm_metadata_done += 1;
             });
@@ -198,10 +282,20 @@ pub(crate) fn spawn_metadata_prewarm(
             let (client, state, sem) = (client.clone(), Arc::clone(&state), Arc::clone(&sem));
             set.spawn(async move {
                 let _permit = sem.acquire_owned().await.ok();
-                if !crate::session_current(&state, &client) { return; }
+                if !crate::session_current(&state, &client) {
+                    return;
+                }
                 match client.get_playlist_items(&id).await {
-                    Ok(v)  => { if crate::session_current(&state, &client) { state.lock().unwrap().container_tracks_cache.insert(id, v); } }
-                    Err(e) => if crate::is_not_found(&e) { state.lock().unwrap().container_tracks_cache.remove(&id); }
+                    Ok(v) => {
+                        if crate::session_current(&state, &client) {
+                            state.lock().unwrap().container_tracks_cache.insert(id, v);
+                        }
+                    }
+                    Err(e) => {
+                        if crate::is_not_found(&e) {
+                            state.lock().unwrap().container_tracks_cache.remove(&id);
+                        }
+                    }
                 }
                 state.lock().unwrap().prewarm_metadata_done += 1;
             });
@@ -210,10 +304,20 @@ pub(crate) fn spawn_metadata_prewarm(
             let (client, state, sem) = (client.clone(), Arc::clone(&state), Arc::clone(&sem));
             set.spawn(async move {
                 let _permit = sem.acquire_owned().await.ok();
-                if !crate::session_current(&state, &client) { return; }
+                if !crate::session_current(&state, &client) {
+                    return;
+                }
                 match client.get_similar_items(&id).await {
-                    Ok(v)  => { if crate::session_current(&state, &client) { state.lock().unwrap().similar_items_cache.insert(id, v); } }
-                    Err(e) => if crate::is_not_found(&e) { state.lock().unwrap().similar_items_cache.remove(&id); }
+                    Ok(v) => {
+                        if crate::session_current(&state, &client) {
+                            state.lock().unwrap().similar_items_cache.insert(id, v);
+                        }
+                    }
+                    Err(e) => {
+                        if crate::is_not_found(&e) {
+                            state.lock().unwrap().similar_items_cache.remove(&id);
+                        }
+                    }
                 }
                 state.lock().unwrap().prewarm_metadata_done += 1;
             });
@@ -222,8 +326,13 @@ pub(crate) fn spawn_metadata_prewarm(
         while set.join_next().await.is_some() {}
 
         let elapsed = start.elapsed();
-        let total_requests = req_top_detail + req_person_detail + req_similar
-            + req_boxset + req_artist + req_tracks + req_person_film;
+        let total_requests = req_top_detail
+            + req_person_detail
+            + req_similar
+            + req_boxset
+            + req_artist
+            + req_tracks
+            + req_person_film;
         let summary = format!(
             "metadata prewarm complete in {:.0?}: {total_requests} requests total \
              ({req_top_detail} top-level detail batches, {req_person_detail} person-detail \
@@ -238,7 +347,9 @@ pub(crate) fn spawn_metadata_prewarm(
         // sweep's reentrancy guard (running=false) out from under it, letting a
         // second concurrent sweep start, and would overwrite its summary text
         // with a description of the old session's run.
-        if !crate::session_current(&state, &client) { return; }
+        if !crate::session_current(&state, &client) {
+            return;
+        }
         let mut s = state.lock().unwrap();
         s.prewarm_metadata_running = false;
         s.prewarm_metadata_summary = summary;
@@ -249,15 +360,17 @@ pub(crate) fn spawn_metadata_prewarm(
 
 pub(crate) fn spawn_image_prewarm(
     client: Arc<JellyfinClient>,
-    state:  Arc<Mutex<FjordState>>,
-    rt:     tokio::runtime::Handle,
+    state: Arc<Mutex<FjordState>>,
+    rt: tokio::runtime::Handle,
 ) {
     {
         let mut s = state.lock().unwrap();
-        if s.prewarm_image_running { return; }
+        if s.prewarm_image_running {
+            return;
+        }
         s.prewarm_image_running = true;
-        s.prewarm_image_total   = 0;
-        s.prewarm_image_done    = 0;
+        s.prewarm_image_total = 0;
+        s.prewarm_image_done = 0;
         s.prewarm_image_summary = String::new();
     }
 
