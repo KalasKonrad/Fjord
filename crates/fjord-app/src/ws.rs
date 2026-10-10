@@ -688,8 +688,10 @@ async fn run_session(
                 // Deleted items: drop their cached artwork now — the 24 h orphan
                 // sweep otherwise leaves poster-less ghosts in stale grids.
                 for id in &removed {
-                    let pp = crate::config::poster_cache_path(id);
-                    let bp = crate::config::backdrop_cache_path(id);
+                    // None for an id that isn't a valid cache name — nothing to delete.
+                    let (Some(pp), Some(bp)) = (crate::config::poster_cache_path(id), crate::config::backdrop_cache_path(id)) else {
+                        continue;
+                    };
                     rt.spawn(async move {
                         let _ = tokio::fs::remove_file(pp.with_extension("tag")).await;
                         let _ = tokio::fs::remove_file(bp.with_extension("tag")).await;

@@ -1,7 +1,8 @@
 // ── fjord-app · home.rs ──────────────────────────────────────────────────────
 //   HomeSection     named enum for the 17 poster-loading sections (replaces raw usize)
 //   HomeData        continue-watching, next-up, recently-added, collections + music rows + favorites
-//   profile_cache_dir/cache_path  XDG_CACHE_HOME resolver: ~/.cache/fjord/profiles/<user_id>/<filename>
+//   profile_cache_dir/cache_path  XDG_CACHE_HOME resolver: ~/.cache/fjord/profiles/<user_id>/<filename>;
+//                   None (nothing read/written) unless user_id passes config::safe_cache_name
 //                   (Bonfire Phase 1, 2026-08-09 — every cache below takes an explicit user_id,
 //                   never resolved internally, so an async gap between fetch and save can't
 //                   attribute one profile's data to another's cache file)
@@ -143,20 +144,26 @@ pub(crate) struct HomeData {
 // profile's session well before the save call runs (an async gap a profile
 // switch could cross), so the caller must capture user_id at the same point
 // it captured the client/fetch, not re-derive it at save time.
-fn profile_cache_dir(user_id: &str) -> PathBuf {
-    xdg_cache_base().join("fjord").join("profiles").join(user_id)
+// None when user_id isn't a valid cache name (config::safe_cache_name) —
+// nothing is then read or written.
+fn profile_cache_dir(user_id: &str) -> Option<PathBuf> {
+    Some(xdg_cache_base().join("fjord").join("profiles").join(crate::config::safe_cache_name(user_id)?))
 }
 
-fn cache_path(user_id: &str, filename: &str) -> PathBuf {
-    profile_cache_dir(user_id).join(filename)
+fn cache_path(user_id: &str, filename: &str) -> Option<PathBuf> {
+    Some(profile_cache_dir(user_id)?.join(filename))
 }
 
-fn load_cache<T: serde::de::DeserializeOwned>(path: PathBuf) -> Option<T> {
-    let data = std::fs::read_to_string(path).ok()?;
+fn load_cache<T: serde::de::DeserializeOwned>(path: Option<PathBuf>) -> Option<T> {
+    let data = std::fs::read_to_string(path?).ok()?;
     serde_json::from_str(&data).ok()
 }
 
-fn save_cache<T: serde::Serialize + ?Sized>(path: PathBuf, data: &T) {
+fn save_cache<T: serde::Serialize + ?Sized>(path: Option<PathBuf>, data: &T) {
+    let Some(path) = path else {
+        warn!("cache: not a valid user id for a cache folder — not saved");
+        return;
+    };
     if let Some(parent) = path.parent() { let _ = std::fs::create_dir_all(parent); }
     if let Ok(json) = serde_json::to_string(data) {
         let tmp = path.with_extension("json.tmp");
@@ -166,18 +173,18 @@ fn save_cache<T: serde::Serialize + ?Sized>(path: PathBuf, data: &T) {
     }
 }
 
-pub(crate) fn home_cache_path(user_id: &str) -> PathBuf { cache_path(user_id, "home.json") }
+pub(crate) fn home_cache_path(user_id: &str) -> Option<PathBuf> { cache_path(user_id, "home.json") }
 pub(crate) fn load_home_cache(user_id: &str)            -> Option<HomeData>     { load_cache(home_cache_path(user_id)) }
 pub(crate) fn save_home_cache(user_id: &str, hd: &HomeData)                     { save_cache(home_cache_path(user_id), hd) }
 
 // ── Library list caches (movies.json / series.json / collections.json) ───────
 
-fn movies_cache_path(user_id: &str)      -> PathBuf { cache_path(user_id, "movies.json") }
-fn series_cache_path(user_id: &str)      -> PathBuf { cache_path(user_id, "series.json") }
-fn collections_cache_path(user_id: &str) -> PathBuf { cache_path(user_id, "collections.json") }
-fn artists_cache_path(user_id: &str)     -> PathBuf { cache_path(user_id, "artists.json") }
-fn albums_cache_path(user_id: &str)      -> PathBuf { cache_path(user_id, "albums.json") }
-fn playlists_cache_path(user_id: &str)   -> PathBuf { cache_path(user_id, "playlists.json") }
+fn movies_cache_path(user_id: &str)      -> Option<PathBuf> { cache_path(user_id, "movies.json") }
+fn series_cache_path(user_id: &str)      -> Option<PathBuf> { cache_path(user_id, "series.json") }
+fn collections_cache_path(user_id: &str) -> Option<PathBuf> { cache_path(user_id, "collections.json") }
+fn artists_cache_path(user_id: &str)     -> Option<PathBuf> { cache_path(user_id, "artists.json") }
+fn albums_cache_path(user_id: &str)      -> Option<PathBuf> { cache_path(user_id, "albums.json") }
+fn playlists_cache_path(user_id: &str)   -> Option<PathBuf> { cache_path(user_id, "playlists.json") }
 
 pub(crate) fn load_movies_cache(user_id: &str)                     -> Option<Vec<MediaItem>> { load_cache(movies_cache_path(user_id)) }
 pub(crate) fn save_movies_cache(user_id: &str, items: &[MediaItem])                          { save_cache(movies_cache_path(user_id), items) }
