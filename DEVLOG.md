@@ -14430,3 +14430,706 @@ Above `let mut counts2: HashMap<String, usize> = HashMap::new();`:
 //   fetch_audio_devices / fetch_system_fonts  startup fetches for the audio-device and font dropdowns
 // ─────────────────────────────────────────────────────────────────────────────
 ```
+
+#### `crates/fjord-app/src/profile_edit.rs`
+
+Above `fn close_profile_edit_screen(g: &AppState) {`:
+```
+/// Closes ProfileEditScreen and clears the on-screen keyboard along with
+/// it. Real gap, caught while wiring the keyboard into this screen's 3 text
+/// fields (2026-08-23): all 3 of this screen's real close paths (Cancel,
+/// Save success, Delete success) called `g.set_show_profile_edit(false)`
+/// directly, with no guarantee the keyboard — if a mouse click had closed
+/// the screen without pressing its own Done key first — was ever closed
+/// alongside it. `keys.rs`'s show-onscreen-keyboard gate is checked before
+/// every other input tier, so a stray `true` surviving past this screen
+/// permanently swallows almost all keyboard/remote input on whatever comes
+/// next — the identical critical bug already found and fixed once for
+/// LoginScreen (`main.rs::close_login_screen`), same shared-choke-point fix.
+```
+
+Above `const PARENTAL_RATING_MODEL: [&str; 13] = [`:
+```
+// Same values as profile_edit.slint's two SettingsDropdown `model:` arrays
+// — kept in lockstep by hand, same caveat as AVATAR_PALETTE_HEX above.
+// "Any"/"Never" are the display sentinels for the stored ""/"0" values,
+// matching each dropdown's own `selected(v) => ...` translation in Slint.
+```
+
+Above `const UNKNOWN_RATING: &str = "__unknown__";`:
+```
+// Live-questioned 2026-08-17 ("thats a bit bad to not know what parental
+// ration a profile is on") — re-verified directly against Bonfire's real
+// developer-api.md (WebFetch) rather than assumed a second time: confirmed
+// genuinely no endpoint anywhere ever returns a profile's current
+// maxParentalRating — it's write-only (accepted by create/update, absent
+// from every GET response including /list, /admin/mappings, everything).
+// A real upstream limitation, not something Fjord can read around. Silently
+// defaulting the Edit dropdown to "Any" was actively misleading, though —
+// it looked like a confirmed value when it was really just "we have no
+// idea." This sentinel is the honest middle ground: shown ONLY as the
+// pre-interaction display state (never a real, pickable dropdown option —
+// PARENTAL_RATING_MODEL above is unchanged), so it's visually and
+// functionally distinct from actually choosing "Any" (a deliberate "no
+// restriction" pick, once the user has genuinely opened the dropdown and
+// selected it). Must be treated as equivalent to "" (omit from the save
+// request) everywhere parental_rating.is_empty() is checked — see
+// on_profile_edit_save's own updated check.
+```
+
+Above `let master_id = client.user_id.clone();`:
+```
+// Real bug, code-review 2026-08-16: Bonfire's own /list
+// response includes the calling master's own profile
+// alongside its real sub-profiles — sync_bonfire_subprofiles
+// (profile.rs) already filters this exact case out (see its
+// own doc comment, and the real corruption bug that fix
+// closed), but this screen hit the same endpoint with no
+// equivalent filter, showing the master's own tile mixed
+// into the sub-profile grid — selectable, editable, and
+// (via Delete) attemptable against its own account. Also
+// inflated the "< 5 profiles" Add-Profile cap check by one.
+```
+
+Above `let max_sub_profiles = profiles`:
+```
+// Real bug, live-reported 2026-08-17: "the add profile did
+// not dissapear when max profiles for master accaunt was
+// reached" — Bonfire's real cap is per-master
+// (max_sub_profiles, admin-adjustable server-side), not the
+// hardcoded "5" this screen and its keyboard clamp both
+// used before. Only the MASTER's own /list entry — the one
+// about to be filtered out — carries this field, so it has
+// to be read here, before the filter runs. 0/absent (a
+// server that never populated it) falls back to Bonfire's
+// own documented default of 5, matching the old behavior.
+```
+
+Above `let profiles: Vec<_> = profiles`:
+```
+// Bonfire Phase 5: also exclude any entry with `is_master ==
+// true` — another master's own account, reached via a
+// cross-household group (see profile.rs's own
+// sync_bonfire_subprofiles doc comment). This screen only
+// ever lists sub-profiles the current session actually
+// administers; Bonfire's own server would 401 an
+// edit/delete attempt against a foreign master's account
+// regardless, but the UI shouldn't offer a button that can
+// only ever fail.
+```
+
+Above `pub(crate) fn open_my_profile_edit_screen(`:
+```
+/// The master editing ITSELF — 2026-08-17, live-questioned ("shuld they
+/// not be able to changepin etc on there own profile?"). Distinct entry
+/// point from Manage Profiles (which deliberately excludes the master's
+/// own tile — Finding 2, code review 2026-08-16 — since Bonfire's own
+/// `/list` response mixes the caller's own entry in with real
+/// sub-profiles): that exclusion was about not letting the master
+/// accidentally *delete itself* via a screen meant for managing
+/// subordinates, not about self-editing being unsupported. Confirmed via
+/// the real Bonfire API docs (fetched directly, not assumed) that
+/// create/update/delete all require master-token auth — sub-profiles can
+/// NEVER self-manage (a hard server-side limitation, not a Fjord gap) —
+/// but nothing in the docs rules out the master targeting its own
+/// `profileId`, so this is offered, gated the same defensive way Manage
+/// Profiles already is. Whether the server actually accepts a
+/// self-targeted `update` call is unverified either way — real "needs a
+/// live test" territory, same as the rest of this crate's Bonfire module.
+```
+
+Above `pub(crate) fn open_profile_edit_screen(`:
+```
+/// `existing: None` = create mode, `Some(profile)` = edit mode.
+/// `is_self`: the master editing its own profile (see
+/// `open_my_profile_edit_screen`'s own doc comment) rather than a
+/// sub-profile via Manage Profiles — hides Delete and changes where
+/// Save/Cancel return to. Sets every AppState field synchronously (so the
+/// screen shows correctly-populated content the instant it appears,
+/// matching every other screen-open function's own "no flash of stale
+/// data" precedent) before the async libraries/devices fetch runs.
+```
+
+Above `g.set_profile_edit_parental_rating(ss(if is_create { "" } else { UNKNOWN_RATING }));`:
+```
+// Create mode: a brand-new profile genuinely has no rating restriction
+// yet, so "Any" (empty string) is accurate. Edit mode: Bonfire never
+// reports the CURRENT value (see UNKNOWN_RATING's own doc comment) —
+// start at the honest "Unknown" sentinel instead of a misleading "Any".
+```
+
+Above `g.set_profile_edit_zone(0);`:
+```
+// Full D-pad retrofit, 2026-08-17 — every new zone/cursor property (see
+// app_state.slint's own profile-edit-zone doc comment for the full zone
+// list) reset to its starting position on every open, same "no stale
+// state left over from a previous visit" discipline the ~18 fields
+// above already follow. zone=0 is the first real zone (Name).
+```
+
+Above `g.set_show_profile_edit_delete_confirm(false);`:
+```
+// Delete-confirm dialog (2026-08-21) — a stray true left over from a
+// previous visit could otherwise reopen the dialog (or, worse, leave
+// keys.rs's own dialog-focused gate intercepting keys) the instant this
+// screen shows again, same class of gap this function's own dated
+// comment above already guards against for every other new zone prop.
+```
+
+Above `if !g.get_profile_edit_is_self() {`:
+```
+// Manage Profiles is the entry point that opened this screen, UNLESS
+// it was "Edit My Profile" (is_self) — that one has no Manage
+// Profiles list to return to, since it's opened directly from the
+// sidebar. Either way its list, if it exists, is still whatever the
+// last fetch left it at — no re-fetch needed since nothing was saved.
+```
+
+Above `crate::profile::sync_bonfire_subprofiles(`:
+```
+// Real bug, live-reported 2026-08-17: setting a PIN
+// on a sub-profile via Manage Profiles, then
+// immediately trying to switch to it, failed with a
+// raw 400 from Bonfire's own /switch — traced to
+// Fjord attempting a PASSWORDLESS switch (no `pin`
+// param at all), because the LOCAL Config.profiles
+// entry for that sub-profile (what
+// should_show_picker_at_startup/switch_to_profile/
+// the picker's own tiles all actually read — never
+// a live Bonfire fetch) still had `has_pin: false`.
+// The only thing that ever updates that local entry
+// is sync_bonfire_subprofiles, called at
+// login/switch/auto-login — never after an ordinary
+// profile EDIT, so a PIN (or name/avatar) change
+// made right here just sat unreflected locally
+// until the next full session-setup happened to run
+// for the master. Fixed by calling the same
+// sync_bonfire_subprofiles primitive here too — it
+// already does exactly the right thing (patches
+// display_name/avatar_color/avatar_initial/has_pin
+// on a matching existing entry, or adds one for a
+// brand-new profile just created via this same
+// screen — a second, related gap this closes as a
+// side effect, since a fresh Add-Profile previously
+// wouldn't appear in Config.profiles until the next
+// login/switch either).
+```
+
+Above `{`:
+```
+// Real bug, code-review 2026-08-16: only the Ok branch
+// cleared these, contradicting profile_edit_pin_buffer's
+// own "same discipline [as profile_pin_buffer]" doc
+// comment — a failed save left both PIN pads holding their
+// typed digits, so retyping without noticing appended onto
+// the already-wrong value instead of starting clean.
+```
+
+Above `/// The zone list with gaps (like discover's existing_option_zones): zones 4/9 (libraries/`:
+```
+// ── Full D-pad keyboard navigation, 2026-08-17 ───────────────────────────────
+// Live-reported twice ("no keybord navigation in manage profiles" / "still
+// no keybord nav in edit profile"); AskUserQuestion confirmed the user
+// wanted the whole screen, not just the two PIN pads. Dispatched from
+// keys.rs's show_profile_edit raw-key tier via handle_key_profile_edit,
+// mirroring discover.rs::handle_key_request_options's own factoring for a
+// comparably-sized multi-zone screen rather than growing keys.rs's own
+// match arms indefinitely. See app_state.slint's profile-edit-zone doc
+// comment for the full 12-zone list.
+```
+
+Above `fn existing_profile_edit_zones(g: &AppState) -> Vec<i32> {`:
+```
+/// The "gaps are fine" filtered zone list (same idiom as
+/// discover.rs::existing_option_zones) — zones 4/9 (the libraries/devices
+/// checklists) are skipped when their fetched list is empty. Must stay
+/// hand-in-lockstep with profile_edit.slint's own two
+/// `if AppState.profile-edit-libraries/-devices.length > 0` gates — the
+/// exact class of drift this codebase already documents once for
+/// context_menu.rs/.slint (Phase 163).
+```
+
+Above `pub(crate) fn apply_profile_edit_dropdown_selection(g: &AppState, cursor: i32) {`:
+```
+/// Confirms whichever row the dropdown popup's cursor is on, translating
+/// the "Any"/"Never" display sentinels back to the stored ""/"0" values —
+/// same translation each SettingsDropdown's own `selected(v) => ...`
+/// handler already does in Slint for the mouse path.
+```
+
+Above `pub(crate) fn handle_key_profile_edit(raw_key: &str, g: &AppState) -> bool {`:
+```
+/// Main raw-key dispatch for ProfileEditScreen, called from keys.rs's
+/// show_profile_edit tier for every key except Ctrl+Q (handled there) and
+/// Escape-while-not-text-editing (also handled there, since it needs to
+/// distinguish "close the dropdown popup" from "cancel the whole screen").
+/// Escape while a LineEdit holds real Slint focus never reaches this
+/// function at all — it's consumed entirely by that field's own
+/// key-pressed(event) hook in profile_edit.slint (Slint's key routing
+/// walks only the focused item's own ancestor chain, confirmed against
+/// i-slint-core's own source before relying on it).
+```
+
+Above `0 | 5 | 6 => match raw_key {`:
+```
+// Zones 0/5/6 — Name / Blocked tags / Allowed tags. Enter opens the
+// on-screen keyboard directly (2026-08-25, real friction live-
+// reported: "manage profile needs 2 presses of enter one to get in
+// to it then you can type with the keybord and one more opens the
+// virtiul keybord"). Deliberately does NOT touch
+// profile-edit-text-editing / grab native LineEdit focus at all —
+// a first attempt at this fix did (set text-editing=true, which
+// synchronously grabs real focus via the Slint-side tracker below,
+// then called invoke_refocus() to immediately hand it back) and
+// was STILL broken, live-reported the same day ("must pres down
+// before i can use the onscreen keybord... left and right just
+// moves the curser itn the textbox, up dose nothing") — grabbing
+// real native focus and then trying to release it again in the
+// same call is a race this sandboxed environment can't verify
+// wins reliably, so the fix here sidesteps the race instead of
+// re-tuning it: since `fs` (the global dispatch scope) already
+// holds focus at the moment this Enter is processed (that's WHY
+// this Rust code is even reached — see this tier's own top-of-
+// function comment), simply never touching native focus at all
+// means `fs` never loses it, so keys.rs's own on-screen-keyboard
+// tier correctly sees the very next keypress with zero extra
+// steps. `dispatch-onscreen-key` mutates `field.text` directly
+// (a plain property/method call, not dependent on which element
+// currently holds Slint's own notion of "focus") — typing via the
+// on-screen grid never needed native focus on the field at all.
+// Real native focus is granted for the FIRST time only once Done
+// closes the keyboard, via the existing _kb-close-mirror tracker
+// (profile_edit.slint) — unchanged by this fix, and the reason the
+// field's own key-pressed Enter branch below still matters: it's
+// the only thing reached by every Enter AFTER Done, once real
+// focus is genuinely held.
+```
+
+Above `2 | 10 => {`:
+```
+// Zones 2/10 — the two PIN pads (own PIN / master confirmation PIN).
+// Same 12-key row-major grid math as the profile picker's own PIN
+// entry (keys.rs::show_profile_picker) — including the identical
+// real-keyboard fix (2026-08-17, live-reported: "you cant use numpad
+// or numbers if you have a real keybord and backspace dont work"):
+// raw digit keys act as if the matching on-screen key was pressed
+// (syncing the grid cursor to match, same mouse-sync discipline as
+// every click handler on this screen), and Backspace deletes the
+// last digit rather than doing nothing — this zone never gave
+// Backspace any meaning before, so repurposing it is a pure addition,
+// not a behavior change.
+```
+
+#### `crates/fjord-app/src/profile_edit.rs` — file header (TOC)
+```
+// ── fjord-app · profile_edit.rs ──────────────────────────────────────────────
+//   Bonfire Phase 2 (2026-08-09) — native profile create/edit/delete, on top
+//   of the bonfire.rs client module Phase 1 step 5 already built.
+//   open_manage_profiles_screen  fetches bonfire_list_profiles() for the active
+//                       master (gated on profile::is_true_master — a Bonfire sub-profile can't
+//                       manage siblings, per bonfire_list_profiles' own "all profiles under THIS
+//                       master account" doc comment, but a session actively impersonating a
+//                       foreign group account, Bonfire Phase 5, genuinely can), builds
+//                       ManageProfilesScreen's tile list from the result;
+//                       filters the calling master's own profile_user_id out
+//                       of the response first (2026-08-16, code review — /list
+//                       includes it alongside real sub-profiles, same self-
+//                       exclusion sync_bonfire_subprofiles already does), AND
+//                       (Bonfire Phase 5) any bp.is_master entry — another master's own
+//                       account reached via a cross-household group, never a sub-profile
+//                       this session administers; resets manage-profiles-cursor to 0 on every open
+//   on_manage_profiles_select/-add  resolve a tile (via FjordState.manage_profiles_cache,
+//                       the last fetch — avoids a second round trip just to
+//                       open the edit form) -> open_profile_edit_screen
+//   open_profile_edit_screen  populates ProfileEditScreen's AppState fields from
+//                       an existing BonfireProfile (edit mode) or blanks
+//                       (create mode); fetches bonfire_list_libraries()/
+//                       bonfire_list_devices() in parallel to build the two
+//                       checklists. max_parental_rating is NEVER pre-filled —
+//                       BonfireProfile (the /list response) simply doesn't
+//                       carry it, even though create/update both accept it;
+//                       re-confirmed 2026-08-17 via Bonfire's real
+//                       developer-api.md that NO endpoint anywhere ever
+//                       returns it (write-only, a genuine upstream gap, not
+//                       something Fjord can read around). Edit mode starts
+//                       the field at UNKNOWN_RATING, an honest "we don't
+//                       know" sentinel distinct from a real "Any" pick
+//                       (live-questioned: silently defaulting to "Any" was
+//                       misleading, since it looked like a confirmed
+//                       value) — never sent to the server unless the user
+//                       actually opens the dropdown and picks something,
+//                       same "omit, don't send null" discipline every
+//                       other field here already follows.
+//   on_profile_edit_pin_key/-master_pin_key  digit accumulation into
+//                       FjordState.profile_edit_pin_buffer/-master_pin_buffer
+//                       — two separate buffers (the profile's own new PIN vs.
+//                       the calling master's authorization PIN), same
+//                       never-round-tripped-through-Slint discipline as
+//                       profile.rs's own profile_pin_buffer
+//   on_profile_edit_avatar_color_selected/-toggle_library/-toggle_device
+//   on_profile_edit_save  builds Create/UpdateProfileRequest from AppState +
+//                       the two PIN buffers, calls bonfire_create_profile/
+//                       bonfire_update_profile, then re-opens
+//                       ManageProfilesScreen with a fresh fetch on success;
+//                       both PIN buffers + their -len display counterparts
+//                       are cleared on FAILURE too now (2026-08-16, code
+//                       review — previously only on success, leaving a wrong
+//                       PIN in place for the next attempt to silently append onto).
+//                       is_self branch's local ProfileSettings patch also sets
+//                       lockout_minutes now (2026-08-29, Bonfire Phase 4) so
+//                       wire_idle_lock_timer's own read is correct immediately,
+//                       not just after the next sync_bonfire_subprofiles.
+//   on_profile_edit_delete  bonfire_delete_profile, same success path, same
+//                       clear-on-failure fix as on_profile_edit_save
+//   on_profile_edit_cancel  closes without saving, returns to the
+//                       already-fetched ManageProfilesScreen list
+//   close_profile_edit_screen  real gap, caught while wiring the on-screen
+//                       keyboard into this screen's 3 text fields (2026-08-23)
+//                       — closing via mouse (Cancel/Save-success/Delete-
+//                       success, 3 independent call sites) without first
+//                       pressing the keyboard's own Done key left
+//                       show-onscreen-keyboard stuck true, the identical
+//                       critical bug class already found and fixed once for
+//                       LoginScreen; shared choke point for all 3
+//   wire_profile_edit      callbacks moved from main() (0.5.0 step 3): Manage Profiles + ProfileEditScreen
+// ─────────────────────────────────────────────────────────────────────────────
+```
+
+#### `crates/fjord-app/ui/profile_edit.slint`
+
+Above `in property <bool> kbd-focused: false;`:
+```
+// Real gap, code review 2026-08-17 (full D-pad retrofit) — this
+// component (the two checklist rows) had no keyboard-focus concept at
+// all, just per-tap TouchArea. Same border/PressPulse convention as
+// FjordButton.
+```
+
+Above `property <[color]> avatar-palette-colors: [`:
+```
+// Two parallel arrays, not one — Slint's expression language has no
+// string-to-color parse (confirmed the hard way: "Cannot convert string
+// to brush" at compile time), so the swatch background needs a real
+// `color` literal while profile-edit-avatar-color-selected still needs
+// the matching raw hex STRING to send to Bonfire's API. Same 8-color
+// palette as profile.rs::avatar_color_for's own fallback set, kept in
+// lockstep by hand — the two lists have no shared source of truth
+// between Rust and Slint, same caveat as every other dual-side list in
+// this app (settings.rs's dropdown models, profile_edit.rs's own
+// AVATAR_PALETTE_HEX/PIN_VALS/PARENTAL_RATING_MODEL/LOCKOUT_MODEL).
+```
+
+Above `pure function zone-el-y(zone: int) -> length {`:
+```
+// Direct-element-.y reads for the whole-screen auto-scroll — same
+// technique CLAUDE.md documents as the eventually-correct fix for the
+// Key Bindings Reset-button scroll saga ("read the element's own real,
+// Slint-resolved y directly... not an approximation, it's the literal
+// answer") rather than hand-computing cumulative pixel offsets, which
+// that same saga took 4 attempts to get right by hand. Zones 4/9 (the
+// two conditional checklists) CAN'T be referenced this way — an element
+// declared inside an `if` block isn't a valid identifier outside it, a
+// hard Slint scoping rule, not a style choice — so those two fall back
+// to a fixed offset from their nearest unconditional neighbor. Flagged
+// in the plan as the one part of this feature accepted to ship
+// imprecise on the first pass: the FOCUS RING itself is always correct
+// regardless of this function's accuracy, only auto-scroll timing can
+// be off.
+```
+
+Above `animate content-y {`:
+```
+// Live-reported 2026-08-17: "no animation in the scrol so its
+// instant" — every other keyboard-scrollable Flickable in the
+// app animates content-y (Detail/Series/Season/Settings/etc.,
+// all `200ms * settings-scroll-speed, ease-in-out`); this one
+// was the one screen missing it, a real inconsistency, not a
+// deliberate choice — matching the established convention.
+```
+
+Above `if event.text == "\u{9}" && event.modifiers.shift {`:
+```
+// Real bug, live-reported 2026-08-17: "after the
+// last you go out it do not cycle back to
+// name" — mid-chain Tab between the 3 fields
+// already works via Slint's own native focus-
+// chain traversal (unmodified, left to `reject`
+// below); only the WRAP at either end needed an
+// explicit hand-off, since this screen is the
+// one place in the app with real LineEdit
+// focus and there's nothing else in the window
+// for the native chain to wrap into/out of.
+```
+
+Above `if event.text == "\u{F701}" {`:
+```
+// Real bug, live-reported 2026-08-21: "when in a
+// text field in manage profile you cant navigate
+// out of it with out pressing escape" — Escape/
+// Tab were the only keys this hook (or any of
+// the other two text fields' own hooks) ever
+// handled; Up/Down fell through to Slint's own
+// native LineEdit behavior, a no-op in a single-
+// line field, so the field was a genuine dead
+// end for D-pad/remote navigation. Down hands
+// off to zone 1 (Avatar) — the same `text-
+// editing=false; refocus();` shape Escape
+// already uses. Zone 0 is always first in
+// existing_profile_edit_zones (profile_edit.rs),
+// so its Down target (zone 1) and Up target
+// (nothing — left unhandled, matching this
+// field's own pre-existing "no-op, nothing
+// above it" comment) are both fixed regardless
+// of which conditional zones happen to exist.
+```
+
+Above `if event.text == "\u{000a}" {`:
+```
+// On-screen keyboard, 2026-08-23 — only reached
+// once text-editing is already true and this
+// field genuinely has native focus (Enter's
+// FIRST job, entering text-editing, is handled
+// in Rust before this hook can ever see a key at
+// all — see this file's own header comment).
+```
+
+Above `Text {`:
+```
+// Real gap, live-questioned 2026-08-17 ("thats a bit bad to
+// not know what parental ration a profile is on") —
+// re-confirmed against Bonfire's own real API docs that no
+// endpoint ever reports the current value at all (genuine
+// upstream limitation). "Unknown" (profile_edit.rs's
+// UNKNOWN_RATING sentinel) is the honest starting display
+// in Edit mode — distinct from "Any", which is only ever
+// shown once the user has genuinely opened this dropdown
+// and picked it.
+```
+
+Above `rating-dd-wrap := Rectangle {`:
+```
+// Real bug, live-reported 2026-08-19 ("still no hilight so
+// the user knows it is on the dropdown menu") — this fix's
+// earlier pass only highlighted the CURSOR ROW inside the
+// popup once opened; there was no indicator on the row
+// itself while just D-pad-navigating past it, unlike every
+// other zone in this screen (Name/PIN/checklists/LAN
+// bypass all have their own bordered wrapper).
+// SettingsDropdown has no kbd-focused concept of its own
+// (Settings' own usage relies entirely on SettingsRow's
+// wrapping ring for this) — wrapped here the same way
+// name-field-wrap/lan-bypass-row already wrap their own
+// controls. zone-el-y reads this wrapper's own .y, not
+// rating-dd's (which is now relative to IT, not the
+// screen — a real, easy-to-miss coordinate-space trap).
+```
+
+Above `if event.text == "\u{F700}" {`:
+```
+// Real bug, live-reported 2026-08-21 — see
+// name-field's own key-pressed comment for the
+// full explanation. Up's target is the one
+// transition in this whole retrofit that
+// genuinely depends on a conditional zone
+// (Enabled libraries, zone 4, only exists when
+// AppState.profile-edit-libraries is non-empty)
+// — mirrors existing_profile_edit_zones'
+// (profile_edit.rs) own prev-zone resolution
+// for zone 5 by hand, since Slint has no access
+// to that Rust-side filtered list; kept in
+// lockstep the same way that function's own doc
+// comment already flags for its Slint `if`
+// counterpart. Down's target (zone 6, Allowed
+// tags) is unconditional — nothing ever sits
+// between 5 and 6 in the zone list.
+```
+
+Above `if event.text == "\u{F700}" {`:
+```
+// Real bug, live-reported 2026-08-21 — see
+// name-field's own key-pressed comment. Both
+// targets here are unconditional: zone 5
+// (Blocked tags) always precedes zone 6, and
+// zone 7 (Auto-lock dropdown) always follows it
+// — nothing conditional sits on either side.
+```
+
+Above `height: 36px;`:
+```
+// Real bug, live-reported 2026-08-19/21/21 ("this is
+// miss alinged" / "did you not fix this?" / a
+// screenshot showing the row's own border stretching
+// noticeably wider than every sibling row). Two prior
+// attempts (padding 4px→12px on a HorizontalLayout,
+// then dropping that layout for explicit x/y
+// positioning of the Text/ToggleSwitch children) both
+// targeted where the CHILDREN sit within this row —
+// neither touched the ROOT `Rectangle`'s own width,
+// which was the actual bug the screenshot revealed:
+// `width: parent.width` reads the enclosing
+// VerticalLayout's raw, UNPADDED width, not the padded
+// content width every sibling row gets automatically
+// by leaving `width` unset (confirmed directly against
+// blocked-tags-wrap/allowed-tags-wrap above, neither
+// of which sets an explicit width at all) — so this
+// row alone rendered wider than the form around it,
+// extending into the padding no other row does.
+// Removed the explicit width entirely; the layout now
+// assigns the same content width as every sibling, and
+// the children's own `parent.width`-relative x
+// bindings below are unaffected — they just resolve
+// against the corrected value instead of the wrong one.
+```
+
+Above `AppState.profile-edit-delete-confirm-focused = 0;`:
+```
+// Confirmation dialog, 2026-08-21 — see
+// show-profile-edit-delete-confirm's own doc comment in
+// app_state.slint. Mirrors the mouse click handler exactly
+// so keyboard and mouse can't diverge on what Enter/click
+// on Delete actually does.
+```
+
+Above `pure function is-my-onscreen-target() -> bool {`:
+```
+// ── On-screen alphanumeric keyboard (2026-08-23, full rollout) ──────────
+// Real gap caught while wiring this in, not assumed away: unlike Login
+// (a startup-tier screen that can never coexist with a post-login
+// screen), ProfileEditScreen is an overlay reachable from the sidebar
+// quick-menu regardless of which content tab is underneath it — so it
+// CAN be mounted at the same time as Discover/Browse/etc, which also
+// get their own on-screen-keyboard interaction in this same rollout.
+// Every one of this screen's 3 keyboard-interaction sites (mount
+// condition, close-mirror, physical-key-mirror) needs to check that
+// onscreen-keyboard-target is actually ONE OF ITS OWN 3 fields before
+// acting — without this, two screens' QwertyKeyboard instances could
+// render simultaneously, or one screen's Done/physical keystroke could
+// wrongly steal focus/dispatch meant for a completely different screen.
+```
+
+Above `property <length> active-field-y: card.y + fl.content-y + zone-el-y(AppState.profile-edit-zone);`:
+```
+// Anchored to whichever text field is actually focused, not a fixed
+// screen position (real fix, live-reported 2026-08-25: a background-
+// less keyboard docked flush at the screen bottom visibly overlapped
+// this screen's own form content — a fixed-bottom dock never actually
+// knew where the card's own content ended). active-field-y reads the
+// SAME zone-el-y this screen's own kb-y auto-scroll already uses,
+// combined with the Flickable's real live scroll offset (fl.content-y,
+// a plain property, not layout-cache-derived — safe to read from here)
+// and the card's own on-screen position (also a plain, non-conditional
+// expression) — the literal, exact on-screen Y of whichever field
+// currently holds focus, not an approximation. Docks below that field
+// with a margin (FieldFocusWrap's own fixed 40px height accounts for
+// the field itself); falls back to ABOVE it if there's no room below
+// (a field near the very bottom of a tall, fully-scrolled form).
+```
+
+Above `property <bool> _kb-close-mirror: AppState.show-onscreen-keyboard;`:
+```
+// Restores real native LineEdit focus to the right field the instant
+// the keyboard closes (Done) — this needs its own tracker on
+// show-onscreen-keyboard rather than profile-edit-text-editing, same
+// idiom as login.slint's own _kb-close-mirror. Also sets
+// profile-edit-text-editing = true here now (2026-08-25 — Enter no
+// longer sets it when opening the keyboard, see profile_edit.rs's own
+// zone 0/5/6 doc comment for the real bug that fix avoids): this is
+// the FIRST point real native focus is ever genuinely granted in the
+// collapsed one-Enter flow, so it's also the correct point to flip the
+// border ring's own "editing" state to match reality — setting it
+// false-to-true here is a genuine transition (not a no-op the way it
+// would have been under the old design, where it was already true
+// before Enter ever opened the keyboard), so _text-editing-mirror's
+// own tracker fires too and redundantly re-issues the identical
+// .focus() call below — harmless, not a conflict.
+```
+
+Above `border-width: (dd-item-ta.pressed || dd-pulse.pulsing) ? 3px`:
+```
+// Real bug, live-reported 2026-08-17: "they pop up but
+// you dont get a hilight when you are on them" —
+// accent-muted is only 25% alpha (theme.slint), which
+// reads as genuinely too subtle against
+// surface-raised's near-black on a real display. Adds
+// a steady Theme.focus-border ring (this codebase's own
+// established, high-contrast focus indicator) at 2px
+// for the cursor row, bumping to 3px on an actual press
+// — same "existing ring bumps up on press" convention
+// every other keyboard-focus site in this app uses.
+```
+
+Above `if AppState.show-profile-edit-delete-confirm: ConfirmDialog {`:
+```
+// Delete-profile confirm dialog, 2026-08-21 — direct request after full
+// live-testing ("did spot one improvment, we shuld add a confirmation
+// dialog when deliting profile"): Delete previously fired
+// AppState.profile-edit-delete() immediately on both mouse click and
+// keyboard Enter (via the _pulse-mirror tracker above), with zero
+// confirmation — a single mis-click/mis-press permanently removed a
+// profile. Reuses ConfirmDialog (widgets.slint) rather than inventing a
+// second modal mechanism — same shape as settings.slint's own Reset Key
+// Bindings / rebind-collision dialogs, declared last so it renders on
+// top of everything else on this screen. Keyboard (Left/Right/Confirm/
+// Back) is handled by keys.rs's own show_profile_edit raw-key tier, not
+// here — ConfirmDialog itself is keyboard-dumb by design. name-field.text
+// (not profile-edit-name-initial, which is only the pre-fill) so the
+// message reflects whatever the user actually has typed right now.
+```
+
+#### `crates/fjord-app/ui/profile_edit.slint` — file header (TOC)
+```
+// ── fjord-app · profile_edit.slint ───────────────────────────────────────────
+//   ProfileEditScreen  Bonfire Phase 2 (2026-08-09) — create or edit a Bonfire
+//                      sub-profile (profile-edit-is-create picks the mode).
+//                      Full D-pad keyboard navigation added 2026-08-17 (see
+//                      app_state.slint's profile-edit-zone doc comment for
+//                      the full 12-zone design) — Name/Blocked tags/Allowed
+//                      tags still need a physical keyboard to TYPE into
+//                      (Phase 3's on-screen alphanumeric keyboard doesn't
+//                      exist yet), but D-pad can enter/exit every zone,
+//                      including those three. Dispatch lives in
+//                      profile_edit.rs::handle_key_profile_edit, called from
+//                      keys.rs's show_profile_edit raw-key tier — this file
+//                      only wires the VISUAL focus rings + the mouse-sync
+//                      assignments + the two Rust-can't-do-this-itself
+//                      mechanisms: LineEdit.focus() (a local mirror +
+//                      changed tracker, since Rust can only SET
+//                      profile-edit-text-editing, not call a named
+//                      element's method) and the button row's actual
+//                      Save/Cancel/Delete dispatch (a changed tracker on
+//                      kb-activate-pulse, since Rust can't read live
+//                      LineEdit.text to build the Save call itself).
+//                      On-screen alphanumeric keyboard (2026-08-23, full
+//                      (2026-10-05: on-screen keys edit at the keyboard's caret — onscreen-keyboard-edit)
+//                      rollout beyond Login) — Name/Blocked tags/Allowed
+//                      tags (zones 0/5/6) — when it's turned off in Settings
+//                      (2026-10-10), Enter from the D-pad enters the field for
+//                      typing instead (profile_edit.rs) and Enter inside it does
+//                      nothing. ONE Enter opens the keyboard
+//                      directly (2026-08-25, collapsed from two separate
+//                      presses — real friction, live-reported: "2 presses
+//                      of enter one to get in to it... one more opens the
+//                      virtiul keybord") WITHOUT touching native LineEdit
+//                      focus at all — a first version of this fix DID grab
+//                      native focus (via profile-edit-text-editing) and
+//                      then immediately tried to release it again via
+//                      AppState.refocus(), and was STILL broken, live-
+//                      reported the SAME day ("must pres down before i can
+//                      use the onscreen keybord... left and right just
+//                      moves the curser itn the textbox") — grab-then-
+//                      release in one call is a race this sandboxed
+//                      environment can't verify wins reliably. Real native
+//                      focus is now granted for the first time only once
+//                      Done closes the keyboard (the existing
+//                      _kb-close-mirror tracker below, which ALSO now sets
+//                      profile-edit-text-editing = true at that point — see
+//                      its own doc comment). The field's own key-pressed
+//                      Enter branch is untouched and still needed for
+//                      every Enter AFTER Done, once real focus is
+//                      genuinely held. The existing hand-rolled 3-state
+//                      border ring (unfocused/zone-focused/text-editing)
+//                      gained a 4th outer state for keyboard-open rather
+//                      than migrating to widgets.slint's FieldFocusWrap,
+//                      which only models 2 states.
+// ─────────────────────────────────────────────────────────────────────────────
+```
