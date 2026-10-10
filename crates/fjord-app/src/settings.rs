@@ -1,83 +1,39 @@
 // ── fjord-app · settings.rs ───────────────────────────────────────────────────
-//   Design (Phase 0, 2026-08-07, Bonfire prep — full data-driven rewrite,
-//   zero intended behavior change)  Every section and every row now has a
-//   stable string KEY ("general.launch_fullscreen", "video", ...) instead of
-//   a positional int. `AppState.settings-section`/`settings-focused` are now
-//   `string` (see app_state.slint) — "" is the sentinel for "nothing
-//   selected" (was -1). Row *existence* for a section is computed by
-//   `section_row_keys()`, one function per section that pushes each row's
-//   key only when its visibility condition holds — this REPLACES the old
-//   ~15 hand-duplicated skip-blocks that used to live inside dispatch_settings's
-//   Up AND Down arms separately (two copies of every condition, easy to let
-//   drift). Up/Down now just step through whatever section_row_keys()
-//   returns; Confirm/Right resolve the row directly via key match. A row
-//   being hidden is controlled ONLY by settings.slint's own `if` condition on
-//   the Slint side and ONLY by section_row_keys()'s matching condition on the
-//   Rust side — these two are still independently maintained (Slint can't
-//   call Rust to ask "is this visible", and Rust has no visibility into
-//   Slint's render tree), so a row's condition must still be kept in sync by
-//   hand between the two files, same as before — but now there is exactly
-//   ONE place per direction, not two, and the row's IDENTITY no longer
-//   depends on getting that in sync (a row with a wrong/missing visibility
-//   condition just doesn't appear or doesn't get skipped — it can no longer
-//   silently push every LATER row's numbering off by one).
-//   Sections     SECTION_GENERAL, SECTION_PROFILES (Sign Out moved here from
-//                General; Bonfire Phase 1 step 7 added the launch-policy
-//                rows — profiles.launch_policy + the virtual
-//                profiles.default_profile dynamic dropdown; 2026-08-14's 2-tier
-//                account/profile redesign added the identical pair one tier up —
-//                profiles.account_launch_policy + the virtual profiles.default_account
-//                — plus profiles.add_account, a plain button row: always available
-//                regardless of how many accounts exist, since the account picker's own
-//                "+ Add Account" tile only ever shows once 2+ accounts already do),
-//                SECTION_VIDEO, SECTION_AUDIO,
-//                SECTION_PLAYER_CFG, SECTION_KEYBINDINGS, SECTION_UI,
-//                SECTION_INTEGRATIONS — ALL_SECTIONS is the sidebar order.
-//   Row keys     see the const block below, grouped by section; each key is
-//                "<section>.<field>" except the few bespoke action/button
-//                rows (Sign Out, Connect/Disconnect, Manage Blocklist,
-//                Prewarm ×2), which follow the same naming shape.
-//   section_row_keys(section, g) -> Vec<&'static str>   ordered, visible-only
-//                row list for a section — the single source of truth for
-//                Up/Down bounds and stepping.
-//   dispatch_settings   keyboard nav (three-state: sidebar → left pane →
-//                right pane / keybindings; Enter opens dropdown popup;
-//                Up/Down/Enter/Esc navigate popup).
-//   dropdown_model(key)         static model strings for a row (None for
-//                toggle/button/action rows and for the 12 dynamic-dropdown
-//                rows, whose list comes from an AppState property instead).
-//   is_dynamic_dropdown(key)    the 12 rows whose list/current-desc are
-//                fetched at runtime (Default Profile/Default Account — built
-//                from Config.profiles itself, not a network fetch — audio
-//                device ×2, font family, Seerr streaming region/display
-//                language/discover language/discover region, and display_sync's
-//                VID_SEPARATE_VIDEO_SURFACE (HDR Stage 5) is only listed on Wayland (is-wayland);
-//                VID_OWN_BUFFERS (10-bit video plane, 2026-10-08) under it while it's on;
-//                VID_DITHER_OFF (test aid, 2026-10-08) always, right after them
-//                own output/default-resolution/default-hz ×3 — kscreen-doctor,
-//                re-fetched whenever the selected output changes) rather than
-//                a fixed compile-time list.
-//   open_dropdown_popup(key, g)   populates settings-dropdown-model/-cursor/
-//                -display and opens the popup — used by both keyboard
-//                Confirm and mouse click-to-open (main.rs wires the latter
-//                through the same call via on_dropdown_pick/settings-row
-//                click paths that already resolve to Confirm-equivalent).
-//   current_value_str / display_val / apply_dropdown_selection   same shape
-//                as before, re-keyed from (section, row) to a flat key.
-//   settings_row_action(key, g)   per-row Confirm/Right activation — toggle
-//                flip, dropdown cycle-forward-by-one, or button/action
-//                invoke. `forward` was dropped: the old parameter was always
-//                called with `true` from both of its two call sites, so the
-//                backward branch was dead code — confirmed by reading every
-//                call site before removing it.
-//   wire_device_lists      callbacks moved from main() (0.5.0 step 3): audio/passthrough device and font lists (fetched once) + their dropdowns
-//   wire_profile_defaults  callbacks moved from main() (0.5.0 step 3): default profile / account dropdowns
-//   wire_regions           callbacks moved from main() (0.5.0 step 3): streaming/discover region + display/discover language dropdowns
-//   wire_settings_changed  callbacks moved from main() (0.5.0 step 3): settings-changed, dropdown mouse pick, settings row focus
-//   settings helpers     apply_settings_to_window ↔ read_settings_from_window;
-//                        settings_snapshot/settings_diff — the settings-changed handler logs
-//                        which settings changed (debug; text values by name only)
-//   fetch_audio_devices / fetch_system_fonts  startup fetches for the audio-device and font dropdowns
+//   Design       every section and row has a stable string key ("video",
+//                "general.launch_fullscreen"); AppState.settings-section/settings-focused are
+//                strings ("" = nothing selected).
+//                Which rows exist is decided twice — by settings.slint's `if` conditions and by
+//                section_row_keys() here — and the two must be kept in sync by hand; a mismatch
+//                only hides or skips that one row (identity doesn't depend on position).
+//   Sections     SECTION_GENERAL, SECTION_PROFILES, SECTION_VIDEO, SECTION_AUDIO,
+//                SECTION_PLAYER_CFG, SECTION_KEYBINDINGS, SECTION_UI, SECTION_INTEGRATIONS;
+//                ALL_SECTIONS is the sidebar order
+//   Row keys     the const block below, "<section>.<field>", grouped by section (bespoke button
+//                rows — Sign Out, Add Account, Connect/Disconnect, Manage Blocklist, Prewarm —
+//                use the same shape)
+//   section_row_keys(section, g)  the ordered visible rows of a section — the source of truth
+//                for Up/Down stepping
+//   set_focused / set_section / row_focused  focus helpers (row_focused = mouse click path)
+//   dispatch_settings  keyboard: section list → rows / key bindings; Enter opens a dropdown
+//                popup (Up/Down/Enter/Esc inside it); confirm dialogs checked first
+//   dropdown_model(key)  static option lists (None for toggles/buttons and dynamic dropdowns)
+//   is_dynamic_dropdown(key)  the 12 rows whose options come from AppState at runtime: default
+//                profile/account (from Config), audio/passthrough device, font, Seerr streaming
+//                region/display language/discover language/discover region, display-sync
+//                screen/default resolution/default Hz (kscreen-doctor, per selected screen)
+//   open_dropdown_popup / apply_dropdown_selection / current_value_str / display_val
+//                the dropdown popup, shared by keyboard Confirm and mouse
+//   settings_row_action(key, g)  Confirm/Right on a row: flip a toggle, cycle a dropdown
+//                forward, or run a button
+//   wire_device_lists      audio/passthrough device and font lists (fetched once) + their dropdowns
+//   wire_profile_defaults  default profile / account dropdowns (local, no network)
+//   wire_regions           Seerr streaming/discover region + display/discover language
+//                          (GET-mutate-POST of the user's general settings)
+//   wire_settings_changed  settings-changed (persist + live-apply), dropdown mouse pick, row focus
+//   apply_settings_to_window ↔ read_settings_from_window; settings_snapshot/settings_diff (the
+//                settings-changed handler logs which settings changed; text values by name only)
+//   fetch_audio_devices / fetch_system_fonts  startup fetches for the device and font dropdowns
+//                (duplicate device descriptions get a backend or name suffix)
 // ─────────────────────────────────────────────────────────────────────────────
 
 use crate::MainWindow;
@@ -122,39 +78,23 @@ const PROF_DEFAULT_PROFILE: &str = "profiles.default_profile"; // virtual — on
 // Bonfire sub-profile can't manage siblings (bonfire_list_profiles' own
 // "all profiles under THIS master account" semantics — see profile_edit.rs).
 const PROF_MANAGE_PROFILES: &str = "profiles.manage_profiles";
-// 2026-08-14, the 2-tier account/profile redesign — the identical
-// launch-policy shape one tier up, appended after the existing
-// profile-level rows (not inserted before them) per this codebase's own
-// "append, don't insert" convention for exactly this reason.
+// Account-tier launch policy: the profile-level shape one tier up, appended after the
+// profile rows.
 const PROF_ACCOUNT_LAUNCH_POLICY: &str = "profiles.account_launch_policy";
 const PROF_DEFAULT_ACCOUNT: &str = "profiles.default_account"; // virtual — only when account_launch_policy == "default"
-// Always visible, regardless of how many accounts already exist — the
-// picker's own "+ Add Account" tile only shows once there's a 2nd one to
-// switch between; this is the actual way to go from 1 to 2 in the first
-// place.
+// Always visible: the picker's "+ Add Account" tile only shows once there are two
+// accounts, so this is the way to add the second.
 const PROF_ADD_ACCOUNT: &str = "profiles.add_account";
-// Live-questioned 2026-08-17 ("no why to change this on the accaunt
-// without sinign out and in again") — see app_state.slint's own doc
-// comment on settings-remember-login for the full design. A toggle, not a
-// dropdown: OFF is immediate, ON opens the confirm-password modal instead
-// of flipping directly (handled entirely in profile::on_remember_login_toggle,
-// not the generic toggle-row shape most other bool rows use).
+// A toggle with its own handler (profile::on_remember_login_toggle): OFF is immediate, ON
+// opens the confirm-password modal (see settings-remember-login in app_state.slint).
 const PROF_REMEMBER_LOGIN: &str = "profiles.remember_login";
 const PROF_SIGN_OUT: &str = "profiles.sign_out";
-// Bonfire Phase 5 (cross-household groups, 2026-08-29) — appended at the
-// end of the section, not sandwiched next to Manage Profiles, matching
-// this section's own "append, don't insert" precedent (see
-// PROF_ACCOUNT_LAUNCH_POLICY's comment above). Same gate as Manage
-// Profiles (settings-is-master-profile — now correctly true while
-// impersonating a foreign group account too, see profile.rs::is_true_master).
+// Bonfire Group: same gate as Manage Profiles (settings-is-master-profile — also true while
+// impersonating a foreign group account, see profile::is_true_master).
 const PROF_BONFIRE_GROUP: &str = "profiles.bonfire_group";
-// Bonfire Phase 6 (admin actions, 2026-09-04) — gated on
-// jellyfin-is-server-admin, NOT settings-is-master-profile: the
-// mappings/reset-pin/set-limit/audit-log endpoints all authorize against
-// Jellyfin's own core Policy.IsAdministrator, confirmed against the real
-// plugin controller source — a Bonfire household master with no server
-// admin rights should never see this row, and a genuine server admin who
-// happens to run no Bonfire household of their own still should.
+// Gated on jellyfin-is-server-admin, not settings-is-master-profile: the plugin's
+// mappings/reset-pin/set-limit/audit-log endpoints authorize against Jellyfin's
+// Policy.IsAdministrator, regardless of Bonfire household ownership.
 const PROF_BONFIRE_ADMIN: &str = "profiles.bonfire_admin";
 
 // ── Video section rows ────────────────────────────────────────────────────────
@@ -175,10 +115,8 @@ const VID_TONE_MAPPING: &str = "video.tone_mapping"; // always visible (2026-08-
 const VID_OPENGL_EARLY_FLUSH: &str = "video.opengl_early_flush";
 const VID_VIDEO_LATENCY_HACKS: &str = "video.video_latency_hacks"; // virtual — only when video-sync == display-resample
 
-// display_sync (2026-09-18) — native resolution/refresh-rate/HDR/WCG matched
-// to source. See CLAUDE.md's own display_sync section and display_sync.rs's
-// module doc comment for the full design. Every row below the master toggle
-// is virtual (hidden while the toggle is off) — see section_row_keys' own
+// Display sync (resolution/refresh-rate/HDR/WCG matched to the source, see
+// display_sync.rs). Every row below the master toggle is virtual — see section_row_keys'
 // SECTION_VIDEO arm.
 const VID_DISPLAY_SYNC_ENABLED: &str = "video.display_sync_enabled";
 const VID_DISPLAY_SYNC_SCREEN: &str = "video.display_sync_screen"; // dynamic dropdown
@@ -290,13 +228,8 @@ fn section_row_keys(section: &str, g: &crate::AppState<'_>) -> Vec<&'static str>
         }
         SECTION_VIDEO => {
             let mut rows = vec![VID_HWDEC];
-            // vf exists solely to fix NVDEC's own stride-corruption bug (see
-            // CLAUDE.md's "NVIDIA legacy Wayland: NVDEC stride corruption")
-            // — with any other decoder there's no stride mismatch for it to
-            // correct, so it does nothing useful. `auto` is deliberately
-            // treated as "not committed to NVDEC" and hidden too (2026-08-08,
-            // direct user choice) rather than shown just in case it resolves
-            // to nvdec at runtime.
+            // vf only works around NVDEC's stride corruption (see CLAUDE.md), so it's shown only
+            // with NVDEC selected explicitly — "auto" counts as not NVDEC.
             if matches!(g.get_settings_hwdec().as_str(), "nvdec" | "nvdec-copy") {
                 rows.push(VID_VF);
             }
@@ -314,15 +247,9 @@ fn section_row_keys(section: &str, g: &crate::AppState<'_>) -> Vec<&'static str>
                 }
             }
             rows.push(VID_DITHER_OFF);
-            // Always visible now (2026-08-15, live-reported: "the tonemap setting shuld
-            // not be gateded byt the hdr hint setting") — was hidden whenever HDR
-            // passthrough was on, on the assumption tone-mapping never runs in that
-            // state. That assumption is wrong: mpv's own target-colorspace-hint-strict
-            // (default on) falls back to tone-mapping whenever the compositor doesn't
-            // actually accept the hint, using this exact stored value (fjord-player's
-            // Player::new sets --tone-mapping and --target-colorspace-hint as two fully
-            // independent mpv options, never gated on each other) — so hiding the row
-            // left no way to pick which curve backs that fallback.
+            // Always visible: mpv's target-colorspace-hint-strict falls back to this curve when the
+            // compositor refuses HDR passthrough (Player::new sets tone-mapping and the hint
+            // independently), so the curve must stay choosable.
             rows.push(VID_TONE_MAPPING);
             rows.push(VID_OPENGL_EARLY_FLUSH);
             if g.get_settings_video_sync().as_str() == "display-resample" {
@@ -459,13 +386,8 @@ fn set_section(g: &crate::AppState<'_>, section: &str) {
 // path above, just resolving the visual index from the row's key instead of
 // stepping from a known current position.
 pub(crate) fn row_focused(g: &crate::AppState<'_>, key: &str) {
-    // Code review, 2026-08-08: a dropdown popup opened via keyboard Confirm
-    // has no backdrop and doesn't cover the whole right pane, so a row
-    // behind it stayed clickable while the popup was open — clicking one
-    // re-pointed settings-focused without closing the popup, so the next
-    // Confirm applied the NEWLY-clicked row's value using the OLD popup's
-    // stale cursor position. Closing it here means a row click always means
-    // "focus this row", never "also silently keep an unrelated popup open".
+    // A keyboard-opened dropdown has no backdrop, so rows behind it stay clickable; close it on
+    // a row click, or the next Confirm would apply the old popup's cursor to the new row.
     if g.get_settings_dropdown_open() {
         g.set_settings_dropdown_open(false);
     }
@@ -479,13 +401,9 @@ pub(crate) fn row_focused(g: &crate::AppState<'_>, key: &str) {
 }
 
 pub(crate) fn dispatch_settings(action: &Action, g: &crate::AppState<'_>) -> Option<bool> {
-    // Disconnect Seerr confirmation (2026-08-22, see show-seerr-disconnect-
-    // confirm's own doc comment in app_state.slint) — checked first, same
-    // shape as the dropdown-open gate right below: intercepts all Settings
-    // input while open, regardless of section/row focus. Settings-only
-    // (single trigger context, the Integrations row), unlike Sign Out /
-    // Cancel Request, so this doesn't need a global main.slint-level
-    // dialog or a pre-active_mode() keys.rs tier.
+    // Disconnect Seerr confirmation (see show-seerr-disconnect-confirm in app_state.slint):
+    // checked first, swallows all Settings input while open. Settings is its only trigger, so
+    // it needs no global dialog or keys.rs tier (unlike Sign Out / Cancel Request).
     if g.get_show_seerr_disconnect_confirm() {
         match action {
             Action::Left => g.set_seerr_disconnect_confirm_focused(0),
@@ -581,15 +499,8 @@ pub(crate) fn dispatch_settings(action: &Action, g: &crate::AppState<'_>) -> Opt
                 Some(true)
             }
             Action::Confirm => {
-                // Code review, 2026-08-08: unlike Up/Down (which already
-                // look up `idx` and self-heal on a miss), Confirm/Right used
-                // to act on `sf` unconditionally — if a MOUSE interaction
-                // elsewhere hid the row `sf` still pointed at (e.g. toggling
-                // a setting that hides other rows, without going through
-                // settings-row-focused), Enter/Right would silently open a
-                // dropdown for, or mutate, a row the user can no longer see.
-                // Self-heal the same way Up/Down already do instead of
-                // acting on a key that's no longer actually on screen.
+                // Like Up/Down, self-heal when `sf` points at a row that's no longer shown (a mouse
+                // toggle can hide rows) instead of acting on an invisible row.
                 let Some(_) = idx else {
                     if let Some(&first) = rows.first() {
                         set_focused(g, first, 0);
@@ -735,17 +646,9 @@ const TSCALE_MODEL: &[&str] = &[
 const TONE_MAPPING_MODEL: &[&str] = &[
     "auto", "hable", "bt.2390", "reinhard", "mobius", "clip", "gamma", "linear",
 ];
-// display_sync (2026-09-18) — Default resolution/Default refresh rate
-// started as a small, pragmatic static list here (hand-picked common
-// values, since display_sync::get_supported_modes was private to
-// display_sync.rs at the time) but a real dev-machine report ("not many
-// choices... none of them necessarily even valid for my display") showed
-// that was the wrong trade-off — both are now genuinely dynamic dropdowns
-// (VID_DISPLAY_SYNC_DEFAULT_RESOLUTION/_HZ in is_dynamic_dropdown below),
-// sourced from display_sync::supported_resolutions_and_hz for whichever
-// screen is actually selected, the same shape VID_DISPLAY_SYNC_SCREEN
-// already used. Scale still has no per-output "supported scales" concept
-// to query, so it stays a plain static list.
+// Default resolution/refresh rate are dynamic dropdowns (VID_DISPLAY_SYNC_DEFAULT_
+// RESOLUTION/_HZ, from display_sync::supported_resolutions_and_hz for the selected screen).
+// Scale has no per-output list to query, so it stays static.
 const DISPLAY_SYNC_SCALE_MODEL: &[&str] = &["1.0", "1.25", "1.5", "1.75", "2.0"];
 const DISPLAY_SYNC_4K_ODD_FPS_MODEL: &[&str] = &["fallback", "stay_4k"];
 const DISPLAY_SYNC_HDR_MODE_MODEL: &[&str] = &["yes", "no", "always"];
@@ -755,10 +658,8 @@ const SUB_TYPE_MODEL: &[&str] = &["Any", "Normal", "Forced", "Hearing Impaired"]
 // CACHE_MAX_MB_MODEL below) — displayed as "Unlimited" via display_val.
 const CACHE_SECS_MODEL: &[&str] = &["0", "10", "30", "60", "120", "300"];
 const CACHE_SECS_VALUES: &[i32] = &[0, 10, 30, 60, 120, 300];
-// "0" here means a genuinely raised byte ceiling (mpv.rs sets
-// demuxer-max-bytes to a large fixed value, not mpv's own 150 MiB stock
-// default — see its own doc comment), so Cache Duration alone governs —
-// also displayed as "Unlimited" via display_val.
+// "0" = a raised byte ceiling (mpv.rs sets demuxer-max-bytes high, not mpv's 150 MiB
+// default), so Cache Duration alone governs; shown as "Unlimited" via display_val.
 const CACHE_MAX_MB_MODEL: &[&str] = &["0", "150", "300", "500", "1000", "2000"];
 const CACHE_MAX_MB_VALUES: &[i32] = &[0, 150, 300, 500, 1000, 2000];
 const SKIP_MODE_4_MODEL: &[&str] = &["always-skip", "ask", "ask-timed", "never-skip"];
@@ -768,11 +669,8 @@ const CREDITS_SECS_MODEL: &[&str] = &["10", "15", "20", "30", "45", "60"];
 const LOG_LEVEL_MODEL: &[&str] = &["error", "warn", "info", "debug"];
 const LAUNCH_POLICY_MODEL: &[&str] = &["always_ask", "remember_last", "default"];
 const SUB_SCALE_MODEL: &[&str] = &["50", "75", "100", "125", "150", "175", "200"];
-// mpv's real supported range is 0-150 (verified via `man mpv` 0.41.0) — 100 is
-// mpv's own "default bottom" position, not the screen edge; values above 100
-// push subtitles further down still. Text/ASS subs can get clipped above 100
-// (a libass restriction, per the same manual page), which is why the row's
-// subtitle string calls this out rather than silently allowing it.
+// mpv's range is 0–150: 100 is mpv's default bottom position, above that pushes subtitles
+// further down, and text/ASS subs may clip (libass) — the row's subtitle says so.
 const SUB_POS_MODEL: &[&str] = &[
     "50", "60", "70", "80", "90", "95", "100", "110", "120", "130", "140", "150",
 ];
@@ -800,18 +698,9 @@ const TRAILER_QUALITY_MODEL: &[&str] = &["Best", "1080p", "720p", "480p"];
 fn display_val<'a>(val: &'a str, key: &str) -> &'a str {
     if val.is_empty() {
         return match key {
-            // "Default" (2026-08-08, user feedback): an empty language
-            // preference doesn't mean "no subtitle/audio track selected at
-            // all" — playback.rs's wire_mpv_timer tries sub_lang/sub_lang2
-            // by lang.starts_with(code) only when actually set, and "if no
-            // match, mpv's default selection is left unchanged" (see
-            // CLAUDE.md's Subtitle auto-select section) — so an empty value
-            // genuinely means "use whatever the video container's own
-            // default track is," which "Default" names directly rather
-            // than "Any" (which reads as "no filtering," the correct word
-            // for PLY_SUB_TYPE below, a real type filter, but a misleading
-            // one for a language preference that actually does fall
-            // through to the container's default track).
+            // An empty language preference means "the container's default track" (playback only
+            // overrides mpv's choice on a match), so "Default", not "Any" (PLY_SUB_TYPE's "Any" is
+            // a real filter).
             AUD_AUDIO_LANG | PLY_SUB_LANG | PLY_SUB_LANG2 => "Default",
             PLY_SUB_TYPE => "Any",
             PLY_SUB_COLOR => "Default",
@@ -1058,14 +947,9 @@ pub(crate) fn open_dropdown_popup(key: &str, g: &crate::AppState<'_>) {
             g.get_settings_streaming_region_display(),
             g.get_settings_discover_region_desc(),
         )),
-        // Output's own desc is the annotated display label ("HDMI-A-2
-        // (Primary)"), not the raw connector name — a real name<->desc
-        // lookup exists for this one (FjordState.display_sync_outputs,
-        // resolved in main.rs's own on_display_sync_screen_selected), same
-        // shape as audio-device/font-family. Resolution/Hz's own desc IS
-        // still the value directly (a plain resolution/Hz string, nothing
-        // to annotate) — see display-sync-hz/resolution-selected's own doc
-        // comments in app_state.slint.
+        // The output's desc is its annotated label ("HDMI-A-2 (Primary)"); name↔desc is looked up
+        // in FjordState.display_sync_outputs by display_sync.rs's on_display_sync_screen_selected,
+        // like audio-device/font-family. Resolution/Hz descs are the values themselves.
         VID_DISPLAY_SYNC_SCREEN => Some((
             g.get_settings_display_sync_screen_options(),
             g.get_settings_display_sync_screen_desc(),
@@ -1334,12 +1218,8 @@ fn settings_row_action(key: &str, g: &crate::AppState<'_>) {
         PROF_ADD_ACCOUNT => g.invoke_settings_add_account(),
         PROF_REMEMBER_LOGIN => g.invoke_settings_remember_login_toggle(),
         PROF_SIGN_OUT => {
-            // Confirmation dialog, 2026-08-22 — see show-sign-out-confirm's
-            // own doc comment in app_state.slint. This row's own Confirm/
-            // Enter no longer signs out directly; it opens the (global,
-            // main.slint-level) dialog instead — the same one the sidebar
-            // quick-menu's "Sign Out" row and OfflineScreen's "Change
-            // Server" button now also open.
+            // Opens the global (main.slint) Sign Out confirmation — the same one the sidebar
+            // quick-menu and OfflineScreen's "Change Server" open (see show-sign-out-confirm).
             g.set_sign_out_confirm_focused(0);
             g.set_show_sign_out_confirm(true);
         }
@@ -1816,7 +1696,8 @@ fn settings_row_action(key: &str, g: &crate::AppState<'_>) {
 }
 
 // ── wire_device_lists (moved from main(), 0.5.0 step 3) ──────────────────
-/// Wires audio/passthrough device and font lists (fetched once) + their dropdowns: audio_device_selected, passthrough_device_selected, font_family_selected.
+/// Wires audio/passthrough device and font lists (fetched once) + their dropdowns:
+/// audio_device_selected, passthrough_device_selected, font_family_selected.
 pub(crate) fn wire_device_lists(
     window: &crate::MainWindow,
     state: &std::sync::Arc<std::sync::Mutex<crate::config::FjordState>>,
@@ -2017,13 +1898,9 @@ pub(crate) fn wire_profile_defaults(
     use crate::*;
     let window = slint::ComponentHandle::clone_strong(window);
     let state = std::sync::Arc::clone(state);
-    // ── default profile selected callback (Bonfire Phase 1, step 7) ──────────
-    // 100% local, no network round trip — same shape as font-family above.
-    // Resolves the selected display label back to a user_id (duplicate
-    // labels resolve to whichever profile matches first, the same known
-    // limitation refresh_profile_settings_dropdown's own doc comment
-    // already states) and lets the generic on_settings_changed handler
-    // below persist it via read_settings_from_window + save_config.
+    // ── default profile selected callback ───────────────────────────────────────
+    // Local only, like font-family. Resolves the label back to a user_id (duplicate labels:
+    // first match, see refresh_profile_settings_dropdown); on_settings_changed persists it.
     {
         let state_dp = Arc::clone(&state);
         let ww_dp = window.as_weak();
@@ -2032,12 +1909,8 @@ pub(crate) fn wire_profile_defaults(
             let g = AppState::get(&w);
             let user_id = {
                 let s = state_dp.lock().unwrap();
-                // Scoped to the current Default Account (2026-08-17, same
-                // fix as refresh_profile_settings_dropdown's own doc
-                // comment) — the dropdown's own option list is already
-                // scoped this way, so this just avoids the pre-existing,
-                // documented "duplicate display label" edge case picking a
-                // same-named profile under a DIFFERENT account by mistake.
+                // Scoped to the current Default Account, like the dropdown's options — a same-named
+                // profile under another account must not match.
                 let account_id = s.config.device.default_account_id.clone();
                 s.config
                     .profiles
@@ -2059,10 +1932,9 @@ pub(crate) fn wire_profile_defaults(
         });
     }
 
-    // ── default account selected callback (2026-08-14) ───────────────────────
-    // Account-tier mirror of default-profile-selected just above — same
-    // 100%-local shape, resolves the display label back to an account's own
-    // root_id via group_into_accounts.
+    // ── default account selected callback ───────────────────────────────────────
+    // Account-tier mirror of default-profile-selected: local, label → root_id via
+    // group_into_accounts.
     {
         let state_da = Arc::clone(&state);
         let ww_da = window.as_weak();
@@ -2092,16 +1964,8 @@ pub(crate) fn wire_profile_defaults(
             };
             g.set_settings_default_account_id(ss(&root_id));
             g.set_settings_default_account_desc(desc);
-            // Re-scope Default Profile's own option list to the just-picked
-            // account immediately (2026-08-17) — without this, the profile
-            // dropdown kept showing whatever account's profiles it happened
-            // to load with until Settings was reopened, which could still
-            // let a stale cross-account combination through the UI in the
-            // gap between the two picks even though refresh_profile_settings_dropdown
-            // is now correctly scoped. cfg is cloned+patched locally rather
-            // than persisted here — the real Config write still happens
-            // below via invoke_settings_changed, this is purely a same-tick
-            // display refresh.
+            // Re-scope Default Profile's options to the just-picked account right away (display
+            // only — invoke_settings_changed below does the real Config write).
             {
                 let mut cfg = state_da.lock().unwrap().config.clone();
                 cfg.device.default_account_id = root_id;
@@ -2113,7 +1977,9 @@ pub(crate) fn wire_profile_defaults(
 }
 
 // ── wire_regions (moved from main(), 0.5.0 step 3) ───────────────────────
-/// Wires streaming/discover region + display/discover language dropdowns: streaming_region_selected, discover_region_selected, display_language_selected, discover_language_selected.
+/// Wires streaming/discover region + display/discover language dropdowns:
+/// streaming_region_selected, discover_region_selected, display_language_selected,
+/// discover_language_selected.
 pub(crate) fn wire_regions(
     window: &crate::MainWindow,
     state: &std::sync::Arc<std::sync::Mutex<crate::config::FjordState>>,
@@ -2123,15 +1989,10 @@ pub(crate) fn wire_regions(
     use crate::*;
     let window = slint::ComponentHandle::clone_strong(window);
     let state = std::sync::Arc::clone(state);
-    // ── streaming region selected callback ────────────────────────────────────
-    // Unlike font-family (100% local, no network write), this needs an
-    // actual round trip to Seerr — GET the connected user's current general
-    // settings first (see UserGeneralSettings' own doc comment for why a
-    // bare {"streamingRegion": ...} body would blank out their username),
-    // mutate just streamingRegion, POST the whole thing back. Updates
-    // AppState + the FjordState cache resolve_streaming_region reads from
-    // only on success, so a failed write leaves the picker showing the
-    // still-actually-current value rather than a value that didn't take.
+    // ── streaming region selected callback ────────────────────────────────────────
+    // A Seerr round trip: GET the user's general settings, change streamingRegion, POST the
+    // whole object (a bare field would blank the rest, see UserGeneralSettings). AppState and
+    // the resolve_streaming_region cache update only on success.
     {
         let state_sr = Arc::clone(&state);
         let ww_sr = window.as_weak();
@@ -2176,10 +2037,8 @@ pub(crate) fn wire_regions(
         });
     }
 
-    // ── discover region selected callback (2026-07-18, Watchlist + Release ──
-    // Calendar) — same GET-mutate-POST shape as streaming region above, just
-    // mutating discoverRegion instead. Reuses the same seerr_regions list
-    // (region codes are shared between the two settings) for the code lookup.
+    // ── discover region selected callback ────────────────────────────────────────
+    // Same GET-mutate-POST, for discoverRegion; reuses seerr_regions for the code lookup.
     {
         let state_dr = Arc::clone(&state);
         let ww_dr = window.as_weak();
@@ -2334,7 +2193,8 @@ pub(crate) fn wire_regions(
 }
 
 // ── wire_settings_changed (moved from main(), 0.5.0 step 3) ──────────────
-/// Wires settings-changed, dropdown mouse pick, settings row focus: settings_changed, dropdown_pick, profile_edit_dropdown_pick, settings_row_focused.
+/// Wires settings-changed, dropdown mouse pick, settings row focus: settings_changed,
+/// dropdown_pick, profile_edit_dropdown_pick, settings_row_focused.
 pub(crate) fn wire_settings_changed(
     window: &crate::MainWindow,
     state: &std::sync::Arc<std::sync::Mutex<crate::config::FjordState>>,
@@ -2370,17 +2230,10 @@ pub(crate) fn wire_settings_changed(
                     changed.join(", ")
                 }
             );
-            // Live-reflect the seerr-enabled toggle: rebuild seerr_client
-            // (build_seerr_client already returns None when seerr_enabled
-            // is false, so this both tears it down on disable and rebuilds
-            // it from the still-saved credentials on re-enable — no forced
-            // reconnect either way) and push seerr-connected/-label so
-            // every row/block gated on `seerr-connected` (Streaming Region,
-            // Display/Discover Language, Trailer Quality, the Settings
-            // sidebar SEERR info block) hides/shows immediately rather than
-            // only after the next app restart. Real bug, user-reported
-            // 2026-07-17 ("for me it shuld turn off seerr") — previously
-            // only the Discover sidebar tab responded to this toggle live.
+            // Live-apply the seerr-enabled toggle: build_seerr_client returns None when disabled,
+            // so this tears the client down or rebuilds it from the saved credentials (no
+            // reconnect), and pushing seerr-connected/-label hides or shows every Seerr-gated row
+            // right away.
             s.seerr_client = seerr_auth::build_seerr_client(s.config.active());
             seerr_auth::push_seerr_status(&AppState::get(&w), s.config.active());
             let launch_fs = s.config.device.launch_fullscreen;
@@ -2600,11 +2453,8 @@ pub(crate) fn apply_settings_to_window(w: &MainWindow, s: &FjordState) {
     g.set_settings_default_account_id(ss(&c.default_account_id));
     profile::refresh_profile_settings_dropdown(&g, &s.config);
     profile::refresh_account_settings_dropdown(&g, &s.config);
-    // Bonfire Phase 5: `is_true_master`, not bare `!is_bonfire` — a session
-    // actively impersonating a foreign group account (`is_group_account`)
-    // also has `is_bonfire == true` on its own local entry, but it's "a
-    // fully privileged session for that account" per Bonfire's own docs,
-    // and should still see Manage Profiles / Bonfire Group in Settings.
+    // is_true_master, not !is_bonfire: a session impersonating a foreign group account has
+    // is_bonfire set but is fully privileged for that account (Manage Profiles / Bonfire Group).
     g.set_settings_is_master_profile(profile::is_true_master(s.config.active()));
     {
         let root_id = profile::account_root_id(s.config.active()).to_string();
@@ -2783,18 +2633,10 @@ pub(crate) fn fetch_audio_devices() -> Vec<(String, String)> {
         };
         devices.push((name, desc));
     }
-    // Real devices can be exposed under more than one backend with an
-    // identical parenthetical description — confirmed live 2026-08-07: a USB
-    // interface listed once as `pipewire/alsa_output...` and once as
-    // `pulse/alsa_output...`, both described "UAC-2 Digital Stereo (IEC958)".
-    // Selection in Settings round-trips purely through this description
-    // string (the dropdown widget only knows strings, not indices), so two
-    // entries sharing one desc made the second unselectable — picking it
-    // always resolved back to the first matching desc instead. Suffix every
-    // duplicate with its backend (the part of `name` before the first '/')
-    // so every entry's desc is unique; `Config.audio_device`/
-    // `audio_device_passthrough` store the device NAME, not desc, so this is
-    // purely a display-string fix with nothing to migrate on disk.
+    // Settings selects audio devices by description string, so duplicates made the second
+    // entry unselectable. The same device can appear under two backends with one description
+    // (pipewire/… and pulse/…): suffix duplicates with the backend. Config stores the device
+    // NAME, so this is display-only.
     let mut counts: HashMap<String, usize> = HashMap::new();
     for (_, desc) in &devices {
         *counts.entry(desc.clone()).or_insert(0) += 1;
@@ -2805,14 +2647,8 @@ pub(crate) fn fetch_audio_devices() -> Vec<(String, String)> {
             *desc = format!("{desc} [{backend}]");
         }
     }
-    // Code review, 2026-08-08: the backend suffix above only disambiguates
-    // ACROSS backends — two devices under the SAME backend with the same
-    // description (a real, confirmed case: two USB devices both enumerating
-    // as "HD-Audio Generic/USB Stream Output" under `alsa`) still collide
-    // after suffixing, reproducing the exact unselectable-second-entry bug
-    // this whole fix was for, just narrower. Re-check after the backend
-    // suffix and fall back to the raw device name (mpv's own identifier,
-    // guaranteed unique) for anything still colliding.
+    // Still colliding after the backend suffix (two devices with one description under the
+    // same backend): fall back to the raw device name, which is unique.
     let mut counts2: HashMap<String, usize> = HashMap::new();
     for (_, desc) in &devices {
         *counts2.entry(desc.clone()).or_insert(0) += 1;
