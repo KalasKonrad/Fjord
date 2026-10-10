@@ -17987,3 +17987,348 @@ Above `let mut discover_lang_display = language_display.clone();`:
 //   spawn_seerr_settings_fetch  Seerr-side settings for the Settings dropdowns (region, languages)
 // ─────────────────────────────────────────────────────────────────────────────
 ```
+
+#### `crates/fjord-app/src/keys/bindings.rs`
+
+Above `pub fn new(key: impl Into<String>, shift: bool, ctrl: bool, alt: bool) -> Self {`:
+```
+/// The single normalizing constructor — every KeyCombo in this app should
+/// be built through this (or `plain`/`shifted`, which just call it), never
+/// a raw struct literal. Lower-cases `key` so captured/looked-up/stored
+/// combos are keyed on the physical Shift-key state alone, never on the
+/// resulting glyph's case. Slint reports the *effective* character after
+/// both Shift and Caps Lock are applied (`event.text`), but Caps Lock has
+/// no modifier flag at all — plain "n" with Caps Lock on arrives as
+/// `{key: "N", shift: false}`, indistinguishable at face value from an
+/// actual attempt to bind capital "N", and different from the SAME
+/// physical key with Caps Lock off. Lower-casing collapses all four
+/// (Shift × Caps Lock) states of a letter down to the only two that
+/// should ever matter for a binding — Shift held, or not — which is
+/// also then the only source of truth for it (no more hand-registering
+/// both "f" and "F" as separate defaults to cover Caps Lock, and no more
+/// need for a shift-strip retry in lookup_action — see its own history
+/// in this file's git log before this comment). No-op for digits/
+/// symbols/named keys — `to_lowercase()` only changes actual uppercase
+/// letters.
+```
+
+Above `if !shift`:
+```
+// Migration (2026-08-08): an old-format single uppercase
+// letter with no explicit "shift+" prefix — e.g. a bare
+// "Z" — encoded Shift entirely via the character's OWN
+// case, the pre-KeyCombo::new convention this file used
+// to rely on. Blindly lower-casing that (KeyCombo::new's
+// job below) without also recovering the shift it implied
+// would silently collide it with plain "z": for a
+// shift-SENSITIVE pair (z/Z sub-delay, x/X audio-delay —
+// see default_player_map's own doc comment) that's real
+// data loss, not a harmless dedupe — confirmed live, one
+// of the two colliding actions ends up completely
+// unbound (shows "—") depending on HashMap deserialization
+// order. Reconstruct the original intent instead: an
+// uppercase letter with no already-explicit shift is
+// shift+<lowercase letter>, matching what physically
+// produced it. Harmless when the two entries actually
+// pointed at the SAME action (the old redundant-pair
+// shape, e.g. "f"/"F" both -> Fullscreen) — that just
+// leaves a redundant-but-correct second entry rather than
+// colliding, which the next rebind of that action
+// naturally prunes away (rebind_action retains only the
+// one freshly-captured combo).
+//
+// Restricted to ctrl==false && alt==false (code review,
+// 2026-08-08): the legacy case-encodes-shift convention
+// only ever applied to a BARE letter with no modifier
+// prefix at all — the old Display always wrote an explicit
+// "shift+"/"ctrl+"/"alt+" prefix whenever that modifier was
+// actually held, so a string like "ctrl+Z" never meant
+// "Ctrl+Shift+z"; it means Ctrl+z captured with Caps Lock
+// on, shift genuinely not held. Reconstructing shift there
+// too would wrongly turn a real Ctrl+z binding into
+// Ctrl+Shift+z.
+```
+
+Above `fn deserialize_keymap<'de, D>(d: D) -> Result<KeyMap, D::Error>`:
+```
+/// Custom `Deserialize` for `KeyMap` (code review, 2026-08-08). A plain
+/// derived `HashMap<KeyCombo, Action>` deserialize just calls `.insert()`
+/// per JSON entry in file order — if two DIFFERENT raw strings normalize to
+/// the SAME `KeyCombo` (the Caps-Lock/case migration makes this reachable:
+/// a pre-existing bare-uppercase legacy default like `"Z"` and a genuine
+/// user rebind stored as `"shift+Z"` both resolve to `{z, shift:true}`),
+/// the later one in the file silently overwrites the earlier one with no
+/// trace — one binding just disappears. This visits the map as raw
+/// `(String, Action)` pairs so a collision can be detected and resolved
+/// deliberately instead of by accident: prefer whichever raw string carries
+/// an explicit modifier prefix (`"shift+"`/`"ctrl+"`/`"alt+"`) over a bare
+/// one, since the bare-uppercase form is exactly the redundant legacy
+/// encoding this project's own default-keymap cleanup already prunes going
+/// forward, while an explicit prefix only ever comes from deliberate intent
+/// (either a real rebind, or the current Display format for a shift-bound
+/// default). Logs a warning either way, so a resolved collision is visible
+/// in `fjord.log` rather than fully silent.
+```
+
+Above `m.insert(KeyCombo::plain("f"), Action::Fullscreen);`:
+```
+// Single, shift-insensitive entry per letter (2026-08-08) — used to be
+// two ("f" and "F") to cover Shift/Caps Lock, which also meant the Key
+// Bindings screen showed both as separate labels for the same action.
+// lookup_action's own shift-and-retry-unshifted fallback now makes the
+// second entry unnecessary: pressing the key with Shift held (or with
+// Caps Lock on, which KeyCombo::new's lower-casing makes indistinguishable
+// from not holding Shift at all) still resolves to this one entry.
+```
+
+Above `m.insert(KeyCombo::plain("z"), Action::SubDelayIncrease);`:
+```
+// Genuinely shift-SENSITIVE, unlike every plain letter above (matches
+// mpv's own convention: z/x increase, Shift+z/Shift+x decrease) — used
+// to be registered as two unshifted entries ("z" and "Z", relying on
+// "Z" only ever being reachable by literally typing a capital Z) rather
+// than an explicit shift:true combo, which happened to work before this
+// file's own Caps-Lock/case-normalization fix but was never really
+// correct: Caps Lock alone (no Shift held) would have produced the same
+// "Z" text and wrongly fired Decrease instead of Increase.
+// KeyCombo::shifted expresses the real intent directly.
+```
+
+Above `let collision: Option<String> = {`:
+```
+// Code review, 2026-08-08: this used to look the OTHER action up in
+// `remappable_actions()` (the settings-screen row list) and treat a miss
+// as "no collision" — but several real, bound actions have no row there
+// at all (OpenQueuePanel/q, DeleteItem/Delete, ToggleLyrics/l,
+// ToggleNowPlaying/m, SeekToPercent/0-9), so rebinding onto any of THEIR
+// keys silently stole the binding with no dialog — defeating the whole
+// "block and require confirmation" feature for exactly the bindings a
+// user is least likely to expect losing. Fall back to the action's own
+// Debug label when it isn't a settings-screen row, rather than treating
+// "no row" as "no collision".
+```
+
+Above `if g.get_show_keybinding_reset_confirm() {`:
+```
+// Reset-to-defaults confirmation (2026-08-07) — ConfirmDialog itself is
+// keyboard-dumb (see its own doc comment in widgets.slint), so this
+// screen owns Left/Right/Confirm/Back for it, same shape as every other
+// ConfirmDialog/zone-based overlay in this app. Reachable whether the
+// dialog was opened by keyboard (Confirm on the Reset row below) or
+// mouse (settings.slint's FjordButton.clicked, which also sets
+// keybinding-focused to the Reset-button position before opening this)
+// — both converge on the same state, so this one gate handles both.
+```
+
+Above `if g.get_show_keybinding_collision_confirm() {`:
+```
+// Rebind-collision confirmation (2026-08-08) — same keyboard-dumb-
+// ConfirmDialog shape as the reset dialog above. This function only
+// has AppState, not FjordState/the window, so the actual apply/discard
+// (which needs both, via keys::apply_rebind) lives in two AppState
+// callbacks registered in main.rs — invoked here for keyboard, and
+// directly from settings.slint's ConfirmDialog for mouse, so both
+// paths always go through the exact same Rust logic.
+```
+
+#### `crates/fjord-app/src/keys/bindings.rs` — file header (TOC)
+```
+// ── fjord-app · keys/bindings.rs ─────────────────────────────────────────────
+//   Action             semantic action enum (~42 variants, incl. ToggleLyrics)
+//   KeyCombo           key text (Slint event.text) + shift/ctrl/alt bools; key is always
+//                      lower-cased (KeyCombo::new, the one normalizing constructor every
+//                      KeyCombo must go through — Caps Lock has no modifier flag, so only
+//                      lower-casing makes "N"/"n" the same combo regardless of it); TryFrom
+//                      migrates a pre-KeyCombo::new file's bare-uppercase letters (shift
+//                      encoded via case alone) into shift+<lowercase>, restricted to no
+//                      ctrl/alt held (see its own doc comment)
+//                      serialises/deserialises as a human-readable string ("ctrl+shift+f")
+//   ActionMap          Normal or Player — which KeyMap an action lives in
+//   deserialize_keymap custom KeyMap Deserialize — detects two raw strings colliding to the
+//                      same KeyCombo (the migration above makes this reachable) and resolves
+//                      it deliberately instead of a silent last-insert-wins
+//   Keybindings        normal + player KeyMaps (via deserialize_keymap); user JSON replaces
+//                      defaults on load
+//   PendingKeybindRebind  stashed (row, combo) while the rebind-collision confirm dialog is open
+//   apply_rebind       the ONLY place that mutates `keybindings` — called directly (no
+//                      collision) or from the collision-confirm callbacks in main.rs
+//   default_keybindings  hardcoded defaults; user keybindings.json replaces on load
+//   remappable_actions   ordered list of (Action, label, ActionMap) for the settings UI
+//   key_display_name   human-readable label for a Slint key string
+//   action_key_labels  all KeyCombos for an Action joined into a display string
+//   push_keybinding_rows  build + push keybinding model to AppState
+//   dispatch_keybinding_nav  Settings → Keybindings section navigation
+//   wire_keybindings       callbacks moved from main() (0.5.0 step 3): keybinding reset + rebind collision confirm/cancel
+// ─────────────────────────────────────────────────────────────────────────────
+```
+
+#### `crates/fjord-app/src/keys/text_input.rs`
+
+Above `pub(crate) fn onscreen_keyboard_move_row(row_lens: &[i32], cursor: i32, dir: i32) -> i32 {`:
+```
+// ── On-screen alphanumeric keyboard: cursor math ─────────────────────────────
+// Nearest-column mapping across QwertyKeyboard's irregular row widths
+// (10/9/9/3) — Up/Down land on whichever key sits geometrically closest,
+// left-to-right, to the current one. No-op at the top/bottom row (returns
+// the cursor unchanged) rather than handing off past the grid edge the way
+// the numeric VirtualKeyboard's own PIN entry does, since row 3 already
+// contains its own in-grid Done key — there's nothing left to hand off to
+// below it, and nothing above row 0.
+//
+// Real bug, live-reported 2026-08-23 ("if you mov up from the abc you
+// always land on z" / "if you move down and is raigt abowe the abc you get
+// to the middelbutton isted"): the original formula mapped a column by
+// FRACTIONAL POSITION (col / (row_len-1)), which assumes every row spans
+// the same left-to-right width — wrong, since QwertyKeyboard's own per-row
+// HorizontalLayout uses `alignment: center` (widgets.slint), so a shorter
+// row is horizontally CENTERED under the widest one, not left-aligned to
+// it. Solving for "same on-screen pixel position" instead of "same
+// fraction" is what the user actually wants (and matches how every real
+// text editor moves a cursor vertically — preserving x-position, not a
+// proportional fraction of line length).
+//
+// Derivation: each row's own left offset in the shared coordinate space is
+// `(max_row_len - row_len) * half-cell-pitch` (half of the pixel gap
+// between it and the widest row, exactly what centering means); a cell's
+// on-screen center is `offset + col * cell-pitch + cell-pitch/2`. Setting
+// center(row, col) == center(new_row, col') and solving for col' — the
+// pitch and half-pitch terms cancel cleanly regardless of the actual pixel
+// size of a key, leaving a closed form with no pixel constants in it at
+// all: `col' = col + (row_lens[new_row] - row_lens[row]) / 2`.
+```
+
+Above `k if k == key::RETURN => {`:
+```
+// On-screen keyboard, 2026-08-25 — missed in the original rollout
+// (real gap, live-reported: "why dont library serche spawn the
+// keybord on enter?"); this field is a hand-drawn Text+caret, same
+// shape as Discover/Browse's own search fields, so this is a direct
+// extension of that exact pattern. Was merged with Down above
+// ("move into the grid") — splitting them apart costs nothing,
+// since Down alone still does the identical job Enter used to. No
+// AppState.refocus() call needed — this field never held native
+// Slint focus to release.
+```
+
+Above `k if k == key::RETURN => {`:
+```
+// On-screen keyboard, 2026-08-23 — was merged with Down above
+// (both did the same "move into the list" thing); splitting them
+// apart costs nothing, since Down alone still does the identical
+// job Enter used to. No AppState.refocus() call needed — this
+// field never held native Slint focus to release.
+```
+
+Above `k if k == key::DOWN => {`:
+```
+// Down enters the filter bar, not the content grid directly — real
+// bug fixed 2026-07-18: this was asymmetric with Up (which already
+// enters the filter bar) and with the filter bar's own Down (which
+// goes to content), since the filter bar sits between the search
+// field and content in real visual layout order. (Enter used to
+// jump straight to the top result — see the RETURN arm below,
+// repurposed 2026-08-23 to open the on-screen keyboard instead.)
+```
+
+Above `k if k == key::RETURN => {`:
+```
+// On-screen keyboard, 2026-08-23 (full rollout beyond Login) —
+// replaces the old "jump straight to the top result" behavior
+// (a deliberate, user-confirmed trade-off: Down still reaches the
+// grid via the filter bar, one extra step, not a dead end). No
+// AppState.refocus() call needed — this field never held native
+// Slint focus to release in the first place (it's a hand-drawn
+// Text, not a LineEdit).
+```
+
+Above `k if k == key::UP => {`:
+```
+// Up now always enters the filter bar (2026-07-18, Discover
+// filters) — previously a no-op for a non-empty query (silently
+// swallowed by the is_navigation_key catch-all below, since unlike
+// handle_library_search this function had no explicit Up arm at
+// all) since there was nothing above the search field to focus.
+// Deliberately unconditional (not gated on query emptiness like
+// Left below) — the filter bar is always visible regardless of
+// query state, matching Library grid's own always-visible sort bar.
+```
+
+Above `k if k == key::LEFT && g.get_discover_query().is_empty() => {`:
+```
+// Real bug, user-reported 2026-07-18: with an empty query (either
+// never typed anything, or typed then backspaced all the way back
+// to empty — same state either way, see this function's own
+// investigation notes), Escape was the ONLY way out — Up/Left were
+// both silently swallowed by the is_navigation_key catch-all below,
+// since (unlike handle_library_search, which has an explicit Up
+// arm) this function never had one. (There's no separate raw
+// "Back" key at this layer — Backspace and Escape both map to
+// Action::Back elsewhere via the KeyMap, and Backspace is already
+// claimed above for character deletion.) Go straight to the
+// sidebar (fs=-1), same destination Escape now also targets,
+// rather than landing in the zero-result-grid limbo state that
+// Up-from-the-grid enters this field FROM (discover.rs's own
+// `count == 0` branch) — that limbo state has nothing useful to
+// show when the query is empty, so bouncing through it first would
+// just trade one extra keypress for another. Left keeps this
+// query-emptiness gating (unlike Up above) — a non-empty query's
+// Left is unrelated to this fix and stays swallowed by
+// is_navigation_key, unchanged.
+```
+
+Above `k if caret_key(&crate::text_field::DISCOVER_SEARCH, k, &g) => true,`:
+```
+// Caret keys with text in the field (2026-10-04, live-reported:
+// fixing one letter meant deleting everything after it). Left at the
+// very start stays put — leaving the field mid-edit would be easy to
+// hit by accident; Escape/Up/Down still leave it.
+```
+
+Above `k if k == key::RETURN => {`:
+```
+// On-screen keyboard, 2026-08-23 — Enter now opens it (was
+// "create the playlist directly," the closest analog to
+// Login's own password-submit conflict). Right takes over
+// create, since Done should keep meaning "just close the
+// keyboard" everywhere, consistent with every other screen.
+```
+
+Above `g.set_playlist_picker_name("".into());`:
+```
+// Real gap, live-reported 2026-08-25 ("Needs to presses to
+// get the of enter to open the virtual keybord on add new
+// playlist") — same shape as ProfileEditScreen's identical
+// 2-Enter friction: entering naming mode and opening the
+// on-screen keyboard used to be two separate presses (this
+// one, then a second Enter caught by the naming-mode match
+// arm above). Collapsed into one — naming mode and the
+// keyboard now open together on the very first Enter.
+```
+
+#### `crates/fjord-app/src/keys/text_input.rs` — file header (TOC)
+```
+// ── fjord-app · keys/text_input.rs ───────────────────────────────────────────
+//   onscreen_keyboard_move_row  proportional column mapping across QwertyKeyboard's irregular
+//                      [10,9,9,5] row widths for Up/Down (Bonfire Phase 3, on-screen alphanumeric
+//                      keyboard, 2026-08-22, rolled out to every text-entry surface as of
+//                      2026-08-23 — see app_state.slint's own show-onscreen-keyboard doc
+//                      comment for the full design)
+//   open_onscreen_keyboard  the one Rust way to open the on-screen keyboard; false (nothing
+//                      changed) when Settings → UI has it off — the caller then does its own Enter
+//                      action (2026-10-10)
+//   handle_library_search / handle_browse_search  raw-key pre-dispatch for the drawn search fields
+//   handle_playlist_picker  Add-to-playlist picker (raw keys — naming mode needs text input)
+//   handle_discover_search  raw-key pre-dispatch for Discover's search field (typing/backspace/
+//                           2026-10-04: Left/Right/Home/End move the caret, Delete deletes after it
+//                      escape), mirrors handle_browse_search — bypasses the Action/KeyMap lookup;
+//                      Up and Down both unconditionally enter the filter bar (Down fixed
+//                      2026-07-18 — previously skipped straight into content, asymmetric
+//                      with Up); Enter opens the on-screen keyboard (2026-08-23, full rollout —
+//                      was "jump straight to the top search result," a deliberate trade-off the
+//                      user chose directly; Down still reaches the grid via the filter bar);
+//                      Left on an empty query still exits to the sidebar (fs=-1), same
+//                      destination Escape targets — real bug fixed 2026-07-18: this function had
+//                      no Up handler at all (unlike handle_library_search), so Escape was the
+//                      ONLY way out of an empty/cleared search field
+// ─────────────────────────────────────────────────────────────────────────────
+```
