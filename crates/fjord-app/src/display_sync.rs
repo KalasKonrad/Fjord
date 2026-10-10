@@ -68,6 +68,7 @@
 //   needs_revert           pure: revert only if Fjord changed the display this
 //                          session and it isn't back at default (unit-tested)
 //   wire_display_sync      callbacks moved from main() (0.5.0 step 3): display-sync output list (fetched once) + screen/resolution/Hz dropdowns
+//   spawn_display_sync_modes_fetch  resolutions/Hz of the chosen output (Settings dropdowns)
 // ─────────────────────────────────────────────────────────────────────────────
 
 use std::collections::HashSet;
@@ -78,6 +79,7 @@ use std::time::Duration;
 
 use fjord_player::SourceHdrMetadata;
 
+use crate::MainWindow;
 use crate::config::{DeviceConfig, FjordState};
 
 const RES_4K: &str = "3840x2160";
@@ -979,6 +981,61 @@ pub(crate) fn wire_display_sync(
             }
         });
     }
+}
+
+/// Fetches `display_sync::supported_resolutions_and_hz(screen)` off-thread
+/// and patches `settings-display-sync-resolution-options`/`-hz-options` —
+/// called once at startup for whichever output ends up effective, and again
+/// every time the Output row's own selection actually changes (a previous
+/// output's supported modes are meaningless for a different display). Never
+/// clears an already-populated list on a failed/empty query (missing
+/// binary, unknown output name) — same "don't stomp a working value over a
+/// transient/absent query" precedent `list_outputs_with_priority`'s own
+/// screen-name pre-fill already follows.
+pub(crate) fn spawn_display_sync_modes_fetch(
+    ww: slint::Weak<MainWindow>,
+    rt_handle: tokio::runtime::Handle,
+    screen: String,
+) {
+    // Moved from main.rs: names resolve as they did there.
+    use crate::*;
+    debug!("display_sync: fetching supported resolutions/Hz for output {screen:?}");
+    rt_handle.spawn(async move {
+        let screen2 = screen.clone();
+        let (resolutions, hz) =
+            tokio::task::spawn_blocking(move || display_sync::supported_resolutions_and_hz(&screen2))
+                .await
+                .unwrap_or_default();
+        if resolutions.is_empty() && hz.is_empty() {
+            warn!(
+                "display_sync: no supported modes found for output {screen:?} — leaving \
+                 Default resolution/Hz dropdowns unchanged (missing kscreen-doctor, or this \
+                 output name isn't currently reported by it — see the log lines just above \
+                 for the actual cause)"
+            );
+            return;
+        }
+        info!(
+            "display_sync: output {screen:?}: {} resolution(s), {} Hz value(s) — {resolutions:?} / {hz:?}",
+            resolutions.len(),
+            hz.len()
+        );
+        let _ = slint::invoke_from_event_loop(move || {
+            if let Some(w) = ww.upgrade() {
+                let g = AppState::get(&w);
+                if !resolutions.is_empty() {
+                    let r: Vec<slint::SharedString> =
+                        resolutions.iter().map(|s| slint::SharedString::from(s.as_str())).collect();
+                    g.set_settings_display_sync_resolution_options(slint::ModelRc::new(slint::VecModel::from(r)));
+                }
+                if !hz.is_empty() {
+                    let h: Vec<slint::SharedString> =
+                        hz.iter().map(|s| slint::SharedString::from(s.as_str())).collect();
+                    g.set_settings_display_sync_hz_options(slint::ModelRc::new(slint::VecModel::from(h)));
+                }
+            }
+        });
+    });
 }
 
 #[cfg(test)]

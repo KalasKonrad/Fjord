@@ -56,6 +56,7 @@
 //                        clears person_tmdb_id_cache/person_other_work_cache (2026-07-29,
 //                        Deep Seerr integration) — a (re)connect may point at a different
 //                        server/catalog, same reasoning as the caches above
+//   spawn_seerr_settings_fetch  Seerr-side settings for the Settings dropdowns (region, languages)
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
 
@@ -768,4 +769,168 @@ fn set_error(ww: &Weak<MainWindow>, msg: &str) {
         g.set_connect_seerr_busy(false);
         g.set_connect_seerr_error(msg.into());
     }
+}
+
+// ── Seerr user-settings discovery (region + display language + discover language) ──
+// Same (value, display) shape as fetch_audio_devices/fetch_system_fonts above,
+// but fetched from Seerr instead of a local process, and only once a
+// connection actually exists — called both at startup (if a saved connection
+// exists) and right after a fresh connect (seerr_auth.rs::commit_connection),
+// mirroring spawn_refresh_seerr_version's own dual call sites. Populates all
+// three Settings -> Integrations dropdowns (Streaming Region, Display
+// Language, Discover Language) in ONE round trip — regions/languages fetched
+// in parallel, and the single `get_current_user`+`get_user_settings` call
+// covers streamingRegion/locale/originalLanguage together rather than
+// issuing that same pair of requests three times (2026-07-17: this function
+// used to be streaming-region-only; extended in place rather than adding two
+// near-duplicate sibling functions, since all three genuinely share one
+// underlying settings object).
+pub(crate) fn spawn_seerr_settings_fetch(
+    client: Arc<fjord_seerr::SeerrClient>,
+    state: Arc<Mutex<FjordState>>,
+    ww: slint::Weak<MainWindow>,
+    rt: tokio::runtime::Handle,
+) {
+    // Moved from main.rs: names resolve as they did there.
+    use crate::*;
+    rt.spawn(async move {
+        let (regions_res, languages_res) =
+            tokio::join!(client.get_watch_provider_regions(), client.get_languages());
+        let mut region_pairs: Vec<(String, String)> = regions_res
+            .unwrap_or_default()
+            .iter()
+            .map(|r| (r.iso_3166_1.clone(), format!("{} ({})", r.english_name, r.iso_3166_1)))
+            .collect();
+        region_pairs.sort_by(|a, b| a.1.cmp(&b.1));
+        let mut language_pairs: Vec<(String, String)> = languages_res
+            .unwrap_or_default()
+            .iter()
+            .map(|l| (l.iso_639_1.clone(), format!("{} ({})", l.english_name, l.iso_639_1)))
+            .collect();
+        language_pairs.sort_by(|a, b| a.1.cmp(&b.1));
+
+        // Mirrors resolve_streaming_region's own read path (discover.rs).
+        // Also captures the connected account's own id + MANAGE_REQUESTS
+        // permission bit here (piggybacking on this same /auth/me call,
+        // rather than a second one) — the Discover context menu's
+        // Edit/Cancel ownership check and Approve/Decline gate.
+        let current_user = client.get_current_user().await.ok();
+        let (user_id, is_admin) =
+            current_user.as_ref().map(|u| (Some(u.id), u.can_manage_requests())).unwrap_or((None, false));
+        // MANAGE_BLOCKLIST — a genuinely separate permission bit from
+        // MANAGE_REQUESTS/ADMIN (see can_manage_blocklist's own doc
+        // comment) — piggybacks on this same already-fetched user, zero
+        // extra network cost. 2026-08-06, Seerr Blocklist support.
+        let can_manage_blocklist = current_user.as_ref().is_some_and(|u| u.can_manage_blocklist());
+        debug!(
+            "seerr: current user id={user_id:?} permissions={:?} can_manage_requests={is_admin} can_manage_blocklist={can_manage_blocklist}",
+            current_user.as_ref().map(|u| u.permissions),
+        );
+        let settings = async {
+            let user = current_user?;
+            client.get_user_settings(user.id).await.ok()
+        }
+        .await;
+
+        let current_region_code = settings
+            .as_ref()
+            .and_then(|s| s.streaming_region.clone())
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| "US".to_string());
+        let current_region_desc = region_pairs
+            .iter()
+            .find(|(code, _)| code == &current_region_code)
+            .map(|(_, desc)| desc.clone())
+            .unwrap_or_else(|| current_region_code.clone());
+
+        // Discover Region (2026-07-18, Watchlist + Release Calendar) — a
+        // genuinely different setting from streaming_region above (see
+        // resolve_discover_region's own doc comment in discover.rs), just
+        // resolved from the same already-fetched region_pairs list here
+        // rather than a second fetch.
+        let current_discover_region_code = settings
+            .as_ref()
+            .and_then(|s| s.discover_region.clone())
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| "US".to_string());
+        let current_discover_region_desc = region_pairs
+            .iter()
+            .find(|(code, _)| code == &current_discover_region_code)
+            .map(|(_, desc)| desc.clone())
+            .unwrap_or_else(|| current_discover_region_code.clone());
+
+        // "" = "Default (English)" (Seerr's own admin-configured fallback,
+        // see UserGeneralSettings' doc comment — locale is never actually
+        // absent once a settings row exists, but a fresh account's GET can
+        // still omit it, which deserializes to None here).
+        let current_locale_code = settings.as_ref().and_then(|s| s.locale.clone()).unwrap_or_default();
+        let current_locale_desc = if current_locale_code.is_empty() {
+            "Default (English)".to_string()
+        } else {
+            language_pairs
+                .iter()
+                .find(|(code, _)| code == &current_locale_code)
+                .map(|(_, desc)| desc.clone())
+                .unwrap_or_else(|| current_locale_code.clone())
+        };
+
+        // "all" (the literal sentinel, not "") = "Default (All Languages)" —
+        // see discover.ts's createTmdbWithRegionLanguage: an empty string
+        // would fall through to the ADMIN's originalLanguage default
+        // instead of meaning "no filter."
+        let current_lang_code = settings
+            .as_ref()
+            .and_then(|s| s.original_language.clone())
+            .filter(|s| s != "all" && !s.is_empty())
+            .unwrap_or_else(|| "all".to_string());
+        let current_lang_desc = if current_lang_code == "all" {
+            "Default (All Languages)".to_string()
+        } else {
+            language_pairs
+                .iter()
+                .find(|(code, _)| code == &current_lang_code)
+                .map(|(_, desc)| desc.clone())
+                .unwrap_or_else(|| current_lang_code.clone())
+        };
+
+        {
+            let mut s = state.lock().unwrap();
+            s.seerr_regions = region_pairs.clone();
+            s.seerr_streaming_region = Some(current_region_code);
+            s.seerr_discover_region = Some(current_discover_region_code);
+            s.seerr_languages = language_pairs.clone();
+            s.seerr_locale = Some(current_locale_code);
+            s.seerr_original_language = Some(current_lang_code);
+            s.seerr_user_id = user_id;
+            s.seerr_is_admin = is_admin;
+            s.seerr_can_manage_blocklist = can_manage_blocklist;
+        }
+
+        let region_display: Vec<slint::SharedString> =
+            region_pairs.iter().map(|(_, d)| slint::SharedString::from(d.as_str())).collect();
+        let mut language_display: Vec<slint::SharedString> =
+            language_pairs.iter().map(|(_, d)| slint::SharedString::from(d.as_str())).collect();
+        // Both language dropdowns prepend their own "Default" sentinel row —
+        // NOT shared, since the two synthetic labels differ ("Default
+        // (English)" vs "Default (All Languages)"), matching Seerr's own
+        // web UI wording exactly.
+        let mut discover_lang_display = language_display.clone();
+        language_display.insert(0, slint::SharedString::from("Default (English)"));
+        discover_lang_display.insert(0, slint::SharedString::from("Default (All Languages)"));
+
+        let _ = slint::invoke_from_event_loop(move || {
+            if let Some(w) = ww.upgrade() {
+                let g = AppState::get(&w);
+                g.set_settings_streaming_region_display(slint::ModelRc::new(slint::VecModel::from(region_display)));
+                g.set_settings_streaming_region_desc(slint::SharedString::from(current_region_desc.as_str()));
+                g.set_settings_discover_region_desc(slint::SharedString::from(current_discover_region_desc.as_str()));
+                g.set_settings_display_language_display(slint::ModelRc::new(slint::VecModel::from(language_display)));
+                g.set_settings_display_language_desc(slint::SharedString::from(current_locale_desc.as_str()));
+                g.set_settings_discover_language_display(slint::ModelRc::new(slint::VecModel::from(discover_lang_display)));
+                g.set_settings_discover_language_desc(slint::SharedString::from(current_lang_desc.as_str()));
+                g.set_seerr_is_admin(is_admin);
+                g.set_seerr_can_manage_blocklist(can_manage_blocklist);
+            }
+        });
+    });
 }
