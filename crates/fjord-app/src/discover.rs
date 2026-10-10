@@ -47,7 +47,7 @@
 //                              empty on failure — see available_request_options_both_tiers) in
 //                              parallel, then cast/crew portraits + season posters (TMDB,
 //                              bounded concurrency, same JoinSet+Semaphore shape as detail.rs's
-//                              Jellyfin cast fetch); gen-guarded, populates RequestDetailScreen.
+//                              Jellyfin cast fetch); generation-guarded, populates RequestDetailScreen.
 //                              Profile row 0 is always a synthetic "Default" entry (id 0)
 //                              prepended so the picker has an explicit "no explicit choice"
 //                              option, not just whatever's focused first.
@@ -977,7 +977,7 @@ fn maybe_autofill_grid(g: &AppState) {
 /// synchronously before the fetch starts rather than recomputed here).
 async fn fetch_and_patch_posters(
     ww: Weak<MainWindow>,
-    gen: Arc<AtomicU64>,
+    generation: Arc<AtomicU64>,
     my_gen: u64,
     poster_jobs: Vec<(usize, String, String, String)>,
 ) {
@@ -1024,7 +1024,7 @@ async fn fetch_and_patch_posters(
     // right — every completed fetch just lands as soon as it's done.
     while let Some(res) = set.join_next().await {
         let Ok(Some((idx, item_type, tmdb_id, buf))) = res else { continue };
-        if gen.load(Ordering::SeqCst) != my_gen {
+        if generation.load(Ordering::SeqCst) != my_gen {
             break; // a newer search superseded this one
         }
         let ww2 = ww.clone();
@@ -1050,10 +1050,10 @@ pub(crate) fn spawn_discover_search(
     ww: Weak<MainWindow>,
     state: Arc<Mutex<FjordState>>,
     query: String,
-    gen: Arc<AtomicU64>,
+    generation: Arc<AtomicU64>,
     rt: &tokio::runtime::Handle,
 ) {
-    let my_gen = gen.fetch_add(1, Ordering::SeqCst) + 1;
+    let my_gen = generation.fetch_add(1, Ordering::SeqCst) + 1;
 
     if query.trim().is_empty() {
         {
@@ -1105,7 +1105,7 @@ pub(crate) fn spawn_discover_search(
 
     rt.spawn(async move {
         tokio::time::sleep(Duration::from_millis(300)).await;
-        if gen.load(Ordering::SeqCst) != my_gen {
+        if generation.load(Ordering::SeqCst) != my_gen {
             return; // superseded by a newer keystroke before the debounce elapsed
         }
 
@@ -1121,7 +1121,7 @@ pub(crate) fn spawn_discover_search(
                 return;
             }
         };
-        if gen.load(Ordering::SeqCst) != my_gen {
+        if generation.load(Ordering::SeqCst) != my_gen {
             return; // a newer search already superseded this response
         }
 
@@ -1236,13 +1236,13 @@ pub(crate) fn spawn_discover_search(
             }
         });
 
-        fetch_and_patch_posters(ww.clone(), Arc::clone(&gen), my_gen, poster_jobs).await;
+        fetch_and_patch_posters(ww.clone(), Arc::clone(&generation), my_gen, poster_jobs).await;
         // Re-narrow to whatever filters are already set — a no-op when
         // none are (search_filters_active's own early return), so this is
         // safe to call unconditionally after every commit. Must run AFTER
         // the poster patch above, not before — see apply_search_filters'
         // own doc comment for why.
-        if gen.load(Ordering::SeqCst) == my_gen {
+        if generation.load(Ordering::SeqCst) == my_gen {
             apply_search_filters(&state, &ww);
         }
     });
@@ -1266,10 +1266,10 @@ pub(crate) fn spawn_discover_search_more(
     ww: Weak<MainWindow>,
     state: Arc<Mutex<FjordState>>,
     query: String,
-    gen: Arc<AtomicU64>,
+    generation: Arc<AtomicU64>,
     rt: &tokio::runtime::Handle,
 ) {
-    let my_gen = gen.load(Ordering::SeqCst);
+    let my_gen = generation.load(Ordering::SeqCst);
     let (client, next_page) = {
         let mut s = state.lock().unwrap();
         if s.discover_search_loading_more { return; }
@@ -1283,8 +1283,8 @@ pub(crate) fn spawn_discover_search_more(
     // Append offset: the row count *right now*, read synchronously on the
     // calling (UI event loop) thread — `discover-results` can only be
     // touched from there. Safe against a race with a fresh search landing
-    // first: that path bumps `gen` synchronously before its own debounce
-    // sleep even starts, so this fetch's `gen` check below (after the
+    // first: that path bumps `generation` synchronously before its own debounce
+    // sleep even starts, so this fetch's `generation` check below (after the
     // network round trip) will already see the mismatch and bail before
     // ever using this offset.
     let offset = ww.upgrade().map(|w| AppState::get(&w).get_discover_results().row_count()).unwrap_or(0);
@@ -1300,7 +1300,7 @@ pub(crate) fn spawn_discover_search_more(
                 return;
             }
         };
-        if gen.load(Ordering::SeqCst) != my_gen {
+        if generation.load(Ordering::SeqCst) != my_gen {
             state2.lock().unwrap().discover_search_loading_more = false;
             return; // a newer search superseded this one before it landed
         }
@@ -1369,8 +1369,8 @@ pub(crate) fn spawn_discover_search_more(
             }
         });
 
-        fetch_and_patch_posters(ww.clone(), Arc::clone(&gen), my_gen, poster_jobs).await;
-        if gen.load(Ordering::SeqCst) == my_gen {
+        fetch_and_patch_posters(ww.clone(), Arc::clone(&generation), my_gen, poster_jobs).await;
+        if generation.load(Ordering::SeqCst) == my_gen {
             apply_search_filters(&state2, &ww);
         }
     });
@@ -3463,11 +3463,11 @@ pub(crate) fn refresh_watchlist(state: Arc<Mutex<FjordState>>, ww: Weak<MainWind
 /// persisted last session, and — if that means filters are already active
 /// — kicks off the filtered-browse fetch right here rather than leaving
 /// the screen showing landing rows until the user touches a filter pill
-/// (hence needing `gen`, unlike a pure fetch-and-cache function).
+/// (hence needing `generation`, unlike a pure fetch-and-cache function).
 pub(crate) fn ensure_discover_filter_options(
     state: Arc<Mutex<FjordState>>,
     ww: Weak<MainWindow>,
-    gen: Arc<AtomicU64>,
+    generation: Arc<AtomicU64>,
     rt: tokio::runtime::Handle,
 ) {
     let client = {
@@ -3530,7 +3530,7 @@ pub(crate) fn ensure_discover_filter_options(
             // in-progress search query isn't persisted, but this fires
             // before the user could have typed anything new yet either way).
             if active && g.get_discover_query().as_str().is_empty() {
-                spawn_discover_filtered_browse(ww.clone(), Arc::clone(&state), Arc::clone(&gen), &rt2);
+                spawn_discover_filtered_browse(ww.clone(), Arc::clone(&state), Arc::clone(&generation), &rt2);
             }
         });
     });
@@ -3675,10 +3675,10 @@ fn merge_filtered_metas(movie: Vec<FilteredRowItem>, tv: Vec<FilteredRowItem>, s
 pub(crate) fn spawn_discover_filtered_browse(
     ww: Weak<MainWindow>,
     state: Arc<Mutex<FjordState>>,
-    gen: Arc<AtomicU64>,
+    generation: Arc<AtomicU64>,
     rt: &tokio::runtime::Handle,
 ) {
-    let my_gen = gen.fetch_add(1, Ordering::SeqCst) + 1;
+    let my_gen = generation.fetch_add(1, Ordering::SeqCst) + 1;
     let Some(client) = state.lock().unwrap().seerr_client.clone() else {
         warn!("seerr: filtered-browse dispatched with no seerr_client set — not connected?");
         return;
@@ -3699,7 +3699,7 @@ pub(crate) fn spawn_discover_filtered_browse(
             (cp.discover_filter_type.clone(), cp.discover_filter_sort.clone())
         };
         let region = resolve_streaming_region(&client, &state).await;
-        if gen.load(Ordering::SeqCst) != my_gen {
+        if generation.load(Ordering::SeqCst) != my_gen {
             return; // superseded before the region lookup even finished
         }
         let want_movie = type_key != "tv";
@@ -3712,7 +3712,7 @@ pub(crate) fn spawn_discover_filtered_browse(
             async { if want_movie { Some(client.discover_movies_filtered(1, &movie_filters).await) } else { None } },
             async { if want_tv { Some(client.discover_tv_filtered(1, &tv_filters).await) } else { None } },
         );
-        if gen.load(Ordering::SeqCst) != my_gen {
+        if generation.load(Ordering::SeqCst) != my_gen {
             return; // a newer filter change / search already superseded this
         }
         let movie_resp = match movie_res {
@@ -3766,7 +3766,7 @@ pub(crate) fn spawn_discover_filtered_browse(
             }
         });
 
-        fetch_and_patch_posters(ww, gen, my_gen, poster_jobs).await;
+        fetch_and_patch_posters(ww, generation, my_gen, poster_jobs).await;
     });
 }
 
@@ -3784,10 +3784,10 @@ pub(crate) fn spawn_discover_filtered_browse(
 pub(crate) fn spawn_discover_filtered_browse_more(
     ww: Weak<MainWindow>,
     state: Arc<Mutex<FjordState>>,
-    gen: Arc<AtomicU64>,
+    generation: Arc<AtomicU64>,
     rt: &tokio::runtime::Handle,
 ) {
-    let my_gen = gen.load(Ordering::SeqCst);
+    let my_gen = generation.load(Ordering::SeqCst);
     let (client, next_page, type_key, sort_key) = {
         let mut s = state.lock().unwrap();
         if s.discover_filtered_loading_more {
@@ -3818,7 +3818,7 @@ pub(crate) fn spawn_discover_filtered_browse_more(
     let state2 = Arc::clone(&state);
     rt.spawn(async move {
         let region = resolve_streaming_region(&client, &state2).await;
-        if gen.load(Ordering::SeqCst) != my_gen {
+        if generation.load(Ordering::SeqCst) != my_gen {
             state2.lock().unwrap().discover_filtered_loading_more = false;
             return;
         }
@@ -3832,7 +3832,7 @@ pub(crate) fn spawn_discover_filtered_browse_more(
             async { if want_movie { Some(client.discover_movies_filtered(next_page, &movie_filters).await) } else { None } },
             async { if want_tv { Some(client.discover_tv_filtered(next_page, &tv_filters).await) } else { None } },
         );
-        if gen.load(Ordering::SeqCst) != my_gen {
+        if generation.load(Ordering::SeqCst) != my_gen {
             state2.lock().unwrap().discover_filtered_loading_more = false;
             return;
         }
@@ -3919,7 +3919,7 @@ pub(crate) fn spawn_discover_filtered_browse_more(
             }
         });
 
-        fetch_and_patch_posters(ww, gen, my_gen, poster_jobs).await;
+        fetch_and_patch_posters(ww, generation, my_gen, poster_jobs).await;
     });
 }
 
@@ -3988,13 +3988,13 @@ fn trailer_candidates(videos: &[fjord_seerr::Video]) -> Vec<String> {
 /// session cache when possible, otherwise show greyed "Checking…" and run
 /// `yt-dlp --simulate` (no download) per candidate, best first, until one
 /// resolves. Sets request-detail-trailer-state "ok" (+ -trailer-url) or
-/// "none". UI thread only. `gen` = request-detail-open-gen of the screen
+/// "none". UI thread only. `generation` = request-detail-open-gen of the screen
 /// this is for; a later open of another title discards the result.
 pub(crate) fn start_trailer_check(
     state: &Arc<Mutex<FjordState>>,
     ww: &Weak<MainWindow>,
     rt: &tokio::runtime::Handle,
-    gen: i32,
+    generation: i32,
     candidates: Vec<String>,
 ) {
     let Some(w) = ww.upgrade() else { return };
@@ -4039,7 +4039,7 @@ pub(crate) fn start_trailer_check(
         let _ = slint::invoke_from_event_loop(move || {
             let Some(w) = ww.upgrade() else { return };
             let g = AppState::get(&w);
-            if g.get_request_detail_open_gen() != gen || !g.get_show_request_detail() {
+            if g.get_request_detail_open_gen() != generation || !g.get_show_request_detail() {
                 return; // another title (or none) is showing by now
             }
             match found {
@@ -4511,7 +4511,7 @@ fn open_discover_item_ex(
     let Some(client) = state.lock().unwrap().seerr_client.clone() else { return };
     let is_session_auth = client.is_session_auth();
 
-    let gen = {
+    let generation = {
         let Some(w) = ww.upgrade() else { return };
         let g = AppState::get(&w);
         let next = g.get_request_detail_open_gen() + 1;
@@ -4589,7 +4589,7 @@ fn open_discover_item_ex(
 
     // Delayed spinner-show — see this block's own comment above. Only
     // actually flips app-content-loading on if, once the short window
-    // elapses, this exact open (gen still matches — a newer open, or this
+    // elapses, this exact open (generation still matches — a newer open, or this
     // same one having already superseded itself, both correctly skip it)
     // hasn't already finished (show-request-detail still false). A fetch
     // faster than the window never shows a spinner at all; one slower
@@ -4602,7 +4602,7 @@ fn open_discover_item_ex(
             let _ = slint::invoke_from_event_loop(move || {
                 let Some(w) = ww_spin.upgrade() else { return };
                 let g = AppState::get(&w);
-                if g.get_request_detail_open_gen() == gen && !g.get_show_request_detail() {
+                if g.get_request_detail_open_gen() == generation && !g.get_show_request_detail() {
                     g.set_app_content_loading(true);
                 }
             });
@@ -4767,7 +4767,7 @@ fn open_discover_item_ex(
         let _ = slint::invoke_from_event_loop(move || {
             let Some(w) = ww.upgrade() else { return };
             let g = AppState::get(&w);
-            if g.get_request_detail_open_gen() != gen {
+            if g.get_request_detail_open_gen() != generation {
                 return; // superseded by a rapid re-open of a different item
             }
             // Session guard (Bonfire Phase 1, step 8 audit, 2026-08-09) —
@@ -4871,7 +4871,7 @@ fn open_discover_item_ex(
                 })
                 .collect();
             g.set_request_detail_providers(ModelRc::new(VecModel::from(providers)));
-            start_trailer_check(&state, &ww, &rt_trailer, gen, fields.trailer_candidates);
+            start_trailer_check(&state, &ww, &rt_trailer, generation, fields.trailer_candidates);
             if let Some(buf) = poster_buf {
                 g.set_request_detail_poster(slint::Image::from_rgba8(buf));
                 g.set_request_detail_has_poster(true);
@@ -5740,7 +5740,7 @@ fn discover_request_action(
 /// nothing extra (query empty, filters now all default — the landing rows
 /// are already loaded and untouched; the Slint side's own view switch just
 /// shows them again once `discover-results` is cleared).
-fn on_discover_filter_changed(state: &Arc<Mutex<FjordState>>, ww: &Weak<MainWindow>, gen: &Arc<AtomicU64>, rt: &tokio::runtime::Handle) {
+fn on_discover_filter_changed(state: &Arc<Mutex<FjordState>>, ww: &Weak<MainWindow>, generation: &Arc<AtomicU64>, rt: &tokio::runtime::Handle) {
     let Some(w) = ww.upgrade() else { return };
     let g = AppState::get(&w);
     let (active, cfg) = {
@@ -5751,7 +5751,7 @@ fn on_discover_filter_changed(state: &Arc<Mutex<FjordState>>, ww: &Weak<MainWind
     g.set_discover_filters_active(active);
     if g.get_discover_query().as_str().is_empty() {
         if active {
-            spawn_discover_filtered_browse(ww.clone(), Arc::clone(state), Arc::clone(gen), rt);
+            spawn_discover_filtered_browse(ww.clone(), Arc::clone(state), Arc::clone(generation), rt);
         } else {
             g.set_discover_results(ModelRc::new(VecModel::from(Vec::<CardItem>::new())));
         }
@@ -5785,14 +5785,14 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
     g.on_nav_selected({
         let state = Arc::clone(&state);
         let ww = window.as_weak();
-        let gen = Arc::clone(&discover_gen);
+        let generation = Arc::clone(&discover_gen);
         let rt = rt.clone();
         move |nav| {
             debug!("nav-selected({nav})"); // sidebar click or key (2026-10-08 diagnostics)
             if nav == 6 {
                 ensure_discover_landing(Arc::clone(&state), ww.clone(), rt.clone());
                 spawn_movies_list_fetch(Arc::clone(&state), ww.clone(), rt.clone(), false);
-                ensure_discover_filter_options(Arc::clone(&state), ww.clone(), Arc::clone(&gen), rt.clone());
+                ensure_discover_filter_options(Arc::clone(&state), ww.clone(), Arc::clone(&generation), rt.clone());
                 // Watchlist + Release Calendar, 2026-07-18 — same
                 // once-per-session guard shape as ensure_discover_landing.
                 ensure_discover_watchlist(Arc::clone(&state), ww.clone(), rt.clone());
@@ -5884,7 +5884,7 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
     g.on_discover_filter_type_selected({
         let state = Arc::clone(&state);
         let ww = window.as_weak();
-        let gen = Arc::clone(&discover_gen);
+        let generation = Arc::clone(&discover_gen);
         let rt = rt.clone();
         move |desc| {
             let Some(w) = ww.upgrade() else { return };
@@ -5903,14 +5903,14 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
                 let s = state.lock().unwrap();
                 refresh_discover_filter_models(&g, &s);
             }
-            on_discover_filter_changed(&state, &ww, &gen, &rt);
+            on_discover_filter_changed(&state, &ww, &generation, &rt);
         }
     });
 
     g.on_discover_filter_sort_selected({
         let state = Arc::clone(&state);
         let ww = window.as_weak();
-        let gen = Arc::clone(&discover_gen);
+        let generation = Arc::clone(&discover_gen);
         let rt = rt.clone();
         move |desc| {
             let key = discover_sort_key(desc.as_str());
@@ -5921,14 +5921,14 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
             if let Some(w) = ww.upgrade() {
                 AppState::get(&w).set_discover_filter_sort_desc(discover_sort_desc(key).into());
             }
-            on_discover_filter_changed(&state, &ww, &gen, &rt);
+            on_discover_filter_changed(&state, &ww, &generation, &rt);
         }
     });
 
     g.on_discover_filter_rating_selected({
         let state = Arc::clone(&state);
         let ww = window.as_weak();
-        let gen = Arc::clone(&discover_gen);
+        let generation = Arc::clone(&discover_gen);
         let rt = rt.clone();
         move |desc| {
             let value = discover_rating_value(desc.as_str());
@@ -5939,14 +5939,14 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
             if let Some(w) = ww.upgrade() {
                 AppState::get(&w).set_discover_filter_rating_desc(discover_rating_desc(value).into());
             }
-            on_discover_filter_changed(&state, &ww, &gen, &rt);
+            on_discover_filter_changed(&state, &ww, &generation, &rt);
         }
     });
 
     g.on_discover_filter_year_selected({
         let state = Arc::clone(&state);
         let ww = window.as_weak();
-        let gen = Arc::clone(&discover_gen);
+        let generation = Arc::clone(&discover_gen);
         let rt = rt.clone();
         move |desc| {
             let value = discover_year_value(desc.as_str());
@@ -5957,7 +5957,7 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
             if let Some(w) = ww.upgrade() {
                 AppState::get(&w).set_discover_filter_year_desc(discover_year_desc(value).into());
             }
-            on_discover_filter_changed(&state, &ww, &gen, &rt);
+            on_discover_filter_changed(&state, &ww, &generation, &rt);
         }
     });
 
@@ -5969,7 +5969,7 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
     g.on_discover_filter_genre_toggle({
         let state = Arc::clone(&state);
         let ww = window.as_weak();
-        let gen = Arc::clone(&discover_gen);
+        let generation = Arc::clone(&discover_gen);
         let rt = rt.clone();
         move |idx| {
             let Some(w) = ww.upgrade() else { return };
@@ -5985,14 +5985,14 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
                 .collect();
             g.set_discover_filter_genre_count(names.len() as i32);
             state.lock().unwrap().config.active_mut().discover_filter_genre_names = names;
-            on_discover_filter_changed(&state, &ww, &gen, &rt);
+            on_discover_filter_changed(&state, &ww, &generation, &rt);
         }
     });
 
     g.on_discover_filter_provider_toggle({
         let state = Arc::clone(&state);
         let ww = window.as_weak();
-        let gen = Arc::clone(&discover_gen);
+        let generation = Arc::clone(&discover_gen);
         let rt = rt.clone();
         move |idx| {
             let Some(w) = ww.upgrade() else { return };
@@ -6005,14 +6005,14 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
                 (0..model.row_count()).filter_map(|i| model.row_data(i)).filter(|p| p.selected).map(|p| p.id as i64).collect();
             g.set_discover_filter_provider_count(ids.len() as i32);
             state.lock().unwrap().config.active_mut().discover_filter_provider_ids = ids;
-            on_discover_filter_changed(&state, &ww, &gen, &rt);
+            on_discover_filter_changed(&state, &ww, &generation, &rt);
         }
     });
 
     g.on_discover_filter_clear({
         let state = Arc::clone(&state);
         let ww = window.as_weak();
-        let gen = Arc::clone(&discover_gen);
+        let generation = Arc::clone(&discover_gen);
         let rt = rt.clone();
         move || {
             let Some(w) = ww.upgrade() else { return };
@@ -6035,7 +6035,7 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
                 let s = state.lock().unwrap();
                 refresh_discover_filter_models(&g, &s);
             }
-            on_discover_filter_changed(&state, &ww, &gen, &rt);
+            on_discover_filter_changed(&state, &ww, &generation, &rt);
         }
     });
 
@@ -6063,7 +6063,7 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
     g.on_discover_search_append({
         let state = Arc::clone(&state);
         let ww = window.as_weak();
-        let gen = Arc::clone(&discover_gen);
+        let generation = Arc::clone(&discover_gen);
         let rt = rt.clone();
         move |ch| {
             let Some(w) = ww.upgrade() else { return };
@@ -6083,19 +6083,19 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
                 g.set_discover_focused(0);
                 g.set_discover_focused_row(0);
             }
-            spawn_discover_search(ww.clone(), Arc::clone(&state), q, Arc::clone(&gen), &rt);
+            spawn_discover_search(ww.clone(), Arc::clone(&state), q, Arc::clone(&generation), &rt);
         }
     });
     g.on_discover_search_backspace({
         let state = Arc::clone(&state);
         let ww = window.as_weak();
-        let gen = Arc::clone(&discover_gen);
+        let generation = Arc::clone(&discover_gen);
         let rt = rt.clone();
         move || {
             let Some(w) = ww.upgrade() else { return };
             let g = AppState::get(&w);
             if let Some(q) = crate::text_field::DISCOVER_SEARCH.backspace(&g) {
-                spawn_discover_search(ww.clone(), Arc::clone(&state), q, Arc::clone(&gen), &rt);
+                spawn_discover_search(ww.clone(), Arc::clone(&state), q, Arc::clone(&generation), &rt);
             }
         }
     });
@@ -6103,20 +6103,20 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
     g.on_discover_search_delete({
         let state = Arc::clone(&state);
         let ww = window.as_weak();
-        let gen = Arc::clone(&discover_gen);
+        let generation = Arc::clone(&discover_gen);
         let rt = rt.clone();
         move || {
             let Some(w) = ww.upgrade() else { return };
             let g = AppState::get(&w);
             if let Some(q) = crate::text_field::DISCOVER_SEARCH.delete(&g) {
-                spawn_discover_search(ww.clone(), Arc::clone(&state), q, Arc::clone(&gen), &rt);
+                spawn_discover_search(ww.clone(), Arc::clone(&state), q, Arc::clone(&generation), &rt);
             }
         }
     });
     g.on_discover_search_clear({
         let state = Arc::clone(&state);
         let ww = window.as_weak();
-        let gen = Arc::clone(&discover_gen);
+        let generation = Arc::clone(&discover_gen);
         let rt = rt.clone();
         move || {
             let Some(w) = ww.upgrade() else { return };
@@ -6124,13 +6124,13 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
             g.set_discover_query("".into()); // caret: past the end = end, nothing to reset
             g.set_discover_focused(0);
             g.set_discover_focused_row(0);
-            spawn_discover_search(ww.clone(), Arc::clone(&state), String::new(), Arc::clone(&gen), &rt);
+            spawn_discover_search(ww.clone(), Arc::clone(&state), String::new(), Arc::clone(&generation), &rt);
         }
     });
     g.on_discover_load_more({
         let state = Arc::clone(&state);
         let ww = window.as_weak();
-        let gen = Arc::clone(&discover_gen);
+        let generation = Arc::clone(&discover_gen);
         let rt = rt.clone();
         move || {
             let Some(w) = ww.upgrade() else { return };
@@ -6139,11 +6139,11 @@ pub(crate) fn wire_discover(window: &MainWindow, state: Arc<Mutex<FjordState>>, 
                 // Filtered-browse's own pagination (2026-07-18) — landing
                 // rows (no filters active) have nothing to load more of.
                 if discover_filters_active(state.lock().unwrap().config.active()) {
-                    spawn_discover_filtered_browse_more(ww.clone(), Arc::clone(&state), Arc::clone(&gen), &rt);
+                    spawn_discover_filtered_browse_more(ww.clone(), Arc::clone(&state), Arc::clone(&generation), &rt);
                 }
                 return;
             }
-            spawn_discover_search_more(ww.clone(), Arc::clone(&state), query, Arc::clone(&gen), &rt);
+            spawn_discover_search_more(ww.clone(), Arc::clone(&state), query, Arc::clone(&generation), &rt);
         }
     });
 

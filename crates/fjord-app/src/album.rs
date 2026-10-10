@@ -16,7 +16,7 @@
 //                         container_tracks_cache + item_detail_cache (Part 2) — only sets
 //                         app-content-loading=true when either is a miss; spawn async: fetch
 //                         tracks + cover poster in parallel (cached ones skip their network
-//                         call); populate TrackItem model; gen-guarded invoke_from_event_loop
+//                         call); populate TrackItem model; generation-guarded invoke_from_event_loop
 //                         shows page
 //   handle_key            keyboard dispatch: Back button / ▶+♥ button row / bio (slot 2) / track list;
 //                         Up from track 0 → bio (or button row); C → open-context-menu;
@@ -159,7 +159,7 @@ fn open_music_screen(
     let is_cache_hit = cached_tracks.is_some() && cached_detail.is_some();
     tracing::debug!("open_music_screen({id}): cache_hit={is_cache_hit}");
 
-    let gen = if let Some(w) = ww.upgrade() {
+    let generation = if let Some(w) = ww.upgrade() {
         let g = AppState::get(&w);
         g.set_album_id(id.as_str().into());
         g.set_album_title(title.as_str().into());
@@ -219,7 +219,7 @@ fn open_music_screen(
                 let _ = slint::invoke_from_event_loop(move || {
                     if let Some(w) = ww_err.upgrade() {
                         let g = AppState::get(&w);
-                        if g.get_album_open_gen() == gen {
+                        if g.get_album_open_gen() == generation {
                             g.set_app_content_loading(false);
                         }
                     }
@@ -237,7 +237,7 @@ fn open_music_screen(
                 let _ = slint::invoke_from_event_loop(move || {
                     if let Some(w) = ww_err.upgrade() {
                         let g = AppState::get(&w);
-                        if g.get_album_open_gen() == gen {
+                        if g.get_album_open_gen() == generation {
                             g.set_app_content_loading(false);
                         }
                     }
@@ -260,9 +260,9 @@ fn open_music_screen(
         let _ = slint::invoke_from_event_loop(move || {
             let Some(w) = ww2.upgrade() else { return };
             let g = AppState::get(&w);
-            if g.get_album_open_gen() != gen { return; }
+            if g.get_album_open_gen() != generation { return; }
             // Session guard (Bonfire Phase 1, step 8 audit, 2026-08-09) —
-            // the gen counter alone doesn't catch a sign-out/profile-switch
+            // the generation counter alone doesn't catch a sign-out/profile-switch
             // that happens after this screen was backed out of but before
             // this fetch resolves, since nothing increments it on either
             // path. See collection.rs's own open_collection_screen for the
@@ -319,13 +319,13 @@ fn open_music_screen(
     // fallback. This revalidation is what closes that gap for whatever's
     // actually on screen right now.
     if is_cache_hit {
-        spawn_album_revalidate(id_revalidate, gen, state_revalidate, ww_revalidate, rt_revalidate, is_playlist);
+        spawn_album_revalidate(id_revalidate, generation, state_revalidate, ww_revalidate, rt_revalidate, is_playlist);
     }
 }
 
 fn spawn_album_revalidate(
     id:          String,
-    gen:         i32,
+    generation:         i32,
     state:       Arc<Mutex<FjordState>>,
     ww:          slint::Weak<MainWindow>,
     rt:          tokio::runtime::Handle,
@@ -366,7 +366,7 @@ fn spawn_album_revalidate(
         let _ = slint::invoke_from_event_loop(move || {
             let Some(w) = ww.upgrade() else { return };
             let g = AppState::get(&w);
-            if g.get_album_open_gen() != gen { return; }
+            if g.get_album_open_gen() != generation { return; }
             g.set_album_meta(meta.as_str().into());
             g.set_album_artist(artist.as_str().into());
             g.set_album_overview(overview.as_str().into());

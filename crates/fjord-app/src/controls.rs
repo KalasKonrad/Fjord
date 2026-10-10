@@ -451,12 +451,12 @@ pub(crate) fn wire_controls(
                 }
             }
             g.set_show_volume_overlay(true);
-            let gen  = vgen.fetch_add(1, Ordering::Relaxed) + 1;
+            let generation  = vgen.fetch_add(1, Ordering::Relaxed) + 1;
             let vg2  = Arc::clone(&vgen);
             let ww2  = ww.clone();
             rt.spawn(async move {
                 tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
-                if vg2.load(Ordering::Relaxed) == gen {
+                if vg2.load(Ordering::Relaxed) == generation {
                     let _ = slint::invoke_from_event_loop(move || {
                         if let Some(w) = ww2.upgrade() {
                             AppState::get(&w).set_show_volume_overlay(false);
@@ -484,12 +484,12 @@ pub(crate) fn wire_controls(
                 }
             }
             g.set_show_volume_overlay(true);
-            let gen  = vgen.fetch_add(1, Ordering::Relaxed) + 1;
+            let generation  = vgen.fetch_add(1, Ordering::Relaxed) + 1;
             let vg2  = Arc::clone(&vgen);
             let ww2  = ww.clone();
             rt.spawn(async move {
                 tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
-                if vg2.load(Ordering::Relaxed) == gen {
+                if vg2.load(Ordering::Relaxed) == generation {
                     let _ = slint::invoke_from_event_loop(move || {
                         if let Some(w) = ww2.upgrade() {
                             AppState::get(&w).set_show_volume_overlay(false);

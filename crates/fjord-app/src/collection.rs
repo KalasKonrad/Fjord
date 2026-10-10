@@ -6,7 +6,7 @@
 //                           their network call); sets collection-overview,
 //                           collection-is-favorite, collection-has-played from detail;
 //                           backdrop only when backdrop_image_tags non-empty;
-//                           stale-request guard (gen check, handles same-ID re-opens) +
+//                           stale-request guard (generation check, handles same-ID re-opens) +
 //                           early-return-on-error with toast;
 //                           single invoke_from_event_loop sets all data then shows page;
 //                           also spawns spawn_missing_items (independent task)
@@ -66,7 +66,7 @@ pub(crate) fn open_collection_screen(
 
     // Increment the open-generation counter and capture it so async tasks can
     // detect when they've been superseded (even by a re-open of the same collection).
-    let gen = if let Some(w) = ww.upgrade() {
+    let generation = if let Some(w) = ww.upgrade() {
         let g = AppState::get(&w);
         g.set_collection_id(id.as_str().into());
         g.set_collection_title(title.as_str().into());
@@ -90,7 +90,7 @@ pub(crate) fn open_collection_screen(
         g.set_collection_open_gen(next);
         next
     } else {
-        -1  // window gone; async task will abort on the gen check
+        -1  // window gone; async task will abort on the generation check
     };
 
     let id2    = id.clone();
@@ -129,7 +129,7 @@ pub(crate) fn open_collection_screen(
                 let _ = slint::invoke_from_event_loop(move || {
                     if let Some(w) = ww_err.upgrade() {
                         let g = AppState::get(&w);
-                        if g.get_collection_open_gen() == gen {
+                        if g.get_collection_open_gen() == generation {
                             g.set_app_content_loading(false);
                         }
                     }
@@ -152,7 +152,7 @@ pub(crate) fn open_collection_screen(
                 let _ = slint::invoke_from_event_loop(move || {
                     if let Some(w) = ww_err.upgrade() {
                         let g = AppState::get(&w);
-                        if g.get_collection_open_gen() == gen {
+                        if g.get_collection_open_gen() == generation {
                             g.set_app_content_loading(false);
                         }
                     }
@@ -170,9 +170,9 @@ pub(crate) fn open_collection_screen(
             let g = AppState::get(&w);
 
             // Stale-request guard: abort if superseded by any newer open (same or different collection).
-            if g.get_collection_open_gen() != gen { return; }
+            if g.get_collection_open_gen() != generation { return; }
             // Session guard (Bonfire Phase 1, step 8 audit, 2026-08-09): the
-            // gen counter above only catches a SAME-TYPE re-open — nothing
+            // generation counter above only catches a SAME-TYPE re-open — nothing
             // increments it on sign-out or a profile switch, so a stale
             // fetch from a torn-down session can still match it and
             // silently re-open this screen (with the OLD session's data)
@@ -227,7 +227,7 @@ pub(crate) fn open_collection_screen(
     // its JoinHandle is ready to hand over — see that function's own doc
     // comment for why it needs to know about this specific revalidate.
     let revalidate_handle = if is_cache_hit {
-        spawn_collection_revalidate(id_revalidate, gen, state_revalidate, ww_revalidate, rt_revalidate)
+        spawn_collection_revalidate(id_revalidate, generation, state_revalidate, ww_revalidate, rt_revalidate)
     } else {
         None
     };
@@ -241,7 +241,7 @@ pub(crate) fn open_collection_screen(
 // that function's own doc comment for the bug this fixes.
 fn spawn_collection_revalidate(
     id:    String,
-    gen:   i32,
+    generation:   i32,
     state: Arc<Mutex<FjordState>>,
     ww:    slint::Weak<MainWindow>,
     rt:    tokio::runtime::Handle,
@@ -267,7 +267,7 @@ fn spawn_collection_revalidate(
         let _ = slint::invoke_from_event_loop(move || {
             let Some(w) = ww.upgrade() else { return };
             let g = AppState::get(&w);
-            if g.get_collection_open_gen() != gen { return; }
+            if g.get_collection_open_gen() != generation { return; }
             g.set_collection_overview(crate::strip_html_to_text(detail.overview.clone().unwrap_or_default().trim()).into());
             g.set_collection_is_favorite(detail.user_data.is_favorite);
             g.set_collection_has_played(detail.user_data.played);
