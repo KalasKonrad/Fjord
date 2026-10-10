@@ -28,6 +28,10 @@ are bumped together as one step, not separately.
   directly as file names, so a malicious server — or anyone tampering with
   an unencrypted (http://) connection — could have placed files anywhere in
   your home folder. Ids are now checked, and only real images are saved.
+- **Security: a trailer link from the server could run a program.** Trailer
+  links were passed to yt-dlp unchecked, so a specially crafted link could
+  have made it run a command. Fjord now only accepts https YouTube links for
+  trailers and passes them so they can never be read as options.
 - **Fixed: Fjord's log file contained your Jellyfin access key** (in the
   line logged when the live-update connection starts). It's now hidden there
   and in connection errors and player messages, like it already was for
