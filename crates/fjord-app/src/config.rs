@@ -1,168 +1,56 @@
 // ── fjord-app · config.rs ────────────────────────────────────────────────────
-//   BoundedCache<V> FIFO cache (cap 40 by default), Serialize/Deserialize + Clone —
-//                   Part 2/103 screen-open caches; freshness via WS invalidation +
-//                   post-login refresh sweep, not a TTL (dropped in Phase 103);
-//                   set_cap (raise-only) + recent_keys(n) added Phase 104 for the
-//                   opt-in library prewarm; iter() -> (&str, &V) added in review
-//                   (2026-07-11) for callers walking every entry without cloning;
-//                   clear() added same day, called on sign-out — these caches hold
-//                   per-user data with no user/server scoping; keys() (superseded
-//                   by iter()) removed as dead code once its one remaining caller
-//                   switched over; see doc comment above the type
-//   ScreenCachesFile  on-disk snapshot of the six caches (screen_caches.json, Phase 103)
-//   screen_caches_path/load_screen_caches/save_screen_caches  Phase 103 persistence I/O
-//   RememberedTracks  { audio_lang, sub_lang } — one series' manually-picked S/A track languages
-//   default_* fns   serde defaults for DeviceConfig/ProfileSettings string fields
-//   sub_color_hex   ProfileSettings.sub_color display name ("White"/...) -> mpv hex color,
-//                   "" = don't touch
-//   vf_mpv_value    DeviceConfig.vf display label ("auto: nv12/p010"/"auto: yuv420p/...") -> raw
-//                   mpv sentinel ("" / "auto"); deser_vf migrates a pre-relabel raw value forward
-//   DeviceConfig    settings that describe THIS PHYSICAL BOX regardless of who's signed in —
-//                   hwdec/vf/audio device/seek step/animation speed/log_level/launch_policy
-//                   (Bonfire profile-picker launch policy, within one account) + default_profile_id;
-//                   account_launch_policy/default_account_id (2026-08-14, 2-tier account/profile
-//                   redesign — profile.rs's StartupGate doc comment has the full resolution order)
-//                   are the identical 3-way shape one tier UP: which ACCOUNT (a plain login, or a
-//                   whole Bonfire household) to resolve silently at startup, before ever touching
-//                   which profile within it. display_sync_* (2026-09-18) — native resolution/
-//                   refresh-rate/HDR/WCG matching to source via kscreen-doctor (see display_sync.rs),
-//                   display_sync_trailers (2026-10-04, default off) — Watch Trailer switches the display too
-//                   separate_video_surface (HDR Stage 5, 2026-10-05, default on) — video on its own
-//                   Wayland subsurface; off = the old in-window path
-//                   video_own_buffers (2026-10-08, default off) — the subsurface's own 10-bit
-//                   dmabuf buffers, opt-in; per run
-//                   video_dither_off (2026-10-08, default off) — test aid: mpv dither-depth=no
-//                   opt-in/off by default; enabled/screen_name/default_resolution/default_hz/
-//                   scale_4k/scale_1080p/sync_resolution/sync_refresh_rate/4k_odd_fps_mode/
-//                   hdr_mode/wcg_mode.
-//   ProfileSettings settings that follow the SIGNED-IN PERSON — auth (server_url/user_id/token),
-//                   subtitle/audio language, library sort, Seerr connection, Discover filters,
-//                   skip_*_mode/_secs, trailer_quality. keyed by user_id (also
-//                   Config.active_profile_id's lookup key). remember_login (2026-08-14, default
-//                   true) — the real security gate the 2-tier redesign was built to close: false
-//                   means this profile's ROOT account can never be silently resumed at startup
-//                   regardless of account_launch_policy, always demanding a fresh password via
-//                   StartupGate::RequireLogin — a plain (non-Bonfire) account has no PIN concept
-//                   at all, so without this a stored token would be a built-in bypass around
-//                   every PIN in a sibling Bonfire household on the same install.
-//                   lockout_minutes (2026-08-29, Bonfire Phase 4) — Bonfire's own real
-//                   lockoutMinutes value (0 = disabled, purely declarative — Bonfire enforces
-//                   nothing itself; every client is expected to), synced from the same 2 sites as
-//                   has_pin. Only acted on when has_pin is also true — see
-//                   profile.rs::wire_idle_lock_timer, the sole reader.
-//                   is_group_account/synced_via (2026-08-29, Bonfire Phase 5) — distinguishes a
-//                   genuine sub-profile from another master's own account reached via a
-//                   cross-household group (is_group_account, deliberately empty master_user_id —
-//                   see repair_bonfire_profile_corruption's own doc comment for the self-reference
-//                   collision that field choice avoids); synced_via records which of the user's
-//                   OWN accounts discovered this entry, for switch_to_profile's auth lookup and
-//                   sync_bonfire_subprofiles's prune scoping. See profile.rs::is_true_master.
-//   Config          { device: DeviceConfig, profiles: Vec<ProfileSettings>, active_profile_id }
-//                   (Bonfire Phase 1, 2026-08-08 — was one flat struct before this; see the
-//                   device/profile split's own doc comment above DeviceConfig for the full "why").
-//                   active()/active_mut() are the ONLY way other code should read/write a
-//                   profile-scoped field. v1 (this commit) always has exactly one profile —
-//                   no picker, no switching UI yet, deliberately zero behavior change from the
-//                   old flat Config. skip_*_mode: "always-skip"|"ask"|"ask-timed"|"never-skip";
-//                   skip_*_secs: auto-skip countdown (ask-timed); credits secs for Up Next banner.
-//                   log_level: "error"|"warn"|"info"|"debug" — read once at startup before the
-//                   tracing subscriber is built (main.rs); Settings→General row.
-//                   seerr_enabled/seerr_url/seerr_auth_method/seerr_api_key/seerr_session_cookie —
-//                   Seerr integration (Settings→Integrations), cleared on sign-out with the
-//                   Jellyfin auth fields; token/seerr_api_key/seerr_session_cookie are encrypted
-//                   at rest — see load_config/save_config and secrets.rs (looped over
-//                   cfg.profiles now, not three flat fields — secrets.rs itself is unchanged).
-//                   save_config serialises concurrent saves (one shared .tmp path) — 2026-10-04.
-//                   discover_filter_type/_genre_names/_sort/_min_rating/_min_year/_provider_ids
-//                   (2026-07-18) — Discover screen's persisted filter selections; profile-scoped
-//                   as of the Phase 1 split (a deliberate reversal of the old "not tied to Seerr
-//                   connection state so not cleared on sign-out" — see ProfileSettings' own doc
-//                   comment); genre persisted by name (stable across movie/TV id-space mismatch),
-//                   provider by id (TMDB watch-provider ids are shared across movie/TV).
-//   LegacyConfig/migrate_legacy_config  the pre-Phase-1 flat shape + its one-time migration into
-//                   the device/profiles shape — see load_config's own doc comment
-//   FjordState      runtime app state: config (auth + all settings, canonical),
-//                   client, library vecs, filtered lists, series cache, keybindings.
-//                   audio_devices: Vec<(name, description)> fetched at startup from mpv.
-//                   system_fonts: Vec<(value, display)> fetched at startup via fc-list, same
-//                     pattern as audio_devices — see fetch_system_fonts (main.rs).
-//                   movie_collections: HashMap<movie_id, (boxset_id, boxset_name)> built in background.
-//                   remembered_tracks: HashMap<series_id, RememberedTracks> — manual S/A panel picks,
-//                     session-only, cleared on sign-out; see RememberedTracks doc comment.
-//                   series_episode_cache: HashMap<season_id, Vec<MediaItem>> avoids re-fetching
-//                     already-seen seasons; cleared when a new series is opened.
-//                   series_season_generation: incremented on each season switch; async tasks compare
-//                     on completion to discard stale results from rapid navigation.
-//                   ws_abort: AbortHandle for the WebSocket reconnect task; abort on sign-out.
-//                   activity::ActivityClock (2026-08-29 Bonfire Phase 4, moved out of FjordState
-//                     on the event-loop branch 2026-09-08) — last observed keyboard/mouse
-//                     activity, app-wide; lives in its own dedicated file (activity.rs), not here,
-//                     since the new true-global mouse tap fires on every raw CursorMoved and would
-//                     otherwise contend this whole struct's mutex for that; read by
-//                     profile.rs::wire_idle_lock_timer, touch()ed from main.rs's on_handle_key,
-//                     activity::FjordApplicationHandler's winit-level hook, and the timer itself
-//                     while media plays.
-//                   ws_connected/ws_last_keepalive_at (2026-08-28): live connection-health signal
-//                     updated from ws.rs, consulted by wire_mpv_timer's stall-recovery to pick a
-//                     trailer_playable/request_detail_trailers (2026-10-04): session cache of which
-//                     YouTube trailer URLs play, for discover::start_trailer_check
-//                     long vs. short retry budget (see the field's own doc comment)
-//                   item_detail_cache/similar_items_cache/boxset_items_cache/artist_albums_cache/
-//                     person_filmography_cache/container_tracks_cache: BoundedCache<...> — screen-open
-//                     caches keyed by item/container id (Part 2), shared across the 7 detail-style screens;
-//                     persisted as one unit to screen_caches.json (Phase 103)
-//                   person_tmdb_id_cache (2026-07-29, Deep Seerr integration) — Jellyfin person id ->
-//                     TMDB person id (None = tried, no match); also persisted via ScreenCachesFile,
-//                     since the fuzzy name-search fallback is comparatively expensive to repeat.
-//                     person_other_work_cache — the row's own DiscoverCardMeta results, session-only
-//                     (item_type is &'static str, can't round-trip through serde); local_person_by_tmdb_cache
-//                     (2026-08-13) — TMDB person id -> matching local Jellyfin Person id (None = no
-//                     match), session-only, cleared on sign-out/profile-switch only (not Seerr
-//                     connect/disconnect — the mapping depends on the Jellyfin library, not Seerr)
-//                   discover_watchlist_ids/discover_watchlist_fetched/discover_calendar_entries/
-//                     seerr_discover_region (2026-07-18, Watchlist + Release Calendar) — Seerr-
-//                     connection-scoped, cleared alongside discover_known_requests/
-//                     seerr_streaming_region in clear_connection/commit_connection/sign-out; see
-//                     discover.rs's own TOC header for the fetch/rebuild functions
-//                   jellyfin_watchlist_ids (2026-07-20) — the resolved set of LOCAL Jellyfin
-//                     ids on the Seerr watchlist (tmdb-id-keyed discover_watchlist_ids' own
-//                     Jellyfin-id-keyed counterpart); real bug fix — item_to_card_item/
-//                     items_to_model consult this directly at CardItem-construction time
-//                     because a live model patch alone (context_menu::patch_watchlist_on_-
-//                     jellyfin_models) gets silently wiped by the next screen rebuild, since
-//                     MediaItem itself has no watchlist concept; kept authoritative by
-//                     discover::resync_jellyfin_watchlist_stars (wholesale replace) + a per-
-//                     toggle incremental update in discover_toggle_watchlist; cleared
-//                     alongside discover_watchlist_ids in clear_connection/commit_connection/
-//                     sign-out — see its own doc comment for the full story ("the watch list
-//                     symbol do not show up on items i the library screens")
-//                   screen_revalidate_last_run (2026-07-31, performance sweep) — rate-limits the
-//                     7 screen "revalidate on cache hit" functions to once per 60s per item id
-//                     (main.rs::should_revalidate); same missing-guard bug class as
-//                     seerr_admin_last_refresh, cleared on sign-out
-//                   pending_keybind_rebind: Option<keys::PendingKeybindRebind> (2026-08-07,
-//                     Key Bindings rebind-collision confirm) — stashed (row, combo) while
-//                     `show-keybinding-collision-confirm` is open; consumed by
-//                     `on_keybinding_collision_confirmed`/`_cancelled` (main.rs); cleared on
-//                     sign-out alongside the other transient Settings UI-flow flags
-//                   Adding a setting: add to Config only — FjordState.config is the copy.
-//                   movies_fetched/artists_fetched/albums_fetched/playlists_fetched: true after first network fetch (guards re-fetch)
-//                   movie_posters_loaded: Movies grid posters loaded for the current list (Discover fetches it without)
-//                   next_ep_pending moved to VideoState — cleared automatically on start_playback
-//   path helpers    xdg_config_base, xdg_cache_base (shared), config_path, poster_cache_dir/path, backdrop_cache_dir/path,
-//                   discover_poster_cache_dir/path (Seerr/TMDB posters — separate dir, no Jellyfin tag-revalidation concept), keybindings_path
-//   safe_cache_name server-provided id → cache file/folder name only if it's 32 hex (2026-10-09 security
-//                   review); the cache path helpers return None otherwise (unit-tested)
-//   write_private   owner-only (0600) file write from the first byte — config.json's temp file
-//                   (2026-10-09 security review; unit-tested)
-//   config I/O      load_config, save_config, ensure_device_id — save_config/save_screen_caches
-//                   both log a real tracing::error! on every failure point (serialize/write/rename),
-//                   2026-08-28 logging audit; load_config's own "corrupted file" fallthrough
-//                   (matches neither new nor legacy shape) does too, instead of silently treating
-//                   it as absent
-//   keybindings I/O load_keybindings, save_keybindings (same error!-on-failure treatment)
-//   fmt_resume_label  format resume position as "1h 23m 45s"
-//   upsert_media_item  replace-by-id-if-present-else-append; WS delta-sync merge helper
+//   BoundedCache<V> FIFO cache (default cap 40), Serialize/Deserialize, O(1) Clone (Arc + make_mut);
+//                   set_cap (raise-only, for the prewarm), recent_keys(n), iter(), clear() (sign-out);
+//                   freshness via WS invalidation + a post-login refresh, not a TTL
+//   ScreenCachesFile  on-disk snapshot of the screen-open caches (screen_caches.json)
+//   screen_caches_path/load_screen_caches/save_screen_caches  its persistence I/O (per profile)
+//   RememberedTracks  { audio_lang, sub_lang } — one series' manually picked track languages
+//   default_* fns   serde defaults for DeviceConfig/ProfileSettings fields
+//   sub_color_hex   ProfileSettings.sub_color display name → mpv hex colour ("" = don't touch)
+//   vf_mpv_value / deser_vf  DeviceConfig.vf display label → raw mpv sentinel ("" / "auto");
+//                   deser_vf migrates old raw values to the labels
+//   DeviceConfig    settings of THIS BOX, whoever is signed in: hwdec/vf/audio device/seek step/
+//                   animation speed/log_level/cache, launch_policy + default_profile_id (profile
+//                   tier), account_launch_policy + default_account_id (account tier),
+//                   onscreen_keyboard_enabled, display_sync_* (opt-in; display_sync_trailers),
+//                   separate_video_surface (default on), video_own_buffers (opt-in, per run),
+//                   video_dither_off (test aid)
+//   ProfileSettings settings that follow the PERSON, keyed by user_id: auth (server_url/user_id/
+//                   token), subtitle/audio language, library sort, skip_*_mode/_secs, trailer
+//                   quality, Seerr connection (seerr_enabled/_url/_auth_method/_api_key/
+//                   _session_cookie), Discover filters (genres by name, providers by id), Request
+//                   Options' remembered choices; remember_login (false → never resumed silently,
+//                   StartupGate::RequireLogin); Bonfire: is_bonfire/master_user_id/has_pin/
+//                   lockout_minutes, is_group_account/synced_via (group accounts, see
+//                   profile.rs::is_true_master), bonfire_linked_roots
+//   Config          { device, profiles, active_profile_id } — active()/active_mut() are the ONLY
+//                   way to read/write a profile-scoped field. Adding a setting: add it to Config
+//                   only (FjordState.config is the copy). token/seerr_api_key/seerr_session_cookie
+//                   are encrypted at rest (load_config/save_config, secrets.rs)
+//   LegacyConfig/migrate_legacy_config  the old flat shape + its one-time migration
+//   repair_bonfire_profile_corruption  self-heals profiles written by an old, unguarded Bonfire sync
+//   FjordState      runtime state (never persisted as a whole): config (canonical), client,
+//                   library vecs + *_fetched / movie_posters_loaded guards, filtered lists,
+//                   series/episode caches + series_season_generation, keybindings,
+//                   audio_devices / system_fonts (startup fetches), movie_collections,
+//                   remembered_tracks, ws_abort, ws_connected / ws_last_keepalive_at (stall-recovery
+//                   budget), PIN buffers, live_requires_pin, available_plugins, the screen-open
+//                   BoundedCaches (persisted together) + person caches, Seerr state
+//                   (client, regions, languages, permissions, watchlist/calendar/known requests,
+//                   jellyfin_watchlist_ids + its resync generation), screen_revalidate_last_run,
+//                   pending_keybind_rebind, trailer_playable, display_sync_current_mode.
+//                   Idle tracking lives in activity::ActivityClock, not here. Every transient field
+//                   is reset in reset_session_state (session.rs)
+//   path helpers    xdg_config_base, xdg_cache_base, config_path, poster/backdrop cache dir/path,
+//                   discover_poster_cache_dir/path (TMDB posters, separate dir), keybindings_path
+//   safe_cache_name server-provided id → cache file/folder name only if it's 32 hex; the cache
+//                   path helpers return None otherwise (unit-tested)
+//   write_private   owner-only (0600) file write from the first byte (config.json's temp file)
+//   config I/O      load_config, save_config (one save at a time), ensure_device_id — every failure
+//                   is logged, including a config.json that matches neither shape
+//   keybindings I/O load_keybindings, save_keybindings
+//   fmt_resume_label  resume position as "1h 23m 45s"
+//   upsert_media_item  replace-by-id or append; WS delta-sync merge helper
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::Arc;
 use std::time::Instant;
@@ -306,14 +194,10 @@ fn deser_deinterlace<'de, D: serde::Deserializer<'de>>(d: D) -> Result<String, D
     })
 }
 
-// Migrate the raw sentinel/mpv-value strings this field stored before the
-// vf dropdown was reworded to self-describing labels (2026-07-31) forward
-// to their new display equivalent — `vf_mpv_value()` already treats these
-// two old raw forms and their new labels as interchangeable for actual
-// playback, but without this an install upgrading from before the reword
-// would show the now-unrecognized old value as a blank "(none)" in the
-// Settings dropdown until the user happened to touch it. The four explicit
-// `format=...` values are unchanged by the reword and pass through as-is.
+// Migrates the raw sentinel values this field stored before the vf dropdown got
+// self-describing labels to those labels, so an upgraded install doesn't show a
+// blank "(none)" in Settings. `vf_mpv_value()` treats old and new forms alike for
+// playback; the four explicit `format=...` values pass through unchanged.
 fn deser_vf<'de, D: serde::Deserializer<'de>>(d: D) -> Result<String, D::Error> {
     Ok(match String::deserialize(d)?.as_str() {
         "" => "auto: nv12/p010",
@@ -323,43 +207,16 @@ fn deser_vf<'de, D: serde::Deserializer<'de>>(d: D) -> Result<String, D::Error> 
     .into())
 }
 
-// ── Config: device-scoped vs profile-scoped split (Bonfire Phase 1) ──────────
+// ── Config: device-scoped vs. profile-scoped ──────────────────────────────────
 //
-// A Bonfire sub-profile switch and a full sign-out/sign-in-as-someone-else
-// are the same underlying event: a new Jellyfin user_id+token becomes
-// active. Before this split, `Config` was one flat struct — every setting
-// followed whichever account happened to be signed in on this install, so a
-// second profile would silently inherit the first's subtitle language,
-// library sort order, Seerr connection, etc. `DeviceConfig` holds settings
-// that describe THIS PHYSICAL BOX regardless of who's using it (hwdec,
-// audio device, seek step, animation speed, log level...); `ProfileSettings`
-// holds everything that should follow the signed-in person instead (auth,
-// subtitle/audio language, library sort, Seerr connection, Discover
-// filters...). `Config.profiles: Vec<ProfileSettings>` + `active_profile_id`
-// is deliberately a `Vec` even though v1 (this commit) only ever has exactly
-// one entry and no UI to add a second — see the Bonfire integration plan for
-// the full profile-switching design this sets up. `Config.active()`/
-// `active_mut()` are the ONLY way any other code should read/write a
-// profile-scoped field; every call site was updated to go through them as
-// part of this same change (verified by the compiler — moving a field out
-// of a flat struct into a nested one makes every remaining direct reference
-// a compile error with an exact file:line, which is what actually drove this
-// pass, not a manual audit).
-//
-// Field classification below mirrors the plan's own table, with two
-// corrections made while writing this code against the real struct (not the
-// plan's earlier draft of it): `now_playing_auto_open` is profile-scoped
-// (pure per-viewer UX preference, its own doc comment below has no
-// hardware-compatibility framing the way `gapless_audio`'s "kill switch"
-// wording does); `cache_secs`/`cache_max_mb` stay device-scoped (about the
-// box's own network path, not per-viewer taste).
-//
-// This whole restructuring is meant to be genuinely ZERO BEHAVIOR CHANGE —
-// one profile behaves identically to the single flat Config that existed
-// before it. Nothing here builds the profile PICKER, switching UI, or
-// Bonfire API calls yet; those are later, separate commits in the same
-// phase, deliberately kept out of this one so it stays small enough to
-// bisect on its own if anything regresses.
+// A Bonfire sub-profile switch and a sign-in as someone else are the same event: a
+// new Jellyfin user_id + token becomes active. `DeviceConfig` holds what describes
+// THIS BOX whoever uses it (hwdec, audio device, seek step, animation speed, log
+// level, cache_secs/cache_max_mb — the box's network path …); `ProfileSettings`
+// holds what follows the person (auth, subtitle/audio language, library sort, Seerr
+// connection, Discover filters, now_playing_auto_open …). `Config.profiles` +
+// `active_profile_id` select the active one; `Config::active()`/`active_mut()` are
+// the ONLY way other code reads/writes a profile-scoped field.
 
 #[derive(Clone, Serialize, Deserialize)]
 pub(crate) struct DeviceConfig {
@@ -416,23 +273,12 @@ pub(crate) struct DeviceConfig {
         deserialize_with = "deser_deinterlace"
     )]
     pub deinterlace: String,
-    // ── Network cache (Settings → Player → Buffering) ───────────────────────
-    // cache_secs sets mpv's `cache-secs` directly (0 = mpv's own default,
-    // which is enormous — ~3.6M seconds per the real mpv manual — so in
-    // practice cache_max_mb is what actually binds). cache_max_mb sets
-    // `demuxer-max-bytes`, the real byte ceiling mpv enforces by default
-    // (150 MiB) regardless of cache_secs — confirmed 2026-08-09 against the
-    // installed mpv 0.41.0 manual after a real HTPC network outage showed
-    // the *previous* single `cache_size_mb` setting only ever adjusted
-    // cache-secs via an arbitrary `×0.8` conversion and never touched
-    // demuxer-max-bytes at all, meaning it could never actually raise the
-    // real buffer past mpv's stock 150 MiB — see CLAUDE.md's "Playback
-    // resilience" section for the full story. cache_max_mb's own 0 means
-    // something different from cache_secs's — "Unlimited" (fjord-player's
-    // `Player::new` raises demuxer-max-bytes to a large fixed ceiling
-    // instead of leaving mpv's small 150 MiB stock default in place, which
-    // would be the most RESTRICTIVE choice on the row, the opposite of
-    // unlimited), for a user who wants cache_secs alone to govern.
+    // ── Network cache (Settings → Player → Buffering) ───────────────────────────
+    // cache_secs → mpv `cache-secs` (0 = mpv's default, ~3.6M s, so cache_max_mb is what
+    // binds in practice). cache_max_mb → `demuxer-max-bytes`, the byte ceiling mpv
+    // enforces (stock 150 MiB) regardless of cache_secs; its 0 means "Unlimited"
+    // (`Player::new` raises demuxer-max-bytes to a large fixed ceiling) for letting
+    // cache_secs alone govern. Background: DEVLOG → "Playback resilience".
     #[serde(default = "default_cache_secs")]
     pub cache_secs: u32,
     #[serde(default = "default_cache_max_mb")]
@@ -458,14 +304,9 @@ pub(crate) struct DeviceConfig {
     pub gapless_audio: bool,
     #[serde(default)]
     pub alsa_irq_scheduling: bool,
-    // Whether the skip-segment fade (see skip_fade_ms below) mutes audio for
-    // its whole duration when SPDIF passthrough is active — the closest
-    // available analog to a fade there, since a raw bitstream can't be
-    // volume-ramped like PCM (Settings → Audio → Passthrough; 2026-08-11
-    // follow-up: "add a setting for mute during fade for audio passthrou so
-    // i only can turn off that and not the video fade" — this only ever
-    // gates the passthrough mute, never the video fade or the PCM ramp,
-    // both of which stay unconditional regardless of this toggle).
+    // Whether the skip-segment fade (skip_fade_ms) mutes audio during SPDIF passthrough
+    // — a raw bitstream can't be volume-ramped like PCM, so muting is the closest analog.
+    // Gates only that mute; the video fade and the PCM ramp always apply.
     #[serde(default = "default_skip_fade_mute_passthrough")]
     pub skip_fade_mute_passthrough: bool,
 
@@ -480,13 +321,9 @@ pub(crate) struct DeviceConfig {
     #[serde(default = "default_seek_step_long")]
     pub seek_step_long_secs: u32,
 
-    // ── Skip-segment fade-to-black duration (Settings → Player → Seeking,
-    // appended alongside seek_step for the same "no natural home, append at
-    // the end" reason) — base ms before the settings-animation-speed
-    // multiplier; 0 = instant, same hard cut as before this feature shipped.
-    // Closer to "how this screen/setup feels" than personal viewer taste
-    // (same reasoning already applied to seek_step_secs), so device- not
-    // profile-scoped.
+    // ── Skip-segment fade-to-black duration (Settings → Player → Seeking) ──────────
+    // Base ms before the settings-animation-speed multiplier; 0 = an instant cut.
+    // Device-scoped like seek_step_secs (about the setup, not personal taste).
     #[serde(default = "default_skip_fade_ms")]
     pub skip_fade_ms: u32,
 
@@ -504,63 +341,41 @@ pub(crate) struct DeviceConfig {
     #[serde(default = "default_ui_font_family")]
     pub ui_font_family: String,
 
-    // ── On-screen alphanumeric keyboard (Settings → UI, 2026-08-27, direct
-    // request) — Fjord must be installable and fully usable on a box with
-    // no physical keyboard attached (remote/D-pad only), which is the
-    // entire reason this feature exists, so it defaults ON. Device-scoped,
-    // not profile-scoped — "does this box have a keyboard plugged in" is a
-    // hardware fact, not personal viewer taste, same reasoning already
-    // applied to seek_step_secs/skip_fade_ms above. Gated in two places
-    // for defense in depth, not just one — every QwertyKeyboard mount
-    // condition (so it never renders when off) AND keys.rs's own
-    // on-screen-keyboard dispatch gate (so even if some trigger site still
-    // flips show-onscreen-keyboard to true while this is off, that gate —
-    // which runs before every other input tier and unconditionally
-    // consumes any key — can't turn into a silent, no-visible-cause
-    // lockout the way a mount-condition-only fix could).
+    // ── On-screen alphanumeric keyboard (Settings → UI) ─────────────────────────
+    // Default ON: Fjord must be fully usable with no physical keyboard (remote/D-pad).
+    // Device-scoped — whether a keyboard is attached is a hardware fact. Checked by the
+    // openers (AppState.open-onscreen-keyboard / keys::open_onscreen_keyboard — nothing
+    // opens when off), every QwertyKeyboard mount, and keys.rs's keyboard gate.
     #[serde(default = "default_true")]
     pub onscreen_keyboard_enabled: bool,
 
-    // ── Bonfire profile-picker launch policy (Phase 1, not yet wired to a
-    // Settings row or the picker screen in this commit) — "always_ask" |
-    // "remember_last" | "default". default_profile_id is that profile's
-    // user_id, meaningful only when launch_policy == "default".
+    // ── Profile-picker launch policy (Settings → Profiles) ──────────────────────
+    // "always_ask" | "remember_last" | "default"; default_profile_id is that profile's
+    // user_id, used only with "default".
     #[serde(default = "default_launch_policy")]
     pub launch_policy: String,
     #[serde(default)]
     pub default_profile_id: String,
 
-    // ── Account-tier picker (2026-08-14) — the identical launch-policy
-    // shape one level up, mirroring launch_policy/default_profile_id
-    // exactly: "always_ask" | "remember_last" | "default". Only actually
-    // consulted once should_show_picker_at_startup finds 2+ distinct
-    // ACCOUNTS (grouped by profile::account_root_id, not raw profile
-    // count) — a single-account install (every existing one, today) never
-    // reads either of these. default_account_id is that account's own
-    // root user_id (the master's, or a standalone plain profile's own).
+    // ── Account-tier launch policy ───────────────────────────────────────────────
+    // The same three values one tier up (account_launch_policy / default_account_id =
+    // the account's root user_id). Only consulted when should_show_picker_at_startup
+    // finds 2+ accounts (grouped by profile::account_root_id).
     #[serde(default = "default_launch_policy")]
     pub account_launch_policy: String,
     #[serde(default)]
     pub default_account_id: String,
 
-    // ── display_sync (2026-09-18) — native resolution/refresh-rate/HDR/WCG
-    // matching to source, replacing the external `media_display_sync`
-    // script's own job for this exact machine. Device-scoped: which KDE
-    // output exists and what modes it supports is a hardware fact, same
-    // reasoning as `target_colorspace_hint`/`seek_step_secs` above. Opt-in,
-    // off by default — see `display_sync.rs`'s own module doc comment and
-    // CLAUDE.md's dated section for the full design, including the real
-    // ordering fix this needed against the pre-existing HDR Stage 3 hook.
+    // ── display_sync — resolution/refresh-rate/HDR/WCG matched to the source ────
+    // Device-scoped (which output exists and its modes are hardware facts), opt-in.
+    // Design in display_sync.rs's module doc and DEVLOG → display_sync, including its
+    // ordering against the HDR Stage 3 hook.
     #[serde(default)]
     pub display_sync_enabled: bool,
-    // Not auto-detected at runtime — only auto-pre-filled once, at startup,
-    // while still empty (`main.rs`'s `display_sync::list_output_names()`
-    // fetch, only when it returns exactly one candidate); stored and used as
-    // an explicit string from then on, same reasoning the external script's
-    // own hard-required SCREEN_NAME config key already established (a
-    // "first enabled+connected output" heuristic picks wrong the moment
-    // there's a second output). Editable any time via Settings' own dynamic
-    // dropdown, which always shows every currently connected output.
+    // Not auto-detected at runtime: pre-filled once at startup while still empty, and
+    // only when `display_sync::list_output_names()` finds exactly one output; an
+    // explicit setting from then on ("first connected output" picks wrong as soon as
+    // there's a second one). Editable via Settings' dynamic dropdown.
     #[serde(default)]
     pub display_sync_screen_name: String,
     #[serde(default = "default_display_sync_resolution")]
@@ -724,16 +539,11 @@ pub(crate) struct ProfileSettings {
     pub is_bonfire: bool,
     #[serde(default)]
     pub master_user_id: String,
-    // Bonfire Phase 5 (cross-household groups, 2026-08-29) — true only for
-    // an `/list` entry representing ANOTHER master's own account (Bonfire's
-    // `is_master: true`), reached because the calling master joined or owns
-    // a group with them — never true for a genuine sub-profile. When true,
-    // `master_user_id` is deliberately left EMPTY (not self-referencing —
-    // see `repair_bonfire_profile_corruption`'s own doc comment for the
-    // collision that would cause) and `account_root_id()` roots this entry
-    // to itself instead of reading `master_user_id` at all; the calling
-    // master that discovered it is recorded separately, in `synced_via`,
-    // for `switch_to_profile`'s own auth lookup and for prune-scoping.
+    // True only for a /list entry that is ANOTHER master's own account (Bonfire
+    // `is_master: true`), reached through a group the calling master joined or owns —
+    // never for a sub-profile. Then `master_user_id` stays EMPTY (never self-referencing —
+    // see `repair_bonfire_profile_corruption`), `account_root_id()` roots the entry to
+    // itself, and `synced_via` records who discovered it (switch auth, prune scope).
     #[serde(default)]
     pub is_group_account: bool,
     // Bonfire Phase 5 — which of *my own* saved master accounts' `/list`
@@ -752,58 +562,25 @@ pub(crate) struct ProfileSettings {
     // caveat as every other cached-until-next-refresh field in this app.
     #[serde(default)]
     pub has_pin: bool,
-    // Bonfire Phase 4 (inactivity auto-lock, 2026-08-29) — minutes of
-    // idleness before this profile is force-locked back to the Profile
-    // Picker; 0 = disabled, matching Bonfire's own real API semantics
-    // (confirmed against the plugin's developer-api.md: purely declarative,
-    // no server-side enforcement — every Bonfire-compatible client is
-    // expected to enforce this itself). Cached from the same /list response
-    // as has_pin, same staleness caveat; kept in sync at the same 2 sites
-    // (sync_bonfire_subprofiles, ProfileEditScreen's self-edit save path).
-    // Only ever acted on when has_pin is also true — see
-    // main.rs::wire_idle_lock_timer.
+    // Minutes idle before this profile locks back to the picker; 0 = off. Bonfire only
+    // declares it (developer-api.md: clients enforce it, the server doesn't). Cached from
+    // /list like has_pin (same staleness), refreshed in sync_bonfire_subprofiles and the
+    // self-edit save. Only acts when has_pin is also true — profile::wire_idle_lock_timer.
     #[serde(default)]
     pub lockout_minutes: i64,
-    // Bonfire Phase 5 follow-up (2026-08-31, live-reported: "but what i
-    // shuld still be able to switch to a bonfire master profile with out
-    // needing to switch 'accaunt' thats whats bonfire grouping is for?") —
-    // the set of OTHER account-root user_ids my most recent /list sync
-    // reported as linked to my own account, recorded ONLY on the syncing
-    // session's own root entry. Deliberately independent of is_bonfire/
-    // is_group_account (which encode auth authority, not group
-    // membership) — an account can be both independently known (its own
-    // real login) AND Bonfire-linked at the same time, and the existing
-    // "skip an already-known independent account" guard in
-    // sync_bonfire_subprofiles must keep working exactly as it did before
-    // this field existed while ALSO recording the linkage here. Used by
-    // profile.rs::linked_account_roots to build extra "{name}'s Bonfire"
-    // sections directly into ProfilePickerScreen — see open_profile_picker.
+    // OTHER account roots my latest /list sync reported as linked to my account, stored
+    // only on the syncing session's own root entry. Independent of is_bonfire /
+    // is_group_account (those encode auth authority, not membership): an account can be
+    // independently known AND linked. Used by profile::linked_account_roots for the
+    // picker's extra sections.
     #[serde(default)]
     pub bonfire_linked_roots: Vec<String>,
-    // Account-tier picker (2026-08-14, live-reported design feedback: "if
-    // there is no bonfire on the other server everyone can use that
-    // accaunt as the session is saved... mabey add a setting to remember
-    // login"). Only meaningful on an ACCOUNT-root entry — originally always
-    // `is_bonfire == false`, but Bonfire Phase 5 (cross-household groups)
-    // means a group account (`is_group_account == true`) is now ALSO an
-    // account root despite `is_bonfire == true`, so that premise is no
-    // longer exact; a genuine sub-profile is still switched into via the
-    // master's own token, never its own stored one, so this flag has
-    // nothing to gate for it either way. In practice this field is inert
-    // for a group account regardless — nothing ever sets it to `false` for
-    // one (`sync_bonfire_subprofiles` never touches it), and
-    // `should_show_picker_at_startup`'s own `!is_group_account` exclusion
-    // already makes a group account non-auto-resumable independent of this
-    // flag's value. Default true — preserves today's actual behavior (every
-    // account silently resumes via its stored token) for every existing
-    // install and every newly-added account unless explicitly turned off;
-    // when false, that account's own StartupGate/switch path must show a
-    // fresh Login (password required) instead of ever silently resuming
-    // via the stored token, regardless of what account/profile launch
-    // policy would otherwise decide. Set via the "Remember this login"
-    // checkbox on LoginScreen at Add-Account time (also the very first
-    // login) — see should_show_picker_at_startup's own doc comment for
-    // where this is actually enforced.
+    // Only meaningful on an account-root entry (a sub-profile is switched into with its
+    // master's token). Default true: the account resumes silently from its stored token.
+    // False: the startup gate and picker switches show Login (password) instead, whatever
+    // the launch policies say (should_show_picker_at_startup,
+    // profile::account_requires_login). Set by "Remember this login" on LoginScreen and in
+    // Settings. Inert for a group account (never set false; it never auto-resumes anyway).
     #[serde(default = "default_true")]
     pub remember_login: bool,
 
@@ -908,32 +685,14 @@ pub(crate) struct ProfileSettings {
     #[serde(default = "default_trailer_quality")]
     pub trailer_quality: String,
 
-    // ── Discover filters (2026-07-18) ─────────────────────────────────────
-    // "" / empty Vec / 0 all mean "no filter set" for their respective field,
-    // matching this file's existing empty-string-means-unset convention
-    // (sub_lang etc). discover_filter_type: "" (All) | "movie" | "tv".
-    // discover_filter_sort: "" (Popularity, Seerr/TMDB's own default) |
-    // "rating" | "newest" | "oldest" — an internal key, translated to the
-    // correct per-media-type TMDB sortBy value at request time (discover.rs),
-    // not the TMDB value itself, since the same internal key means a
-    // different literal string for movies vs TV (primary_release_date.* vs
-    // first_air_date.*). discover_filter_min_rating: 0.0 = Any, else the
-    // bucket floor (6.0/7.0/8.0). discover_filter_min_year: 0 = Any, else
-    // the bucket floor (2000/2010/2015/2020). Provider ids are TMDB ids as
-    // selected in the Provider chip picker (real TMDB watch-provider ids are
-    // shared across movie/TV, unlike genre ids — see DiscoverFilters' own
-    // doc comment in fjord-seerr), ORed together at request time. Genre is
-    // persisted by NAME, not id — movie/TV genre id spaces don't fully
-    // overlap even for same-named genres, so a raw id alone is ambiguous
-    // once discover_filter_type changes; name is the stable identity
-    // `GenreItem` dedup already uses, re-resolved to whichever type-specific
-    // id is actually needed at request time.
-    //
-    // Profile-scoped (2026-08-08, Bonfire Phase 1) — a deliberate reversal
-    // of this block's own earlier "not tied to Seerr connection state so not
-    // cleared on sign-out" note: these now reset to blank while no profile
-    // is active and are restored when that profile is switched back to,
-    // since Discover filters really are personal taste.
+    // ── Discover filters ────────────────────────────────────────────────────────
+    // "" / empty Vec / 0 = no filter. discover_filter_type: "" (All) | "movie" | "tv".
+    // discover_filter_sort: "" (popularity) | "rating" | "newest" | "oldest" — an internal
+    // key, mapped to the per-media-type TMDB sortBy at request time (the date fields
+    // differ between movies and TV). min_rating: 0.0 = Any, else 6/7/8. min_year: 0 =
+    // Any, else 2000/2010/2015/2020. Providers: TMDB watch-provider ids (shared by movie
+    // and TV), ORed. Genres by NAME, not id — movie/TV genre ids differ even for the same
+    // name; re-resolved to the type's id at request time. Profile-scoped (personal taste).
     #[serde(default)]
     pub discover_filter_type: String,
     #[serde(default)]
@@ -947,27 +706,14 @@ pub(crate) struct ProfileSettings {
     #[serde(default)]
     pub discover_filter_provider_ids: Vec<i64>,
 
-    // ── Request Options "remember last choice" (2026-08-12) ──────────────────
-    // Direct request, matching Seerr's own web UI behavior ("seerr always
-    // remember what you hade chosen last time so it shuld mirror it"):
-    // Quality/Profile/Tags picked in the RequestOptionsOverlay modal are
-    // remembered permanently and re-applied as the starting point the next
-    // time the modal opens for a DIFFERENT item — not just within the same
-    // item's session, which already worked for free (nothing ever reset
-    // those fields between a Cancel and a reopen, or between toggling
-    // Quality and back). Split by media type (movie vs tv) since Seerr's own
-    // Radarr/Sonarr split means the two have entirely separate
-    // profile/tag id spaces and a user may reasonably want a different
-    // default tier for each; each bucket remembers BOTH tiers' own
-    // profile+tags at once (not just whichever tier was actually
-    // submitted), mirroring the existing session-only 2K/4K "alt" swap
-    // (discover::set_quality) so toggling tiers in the modal doesn't lose
-    // whatever was independently picked on the other one. Persisted only on
-    // a successful Request/Save (submit_request/submit_edit_request), not
-    // on every intermediate toggle — Cancel shouldn't overwrite what was
-    // remembered before. Profile/tag ids that no longer exist on the server
-    // (config changed) are simply not found when re-applied, falling back
-    // to Default/unselected for that one row — no explicit migration needed.
+    // ── Request Options: remember the last choice ────────────────────────────────
+    // Like Seerr's web UI: Quality/Profile/Tags picked in the Request Options modal are
+    // remembered and pre-selected next time, for any item. Separate buckets for movie
+    // and tv (Radarr/Sonarr have separate profile/tag ids), each keeping BOTH tiers'
+    // profile+tags (like the modal's 2K/4K "alt" swap, discover::set_quality). Saved only
+    // on a successful Request/Save (submit_request/submit_edit_request), never on Cancel.
+    // Ids that no longer exist on the server just aren't found and fall back to
+    // Default/unselected.
     #[serde(default)]
     pub request_pref_movie: RequestPreference,
     #[serde(default)]
@@ -1563,80 +1309,24 @@ pub(crate) fn fmt_resume_label(secs: f64) -> String {
     }
 }
 
-// Config's on-disk `token`/`seerr_api_key`/`seerr_session_cookie` are
-// encrypted at rest (see secrets.rs) — decrypted here immediately after
-// parsing so every other call site keeps reading plain strings from `Config`
-// exactly as before. `device_id` itself stays plaintext (it's the key
-// material, not a secret — Jellyfin ties auth to it, but it isn't a bearer
-// credential on its own) and is what makes the derivation possible without a
-// separate keyfile.
-// Bonfire Phase 1: tries the current (device/profiles) shape first; on
-// failure, falls back to the pre-Phase-1 flat `LegacyConfig` shape and
-// migrates it forward, re-saving once so this fallback only ever runs on
-// the very first post-upgrade launch. Every profile's token/seerr_api_key/
-// seerr_session_cookie are decrypted here — same reasoning as before this
-// split, just looped over `profiles` instead of three flat fields.
-/// Self-heals `Config.profiles` against two related, live-found Bonfire
-/// corruption patterns, both traceable to an older, unguarded
-/// `sync_bonfire_subprofiles` (`profile.rs`) blindly trusting the CALLING
-/// session's own `user_id` as the `master_user_id` for whatever Bonfire's
-/// `/list` endpoint returned — the write side of both is already fixed
-/// (that function now refuses to run at all unless the calling session's
-/// own local entry is a genuine, non-Bonfire master); this only repairs a
-/// `config.json` already corrupted by the old version. Returns whether
-/// anything changed, so the caller knows whether to re-save.
-///
-/// **Pattern 1 — self-reference** (found live 2026-08-14): a master's own
-/// already-correct entry silently overwritten to `is_bonfire: true,
-/// master_user_id: <itself>` — a self-referencing state that's always
-/// wrong (a profile can never legitimately be a Bonfire sub-profile of
-/// itself) and made `switch_to_profile` treat clicking that profile's own
-/// picker tile as a Bonfire switch INTO itself, which the server has no
-/// reason to accept.
-///
-/// **Pattern 2 — reparented under a sub-profile** (found live 2026-08-15):
-/// switching TO a sub-profile and having the old, unguarded sync run as
-/// that sub-profile could silently reparent ITS OWN siblings (and, per a
-/// second real report the next day, even the true master's own entry, if
-/// Bonfire's `/list` response queried by a sub-profile also happened to
-/// include the real master in the returned list) to point at the calling
-/// sub-profile instead of the real master. A profile whose `master_user_id`
-/// points at ANOTHER Bonfire profile (a sub-profile can never legitimately
-/// be another sub-profile's master) gets re-pointed at that chain's real
-/// root, walking `master_user_id` up to 5 hops (generous — Bonfire's own
-/// real data model has no legitimate multi-hop case at all, a sub-profile
-/// always points directly at its true master, so anything still unresolved
-/// by hop 2 is already corruption either way).
-///
-/// **Cycle handling, the real gap found live 2026-08-16 on a second,
-/// independently corrupted machine**: a plain hop-count cap alone silently
-/// gave up on a genuine CYCLE (A's master is B, B's master is A) without
-/// ever fixing it — exactly what happens when the corrupted `/list`
-/// response includes the real master itself, flipping ITS entry to
-/// `is_bonfire: true, master_user_id: <the calling sub-profile's id>` while
-/// that sub-profile's own (also-corrupted) entry still points back at the
-/// real master. A chain walk can detect this (it revisits an id already
-/// seen on the same walk) but can never safely decide FROM THE DATA ALONE
-/// which of the two cyclic nodes is the genuine master and which is the
-/// impostor — both look identical (`is_bonfire: true`) once corrupted.
-/// Chosen resolution: demote ONLY the node that is itself part of the
-/// detected cycle (its own walk loops back to its own id) to a plain,
-/// standalone account — NOT every profile that merely points INTO the
-/// cycle from outside (e.g. a genuine sibling sub-profile still correctly
-/// pointing at one of the two cyclic nodes) — guessing which cyclic node
-/// is "real" and force-repointing an outside sibling to it could easily
-/// guess wrong; leaving it pointed at whichever cyclic node it already
-/// references is strictly safer, since that node is now a genuine,
-/// working plain account either way (just possibly the "wrong" one to be
-/// attributed under for now). This can demote BOTH nodes of a 2-cycle to
-/// their own standalone accounts in the same pass — a fully working, if
-/// not perfectly-attributed, interim state — because the already-proven
-/// write-side fix means the very next time the user does a real,
-/// password-based login as whichever one is the TRUE master, that
-/// session's own `sync_bonfire_subprofiles` run re-derives the entire real
-/// household tree from Bonfire's own live `/list` response (ground truth),
-/// correctly re-parenting every sub-profile including siblings left
-/// pointing at the "wrong" cyclic node here.
+// Self-heals `Config.profiles` against two corruption patterns written by an older,
+// unguarded `sync_bonfire_subprofiles` (it used the CALLING session's `user_id` as
+// `master_user_id` for everything /list returned; it now refuses to run unless the
+// caller is a true master). Repairs only already-corrupted config.json files; returns
+// whether anything changed (the caller re-saves).
+//
+// **Self-reference:** a master rewritten to `is_bonfire: true, master_user_id: <itself>`
+// (a switch to it then fails) → restored to a plain account.
+//
+// **Re-parented under a sub-profile:** a `master_user_id` pointing at another Bonfire
+// profile (a sub-profile is never another's master) is re-pointed at its chain's
+// root, following up to 5 hops.
+//
+// **Cycles** (A → B → A, when /list also returned the real master): the data can't
+// tell which node is the real master, so only nodes whose own walk loops back to
+// themselves are demoted to standalone accounts; profiles pointing into the cycle
+// are left alone. That interim state works, and the next real login as the true
+// master re-derives the household from /list (ground truth).
 fn repair_bonfire_profile_corruption(profiles: &mut [ProfileSettings]) -> bool {
     let mut repaired = false;
     for p in profiles.iter_mut() {
@@ -1703,6 +1393,11 @@ fn repair_bonfire_profile_corruption(profiles: &mut [ProfileSettings]) -> bool {
     repaired
 }
 
+// Loads config.json: the current (device/profiles) shape first, else the old flat
+// `LegacyConfig`, migrated forward and re-saved once. Every profile's token /
+// seerr_api_key / seerr_session_cookie is decrypted here (encrypted at rest, see
+// secrets.rs), so the rest of the app reads plain strings. `device_id` stays
+// plaintext: it's the key material, not a bearer credential.
 pub(crate) fn load_config() -> Option<Config> {
     let data = std::fs::read_to_string(config_path()).ok()?;
     let (mut cfg, migrated) = match serde_json::from_str::<Config>(&data) {
@@ -1710,15 +1405,9 @@ pub(crate) fn load_config() -> Option<Config> {
         Err(new_err) => match serde_json::from_str::<LegacyConfig>(&data) {
             Ok(legacy) => (migrate_legacy_config(legacy), true),
             Err(legacy_err) => {
-                // 2026-08-28 logging audit — real gap: a genuinely
-                // corrupted config.json (neither valid new-shape nor valid
-                // legacy-shape JSON — a crash mid-write, a bad manual
-                // edit, a disk error) previously fell through both
-                // `.ok()?` calls silently, indistinguishable in the log
-                // from a fresh install with no config file at all. The
-                // user would be dropped back to a blank Login screen with
-                // nothing to explain why their saved session/settings
-                // just vanished.
+                // Neither shape parses (crash mid-write, bad manual edit, disk error): log it —
+                // otherwise it looks like a fresh install and the user lands on Login with
+                // everything gone and nothing in the log.
                 tracing::error!(
                     "load_config: config.json is neither valid new-shape ({new_err:#}) nor valid legacy-shape ({legacy_err:#}) — treating as absent, all settings/session will reset"
                 );
@@ -1771,14 +1460,8 @@ pub(crate) fn save_config(cfg: &Config) {
             p.seerr_session_cookie = crate::secrets::encrypt(&p.seerr_session_cookie, &key);
         }
     }
-    // 2026-08-28 logging audit — real gap: all three steps below (the
-    // single most critical persistence path in the app — every settings
-    // change, sign-out, and profile switch goes through this) silently
-    // did nothing on failure, with zero trace anywhere. A full disk, a
-    // permissions problem, or anything else going wrong here previously
-    // meant the user's changes just silently never persisted — "my
-    // settings keep resetting" / "I got signed out again" with nothing in
-    // the log to explain why.
+    // Every failure below is logged: this is the one persistence path (settings,
+    // sign-out, profile switch) — a silent failure looks like settings resetting.
     match serde_json::to_string_pretty(&on_disk) {
         Ok(json) => {
             let tmp = path.with_extension("json.tmp");
@@ -1800,11 +1483,10 @@ pub(crate) fn save_config(cfg: &Config) {
     set_owner_only_permissions(&path);
 }
 
-/// Writes `data` to `path`, readable by the owner only from the first byte
-/// on (2026-10-09 security review: writing with the default umask and
-/// chmod-ing after the rename left config.json — which holds the tokens —
-/// world-readable for a moment). Re-tightens an existing file too: a temp
-/// file left by a crash keeps its old mode when reopened.
+/// Writes `data` to `path`, readable by the owner only from the first byte on
+/// (writing with the default umask and chmod-ing after the rename would leave
+/// config.json, which holds the tokens, world-readable for a moment). Re-tightens an
+/// existing file too: a temp file left by a crash keeps its old mode when reopened.
 pub(crate) fn write_private(path: &std::path::Path, data: &[u8]) -> std::io::Result<()> {
     use std::io::Write;
     let mut opts = std::fs::OpenOptions::new();
@@ -1844,13 +1526,10 @@ pub(crate) struct ScreenCachesFile {
     pub artist_albums: BoundedCache<Vec<MediaItem>>,
     pub person_filmography: BoundedCache<Vec<MediaItem>>,
     pub container_tracks: BoundedCache<Vec<MediaItem>>,
-    // Jellyfin person id -> TMDB person id, `None` meaning "already tried,
-    // no confident match" (worth persisting since a miss still costs a
-    // real fuzzy name-search fallback — Person "Other Work" row, 2026-07-29,
-    // Deep Seerr integration). Unlike the other 5 caches above this one
-    // holds a trivially-serializable Option<i64>, not a MediaItem — added
-    // with a default fn (BoundedCache has no Default impl) so old
-    // screen_caches.json files without this field still load.
+    // Jellyfin person id → TMDB person id (Person "Other Work" row); `None` = already
+    // tried, no confident match — worth persisting, a miss costs a fuzzy name search.
+    // Has a default fn (BoundedCache has no Default) so older screen_caches.json files
+    // without this field still load.
     #[serde(default = "default_person_tmdb_id_cache")]
     pub person_tmdb_id: BoundedCache<Option<i64>>,
 }
@@ -1976,50 +1655,17 @@ fn default_cap() -> usize {
     40
 }
 
-/// FIFO cache: at most `cap` entries, oldest evicted first. Used to skip the
-/// network round-trip for screen-open fetches (get_item_detail /
-/// get_similar_items / etc) when an item was viewed recently — the goal is
-/// "reopening something you just looked at shows instantly, no loading
-/// spinner." Persisted to disk (`screen_caches.json`, Phase 103) so this
-/// survives a restart; freshness is guarded by WS-driven invalidation
-/// (`ws.rs`'s LibraryChanged/UserDataChanged handlers call `.remove()`/
-/// `.insert()` on the matching cache as changes are reported) plus a
-/// post-login background refresh sweep, not a TTL — an earlier version of
-/// this cache used a 5-minute TTL, dropped once WS invalidation covered the
-/// same freshness guarantee without discarding a still-valid entry early.
-/// `cap` is genuinely persisted (not `#[serde(skip)]`, Phase 104 fix): the
-/// opt-in library prewarm (`prewarm.rs`) raises it via `set_cap` to fit
-/// however many items it actually populates — a skipped/reset-to-40 cap
-/// silently evicted all but the last 40 of a 10,000+-item prewarm sweep
-/// straight back down to nothing, confirmed via a real run's
-/// `screen_caches.json` (thousands of requests made, 40 entries survived).
-/// `default_cap()` only covers a JSON file predating this field.
+/// FIFO cache: at most `cap` entries, oldest evicted first — reopening something you
+/// just looked at shows instantly. Persisted (`screen_caches.json`); kept fresh by
+/// ws.rs's LibraryChanged/UserDataChanged handlers (remove/insert) plus a post-login
+/// background refresh, not a TTL. `cap` is persisted too: the opt-in library prewarm
+/// (prewarm.rs) raises it via `set_cap` to fit the whole library; `default_cap()` only
+/// covers files predating the field.
 ///
-/// Backing storage is `Arc<BoundedCacheInner<V>>`, not a plain struct —
-/// real fix, 2026-08-01 (previously deferred as "disproportionate blast
-/// radius" under the assumption a cheap clone would require touching every
-/// call site across the 7 screens that use these caches; re-examined after
-/// being asked directly why not do the full fix, and it turns out
-/// `Arc::make_mut` gets the same result with zero call-site changes, since
-/// it's entirely internal to this impl block). `BoundedCache::clone()`
-/// (used by `save_screen_caches` to snapshot all six caches under a brief
-/// lock before writing them to disk) is now O(1) — just bumps the Arc's
-/// refcount — instead of a deep `HashMap`+`VecDeque` copy, which stopped
-/// being free once the opt-in library prewarm (Phase 104) raises `cap` to
-/// fit the whole library. Every mutating method below goes through
-/// `Arc::make_mut`, Rust's standard clone-on-write primitive: when the Arc
-/// is uniquely held (the overwhelmingly common case — nothing else has
-/// cloned it), the mutation happens in place with zero extra cost, exactly
-/// like before this change; only if something else (a save in flight) is
-/// still holding a clone does the one mutation that collides with it pay a
-/// real clone, once, after which the Arc is unique again and subsequent
-/// mutations are back to free. Needs serde's `rc` feature (workspace
-/// `Cargo.toml`) so `Arc<BoundedCacheInner<V>>` can derive
-/// `Serialize`/`Deserialize` directly — it serializes the inner value as
-/// if it were a plain field, which is exactly what's wanted here (this
-/// cache is never actually shared across more than one live `Arc` clone
-/// for longer than a save's own snapshot window, so there's no meaningful
-/// "shared reference" semantic being lost on a round trip through JSON).
+/// Storage is `Arc<BoundedCacheInner<V>>` with `Arc::make_mut` in every mutating
+/// method (clone-on-write): `clone()` — used by `save_screen_caches` to snapshot all
+/// caches under a brief lock — is O(1), and a mutation only pays a real copy while a
+/// save still holds a clone. Needs serde's `rc` feature (workspace Cargo.toml).
 #[derive(Serialize, Deserialize, Clone, Default)]
 struct BoundedCacheInner<V> {
     map: std::collections::HashMap<String, V>,
@@ -2028,16 +1674,9 @@ struct BoundedCacheInner<V> {
     cap: usize,
 }
 
-// `transparent`: without it, this would serialize as `{"inner": {...}}`
-// instead of `BoundedCacheInner`'s own flat `{"map":...,"order":...,"cap":...}`
-// shape — a real, live-caught regression risk, not a hypothetical one: a
-// genuine 41MB `screen_caches.json` already exists on disk in the old flat
-// shape (confirmed by reading it directly before adding this attribute),
-// and every one of the six caches in `ScreenCachesFile` embeds a
-// `BoundedCache<V>` the same way. `transparent` keeps the on-disk format
-// byte-for-byte identical to before this whole Arc/COW change — the `Arc`
-// wrapping is purely an in-memory implementation detail now, invisible on
-// both sides of a JSON round trip.
+// `transparent`: serializes as BoundedCacheInner's flat {map, order, cap} shape, not
+// {"inner": …}, so existing screen_caches.json files (the six caches in
+// ScreenCachesFile embed it) keep the exact same format.
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(transparent)]
 pub(crate) struct BoundedCache<V> {
@@ -2100,13 +1739,9 @@ impl<V: Clone> BoundedCache<V> {
     pub(crate) fn iter(&self) -> impl Iterator<Item = (&str, &V)> {
         self.inner.map.iter().map(|(k, v)| (k.as_str(), v))
     }
-    /// Up to the `n` most recently inserted/touched keys. Used by the ambient
-    /// post-login background refresh (`main.rs::spawn_screen_cache_refresh`,
-    /// Phase 103), which must stay cheap and unprompted-safe regardless of how
-    /// large `cap` has grown via the opt-in prewarm sweep (Phase 104) — that
-    /// sweep can fill the cache with the whole library, but the ambient one
-    /// should still only ever revalidate a small "recently used" slice, or a
-    /// prewarmed library would repeat the prewarm's full cost on every login.
+    /// Up to the `n` most recently inserted/touched keys — for the post-login background
+    /// refresh (`startup::spawn_screen_cache_refresh`), which must stay a small "recently
+    /// used" slice even when the prewarm has filled the cache with the whole library.
     pub(crate) fn recent_keys(&self, n: usize) -> Vec<String> {
         let len = self.inner.order.len();
         self.inner
@@ -2135,18 +1770,13 @@ pub(crate) struct RememberedTracks {
 pub(crate) struct FjordState {
     pub config: Config, // authoritative settings + auth; saved on change
     pub client: Option<Arc<JellyfinClient>>,
-    // PIN digits typed so far in ProfilePickerScreen's PIN-entry sub-state
-    // (Bonfire Phase 1, step 6, 2026-08-09) — deliberately never round-tripped
-    // through a Slint string property (see AppState.profile-pin-len's own
-    // doc comment in app_state.slint); cleared on every fresh PIN-entry open
-    // and on a successful/failed switch attempt alike.
+    // PIN digits typed in ProfilePickerScreen's PIN entry — never stored in a Slint
+    // property (see AppState.profile-pin-len); cleared on every PIN-entry open and after
+    // every switch attempt.
     pub profile_pin_buffer: String,
-    // Same discipline, for ProfileEditScreen's two PIN pads (Bonfire Phase
-    // 2, 2026-08-09) — the profile's own new/changed PIN, and the
-    // household master's own confirmation PIN. Two separate buffers, not
-    // one reused for both: they're semantically different values (one
-    // profile's new PIN vs. the account authorizing the change), and
-    // conflating them would risk sending the wrong one to Bonfire's API.
+    // Same discipline for ProfileEditScreen's two PIN pads: the profile's new PIN and the
+    // master's confirmation PIN. Two buffers so the wrong value can never be sent to
+    // Bonfire.
     pub profile_edit_pin_buffer: String,
     pub profile_edit_master_pin_buffer: String,
     // The last bonfire_list_profiles() result ManageProfilesScreen showed —
@@ -2154,31 +1784,17 @@ pub(crate) struct FjordState {
     // BonfireProfile (parental rating, tags, enabled libraries, etc.) it
     // needs to pre-fill ProfileEditScreen with, without a second fetch.
     pub manage_profiles_cache: Vec<fjord_api::models::BonfireProfile>,
-    // LAN-bypass PIN staleness fix (2026-09-04) — session-only, never
-    // persisted. `ProfileSettings.has_pin` (the persisted field) is only
-    // ever as fresh as the last sync_bonfire_subprofiles run; Bonfire's
-    // own `bypassPinOnLocalNetwork` setting can make the REAL, live
-    // `requires_pin` false (this device is on the LAN right now) even
-    // while `has_pin` stays stale-true. Captured as a free byproduct of
-    // sync_bonfire_subprofiles's existing /list-parsing loop (that data
-    // was already being deserialized and silently discarded before this)
-    // — a flat map, not scoped per syncing account, since LAN-bypass
-    // reflects THIS device's own network position relative to the server,
-    // not which account happened to run the sync. Every "show a PIN pad?"
-    // decision that has a live client available prefers this over the
-    // persisted has_pin, falling back to it when no live value has been
-    // captured yet (e.g. the very first picker before any sync has run).
+    // Session-only, never persisted. `ProfileSettings.has_pin` is only as fresh as the
+    // last sync; Bonfire's `bypassPinOnLocalNetwork` can make the live `requires_pin`
+    // false (this device is on the LAN) while has_pin stays true. Captured from
+    // sync_bonfire_subprofiles' /list loop; one flat map (LAN bypass depends on this
+    // device's network position, not the syncing account). Every "show a PIN pad?"
+    // decision prefers it over has_pin and falls back to has_pin when nothing was
+    // captured yet.
     pub live_requires_pin: std::collections::HashMap<String, bool>,
-    // Plugin names installed on the server (Bonfire Phase 1, 2026-08-09) —
-    // fetched once per login/auto-login (GET /Plugins) alongside the
-    // existing home-data/series/system-info join. Two consumers: Bonfire's
-    // own gate (a fast presence check before ever calling
-    // /plugins/profiles/list) and, later, Intro Skipper detection (which
-    // today only ever infers presence per-episode via a 404). Keyed by
-    // plugin NAME, not GUID — deliberately, since exact plugin GUIDs
-    // couldn't be verified against a real server in this sandboxed
-    // environment, unlike most other API surfaces this project checks
-    // directly. Session-scoped, cleared by reset_session_state.
+    // Plugin names installed on the server, fetched once per login (GET /Plugins) —
+    // Bonfire's quick presence check before /plugins/profiles/list. By NAME, not GUID
+    // (GUIDs weren't verifiable here). Session-scoped, cleared by reset_session_state.
     pub available_plugins: std::collections::HashSet<String>,
     pub keybindings: Keybindings,
     pub all_movies: Vec<MediaItem>,
@@ -2197,15 +1813,10 @@ pub(crate) struct FjordState {
     pub albums_fetched: bool,
     pub playlists_fetched: bool,
     pub filtered_items: Vec<MediaItem>,
-    // True once the unfiltered (query="") Browse All list has been built this
-    // session — mirrors movies_fetched/discover_landing_fetched's own "fetch
-    // once, not on every arrival" shape. Real gap this closes: sidebar_nav
-    // landing on nav=5 used to unconditionally rebuild the ~800-item Slint
-    // list model every single arrival, even a quick pass-through — Discover's
-    // landing rows already had this exact guard, Browse All never did.
-    // Invalidated (not by this flag directly, but the same effect) whenever
-    // all_movies/all_series change via a WS LibraryChanged event, so the list
-    // doesn't go stale for the rest of the session — see ws.rs.
+    // True once the unfiltered (query "") Browse All list has been built this session —
+    // arriving at nav 5 doesn't rebuild the ~800-item model each time (like
+    // movies_fetched / discover_landing_fetched). A WS LibraryChanged that changes
+    // all_movies/all_series invalidates it (ws.rs).
     pub browse_populated: bool,
     pub series_open_id: String,
     pub series_season_ids: Vec<String>,
@@ -2224,32 +1835,18 @@ pub(crate) struct FjordState {
     // for that series only). In-memory only — session-scoped like
     // series_episode_cache, not persisted to disk; cleared on sign-out.
     pub remembered_tracks: std::collections::HashMap<String, RememberedTracks>,
-    // A rebind capture (Key Bindings screen) that collided with an existing
-    // binding for a DIFFERENT action, awaiting the user's confirm/cancel on
-    // the resulting dialog (2026-08-08) — keys.rs::rebind_action/
-    // dispatch_keybinding_nav. None the rest of the time; in-memory only,
-    // never persisted (the collision is resolved or abandoned within the
-    // same session before it would ever matter).
+    // A rebind capture that collided with another action's binding, waiting for the
+    // confirm/cancel dialog (keys::rebind_action / dispatch_keybinding_nav). In memory
+    // only.
     pub pending_keybind_rebind: Option<crate::keys::PendingKeybindRebind>,
     pub ws_abort: Option<tokio::task::AbortHandle>, // abort to stop the WS reconnect loop on sign-out
-    // Live connection-health signal (2026-08-28, direct user question:
-    // "is there not another way to detect if there is a genuine
-    // connection issue" — prompted by the stall-recovery retry-budget
-    // work right above). The WebSocket's own already-existing 30s
-    // keep-alive is the cheapest continuously-refreshed proof that the
-    // Jellyfin server itself is actually reachable, independent of
-    // whatever a specific playback stream's own read is blocked on (e.g.
-    // a spun-down library drive, which blocks server-side disk I/O, not
-    // the WS connection at all) — wire_mpv_timer's stall-recovery check
-    // consults this to choose a LONG retry budget (connection confirmed
-    // healthy — be patient, most likely just a slow local resource) vs. a
-    // SHORT one (connection status unknown/stale — a still-broken network
-    // gets reported to the user faster instead of making them wait out
-    // the full patient budget for something retrying won't fix). Updated
-    // from ws.rs: ws_connected flips true right after a successful
-    // connect and false the instant the read loop exits/errors (before
-    // the reconnect attempt); ws_last_keepalive_at is stamped on every
-    // successful keep-alive ack.
+    // Live connection-health signal: the WebSocket's 30 s keep-alive proves the server
+    // is reachable independently of a stalled stream (e.g. a spun-down library disk
+    // blocks server-side reads, not the WS). Stall recovery (wire_mpv_timer) uses it to
+    // pick a LONG retry budget (connection healthy — be patient) or a SHORT one (status
+    // unknown — report a broken network quickly). ws.rs sets ws_connected true after
+    // connect and false the moment the read loop ends; ws_last_keepalive_at is stamped
+    // on every keep-alive ack.
     pub ws_connected: bool,
     pub ws_last_keepalive_at: Option<Instant>,
     // Screen-open caches (Part 2, see BoundedCache doc comment above). Keyed by
@@ -2260,45 +1857,24 @@ pub(crate) struct FjordState {
     pub artist_albums_cache: BoundedCache<Vec<MediaItem>>, // get_artist_albums — artist.rs
     pub person_filmography_cache: BoundedCache<Vec<MediaItem>>, // get_person_filmography — person.rs
     pub container_tracks_cache: BoundedCache<Vec<MediaItem>>, // get_album_tracks / get_playlist_items — album.rs
-    // Jellyfin person id -> TMDB person id (None = already tried, no match) —
-    // Person "Other Work" row, 2026-07-29 (Deep Seerr integration). Persisted
-    // via ScreenCachesFile (see its own doc comment) unlike the session-only
-    // cache below, since the fuzzy name-search fallback is comparatively
-    // expensive and worth not repeating every restart.
+    // Jellyfin person id → TMDB person id (None = no match) for the Person "Other Work"
+    // row. Persisted via ScreenCachesFile — the fuzzy name-search fallback is expensive.
     pub person_tmdb_id_cache: BoundedCache<Option<i64>>,
-    // Person "Other Work" row results, keyed by resolved TMDB person id —
-    // session-only (not part of ScreenCachesFile): DiscoverCardMeta.item_type
-    // is a &'static str, which genuinely can't round-trip through serde into
-    // an owned struct field, and these are "discovery" results that are fine
-    // to refetch after a restart anyway (2026-07-29, Deep Seerr integration).
-    // Keeps poster_path alongside each meta (same shape `build_filtered_metas`
-    // returns) so a same-session cache hit can still re-fetch/redisplay
-    // posters, not just the text data.
+    // Person "Other Work" results by TMDB person id — session-only (not in
+    // ScreenCachesFile): DiscoverCardMeta.item_type is a &'static str that can't
+    // round-trip through serde, and discovery results are fine to refetch. Keeps
+    // poster_path with each meta so a cache hit can still show posters.
     pub person_other_work_cache:
         BoundedCache<Vec<(crate::discover::DiscoverCardMeta, Option<String>)>>,
-    // TMDB person id (as string) -> matching LOCAL Jellyfin Person id, if any
-    // (None = searched, no confident match) — 2026-08-13, opening person
-    // detail from a Discover-sourced cast member (RequestDetailScreen's
-    // CastRow). Session-only, same reasoning as person_other_work_cache
-    // above: cheap to redo (one name search + at most one detail fetch) and
-    // Jellyfin's own library contents can change what a fresh search would
-    // find, so not worth persisting stale answers across restarts.
+    // TMDB person id → matching local Jellyfin Person id (None = no confident match),
+    // for opening a Discover cast member (RequestDetailScreen's CastRow). Session-only:
+    // cheap to redo, and the library can change what a search finds.
     pub local_person_by_tmdb_cache: BoundedCache<Option<String>>,
-    // 2026-08-19 — a repeat press on the same Discover cast member before
-    // the first press's resolve+open pipeline has settled used to spawn a
-    // fully independent, fully redundant resolve_local_person +
-    // open_person_screen[_tmdb] chain every time (live-confirmed from a
-    // real log: 4 complete round trips for the same target in ~0.6s). The
-    // existing 2026-08-19 guard inside open_person_screen_tmdb only
-    // protects its OWN re-entry once a fetch is already mid-flight there —
-    // it has no visibility into a second, independent chain still sitting
-    // inside resolve_local_person (which becomes near-instant on a cache
-    // hit, exactly the timing that let repeat chains slip past that later
-    // guard). This tracks "already resolving tmdb_id N via
-    // open_person_from_discover," checked+set at that one entry point and
-    // cleared the moment resolution finishes and hands off to whichever
-    // screen actually opens — not persisted, not connection-scoped, purely
-    // an in-flight marker.
+    // In-flight marker for open_person_from_discover: the TMDB person id being resolved.
+    // Repeat presses on the same cast member are ignored until it resolves and the
+    // screen opens (otherwise each press ran a full resolve + open chain;
+    // open_person_screen_tmdb's own guard can't see a chain still inside
+    // resolve_local_person). Not persisted.
     pub person_discover_resolving: Option<i64>,
     // Opt-in one-time library prewarm progress (Phase 104) — read by a 1s
     // AppState-updating timer (main.rs::wire_prewarm_progress_timer), written
@@ -2311,11 +1887,9 @@ pub(crate) struct FjordState {
     pub prewarm_image_total: usize,
     pub prewarm_image_done: usize,
     pub prewarm_image_summary: String,
-    // Seerr integration (Settings → Integrations, discover.rs) — built from
-    // Config.seerr_* at startup (if enabled + a valid cookie/key is present)
-    // and rebuilt after every successful ConnectSeerrScreen flow. None means
-    // "not connected"; a 401 from any call (session-auth only, API keys don't
-    // expire) also resets this to None — see discover.rs's re-auth handling.
+    // Built from Config.seerr_* at startup (enabled + valid key/cookie) and after every
+    // successful Connect Seerr flow. None = not connected; a 401 (session auth only —
+    // API keys don't expire) resets it to None (discover's re-auth handling).
     pub seerr_client: Option<Arc<fjord_seerr::SeerrClient>>,
     // Guards the Discover landing rows (Trending/Popular/Upcoming) so they're
     // fetched once per session on first arrival, not on every nav switch back
@@ -2344,87 +1918,40 @@ pub(crate) struct FjordState {
     // discover-results whenever a filter changes; cleared/rebuilt on every
     // NEW search alongside discover_search_page.
     pub discover_search_metas: Vec<crate::discover::DiscoverCardMeta>,
-    // Same idea as discover_search_metas, but for the filtered-browse view
-    // (query empty, ≥1 filter active) — accumulated across every fetched
-    // page so a page-2+ load can re-sort the FULL set by sort_key, not just
-    // the newly-fetched page's own batch. Real bug fixed 2026-07-31 (code
-    // review): merge_filtered_metas only ever sorted each page in isolation;
-    // the commit closure then plain-appended it onto the already-rendered
-    // rows with no re-sort, so Type=All + any sort visibly broke order
-    // across a page boundary the moment a later page's top item outranked
-    // an earlier page's tail item. Reset on every fresh page-1 fetch.
+    // All pages of the filtered-browse view (query empty, ≥1 filter), so a page-2+ load
+    // re-sorts the FULL set by sort_key — sorting each page alone breaks the order across
+    // page boundaries. Reset on every fresh page-1 fetch.
     pub discover_filtered_metas: Vec<crate::discover::FilteredRowItem>,
-    // Real bug fixed 2026-07-18: search results and 5 of the 6 landing rows
-    // never carried real request state at all (request_id/pending/mine were
-    // always zeroed for them — only the Requested row itself had it), so
-    // their context menu offered "Request" instead of "Edit/Cancel/View
-    // Request" for an item that was, in fact, already requested. Populated
-    // from the DiscoverCardMeta list fetch_requested_row already builds
-    // (no new network call) whenever the Requested row is (re)fetched, and
-    // consulted to patch matching cards built elsewhere in discover.rs.
-    // Keyed by (item_type, tmdb-id-as-string) - the exact same key shape
-    // ensure_discover_landing's own requested_keys dedup set already uses.
-    // Only catches requests within fetch_requested_row's own ~20-per-type
-    // cap (a much older request might still show stale until it ages into
-    // that window) - a deliberate, cheap tradeoff over a full uncapped
-    // GET /request sweep, confirmed with the user before implementing.
+    // Request state for cards outside the Requested row: (item_type, tmdb id) → request,
+    // filled from fetch_requested_row's list (no extra call) and used to patch search
+    // results and the other landing rows, so their context menu offers Edit/Cancel/View
+    // Request. Covers fetch_requested_row's ~20-per-type window only — a cheap tradeoff
+    // over an uncapped GET /request sweep.
     pub discover_known_requests:
         std::collections::HashMap<(&'static str, String), crate::discover::KnownRequest>,
-    // Watchlist + Release Calendar (2026-07-18). discover_watchlist_ids
-    // mirrors discover_known_requests' own (item_type, tmdb-id) key shape —
-    // populated by ensure_discover_watchlist/refresh_watchlist, consulted
-    // by patch_known_request_state's sibling to set CardItem.on-watchlist.
-    // discover_calendar_entries is the built "Coming Up" row's data (see
-    // discover.rs::CalendarEntry/build_calendar_entries), rebuilt whenever
-    // the watchlist or requested-row set changes. seerr_discover_region
-    // mirrors seerr_streaming_region's own cache shape exactly, just for
-    // the DIFFERENT discoverRegion user setting Seerr's own frontend uses
-    // for release-date display specifically (not the same region as
-    // "Currently Streaming On" — confirmed from Seerr's real source).
+    // discover_watchlist_ids: (item_type, tmdb id) like discover_known_requests — filled by
+    // ensure_discover_watchlist/refresh_watchlist, sets CardItem.on-watchlist.
+    // discover_calendar_entries: the "Coming Up" row's data (build_calendar_entries),
+    // rebuilt when the watchlist or requested set changes. seerr_discover_region: like
+    // seerr_streaming_region but for Seerr's separate discoverRegion setting (release
+    // dates), not the streaming region.
     pub discover_watchlist_ids: std::collections::HashSet<(&'static str, String)>,
-    // Real gap fixed 2026-07-20, live-reported ("the watch list symbol do
-    // not show up on items i the library screens"): the star badge needs
-    // to be TRUE at CardItem-construction time for local Jellyfin cards, not
-    // just live-patched onto an already-rendered model — a live patch alone
-    // (context_menu::patch_watchlist_on_jellyfin_models) gets silently wiped
-    // the next time that screen's model is rebuilt from MediaItem data
-    // (item_to_card_item/items_to_model always default on_watchlist to
-    // false, since MediaItem itself has no watchlist concept — it's
-    // Jellyfin-only data), which happens routinely (grid open, sort/filter,
-    // WS delta sync, a background network refresh). This is the resolved
-    // set of LOCAL Jellyfin ids currently on the Seerr watchlist — the
-    // Jellyfin-id-keyed counterpart to discover_watchlist_ids (tmdb-id-
-    // keyed) — kept authoritative by resync_jellyfin_watchlist_stars
-    // (replaces wholesale, not add-only) and updated incrementally by
-    // discover_toggle_watchlist's own single-item success handler;
-    // item_to_card_item/items_to_model consult it directly so every
-    // rebuild gets the right value the first time, with no separate patch
-    // pass needed afterward.
+    // LOCAL Jellyfin ids currently on the Seerr watchlist (the Jellyfin-id counterpart of
+    // discover_watchlist_ids). item_to_card_item/items_to_model read it, so the watchlist
+    // star is right every time a model is rebuilt from MediaItems (grid open, sort,
+    // filter, WS sync, refresh) — a live patch alone would be wiped by the next rebuild.
+    // Replaced wholesale by resync_jellyfin_watchlist_stars, updated per item by
+    // discover_toggle_watchlist.
     pub jellyfin_watchlist_ids: std::collections::HashSet<String>,
-    // Generation guard for resync_jellyfin_watchlist_stars (2026-07-22, code
-    // review finding): the resync is spawned independently from 4 separate
-    // trigger points (the watchlist fetch itself, push_cached_data,
-    // spawn_auto_login's fresh-series landing, spawn_movies_list_fetch's
-    // completion) with no ordering between them — without this, whichever
-    // call's mem::replace happened to land LAST won regardless of which one
-    // actually computed the more complete result, so a call that started
-    // earlier (and had a less-populated all_movies/all_series to scan) could
-    // finish after a later, more-complete call and silently overwrite it,
-    // un-starring genuinely-still-watchlisted cards via its own stale
-    // "removed" diff. Each call bumps this and captures its own value before
-    // scanning; only the call that's still the highest-numbered one by the
-    // time it's ready to write actually writes — an older call that finds a
-    // newer one has already started skips its own write outright rather than
-    // clobbering, the same single-writer-wins idiom this codebase already
-    // uses for stale-async-result guards elsewhere (e.g. discover_gen).
+    // Generation guard for resync_jellyfin_watchlist_stars, which starts from 4
+    // independent triggers (watchlist fetch, push_cached_data, auto-login's series
+    // landing, spawn_movies_list_fetch). Each call bumps it and only writes if it's
+    // still the newest when ready, so an older call scanning less-complete data can't
+    // overwrite a newer result and un-star still-watchlisted cards.
     pub jellyfin_watchlist_resync_seq: u64,
-    // Rate-limits the 7 screen-open "revalidate on cache hit" functions
-    // (collection.rs/detail.rs/series.rs/season.rs/artist.rs/person.rs/
-    // album.rs' spawn_X_revalidate) to at most once per REVALIDATE_COOLDOWN
-    // per item id (main.rs::should_revalidate) — same missing-guard bug class
-    // as seerr_admin_last_refresh's own cooldown, fixed once already this
-    // same day. Plain HashMap, not BoundedCache: Instant isn't Serialize and
-    // this never needs to persist across restarts. Cleared on sign-out.
+    // Rate-limits the 7 screens' "revalidate on cache hit" (spawn_*_revalidate) to once
+    // per REVALIDATE_COOLDOWN per item id (should_revalidate). A plain HashMap (Instant
+    // isn't Serialize, nothing to persist); cleared on sign-out.
     pub screen_revalidate_last_run: std::collections::HashMap<String, Instant>,
     // Guards the watchlist-id fetch (ensure_discover_watchlist) the same
     // way discover_landing_fetched guards the landing rows — once per
@@ -2432,11 +1959,9 @@ pub(crate) struct FjordState {
     pub discover_watchlist_fetched: bool,
     pub discover_calendar_entries: Vec<crate::discover::CalendarEntry>,
     pub seerr_discover_region: Option<String>,
-    // Discover filters (2026-07-18). Guards the one-per-session genre +
-    // watch-provider list fetch, same shape as discover_landing_fetched;
-    // reset alongside it. Raw lists cached so switching the Type filter
-    // (All/Movies/TV) can rebuild the Genre/Provider chip models locally
-    // without a re-fetch.
+    // Guards the once-per-session genre + watch-provider list fetch (like
+    // discover_landing_fetched, reset with it). The raw lists are kept so switching
+    // Type (All/Movies/TV) rebuilds the chip models without a re-fetch.
     pub discover_filter_options_fetched: bool,
     pub seerr_genres_movie: Vec<fjord_seerr::Genre>,
     pub seerr_genres_tv: Vec<fjord_seerr::Genre>,
@@ -2469,25 +1994,17 @@ pub(crate) struct FjordState {
     // once at startup, just gated on a live Seerr connection existing first
     // instead of being always-available like a local `fc-list` query.
     pub seerr_regions: Vec<(String, String)>,
-    // (iso_639_1, "English Name (en)") pairs — TMDB's full language list
-    // (GET /languages), shared by BOTH Settings -> Integrations -> Display
-    // Language and Discover Language dropdowns (2026-07-17) — see
-    // fjord_seerr::Language's own doc comment for why one fetched list
-    // backs both rather than hardcoding Seerr's separate, smaller
-    // UI-translation locale set for Display Language.
+    // (iso_639_1, "English Name (en)") pairs — TMDB's full language list (GET /languages),
+    // shared by the Display Language and Discover Language dropdowns (see
+    // fjord_seerr::Language for why not Seerr's smaller UI-locale set).
     pub seerr_languages: Vec<(String, String)>,
-    // The connected user's own `locale` (Display Language — Seerr's default
-    // TMDB `language` query param for movie/tv/search calls whenever Fjord
-    // doesn't pass one explicitly, confirmed from source; genuinely affects
-    // what language titles/overviews come back in). `""` = "Default
-    // (English)" (Seerr's own admin-configured fallback). `None` before the
-    // first fetch resolves.
+    // The connected user's `locale` (Display Language) — Seerr's default TMDB `language`
+    // param whenever Fjord passes none; it changes the language of titles/overviews.
+    // "" = "Default (English)". None until fetched.
     pub seerr_locale: Option<String>,
-    // The connected user's own `originalLanguage` (Discover Language —
-    // filters Discover/trending/search results by TMDB original language).
-    // `"all"` (the literal sentinel Seerr's own frontend sends, NOT an
-    // empty string — see the write-handler doc comment) = "Default (All
-    // Languages)", no filter. `None` before the first fetch resolves.
+    // The connected user's `originalLanguage` (Discover Language — filters results by
+    // TMDB original language). "all" (Seerr's own sentinel, not "") = "Default (All
+    // Languages)". None until fetched.
     pub seerr_original_language: Option<String>,
     // The connected Seerr account's own user id and `MANAGE_REQUESTS`
     // permission bit, fetched alongside the other seerr_* settings above
@@ -2498,72 +2015,41 @@ pub(crate) struct FjordState {
     // the first fetch resolves or when not connected.
     pub seerr_user_id: Option<i64>,
     pub seerr_is_admin: bool,
-    // `MANAGE_BLOCKLIST` permission bit — a genuinely separate permission
-    // from `MANAGE_REQUESTS`/`ADMIN` (see `fjord_seerr::User::
-    // can_manage_blocklist`'s own doc comment) — fetched from the same
-    // already-in-flight `get_current_user` call as `seerr_is_admin`, zero
-    // extra network cost. Gates the Discover context menu's Blocklist row,
-    // RequestDetailScreen's Blocklist button, CollectionScreen's bulk
-    // blocklist button, and the Settings -> Integrations -> Manage
-    // Blocklist row. `false` before the first fetch resolves or when not
-    // connected. 2026-08-06, Seerr Blocklist support.
+    // MANAGE_BLOCKLIST — separate from MANAGE_REQUESTS/ADMIN (fjord_seerr::User::
+    // can_manage_blocklist), read from the same get_current_user call as seerr_is_admin.
+    // Gates the Discover context menu's Blocklist row, RequestDetailScreen's Blocklist
+    // button, CollectionScreen's bulk blocklist and Settings → Manage Blocklist. False
+    // until fetched or when not connected.
     pub seerr_can_manage_blocklist: bool,
-    // Jellyfin's own core server-admin flag — genuinely unrelated to Seerr,
-    // just placed here alongside seerr_is_admin/seerr_can_manage_blocklist
-    // since it's the same "one bool, populated once per session, gates a
-    // Settings row" shape. Never persisted (FjordState is rebuilt fresh on
-    // every process start), so this is re-fetched on EVERY session-
-    // establishment path (spawn_jellyfin_admin_check, main.rs), not
-    // conditionally like the display_name backfill a few lines away from
-    // its own call site. Gates Settings -> Profiles -> "Bonfire Admin"
-    // (Bonfire Phase 6, 2026-09-04) — Bonfire's own admin/* endpoints gate
-    // on this exact same Jellyfin Policy.IsAdministrator bit server-side,
-    // verified directly against the real plugin controller source.
+    // Jellyfin's server-admin flag (Policy.IsAdministrator — what Bonfire's admin/*
+    // endpoints check server-side). Never persisted; re-fetched on every session start
+    // (startup::spawn_jellyfin_admin_check). Gates Settings → Profiles → "Bonfire Admin".
     pub jellyfin_is_server_admin: bool,
-    // Manage Blocklist screen's own pagination cursor (blocklist.rs) — a
-    // plain `skip` offset into `GET /blocklist`, reset to 0 every time the
-    // screen opens (not connection-scoped like discover_search_page, since
-    // this screen has no equivalent "stays open across a query change"
-    // concern). blocklist_total_results (page_info.results, the true total
-    // across every page) is what load_more checks against to know whether
-    // another page exists; blocklist_loading_more guards a double-fetch,
-    // same shape as discover_search_loading_more. 2026-08-06, Seerr
-    // Blocklist support.
+    // Manage Blocklist pagination (blocklist.rs): `skip` offset into GET /blocklist,
+    // reset to 0 on every open. blocklist_total_results (page_info.results) tells
+    // load_more whether another page exists; blocklist_loading_more prevents a
+    // double fetch.
     pub blocklist_skip: u32,
     pub blocklist_total_results: u32,
     pub blocklist_loading_more: bool,
-    // Rate-limits `discover::refresh_seerr_admin_status` — that function was
-    // unconditionally re-firing a real `GET /auth/me` round trip on EVERY
-    // single arrival at the Discover sidebar tab, no guard at all (deliberate
-    // at the time, so a server-side permission change mid-session would be
-    // picked up on the next visit). Live-reported HTPC hitch, 2026-07-31: a
-    // user holding Down/Up to rapidly cycle the sidebar passes through
-    // Discover (nav==6) many times a minute — each pass fired its own
-    // network request, and a burst of these completing out of order (worse
-    // under the higher latency/lower thread-pool headroom of a lower-end
-    // machine) queued up `invoke_from_event_loop` closures that visibly
-    // collided with the next real keypress, the same mechanism already
-    // documented for the Browse All rebuild hitch just above. `None` before
-    // the first refresh.
+    // Rate-limits discover::refresh_seerr_admin_status (a GET /auth/me) — without it,
+    // holding Down/Up through the sidebar fired one request per pass over Discover, and
+    // their late UI updates collided with the next key press (a visible hitch on the
+    // HTPC). None before the first refresh.
     pub seerr_admin_last_refresh: Option<Instant>,
     // Whether `yt-dlp` was found on `PATH` at startup (`main.rs::
     // detect_yt_dlp`) — gates Watch Trailer button visibility. A pure
     // local-machine fact, not tied to Seerr connection state, not reset on
     // sign-out/disconnect.
     pub yt_dlp_available: bool,
-    // Trailer check (2026-10-04, discover::start_trailer_check): YouTube URL
-    // → plays (yt-dlp resolved it / it played) or not. Session-only; cleared
-    // in reset_session_state like every other cache. request_detail_trailers
-    // = the candidates of the RequestDetail screen currently showing, so a
-    // failed play can re-check the rest.
+    // Trailer check (discover::start_trailer_check): YouTube URL → plays or not.
+    // Session-only, cleared in reset_session_state. request_detail_trailers = the
+    // candidates of the RequestDetail screen showing, so a failed play can re-check the rest.
     pub trailer_playable: std::collections::HashMap<String, bool>,
     pub request_detail_trailers: Vec<String>,
-    // display_sync (2026-09-18) — "what's currently applied to the physical
-    // output," so a same-mode item (e.g. back-to-back episodes of one show)
-    // never redundantly re-switches and re-pays the 3s settle. `None` means
-    // "not yet applied this session" (always a genuine change the first
-    // time). Never persisted, never reset on sign-out/profile-switch — this
-    // is a fact about the physical display, not about who's signed in.
+    // What's currently applied to the physical output, so a same-mode item (back-to-back
+    // episodes) doesn't re-switch and pay the ~3 s settle again. None = nothing applied
+    // this session. Not reset on sign-out/profile switch — a fact about the display.
     pub display_sync_current_mode: Option<(String, String)>,
     pub display_sync_current_hdr: Option<bool>,
 }
@@ -2864,10 +2350,8 @@ mod tests {
         "discover_filter_type": "movie"
     }"#;
 
-    // Regression test for the cycle-repair gap found live 2026-08-16 (a real
-    // household's own config.json — see the fix's own doc comment on
-    // repair_bonfire_profile_corruption for the full trace; this uses
-    // synthetic ids, not the real data that originally surfaced the bug).
+    // Regression test for the cycle repair in repair_bonfire_profile_corruption
+    // (synthetic ids).
     #[test]
     fn repairs_bonfire_master_user_id_cycle() {
         let mut profiles = vec![
@@ -2916,16 +2400,10 @@ mod tests {
         assert!(!find("other").is_bonfire);
     }
 
-    // Regression test for Bonfire Phase 5 (cross-household groups): a
-    // legitimate group-account entry (`is_group_account: true`, deliberately
-    // EMPTY `master_user_id` — see that field's own doc comment) must never
-    // be mistaken for the self-referencing corruption
-    // `repair_bonfire_profile_corruption`'s first check exists to fix. The
-    // plan's own first draft got this wrong (self-referencing
-    // `master_user_id`, which this exact repair pass would have silently
-    // stripped on the very next config load) — this test pins the correct
-    // shape down so a future change can't reintroduce that collision
-    // unnoticed.
+    // A legitimate group account (`is_group_account: true`, EMPTY `master_user_id`) must
+    // never be mistaken for the self-referencing corruption
+    // `repair_bonfire_profile_corruption` fixes — a self-referencing master_user_id
+    // would be stripped on the next load.
     #[test]
     fn leaves_group_account_entries_untouched() {
         let mut profiles = vec![
