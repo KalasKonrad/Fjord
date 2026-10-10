@@ -1,160 +1,36 @@
-// ── fjord-seerr · models.rs ──────────────────────────────────────────────────
-//   MediaStatus       MediaInfo.status: 1=Unknown 2=Pending 3=Processing
-//                     4=PartiallyAvailable 5=Available 6=Blocklisted 7=Deleted
-//                     (verified against Seerr's real server/constants/media.ts
-//                     after a live bug — see MediaStatus's own doc comment)
-//   MediaInfo         status + status4k (tracked completely independently by Seerr — see
-//                     status4k's own doc comment, real bug fixed 2026-07-18) + tmdbId,
-//                     present only once Seerr has seen an item; requests (only populated
-//                     on the single-item detail endpoints, see its own doc comment)
-//   SearchResponse/SearchResult  GET /search — mediaType discriminates movie/tv/person;
-//                                 genreIds/voteAverage/popularity added 2026-07-18 for
-//                                 client-side filtering+sorting of search results AND
-//                                 merge-sorting the filtered-browse view's Type=All movie+TV
-//                                 interleave (Discover filters — /search itself accepts no
-//                                 filter query params at all, see DiscoverFilters' own doc comment)
-//   DiscoverFilters               GET /discover/movies GET /discover/tv's real filter query
-//                                 params (genre/watchProviders/sortBy/voteAverageGte/date
-//                                 range — confirmed from Seerr's real route source, 2026-07-18);
-//                                 sort/date_gte/date_lte are pre-resolved to the correct
-//                                 value+key name per media type by the caller, since movies/TV
-//                                 genuinely differ there (primary_release_date vs first_air_date);
-//                                 date_lte added 2026-07-18 for "New in Theaters"' upper bound
-//   WatchlistResponse/WatchlistItem  GET /discover/watchlist — local (non-Plex) per-user
-//                                 Watchlist, independent of Requests (2026-07-18, Watchlist +
-//                                 Release Calendar); no poster/richer data, same per-item-
-//                                 detail-fetch situation as a bare MediaRequest
-//   BlocklistResponse/BlocklistItem  GET /blocklist — a genuinely different pagination
-//                                 envelope from every other list endpoint (`{pageInfo:{pages,
-//                                 pageSize,results,page}}`, not `{page,totalPages,totalResults}`
-//                                 — confirmed from Seerr's real route source, 2026-08-06,
-//                                 Seerr Blocklist support). Global per Seerr server, not
-//                                 per-user (the real DB entity's uniqueness is on
-//                                 (tmdbId,mediaType) alone) — `user` only records who
-//                                 blocklisted it, for display ("Blocklisted By"). No poster;
-//                                 `title`/`created_at`/`user` are what the Manage Blocklist
-//                                 screen shows per row with zero extra fetch.
-//   PageInfo                      BlocklistResponse's own pagination shape (see above)
-//   MovieDetails/TvDetails       GET /movie/{id}, /tv/{id} — voteAverage + credits (Cast/Crew)
-//                                 confirmed present in the OpenAPI spec but not deserialized
-//                                 until the RequestDetailScreen redesign (2026-07-16);
-//                                 onUserWatchlist (both) + releases (MovieDetails only, see
-//                                 ReleaseDatesResult below) added 2026-07-18; MovieDetails.collection
-//                                 (belongs_to_collection, {id,name,posterPath,backdropPath}) added
-//                                 2026-07-29 for the Collection screen's missing-items row — resolves
-//                                 a local BoxSet's TMDB collection id via any member movie's already-
-//                                 called get_movie response, no new endpoint needed for that step
-//   MovieCollectionRef            MovieDetails.collection — see above
-//   Collection                    GET /collection/{id} — full TMDB collection membership; `parts`
-//                                 reuses SearchResult verbatim (same mapMovieResult shape as
-//                                 /search, confirmed from Seerr's real source) (2026-07-29)
-//   PersonDetails                 GET /person/{id} — TMDB bio/name/profile-photo, for the
-//                                 TMDB-only person screen (2026-08-13, Discover-cast-with-no-
-//                                 local-match fallback)
-//   PersonCreditCast/PersonCreditCrew/CombinedCredits  GET /person/{id}/combined_credits — an
-//                                 actor/director's full TMDB filmography, backing the Person
-//                                 screen's "Other Work" row (2026-07-29); media_info deliberately
-//                                 not modeled — this endpoint's relation join is watchlist-only,
-//                                 same as /search, so request state is patched client-side instead
-//   ReleaseDatesResult/RegionReleases/ReleaseDateEntry  MovieDetails.releases — TMDB's raw
-//                                 per-region theatrical(3)/digital(4)/physical(5) release-date
-//                                 breakdown, forwarded verbatim by Seerr; TV has no equivalent
-//                                 (2026-07-18, Watchlist + Release Calendar)
-//   Season                       TvDetails.seasons — TMDB-shape, no per-season
-//                                 Jellyfin-availability field in the published spec.
-//                                 posterPath also present in the spec, same
-//                                 previously-undeserialized-field situation as above
-//   Credits/Cast/Crew            MovieDetails/TvDetails.credits — cast (id/name/character/
-//                                 order/profilePath) + crew (id/name/job/department/profilePath)
-//   SeasonsSelector              POST /request body's `seasons`: array or "all"
-//   MediaRequest                 POST /request response + GET /request list entries (media/
-//                                 created_at/requested_by/profile_id/tags/seasons only populated
-//                                 by the latter — Discover "Requested" row + context menu);
-//                                 is4k picks which of media's status/status4k is the relevant
-//                                 fulfillment status (2026-07-18); status: 1=Pending 2=Approved
-//                                 3=Declined 4=Failed 5=Completed (real enum, confirmed from
-//                                 Seerr's source, 2026-07-18); is_pending() checks status==1
-//   RequestedBy                  MediaRequest.requestedBy — id only, ownership check for
-//                                 Edit/Cancel Request (2026-07-18)
-//   SeasonRequestNumber          MediaRequest.seasons entry — Seerr's own tracked per-season
-//                                 request state (seasonNumber only), NOT Season above (TMDB
-//                                 metadata) — pre-fills Edit Request's season picker (2026-07-18)
-//   User                         auth response — id/displayName for "Connected as X";
-//                                 permissions bitmask (can_manage_requests(): MANAGE_REQUESTS
-//                                 bit 16 OR the ADMIN bit 2, which bypasses every permission
-//                                 check server-side and is what the owner account actually
-//                                 carries — fixed 2026-07-18, see the impl's own doc comment)
-//                                 gates Approve/Decline/admin-Cancel in the Discover context
-//                                 menu (2026-07-18); can_manage_blocklist(): same OR-with-
-//                                 ADMIN-bypass shape, but MANAGE_BLOCKLIST bit 268435456 —
-//                                 a genuinely separate permission from MANAGE_REQUESTS,
-//                                 confirmed from Seerr's real server/lib/permissions.ts
-//                                 (2026-08-06, Seerr Blocklist support)
-//   QuickConnect                 POST /auth/jellyfin/quickconnect/initiate response
-//   StatusInfo                   GET /status response — version, shown in Settings sidebar
-//   Tag                          Radarr/Sonarr tag {id, label} — GET /service/{radarr|sonarr}/{id}'s
-//                                 `tags` field, NOT in the published OpenAPI spec (confirmed from
-//                                 Seerr's actual TypeScript source, same class of gap as media_type below)
-//   Profile                      Radarr/Sonarr quality profile {id, name} — same endpoint's `profiles`
-//                                 field; spec shows it as a single object with no array wrapper, but
-//                                 Seerr's TypeScript source confirms it's really QualityProfile[]
-//   ServiceServer                GET /service/{radarr|sonarr} list entry — `id`/`isDefault`/`is4k`
-//                                 (find the default server for a given quality tier to fetch tags/
-//                                 profiles for; no per-server picker in v1)
-//   ServiceServerDetails         GET /service/{radarr|sonarr}/{id} — `tags` + `profiles` extracted;
-//                                 every other field (rootFolders, server, languageProfiles) ignored
-//   ProductionCountry/Network/NextEpisode/WatchProviderEntry/WatchProviderDetail
-//                                 MovieDetails/TvDetails' status/originalLanguage/
-//                                 productionCountries/networks/nextEpisodeToAir/watchProviders —
-//                                 confirmed present in Seerr's real server/models/{Movie,Tv,common}.ts
-//                                 (not in the published OpenAPI spec, same class of gap as Tag/Profile
-//                                 above); added for the request-detail metadata panel (2026-07-17);
-//                                 NextEpisode extended with episode_number/name/season_number
-//                                 2026-07-18 for the "Coming Up" calendar entry label
-//   Video                         MovieDetails/TvDetails.relatedVideos entry — YouTube trailer/
-//                                 teaser/clip links (kind + already-fully-formed url); Watch Trailer
-//                                 feature (2026-07-17)
-//   Region                        GET /watchproviders/regions list entry — populates the Streaming
-//                                 Region picker (Settings -> Integrations)
-//   Language                      GET /languages list entry (TMDB's full ~180-entry list) — backs
-//                                 BOTH the Discover Language and Display Language pickers (Settings
-//                                 -> Integrations, 2026-07-17); Discover Region deliberately NOT
-//                                 mirrored — confirmed dead in Seerr itself, discover.ts's
-//                                 createTmdbWithRegionLanguage reads user.settings.streamingRegion
-//                                 for its "discoverRegion" TMDB param, never discoverRegion
-//   UserGeneralSettings           GET/POST /user/{id}/settings/main — gated by Seerr's own
-//                                 isOwnProfileOrAdmin(), NOT Permission.ADMIN (confirmed from source,
-//                                 corrected a wrong earlier assumption that this needed admin rights)
-//                                 — used to read/write the CONNECTED user's own streamingRegion, which
-//                                 resolve_streaming_region (discover.rs) also reads from for "Currently
-//                                 Streaming On." POST overwrites the whole object, no partial patch —
-//                                 every field skip_serializing_if=is_none (a real 500 live-reproduced
-//                                 otherwise — locale is a NOT NULL DB column, see this struct's own
-//                                 doc comment, 2026-07-17)
+// ── fjord-seerr · models.rs ────────────────────────────────────────────────
+//   MediaStatus       MediaInfo.status: 1 Unknown 2 Pending 3 Processing 4 PartiallyAvailable 5 Available
+//                     6 Blocklisted 7 Deleted (Seerr server/constants/media.ts)
+//   MediaInfo         status + status4k (independent per tier), tmdbId; requests only on detail endpoints
+//   SearchResponse/SearchResult  GET /search (mediaType movie/tv/person; genreIds/voteAverage/popularity
+//                     for client-side filtering and sorting)
+//   DiscoverFilters   GET /discover/movies|tv filter params; sort/date keys pre-resolved per media type
+//   WatchlistResponse/WatchlistItem  GET /discover/watchlist (the local per-user watchlist)
+//   BlocklistResponse/BlocklistItem/PageInfo  GET /blocklist (own {pageInfo} envelope; global per server)
+//   MovieDetails/TvDetails  GET /movie|tv/{id}: credits, voteAverage, onUserWatchlist, releases + collection
+//                     (movies), status/originalLanguage/productionCountries/networks/nextEpisodeToAir/
+//                     watchProviders, relatedVideos
+//   MovieCollectionRef / Collection  belongs_to_collection; GET /collection/{id} (parts = SearchResult)
+//   PersonDetails / PersonCreditCast / PersonCreditCrew / CombinedCredits  GET /person/{id}[/combined_credits]
+//   ReleaseDatesResult/RegionReleases/ReleaseDateEntry  per-region theatrical(3)/digital(4)/physical(5) dates
+//   Season, Credits/Cast/Crew, SeasonsSelector ("all" or a list of season numbers)
+//   MediaRequest      POST /request response + GET /request entries; status 1 Pending 2 Approved 3 Declined
+//                     4 Failed 5 Completed (is_pending); is4k picks status vs status4k
+//   RequestedBy / SeasonRequestNumber  who requested (Edit/Cancel ownership); requested seasons
+//   User              auth response; can_manage_requests / can_manage_blocklist (ADMIN bypasses both)
+//   QuickConnect, StatusInfo, Tag, Profile, ServiceServer, ServiceServerDetails  Radarr/Sonarr default
+//                     server tags + quality profiles (not in the OpenAPI spec; from Seerr's source)
+//   ProductionCountry/Network/NextEpisode/WatchProviderEntry/WatchProviderDetail, Video, Region, Language
+//   UserGeneralSettings  GET/POST /user/{id}/settings/main (own profile or admin; POST replaces the object)
 //
-// Every Deserialize struct below carries #[serde(rename_all = "camelCase")] —
-// Seerr's JSON is camelCase throughout (mediaType, posterPath, totalResults,
-// displayName, ...), confirmed directly from the OpenAPI spec. Real bug, found
-// live via the fjord.log warning this crate's own logging added: without this,
-// serde requires an exact field-name match, so any REQUIRED multi-word field
-// (SearchResult.media_type) failed deserialization outright — but every
-// Option<...> field with #[serde(default)] (MovieDetails.poster_path etc.)
-// would have failed *silently* instead, just quietly staying None even when
-// the server sent real data. rename_all fixes both classes at once.
+// Every Deserialize struct carries #[serde(rename_all = "camelCase")]: Seerr's JSON is camelCase, and
+// without it a required field fails while Option fields silently stay None.
+// ─────────────────────────────────────────────────────────────────────────────
 use serde::{Deserialize, Serialize};
 
-/// Confirmed directly against Seerr's real source (`server/constants/
-/// media.ts`) after a live report of "Deleted" items surviving the
-/// Discover "Requested" row's filter — the previously-modeled 6-value
-/// enum (`...Available=5, Deleted=6`) was simply wrong past `Available`:
-/// the real enum has a `Blocklisted` value at 6 that was never
-/// represented at all, pushing the real `Deleted` to 7. Every request
-/// this crate had actually seen with a real status of 7 (Deleted) was
-/// silently falling through `from_code` to `None` — indistinguishable
-/// from a genuinely unrecognized code — so `requested_not_available`'s
-/// exclusion check (`Some(Available | Deleted)`) never matched it and
-/// deleted-but-still-request-tracked items stayed listed as "not yet
-/// available."
+/// Seerr's real enum (server/constants/media.ts) — 6 is Blocklisted and Deleted is 7. (An
+/// older model had Deleted at 6, so real Deleted items fell through `from_code` and
+/// stayed in the Requested row.)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[repr(u8)]
 pub enum MediaStatus {
@@ -188,27 +64,15 @@ pub struct MediaInfo {
     #[serde(default)]
     pub tmdb_id: Option<i64>,
     pub status: u8,
-    /// The 4K tier's own fulfillment status, tracked entirely separately
-    /// from `status` (confirmed live, 2026-07-18, against a real account
-    /// where almost every request is `is4k` — many items had `status: 1`
-    /// (Unknown, the non-4K tier was never requested) alongside a genuinely
-    /// `status4k: 5` (Available) or still-`status4k: 3` (Processing)).
-    /// `requested_not_available`'s original filter checked `status` alone
-    /// regardless of which tier was actually requested, which is why
-    /// already-fulfilled 4K requests kept showing in the Discover
-    /// "Requested" row — see that function's own doc comment.
+    /// The 4K tier's fulfilment status, independent of `status` (an item can be status 1
+    /// Unknown with status4k 5 Available). Pick by the request's tier (`MediaRequest.is4k`)
+    /// — see `requested_not_available`.
     #[serde(default)]
     pub status4k: Option<u8>,
-    /// Only populated on the single-item detail endpoints (`GET /movie/
-    /// {id}`/`GET /tv/{id}`) — confirmed from Seerr's real source
-    /// (`Media.getMedia`, `server/entity/Media.ts`): `relations: {
-    /// requests: true, issues: true }`. The list-style endpoints (`/search`,
-    /// `/discover/*`) use `Media.getRelatedMedia` instead, which only joins
-    /// `watchlists` — `requests` stays empty there, not because no request
-    /// exists, but because that query never asked for it. Added 2026-07-18
-    /// to let the Discover detail page show a tier-aware, approval-aware
-    /// status (`RequestDetailScreen`'s poster badge and status pills) —
-    /// picks the request matching a given `is4k` tier via `.iter().find()`.
+    /// Only on the single-item detail endpoints (`GET /movie|tv/{id}` — Media.getMedia joins
+    /// requests). List endpoints (`/search`, `/discover/*` — Media.getRelatedMedia) only join
+    /// watchlists, so `requests` is empty there even when requests exist. Feeds the detail
+    /// page's tier- and approval-aware status.
     #[serde(default)]
     pub requests: Vec<MediaRequest>,
 }
@@ -290,22 +154,9 @@ impl SearchResult {
     }
 }
 
-/// `GET /discover/watchlist` — same `{page, totalPages, totalResults,
-/// results}` shape family as `SearchResponse` (confirmed
-/// `server/interfaces/api/discoverInterfaces.ts`'s `WatchlistResponse`).
-/// For a non-Plex user (every one of Fjord's 4 auth methods), this is the
-/// LOCAL Watchlist table, not a Plex-synced one (confirmed
-/// `server/routes/discover.ts`).
-///
-/// Real bug, live-reported 2026-07-19: this struct originally had no
-/// `#[serde(rename_all = "camelCase")]` (unlike `WatchlistItem` right below
-/// it, which does) — every fetch failed with `missing field 'total_pages'`
-/// since the real response sends `totalPages`. Confirmed against a real
-/// instance (`{"page":1,"totalPages":1,"totalResults":0,"results":[]}`,
-/// queried directly with the saved session cookie, decrypted locally the
-/// same one-off way this project always has — nothing persisted) — the
-/// exact same class of gap this crate's own `#[serde(rename_all =
-/// "camelCase")]` sweep was supposed to have caught everywhere already.
+/// `GET /discover/watchlist` — {page, totalPages, totalResults, results}
+/// (discoverInterfaces.ts). For non-Plex users (all of Fjord's auth methods) this is the
+/// LOCAL watchlist table (routes/discover.ts). camelCase like everything else.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WatchlistResponse {
@@ -350,15 +201,9 @@ pub struct BlocklistResponse {
     pub results: Vec<BlocklistItem>,
 }
 
-/// One blocklisted title — no poster/richer data (confirmed
-/// `server/interfaces/api/blocklistInterfaces.ts`'s `BlocklistItem`), same
-/// "needs its own per-item detail fetch for a poster" situation as
-/// `WatchlistItem`/`MediaRequest` above. `user`/`created_at` are what let
-/// the Manage Blocklist screen show "Blocklisted by X on Y" with zero extra
-/// round trip — RequestDetailScreen deliberately does NOT fetch this same
-/// detail (see the Blocklist support write-up in CLAUDE.md for why).
-/// `blocklisted_tags` (a Sonarr/Radarr auto-blocklist-by-tag admin feature)
-/// is modeled but not surfaced anywhere in Fjord's UI — out of scope.
+/// One blocklisted title — no poster (blocklistInterfaces.ts). `user`/`created_at` give
+/// "Blocklisted by X on Y" with no extra call. `blocklisted_tags` (Sonarr/Radarr
+/// auto-blocklist by tag) is modeled but not shown.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BlocklistItem {
@@ -374,25 +219,12 @@ pub struct BlocklistItem {
     pub blocklisted_tags: Option<String>,
 }
 
-/// `GET /discover/movies`/`GET /discover/tv`'s real filter query params
-/// (confirmed from Seerr's actual route source, `server/routes/
-/// discover.ts` — the OpenAPI spec has been wrong/incomplete before, see
-/// this crate's own history of re-verifying against real source rather
-/// than the spec). `GET /search` accepts NONE of these — only `query`/
-/// `page`/`language` — so this struct is only ever used against the two
-/// `/discover/*` endpoints, never search. All fields optional; a `Some`
-/// field is appended to the query string, `None` is omitted entirely
-/// (matching every other optional-query-param pattern already used
-/// elsewhere in this crate, e.g. `create_request`'s `tags`/`profileId`).
-///
-/// `sort`/`date_gte` are pre-resolved to the correct literal TMDB
-/// parameter VALUE (e.g. `"primary_release_date.desc"`) and QUERY KEY
-/// NAME (`primaryReleaseDateGte` for movies vs `firstAirDateGte` for TV)
-/// respectively by the caller — this struct doesn't know which media type
-/// it's being used for, and movies/TV genuinely use different names for
-/// their date-range/date-sort params (confirmed from the real route
-/// source), so resolving that here would need a media-type parameter this
-/// struct has no other use for.
+/// `GET /discover/movies` / `/discover/tv` filter params, from Seerr's route source
+/// (server/routes/discover.ts — the OpenAPI spec has been wrong before). `GET /search`
+/// takes none of them (only query/page/language). `Some` fields go into the query
+/// string, `None` is omitted. `sort`/`date_gte` are resolved by the caller to the TMDB
+/// VALUE ("primary_release_date.desc") and the per-type KEY (primaryReleaseDateGte vs
+/// firstAirDateGte) — this struct doesn't know its media type.
 #[derive(Debug, Clone, Default)]
 pub struct DiscoverFilters {
     /// Multiple ids are pipe-joined (OR logic) at request-build time —
@@ -412,10 +244,8 @@ pub struct DiscoverFilters {
     /// (`primaryReleaseDateGte` vs `firstAirDateGte`) paired with its
     /// value — see this struct's own doc comment.
     pub date_gte: Option<(&'static str, String)>,
-    /// Mirrors `date_gte` exactly (`primaryReleaseDateLte`/
-    /// `firstAirDateLte`) — added 2026-07-18 for the "New in Theaters" row,
-    /// which needs an upper bound too (without one, `date_gte` alone would
-    /// also match future not-yet-released titles).
+    /// Like `date_gte` (primaryReleaseDateLte / firstAirDateLte) — the upper bound
+    /// "New in Theaters" needs.
     pub date_lte: Option<(&'static str, String)>,
 }
 
@@ -494,14 +324,8 @@ pub struct Network {
     pub name: String,
 }
 
-/// TV's `nextEpisodeToAir` — `air_date` was the only field this crate's
-/// consumer needed originally; `episode_number`/`name`/`season_number`
-/// added 2026-07-18 for the "Coming Up" calendar entry label (all already
-/// present in the real `TmdbTvEpisodeResult` shape TMDB returns, confirmed
-/// from Seerr's own `server/api/themoviedb/interfaces.ts`, just unread
-/// until now — `overview`/`still_path` also exist there but aren't
-/// consumed by anything yet, so left unmodeled, same "only what's
-/// consumed" style as `Video`).
+/// TV's `nextEpisodeToAir`: air_date + episode_number/name/season_number for the
+/// Coming Up label (TMDB's TmdbTvEpisodeResult; overview/still_path left out).
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NextEpisode {
@@ -515,11 +339,8 @@ pub struct NextEpisode {
     pub season_number: Option<i64>,
 }
 
-/// `MovieDetails.releases` (2026-07-18, Watchlist + Release Calendar) — the
-/// raw TMDB `release_dates` shape, forwarded verbatim by Seerr's own
-/// `mapMovieDetails` (confirmed `server/models/Movie.ts`: `releases:
-/// movie.release_dates`). TV has no equivalent — TMDB doesn't track
-/// per-episode release types, only `nextEpisodeToAir.airDate` above.
+/// `MovieDetails.releases` — TMDB's raw release_dates, forwarded by Seerr's
+/// mapMovieDetails (models/Movie.ts). TV has no equivalent (only nextEpisodeToAir).
 #[derive(Debug, Clone, Deserialize)]
 pub struct ReleaseDatesResult {
     #[serde(default)]
@@ -611,37 +432,15 @@ pub struct Language {
     pub english_name: String,
 }
 
-/// `GET`/`POST /user/{id}/settings/main`'s "general" shape — only the
-/// fields this crate's consumer round-trips. **The POST handler
-/// unconditionally overwrites `username`/`email`/etc. from the body with
-/// no partial-patch semantics** (confirmed from Seerr's real source, not
-/// assumed) — a caller changing just one field (e.g. `streaming_region`)
-/// must `GET` this struct first, mutate the one field, and `POST` the
-/// whole thing back; constructing one from scratch with the rest left at
-/// `Default`/`None` would blank out the user's username/email server-side.
+/// `GET`/`POST /user/{id}/settings/main` ("general") — only the fields Fjord round-trips.
+/// **The POST overwrites username/email/… from the body (no partial patch):** GET, change
+/// one field, POST the whole thing back; building one from scratch would blank the
+/// user's username/email.
 ///
-/// **Every field is `skip_serializing_if = "Option::is_none"` on the way
-/// out — this is load-bearing, not cosmetic.** Live-reproduced: for an
-/// account that has never saved anything under Seerr's own Settings ->
-/// General (a real, unremarkable state — confirmed via `GET /auth/me`
-/// returning `"settings": null` for such a user), `GET .../settings/main`
-/// simply omits keys like `locale` entirely rather than returning them as
-/// `null`, so this struct deserializes them as `None`. Seerr's
-/// `user_settings.locale` DB column is `NOT NULL` with an empty-string
-/// default — sending it back as JSON `null` (which plain `Option<String>`
-/// serialization does unconditionally) reaches the SQL layer unchanged and
-/// the whole write 500s: `{"message":"SQLITE_CONSTRAINT: NOT NULL
-/// constraint failed: user_settings.locale"}` (the exact body, captured by
-/// hand-crafting the same POST directly against a live instance — the
-/// generic `error_for_status()` Fjord's own client used at the time threw
-/// away this message entirely, showing only "500 Internal Server Error"
-/// with no indication of why). Omitting the key outright (confirmed live
-/// against the same instance) lets Seerr fall back to its own column
-/// default instead, which succeeds. Applied to every field, not just
-/// `locale` — the same class of NOT NULL mismatch could exist on any of
-/// these columns on a different Seerr version/install, and omitting an
-/// unset field is also just correct: this client never has an opinion on a
-/// field it never received a real value for.
+/// **Every field is `skip_serializing_if = "Option::is_none"` — load-bearing.** For a user
+/// who never saved Seerr's General settings, GET omits keys like `locale`; sending them
+/// back as `null` hits NOT NULL columns and the write 500s ("SQLITE_CONSTRAINT: NOT NULL
+/// constraint failed: user_settings.locale"). Omitted, Seerr uses its column default.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UserGeneralSettings {
@@ -694,26 +493,16 @@ pub struct MovieDetails {
     pub watch_providers: Vec<WatchProviderEntry>,
     #[serde(default)]
     pub related_videos: Vec<Video>,
-    /// Already computed server-side (confirmed `server/routes/movie.ts`:
-    /// `onUserWatchlist: userWatchlist`) — zero extra network calls to know
-    /// watchlist state on the detail page (2026-07-18, Watchlist + Release
-    /// Calendar).
+    /// Computed server-side (routes/movie.ts: onUserWatchlist) — watchlist state with no
+    /// extra call.
     #[serde(default)]
     pub on_user_watchlist: bool,
-    /// TMDB's per-region theatrical/digital/physical release dates,
-    /// forwarded verbatim by Seerr — see `ReleaseDatesResult`'s own doc
-    /// comment. TV has no equivalent (2026-07-18, Watchlist + Release
-    /// Calendar).
+    /// TMDB's per-region release dates — see `ReleaseDatesResult`. TV has none.
     #[serde(default)]
     pub releases: Option<ReleaseDatesResult>,
-    /// The TMDB collection/franchise this movie belongs to, if any —
-    /// confirmed present on Seerr's own `GET /movie/{id}` response
-    /// (`server/models/Movie.ts`: `movie.belongs_to_collection` mapped to
-    /// `{id, name, posterPath, backdropPath}`), just never deserialized
-    /// until the Collection screen's "Missing From This Collection" row
-    /// (2026-07-29). This is how a local BoxSet's TMDB collection id is
-    /// resolved — via any one member movie's already-known TMDB id and this
-    /// already-called endpoint — with no new network call of its own.
+    /// The movie's TMDB collection (`belongs_to_collection` → {id, name, posterPath,
+    /// backdropPath}, models/Movie.ts) — how a local BoxSet's TMDB collection id is found,
+    /// from any member's already-fetched details.
     #[serde(default)]
     pub collection: Option<MovieCollectionRef>,
 }
@@ -772,13 +561,9 @@ pub struct TvDetails {
     pub on_user_watchlist: bool,
 }
 
-/// GET /collection/{id} — the full TMDB collection/franchise membership,
-/// used by the Collection screen's "Missing From This Collection" row
-/// (2026-07-29) to diff against a local BoxSet's own member list. `parts`
-/// reuses `SearchResult` verbatim — confirmed from Seerr's real
-/// `server/models/Collection.ts`: `mapCollection`'s `parts` field is built
-/// with the exact same `mapMovieResult` function `/search`/`/discover/*`
-/// already use, i.e. byte-for-byte the same shape.
+/// GET /collection/{id} — the full TMDB collection, diffed against a local BoxSet for
+/// the Collection screen's "Missing From This Collection" row. `parts` reuses
+/// `SearchResult` (mapCollection uses the same mapMovieResult as /search).
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Collection {
@@ -794,18 +579,11 @@ pub struct Collection {
     pub parts: Vec<SearchResult>,
 }
 
-/// GET /person/{id}/combined_credits — an actor/director's full TMDB
-/// filmography, used by the Person screen's "Other Work" row (2026-07-29)
-/// to show titles not already in the local library. Confirmed from Seerr's
-/// real `server/models/Person.ts`/`server/routes/person.ts`: cast and crew
-/// credits share the same base fields (only what Fjord actually consumes is
-/// modeled here, matching this crate's existing style, e.g. `Video`) plus
-/// `character` (cast) or `department`+`job` (crew). `media_type` is
-/// genuinely optional on some legacy TMDB credit entries. `media_info` is
-/// NOT modeled — confirmed this endpoint's relation join is watchlist-only,
-/// same as `/search`/`/discover/*` (no `requests` populated), so request
-/// state is patched client-side the same way every other list-style
-/// Discover row already is, not read off this response.
+/// GET /person/{id}/combined_credits — a person's full TMDB filmography (Person screen's
+/// "Other Work" row). Cast and crew share base fields plus `character` (cast) or
+/// `department`+`job` (crew) (models/Person.ts); `media_type` is optional on some old
+/// entries. No `media_info`: this join is watchlist-only (like /search), so request state
+/// is patched client-side.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PersonCreditCast {
@@ -848,18 +626,9 @@ pub struct PersonCreditCrew {
     pub job: Option<String>,
 }
 
-/// `GET /person/{id}` — TMDB's own person bio/portrait, forwarded via
-/// Seerr's `mapPersonDetails`. Field shape confirmed live against
-/// `seerr-team/seerr`'s real `server/models/Person.ts` (2026-08-13, not
-/// live-tested against a real running instance — same standing limitation
-/// as every other Seerr model in this crate) rather than assumed from the
-/// OpenAPI spec, which this crate has already caught being wrong/
-/// incomplete more than once. Only the fields Fjord's TMDB-only person
-/// screen actually needs are modeled — `birthday`/`deathday`/
-/// `knownForDepartment`/`gender`/`popularity`/`placeOfBirth`/`adult`/
-/// `imdbId`/`homepage`/`alsoKnownAs` are real fields on the response too,
-/// deliberately left unmapped (same "only what's consumed" style as
-/// `Video`/`NextEpisode` elsewhere in this crate).
+/// GET /person/{id} — TMDB bio/portrait via Seerr's mapPersonDetails (checked in
+/// models/Person.ts, not against a live instance). Only what the TMDB-only person
+/// screen needs is modeled.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PersonDetails {
@@ -923,31 +692,17 @@ impl SeasonsSelector {
     }
 }
 
-/// `status` is the *request* (approval workflow) state — real enum,
-/// confirmed from Seerr's own source (`server/constants/media.ts`,
-/// `MediaRequestStatus`): 1=PENDING, 2=APPROVED, 3=DECLINED, 4=FAILED,
-/// 5=COMPLETED — a different enum from `MediaInfo.status` (fulfillment
-/// state: Unknown/Pending/Processing/PartiallyAvailable/Available/
-/// Blocklisted/Deleted). `media`/`created_at` are only populated by `GET
-/// /request` (the create-request response doesn't need them) — `#[serde(default)]`
-/// so both endpoints deserialize into the same struct. `requested_by`/
-/// `profile_id`/`tags`/`seasons` are all already present on the same `GET
-/// /request` response (confirmed from Seerr's route source —
-/// `leftJoinAndSelect`s `requestedBy`/`seasons`, and `profileId`/`tags` are
-/// plain unguarded columns on the entity), added 2026-07-18 for the
-/// Discover context menu's Edit/Cancel/Approve/Decline actions — no new
-/// network call needed to support them.
+/// `status` = the REQUEST's workflow state (MediaRequestStatus, constants/media.ts):
+/// 1 PENDING 2 APPROVED 3 DECLINED 4 FAILED 5 COMPLETED — not `MediaInfo.status`
+/// (fulfilment). `media`/`created_at` only come with GET /request (`#[serde(default)]`,
+/// so both endpoints deserialize here); `requested_by`/`profile_id`/`tags`/`seasons` are on
+/// the same response and feed the context menu's Edit/Cancel/Approve/Decline.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MediaRequest {
     pub id: i64,
     pub status: u8,
-    /// Which tier THIS request is for — confirmed live (2026-07-18) this is
-    /// the field that must pick which of `MediaInfo.status`/`status4k` is
-    /// the relevant fulfillment status, not `media.status` alone. Rust
-    /// field name matches the JSON key verbatim (`is4k`, already valid
-    /// snake_case — no `rename_all` transform needed or relied on, same
-    /// reasoning as `status4k` above).
+    /// Which tier THIS request is for — decides between `MediaInfo.status` and `status4k`.
     #[serde(default)]
     pub is4k: bool,
     #[serde(default)]
@@ -1017,28 +772,14 @@ impl User {
             .unwrap_or_else(|| format!("user #{}", self.id))
     }
 
-    /// **Real bug, live-reported 2026-07-18** ("on requested 4k items I
-    /// only got detail on the context menu"): this originally checked bit
-    /// 16 (`MANAGE_REQUESTS`) alone. But Seerr's own `hasPermission()`
-    /// (`server/lib/permissions.ts`) treats the `ADMIN` bit (2) as a
-    /// universal bypass for every permission check — `!!(value &
-    /// Permission.ADMIN) || !!(value & total)` — and the owner/first-admin
-    /// account is provisioned with exactly `permissions: Permission.ADMIN`
-    /// (confirmed from `server/routes/auth.ts`'s account-creation paths),
-    /// not the literal `MANAGE_REQUESTS` bit. On a personal single-user
-    /// Seerr instance the connected account is almost always this owner
-    /// account, so the old bit-16-only check made `can_manage_requests()`
-    /// false for the one account most likely to actually have the
-    /// server-side permission — Approve/Decline (and the admin bypass on
-    /// Cancel) silently never appeared. Mirrors the real OR-bypass exactly.
+    /// MANAGE_REQUESTS (bit 16) OR ADMIN (bit 2): Seerr's hasPermission() (lib/permissions.ts)
+    /// treats ADMIN as a bypass for every permission, and the owner account carries exactly
+    /// ADMIN — bit 16 alone hid Approve/Decline from the account most likely to have them.
     pub fn can_manage_requests(&self) -> bool {
         self.permissions & (2 | 16) != 0
     }
 
-    /// Same OR-with-ADMIN-bypass shape as `can_manage_requests` above, but
-    /// `MANAGE_BLOCKLIST = 268435456` — confirmed a genuinely separate bit
-    /// from `MANAGE_REQUESTS`/`ADMIN` in Seerr's real `server/lib/
-    /// permissions.ts` (2026-08-06, Seerr Blocklist support).
+    /// Same ADMIN bypass, with MANAGE_BLOCKLIST = 268435456 — a separate bit (lib/permissions.ts).
     pub fn can_manage_blocklist(&self) -> bool {
         self.permissions & (2 | 268_435_456) != 0
     }
