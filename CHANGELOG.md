@@ -46,6 +46,8 @@ are bumped together as one step, not separately.
   The settings file (which holds your login) could be readable by other
   users for a moment while saving, and the logs always were. Both are now
   readable only by you.
+- **Security: updated libraries with known problems** (HTTP/2, TLS, the
+  browser launcher and others), found with a dependency audit.
 - **Fixed: Fjord's log file contained your Jellyfin access key** (in the
   line logged when the live-update connection starts). It's now hidden there
   and in connection errors and player messages, like it already was for
