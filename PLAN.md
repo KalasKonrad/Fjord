@@ -15,7 +15,7 @@ Version history: [CHANGELOG.md](CHANGELOG.md) (git tags `v0.1.0`–`v0.4.2`). Im
 **Check an item off only once it has been clicked through on real hardware** — a clean build/clippy/test says nothing about whether it works. Add a line here the moment something ships "not live-tested". Ticked items are removed at the next cleanup; their story lives in `DEVLOG.md`.
 
 ### Security fixes (0.5.0 step 0)
-- [ ] **S7 — pinned actions (2026-10-10).** The next push to `main` still produces the "nightly" release (Actions tab green, new `fjord-x86_64.tar.gz`).
+- [x] **S7 — pinned actions (2026-10-10).** The next push to `main` still produces the "nightly" release (Actions tab green, new `fjord-x86_64.tar.gz`). Confirmed 2026-10-10: the nightly run for `d1a54da` (pinned actions) succeeded.
 - [ ] **S6 — owner-only files (2026-10-10).** After a start: `stat -c '%a %n' ~/.config/fjord/config.json ~/.cache/fjord/logs ~/.cache/fjord/logs/fjord.log*` → 600 / 700 / 600 on both machines; on the HTPC the share files stay readable from the dev machine; no `log permissions not tightened` line (or, on the HTPC, it explains why).
 - [ ] **S5 — plain HTTP is visible (2026-10-10).** Settings → the SERVER block at the bottom of the left pane shows "Not encrypted (http://)" in red for the own server (it's http://); SEERR too if Seerr is http://. Signing in with an address typed without `http(s)://` to a server that only answers on http → one toast "Jellyfin: connected without encryption …" (log `didn't answer over https`). Typed `http://…` → no toast.
 - [ ] **S4 — live sync over HTTPS (2026-10-10).** Proven against a public `wss://` echo server; with the own (http://) server nothing changes: `ws: connected` as before. Only testable for real against an https:// Jellyfin.
@@ -28,6 +28,7 @@ Version history: [CHANGELOG.md](CHANGELOG.md) (git tags `v0.1.0`–`v0.4.2`). Im
 ## Pending
 
 - [ ] **`cargo audit` again after the Slint 1.18 upgrade and before tagging 0.5.0** — 2 advisories left (quick-xml 0.39.4 via Slint's accessibility stack, not reachable; see DEVLOG "Security review before 0.5.0").
+- [ ] **0.5.0 release work happens on branch `release-0.5`** (plan: `~/.claude/plans/velvety-mixing-flute.md`); `PKGBUILD` on `main` builds it (`#branch=release-0.5`) — remove the fragment when it's merged.
 - [ ] **Remove the temporary `--cfg slint_debug_property` line from `PKGBUILD`'s `build()`** once the Settings crash (Issues) is understood or hasn't come back for a while — it's there so a repeat names the property in the `PANIC` line.
 
 ## Issues
