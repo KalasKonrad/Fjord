@@ -2,6 +2,9 @@
 //   LoginOptions  { append, remember } — grouped to keep do_login's own arg count under
 //             clippy's too_many_arguments threshold (2026-08-14); `remember` is written into
 //             the just-authenticated ProfileSettings.remember_login in all 3 branches below
+//   fell_back_to_http / note_if_http_fallback  a schemeless address that only answered over
+//             http:// → one log line + toast (Jellyfin login, Seerr connects; 2026-10-09
+//             security review — no silent plain HTTP; unit-tested)
 //   do_login  authenticate, persist config, then finish_session_setup; the authenticate()
 //             HTTP client carries an explicit 30s timeout (previously a bare
 //             reqwest::Client::new() with no timeout — the one call in the app that could
@@ -69,6 +72,24 @@ fn ss(s: &str) -> SharedString { SharedString::from(s) }
 /// this verbatim (it has zero Jellyfin-specific typing) rather than
 /// duplicating the same candidate-ordering logic for Seerr's own
 /// server-URL field, which had the identical bare-host-fails-outright gap.
+/// True when `typed` had no scheme and the address that answered is plain
+/// `http://` — https didn't answer and Fjord fell back (the only way a
+/// schemeless address ends up on http, see candidate_server_urls).
+pub(crate) fn fell_back_to_http(typed: &str, resolved: &Url) -> bool {
+    let typed = typed.trim().to_ascii_lowercase();
+    resolved.scheme() == "http" && !typed.starts_with("http://") && !typed.starts_with("https://")
+}
+
+/// No silent plain HTTP (2026-10-09 security review): one toast + a log
+/// line when `what` ("Jellyfin"/"Seerr") was reached only over http://
+/// after https didn't answer. Settings shows "not encrypted" permanently.
+pub(crate) fn note_if_http_fallback(ww: &slint::Weak<crate::MainWindow>, what: &str, typed: &str, resolved: &Url) {
+    if fell_back_to_http(typed, resolved) {
+        warn!("{what}: {typed} didn't answer over https — connected over unencrypted http ({resolved})");
+        crate::show_toast(ww.clone(), format!("{what}: connected without encryption — the server didn't answer over https"));
+    }
+}
+
 pub(crate) fn candidate_server_urls(input: &str) -> Vec<String> {
     let trimmed = input.trim();
     let lower = trimmed.to_ascii_lowercase();
@@ -187,6 +208,7 @@ pub(crate) fn do_login(
                 &login_http, &server, &user, &pass, &cfg.device.device_id,
             ).await?;
             info!("authenticated as {}", auth.user.name);
+            note_if_http_fallback(&window_weak, "Jellyfin", &server, &server_url);
             // `append` (Bonfire Phase 1, step 6, 2026-08-09 — the picker's own
             // "+ Add Account" tile) means "keep every existing profile intact,
             // add this one alongside them" rather than the normal sign-in
@@ -476,7 +498,7 @@ pub(crate) async fn finish_session_setup(
         let _ = slint::invoke_from_event_loop(move || {
             let Some(w) = ww_warm.upgrade() else { return };
             let g = AppState::get(&w);
-            g.set_server_url(ss(&server_str_warm));
+            crate::set_server_url_ui(&g, &server_str_warm);
             if let Some(hd) = &cached_home { push_home_data(&w, hd, &watchlist_warm); }
             if let Some(series) = &cached_series { g.set_all_series(items_to_model(series, &watchlist_warm)); }
             // Real bug fix, 2026-08-14 — see this function's own top-of-body
@@ -571,7 +593,7 @@ pub(crate) async fn finish_session_setup(
     let _ = slint::invoke_from_event_loop(move || {
         if let Some(w) = ww.upgrade() {
             let g = AppState::get(&w);
-            g.set_server_url(ss(&server_str));
+            crate::set_server_url_ui(&g, &server_str);
             g.set_server_name(ss(&srv_name));
             g.set_server_version(ss(&srv_ver));
             // warm_started: an earlier paint from cache already happened
@@ -663,7 +685,19 @@ fn spawn_not_watched_rows(
 
 #[cfg(test)]
 mod tests {
-    use super::candidate_server_urls;
+    use super::{candidate_server_urls, fell_back_to_http};
+    use url::Url;
+
+    #[test]
+    fn http_fallback_is_noticed() {
+        let http = Url::parse("http://jellyfin.example.com").unwrap();
+        let https = Url::parse("https://jellyfin.example.com").unwrap();
+        assert!(fell_back_to_http("jellyfin.example.com", &http));
+        assert!(fell_back_to_http(" Jellyfin.Example.com:8096 ", &http));
+        assert!(!fell_back_to_http("http://jellyfin.example.com", &http)); // typed http on purpose
+        assert!(!fell_back_to_http("HTTP://jellyfin.example.com", &http));
+        assert!(!fell_back_to_http("jellyfin.example.com", &https));
+    }
 
     #[test]
     fn bare_host_tries_https_then_http() {

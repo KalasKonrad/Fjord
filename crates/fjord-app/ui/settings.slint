@@ -7,7 +7,8 @@
 //                    for the full "why" — a section can now be inserted anywhere in the array
 //                    without renumbering anything that follows it); below the section list, a
 //                    vertical-stretch:1 spacer pins a SERVER/CLIENT/SEERR info block to the
-//                    bottom of the pane — SEERR only rendered when AppState.seerr-connected
+//                    bottom of the pane — SEERR only rendered when AppState.seerr-connected;
+//                    "Not encrypted (http://)" under SERVER/SEERR for plain-HTTP connections
 //     Right pane     Flickable; shows section content based on settings-section (string key)
 //       General      launch-in-fullscreen, video-behind, log-level, prewarm-metadata,
 //                    prewarm-images — Sign Out moved to the new Profiles section below
@@ -232,6 +233,13 @@ export component SettingsScreen inherits Rectangle {
                     font-size: 11px;
                     overflow:  elide;
                 }
+                // Plain http:// (2026-10-09 security review): shown, not nagged about.
+                if AppState.server-unencrypted: Text {
+                    text:      "Not encrypted (http://)";
+                    color:     Theme.error;
+                    font-size: 11px;
+                    overflow:  elide;
+                }
 
                 // Same 3-line shape as SERVER/CLIENT — header + bold primary
                 // name line + muted secondary version line.
@@ -246,6 +254,12 @@ export component SettingsScreen inherits Rectangle {
                 if AppState.seerr-connected && AppState.seerr-version != "": Text {
                     text:      AppState.seerr-version;
                     color:     Theme.text-muted;
+                    font-size: 11px;
+                    overflow:  elide;
+                }
+                if AppState.seerr-unencrypted: Text {
+                    text:      "Not encrypted (http://)";
+                    color:     Theme.error;
                     font-size: 11px;
                     overflow:  elide;
                 }
