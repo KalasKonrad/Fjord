@@ -61,7 +61,7 @@ jobs:
   build:
     runs-on: [self-hosted, fjord]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0 — pinned to a commit (self-hosted runner)
         with:
           fetch-depth: 0   # full history — pkgver()-style r<count>.<hash> needs `git rev-list --count`
 
@@ -85,7 +85,7 @@ jobs:
           tar -C dist -czf fjord-x86_64.tar.gz fjord-bin
 
       - name: Publish "nightly" release (moving tag, overwritten every push)
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2 — pinned to a commit (self-hosted runner)
         with:
           tag_name: nightly
           name: "Nightly build (${{ steps.ver.outputs.version }})"
