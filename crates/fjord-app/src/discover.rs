@@ -915,16 +915,25 @@ pub(crate) fn handle_seerr_error(
 }
 
 pub(crate) async fn fetch_tmdb_image(http: &reqwest::Client, base: &str, path: &str, cache_key: &str) -> Option<Vec<u8>> {
+    // None for a key that isn't a safe file name: fetched, not cached.
     let cache_path = discover_poster_cache_path(cache_key);
-    if let Ok(bytes) = tokio::fs::read(&cache_path).await {
-        return Some(bytes);
+    if let Some(p) = &cache_path {
+        if let Ok(bytes) = tokio::fs::read(p).await {
+            return Some(bytes);
+        }
     }
     let url = format!("{base}{path}");
     let bytes = http.get(&url).send().await.ok()?.error_for_status().ok()?.bytes().await.ok()?.to_vec();
-    if let Some(parent) = cache_path.parent() {
-        let _ = tokio::fs::create_dir_all(parent).await;
+    // Only real images reach the disk (poster::is_image).
+    if !crate::poster::is_image(&bytes) {
+        return None;
     }
-    let _ = tokio::fs::write(&cache_path, &bytes).await;
+    if let Some(cache_path) = cache_path {
+        if let Some(parent) = cache_path.parent() {
+            let _ = tokio::fs::create_dir_all(parent).await;
+        }
+        let _ = tokio::fs::write(&cache_path, &bytes).await;
+    }
     Some(bytes)
 }
 

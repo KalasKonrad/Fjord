@@ -105,6 +105,9 @@ Needs `mpv`/libmpv (`pacman -S mpv`). Optional at runtime: `yt-dlp` (trailers), 
   (`Arc::ptr_eq`) or `seerr_session_current`. Per-screen `*-open-gen` counters only guard against the same
   screen reopening for another item.
 - Surface errors with `show_toast(ww, msg)` (safe from any thread).
+- **Server data never becomes a file name or program argument unchecked:** ids go through
+  `config::safe_cache_name` (32 hex) before any cache path; only bytes passing `poster::is_image` are
+  written as images.
 
 ### Config and sessions
 - Device-wide settings go in `DeviceConfig`, per-person settings in `ProfileSettings`. Access profile settings
