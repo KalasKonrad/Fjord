@@ -16,7 +16,13 @@ cargo run -p fjord-app                  # run the app
 cargo build                             # debug build (cargo build --release for release)
 cargo clippy --workspace --all-targets  # must be clean before committing
 cargo test --workspace                  # must pass before committing
+cargo fmt                               # format Rust (rustfmt defaults, width 100)
+slint-lsp format -i crates/fjord-app/ui/*.slint   # format Slint
 ```
+
+Run both formatters before committing (`cargo fmt --check` must be clean). `slint-lsp` comes from
+`cargo install slint-lsp --version <Fjord's Slint version> --locked` (in `~/.cargo/bin`); reinstall it when
+Slint is upgraded. Formatting-only commits go in `.git-blame-ignore-revs`.
 
 Needs `mpv`/libmpv (`pacman -S mpv`). Optional at runtime: `yt-dlp` (trailers), `kscreen-doctor` (display sync).
 
@@ -229,7 +235,7 @@ Needs `mpv`/libmpv (`pacman -S mpv`). Optional at runtime: `yt-dlp` (trailers), 
   (downloads the `nightly` release built by `.github/workflows/build-release.yml` on a self-hosted runner).
 
 ## Style
-- `cargo fmt`. `anyhow::Result` at the top level, `thiserror` for library errors, no `unwrap()` in library code.
+- Layout comes from the formatters (above), never by hand. `anyhow::Result` at the top level, `thiserror` for library errors, no `unwrap()` in library code.
 - `fjord-api`, `fjord-player`, `fjord-seerr` never import Slint.
 - Edition 2024: nested `if let`s are let-chains (clippy `collapsible_if`); an `unsafe fn` body puts its unsafe
   calls in an explicit `unsafe {}` block with a `// SAFETY:` line.

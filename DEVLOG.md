@@ -2866,7 +2866,17 @@ Ran the migration lints first in a separate target dir (`RUSTFLAGS="-W rust-2024
 - **Let-chains.** The edition stabilises `if let … && …`, so clippy's `collapsible_if` fired 126×. Applied `cargo clippy --fix`; the semantics are identical (non-`let` operands of a chain are terminating scopes like a plain `if` condition, `let` scrutinee temporaries live through the body in both forms). clippy leaves the bodies one level too deep, so two scripts re-indented them to the codebase's own style (continuation `&&` lines one level in, body/closing brace aligned with the `if`, joined onto one line when ≤ 120 columns), each verified whitespace-only against clippy's output with identical string-literal contents.
 - **Manifests:** `edition = "2024"` in `[workspace.package]`, crates inherit it (`edition.workspace = true`, like `version`/`authors`); `resolver = "3"` (the 2024 default — only affects future `cargo update`s, which then prefer versions the installed rustc supports). Cargo.lock unchanged.
 
-The repo is not rustfmt-formatted (`cargo fmt --check` reports ~2,400 hunks at this point), so nothing was run through `cargo fmt`.
+The repo was not rustfmt-formatted at this point (`cargo fmt --check` reported ~2,400 hunks), hence the hand re-indent; it was formatted right afterwards (next section).
+
+### Code formatting: rustfmt + Slint formatter (2026-10-10, branch `release-0.5`)
+
+Decided with the user so outside contributors can send pull requests without reformatting whole files (their editors format on save) and without style discussions in review. Before this, the layout was hand-aligned (column-aligned fields, `let` blocks and match tables) and CLAUDE.md's "`cargo fmt`" rule wasn't actually followed.
+
+- **Rust:** `cargo fmt` with rustfmt's defaults (width 100, chosen over 120 to match most Rust projects; no `rustfmt.toml` — the style edition comes from Cargo.toml's 2024). 45 of 53 files, +16,488/−6,758 lines (long lines wrapped). Build, clippy and tests unchanged.
+- **Slint:** `slint-lsp format -i` from `slint-lsp` 1.18.1 (same version as Fjord's Slint; installed with `cargo install slint-lsp --version 1.18.1 --locked`). Its README still calls the formatter "very early stage", so it ran on copies first and was checked with a small tokenizer (Slint identifiers may contain `-`, so `a - b` vs `a-b` matters; strings incl. `\{}` interpolation compared by content, comments by text): all 32 files token-identical except trailing commas added to multi-line `import { … }` lists, and a second run changes nothing. The checker itself caught a planted `a - b` → `a-b` and a planted extra space inside a string. +8,625/−5,743 lines.
+- Both commits are listed in `.git-blame-ignore-revs` (GitHub uses it automatically; locally `git config blame.ignoreRevsFile .git-blame-ignore-revs`).
+- Not done yet: a CI check on pull requests (`cargo fmt --check`, clippy, tests) — only once outside PRs actually arrive, and on GitHub-hosted runners: the self-hosted runner must never run code from pull requests (PLAN.md → Deferred).
+
 
 ### Security review before 0.5.0 (2026-10-09/10)
 
@@ -3120,7 +3130,7 @@ All fields are logged at playback start so the log shows exactly what options we
 
 ## Style
 
-- Standard Rust formatting (`cargo fmt`)
+- Formatted by tools: `cargo fmt` (rustfmt defaults) and `slint-lsp format -i` for `.slint` files (since 2026-10-10)
 - Errors: use `anyhow::Result` at the top level, `thiserror` for library error types
 - No `unwrap()` in library code — propagate errors
 - Keep `fjord-api` and `fjord-player` free of Slint imports
