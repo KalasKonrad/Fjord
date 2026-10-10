@@ -23,6 +23,9 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Fixed: the Movies library could show no posters** after Discover had been
+  opened first in the same session; they only appeared after a profile switch
+  or restart.
 - **Fixed: with the on-screen keyboard turned off, pressing Enter in a text
   field left the screen stuck** (Login, Connect Seerr, profile editing,
   searches, playlist name, Bonfire join code) — no key did anything and the
