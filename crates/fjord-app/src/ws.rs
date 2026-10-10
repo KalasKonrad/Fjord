@@ -774,35 +774,32 @@ async fn run_session(
                             // enough to skip every Episode UserDataChanged event
                             // without needing this payload's (nonexistent) item
                             // type field.
-                            if s.jellyfin_watchlist_ids.contains(id) {
-                                if let Some((tmdb_id_str, media_type)) =
+                            if s.jellyfin_watchlist_ids.contains(id)
+                                && let Some((tmdb_id_str, media_type)) =
                                     crate::context_menu::resolve_tmdb_for_jellyfin_item(&s, id, "Movie")
                                         .or_else(|| crate::context_menu::resolve_tmdb_for_jellyfin_item(&s, id, "Series"))
-                                {
-                                    // A still-airing series stays on the
-                                    // watchlist even once fully caught up
-                                    // (2026-08-02, user request — "keep it
-                                    // but if it get canceld later and
-                                    // everything is watched it shuld get
-                                    // removed... you dont konw if there
-                                    // will be another season"): only movies
-                                    // and non-Continuing (Ended/unknown-
-                                    // status) series are eligible for
-                                    // removal here. A Continuing series is
-                                    // instead caught later, once Jellyfin
-                                    // itself reports it as no longer
-                                    // Continuing — see
-                                    // maybe_spawn_delta_refresh's own
-                                    // series-status check, above in this
-                                    // file.
-                                    let still_continuing = media_type == "tv"
-                                        && s.all_series.iter().find(|m| &m.id == id).and_then(|m| m.status.as_deref())
-                                            == Some("Continuing");
-                                    if !still_continuing {
-                                        if let Ok(tmdb_id) = tmdb_id_str.parse::<i64>() {
-                                            newly_watched_on_watchlist.push((tmdb_id, media_type.to_string()));
-                                        }
-                                    }
+                            {
+                                // A still-airing series stays on the
+                                // watchlist even once fully caught up
+                                // (2026-08-02, user request — "keep it
+                                // but if it get canceld later and
+                                // everything is watched it shuld get
+                                // removed... you dont konw if there
+                                // will be another season"): only movies
+                                // and non-Continuing (Ended/unknown-
+                                // status) series are eligible for
+                                // removal here. A Continuing series is
+                                // instead caught later, once Jellyfin
+                                // itself reports it as no longer
+                                // Continuing — see
+                                // maybe_spawn_delta_refresh's own
+                                // series-status check, above in this
+                                // file.
+                                let still_continuing = media_type == "tv"
+                                    && s.all_series.iter().find(|m| &m.id == id).and_then(|m| m.status.as_deref())
+                                        == Some("Continuing");
+                                if !still_continuing && let Ok(tmdb_id) = tmdb_id_str.parse::<i64>() {
+                                    newly_watched_on_watchlist.push((tmdb_id, media_type.to_string()));
                                 }
                             }
                         }

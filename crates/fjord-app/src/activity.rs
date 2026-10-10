@@ -132,25 +132,23 @@ impl CustomApplicationHandler for FjordApplicationHandler {
         // this is the first point in the whole app where `winit_window` can
         // ever be `Some`. Fires at most once per process, regardless of how
         // many more window_event calls follow.
-        if !self.hdr_handles_captured {
-            if let Some(w) = winit_window {
-                self.hdr_handles_captured = true;
-                if let (Ok(dh), Ok(wh)) = (w.display_handle(), w.window_handle()) {
-                    if let (RawDisplayHandle::Wayland(wdh), RawWindowHandle::Wayland(wwh)) =
-                        (dh.as_raw(), wh.as_raw())
-                    {
-                        crate::hdr::spawn_worker(wdh.display, wwh.surface);
-                        crate::video_surface::set_wayland_handles(wdh.display, wwh.surface);
-                    } else {
-                        tracing::debug!(
-                            "not running under Wayland — skipping HDR color-management worker"
-                        );
-                    }
+        if !self.hdr_handles_captured && let Some(w) = winit_window {
+            self.hdr_handles_captured = true;
+            if let (Ok(dh), Ok(wh)) = (w.display_handle(), w.window_handle()) {
+                if let (RawDisplayHandle::Wayland(wdh), RawWindowHandle::Wayland(wwh)) =
+                    (dh.as_raw(), wh.as_raw())
+                {
+                    crate::hdr::spawn_worker(wdh.display, wwh.surface);
+                    crate::video_surface::set_wayland_handles(wdh.display, wwh.surface);
                 } else {
                     tracing::debug!(
-                        "winit window handle unavailable on first window_event — skipping HDR color-management worker"
+                        "not running under Wayland — skipping HDR color-management worker"
                     );
                 }
+            } else {
+                tracing::debug!(
+                    "winit window handle unavailable on first window_event — skipping HDR color-management worker"
+                );
             }
         }
 

@@ -177,22 +177,20 @@ impl SeriesCtx {
             // Ghost series (deleted server-side): clean up and bail before the
             // page shows — otherwise the loading overlay gives way to an empty
             // shell built from error fallbacks (S4).
-            if let Err(e) = &detail_res {
-                if crate::is_not_found(e) {
-                    if !revalidate {
-                        let ww_err = ww.clone();
-                        let id_err = id.clone();
-                        let _ = slint::invoke_from_event_loop(move || {
-                            let Some(w) = ww_err.upgrade() else { return };
-                            if AppState::get(&w).get_series_id().as_str() != id_err { return; }
-                            let g = AppState::get(&w);
-                            g.set_app_content_loading(false);
-                            g.set_series_id("".into());
-                        });
-                        crate::purge_deleted_item(&state, &ww, &id);
-                    }
-                    return;
+            if let Err(e) = &detail_res && crate::is_not_found(e) {
+                if !revalidate {
+                    let ww_err = ww.clone();
+                    let id_err = id.clone();
+                    let _ = slint::invoke_from_event_loop(move || {
+                        let Some(w) = ww_err.upgrade() else { return };
+                        if AppState::get(&w).get_series_id().as_str() != id_err { return; }
+                        let g = AppState::get(&w);
+                        g.set_app_content_loading(false);
+                        g.set_series_id("".into());
+                    });
+                    crate::purge_deleted_item(&state, &ww, &id);
                 }
+                return;
             }
             let backdrop_bytes = match &detail_res {
                 Ok(d) if !d.backdrop_image_tags.is_empty() =>
@@ -638,20 +636,18 @@ impl SeriesCtx {
             }
             // Cache-hit only: shown instantly above; silently revalidate and
             // patch if changed (same staleness gap as detail.rs::spawn_similar).
-            if is_hit {
-                if let Ok(fresh_similar) = client.get_similar_items(&id).await {
-                    if !crate::session_current(&state, &client) { return; }
-                    state.lock().unwrap().similar_items_cache.insert(id.clone(), fresh_similar.clone());
-                    let bufs = fetch_card_posters(&client, &fresh_similar).await;
-                    let id_c = id.clone();
-                    let _ = slint::invoke_from_event_loop(move || {
-                        let Some(w) = ww2.upgrade() else { return };
-                        if AppState::get(&w).get_series_id().as_str() != id_c { return; }
-                        let g = AppState::get(&w);
-                        let fresh = items_to_cards(&fresh_similar, bufs);
-                        g.set_series_similar(crate::apply_cards_preserving_identity(&g.get_series_similar(), fresh));
-                    });
-                }
+            if is_hit && let Ok(fresh_similar) = client.get_similar_items(&id).await {
+                if !crate::session_current(&state, &client) { return; }
+                state.lock().unwrap().similar_items_cache.insert(id.clone(), fresh_similar.clone());
+                let bufs = fetch_card_posters(&client, &fresh_similar).await;
+                let id_c = id.clone();
+                let _ = slint::invoke_from_event_loop(move || {
+                    let Some(w) = ww2.upgrade() else { return };
+                    if AppState::get(&w).get_series_id().as_str() != id_c { return; }
+                    let g = AppState::get(&w);
+                    let fresh = items_to_cards(&fresh_similar, bufs);
+                    g.set_series_similar(crate::apply_cards_preserving_identity(&g.get_series_similar(), fresh));
+                });
             }
         });
     }
@@ -1293,10 +1289,8 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &crate::AppState) -> b
             }
             Action::Confirm => {
                 let idx = g.get_series_cast_focused();
-                if idx >= 0 {
-                    if let Some(c) = g.get_series_cast().row_data(idx as usize) {
-                        g.invoke_open_person(c.id, c.name);
-                    }
+                if idx >= 0 && let Some(c) = g.get_series_cast().row_data(idx as usize) {
+                    g.invoke_open_person(c.id, c.name);
                 }
                 true
             }
@@ -1435,32 +1429,26 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &crate::AppState) -> b
         }
         Action::Confirm => {
             let cards = g.get_series_episode_cards();
-            if cards.row_count() > 0 {
-                if let Some(card) = cards.row_data(g.get_series_focused_ep() as usize) {
-                    g.invoke_play_series_episode(card.id);
-                }
+            if cards.row_count() > 0 && let Some(card) = cards.row_data(g.get_series_focused_ep() as usize) {
+                g.invoke_play_series_episode(card.id);
             }
             true
         }
         Action::OpenDetail => {
             let cards = g.get_series_episode_cards();
-            if cards.row_count() > 0 {
-                if let Some(card) = cards.row_data(g.get_series_focused_ep() as usize) {
-                    g.invoke_open_detail(card.id, "Episode".into());
-                }
+            if cards.row_count() > 0 && let Some(card) = cards.row_data(g.get_series_focused_ep() as usize) {
+                g.invoke_open_detail(card.id, "Episode".into());
             }
             true
         }
         Action::OpenContextMenu => {
             let cards = g.get_series_episode_cards();
-            if cards.row_count() > 0 {
-                if let Some(card) = cards.row_data(g.get_series_focused_ep() as usize) {
-                    g.set_context_menu_title(card.title.clone());
-                    g.invoke_open_context_menu(
-                        card.id, card.has_played, card.is_favorite, card.resume_pct,
-                        card.item_type, card.series_id,
-                    );
-                }
+            if cards.row_count() > 0 && let Some(card) = cards.row_data(g.get_series_focused_ep() as usize) {
+                g.set_context_menu_title(card.title.clone());
+                g.invoke_open_context_menu(
+                    card.id, card.has_played, card.is_favorite, card.resume_pct,
+                    card.item_type, card.series_id,
+                );
             }
             true
         }

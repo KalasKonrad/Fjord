@@ -213,20 +213,18 @@ fn open_music_screen(
 
         // Deleted album: the ParentId track query returns an empty 200 — the
         // ghost is only visible on the detail fetch's 404 (S4).
-        if let Err(e) = &detail_res {
-            if crate::is_not_found(e) {
-                let ww_err = ww2.clone();
-                let _ = slint::invoke_from_event_loop(move || {
-                    if let Some(w) = ww_err.upgrade() {
-                        let g = AppState::get(&w);
-                        if g.get_album_open_gen() == generation {
-                            g.set_app_content_loading(false);
-                        }
+        if let Err(e) = &detail_res && crate::is_not_found(e) {
+            let ww_err = ww2.clone();
+            let _ = slint::invoke_from_event_loop(move || {
+                if let Some(w) = ww_err.upgrade() {
+                    let g = AppState::get(&w);
+                    if g.get_album_open_gen() == generation {
+                        g.set_app_content_loading(false);
                     }
-                });
-                crate::purge_deleted_item(&state_task, &ww2, &id2);
-                return;
-            }
+                }
+            });
+            crate::purge_deleted_item(&state_task, &ww2, &id2);
+            return;
         }
 
         let tracks = match tracks_res {
@@ -295,11 +293,9 @@ fn open_music_screen(
                 g.set_album_has_played(d.user_data.played);
             }
 
-            if let Some(bytes) = poster_bytes {
-                if let Some(spb) = decode_poster_buffer(&bytes) {
-                    g.set_album_poster(slint::Image::from_rgba8(spb));
-                    g.set_album_has_poster(true);
-                }
+            if let Some(bytes) = poster_bytes && let Some(spb) = decode_poster_buffer(&bytes) {
+                g.set_album_poster(slint::Image::from_rgba8(spb));
+                g.set_album_has_poster(true);
             }
 
             g.set_album_tracks(ModelRc::new(VecModel::from(track_items)));

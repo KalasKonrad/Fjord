@@ -608,9 +608,7 @@ pub(crate) async fn run_poster_cache_cleanup(
     if movie_ids.is_empty() && series_ids.is_empty() && collection_ids.is_empty() && artist_ids.is_empty() && album_ids.is_empty() && playlist_ids.is_empty() { return; }
 
     let now_secs = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
-    if let Some(last) = read_last_cleanup() {
-        if now_secs.saturating_sub(last) < 86_400 { return; }
-    }
+    if let Some(last) = read_last_cleanup() && now_secs.saturating_sub(last) < 86_400 { return; }
 
     let known: HashSet<String> = movie_ids.into_iter()
         .chain(series_ids)

@@ -308,17 +308,13 @@ impl DetailCtx {
                 g.set_detail_has_played(detail.user_data.played);
                 g.set_detail_resume_pct(detail.resume_pct());
                 g.set_detail_loading(false);
-                if let Some(bytes) = poster_bytes {
-                    if let Some(buf) = decode_poster_buffer(&bytes) {
-                        g.set_detail_poster(slint::Image::from_rgba8(buf));
-                        g.set_detail_has_poster(true);
-                    }
+                if let Some(bytes) = poster_bytes && let Some(buf) = decode_poster_buffer(&bytes) {
+                    g.set_detail_poster(slint::Image::from_rgba8(buf));
+                    g.set_detail_has_poster(true);
                 }
-                if let Some(bytes) = backdrop_bytes {
-                    if let Some(buf) = decode_backdrop_buffer(&bytes) {
-                        g.set_detail_backdrop(slint::Image::from_rgba8(buf));
-                        g.set_detail_has_backdrop(true);
-                    }
+                if let Some(bytes) = backdrop_bytes && let Some(buf) = decode_backdrop_buffer(&bytes) {
+                    g.set_detail_backdrop(slint::Image::from_rgba8(buf));
+                    g.set_detail_has_backdrop(true);
                 }
                 // Show the detail page and clear the loading overlay.
                 if !revalidate {
@@ -364,20 +360,18 @@ impl DetailCtx {
             // staleness gap Jellyfin's own WebSocket can leave when it only
             // delivers LibraryChanged to the most-recently-connected client
             // (JELLYFIN.md).
-            if is_hit {
-                if let Ok(fresh_similar) = client.get_similar_items(&id).await {
-                    if !crate::session_current(&state, &client) { return; }
-                    state.lock().unwrap().similar_items_cache.insert(id.clone(), fresh_similar.clone());
-                    let bufs = fetch_card_posters(&client, &fresh_similar).await;
-                    let id_c = id.clone();
-                    slint::invoke_from_event_loop(move || {
-                        let Some(w) = ww2.upgrade() else { return };
-                        if AppState::get(&w).get_detail_id().as_str() != id_c { return; }
-                        let g = AppState::get(&w);
-                        let fresh = items_to_cards(&fresh_similar, bufs);
-                        g.set_detail_similar(crate::apply_cards_preserving_identity(&g.get_detail_similar(), fresh));
-                    }).ok();
-                }
+            if is_hit && let Ok(fresh_similar) = client.get_similar_items(&id).await {
+                if !crate::session_current(&state, &client) { return; }
+                state.lock().unwrap().similar_items_cache.insert(id.clone(), fresh_similar.clone());
+                let bufs = fetch_card_posters(&client, &fresh_similar).await;
+                let id_c = id.clone();
+                slint::invoke_from_event_loop(move || {
+                    let Some(w) = ww2.upgrade() else { return };
+                    if AppState::get(&w).get_detail_id().as_str() != id_c { return; }
+                    let g = AppState::get(&w);
+                    let fresh = items_to_cards(&fresh_similar, bufs);
+                    g.set_detail_similar(crate::apply_cards_preserving_identity(&g.get_detail_similar(), fresh));
+                }).ok();
             }
         });
     }
@@ -436,22 +430,20 @@ impl DetailCtx {
             }
             // Cache-hit only: shown instantly above; silently revalidate and
             // patch if changed (see spawn_similar's identical comment above).
-            if is_hit {
-                if let Ok(fresh_items) = client.get_boxset_items(&bs_id).await {
-                    if !crate::session_current(&state, &client) { return; }
-                    state.lock().unwrap().boxset_items_cache.insert(bs_id.clone(), fresh_items.clone());
-                    let fresh_items: Vec<_> = fresh_items.into_iter().filter(|i| i.id != id).collect();
-                    let bufs = fetch_card_posters(&client, &fresh_items).await;
-                    let id_c = id.clone();
-                    let _ = slint::invoke_from_event_loop(move || {
-                        let Some(w) = ww.upgrade() else { return };
-                        if AppState::get(&w).get_detail_id().as_str() != id_c { return; }
-                        let g = AppState::get(&w);
-                        g.set_detail_collection_title(bs_name.as_str().into());
-                        let fresh = items_to_cards(&fresh_items, bufs);
-                        g.set_detail_collection(crate::apply_cards_preserving_identity(&g.get_detail_collection(), fresh));
-                    });
-                }
+            if is_hit && let Ok(fresh_items) = client.get_boxset_items(&bs_id).await {
+                if !crate::session_current(&state, &client) { return; }
+                state.lock().unwrap().boxset_items_cache.insert(bs_id.clone(), fresh_items.clone());
+                let fresh_items: Vec<_> = fresh_items.into_iter().filter(|i| i.id != id).collect();
+                let bufs = fetch_card_posters(&client, &fresh_items).await;
+                let id_c = id.clone();
+                let _ = slint::invoke_from_event_loop(move || {
+                    let Some(w) = ww.upgrade() else { return };
+                    if AppState::get(&w).get_detail_id().as_str() != id_c { return; }
+                    let g = AppState::get(&w);
+                    g.set_detail_collection_title(bs_name.as_str().into());
+                    let fresh = items_to_cards(&fresh_items, bufs);
+                    g.set_detail_collection(crate::apply_cards_preserving_identity(&g.get_detail_collection(), fresh));
+                });
             }
         });
     }
@@ -819,10 +811,8 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
                 }
                 1 => {
                     let idx = g.get_detail_cast_focused();
-                    if idx >= 0 {
-                        if let Some(c) = g.get_detail_cast().row_data(idx as usize) {
-                            g.invoke_open_person(c.id, c.name);
-                        }
+                    if idx >= 0 && let Some(c) = g.get_detail_cast().row_data(idx as usize) {
+                        g.invoke_open_person(c.id, c.name);
                     }
                 }
                 2 => {

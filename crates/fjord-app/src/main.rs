@@ -767,10 +767,8 @@ pub(crate) fn push_queue_display(vs: &crate::playback::VideoState, g: &AppState)
     let mut items: Vec<crate::QueueEntry> = Vec::new();
 
     // Off-list play (queue jump / single track): synthetic now-playing row on top.
-    if let (Some(id), Some(np)) = (cur_id, vs.now_playing.as_ref()) {
-        if !cur_is_listed && np.id == id {
-            items.push(to_entry(-1, np, true, false));
-        }
+    if let (Some(id), Some(np)) = (cur_id, vs.now_playing.as_ref()) && !cur_is_listed && np.id == id {
+        items.push(to_entry(-1, np, true, false));
     }
 
     if vs.repeat_mode != crate::playback::RepeatMode::Off {
@@ -833,23 +831,22 @@ pub(crate) fn spawn_queue_poster_loading(
         let sem2    = std::sync::Arc::clone(&sem);
         rt.spawn(async move {
             let _permit = sem2.acquire().await;
-            if let Some(bytes) = poster::fetch_poster_cached(&client2, &poster_id).await {
-                if let Some(spb) = poster::decode_poster_buffer(&bytes) {
-                    let _ = slint::invoke_from_event_loop(move || {
-                        use slint::Model;
-                        if let Some(w) = ww2.upgrade() {
-                            let model = AppState::get(&w).get_queue_items();
-                            if let Some(mut row) = model.row_data(row_idx) {
-                                // Guard: poster-id must still match (playlist may have changed)
-                                if row.poster_id.as_str() == poster_id.as_str() {
-                                    row.has_poster = true;
-                                    row.poster     = slint::Image::from_rgba8(spb);
-                                    model.set_row_data(row_idx, row);
-                                }
+            if let Some(bytes) = poster::fetch_poster_cached(&client2, &poster_id).await
+                && let Some(spb) = poster::decode_poster_buffer(&bytes) {
+                let _ = slint::invoke_from_event_loop(move || {
+                    use slint::Model;
+                    if let Some(w) = ww2.upgrade() {
+                        let model = AppState::get(&w).get_queue_items();
+                        if let Some(mut row) = model.row_data(row_idx) {
+                            // Guard: poster-id must still match (playlist may have changed)
+                            if row.poster_id.as_str() == poster_id.as_str() {
+                                row.has_poster = true;
+                                row.poster     = slint::Image::from_rgba8(spb);
+                                model.set_row_data(row_idx, row);
                             }
                         }
-                    });
-                }
+                    }
+                });
             }
         });
     }
@@ -3690,10 +3687,9 @@ fn main() -> Result<()> {
                     let g = AppState::get(&w);
                     let find_boxset = |model: ModelRc<CardItem>| -> Option<(String, String)> {
                         for idx in 0..model.row_count() {
-                            if let Some(c) = model.row_data(idx) {
-                                if c.id.as_str() == item_id && c.item_type.as_str() == "BoxSet" {
-                                    return Some((c.id.to_string(), c.title.to_string()));
-                                }
+                            if let Some(c) = model.row_data(idx)
+                                && c.id.as_str() == item_id && c.item_type.as_str() == "BoxSet" {
+                                return Some((c.id.to_string(), c.title.to_string()));
                             }
                         }
                         None
@@ -4392,9 +4388,7 @@ fn main() -> Result<()> {
             g.set_queue_panel_cursor(0);
             let items = g.get_queue_items();
             for i in 0..items.row_count() {
-                if let Some(e) = items.row_data(i) {
-                    if e.is_current { g.set_queue_panel_cursor(i as i32); break; }
-                }
+                if let Some(e) = items.row_data(i) && e.is_current { g.set_queue_panel_cursor(i as i32); break; }
             }
             g.set_show_queue_panel(true);
             w.invoke_grab_keyboard_focus();
@@ -4549,14 +4543,12 @@ fn main() -> Result<()> {
             if let Some(cached) = s.series_episode_cache.get(&season_id).cloned() {
                 s.series_episode_items = cached.clone();
                 drop(s);
-                if let Some(w) = ww_ss.upgrade() {
-                    if AppState::get(&w).get_series_id().as_str() == series_id {
-                        let cards: Vec<CardItem> = cached.iter().map(ep_to_card).collect();
-                        let g = AppState::get(&w);
-                        g.set_series_episode_cards(ModelRc::new(VecModel::from(cards)));
-                        g.set_series_focused_ep(0);
-                        g.set_series_loading(false);
-                    }
+                if let Some(w) = ww_ss.upgrade() && AppState::get(&w).get_series_id().as_str() == series_id {
+                    let cards: Vec<CardItem> = cached.iter().map(ep_to_card).collect();
+                    let g = AppState::get(&w);
+                    g.set_series_episode_cards(ModelRc::new(VecModel::from(cards)));
+                    g.set_series_focused_ep(0);
+                    g.set_series_loading(false);
                 }
                 spawn_episode_thumb_loading(client, cached, series_id, ww_ss.clone(), rth_ss.clone());
                 return;
@@ -4755,10 +4747,8 @@ fn main() -> Result<()> {
                 let new_fav = !cur_fav;
                 state3.lock().unwrap().update_item_user_state(&id, None, Some(new_fav));
                 let _ = slint::invoke_from_event_loop(move || {
-                    if let Some(w) = ww3.upgrade() {
-                        if AppState::get(&w).get_season_id().as_str() == id {
-                            AppState::get(&w).set_season_is_favorite(new_fav);
-                        }
+                    if let Some(w) = ww3.upgrade() && AppState::get(&w).get_season_id().as_str() == id {
+                        AppState::get(&w).set_season_is_favorite(new_fav);
                     }
                 });
             });

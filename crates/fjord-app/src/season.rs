@@ -341,10 +341,8 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &crate::AppState) -> b
             }
             Action::Confirm => {
                 let idx = g.get_season_cast_focused();
-                if idx >= 0 {
-                    if let Some(c) = g.get_season_cast().row_data(idx as usize) {
-                        g.invoke_open_person(c.id, c.name);
-                    }
+                if idx >= 0 && let Some(c) = g.get_season_cast().row_data(idx as usize) {
+                    g.invoke_open_person(c.id, c.name);
                 }
                 true
             }
@@ -385,32 +383,26 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &crate::AppState) -> b
         }
         Action::Confirm => {
             let cards = g.get_series_episode_cards();
-            if cards.row_count() > 0 {
-                if let Some(card) = cards.row_data(g.get_season_focused_ep() as usize) {
-                    g.invoke_play_series_episode(card.id);
-                }
+            if cards.row_count() > 0 && let Some(card) = cards.row_data(g.get_season_focused_ep() as usize) {
+                g.invoke_play_series_episode(card.id);
             }
             true
         }
         Action::OpenDetail => {
             let cards = g.get_series_episode_cards();
-            if cards.row_count() > 0 {
-                if let Some(card) = cards.row_data(g.get_season_focused_ep() as usize) {
-                    g.invoke_open_detail(card.id, "Episode".into());
-                }
+            if cards.row_count() > 0 && let Some(card) = cards.row_data(g.get_season_focused_ep() as usize) {
+                g.invoke_open_detail(card.id, "Episode".into());
             }
             true
         }
         Action::OpenContextMenu => {
             let cards = g.get_series_episode_cards();
-            if cards.row_count() > 0 {
-                if let Some(card) = cards.row_data(g.get_season_focused_ep() as usize) {
-                    g.set_context_menu_title(card.title.clone());
-                    g.invoke_open_context_menu(
-                        card.id, card.has_played, card.is_favorite, card.resume_pct,
-                        card.item_type, card.series_id,
-                    );
-                }
+            if cards.row_count() > 0 && let Some(card) = cards.row_data(g.get_season_focused_ep() as usize) {
+                g.set_context_menu_title(card.title.clone());
+                g.invoke_open_context_menu(
+                    card.id, card.has_played, card.is_favorite, card.resume_pct,
+                    card.item_type, card.series_id,
+                );
             }
             true
         }

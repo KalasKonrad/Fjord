@@ -918,11 +918,9 @@ impl JellyfinClient {
 
         let mut album_ids: Vec<String> = Vec::new();
         for t in &tracks {
-            if let Some(aid) = &t.album_id {
-                if !album_ids.contains(aid) {
-                    album_ids.push(aid.clone());
-                    if album_ids.len() >= 15 { break; }
-                }
+            if let Some(aid) = &t.album_id && !album_ids.contains(aid) {
+                album_ids.push(aid.clone());
+                if album_ids.len() >= 15 { break; }
             }
         }
         if album_ids.is_empty() { return Ok(vec![]); }

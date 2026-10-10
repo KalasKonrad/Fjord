@@ -123,20 +123,18 @@ pub(crate) fn open_collection_screen(
 
         // Deleted BoxSet: the ParentId item query returns an empty 200, so the
         // ghost is only visible on the detail fetch's 404 — purge and bail (S4).
-        if let Err(e) = &detail_res {
-            if crate::is_not_found(e) {
-                let ww_err = ww_task.clone();
-                let _ = slint::invoke_from_event_loop(move || {
-                    if let Some(w) = ww_err.upgrade() {
-                        let g = AppState::get(&w);
-                        if g.get_collection_open_gen() == generation {
-                            g.set_app_content_loading(false);
-                        }
+        if let Err(e) = &detail_res && crate::is_not_found(e) {
+            let ww_err = ww_task.clone();
+            let _ = slint::invoke_from_event_loop(move || {
+                if let Some(w) = ww_err.upgrade() {
+                    let g = AppState::get(&w);
+                    if g.get_collection_open_gen() == generation {
+                        g.set_app_content_loading(false);
                     }
-                });
-                crate::purge_deleted_item(&state_task, &ww_task, &id2);
-                return;
-            }
+                }
+            });
+            crate::purge_deleted_item(&state_task, &ww_task, &id2);
+            return;
         }
         let backdrop_bytes = match &detail_res {
             Ok(d) if !d.backdrop_image_tags.is_empty() =>
@@ -190,19 +188,15 @@ pub(crate) fn open_collection_screen(
             }
 
             // Collection poster
-            if let Some(bytes) = poster_bytes {
-                if let Some(spb) = decode_poster_buffer(&bytes) {
-                    g.set_collection_poster(slint::Image::from_rgba8(spb));
-                    g.set_collection_has_poster(true);
-                }
+            if let Some(bytes) = poster_bytes && let Some(spb) = decode_poster_buffer(&bytes) {
+                g.set_collection_poster(slint::Image::from_rgba8(spb));
+                g.set_collection_has_poster(true);
             }
 
             // Backdrop
-            if let Some(bytes) = backdrop_bytes {
-                if let Some(spb) = decode_backdrop_buffer(&bytes) {
-                    g.set_collection_backdrop(slint::Image::from_rgba8(spb));
-                    g.set_collection_has_backdrop(true);
-                }
+            if let Some(bytes) = backdrop_bytes && let Some(spb) = decode_backdrop_buffer(&bytes) {
+                g.set_collection_backdrop(slint::Image::from_rgba8(spb));
+                g.set_collection_has_backdrop(true);
             }
 
             let cards = items_to_cards(&items, bufs);
@@ -321,12 +315,10 @@ fn spawn_missing_items(
     };
     rt.spawn(async move {
         let mut collection_id = resolve_missing_items_collection_id(&id, &client, &seerr, &state).await;
-        if collection_id.is_none() {
-            if let Some(handle) = revalidate_handle {
-                debug!("spawn_missing_items({id}): first attempt failed, waiting for the parallel revalidate before retrying");
-                let _ = handle.await;
-                collection_id = resolve_missing_items_collection_id(&id, &client, &seerr, &state).await;
-            }
+        if collection_id.is_none() && let Some(handle) = revalidate_handle {
+            debug!("spawn_missing_items({id}): first attempt failed, waiting for the parallel revalidate before retrying");
+            let _ = handle.await;
+            collection_id = resolve_missing_items_collection_id(&id, &client, &seerr, &state).await;
         }
         let Some(collection_id) = collection_id else {
             debug!("spawn_missing_items({id}): no tmdb collection resolved — row will not show");

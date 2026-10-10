@@ -426,12 +426,10 @@ unsafe fn run_worker(display_ptr: *mut c_void, surface_ptr: *mut c_void) {
         match cmd {
             HdrCommand::SetHdr(params, subsurface) => {
                 // A description left on the other surface goes first.
-                if let Some(prev) = active {
-                    if prev != subsurface {
-                        let t = if prev.is_none() { Some(&main_target) } else { child_target.as_ref().map(|(_, t)| t) };
-                        if let Some(t) = t { t.unset(); }
-                        active = None;
-                    }
+                if let Some(prev) = active && prev != subsurface {
+                    let t = if prev.is_none() { Some(&main_target) } else { child_target.as_ref().map(|(_, t)| t) };
+                    if let Some(t) = t { t.unset(); }
+                    active = None;
                 }
                 let target = match subsurface {
                     None => &mut main_target,
@@ -549,51 +547,49 @@ fn handle_set_hdr(
     // makes the target volume default to matching the primary color volume
     // (BT.2020) — exactly what's wanted, one fewer call, one fewer thing to
     // get chromaticity-coordinate scaling wrong on.
-    if has_feature(Feature::SetMasteringDisplayPrimaries) {
-        if let (Some(min_l), Some(max_l)) = (params.min_lum, params.max_lum) {
-            if max_l > min_l {
-                let min_scaled = (min_l * 10_000.0).round() as u32;
-                let max_scaled = max_l.round() as u32;
-                creator.set_mastering_luminance(min_scaled, max_scaled);
+    if has_feature(Feature::SetMasteringDisplayPrimaries)
+        && let (Some(min_l), Some(max_l)) = (params.min_lum, params.max_lum)
+        && max_l > min_l {
+        let min_scaled = (min_l * 10_000.0).round() as u32;
+        let max_scaled = max_l.round() as u32;
+        creator.set_mastering_luminance(min_scaled, max_scaled);
 
-                // max_cll/max_fall are ONLY ever attempted alongside a
-                // validated mastering-luminance range, checked against that
-                // real range in cd/m² — the protocol's own version-1-only
-                // bound ("max_cll/max_fall must be > min L and <= max L of
-                // the mastering range") applied unconditionally regardless
-                // of which interface version actually negotiated, since
-                // satisfying the stricter check is always also valid under
-                // the more permissive v2+ rule. A value sent outside this
-                // bound would raise a FATAL invalid_luminance protocol
-                // error on the shared connection — real gap an independent
-                // review pass caught, fixed here rather than left open.
-                let cll_ok = params.max_cll.is_some_and(|c| c > min_l && c <= max_l);
-                if let Some(cll) = params.max_cll.filter(|_| cll_ok) {
-                    creator.set_max_cll(cll.round() as u32);
-                    match params.max_fall {
-                        Some(fall) if fall > min_l && fall <= max_l && fall <= cll => {
-                            creator.set_max_fall(fall.round() as u32);
-                        }
-                        // A real, live-observed case, not hypothetical: a
-                        // file's own max_fall (or max_cll) can legitimately
-                        // fall outside its own mastering range — a real
-                        // metadata inconsistency some HDR10 masters carry.
-                        // Send max_cll alone rather than risk this one
-                        // extra property taking the whole negotiation down
-                        // with a fatal protocol error.
-                        Some(fall) => tracing::debug!(
-                            "hdr worker: skipping max_fall={fall} — out of mastering range \
-                             ({min_l}..={max_l}) or exceeds max_cll={cll}"
-                        ),
-                        None => {}
-                    }
-                } else if let Some(cll) = params.max_cll {
-                    tracing::debug!(
-                        "hdr worker: skipping max_cll={cll} (and any max_fall) — out of \
-                         mastering range ({min_l}..={max_l})"
-                    );
+        // max_cll/max_fall are ONLY ever attempted alongside a
+        // validated mastering-luminance range, checked against that
+        // real range in cd/m² — the protocol's own version-1-only
+        // bound ("max_cll/max_fall must be > min L and <= max L of
+        // the mastering range") applied unconditionally regardless
+        // of which interface version actually negotiated, since
+        // satisfying the stricter check is always also valid under
+        // the more permissive v2+ rule. A value sent outside this
+        // bound would raise a FATAL invalid_luminance protocol
+        // error on the shared connection — real gap an independent
+        // review pass caught, fixed here rather than left open.
+        let cll_ok = params.max_cll.is_some_and(|c| c > min_l && c <= max_l);
+        if let Some(cll) = params.max_cll.filter(|_| cll_ok) {
+            creator.set_max_cll(cll.round() as u32);
+            match params.max_fall {
+                Some(fall) if fall > min_l && fall <= max_l && fall <= cll => {
+                    creator.set_max_fall(fall.round() as u32);
                 }
+                // A real, live-observed case, not hypothetical: a
+                // file's own max_fall (or max_cll) can legitimately
+                // fall outside its own mastering range — a real
+                // metadata inconsistency some HDR10 masters carry.
+                // Send max_cll alone rather than risk this one
+                // extra property taking the whole negotiation down
+                // with a fatal protocol error.
+                Some(fall) => tracing::debug!(
+                    "hdr worker: skipping max_fall={fall} — out of mastering range \
+                     ({min_l}..={max_l}) or exceeds max_cll={cll}"
+                ),
+                None => {}
             }
+        } else if let Some(cll) = params.max_cll {
+            tracing::debug!(
+                "hdr worker: skipping max_cll={cll} (and any max_fall) — out of \
+                 mastering range ({min_l}..={max_l})"
+            );
         }
     }
 
