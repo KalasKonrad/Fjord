@@ -1,0 +1,7 @@
+# Formatting-only commits, skipped by `git blame` and GitHub's blame view.
+# Locally: git config blame.ignoreRevsFile .git-blame-ignore-revs
+
+# style: format the Rust code with rustfmt (cargo fmt)
+c5860f60c708a9ba095b7dcd82b86572ba74b39a
+# style: format the .slint files with Slint's formatter
+503a5c283e8b3a85d359eedcdb9c1c9fd8f74e1d
