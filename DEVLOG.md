@@ -7529,3 +7529,440 @@ Above `pub(crate) async fn resolve_true_next_episode(`:
 // away the skip-ahead case above for scenarios this codebase hadn't yet hit
 // in testing; found in review and switched to this validated-hint form.)
 ```
+
+#### `crates/fjord-player/src/mpv.rs`
+
+Above `pub video_out_pix_fmt: String, // video-out-params/pixelformat`:
+```
+// video output (after filters / scaling — the vf chain's own effect,
+// e.g. confirming the NVIDIA stride-fix vf=format=... actually took
+// effect); added 2026-08-15, live-reported: the stats overlay's
+// existing COLOR line (video_primaries/video_gamma above) reads
+// video-params, the DECODED SOURCE's own colorspace.
+```
+
+Above `pub video_out_primaries: String, // video-target-params/primaries`:
+```
+// Real bug, live-reported 2026-08-17 ("CLR out/in still stated hdr10
+// 493 nits" regardless of which Tone Mapping curve was selected, even
+// though switching curves visibly changed the picture — proving
+// tone-mapping WAS running, just never reflected here): these three
+// were originally read from video-out-params too, on the assumption
+// ("video-out-params reflects the real final frame handed to the VO")
+// that turned out to be wrong once actually checked against the
+// installed mpv manual (`zcat /usr/share/man/man1/mpv.1.gz | groff
+// -Tutf8 -man`, not assumed from memory) — video-out-params is
+// explicitly documented as "after video FILTERS," i.e. the --vf
+// chain only; mpv's own GPU tone-mapping/HDR-passthrough negotiation
+// happens inside the VO renderer, a separate stage the --vf chain has
+// no visibility into, so video-out-params never reflected it either
+// way, regardless of whether tone-mapping or passthrough was actually
+// succeeding. video-target-params is the one the manual explicitly
+// documents as "the target properties that VO outputs to" — the
+// genuinely correct property for "what's actually being sent to the
+// display" — used for these three now instead. This retroactively
+// means the earlier "CLR IN and CLR OUT both read bt.2020 · pq —
+// mpv is doing zero conversion" live-test conclusion (see PLAN.md/
+// CLAUDE.md's HDR passthrough investigation) was reached against data
+// that could never have shown a difference either way, and needs
+// re-checking with this fix in place before trusting it again.
+```
+
+Above `#[derive(Clone, Debug, Default)]`:
+```
+// ── SourceHdrMetadata ───────────────────────────────────────────────────────
+// hdr branch, Stage 3 — a small, purpose-built query for the HDR-negotiation
+// worker (fjord-app's hdr.rs), deliberately NOT folded into StatsData above:
+// StatsData is for the user-facing stats overlay (refreshed on a display
+// cadence, always-populated with defaults); this is one-shot negotiation
+// input, read once per playback right after VideoReconfig, where "the
+// property genuinely wasn't reported" has to stay distinguishable from "the
+// file's real luma/CLL value happens to be 0" — hence Option<f64>, not
+// unwrap_or(0.0).
+```
+
+Above `startup_log_suffix: String,`:
+```
+// Pre-formatted "[hwdec=..., vf=..., ...]" summary + resume position,
+// captured once at construction time so `load()` can still log the
+// exact same "mpv player started: ..." line it always has, without
+// needing to hang onto (or clone) the whole PlayerConfig just for two
+// log lines — see `load()`'s own doc comment for why logging moved here.
+```
+
+Above `init.set_option(`:
+```
+// Real bug, live-reported 2026-08-16: turning HDR passthrough
+// OFF in Fjord, and picking an explicit Tone Mapping curve, had
+// no effect at all — CLR IN/OUT kept matching regardless, as if
+// passthrough was still active. Root cause: this only ever
+// called set_option when the toggle was ON; OFF meant simply
+// never touching the option at all, leaving mpv at ITS OWN
+// default, which is "auto" (confirmed live from the installed
+// mpv's own --list-options), not "no" — mpv's own
+// auto-detection can and apparently does still decide to
+// attempt passthrough on its own regardless of what Fjord's
+// toggle says, since "off" was never actually telling it
+// "never." Fjord's toggle is now unconditional and explicit —
+// "yes" or "no", never left at mpv's own "auto" — so OFF
+// genuinely means tone-mapping (and whichever curve is
+// configured) always runs instead.
+```
+
+Above `if config.cache_secs > 0 {`:
+```
+// cache-secs: mpv's own default is ~3.6M seconds (effectively
+// unlimited), specifically so demuxer-max-bytes below is what
+// actually binds in practice — confirmed against the real mpv
+// manual (`--cache-secs`'s own doc text: "the actually achieved
+// readahead will usually be limited by ... --demuxer-max-bytes.
+// Setting this option is usually only useful for limiting
+// readahead"). So this is a CEILING, not something that grows
+// the buffer past demuxer-max-bytes on its own — the two work
+// together, which is why both are separate Settings rows now
+// (previously a single "Cache (MB)" setting only ever touched
+// this one option via an arbitrary MB→seconds conversion and
+// never raised the real byte cap at all — see CLAUDE.md).
+```
+
+Above `let cache_max_mb = if config.cache_max_mb > 0 {`:
+```
+// demuxer-max-bytes: the real forward-readahead byte ceiling,
+// 150 MiB by mpv's own default. This is the option that
+// actually determines how many seconds of an outage can be
+// absorbed silently for a given bitrate. 0 here is the
+// Settings row's "Unlimited" choice — deliberately NOT "leave
+// mpv's own default alone" (150 MiB is the smallest, most
+// restrictive value on the whole dropdown, the opposite of
+// unlimited); raised to a fixed, effectively-never-hit ceiling
+// instead so cache_secs above is genuinely the only thing that
+// governs the buffer, matching what the row's label promises.
+```
+
+Above `init.set_option(`:
+```
+// Explicit ffmpeg HTTP reconnect tuning (raw AVOptions via
+// stream-lavf-o) rather than trusting whatever mpv/ffmpeg's own
+// undocumented internal defaults happen to do — added 2026-08-09
+// after a real HTPC outage where mpv's automatic reconnect
+// attempts (visible in fjord.log as "Will reconnect ... in N
+// second(s)") stopped entirely after a 503 + failed seek, even
+// though the server came back ~17s later. Safe unconditionally:
+// Fjord only ever plays http(s):// URLs from Jellyfin (or a
+// trailer's resolved stream), never local files, so these
+// HTTP-protocol-only options are always applicable.
+```
+
+Above `let min_level = std::ffi::CString::new("warn").unwrap();`:
+```
+// Surface mpv's OWN internal log (hwdec/vo/decoder failures mpv logs
+// itself but never turns into a structural Event) at warn-and-above —
+// added 2026-07-29 chasing a real HTPC bug (a video item played audio
+// only, forever, no VideoReconfig ever fired) that Fjord's own event
+// log couldn't explain: it shows THAT video never initialized, not
+// WHY. "warn" keeps this to fatal/error/warn only (mpv's own
+// filtering, before it ever reaches Rust) — no "v"/"debug"/"trace"
+// firehose regardless of Fjord's own log_level setting. See poll()'s
+// Event::LogMessage arm and CLAUDE.md's Known platform issues.
+```
+
+Above `pub fn load(&self, url: &str) -> Result<()> {`:
+```
+/// Issues the actual `loadfile` command for `url` — deliberately split out
+/// of `new()` and left to the caller to invoke explicitly, once Fjord's
+/// own `mpv_render_context` has been created and attached to this mpv
+/// core (see `fjord-app`'s `wire_rendering_notifier`/`BeforeRendering`
+/// handler, which is the one and only call site).
+///
+/// Root cause this fixes (real HTPC bug, 2026-07-29, previously only
+/// diagnosed via `has_seen_video_reconfig`/mpv's own captured internal
+/// log — see that field's doc comment): mpv's `vo=libmpv` driver
+/// initializes video output as soon as it has decoded enough of the
+/// first frame to need one, which can happen before Slint's own
+/// `BeforeRendering` notifier has ever fired (it depends on Slint's GL
+/// thread scheduling a frame, which is decoupled from — and not
+/// ordered relative to — whatever thread calls `Player::new()`/
+/// `start_playback`). `vo=libmpv` has no render context to attach to
+/// until Fjord creates one, and — confirmed directly from mpv's own
+/// captured log text (`"No render context set."` /
+/// `"Error opening/initializing the selected video_out (--vo)
+/// device."`) — this VO-init failure is NOT retried; it fails once,
+/// permanently, for the life of that mpv instance. Audio keeps playing
+/// normally throughout (a separate, unaffected pipeline), which matches
+/// the exact live symptom this was root-caused from: audio plays, the
+/// screen stays black, and only stopping and restarting playback (a
+/// fresh `Player`/mpv-core instance, and thus a fresh race that this
+/// time happens to land the other way) recovers it.
+///
+/// Calling `load()` only from inside the `BeforeRendering` handler,
+/// immediately after `MpvRenderCtx::new()` succeeds and is stored, makes
+/// the ordering "render context exists, then and only then does mpv
+/// ever see a loadfile" a same-thread guarantee rather than a race —
+/// no new cross-thread synchronization needed, since both the render
+/// context creation and this call already happen on that one GL thread.
+```
+
+Above `let already_active = self.mpv.get_property::<i64>("playlist-pos").unwrap_or(0) != 0;`:
+```
+// CR11-13: mpv's own demux/decode thread can advance into the
+// appended entry between our last poll() and this call (a user
+// toggling shuffle/repeat right as a track ends). If playlist-pos
+// is no longer 0, mpv already made entry 1 the active one — remove
+// it now and we'd cut off audio mpv is already playing. In that
+// case there's nothing left to cancel; the next poll() will see it
+// as a normal EndFile/TrackChanged instead.
+```
+
+Above `warn!(`:
+```
+// CR11-11: the file ended abnormally (error/stop/quit) with
+// an append still queued. mpv may never have actually
+// started the appended entry, so don't claim the
+// transition happened — that showed a track as "now
+// playing" (with a start/stop report pair sent) that
+// never produced audio. Drop the still-queued entry so it
+// can't surface later as a phantom track.
+```
+
+Above `Some(Ok(Event::LogMessage {`:
+```
+// mpv's own internal log (requested at "warn" in Player::new,
+// so only fatal/error/warn ever reach here) — e.g. hwdec init
+// failures, vo errors: the "why" this project's own event log
+// couldn't show for the 2026-07-29 audio-only-video bug.
+```
+
+Above `Some(Err(libmpv2::Error::Raw(code))) if (-20..=-13).contains(&code) => {`:
+```
+// A file that fails to open/play ends with an END_FILE that
+// carries an mpv error code; libmpv2 turns that into
+// Err(Raw(code)) instead of Ok(EndFile) (libmpv2 events.rs).
+// Ignoring it left the player on a black screen forever —
+// seen live 2026-10-04 with unavailable/403 YouTube trailers.
+// Only mpv's END_FILE codes (-13 LOADING_FAILED … -20 GENERIC)
+// count; anything else stays a transient, ignored error.
+```
+
+Above `pub fn query_source_hdr_metadata(&self) -> SourceHdrMetadata {`:
+```
+/// hdr branch, Stage 3 — the real, per-file source colorspace/HDR10
+/// metadata the Wayland color-management negotiation worker needs.
+/// Callers should only call this once real VideoReconfig has fired
+/// (`has_seen_video_reconfig()`) — before that these properties are
+/// unpopulated/stale. `.ok()`, not `.unwrap_or(0.0)`, for the four
+/// luma/CLL/FALL fields specifically so "property unavailable" stays
+/// distinguishable from "genuinely 0" (see SourceHdrMetadata's own doc
+/// comment).
+```
+
+Above `pub fn query_video_dimensions(&self) -> (i64, i64, f64) {`:
+```
+/// display_sync feature — real decoded frame dimensions + mpv's own
+/// measured fps, for picking a matching display mode. Deliberately a
+/// plain tuple, not folded into `SourceHdrMetadata` (that struct is
+/// tightly scoped to the HDR worker's own 4 luma/CLL/FALL fields per its
+/// own doc comment). Reuses the exact same property names/idiom
+/// `log_decoder_info`/`poll_stats` already use for `width`/`height`/
+/// `estimated-vf-fps` — NOT the external `media_display_sync` script's
+/// own `video-params/w`/`h` naming, no reason to introduce a second
+/// convention for the same data in this codebase.
+///
+/// Callers must not read this until `estimated-vf-fps` has had a chance
+/// to settle — mpv's own measured/rolling fps estimate, unlike
+/// `video-params/gamma`/`primaries`, is not reliable at the exact
+/// instant `VideoReconfig` fires (the same reason `log_decoder_info`
+/// itself is gated behind `wire_mpv_timer`'s own ~2s `elapsed_ok` check).
+/// Width, height and frame rate. The rate is mpv's estimate once frames
+/// flow, else the container's declared rate; 0.0 = not known yet (callers
+/// must not act on that — 2026-10-06: display sync treated it as an
+/// "unusual" rate and switched a 4K film to 1080p59.94).
+```
+
+Above `pub fn set_track_preferences(&self, slang: &[String], alang: &[String], subs: bool) {`:
+```
+/// Track preferences for the NEXT file, set before it loads (2026-10-06):
+/// with them mpv enables the right subtitle/audio tracks itself from the
+/// first byte. Switching a track on after reading has started makes mpv
+/// drop and re-read its read-ahead — a ~1 s stop mid-film, or ~3 s slower
+/// start-ups, on high-bitrate 4K. `slang`/`alang`: language codes in
+/// priority order (2- and 3-letter codes match each other); `subs`
+/// false = no subtitles at all.
+```
+
+Above `let is_high_bit = pix_fmt.contains("p010")`:
+```
+// Real bug, live-reported: this used to branch on hwdec.ends_with("-copy")
+// and only applied the real yuv420p/yuv420p10le stride fix for
+// "nvdec-copy" — for plain "nvdec" (zero-copy) it set the format to
+// nv12/p010, which is a no-op (those are already NVDEC's native
+// output formats, so "converting" to the same format fixes nothing).
+// The stride/GL-upload mismatch this filter exists to fix isn't
+// specific to one nvdec variant, and a user's card needed the real
+// fix even on whichever variant they were using — always apply it
+// whenever any nvdec mode is active, purely by bit depth.
+```
+
+#### `crates/fjord-player/src/mpv.rs`
+
+Above `pub fn startup_snapshot(&self) -> String {`:
+```
+/// One-line snapshot of mpv's playback state, for diagnosing start-up
+/// hiccups (2026-10-06: "picture and sound stop ~1 s in"): position,
+/// core-idle (mpv not actually playing), seeking, paused-for-cache, A/V
+/// sync, seconds of demuxed data ahead, and dropped frames so far.
+```
+
+Above `pub fn apply_hdr_output(&self) {`:
+```
+/// hdr branch, Stage 4 (2026-09-16) — make mpv actually emit real
+/// PQ-range/BT.2020 pixel values instead of its own `--target-trc=auto`/
+/// `--target-prim=auto` defaults, which silently tone-map any HDR/wide-
+/// gamut source down to plain gamma-2.2/BT.709 before it ever reaches
+/// the FBO. Called exactly once per item, only after Stage 3's own
+/// Wayland negotiation for THIS item has been confirmed `Active` (see
+/// `wire_mpv_timer`'s poll in fjord-app) — applying this speculatively,
+/// ahead of a confirmed negotiation, would send real PQ-range pixels to
+/// a compositor still treating the surface as ordinary sRGB (badly,
+/// visibly wrong).
+///
+/// Deliberately only 2 of the usual 3 "target" properties: `target-peak`
+/// is left untouched (mpv's own `auto`) since Fjord's render-API setup
+/// has no windowing-system path for mpv to learn the real display's
+/// peak brightness at all — that lives entirely with the Wayland
+/// compositor, which Stage 3 already informs directly (including the
+/// file's own real mastering-luminance/CLL/FALL when available). Setting
+/// target-peak here would mean inventing a display peak Fjord doesn't
+/// actually know; leaving it alone lets mpv encode the source faithfully
+/// into the PQ curve and lets the compositor — which *does* know the
+/// real attached display — do any final adaptation.
+///
+/// Confirmed live-settable with no file reload needed: `target-trc`/
+/// `target-prim` are part of mpv's own `gl_video_conf` sub-options,
+/// refreshed via `m_config_cache_update()` at the top of every single
+/// `gl_video_render_frame()` call (verified directly against mpv's real
+/// upstream source, `video/out/gpu/video.c`) — so this takes effect
+/// starting the very next rendered frame. No revert method is needed:
+/// every new playback item gets a completely fresh mpv core instance
+/// (see `Player::new`), so the next item's own defaults are untouched
+/// regardless of what a previous item's instance had dynamically set.
+```
+
+Above `let gb = |k: &str| {`:
+```
+// selected/forced/hearing-impaired are mpv FLAG properties: read
+// as i64 they failed and always came back 0 (2026-10-06 — every
+// track-list dump said selected=false, even for the playing video
+// and audio, and the Forced/Hearing-Impaired subtitle preference
+// never matched anything).
+```
+
+Above `pub fn render(`:
+```
+/// Render the current video frame into the given OpenGL FBO.
+/// `flip`: pass `true` because OpenGL's origin is bottom-left.
+/// `internal_format`: the real GL internal format the caller allocated
+/// the FBO's texture with (e.g. `gl::RGB10_A2 as i32`), or `0` if
+/// unknown/default — per `mpv_opengl_fbo`'s own doc comment ("e.g.
+/// GL_RGBA8, or 0 if unknown"), this is an optional hint mpv can
+/// introspect around, but should be set correctly when known. hdr
+/// branch, Stage 4 (2026-09-16): previously always hardcoded `0`, which
+/// silently stayed correct only because the FBO itself was always
+/// 8-bit RGBA; now that callers can widen the FBO (see `create_fbo` in
+/// fjord-app), this needs to reflect the real format or mpv could be
+/// left assuming/introspecting the wrong precision.
+/// `depth`: bits per component of what the frame finally lands in
+/// (MPV_RENDER_PARAM_DEPTH — mpv dithers to it), or 0 to leave it out,
+/// which mpv takes as 8. 2026-10-08: never passed before, so even a
+/// 10-bit video plane got video dithered down to 8 bits.
+```
+
+#### `crates/fjord-player/src/mpv.rs` — file header (TOC)
+```
+// ── fjord-player · mpv.rs ────────────────────────────────────────────────────
+//   PlayerConfig    hwdec, sync, tscale, audio_device, subtitle appearance;
+//                   dither_off → dither-depth=no (test aid, 2026-10-08)
+//                   (sub_scale/sub_pos always applied; sub_respect_ass_styling/
+//                   sub_color/sub_background only applied when non-default —
+//                   see the doc comment above those fields) and all other mpv options;
+//                   ytdl_format sets mpv's ytdl-format (a yt-dlp format-selector string)
+//                   only when Some — no-op for every non-trailer call site (Watch Trailer)
+//   PollResult      Running | Finished | TrackChanged (gapless transition, same instance)
+//   redact_api_key  replace api_key= query value with REDACTED for token-safe URL logging
+//                   (also applied to every forwarded mpv log message, 2026-10-08; unit-tested)
+//   StatsData       snapshot of mpv property values for the stats overlay
+//                   includes video_sync_mode (reads "video-sync" property back from mpv);
+//                   video_out_primaries/gamma/sig_peak read video-target-params (2026-08-17
+//                   fix — originally read video-out-params, which the real mpv manual
+//                   documents as "after video FILTERS" only, i.e. the --vf chain; mpv's own
+//                   GPU tone-mapping/HDR-passthrough negotiation happens in the VO renderer,
+//                   a separate stage --vf has no visibility into, so that property never
+//                   reflected it either way — live-caught via "CLR out/in still stated hdr10
+//                   493 nits" despite visibly different Tone Mapping curves changing the
+//                   picture. video-target-params is the manual's own documented "target
+//                   properties that VO outputs to"), distinct from video_primaries/gamma/
+//                   sig_peak above which read video-params (the DECODED SOURCE's own
+//                   colorspace) — for HDR/Dolby Vision content tone-mapped down to SDR the
+//                   two can disagree entirely (source says bt.2020/pq, actual output says
+//                   bt.709/bt.1886), and only the OUT fields answer "what is actually being
+//                   sent to my display." video_out_pix_fmt/w/h stay on video-out-params —
+//                   that's genuinely about the --vf chain's own effect (e.g. confirming the
+//                   NVIDIA stride-fix vf actually applied), a different question from color.
+//   SourceHdrMetadata  one-shot per-file HDR10 metadata for hdr.rs's Wayland
+//                   color-management negotiation worker — gamma/primaries +
+//                   Option<f64> min-luma/max-luma/max-cll/max-fall (None =
+//                   genuinely unavailable, not zero); see Player::
+//                   query_source_hdr_metadata below
+//   Player          libmpv2 wrapper: init, property set/get, seek, volume, tracks
+//                   new(config): builds the mpv core only — does NOT load anything (no url
+//                     param); caller must call load(url) once a render context is attached
+//                   load(url): issues the actual loadfile — deferred out of new() (2026-08-11)
+//                     to fix a real HTPC race where mpv's vo=libmpv driver could try to init
+//                     video output before Fjord's own render context existed, permanently
+//                     failing video for that instance while audio kept playing; see load()'s
+//                     own doc comment and CLAUDE.md's Known platform issues
+//                   get_buffering: paused-for-cache + cache-buffering-state 0-100
+//                   get_buffer_end_fraction: (time-pos + demuxer-cache-duration) / duration as f32
+//                   is_paused: reads mpv "pause" property directly (used by pause_play_toggle to stay in sync)
+//                   poll_passthrough: 1 IPC read — true when audio-out-params/format is iec61937 (passthrough)
+//                   get_drop_counts: 2 IPC reads — (frame-drop-count, decoder-frame-drop-count)
+//                   log_decoder_info: also logs effective video-sync after playback starts
+//                   has_seen_video_reconfig: true once VideoReconfig has fired for this instance —
+//                     diagnostic for the same audio-only-forever bug load() now fixes at the root;
+//                     kept as a belt-and-suspenders warning in wire_mpv_timer regardless
+//                   file_loaded_at: when the first FileLoaded fired (None while still opening) —
+//                     position/duration/chapters/tracks are only real after this
+//                   query_source_hdr_metadata: one-shot gamma/primaries/min-max-luma/CLL/FALL
+//                     read for hdr.rs's Wayland color-management negotiation worker (hdr branch,
+//                     Stage 3) — call once, after has_seen_video_reconfig() first goes true
+//                   query_video_dimensions: (width, height, fps) for display_sync — call only
+//                     after wire_mpv_timer's own ~2s loaded_ok gate (fps needs to settle first)
+//                   get_chapter_count: chapter-list/count (cheap — used for polling)
+//                   get_chapters: Vec<(start_secs, title)> for all chapters
+//                   chapter_step: add chapter ±1 (next/prev chapter navigation)
+//                   adjust_sub_delay: add delta_ms to sub-delay; returns new value in seconds
+//                   adjust_audio_delay: add delta_ms to audio-delay; returns new value in seconds
+//                   get_volume: read "volume" (0-130) — snapshot point for the skip-fade audio ramp
+//                   set_volume: set "volume" to an absolute level, distinct from adjust_volume's
+//                     relative `add` — used by wire_mpv_timer's per-tick skip-fade ramp, which needs
+//                     an exact interpolated value each tick, not a nudge. No effect on SPDIF
+//                     passthrough audio (same reason adjust_volume already skips itself there —
+//                     touching sample values would corrupt the encoded bitstream)
+//                   set_mute: set "mute" to an absolute state, distinct from toggle_mute (flips
+//                     based on current state) — used by the skip-fade's passthrough fallback, since
+//                     a raw bitstream can't be volume-ramped at all; mute is the closest analog
+//                   set_sub_style: live-update sub-scale/sub-pos/sub-ass-override/sub-color/
+//                     sub-back-color+sub-border-style on a running instance — same
+//                     conditional-apply rules as PlayerConfig's construction-time fields
+//                   append_gapless/cancel_pending: queue/drop a gapless-appended playlist entry
+//                   poll: EndFile only reports TrackChanged when reason is Eof — an abnormal end
+//                     (a failed open/play — END_FILE with an mpv error code — returns Failed(code), 2026-10-04)
+//                     (error/stop/quit) with a pending append discards it instead of claiming a
+//                     transition that may never have started (CR11-11); cancel_pending checks
+//                     playlist-pos first so it doesn't remove an entry mpv already made active (CR11-13);
+//                     also routes Event::LogMessage (mpv's own internal log, requested at "warn" in
+//                     new() — see the audio-only-video diagnostic note above) to tracing warn/error
+//   TrackInfo       audio / video / subtitle track descriptor; external_filename for external subs
+//   MpvRenderCtx    OpenGL render context + FBO management; drop before Player.
+//                   render(…, depth) passes MPV_RENDER_PARAM_DEPTH when > 0 (2026-10-08)
+// ─────────────────────────────────────────────────────────────────────────────
+```
