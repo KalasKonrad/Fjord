@@ -7966,3 +7966,2227 @@ Above `pub fn render(`:
 //                   render(…, depth) passes MPV_RENDER_PARAM_DEPTH when > 0 (2026-10-08)
 // ─────────────────────────────────────────────────────────────────────────────
 ```
+
+#### `crates/fjord-app/src/discover/mod.rs`
+
+Above `Some(MediaStatus::Blocklisted) => "blocklisted",`:
+```
+// Blocklisted split into its own arm, 2026-08-06 (Seerr Blocklist
+// support) — previously silently mapped to "" alongside Unknown/
+// Deleted, so a blocklisted item's card showed no indicator at all
+// and (via tier_status_label, see its own doc comment) its Request
+// button incorrectly still showed. This is also the ONLY per-card
+// signal Blocklist needs — unlike Watchlist (a genuinely
+// independent boolean axis), Blocklisted is just another value of
+// this same mutually-exclusive status field, so no new CardItem
+// field/id-set was needed for this feature.
+```
+
+Above `requested_4k: bool,`:
+```
+// Requested row only (2026-07-18) — false/false/false on every other
+// card (search results, landing rows), matching `availability`'s own
+// "only meaningful for Requested" scoping. See CardItem's own doc
+// comment (theme.slint) for what these drive.
+```
+
+Above `genre_ids: Vec<i64>,`:
+```
+// Discover filters (2026-07-18) — NOT surfaced on CardItem at all (never
+// displayed); used purely by apply_search_filters' client-side genre/
+// rating filtering of already-fetched search results, kept alongside
+// the full unfiltered fetch history in FjordState.discover_search_metas.
+// Empty/0.0 on landing-row/Requested-row cards, which never go through
+// this filtering path.
+```
+
+Above `pub(crate) on_watchlist: bool,`:
+```
+// Snapshotted from FjordState.discover_watchlist_ids at candidate-
+// selection time (2026-07-19, real bug fix — see build_calendar_entries'
+// own doc comment) — needed so push_coming_up_row's CardItems don't
+// silently default on-watchlist to false for an item that's on the
+// Coming Up row PRECISELY because it was just watchlisted.
+```
+
+Above `fn patch_known_request_state(`:
+```
+/// Patches `request_id`/`request_pending`/`request_mine` onto a freshly-built
+/// `DiscoverCardMeta` (search result or non-Requested landing-row card) from
+/// the known-requests cache, when a match exists — real bug fixed 2026-07-18,
+/// see `FjordState.discover_known_requests`'s own doc comment for the full
+/// story. A no-op (leaves the meta's zeroed defaults) when the item isn't in
+/// the cache, same as before this fix existed.
+```
+
+Above `return None;`:
+```
+// Filtered out at the source, 2026-08-06 — real bug, live-reported:
+// blocklisting an item only ever patched its pill in place, it never
+// actually left Discover, which defeats the entire stated purpose of
+// the feature ("for items they dont want to show up"). Every landing
+// row, search, and filtered-browse fetch routes through this one
+// function (directly or via `build_filtered_metas`), so filtering
+// here is the single choke point rather than a special case repeated
+// at each of the ~9 call sites — mirrors Seerr's own web frontend,
+// which does the identical filter in `MediaSlider` for any account
+// without VIEW_BLOCKLIST/MANAGE_BLOCKLIST permission; Fjord has no
+// "show blocklisted with a badge" mode of its own, so it always
+// filters, regardless of the connected account's permissions.
+```
+
+Above `pub(crate) fn build_person_credit_metas(`:
+```
+/// GET /person/{id}/combined_credits → `(DiscoverCardMeta, Option<String>)`
+/// pairs, same shape as `build_filtered_metas` — Person screen's "Other
+/// Work" row (2026-07-29, Deep Seerr integration). Cast and crew are merged
+/// and deduped by `(id, media_type)` since a person can be both cast and
+/// crew on the same title (e.g. an actor-director). `media_info` is
+/// deliberately not read here — confirmed this endpoint's relation join is
+/// watchlist-only (see `PersonCreditCast`'s own doc comment), so
+/// `availability` starts empty and is patched in afterward by
+/// `resolve_and_fetch_discovery_row`, same as every other row built here.
+```
+
+Above `pub(crate) async fn resolve_and_fetch_discovery_row(`:
+```
+/// Shared pipeline for the 4 new discovery-style rows added 2026-07-29 (Deep
+/// Seerr integration: Person Other Work, Detail/Series Recommended,
+/// Collection Missing Items). Takes `(meta, poster_path)` pairs already
+/// built by `build_filtered_metas`/`build_person_credit_metas`), and:
+/// (1) drops anything that resolves to a local Jellyfin item via
+/// `find_local_item` — the literal implementation of "discovery = not owned
+/// anywhere" (user's own words, confirmed via `AskUserQuestion`); (2) caps
+/// the result (`cap`, matching this codebase's established `.take(20)`
+/// precedent for similarly-sized supplementary rows); (3) patches
+/// request/watchlist state from the existing caches, same as every other
+/// Discover-sourced row; (4) fetches posters, bounded concurrency. Returns
+/// plain Send-safe pairs — callers build the final `Vec<CardItem>` via
+/// `discover_cards_from` themselves, inside their own
+/// `invoke_from_event_loop` (this function never touches `AppState`/
+/// `CardItem`, matching the two-phase discipline this codebase learned the
+/// hard way from `push_coming_up_row`'s bug).
+```
+
+Above `pub(crate) fn handle_seerr_error(`:
+```
+/// Session-auth 401 means the cookie expired server-side — reset the
+/// connection so Settings shows "Not connected" and the user can reconnect,
+/// rather than every subsequent call failing silently. API-key auth doesn't
+/// expire, so a 401 there means a revoked/invalid key — surfaced as a plain
+/// error instead (reconnecting wouldn't help without a new key anyway).
+/// `pub(crate)` since 2026-08-06 (Seerr Blocklist support) — `blocklist.rs`/
+/// `collection.rs`'s own blocklist error paths reuse it rather than
+/// duplicating the 401-reconnect logic.
+```
+
+Above `async fn resolve_streaming_region(`:
+```
+/// Resolves and caches (`FjordState.seerr_streaming_region`) which
+/// `watch_providers` region entry to display — the CONNECTED user's own
+/// `streamingRegion` preference (`GET /auth/me` then `GET /user/{id}/
+/// settings/main` — corrected from an earlier version of this function that
+/// read the server-wide admin default at `/settings/public` instead, which
+/// doesn't reflect a per-user override and, per Seerr's own frontend source,
+/// isn't even what Seerr's own UI falls back to), falling back to `"US"`
+/// when unset (matching Seerr's own frontend's identical fallback, found
+/// live in `src/components/Settings/SettingsMain/index.tsx`). Also the read
+/// side of the Settings -> Integrations -> Streaming Region picker
+/// (`main.rs`'s `on_streaming_region_selected`), which updates this same
+/// cache on a successful write so "Currently Streaming On" picks up a
+/// change immediately, no reconnect needed. A failed fetch also caches the
+/// `"US"` fallback rather than retrying on every subsequent item open —
+/// this call is cheap and reliable enough, relative to everything else
+/// already required for Discover to work at all, that treating a failure
+/// differently from "not configured" isn't worth the extra state.
+```
+
+Above `async fn resolve_discover_region(`:
+```
+/// Mirrors `resolve_streaming_region` exactly, but for the DIFFERENT
+/// `discoverRegion` user setting Seerr's own frontend uses specifically for
+/// release-date display (`src/components/MovieDetails/index.tsx`) — not
+/// the same region as "Currently Streaming On", confirmed from Seerr's real
+/// source (Watchlist + Release Calendar, 2026-07-18).
+```
+
+Above `const SEERR_ADMIN_REFRESH_COOLDOWN: Duration = Duration::from_secs(60);`:
+```
+/// Re-fetches just the connected account's own id + `MANAGE_REQUESTS`/ADMIN
+/// permission bit (`GET /auth/me`, the same call `spawn_seerr_settings_fetch`
+/// makes at startup/connect, but not the heavier region/language/settings
+/// fetch that goes with it there) — called on every Discover-tab arrival,
+/// unguarded by a "fetched once" flag, unlike `ensure_discover_filter_options`.
+/// Real bug fixed 2026-07-18: `seerr-is-admin` was previously only ever set
+/// once per connection, so a server-side permission change mid-session never
+/// reflected in the Discover context menu's Approve/Decline gating without a
+/// reconnect. Non-blocking and best-effort — the menu opens instantly with
+/// whatever's currently cached; a failed fetch here just leaves that value
+/// unchanged rather than erroring.
+// Rate-limited to at most once every 60s per connection — this used to fire
+// an unconditional `GET /auth/me` on every single arrival at the Discover
+// sidebar tab (deliberate at the time: no once-per-session guard, so a
+// server-side permission change mid-session would be picked up on the very
+// next visit). Live-reported HTPC hitch, 2026-07-31: a user rapidly cycling
+// the sidebar with a held arrow key passes through nav==6 many times a
+// minute — each pass fired its own real network round trip, and a burst of
+// these completing out of order (worse under a lower-end machine's higher
+// latency/thinner thread-pool headroom) queued up `invoke_from_event_loop`
+// closures that visibly collided with the next keypress, the same mechanism
+// already documented for the Browse All rebuild hitch (browse.rs). A 60s
+// cooldown keeps the "catch a mid-session permission change" intent (still
+// checked on the next genuine visit after the cooldown) while making a rapid
+// pass-through a no-op instead of a fresh request every time.
+```
+
+Above `fn patch_discover_card_request_state(`:
+```
+/// Patches `request_id`/`request_pending`/`request_mine` onto whichever
+/// search-grid card matches `(media_type, tmdb_id)`, if visible — the
+/// `discover-results` counterpart to `patch_discover_card_availability`
+/// above, for the 3 fields that one doesn't touch. Real bug fixed
+/// 2026-07-18: submitting a request from the search grid left that same
+/// card's context menu still offering "Request" until the next full
+/// landing-row refresh, since only `availability` was ever patched here.
+```
+
+Above `type CardModelSlot = (ModelRc<CardItem>, Box<dyn Fn(&AppState, ModelRc<CardItem>)>);`:
+```
+/// Every AppState model that can hold a Discover-sourced `CardItem` — the
+/// flat search/filtered-browse grid, all 9 `landing_row_get`/`_set` rows,
+/// AND 5 more that `landing_row_get` does NOT cover: the Movies/TV-specific
+/// split of the Watchlist row (`discover-watchlist-movies`/`-tv`, separate
+/// models from the "mixed" one landing row 8 already reaches) and the
+/// Home/TV/Movies dashboard split of the Coming Up row
+/// (`discover-coming-up-mixed`/`-movies`/`-tv`, separate from landing row
+/// 7's own single Discover-screen instance). Real gap found 2026-08-06
+/// tracing what happens when a watchlisted item gets blocklisted: both
+/// `patch_watchlist_on_all_models` and (the then-new) `remove_card_from_
+/// all_models` only ever walked `landing_row_get`'s 9, so a card patched/
+/// removed on the Discover screen stayed fully visible (and, for a
+/// blocklisted item, requestable) on the Movies/TV dashboard's own
+/// Watchlist row until some unrelated refresh silently caught up. Callers
+/// that only need to read+patch in place (not reassign) can ignore the
+/// second tuple element.
+```
+
+Above `for row in 0..landing_row_lens(g).len() {`:
+```
+// Derived from landing_row_lens's own array length rather than a bare
+// literal repeated here — this exact "hardcoded row count drifts out of
+// sync with the real row count" gap was caught by an independent plan
+// review when the Watchlist row (8) was added, 2026-07-20.
+```
+
+Above `fn patch_watchlist_on_all_models(g: &AppState, item_type: &str, tmdb_id: i64, on_watchlist: bool) {`:
+```
+/// Patches `on-watchlist` in place on every Discover card model that might
+/// be showing this item — a watchlisted item can legitimately appear in
+/// Trending/Popular/Upcoming/etc, not just Requested — matching
+/// `discover_request_action`'s own "patch every model, don't just pick one"
+/// shape. Watchlist + Release Calendar, 2026-07-18; widened to the full
+/// `all_card_model_slots` list (was missing 5 of them) 2026-08-06.
+```
+
+Above `fn remove_card_from_all_models(g: &AppState, item_type: &str, tmdb_id: i64) {`:
+```
+/// Removes the matching card from every Discover-visible model (the full
+/// `all_card_model_slots` list) — used by `discover_toggle_blocklist`'s
+/// adding path. Blocklisting means "don't show this in Discover" (see
+/// `search_result_to_meta`'s own doc comment for the full story: a fresh
+/// fetch already filters a blocklisted item out, but a card blocklisted
+/// from an already-open screen — the flat grid, or RequestDetailScreen
+/// opened from one of these rows — is still sitting in an already-built
+/// model and needs to be pulled out immediately rather than left showing a
+/// "Blocklisted" pill). Each model here is always constructed as a
+/// `VecModel<CardItem>` (every setter in `all_card_model_slots` wraps one),
+/// so downcasting back to it and calling `.remove()` fires a real per-row
+/// removal notification rather than rebuilding the whole model — same
+/// reasoning as `blocklist.rs`'s own remove-row idiom, with the identical
+/// defensive rebuild-and-reassign fallback in case that assumption ever
+/// stops holding. 2026-08-06, Seerr Blocklist support.
+```
+
+Above `let kept: Vec<CardItem> = (0..model.row_count())`:
+```
+// Defensive fallback — every model here is always constructed as
+// a VecModel elsewhere in this file, so this should never
+// actually trigger (same "should never trigger" idiom as
+// blocklist.rs's own remove-row fallback).
+```
+
+#### `crates/fjord-app/src/discover/mod.rs` — file header (TOC)
+```
+// ── fjord-app · discover/mod.rs ──────────────────────────────────────────────
+//   Submodules (re-exported here, so callers keep using crate::discover::*):
+//     wire           wire_discover — every Discover/RequestDetail AppState callback
+//     search         search field: debounced search + paging + poster patching
+//     landing        no-query landing rows (Trending/Popular/Upcoming/Requested/New in theaters)
+//     filters        filter pills, filtered browse, client-side search filters
+//     watchlist      Seerr watchlist rows + toggle + Jellyfin star resync
+//     calendar       Release Calendar + Coming Up row
+//     request_detail RequestDetailScreen: open/fill (open_discover_item_ex), tiers, cast, local match
+//     requests       request submit/edit/actions, blocklist toggle
+//     trailers       trailer URL allow-list + yt-dlp check
+//     keys           keyboard: Discover grid/landing/filter bar/popups, request detail + options
+//   is_401 / handle_seerr_error 401 (session-auth only) resets the connection via
+//                              seerr_auth::clear_connection + toasts "reconnect in
+//                              Settings"; any other error just toasts
+//   ── Keyboard-navigation fixes (2026-07-18, planned via /plan after 5 parallel
+//      investigation agents traced every Seerr keyboard-dispatch path — see
+//      CLAUDE.md's Seerr integration section) ──
+//   KnownRequest/known_requests_from_row/patch_known_request_state  a request's
+//                              (request_id, pending, mine), built from the Requested row's
+//                              own already-fetched RequestEntry list (no new network call)
+//                              and cached in FjordState.discover_known_requests, keyed
+//                              (item_type, tmdb_id); consulted to patch search-grid and
+//                              non-Requested-landing-row DiscoverCardMetas, which never
+//                              carried real request state before this — their context menu
+//                              offered "Request" instead of "Edit/Cancel/View Request" for
+//                              an already-requested item (real bug)
+//   patch_discover_card_request_state  request_id/pending/mine counterpart to
+//                              patch_discover_card_availability, patches a live
+//                              discover-results row in place — used by submit_request's
+//                              success handler so a freshly-submitted card is correct
+//                              immediately, not just after the next Requested-row refresh
+//   refresh_seerr_admin_status  re-fetches just GET /auth/me's permission bit (not the
+//                              heavier region/language/settings fetch spawn_seerr_settings_fetch
+//                              also does) on Discover-tab arrival, rate-limited to once per
+//                              SEERR_ADMIN_REFRESH_COOLDOWN (60s, FjordState.seerr_admin_last_refresh)
+//                              rather than a fetched-once flag — catches a server-side permission
+//                              change mid-session without a reconnect, while a real HTPC hitch
+//                              (2026-07-31: rapid sidebar cycling fired this on every single
+//                              pass through nav==6, piling up concurrent GET /auth/me calls)
+//                              is now a no-op within the cooldown window
+//   ── Watchlist + Release Calendar (2026-07-18, planned via /plan, 2 rounds of
+//      AskUserQuestion + an independent Plan-agent review — see CLAUDE.md's
+//      Seerr integration section) ──
+//   patch_watchlist_state       CardItem.on-watchlist counterpart to
+//                              patch_known_request_state — consults
+//                              FjordState.discover_watchlist_ids, patched onto
+//                              search/landing DiscoverCardMetas alongside the request-state patch
+//   resolve_discover_region     GET-once-per-connection resolver for the (distinct from
+//                              streamingRegion) discoverRegion user setting, mirrors
+//                              resolve_streaming_region's exact shape, cached in
+//                              FjordState.seerr_discover_region
+//   CalendarEntry/CalendarEntryKind  date/tmdb_id/item_type/title/poster_path/kind/
+//                              episode_label — poster_path added 2026-07-19 (user request,
+//                              "it hust dosent have posters" — reverses the original
+//                              deliberately-text-only design)
+//   ── Deep Seerr integration into existing native screens (2026-07-29) ──────
+//   TMDB_POSTER_BASE/fetch_tmdb_image  bumped pub(crate) — reused directly by
+//                              series.rs's Missing Seasons poster fetch instead of duplicating it
+//   build_person_credit_metas  CombinedCredits (cast+crew, deduped by id+media_type) ->
+//                              (DiscoverCardMeta, poster_path) pairs — Person "Other Work" row
+//   resolve_and_fetch_discovery_row  shared pipeline for all 4 new rows this pass: drops anything
+//                              that resolves to a local item (find_local_item) — the literal
+//                              "discovery = not owned anywhere" rule (user's own words, confirmed
+//                              via AskUserQuestion) — caps the result, patches request/watchlist
+//                              state from the existing caches, fetches posters (bounded
+//                              concurrency). Returns plain Send-safe pairs; discover_cards_from
+//                              (below) builds the actual CardItems inside invoke_from_event_loop
+//   discover_cards_from        UI-thread-only: DiscoverCardMeta+poster pairs -> Vec<CardItem>
+// ─────────────────────────────────────────────────────────────────────────────
+```
+
+#### `crates/fjord-app/src/discover/request_detail.rs`
+
+Above `pub(crate) const TMDB_PROFILE_BASE: &str = "https://image.tmdb.org/t/p/w185";`:
+```
+// pub(crate) since 2026-08-13 — person.rs's TMDB-only person screen reuses
+// this same base + cache-key format ("person-{id}") for its own portrait
+// fetch, matching (and free-riding on the disk cache of) the identical
+// fetch this file's own RequestDetailScreen CastRow portrait fetch does.
+```
+
+Above `pub(crate) fn format_date_pretty(iso: &str) -> String {`:
+```
+/// "2026-07-14" -> "July 14, 2026"; empty/unparseable input -> "". A hand-
+/// rolled month-name table would duplicate what `chrono` (already a
+/// workspace dependency, used elsewhere for wall-clock formatting) does
+/// correctly for free.
+// pub(crate) since 2026-08-06 (Seerr Blocklist support) — blocklist.rs
+// reuses it for the Manage Blocklist screen's "Blocklisted on <date>" line.
+```
+
+Above `availability: &'static str,`:
+```
+/// Same `""`/`"requested"`/`"processing"`/`"partial"`/`"available"`/
+/// `"blocklisted"` vocabulary as `CardItem.availability` (via
+/// `availability_tag`) — the base/2K tier's status only (see the
+/// Blocklist eligibility design decision in CLAUDE.md for why 4K isn't
+/// checked separately). This is the field the Blocklist button/row
+/// actually gates on, deliberately NOT `status_label` above, which
+/// mixes in request-workflow labels ("Needs Approval"/"Declined") that
+/// have nothing to do with blocklist eligibility. 2026-08-06, Seerr
+/// Blocklist support.
+```
+
+Above `fn tier_status_label(`:
+```
+/// One tier's user-facing status label, combining Seerr's two independent
+/// status signals — `MediaStatus` (fulfillment: is the file available yet)
+/// and the request's own `MediaRequestStatus` (workflow: has an admin
+/// approved it yet) — into one string. `availability_tag` alone
+/// (fulfillment only) can't distinguish "needs an admin to approve it" from
+/// "approved, waiting on Radarr/Sonarr" — both read as blank/Requested
+/// without the request's own status. Real gap, live-reported 2026-07-18:
+/// "it shuld reflect the status, like if its aproved or needs aprovment
+/// etc." `request.status == 3` is `MediaRequestStatus::Declined` (see
+/// `MediaRequestStatus`'s own doc comment in fjord-seerr — no local const,
+/// matching the same raw-int style `requested_not_available` already uses
+/// for the identical check).
+```
+
+Above `if status == Some(MediaStatus::Blocklisted) {`:
+```
+// Real bug fixed 2026-08-06 (Seerr Blocklist support): this function
+// previously had no arm for Blocklisted at all, falling through to the
+// final `_ => String::new()` — identical to a never-touched item, so
+// RequestDetailScreen's Request button (gated on this string being
+// empty) incorrectly still showed for a blocklisted title. Available
+// and Blocklisted are mutually exclusive server-side, so checking this
+// right after Available (rather than at the very end) is just for
+// readability, not correctness.
+```
+
+Above `pub(crate) fn season_request_status(`:
+```
+/// Per-season request status for the Series "Missing Seasons" row
+/// (2026-07-29, Deep Seerr integration) — `(availability_label, request_id,
+/// pending, mine)` for whichever active request (if any) covers this season
+/// number, regardless of tier (2K vs 4K isn't distinguished per season here
+/// — a deliberate simplification: this pill only ever needs to say "already
+/// requested/pending", not track two independent tiers per season).
+/// `availability_label` is deliberately restricted to the exact same
+/// lowercase vocabulary `MediaCard`'s pill in `widgets.slint` already
+/// recognizes ("requested"/"processing") — confirmed by reading that
+/// component directly (its pill ternary only matches 4 specific literal
+/// strings, it does NOT render arbitrary text as an earlier draft of this
+/// plan assumed) rather than inventing new label text that would silently
+/// render as an empty pill bubble. Status 3 (Declined) and 4 (Failed) are
+/// both excluded from "active" — a failed request doesn't block treating
+/// the season as available to request again, which is arguably the more
+/// useful behavior than a static "Failed" pill with no action anyway. No
+/// per-season Jellyfin-fulfillment field exists anywhere in Seerr's API
+/// (confirmed: `Media.getMedia` doesn't eager-load `seasons`) — this is
+/// request state only, which is all this row's own existence needs, since
+/// comparing local season folders against TMDB's list already establishes
+/// non-ownership independently of anything this function reports.
+```
+
+Above `fn pick_primary_request(`:
+```
+/// Resolves the `(request_id, pending, mine)` triple the Discover context
+/// menu's Edit/Cancel/Approve/Decline rows need, for whichever ONE request
+/// this page's ⋮ More button should act on. When both tiers have an active
+/// request (a real, if rarer, case — see the Discover grid's own "Also
+/// requested in 2K/4K" badge), prefers the 4K one — an arbitrary but
+/// documented tiebreak, not a full per-tier action UI; easy to revisit if
+/// it turns out to matter in practice.
+```
+
+Above `pub(crate) fn find_local_item(`:
+```
+/// Matches a Seerr/TMDB search result back to the corresponding local
+/// library item by provider id, so a card that's already in the library can
+/// open the real item (playable, has watch progress/favorite state) instead
+/// of the Seerr request-detail page (which has nothing left to offer once
+/// something is already available — just a static "In Library" pill).
+/// Client-side by necessity: Jellyfin has no server-side "find item by
+/// provider id" query (confirmed — no `AnyProviderIdEquals`-style parameter
+/// exists), so this scans the already-cached `all_movies`/`all_series`
+/// (populated from disk cache on warm start, refreshed in the background —
+/// see CLAUDE.md's Disk caches section) for a `ProviderIds["Tmdb"]` match.
+/// A miss (library not yet fetched, or genuinely not in the library) just
+/// falls through to the normal Seerr detail flow.
+```
+
+Above `OpenRequestOptionsPreselect(Vec<u32>),`:
+```
+/// Series "Missing Seasons" row (2026-07-29, Deep Seerr integration) —
+/// opens the modal for a genuinely NEW request (unlike `EditRequest`,
+/// nothing here is being edited), but pre-selects only the given season
+/// numbers instead of `tv_fields`' own all-checked default, so clicking
+/// a missing season doesn't re-request seasons already owned.
+```
+
+Above `pub(crate) fn open_series_request_detail(`:
+```
+/// Series "Missing Seasons" row entry point (2026-07-29, Deep Seerr
+/// integration) — always `check_local_library: false`, unlike
+/// `open_discover_item`: the series obviously already exists locally (we're
+/// viewing its own screen), so the normal in-library redirect would just
+/// bounce straight back to the same Detail page with no Seerr request UI at
+/// all, defeating the entire point of this action. `preselect_seasons`:
+/// `Some(seasons)` opens the Request Options modal pre-checked to exactly
+/// those season numbers (a season with no existing covering request);
+/// `None` just shows RequestDetailScreen normally (a season that already
+/// has one — its own ⋮ More button is the correct place to Edit/Cancel it,
+/// not a bespoke season-scoped context menu, which would need to smuggle a
+/// season number through fields shaped for a tmdb id and risks a real
+/// id-type mismatch for zero real benefit here).
+```
+
+Above `pub(crate) fn open_discover_item_ex(`:
+```
+/// `check_local_library`: `true` for every existing call site (View
+/// Details/Request/Edit Request) — unchanged behavior. `false` only for the
+/// Discover context menu's "View Request" row (2026-07-18): a card with a
+/// known Seerr request (`context-menu-request-id != ""`) can ALSO be
+/// partially present in the local Jellyfin library (e.g. a series missing
+/// some seasons) — real bug, live-reported: "if like for a series you have
+/// partial you cant get to request detail only to the series detail even
+/// trouhu the context menu." Per the user's own suggested fix (asked, not
+/// assumed — offered "always skip the redirect" and "only when partial" as
+/// the two obvious options, and the user proposed a third: add a dedicated
+/// row instead), View Details/Request/Edit Request keep redirecting to the
+/// real Jellyfin item exactly as before; only this new row bypasses it.
+```
+
+Above `g.set_app_loading_progress(0.0);`:
+```
+// Loading overlay while the fetch is in flight — RequestDetailScreen
+// has no local cache the way Jellyfin's item_detail_cache gives the
+// native detail screens a fast path. Real bug, live-reported
+// 2026-08-21 ("if you open an item and the load is quick you get a
+// quic flash of the loding then it flash again as the item get
+// shown... its also a bit jaring") — this used to show the overlay
+// unconditionally, the instant this function was called; a
+// genuinely fast fetch then replaced it with real content only a
+// handful of frames later, reading as two visual events back to
+// back rather than one clean transition. Deferred below instead —
+// see the matching comment right after this block — a fetch that's
+// still slow gets the exact same spinner it always did, just not
+// shown until it's actually worth showing.
+```
+
+Above `g.set_request_detail_back_focused(false);`:
+```
+// Land on the button row (Request), not the Back button — real
+// issue, live-reported 2026-07-18: opening a Discover item always
+// required an extra Down press before Request was even reachable,
+// unlike every other detail-style screen's own entry focus.
+```
+
+Above `if !crate::seerr_session_current(&state, &client) {`:
+```
+// Session guard (Bonfire Phase 1, step 8 audit, 2026-08-09) —
+// show-request-detail is set true synchronously at open time,
+// before this fetch even starts; reset_session_state now
+// correctly clears it back to false on a sign-out/profile
+// switch, but without this check this closure could still
+// silently repopulate the (now-hidden) screen's fields with
+// the OUTGOING Seerr connection's data.
+```
+
+Above `let remembered = {`:
+```
+// Apply the remembered Quality/Profile/Tags preference
+// (2026-08-12, "seerr always remember what you hade chosen last
+// time so it shuld mirror it") as this item's starting point —
+// PostOpenAction::EditRequest's own match arm below overwrites
+// these with the real existing request's own actual values
+// afterward, correctly taking precedence when that's the action.
+```
+
+Above `g.set_show_request_detail(true);`:
+```
+// Show the screen and clear the loading overlay now that the
+// primary content above has actually landed — matches every
+// other detail-style screen's own pattern (open_detail/spawn_main
+// etc: app-content-loading while fetching, show_X deferred to the
+// commit). Real bug, live-reported 2026-08-12: this used to be
+// set unconditionally at OPEN time (before the fetch even
+// started), with no loading overlay at all — a blank page for
+// however long the fetch took, inconsistent with every native
+// detail screen. Placed BEFORE the match below (not after) so a
+// failure in one of match's own optional follow-up actions (e.g.
+// EditRequest's own fetch) still leaves the screen showing its
+// already-successfully-loaded primary content instead of leaving
+// it hidden/blank on top of a real early return.
+```
+
+#### `crates/fjord-app/src/discover/request_detail.rs` — file header (TOC)
+```
+// ── fjord-app · discover/request_detail.rs ───────────────────────────────────
+//   find_local_item             matches a Seerr/TMDB result to the local library by
+//                              ProviderIds["Tmdb"] — no server-side Jellyfin lookup exists,
+//                              so this scans the already-cached all_movies/all_series;
+//                              pub(crate) as of 2026-07-20 — also reused by
+//                              resync_jellyfin_watchlist_stars/discover_toggle_watchlist's own
+//                              success handler for the in-library watchlist star (see below)
+//   open_discover_item         find_local_item hit -> detail::open_detail (the real
+//                              Jellyfin item) instead of the Seerr flow below; else
+//                              fetch movie/tv detail + poster + backdrop + available tags/
+//                              quality profiles for BOTH quality tiers (best-effort, silently
+//                              empty on failure — see available_request_options_both_tiers) in
+//                              parallel, then cast/crew portraits + season posters (TMDB,
+//                              bounded concurrency, same JoinSet+Semaphore shape as detail.rs's
+//                              Jellyfin cast fetch); generation-guarded, populates RequestDetailScreen.
+//                              Profile row 0 is always a synthetic "Default" entry (id 0)
+//                              prepended so the picker has an explicit "no explicit choice"
+//                              option, not just whatever's focused first.
+//   build_cast_list/format_rating  Seerr credits -> capped cast+crew rows (2 Director/
+//                              3 Writer/12 top-billed cast, same shape as detail.rs's
+//                              Jellyfin cast) / TMDB voteAverage -> "★ 7.9" badge text
+//   build_tag_profile_items    one quality tier's raw Seerr tags/profiles -> Slint TagItem/
+//                              ProfileItem models; shared by both tiers in open_discover_item
+//   tier_status_label            one tier's FINAL display text ("Needs Approval"/"Approved"/
+//                              "Processing"/"Partially Available"/"Available"/"Declined"/
+//                              "Failed"/"") combining MediaStatus (fulfillment) with the
+//                              request's own MediaRequestStatus (approval workflow) — real gap
+//                              fixed 2026-07-18, "it shuld reflect the status, like if its
+//                              aproved or needs aprovment etc"; feeds request-detail-status/-4k
+//                              AND (movie_fields/tv_fields) drives RequestDetailScreen's poster
+//                              badge, both tier pills, and the Request button's visibility
+//   tier_request/pick_primary_request  tier_request finds the one MediaRequest for a given is4k
+//                              tier out of MediaInfo.requests (only populated on the single-item
+//                              detail endpoints — see MediaInfo's own doc comment in fjord-seerr);
+//                              pick_primary_request resolves the (request_id, pending, mine)
+//                              triple the ⋮ More button's context menu acts on, preferring the
+//                              4K request when both tiers have one (documented tiebreak, not a
+//                              full per-tier action UI)
+//   open_discover_item_ex/PostOpenAction/open_request_options_modal  open_discover_item is now a
+//                              thin wrapper around this with PostOpenAction::None; ::OpenRequestOptions
+//                              (Discover context menu's "Request" row) opens the modal the instant the
+//                              fetch lands; ::EditRequest(id) additionally fetches GET /request/{id}
+//                              fresh (SeerrClient::get_request) and pre-selects its profile/tags/seasons,
+//                              setting request-options-editing so the modal hides Quality and Confirm
+//                              PUTs via submit_edit_request instead of POSTing via submit_request
+//                              (2026-07-18)
+//   season_request_status      per-season request-status pill for Series Missing Seasons —
+//                              deliberately restricted to MediaCard's existing pill vocabulary
+//                              ("requested"/"processing") rather than inventing new label text,
+//                              which would silently render as an empty pill (confirmed by reading
+//                              widgets.slint directly — its ternary only matches 4 literal strings,
+//                              it does NOT render arbitrary text as an earlier draft assumed)
+//   PostOpenAction::OpenRequestOptionsPreselect  new variant — opens the Request Options modal
+//                              for a genuinely new request (unlike EditRequest) but pre-checks
+//                              only the given season numbers instead of tv_fields' all-checked
+//                              default; mirrors EditRequest's own post-hoc season-override pattern
+//   open_series_request_detail  Series Missing Seasons' entry point into RequestDetailScreen —
+//                              always check_local_library:false (the series obviously exists
+//                              locally already; the normal redirect would just bounce back to the
+//                              same Detail page with no Seerr request UI at all)
+// ─────────────────────────────────────────────────────────────────────────────
+```
+
+#### `crates/fjord-app/src/discover/wire.rs`
+
+Above `g.on_nav_selected({`:
+```
+// Landing rows: fetched once per session on first arrival at the
+// Discover tab. nav-selected fires from both the sidebar's mouse click
+// handler and browse::sidebar_nav's keyboard-cycle path, so this one
+// registration covers both entry points — previously unused/unwired
+// (Slint declared it, nothing listened), so this doesn't change
+// behavior for any other nav value.
+//
+// Also proactively refreshes the movie list (metadata only, no poster
+// sweep — `with_posters: false`) here: unlike `all_series`, which the
+// startup auto-login path refreshes unconditionally on every login,
+// `all_movies` is lazy-fetched only when the Movies library grid is
+// opened, so on a session where the user goes straight to Discover
+// without ever opening Movies, `all_movies` (and its `ProviderIds`,
+// needed by `find_local_item`) can still be whatever a stale on-disk
+// cache holds — real bug, live-reported as "in-library redirect works
+// for TV but not movies."
+```
+
+Above `refresh_seerr_admin_status(Arc::clone(&state), ww.clone(), rt.clone());`:
+```
+// Real bug, 2026-07-18: seerr-is-admin was only ever fetched
+// once per connection (spawn_seerr_settings_fetch at startup/
+// connect) and never refreshed, so a server-side permission
+// change mid-session never showed up in Approve/Decline
+// visibility without a reconnect. Non-blocking — the menu
+// still opens instantly with whatever's cached; this just
+// makes the NEXT open correct.
+```
+
+Above `crate::browse::clear_browse_results(&state, &g, nav);`:
+```
+// This is the ONE `on_nav_selected` registration that actually
+// fires — Slint callbacks are single-handler, so browse.rs's own
+// former registration here was silently overwritten by this one
+// (code review, 2026-08-08). Call its logic explicitly instead
+// of leaving it dead.
+```
+
+Above `g.set_show_onscreen_keyboard(false);`:
+```
+// Real, severe bug found in code review, 2026-08-26: the
+// on-screen keyboard was never closed on a sidebar tab switch.
+// Browse/LibraryGrid/DiscoverScreen are all permanently-mounted,
+// `visible:`-toggled siblings (not conditionally destroyed), so
+// opening the on-screen keyboard from one of their search
+// fields, then switching tabs with the mouse, leaves the
+// keyboard widget invisible along with its parent screen while
+// `show-onscreen-keyboard` stays stuck true. keys.rs's
+// on-screen-keyboard gate is checked before EVERY other input
+// tier and unconditionally consumes any key (only Ctrl+Q
+// escapes it) — every arrow key, Backspace, and letter is
+// silently swallowed app-wide, on whatever screen is now
+// showing, with nothing on screen to explain why. This is the
+// single choke point every sidebar switch (mouse NavItem.clicked
+// AND browse::sidebar_nav's keyboard cycle) already funnels
+// through, matching how the two blocks below already reset
+// other classes of stale transient state on the same signal.
+```
+
+Above `g.set_discover_popup_open("".into());`:
+```
+// Leaving Discover: a filter popup left open, or the filter
+// bar left active, otherwise silently reappears (backdrop
+// and all) the next time the user returns — real bug,
+// 2026-07-18. This is the single hook every sidebar tab
+// switch already funnels through (mouse NavItem.clicked AND
+// browse::sidebar_nav's keyboard cycle both call
+// nav-selected), so it's a more robust reset point than
+// touching every NavItem handler in layout.slint by hand.
+```
+
+Above `g.set_keybinding_focused(-1);`:
+```
+// Leaving Settings (code review, 2026-08-08) — a keybinding
+// row focused via keyboard/mouse into Key Bindings, then a
+// MOUSE click on a different sidebar entry, left
+// `keybinding-focused` stale. keys.rs's AppMode::Settings
+// routing checks `keybinding-focused >= 0` before ever
+// looking at settings-section, so every keypress anywhere —
+// regardless of which screen is now showing — kept being
+// hijacked by the (invisible) keybinding dispatcher: Enter
+// could silently arm rebind-capture, and the very next
+// keypress would rebind+persist an arbitrary action with no
+// visible feedback. Also clears the two ConfirmDialog flags
+// and the pending rebind they can leave stranded, matching
+// how sign-out already resets this class of transient
+// Settings UI-flow state (see main.rs's sign-out handler).
+```
+
+Above `g.set_show_seerr_disconnect_confirm(false);`:
+```
+// Disconnect Seerr confirm dialog (2026-08-22) — same class
+// of leak: a stranded true here would silently reopen the
+// dialog over whatever section is showing the next time
+// this user returns to Settings, since it's rendered
+// unconditionally on that flag with no regard for which
+// row/section is currently focused.
+```
+
+Above `g.set_focused_section(0);`:
+```
+// First character typed: the view switches from the 5
+// landing SectionRows to the flat results grid, which only
+// ever means "grid has focus" at focused-section == 0 —
+// reset it so a query typed while parked on a non-zero
+// landing row (reachable by clicking the search field
+// directly, bypassing the keyboard path that always funnels
+// through row 0 first) doesn't leave focused-section stuck
+// on a row index the grid view doesn't understand.
+```
+
+Above `g.on_series_missing_season_activate({`:
+```
+// Series "Missing Seasons" row (2026-07-29, Deep Seerr integration) —
+// wired here (not keys.rs) since keys.rs::handle_key has no state/rt to
+// make the async TMDB-resolution + request-detail-open call itself,
+// same reason on_open_discover_item above is wired here rather than
+// handled inline.
+```
+
+Above `g.on_open_discover_menu_from_detail({`:
+```
+// RequestDetailScreen's own ⋮ More button (2026-07-18) — same
+// context-menu-* population as on_open_context_menu_discover above, but
+// sourced from request-detail-* state (no CardItem exists for this
+// page). request-detail-request-id/-pending/-mine are resolved by
+// discover.rs::pick_primary_request when the item's own detail loads.
+```
+
+Above `g.set_context_menu_availability(g.get_request_detail_availability());`:
+```
+// Real gap, never mattered until the Blocklist row needed it
+// (2026-08-06): this site populates request-id/pending/mine/
+// watchlist for the context menu but had never forwarded
+// availability, since no existing row consumed it.
+```
+
+Above `g.on_context_discover_view_request({`:
+```
+// "View Request" (2026-07-18) — only shown when context-menu-request-id
+// is non-empty (context_menu.slint); unlike View Details, deliberately
+// skips the find_local_item redirect so a partially-available item's
+// Seerr request stays reachable even though it's also (partly) in the
+// Jellyfin library. See open_discover_item_ex's own doc comment.
+```
+
+Above `g.set_cancel_request_confirm_id(request_id.to_string().into());`:
+```
+// Confirmation dialog, 2026-08-22 — see show-cancel-request-
+// confirm's own doc comment in app_state.slint. Cancel Request
+// permanently deletes the underlying MediaRequest (DELETE
+// /request), no undo — re-requesting starts fully over. The
+// actual delete now happens in on_cancel_request_confirmed
+// below, only once the (global, main.slint-level) dialog is
+// confirmed.
+```
+
+Above `g.on_context_discover_toggle_blocklist({`:
+```
+// Discover context menu's Blocklist row (2026-08-06, Seerr Blocklist
+// support) — same shape as its Watchlist sibling above, but "adding"
+// means "not currently blocklisted" rather than a separate bool, since
+// Blocklisted rides on the same availability field every other pill
+// already uses (see availability_tag's own doc comment).
+```
+
+#### `crates/fjord-app/src/discover/wire.rs` — file header (TOC)
+```
+// ── fjord-app · discover/wire.rs ─────────────────────────────────────────────
+//   wire_discover              registers all Discover/RequestDetail AppState callbacks
+//                              (search append/backspace/clear, load-more, open-discover-item,
+//                              request-detail-toggle-season/-tag, request-detail-request,
+//                              open-request-options, request-detail-set-quality); on first
+//                              nav arrival also proactively refreshes all_movies (metadata
+//                              only, crate::spawn_movies_list_fetch(..., with_posters=false))
+//                              so find_local_item's ProviderIds match works on the first
+//                              Discover visit, not just after the Movies grid has been
+//                              opened this session (all_series has no such gap — the
+//                              startup auto-login path already refreshes it unconditionally)
+//   on_discover_filter_changed  shared tail of every filter-pill-changed callback: saves
+//                              Config, recomputes discover-filters-active, then either
+//                              triggers spawn_discover_filtered_browse (query empty + active),
+//                              clears discover-results (query empty + inactive), or calls
+//                              apply_search_filters (query non-empty)
+//   on_nav_selected            (in wire_discover) logs nav-selected(n) at debug (2026-10-08);
+//                              also resets discover-popup-open/
+//                              discover-filter-bar-active when leaving Discover (real bug:
+//                              a filter popup left open silently reappeared on return) and
+//                              calls refresh_seerr_admin_status on every arrival (rate-limited,
+//                              see above); unconditionally closes the on-screen keyboard on
+//                              EVERY nav switch (2026-08-26, code review — the single most
+//                              severe finding: Browse/LibraryGrid/DiscoverScreen are
+//                              permanently-mounted, visible:-toggled siblings, so switching
+//                              tabs with the keyboard open on one of their search fields left
+//                              show-onscreen-keyboard stuck true and silently swallowed all
+//                              subsequent input app-wide, since that gate is checked before
+//                              every other tier in keys.rs)
+// ─────────────────────────────────────────────────────────────────────────────
+```
+
+#### `crates/fjord-app/src/discover/calendar.rs`
+
+Above `pub(crate) async fn build_calendar_entries(state: Arc<Mutex<FjordState>>, ww: Weak<MainWindow>) {`:
+```
+/// Builds the "Coming Up" row's data — every id in `discover_watchlist_ids`
+/// union `discover_known_requests`' own keys (the latter already IS the
+/// `requested_not_available` result set, populated from that exact call by
+/// `ensure_discover_landing`/`refresh_requested_row` — reusing it here
+/// avoids a second, duplicate `GET /request` round trip), capped at 20
+/// CANDIDATES (not 20 RESULTING entries — a date isn't known until after
+/// the detail fetch below, so the cap bounds the number of detail fetches,
+/// not a pre-sorted "soonest 20"; the final list is what gets sorted by
+/// date, not the candidate selection). Same bounded-concurrency JoinSet
+/// shape as `fetch_requested_row`. Movies contribute up to 3 entries each
+/// (Theatrical/Digital/Physical, whichever have a real future date); TV
+/// contributes at most 1 (`next_episode_to_air`). Past dates are excluded —
+/// a "Coming Up" calendar has nothing to say about something already out.
+/// Watchlist + Release Calendar, 2026-07-18.
+```
+
+Above `let candidates: Vec<(&'static str, String, bool)> = {`:
+```
+// Real bug, live-reported 2026-07-19 ("the context menu still shows add
+// to watchlist when its already is in the watch list"): `on_watchlist`
+// needs to be known per-candidate here — `push_coming_up_row` builds its
+// CardItems with `..Default::default()`, which silently means
+// `on_watchlist: false` for every card regardless of the real state, and
+// nothing ever re-patches it afterward since a fresh Coming Up rebuild
+// (this exact function, e.g. via refresh_watchlist right after a toggle)
+// replaces the whole model — the item that was JUST successfully
+// watchlisted, now newly appearing in this row because it has an
+// upcoming date, would flip straight back to "not on watchlist" the
+// instant this function's own rebuild ran.
+```
+
+Above `const ONGOING_CAP: usize = 50;`:
+```
+// Third candidate source (2026-07-29, Deep Seerr integration):
+// ongoing series already in the local library, even if never
+// watchlisted/requested via Seerr. Unioned in AFTER the existing
+// watchlist∪requests .take(20) slice (left completely unchanged
+// above) rather than folded into the same pre-take HashSet —
+// folding it in would non-deterministically starve out watchlist/
+// request candidates via hash-set iteration order once a library
+// has more than a handful of ongoing shows. Its own defensive cap
+// (a safety valve, not a precisely-chosen number) since the real
+// fetch cost is already bounded by the Semaphore(6) below, not by
+// candidate count — a bounded-concurrency fetch of even a few
+// hundred shows just takes longer wall-clock time, it doesn't fail.
+```
+
+Above `if availability_tag(d.media_info.as_ref().and_then(|mi| mi.status()))`:
+```
+// Same "don't show this in Discover" rule as
+// search_result_to_meta/watchlist_*_to_meta (2026-08-06) —
+// blocklisting doesn't remove the title from the watchlist
+// or an ongoing-series scan, so without this it would keep
+// resurfacing here on every calendar refresh.
+```
+
+Above `fn calendar_entry_to_card(e: &CalendarEntry) -> CardItem {`:
+```
+/// Pushes the "Coming Up" landing row from `entries` (soonest-first,
+/// already sorted by `build_calendar_entries`) — capped to a preview count,
+/// plus the trailing sentinel card `handle_key_landing` special-cases.
+/// Text-only commit first, same two-phase pattern as every other landing
+/// row — `fetch_coming_up_posters` (below) patches posters in afterward;
+/// `ensure_discover_landing`'s own poster pass doesn't cover this row
+/// since it's rebuilt independently on its own schedule, not as part of
+/// the 8-way landing join.
+///
+/// Real bug, live-reported 2026-07-19 ("highlight disappears, nothing
+/// shows anywhere"): this function is only ever called from
+/// `build_calendar_entries`, an `async fn` that runs entirely on a Tokio
+/// worker thread (spawned via `tokio::spawn`/`rt.spawn`, never routed
+/// through `invoke_from_event_loop`) — but it called `ww.upgrade()` and
+/// `AppState::get(&w).set_discover_coming_up(...)` directly, off the UI
+/// thread. `slint::Weak::upgrade()` silently returns `None` when called
+/// from any thread other than the one that owns the window (confirmed
+/// from `i-slint-core`'s real source, not assumed: `if
+/// std::thread::current().id() != self.thread { return None; }`, no
+/// panic) — so `discover-coming-up` was never actually set, on any run,
+/// since this feature first shipped; the `debug!("seerr: calendar -> N
+/// entries")` log line in `build_calendar_entries` (which runs BEFORE
+/// this function) made the Rust-side computation look like it succeeded,
+/// masking that the UI-side commit was silently failing every single
+/// time. Every other UI mutation in this file follows the two-phase
+/// pattern (build plain Send-safe data off-thread, construct `CardItem`
+/// only inside `invoke_from_event_loop`) for exactly this reason — this
+/// one function was written without it. Fixed by clamping/cloning
+/// `entries` (plain `Vec<CalendarEntry>`, genuinely `Send`) before the
+/// closure, and moving the `CardItem`/`AppState` mutation inside.
+```
+
+Above `let mixed: Vec<CardItem> = entries.iter().map(calendar_entry_to_card).collect();`:
+```
+// Home/TV/Movies dashboard rows (2026-08-02, user request — "the
+// coming up row shuld also be in home dashbord... coming up in
+// series dashbord that is filtered for series and in movies
+// dashbord that is filtered for movies"), same 3-way mixed/movies/tv
+// split as the Watchlist dashboard rows, sentinel-free (a "Full
+// Calendar" card only makes sense on the Discover screen's own
+// landing row, which has a CalendarScreen to open).
+```
+
+Above `title: "🗓".into(),`:
+```
+// U+1F4C5 (📅 CALENDAR) isn't in any bundled font's cmap (confirmed
+// via fc-query, 2026-07-22, live-reported "still missing symbols on
+// the htpc") — the card title has no font-family pin, so the global
+// Noto fallback mechanism had nothing to fall back TO here, tofu on
+// any system without its own emoji font. U+1F5D3 (🗓 SPIRAL CALENDAR
+// PAD) genuinely is in Noto Sans Symbols2's cmap.
+```
+
+Above `async fn fetch_coming_up_posters(ww: Weak<MainWindow>, entries: &[CalendarEntry]) {`:
+```
+/// Patches posters onto the already-committed Coming Up row (2026-07-19,
+/// user request — "it hust dosent have posters"), same bounded-concurrency
+/// fetch-then-patch-by-index shape as `refresh_requested_row`'s own poster
+/// pass. Must truncate `entries` with the SAME `COMING_UP_PREVIEW_CAP` and
+/// source order `push_coming_up_row` used, since patching is by row index
+/// — the id/type check on each patch is the belt-and-braces guard against
+/// the two ever drifting out of sync (same pattern used everywhere else in
+/// this file a poster fetch patches a model by index).
+```
+
+Above `for model in [`:
+```
+// Home/TV/Movies dashboard rows (2026-08-02): id+item_type
+// lookup, not index — the same tmdb id can sit at a different
+// row index in discover-coming-up-mixed vs. its own type-
+// specific list, same reason fetch_watchlist_posters does this.
+```
+
+Above `pub(crate) fn push_calendar_view(g: &AppState, s: &FjordState) {`:
+```
+/// Rebuilds `calendar-days`/`calendar-leading-blanks`/`calendar-total-days`
+/// for whatever `calendar-year`/`calendar-month` currently are — called on
+/// open and after every month-nav. One `CardItem` per REAL day (no blank
+/// placeholders in the model itself, see `calendar-leading-blanks`' own doc
+/// comment): `title` is the day number, `unplayed-count` repurposed as the
+/// day's entry count, `subtitle` is the first entry's own title (2026-07-19,
+/// user request — "write you the relese in the calander instead of just a
+/// small marker": `CalendarDayCell` now shows this text directly rather
+/// than only a numeric pill; a day with 2+ entries still gets the count
+/// pill too, alongside the title, so a second/third release isn't silently
+/// dropped from the cell — the day-popup remains the place to see all of
+/// them by name), `id` is unused (day index is positional).
+```
+
+Above `pub(crate) fn handle_key_calendar(action: &Action, g: &AppState) -> bool {`:
+```
+/// Zone -1 = header row (Back=col 0, Prev month=col 1, Next month=col 2,
+/// Left/Right cycle among these 3, Confirm activates whichever is
+/// focused); zone >= 0 = the day grid itself (7 columns,
+/// `calendar-cursor-row`/`-col` are raw grid coordinates including blank
+/// cells — landing on a blank is harmless, Enter there is just inert, same
+/// "gaps are fine" tolerance the Coming Up row's own sentinel already
+/// established, rather than clamping arrow keys around blanks). Confirm on
+/// a real day routes through the SAME `calendar-day-selected` callback the
+/// mouse path uses (`on_calendar_day_selected` in `wire_discover`) rather
+/// than calling `open_calendar_day_popup` directly — `keys.rs`'s per-mode
+/// match arms don't hold `state`/`ww`, and funneling both input paths
+/// through one callback is also what guarantees they can't diverge (the
+/// mouse/keyboard focus-desync bug class documented throughout this file).
+///
+/// Left/Right month-changing — corrected design, same day, after a live
+/// report ("the left right to change the month works when you are on the
+/// back button but not when you are on the end ow a row on the
+/// monthgrid... it shuld not change when you press left or right on the
+/// back buttun then you shuld just navigate the buttons"). The FIRST
+/// attempt made header-zone Left/Right always fire the month change
+/// immediately — wrong on two counts: it fired from the Back position too
+/// (the user explicitly didn't want that — Left/Right on Back should just
+/// navigate, not act), and it did nothing useful in the day grid at all.
+/// Reverted the header zone back to its original cursor-cycling behavior
+/// (Left/Right just move among Back/Prev/Next, Confirm activates); added
+/// the actual requested behavior to the DAY GRID instead — Left at the
+/// leftmost column (Sunday) or Right at the rightmost column (Saturday)
+/// now continues past the edge into the adjacent month, mirroring the
+/// common date-picker convention of browsing days seamlessly across a
+/// month boundary. Reuses `invoke_calendar_prev_month`/`_next_month`
+/// directly (both already reset the cursor into the new month's grid as
+/// part of changing it, so no extra cursor bookkeeping needed here either).
+```
+
+#### `crates/fjord-app/src/discover/calendar.rs` — file header (TOC)
+```
+// ── fjord-app · discover/calendar.rs ─────────────────────────────────────────
+//   release_dates_for_region/calendar_kind_for_release_type  ReleaseDatesResult + region ->
+//                              deduped-by-type (3/4/5) (type, date) pairs, mirrors Seerr's own
+//                              frontend filter; type -> CalendarEntryKind (Theatrical/Digital/Physical)
+//   build_calendar_entries      unions discover_watchlist_ids ∪ discover_known_requests keys,
+//                              capped at 20 (mirrors fetch_requested_row's own cap), detail-
+//                              fetches (bounded Semaphore+JoinSet) each and extracts movie
+//                              release dates or TV next_episode_to_air; sorted soonest-first;
+//                              called after every watchlist/request mutation (toggle, submit,
+//                              cancel/approve/decline), not just on session fetch — ALSO now
+//                              spawned from ensure_discover_landing itself right after it
+//                              populates discover_known_requests (real bug, live-reported
+//                              2026-07-19: ensure_discover_watchlist's own post-fetch call
+//                              races ensure_discover_landing's tokio::join! and nearly always
+//                              wins — the watchlist fetch is comparatively instant, the
+//                              landing join is a real network round trip — so on a session
+//                              with zero watchlist items, candidates was empty at the ONE
+//                              call that ever ran, and nothing re-triggered it afterward; the
+//                              Coming Up row stayed sentinel-only for the whole session)
+//   push_coming_up_row          discover_calendar_entries -> discover-coming-up CardItem list
+//                              (capped PREVIEW_CAP=20) + a trailing sentinel card (id="",
+//                              title="📅", subtitle="Full Calendar") whose Enter/click opens
+//                              CalendarScreen instead of an item. Real bug, live-reported
+//                              2026-07-19 ("highlight disappears, nothing shows anywhere"):
+//                              this function's only caller (build_calendar_entries) runs on a
+//                              Tokio worker thread, never invoke_from_event_loop-wrapped, but
+//                              this function called ww.upgrade()/AppState setters directly —
+//                              slint::Weak::upgrade() silently returns None off the UI thread
+//                              (confirmed from i-slint-core's real source), so
+//                              discover-coming-up was never actually set, on any run, since
+//                              this feature shipped; build_calendar_entries's own success log
+//                              made the Rust-side computation look like it worked, masking
+//                              that the UI-side commit was silently failing every time. Fixed
+//                              to match every other UI mutation in this file: clone entries
+//                              (plain Send-safe data) before the closure, build CardItems and
+//                              call the AppState setter only inside invoke_from_event_loop.
+//                              Also splits the same (sentinel-free) card list by item_type into
+//                              discover-coming-up-mixed/-movies/-tv (2026-08-02, user request —
+//                              same 3-way split as the Watchlist dashboard rows, one row on Home
+//                              (mixed) and each of Movies/TV shows only its own type) via the
+//                              shared calendar_entry_to_card mapper; all 4 models route through
+//                              apply_cards_preserving_identity now instead of a raw ModelRc swap
+//                              (this function reruns on every watchlist/request mutation, same
+//                              "Phase 96 flash bug" reasoning as push_watchlist_rows)
+//   calendar_entry_to_card       CalendarEntry -> CardItem (id/item_type/title/date+kind
+//                              subtitle/on_watchlist), no sentinel — shared by push_coming_up_row's
+//                              4 models so the mapping logic lives in exactly one place
+//   fetch_coming_up_posters     patches posters onto the already-committed Coming Up row
+//                              (2026-07-19, user request), bounded-concurrency fetch-then-
+//                              patch-by-index, same shape as refresh_requested_row's own
+//                              poster pass; must truncate with the same COMING_UP_PREVIEW_CAP
+//                              and source order push_coming_up_row used (patches by index).
+//                              Also patches the 3 dashboard split models by id+item_type lookup
+//                              (2026-08-02) — same reason as fetch_watchlist_posters: the same
+//                              tmdb id can sit at a different row index in each of the 3 lists
+//   calendar_grid_dims/push_calendar_view/calendar_day_entries  month-grid data: leading-
+//                              blank-count + day-count for a year/month (Sunday-first);
+//                              calendar-days CardItem list (day number as title, entry count
+//                              via unplayed-count, first entry's own title via subtitle —
+//                              2026-07-19, user request, CalendarDayCell shows it instead of
+//                              just a count pill); one day's matching CalendarEntry rows -> popup CardItems
+//   handle_key_calendar/handle_key_calendar_day_popup  CalendarScreen's own AppMode dispatch —
+//                              header zone (calendar-cursor-row<0) vs. 7-col day grid; Left/Right
+//                              at the header directly invoke calendar-prev-month()/-next-month()
+//                              (2026-07-19, user request — previously just cycled a cursor among
+//                              Back/Prev/Next, needing a separate Confirm; Back is still reachable
+//                              via Escape/Backspace, the universal close-key convention, or Enter
+//                              at the initial Back-focused position); Confirm on a real day
+//                              invokes calendar-day-selected(day) (the SAME callback the mouse
+//                              path calls, so keyboard/mouse can't diverge); day popup: Up/Down
+//                              cursor, Confirm -> calendar-day-popup-entry-selected(idx), Back
+//                              closes the popup only
+//
+//   build_calendar_entries     candidate set gained a third source: ongoing (Status=="Continuing")
+//                              series already in the local library, even if never watchlisted/
+//                              requested — unioned in AFTER the existing watchlist∪requests
+//                              .take(20) slice (left unchanged) with its own separate defensive
+//                              cap, not folded into the same pre-take HashSet (would
+//                              non-deterministically starve out the other two sources)
+// ─────────────────────────────────────────────────────────────────────────────
+```
+
+#### `crates/fjord-app/src/discover/watchlist.rs`
+
+Above `fn watchlist_movie_to_meta(`:
+```
+/// Watchlist row's own meta builders (2026-07-20) — `movie_details_to_meta`/
+/// `tv_details_to_meta` above are NOT reusable here: both require a
+/// `&RequestEntry` built from a real `MediaRequest`, which a plain
+/// watchlist item may not have at all. `availability` is instead derived
+/// straight from `d.media_info`, the SAME single-tier approach
+/// `search_result_to_meta` already uses for Trending/Popular/Upcoming/New
+/// in Theaters (not the Requested row's own dual-tier logic — a watchlist
+/// item's primary concern is list membership, not request-tier status).
+/// `on_watchlist: true` is set directly rather than read from
+/// `d.on_user_watchlist` since membership is true by definition for every
+/// candidate this function is ever called on. Callers are expected to call
+/// `patch_known_request_state` afterward so an item that's ALSO requested
+/// still gets its Edit/Cancel context-menu rows (not the visual pill,
+/// which already comes from `media_info` above — `KnownRequest` doesn't
+/// carry availability/is4k, only request_id/pending/mine).
+///
+/// Both return `None` for a Blocklisted item (2026-08-06, same "don't show
+/// this in Discover" rule `search_result_to_meta` filters by — see its own
+/// doc comment): blocklisting never removes the title from the actual Seerr
+/// Watchlist (the two are independent Seerr entities, confirmed from
+/// `Blocklist.addToBlocklist`'s own source, which only ever touches
+/// `Media.status`/`status4k`), so without this filter a blocklisted-but-
+/// still-watchlisted item would keep resurfacing here on every watchlist
+/// refresh regardless of `remove_card_from_all_models` having pulled it off
+/// screen a moment earlier.
+```
+
+Above `pub(crate) fn ensure_discover_watchlist(`:
+```
+/// Fetches every page of the connected user's Watchlist (`GET
+/// /discover/watchlist`) into a plain `(item_type, tmdb_id)` id set — once
+/// per session, guarded by `FjordState.discover_watchlist_fetched`, same
+/// shape as `discover_landing_fetched`. Deliberately fetches ALL pages, not
+/// just a capped prefix like `fetch_requested_row`'s 20-item cap: unlike
+/// that cap (which bounds a much more expensive per-item DETAIL fetch),
+/// this is plain id/title rows with no per-item network call, so even a
+/// few hundred watchlist entries is a handful of cheap list fetches — safety-
+/// capped at 10 pages (200 items) so a pathological watchlist can't loop
+/// forever. Best-effort: a failed page just stops pagination early rather
+/// than erroring the whole fetch. Watchlist + Release Calendar, 2026-07-18.
+```
+
+Above `let client2 = client.clone();`:
+```
+// Detail-fetch a preview of the watchlist (title+poster, unlike the
+// plain id set above) for the Discover Watchlist row + the Home/Movies/TV
+// dashboard rows — all 4 consumers share this ONE fetch (2026-07-20).
+// Spawned independently (tokio::spawn, not awaited inline) so these ~20
+// extra per-item detail fetches don't delay build_calendar_entries's own
+// commit above, mirroring how that function is itself spawned
+// independently from ensure_discover_landing for the identical reason.
+```
+
+Above `pub(crate) async fn resync_jellyfin_watchlist_stars(`:
+```
+/// Re-resolves EVERY currently-known-watchlisted tmdb id
+/// (`FjordState.discover_watchlist_ids`, read fresh here — no Seerr network
+/// call, this is a pure local re-check) to a local Jellyfin item (if owned)
+/// via `find_local_item`, then (1) writes the resolved id set into
+/// `FjordState.jellyfin_watchlist_ids` — the persistent source of truth
+/// `item_to_card_item`/`items_to_model`/the various carry-forward merges
+/// consult at CardItem-construction time (real bug fixed 2026-07-20: a
+/// live-model patch alone, step 2 below, gets silently wiped by the next
+/// screen rebuild — see `FjordState.jellyfin_watchlist_ids`'s own doc
+/// comment) — and (2) patches the watchlist star onto every already-
+/// rendered native Jellyfin `CardItem` model that item might be visible in
+/// (`context_menu.rs::patch_watchlist_on_jellyfin_models`) for IMMEDIATE
+/// feedback on whatever's on screen right now, without waiting for a
+/// rebuild. This is the reactive, "patch on watchlist/request changes
+/// only" population strategy (user's explicit choice over an eager
+/// full-library scan on login): bounded by watchlist size in the LOOKUP
+/// direction, not library size in the SCAN direction. `find_local_item`
+/// itself does the actual `all_movies`/`all_series` scan, so this is a
+/// genuine lookup per candidate, not a scan over the whole library.
+/// Genuinely not add-only: ids present in the OLD set but missing from the
+/// freshly-resolved one (removed from the watchlist, or no longer locally
+/// owned) are explicitly patched back to `false` too, so a star can't get
+/// stuck on stale. Two-phase pattern: `find_local_item` only reads
+/// `FjordState` (safe from any thread — plain mutex lock, no Slint touch);
+/// the resolved ids (plain Send-safe data) are collected first, then moved
+/// into ONE `invoke_from_event_loop` closure to do the actual `CardItem`
+/// patching — the same discipline `push_coming_up_row`'s real bug
+/// (found+fixed earlier this session) established as mandatory.
+///
+/// `pub(crate)` and callable with no fresh Seerr fetch (unlike
+/// `ensure_discover_watchlist`/`fetch_and_store_watchlist`) specifically so
+/// it can ALSO be re-run from `main.rs` right after `all_movies`/`all_series`
+/// get freshly populated (cache load, post-login fetch) — real gap found by
+/// live-testing THIS exact fix: the very first resync (triggered by the
+/// watchlist fetch itself, early in startup) reliably runs BEFORE the
+/// library lists are populated, so `find_local_item` finds 0 matches on
+/// that pass and the star never appears without a second, later resolve.
+```
+
+Above `let my_seq = {`:
+```
+// Generation guard (2026-07-22, code review finding) — see
+// FjordState.jellyfin_watchlist_resync_seq's own doc comment for the
+// race this prevents. Captured BEFORE the scan so any call that starts
+// after us is guaranteed a higher number.
+```
+
+Above `const WATCHLIST_ROW_CAP: usize = 20;`:
+```
+/// Capped at 20, matching `fetch_requested_row`'s own `.truncate(20)` and
+/// `build_calendar_entries`'s own candidate cap — this exact "a real
+/// watchlist can be large, per-item detail fetches are the expensive part"
+/// tradeoff was already reasoned about once for this feature and settled
+/// on 20; reusing that number rather than picking a fresh one.
+```
+
+Above `fn push_watchlist_rows(`:
+```
+/// Splits by item_type into mixed/movies/tv (mirrors home.rs's own
+/// Continue-Watching cw_movies/cw_tv 3-way split — one source, filtered
+/// client-side, no extra network calls) and commits all 3 AppState models
+/// inside ONE `invoke_from_event_loop` closure. Mandatory two-phase
+/// pattern: `items` is plain Send-safe `DiscoverCardMeta` data built
+/// off-thread; `CardItem` (always `!Send` — carries a `slint::Image` field
+/// regardless of whether it's populated) is only ever constructed here,
+/// and every `AppState` touch happens inside this one closure — the exact
+/// discipline `push_coming_up_row`'s own real bug (found+fixed earlier this
+/// session: called directly from a Tokio-thread `async fn`, silently never
+/// set anything because `slint::Weak::upgrade()` returns `None` off the UI
+/// thread, no panic, no error) established as mandatory for this file.
+///
+/// Routes all 3 models through `apply_cards_preserving_identity` (2026-07-22,
+/// code review finding) instead of unconditionally building a fresh
+/// `ModelRc` — this function runs on EVERY watchlist refresh, which per
+/// `refresh_watchlist`'s own doc comment fires after every single Add/Remove
+/// Watchlist toggle anywhere in the app. A bare `ModelRc::new(...)` swap, per
+/// CLAUDE.md's own documented Phase 96 finding, makes Slint destroy and
+/// recreate every delegate element even when nothing in the row actually
+/// changed — re-fading every OTHER already-visible card's poster and
+/// discarding its already-decoded `Image` handle just because one unrelated
+/// item was toggled.
+```
+
+Above `let state = Arc::clone(state);`:
+```
+// Session guard (Bonfire Phase 1, step 8 audit, 2026-08-09) — this
+// function had no staleness guard at all. Not the same Arc::ptr_eq
+// shape as seerr_session_current: `client` arrives here as an owned,
+// value-cloned `SeerrClient` (Clone-by-value, see fjord-seerr's own
+// impl) rather than a threaded-through `Arc<SeerrClient>` — its
+// original Arc identity was already lost several calls up this chain
+// (fetch_and_store_watchlist takes `&SeerrClient`, deref-coerced from
+// the Arc it started as), so a true identity check would mean
+// re-plumbing that whole chain's client type. A coarser but still
+// real check instead: if Seerr has been disconnected entirely (the
+// common case for both sign-out and a profile switch to an account
+// with no Seerr connection configured — Bonfire sub-profiles very
+// plausibly don't each have their own), bail rather than commit stale
+// rows. Does not catch switching to a DIFFERENT account that also has
+// Seerr connected — a narrower residual gap, left open rather than
+// risking a deeper refactor of an otherwise-working fetch chain.
+```
+
+Above `#[allow(clippy::too_many_arguments)]`:
+```
+/// Add/remove Watchlist — wired from the Discover context menu's Watchlist
+/// row and RequestDetailScreen's Watchlist button. POST/DELETE, then
+/// patches every visible card + updates the id cache + rebuilds the
+/// calendar (a watchlist change is one of the two things that can change
+/// what's on it). Watchlist + Release Calendar, 2026-07-18.
+/// `success_toast` replaces the usual "Added to/Removed from Watchlist"
+/// toast — used by a successful request, which auto-adds to the watchlist
+/// and shows one combined toast instead of two back to back (2026-10-04).
+```
+
+Above `let mut reset_played = false;`:
+```
+// Adding an already-watched item back to the watchlist reads
+// as "I want to watch this again," not left watched
+// (2026-08-02, user request, asked directly rather than
+// guessed — the alternative was blocking the add outright).
+// Only applies to items already in the local Jellyfin
+// library; a Discover-only item has no played state to
+// reset. Real Jellyfin API call (mark_unplayed), not just a
+// local flag flip — Jellyfin echoes it back through
+// UserDataChanged the same way every other played-state
+// change in this app does, so every other visible model
+// (Not Watched rows, etc.) still converges via the existing
+// WS path; the two writes below are only for INSTANT
+// feedback on whatever's already on screen right now.
+```
+
+Above `if let Some((jellyfin_id, _)) = &local_item2 {`:
+```
+// In-library star (2026-07-20) — the toggled item
+// might ALSO be a native Jellyfin card somewhere
+// (Continue Watching, the library grid, etc); patch
+// that too, same shape as patch_watchlist_on_all_models
+// above but by Jellyfin id instead of tmdb id. Also
+// keep the persisted jellyfin_watchlist_ids set in
+// sync incrementally (not just resync's own wholesale
+// replace) so a screen rebuilt between now and the
+// next resync still gets the right value at
+// construction time, not just this live patch.
+```
+
+#### `crates/fjord-app/src/discover/watchlist.rs` — file header (TOC)
+```
+// ── fjord-app · discover/watchlist.rs ────────────────────────────────────────
+//   discover_toggle_watchlist   POST/DELETE /watchlist, updates discover_watchlist_ids,
+//                              patches every model the card might be visible in
+//                              (patch_watchlist_on_all_models) + request-detail-on-watchlist
+//                              if that item's detail page is open, toasts, calls refresh_watchlist
+//                              (which rebuilds the calendar too); debug!-logged at entry/success
+//                              (2026-07-19, live report of "no confirmation" with no evidence in
+//                              the log of the call ever happening — added to get direct proof of
+//                              where it breaks on the next attempt instead of guessing again);
+//                              the context-menu callsite also warn!s if context-menu-item-id
+//                              fails to parse as a tmdb id (its one silent-early-return path);
+//                              its success handler also resolves this one tmdb_id -> Jellyfin id
+//                              via find_local_item and patches the in-library star in place
+//                              (context_menu::patch_watchlist_on_jellyfin_models, 2026-07-20)
+//   ensure_discover_watchlist/refresh_watchlist/fetch_and_store_watchlist  fetch-once-per-
+//                              session (paginated, 200-item safety cap) + refresh-after-toggle
+//                              pair mirroring ensure_discover_landing/refresh_requested_row;
+//                              both funnel through the shared fetch_and_store_watchlist, which
+//                              also triggers build_calendar_entries on every fetch, and — since
+//                              2026-07-20 — independently spawns populate_watchlist_rows (Discover/
+//                              dashboard Watchlist rows) and resync_jellyfin_watchlist_stars
+//                              (in-library star bulk resync) on every fetch too, so all four
+//                              consumers share the one already-fetched discover_watchlist_ids set
+//   ── Watchlist row (2026-07-20, user request — "add a row for the watchlist as in
+//      seerr... culd also add it to the home dashbord, and movies dashbord... and
+//      series dashbord... status indicator to the posters like we do for everything
+//      else") — a genuine "everything on the watchlist" row, distinct from Coming
+//      Up's date-filtered subset; not deduped against Coming Up or any other row ──
+//   watchlist_movie_to_meta/watchlist_tv_to_meta  DiscoverCardMeta builders for a plain
+//                              watchlist item — movie_details_to_meta/tv_details_to_meta
+//                              are NOT reusable (require a real &RequestEntry); availability
+//                              comes straight from d.media_info (search_result_to_meta's own
+//                              single-tier approach), on_watchlist: true set directly; callers
+//                              call patch_known_request_state afterward for Edit/Cancel rows
+//   WATCHLIST_ROW_CAP            20, matching fetch_requested_row's/build_calendar_entries's
+//                              own cap — not a fresh judgment call, reusing the number this
+//                              exact cost tradeoff was already reasoned about for
+//   populate_watchlist_rows/push_watchlist_rows/fetch_watchlist_posters  detail-fetch (bounded
+//                              Semaphore+JoinSet) up to WATCHLIST_ROW_CAP watchlist items, split
+//                              client-side by item_type into mixed/movies/tv (mirrors home.rs's
+//                              own Continue-Watching cw_movies/cw_tv split) feeding BOTH the
+//                              Discover Watchlist row and the Home/Movies/TV dashboard rows —
+//                              one fetch, four consumers. Two-phase threading (build
+//                              DiscoverCardMeta off-thread, touch AppState/CardItem only inside
+//                              invoke_from_event_loop) is mandatory here — see push_coming_up_row's
+//                              own doc comment for the real bug this discipline exists to prevent.
+//                              Posters patched afterward by id+item_type match across all 3
+//                              models (not by index — the same tmdb id sits at a different row
+//                              index in the mixed list vs. its own type-specific list).
+//                              push_watchlist_rows routes all 3 models through
+//                              apply_cards_preserving_identity (2026-07-22, code review finding)
+//                              rather than a bare ModelRc::new swap — this function runs on every
+//                              watchlist refresh, i.e. after every single toggle anywhere in the
+//                              app, and a bare swap would re-fade every OTHER already-visible card
+//                              (Phase 96's documented class of bug) just because one item changed
+//   resync_jellyfin_watchlist_stars  in-library watchlist star (2026-07-20, user request — "if
+//                              its in library it shuld also show there") — resolves each
+//                              currently-watchlisted tmdb id (state.discover_watchlist_ids, read
+//                              fresh here — no Seerr fetch, pure local re-check) to a local
+//                              Jellyfin item via find_local_item; writes the resolved set into
+//                              FjordState.jellyfin_watchlist_ids (the persistent source of truth
+//                              item_to_card_item/items_to_model consult — real bug fix, a live
+//                              model patch alone gets silently wiped by the next screen rebuild,
+//                              see that field's own doc comment) AND patches
+//                              context_menu.rs::patch_watchlist_on_jellyfin_models for each
+//                              match (immediate feedback on whatever's on screen right now);
+//                              genuinely not add-only — ids present in the old set but missing
+//                              from the fresh one are explicitly patched back to false too.
+//                              pub(crate), takes no ids param (reads state itself) so it can be
+//                              called from anywhere as a cheap local re-check, not just after a
+//                              fresh Seerr fetch — real gap found by LIVE-TESTING this exact fix:
+//                              the resync triggered by fetch_and_store_watchlist's own trigger
+//                              points (session start + every toggle refresh) reliably races
+//                              AHEAD of all_movies/all_series being populated and finds 0 local
+//                              matches on that first pass (confirmed via cargo run — "watchlist
+//                              -> 5 id(s)" then "resync_jellyfin_watchlist_stars -> 0 local
+//                              match(es)"); also re-triggered from main.rs's push_cached_data
+//                              (once cache-loaded movies/series land), the auto-login fresh-
+//                              series landing point, and spawn_movies_list_fetch's own
+//                              completion — confirmed via a second cargo run that one of these
+//                              later triggers finds the real matches ("-> 4 local match(es)").
+//                              Generation-guarded (2026-07-22, code review finding: with 4
+//                              independent trigger points and no ordering between them, an older
+//                              call finishing AFTER a newer one had already written a more-
+//                              complete result could silently clobber it, un-starring genuinely-
+//                              still-watchlisted cards via its own stale diff) — see
+//                              FjordState.jellyfin_watchlist_resync_seq's own doc comment
+// ─────────────────────────────────────────────────────────────────────────────
+```
+
+#### `crates/fjord-app/src/discover/landing.rs`
+
+Above `// Explicit `7 =>`/`8 =>` arms, no catch-all `_ =>`: a catch-all would silently`:
+```
+// Row 8 = Watchlist (2026-07-20), appended at the end — not inserted —
+// the established "append, don't insert" rule this codebase already
+// follows for landing-row indices, avoiding the renumbering risk a
+// mid-list insert would carry. No named const: unlike Coming Up it has no
+// sentinel card / no keyboard special-case, so nothing outside
+// landing_row_get/_set/_lens needs to know its index by name. Deliberately
+// NOT deduped against the other 5 discovery rows either (Trending/Popular/
+// Upcoming/New in Theaters) — the existing dedup-against-Requested logic
+// below is a special case for Requested specifically, not a general "hide
+// personal-list items elsewhere" rule; Coming Up already sets the
+// precedent of not needing one.
+```
+
+Above `pub(crate) fn landing_row_get(g: &AppState, idx: usize) -> ModelRc<CardItem> {`:
+```
+// landing_row_get/_set deliberately end in explicit `7 =>`/`8 =>` arms, NOT
+// a catch-all `_ =>` — a catch-all here would silently alias a future 9th
+// row to whichever arm the catch-all resolves to instead of failing to
+// compile (real gap caught by an independent plan review before this row
+// was added, 2026-07-20).
+```
+
+Above `struct RequestEntry {`:
+```
+/// One kept request's raw fields, tagged with which endpoint its detail
+/// fetch needs — `is4k`/`other_tier_available` are what let the card show
+/// "4K Requested" plus a separate "Available in 2K" badge instead of just a
+/// flat, tier-blind "Requested" (see `requested_not_available`'s own doc
+/// comment in fjord-seerr for why `status`/`status4k` must be picked based
+/// on which tier the request is actually for, not `status` unconditionally
+/// — the identical bug, fixed here too since this row builds its badge
+/// text independently of that filter). `request_id`/`pending`/`mine` feed
+/// the Discover context menu's Edit/Cancel/Approve/Decline row set
+/// (2026-07-18) — `pending`/`mine` are the request's own approval-workflow
+/// state (`MediaRequest.status`/`requestedBy.id`), a different thing from
+/// `availability` (media fulfillment status).
+```
+
+Above `let availability = match availability_tag(requested_status) {`:
+```
+// A row reaching this function is, by construction, an active request
+// for this exact tier (requested_not_available's own filter guarantees
+// it) — but Seerr can still report that tier's own media status as
+// Unknown well after the request was created (confirmed live,
+// 2026-07-18: 3 of 49 real 4K requests on a real account had
+// status4k==Unknown despite a genuine MediaRequest existing — most
+// likely a TV show whose top-level status hasn't been recomputed from
+// its season-level state), which must not read as "no request" here
+// the way availability_tag's blank result correctly does for its
+// other caller (a plain, unrequested search result). Fall back to
+// "requested" rather than leaving the main pill blank on a card
+// that's only ever shown in this row because a request exists.
+```
+
+Above `pub(crate) fn refresh_requested_row(`:
+```
+/// Re-fetches just the Requested landing row and replaces `discover-requested`
+/// wholesale — called right after a new request is submitted (both the
+/// ordinary Request button and the Discover context menu's Request/Edit
+/// actions). Real bug, live-reported 2026-07-18: "if a request an item the
+/// request row did not update even thou it was added to the requests in the
+/// webinterface" — `submit_request`'s own success handler only patches the
+/// availability badge on whichever card is ALREADY visible somewhere
+/// (`patch_discover_card_availability`); a freshly-created request has never
+/// been in `discover-requested` before that moment, so there was nothing
+/// there for it to patch, and the row otherwise only refreshes once per
+/// session (`ensure_discover_landing`'s own guard). A full re-fetch of this
+/// one row (not all 6 — Trending/Popular/Upcoming didn't change) is cheap
+/// enough for an infrequent action like submitting a request.
+```
+
+Above `state.lock().unwrap().discover_known_requests = known_requests_from_row(&requested);`:
+```
+// Real bug fixed 2026-07-18 — see FjordState.discover_known_requests'
+// own doc comment. Refreshed here too, not just in
+// ensure_discover_landing, so a request submitted THIS session is
+// immediately known everywhere, not just after the next full landing
+// refresh.
+```
+
+Above `async fn fetch_new_in_theaters(`:
+```
+/// Fetches all 6 landing rows in parallel, once per session (guarded by
+/// `FjordState.discover_landing_fetched`, reset on disconnect/reconnect/
+/// sign-out since a different server means a different catalog). Same
+/// two-phase commit as `spawn_discover_search`: text-only cards land first,
+/// posters patch in as they arrive. Row 5 (Requested) is built differently
+/// from rows 0-4 — see `fetch_requested_row`'s doc comment — but folds into
+/// the same `metas_per_row`/`poster_jobs` shape immediately after, so the
+/// rest of this function (commit + poster fetch) doesn't need to know rows
+/// exist in two different shapes.
+/// "New in Theaters" — an honest APPROXIMATION, not a verified "still
+/// showing" signal: Seerr's `/discover/movies` has no `with_release_type`
+/// passthrough (confirmed by reading its real query schema, only a fixed
+/// allowlist), so this can't filter by release TYPE directly. Instead uses
+/// `primaryReleaseDateGte`/`Lte` (already supported, built for Discover
+/// Filters) over roughly the last 6 weeks — most wide releases' `primary`
+/// TMDB release date IS the theatrical date, but this isn't guaranteed for
+/// every title. Reuses `discover_movies_filtered` (Discover Filters'
+/// existing machinery) with a canned preset rather than a new fetch shape.
+/// Watchlist + Release Calendar, 2026-07-18.
+```
+
+Above `let requested_keys: std::collections::HashSet<(&'static str, String)> =`:
+```
+// Anything already in the Requested row shouldn't also show up in
+// Trending/Popular/Upcoming — real gap, live-reported 2026-07-18
+// ("If the series is in the request row it shuld not show up in any
+// other row in descovery, but shuld still show up when you search").
+// Deliberately only dedups against the Requested row, not the other
+// 5 rows against each other (confirmed via AskUserQuestion) — the
+// same title appearing in both Trending and Popular is normal for a
+// discovery page and left alone; search is untouched, per the user's
+// own explicit ask, since it isn't built from these landing-row
+// fetches at all. Keyed on (item_type, tmdb id) since a movie and a
+// tv show can share a raw tmdb id.
+```
+
+Above `let known = known_requests_from_row(&requested);`:
+```
+// Real bug fixed 2026-07-18 — see FjordState.discover_known_requests'
+// own doc comment: without this, an already-requested item that
+// still shows in Trending/Popular/Upcoming (not deduped out above,
+// since dedup only excludes items requested_not_available itself
+// returned) had its context menu offer "Request" instead of
+// "Edit/Cancel/View Request". Built from `requested` before it's
+// consumed by row 5's own metas_per_row entry below.
+```
+
+Above `tokio::spawn(build_calendar_entries(Arc::clone(&state2), ww.clone()));`:
+```
+// Real bug, live-reported 2026-07-19: `ensure_discover_watchlist`'s own
+// `build_calendar_entries` call races this task and near-always loses —
+// it reads `discover_known_requests` before this line above has had a
+// chance to populate it (this whole tokio::join! above is a network
+// round trip; the watchlist fetch is comparatively instant), so the
+// "Coming Up" row's candidate set (discover_watchlist_ids ∪
+// discover_known_requests) was empty at the one and only time
+// build_calendar_entries ever ran for a session with no watchlist
+// items, and nothing re-triggers it afterward — the row silently
+// stayed sentinel-only forever. Spawned (not awaited) so the calendar
+// rebuild's own per-item detail fetches don't delay committing the
+// rest of this landing-row screen.
+```
+
+Above `let results: Vec<_> = resp.results.into_iter()`:
+```
+// Real bug, live-reported 2026-08-12 ("Gran Hermano...
+// have the Mentalis's poster image" / "Law & order
+// missing poster on popular tv shows row but have
+// poster when you go in to the detail"). `metas` used
+// to be built by filter_map-ing `search_result_to_meta`
+// over `results` (which drops BLOCKLISTED items, not
+// just non-movie/tv ones), while the poster job's own
+// zip separately re-filtered `results` using only a
+// media_type check — the two filters disagreed on
+// blocklisted entries, so a single blocklisted item
+// anywhere in a row's raw results silently shifted
+// every SUBSEQUENT poster-job pairing in that row by
+// one position, assigning the wrong title's
+// poster_path (or none at all, once the shift ran past
+// the end) to every card after it. Fixed by deriving
+// metas and their poster jobs from one single filter
+// pass instead of two independently-filtered views of
+// the same data — they can no longer drift apart
+// because there's only one filtering decision left,
+// made once, per item.
+```
+
+Above `if !crate::seerr_session_current(&state_commit, &client_commit) { return; }`:
+```
+// Session guard (Bonfire Phase 1, step 8 audit, 2026-08-09) — this
+// function previously had NO staleness guard of any kind, not
+// even a generation counter; a sign-out/profile-switch (a
+// different Jellyfin user can have a different or no Seerr
+// connection at all) mid-fetch would otherwise land the OLD
+// connection's Discover rows into the new session's AppState.
+```
+
+(The block above `fetch_new_in_theaters` began with `ensure_discover_landing`'s doc, separated from it; a trimmed doc is back on `ensure_discover_landing`.)
+
+#### `crates/fjord-app/src/discover/landing.rs` — file header (TOC)
+```
+// ── fjord-app · discover/landing.rs ──────────────────────────────────────────
+//   ensure_discover_landing    fetches the 5 no-query landing rows (Trending/Popular
+//                              Movies/Popular TV/Upcoming Movies/Upcoming TV) once per
+//                              session (FjordState.discover_landing_fetched guard), on
+//                              first nav arrival at Discover; same text-first-then-posters
+//                              two-phase commit as search
+//   landing_row_get/_set/_lens  AppState accessors for the 9 fixed landing-row lists
+//                              (0=Trending..8=Watchlist), shared by the fetch and by
+//                              handle_key's landing branch; deliberately explicit `7 =>`/`8 =>`
+//                              arms, not a catch-all — a catch-all here would silently alias a
+//                              future 9th row instead of failing to compile (real gap caught
+//                              by an independent plan review when Watchlist/row 8 was added,
+//                              2026-07-20)
+//   request_entry/RequestEntry  one kept request's raw fields for the "Requested" landing row —
+//                              picks status vs status4k based on r.is4k (real bug fixed
+//                              2026-07-18: fetch_requested_row's own availability badge had the
+//                              identical tier-blindness bug as requested_not_available in
+//                              fjord-seerr, just manifesting as a wrong badge instead of a wrong
+//                              filter result); falls back to "requested" when the tier's own
+//                              status is Unknown rather than leaving the main pill blank (real
+//                              bug, live-reported 2026-07-18 — an active 4K request can sit at
+//                              status4k==Unknown indefinitely); computes other_tier_available
+//                              (OTHER tier already available, "Available in 2K/4K" pill) and
+//                              other_tier_requested (OTHER tier ALSO actively requested but not
+//                              yet available, "Also requested in 2K/4K" pill — via the sibling
+//                              dual_tier_tmdb_ids set, since one MediaRequest has no visibility
+//                              into whether a request for the other tier exists)
+//   dual_tier_tmdb_ids          tmdb ids with an active, not-yet-available request in BOTH
+//                              tiers within one requested_not_available result list
+//   fetch_new_in_theaters        canned DiscoverFilters preset (primaryReleaseDateGte=today-45d,
+//                              primaryReleaseDateLte=today, sort=popularity.desc) over the
+//                              existing discover_movies_filtered — an honest approximation,
+//                              Seerr's /discover/movies has no verified "still showing" signal
+// ─────────────────────────────────────────────────────────────────────────────
+```
+
+#### `crates/fjord-app/src/discover/search.rs`
+
+Above `const DISCOVER_AUTOFILL_ROWS: i32 = 6;`:
+```
+/// Rough target row count for "the grid looks full without scrolling" —
+/// deliberately a fixed estimate, not a pixel-exact viewport-height
+/// computation (that would need a new geometry property pushed from
+/// `MainWindow::sync_layout()`, mirroring `dash-cw`/`dash-ch`/`library-cols`,
+/// for comparatively little payoff over a conservative constant). Real UX
+/// gap, live-reported: "search should fill the screen so you don't need to
+/// go to the end of a row to get new items" — a single TMDB search page
+/// (~20 raw results, fewer once `person` is filtered out) often doesn't
+/// fill even a modest window, so the user hit the Down-triggered load-more
+/// on almost every search before this existed.
+```
+
+Above `while let Some(res) = set.join_next().await {`:
+```
+// Live-reported 2026-08-21 ("all the posters flash every time it loads
+// one item") — investigated as a commit-frequency problem first (a
+// short-lived batching window landed here, then a wider one was
+// attempted) before the user's own follow-ups ("why do we ned to flash
+// every poster when we trickle in data?", "its not good if the user
+// need to wait log for a big search") made the real shape of the ask
+// clear: keep the steady per-item trickle — don't delay or batch
+// commits at all, the first-found result should show the instant it's
+// ready — and instead stop animating each arrival at all. The actual
+// "flash" was never commit frequency; `set_row_data(idx, ...)` is
+// already a genuine single-row patch, confirmed by re-reading it, not
+// a model rebuild that could explain unrelated cards re-animating. It
+// was `MediaCard`'s own poster `FadeInTrigger` (widgets.slint) firing
+// on every has-poster transition — correct, deliberate motion in
+// isolation, but with ~20 cards each independently popping through
+// that same fade at a slightly different moment as their own fetch
+// completes, the accumulated effect across the whole grid reads as
+// continuous flashing rather than a calm progressive fill. Removed the
+// fade there instead (see widgets.slint) — a poster now simply appears
+// the instant its own row is patched, with no motion to draw the eye.
+// That's what makes committing per-arrival, with no batching window,
+// safe again: nothing here is trying to reduce how often a card
+// "flashes" any more, so there is no longer a size/timing dial to get
+// right — every completed fetch just lands as soon as it's done.
+```
+
+Above `warn!("seerr: search dispatched with no seerr_client set — not connected?");`:
+```
+// Silent no-op here used to look identical to "found nothing" from
+// the user's side — no error, no spinner, no log line. Real bug,
+// found live: a search typed while (for whatever reason)
+// `seerr_client` was `None` produced literally no feedback at all.
+```
+
+Above `let ww_searching = ww.clone();`:
+```
+// Real bug, live-reported with a video (2026-08-21) — the "No results
+// for X" empty-state text (discover.slint) is correctly gated on
+// `!discover-searching`, but this used to only flip searching=true
+// AFTER the 300ms debounce sleep below finished — leaving the whole
+// debounce window itself (every keystroke, not just the first) with
+// searching=false and discover-results still holding whatever the
+// PREVIOUS query left behind (empty, for the very first search from
+// the landing rows). The video showed exactly this: the full Trending/
+// Popular grid disappearing straight to a blank "No results" screen
+// the instant a character was typed, well before any search had
+// actually run. Fixed by setting it synchronously, right here, before
+// the debounce delay even starts — a stale (superseded) task's own
+// early-return below never touches this flag, so it stays true for the
+// whole gap and only the WINNING (non-superseded) task's own commit
+// closure or error branch ever clears it back to false.
+```
+
+Above `let results = response.results;`:
+```
+// Search commonly has far more than one page's worth of results
+// (a common word can run into the hundreds) — page 1 alone is what
+// used to cap Fjord's result count well below what Seerr's own web
+// UI shows for the same query, real bug, live-reported. This state
+// is what `spawn_discover_search_more` (below) reads to fetch
+// subsequent pages, triggered as the user's keyboard nav reaches
+// the last row of the grid.
+```
+
+Above `let mut metas: Vec<DiscoverCardMeta> = Vec::with_capacity(results.len());`:
+```
+// Real bug, live-reported 2026-08-12 ("Gran Hermano... have the
+// Mentalis's poster image" / "Law & order missing poster..."): metas
+// and poster_jobs used to be built from two INDEPENDENTLY filtered
+// views of `results` — `search_result_to_meta` also drops
+// blocklisted items, not just non-movie/tv ones, while the old
+// zip's own filter only checked media_type — so a blocklisted item
+// anywhere in the results silently shifted every poster-job pairing
+// after it by one position (same root cause as the identical bug in
+// ensure_discover_landing, see that function's own fix comment).
+// Fixed the same way: metas and poster_jobs are built together in
+// one single-pass filter, so they can't drift apart. patch_known_
+// request_state/patch_watchlist_state still run afterward, under
+// the lock — they mutate metas in place without changing its
+// length or order, so doing that second doesn't reopen the bug.
+```
+
+Above `for m in &mut metas {`:
+```
+// Real bug fixed 2026-07-18 — see FjordState.discover_known_requests'
+// own doc comment: search results never carried real request
+// state at all, so an already-requested item's context menu
+// offered "Request" instead of "Edit/Cancel/View Request".
+```
+
+Above `let old = g.get_discover_results();`:
+```
+// A fresh query always replaces the whole result set (a
+// different query has no reason to keep the same ids in the
+// same order, so apply_cards_preserving_identity's own
+// same-shape check would never fire here) — but rapid
+// keystrokes commonly land on overlapping results ("the
+// bour" -> "the bourn"), and blanking + re-fetching every
+// poster on each one is exactly the flash the user reported
+// while typing. Carry forward already-decoded posters by
+// (id, item_type) across the swap, same pattern
+// apply_search_filters already uses for its own re-filter.
+```
+
+Above `g.set_discover_results(crate::apply_cards_preserving_identity(&old, cards));`:
+```
+// Real bug, live-reported 2026-08-17 ("still flash every
+// item"): carrying posters forward (above) fixed the poster
+// BLANKING, but this still built a brand-new ModelRc every
+// commit — the exact Phase 96 class of bug (a fresh model
+// instance makes Slint destroy/recreate every delegate
+// element regardless of whether the underlying data
+// changed, re-triggering each card's own FadeInTrigger
+// fade-in). The doc comment this replaced argued a fresh
+// query "has no reason to keep the same ids in the same
+// order," which is true in general but not for the actual
+// reported case — overlapping keystrokes ("the bour" ->
+// "the bourn") very often DO return the same top results in
+// the same relative order (TMDB's own popularity sort is
+// stable across a narrowing query), so the same-shape check
+// routinely succeeds and was simply never being attempted.
+```
+
+Above `if let Some(vm) = existing.as_any().downcast_ref::<VecModel<CardItem>>() {`:
+```
+// True incremental append (2026-08-02, real bug live-reported
+// as "the grid flash several times" while searching): a page
+// 2/3/4 auto-load only ever ADDS rows to what's already on
+// screen, but swapping in a brand-new ModelRc — even one
+// built from the exact same existing rows plus the new ones
+// — makes Slint destroy and reconstruct every already-shown
+// card element (this file's own established "Phase 96 flash
+// bug"), discarding their already-decoded poster Images and
+// re-running each one's poster FadeInTrigger for no reason.
+// discover-results is always constructed as a VecModel
+// elsewhere in this file, so downcasting back to it and
+// calling extend() (one row_added notification for the
+// whole batch) appends onto the SAME live model instance —
+// existing rows are never touched. Falls back to a full
+// rebuild only if that assumption somehow doesn't hold.
+```
+
+#### `crates/fjord-app/src/discover/filters.rs`
+
+Above `pub(crate) const SORT_KEYS: &[(&str, &str)] = &[`:
+```
+// ── Discover filters (2026-07-18) ───────────────────────────────────────────
+//
+// Six pills: Type/Sort/Rating/Year are single-value (desc string shown in
+// the pill, internal key/value persisted in Config); Genre/Provider are
+// multi-select chip pickers (GenreItem/ProviderItem models, each row's own
+// `selected` toggled independently — TMDB's with_genres/with_watch_providers
+// both take pipe-separated OR, see DiscoverFilters' own doc comment in
+// fjord-seerr for why). Config stores the INTERNAL representation (""/
+// "movie"/"tv", ""/"rating"/"newest"/"oldest", a raw f32/u32 bucket floor,
+// genre NAMES (stable across the movie/TV id-space mismatch — see
+// GenreItem's own doc comment in theme.slint), provider ids (stable across
+// media types, unlike genre) — never the display string, which is derived
+// fresh by the *_desc functions below every time it's needed.
+```
+
+Above `fn sort_filtered_metas(items: &mut [FilteredRowItem], sort_key: &str) {`:
+```
+/// Merges movie + TV filtered-browse results into one grid for Type=All —
+/// confirmed via `AskUserQuestion`: interleaved by the ACTUAL value of
+/// whichever sort key is active (both types' `popularity`/`vote_average`
+/// are directly comparable; Newest/Oldest compare `year`, already
+/// normalized to a plain int regardless of which date field it came from),
+/// not the simpler movies-then-TV split. Implemented as concatenate-then-
+/// sort rather than a true two-pointer merge — the two inputs are already
+/// server-sorted, but re-sorting the small (≤2 pages') combined list
+/// outright is simpler code for the identical final order.
+/// Extracted from `merge_filtered_metas` (2026-07-31, code review finding)
+/// so `spawn_discover_filtered_browse_more` can re-sort the FULL accumulated
+/// set across a page boundary, not just each page's own batch — see that
+/// function's own doc comment for the bug this fixes.
+```
+
+Above `let all_metas = {`:
+```
+// Accumulate this page onto the full fetch history, then re-sort the
+// WHOLE set — real bug, code review 2026-07-31: sorting and
+// committing only each page's own batch (the old behavior) left the
+// combined list visibly out of order across the page boundary the
+// moment a later page's top item outranked an earlier page's tail
+// item, since a plain append never re-establishes global order.
+```
+
+#### `crates/fjord-app/src/discover/requests.rs`
+
+Above `pub(crate) fn discover_toggle_blocklist(`:
+```
+/// Add/remove Blocklist — wired from the Discover context menu's Blocklist
+/// row and RequestDetailScreen's Blocklist button. POST/DELETE, then patches
+/// `availability` on every visible card + RequestDetailScreen's own status
+/// fields if open for the same item. No id-set bookkeeping (unlike
+/// Watchlist) — Blocklisted rides entirely on the same `MediaStatus` data
+/// every card already carries, see `availability_tag`'s own doc comment;
+/// no jellyfin-star-equivalent either, since an in-library (Available) item
+/// is never blocklist-eligible in the first place. 2026-08-06, Seerr
+/// Blocklist support.
+```
+
+Above `let new_status_label: &'static str = if adding { "Blocklisted" } else { "" };`:
+```
+// remove_blocklist deletes the whole underlying Media row
+// server-side (confirmed from Seerr's real route source —
+// see remove_blocklist's own doc comment), so the item
+// genuinely reverts to untouched status on removal, not
+// just "not blocklisted" — both the pill (availability)
+// AND the tier status labels below reset to empty, matching
+// a never-touched item exactly.
+```
+
+Above `if adding {`:
+```
+// Blocklisting means "don't show this in Discover" —
+// see search_result_to_meta's own doc comment. A
+// fresh fetch already filters a blocklisted item out
+// on its own; this removes it from whatever's
+// ALREADY on screen right now (real bug, live-
+// reported: the item previously just sat there with
+// a "Blocklisted" pill instead of disappearing).
+// Un-blocklisting has nothing to remove — the item
+// was never re-added to any Discover model while it
+// stayed blocklisted, so it naturally reappears only
+// on the next real fetch, same as any other Seerr
+// state change in this app.
+```
+
+Above `let is_4k = g.get_request_detail_want_4k();`:
+```
+// Guard against double-submitting the SAME tier that's currently
+// selected in the modal — not "any status exists at all." 2K and 4K are
+// independently requestable (real bug fixed 2026-07-18: requesting 4K
+// used to blank out the whole Request flow, hiding 2K too — see
+// tier_status_label's own doc comment for the full story).
+```
+
+Above `let already_on_watchlist = g.get_request_detail_on_watchlist();`:
+```
+// Same reasoning: requesting something is a clear declaration of
+// interest, so a brand-new request also adds the item to the Watchlist
+// (2026-08-12, direct question: "shuld not requested item be added to
+// watchlist?") — guarded on not already being on it, both to avoid a
+// redundant POST and because Seerr's own add/remove semantics for an
+// already-watchlisted item aren't documented either way. Scoped to a
+// genuinely NEW request only (submit_edit_request does not do this) —
+// editing an existing request isn't a fresh declaration of interest the
+// same way a first request is, and an already-requested item was
+// already a watchlist candidate the first time around if this was
+// going to add it at all.
+```
+
+Above `if is_4k {`:
+```
+// Only the tier that was actually just requested —
+// the other tier's own status is untouched, so it
+// stays requestable (real bug fixed 2026-07-18: this
+// used to blank out BOTH tiers regardless of is_4k).
+```
+
+Above `refresh_requested_row(Arc::clone(&state), ww, rt2);`:
+```
+// The freshly-created request has never been in
+// discover-requested before now — patch_discover_card_availability
+// above only updates a card ALREADY visible elsewhere (search
+// grid/other landing rows), so the Requested row itself stays
+// stale without this (real bug, live-reported 2026-07-18).
+```
+
+Above `pub(crate) fn submit_edit_request(`:
+```
+/// Confirm inside the Request Options modal while `request-options-editing`
+/// is set (Discover context menu's Edit Request, 2026-07-18) — same shape
+/// as `submit_request` but PUTs the existing request instead of POSTing a
+/// new one, and deliberately does NOT read `request-detail-want-4k`: the
+/// tier can't be changed by editing (confirmed from Seerr's real route
+/// source — see `SeerrClient::update_request`'s own doc comment), so it's
+/// never sent. No `status != ""` guard, unlike `submit_request` — an
+/// existing request obviously already has one.
+```
+
+Above `pub(crate) fn discover_request_action(`:
+```
+/// Discover context menu's Cancel/Approve/Decline (2026-07-18) — all three
+/// share this exact shape: one Seerr call by request id, then either remove
+/// the card from `discover-requested` (Cancel) or leave it in place (its
+/// status/badge will simply be stale until the next landing-row fetch —
+/// Approve/Decline don't change what's ALREADY on screen enough to be worth
+/// a full row rebuild for an infrequent admin action). Also reloads
+/// `RequestDetailScreen` (via `open_discover_item`) if it's open for the
+/// exact item this request belongs to (added when the ⋮ More button gave
+/// this page its own path to these three actions) — simpler than hand-
+/// patching request-detail-status/-4k/-request-id per tier.
+```
+
+Above `let req_key = request_id.to_string();`:
+```
+// Real bug fixed 2026-07-18: Approve never patched request_pending
+// anywhere, so a non-admin could still see and attempt "Cancel
+// Request" on an already-approved request (which then fails
+// server-side, since DELETE requires status==PENDING). Also keeps
+// discover_known_requests in sync for both outcomes — approve
+// updates it to pending=false, cancel/decline remove the entry
+// entirely (the request no longer exists).
+```
+
+Above `if g.get_show_request_detail()`:
+```
+// If the Discover detail page is open for the exact item
+// this request belongs to, reload it fresh rather than
+// hand-patching request-detail-status/-4k/-request-id —
+// simpler than tracking which tier this request_id was
+// for, and matches refresh_requested_row's own
+// "just refetch" approach. Otherwise the page would keep
+// showing a request that no longer exists (Cancel) or a
+// stale Pending/"Needs Approval" label (Approve/Decline).
+```
+
+#### `crates/fjord-app/src/discover/trailers.rs`
+
+Above `pub(crate) fn start_trailer_check(`:
+```
+/// Decides what the RequestDetail Trailer button shows (2026-10-04, live-
+/// reported: a trailer that won't play shouldn't look playable). TMDB lists
+/// trailers YouTube has since blocked for this region or removed, and only
+/// yt-dlp can tell — YouTube's public oEmbed answers 200 for the very video
+/// yt-dlp reports "Video unavailable" (checked live). So: answer from the
+/// session cache when possible, otherwise show greyed "Checking…" and run
+/// `yt-dlp --simulate` (no download) per candidate, best first, until one
+/// resolves. Sets request-detail-trailer-state "ok" (+ -trailer-url) or
+/// "none". UI thread only. `generation` = request-detail-open-gen of the screen
+/// this is for; a later open of another title discards the result.
+```
+
+Above `trailer_url_allowed` (trailer_candidates' doc, separated from it when trailer_url_allowed was inserted; a trimmed doc is back on trailer_candidates):
+```
+/// The videos to offer as "Watch Trailer", best first: every `Trailer`, then
+/// every `Teaser` (a shorter preview, still trailer-like); a `Clip`/
+/// `Featurette`/etc. isn't what "Watch Trailer" implies. Several, not one
+/// (2026-10-04): TMDB keeps listing videos YouTube has since blocked or
+/// removed, so start_trailer_check walks this list until one actually plays.
+/// Capped at 4 to bound the check. `url` is already a fully-formed YouTube
+/// watch-page link — see `Video`'s own doc comment in fjord-seerr for why
+/// only `kind`/`url` are modeled at all.
+```
+
+#### `crates/fjord-app/src/discover/keys.rs`
+
+Above `fn discover_popup_options(kind: &str) -> Vec<&'static str> {`:
+```
+// ── Keyboard: Discover filter bar + popups (2026-07-18) ─────────────────────
+//
+// A 4th Discover keyboard mechanism, alongside the search field's raw
+// pre-dispatch, `fs<0` sidebar, and `fs>=0` grid/landing — real, non-trivial
+// wiring, not a drop-in "nearest zone" hand-off (see this module's own
+// notes elsewhere on why). Two states: `discover-filter-bar-active` (no
+// popup open — Left/Right move the pill cursor, matching Library grid's
+// own sort-bar contract of "cursor moves freely, Enter applies"), and
+// `discover-popup-open` (a popup is open — captures ALL input, same as
+// Settings' own `settings-dropdown-open` capture, but built fresh here
+// since `SettingsDropdown` itself has no keyboard path of its own to
+// reuse — see `ensure_discover_filter_options`'s own doc comment).
+```
+
+Above `pub(crate) fn handle_key(action: &Action, g: &AppState) -> bool {`:
+```
+// ── Keyboard: Discover grid (search-field typing is a raw pre-dispatch in keys.rs) ──
+//
+// `focused_section` (`fs`, shared across every dashboard-tier tab) is the
+// sidebar/content toggle: `< 0` = sidebar has focus, `>= 0` = the screen's own
+// content does. Every other dashboard-tier tab gets this for free from
+// `dispatch_dashboard`; Discover has its own `AppMode` (not `Dashboard`, since
+// its content is a flat poster grid, not `dispatch_dashboard`'s SectionRow
+// model), so it has to replicate the same contract itself — real bug, found
+// live: without this, arriving at Discover with zero results (the state on
+// every first visit, before a query is typed) had no keyboard path out at
+// all, since the old code only ever handled `Action::Up` there.
+```
+
+Above `if fs as usize == LANDING_ROW_COMING_UP && c == count - 1 && count > 0 {`:
+```
+// Real bug caught in review before shipping: handle_key_landing
+// is one generic function shared by all 8 rows, deriving
+// media_type from whatever card is focused with no per-card
+// special case — without this check, Enter on the "Coming Up"
+// row's trailing sentinel (no real tmdb id) would try to open a
+// Discover item for garbage data instead of the calendar
+// (Watchlist + Release Calendar, 2026-07-18).
+```
+
+Above `2 => {`:
+```
+// Cast & Crew row — L/R scroll, Enter opens person detail
+// (2026-08-13 — mirrors the Slint item-selected click handler in
+// request_detail.slint; same "keyboard Confirm and a mouse click
+// reach the identical callback" discipline this whole screen's
+// other zones already follow).
+```
+
+Above `if !slots.contains(&g.get_request_detail_btn_focused()) {`:
+```
+// Clamp request-detail-btn-focused to whatever's actually present.
+// Recomputed on every zone-0 key press rather than only at zone-entry,
+// so it self-corrects regardless of which transition landed here —
+// same "gaps are fine" idiom as existing_discover_menu_rows's own
+// Up/Down, generalized from the original hardcoded Request/Trailer
+// binary once ⋮ More became a third possible slot (2026-07-18).
+```
+
+Above `3 => g.invoke_request_detail_toggle_watchlist(),`:
+```
+// Real pre-existing bug, fixed 2026-08-06: this match had no
+// arm for slot 3 (Watchlist) at all — keyboard Enter on that
+// button silently did nothing, only mouse click worked (via
+// request_detail.slint's own `clicked =>` handler). Fixed
+// alongside adding slot 4 so it doesn't inherit the same gap.
+```
+
+#### `crates/fjord-app/src/discover/search.rs` — file header (TOC)
+```
+// ── fjord-app · discover/search.rs ───────────────────────────────────────────
+//   spawn_discover_search      debounced (300ms) + generation-guarded search dispatch (page 1);
+//                              text-only cards pushed immediately, posters patched in
+//                              as they arrive (bounded concurrency, TMDB CDN, own disk cache);
+//                              records page/total_pages in FjordState for spawn_discover_search_more
+//   spawn_discover_search_more  fetches+appends the next results page — triggered by
+//                              handle_key's Down-at-last-row via the discover-load-more
+//                              callback (Seerr/TMDB search commonly has far more pages than
+//                              the single page v1 ever fetched, capping results well below
+//                              what Seerr's own web UI shows for the same query); no-ops
+//                              quietly with no next page / a fetch already in flight
+//   fetch_and_patch_posters    bounded-concurrency TMDB poster fetch + in-place model patch,
+//                              shared by both search functions above (idx is pre-offset by
+//                              the caller for the append case)
+// ─────────────────────────────────────────────────────────────────────────────
+```
+
+#### `crates/fjord-app/src/discover/filters.rs` — file header (TOC)
+```
+// ── fjord-app · discover/filters.rs ──────────────────────────────────────────
+//   ── Discover filters (2026-07-18, planned via /plan, 3 rounds of
+//      AskUserQuestion — see CLAUDE.md's Seerr integration section) ──
+//   ensure_discover_filter_options  fetches genre + watch-provider lists (both media
+//                              types) once per session; also restores discover-filters-active
+//                              + the 4 *-desc properties from persisted Config and, if filters
+//                              were already active, kicks off spawn_discover_filtered_browse
+//                              immediately rather than waiting for a pill touch
+//   build_discover_filters      current filter selections -> a real fjord_seerr::DiscoverFilters
+//                              for one media type's /discover/* call; genre NAMES re-resolved
+//                              to that type's own raw id (movie/TV genre id spaces don't match)
+//   build_genre_items/build_provider_items/push_or_merge_genre/refresh_discover_filter_models
+//                              raw Seerr genre/provider lists -> Slint GenreItem/ProviderItem
+//                              chip models; push_or_merge_genre merges a same-named genre's
+//                              movie-side and TV-side ids into one chip (GenreItem carries
+//                              both, since the id spaces don't overlap); providers dedupe by
+//                              id directly (shared across media types, unlike genre)
+//   discover_filters_active/search_filters_active  discover_filters_active: is ANY of the
+//                              6 dimensions non-default (landing-rows vs filtered-browse
+//                              switch); search_filters_active: the narrower subset that
+//                              actually applies to search results (excludes Type — /search
+//                              always mixes both types — and Provider, which /search's
+//                              response carries no data for at all)
+//   apply_search_filters        client-side genre/rating/year/sort pass over the full raw
+//                              fetch history (FjordState.discover_search_metas) — the only
+//                              way filters can apply to search results, since /search takes
+//                              no filter params; preserves posters by id lookup (not index —
+//                              filtering reorders/removes rows); must run strictly AFTER
+//                              fetch_and_patch_posters finishes, never before
+//   build_filtered_metas/merge_filtered_metas/sort_filtered_metas  SearchResult list ->
+//                              (meta, poster_path) pairs; merge_filtered_metas interleaves
+//                              movie+TV results into one grid for Type=All, sorted (via
+//                              sort_filtered_metas, extracted 2026-07-31 so _more can reuse it
+//                              on the FULL accumulated set, not just one page — see below) by
+//                              the active sort key's real value (concatenate-then-sort, not a
+//                              two-pointer merge — the inputs are small enough that this is
+//                              simpler for the same result)
+//   spawn_discover_filtered_browse/_more  the new filtered-browse view (query empty, >=1
+//                              filter active) — mirrors spawn_discover_search/_more's two-
+//                              phase commit shape but sources from discover_movies_filtered/
+//                              discover_tv_filtered (real server-side filtering); fetches both
+//                              types in parallel when Type=All; shares spawn_discover_search's
+//                              OWN discover_gen counter (required — a race between the two
+//                              view types would otherwise clobber discover-results); load-more
+//                              advances both underlying TMDB pages in lockstep, stopping on
+//                              max() of the two total_pages so Type=All doesn't cut off early;
+//                              real bug fixed 2026-07-31 (code review) — _more used to sort
+//                              and commit only each page's own batch, silently breaking global
+//                              sort order across the page boundary; now accumulates every
+//                              fetched page into FjordState.discover_filtered_metas and
+//                              re-sorts the WHOLE set on every page, preserving already-known
+//                              posters by id (same idiom as home.rs::refresh_row_preserving_-
+//                              posters) and skipping a redundant re-fetch for them
+//   build_filtered_metas       bumped pub(crate) — reused verbatim (no changes) by Detail/Series
+//                              Recommended and Collection Missing Items, all of which already
+//                              have a plain &[SearchResult] to convert
+// ─────────────────────────────────────────────────────────────────────────────
+```
+
+#### `crates/fjord-app/src/discover/requests.rs` — file header (TOC)
+```
+// ── fjord-app · discover/requests.rs ─────────────────────────────────────────
+//   submit_request              POST /request (seasons + is4k + selected tag ids + selected
+//                              profileId, 0/Default omitted); on success flips ONLY the just-
+//                              requested tier's own request-detail-status/-4k (real bug fixed
+//                              2026-07-18: used to blank out BOTH tiers regardless of is_4k,
+//                              hiding the still-open other tier's own Request option entirely —
+//                              "if you reqest 4k then the requestbutton changes to requested...
+//                              so you cant also request 2k") + patches the originating Discover
+//                              card + toasts
+// ─────────────────────────────────────────────────────────────────────────────
+```
+
+#### `crates/fjord-app/src/discover/trailers.rs` — file header (TOC)
+```
+// ── fjord-app · discover/trailers.rs ─────────────────────────────────────────
+//   trailer_url_allowed         https YouTube only — every trailer URL passes it before yt-dlp/mpv
+//                               (2026-10-09 security review; unit-tested)
+//   trailer_candidates          MovieDetails/TvDetails.relatedVideos -> trailer URLs, best first
+//   start_trailer_check         background yt-dlp check of those candidates → request-detail-
+//                               trailer-state "checking"/"ok"/"none" + -trailer-url (2026-10-04)
+//   mark_trailer_unplayable     a trailer that failed to play → remembered, re-check the rest
+//                              (prefers Trailer, falls back to Teaser, else None)
+//   wire_trailers          callbacks moved from main() (0.5.0 step 3): yt-dlp detection (once) + Watch Trailer
+//   detect_yt_dlp / trailer_ytdl_format  is yt-dlp installed; the format string trailers use
+// ─────────────────────────────────────────────────────────────────────────────
+```
+
+#### `crates/fjord-app/src/discover/keys.rs` — file header (TOC)
+```
+// ── fjord-app · discover/keys.rs ─────────────────────────────────────────────
+//   set_quality                swaps in the other tier's pre-fetched tags/profiles/selected-
+//                              profile-id when Quality actually changes — instant, no
+//                              re-fetch/race, since both tiers were fetched up front; shared
+//                              by the keyboard handler and the request-detail-set-quality
+//                              callback the 2K/4K buttons' mouse clicks go through
+//   handle_key                  Discover screen: replicates dispatch_dashboard's
+//                              focused-section sidebar/content contract itself (Discover has
+//                              its own AppMode, not Dashboard, so doesn't get this for free) —
+//                              fs<0 = sidebar (Up/Down cycle tabs, Right enters); fs>=0 = grid,
+//                              2D nav mirrors LibraryGrid's math (AppState.library-cols),
+//                              Left-at-col-0/Back return to the sidebar. Search-field typing is
+//                              a separate raw-key pre-dispatch in keys.rs (handle_discover_search),
+//                              mirroring browse.rs's handle_browse_search. Action::OpenContextMenu
+//                              (C key) in both the grid and handle_key_landing invokes
+//                              open-context-menu-discover(card) with the focused card (2026-07-18)
+//   existing_zones/handle_key_request_detail  back -> button row -> storyline
+//                              (collapsible overview) -> cast row — Up/Down step to the
+//                              nearest zone that exists for this item.
+//   existing_detail_btn_slots   button row's own "gaps are fine" slot list (2026-07-18,
+//                              generalized from the original hardcoded Request/Trailer binary
+//                              once a 3rd slot joined it): 0=Request (at least one tier still
+//                              requestable), 1=Trailer (found + yt-dlp available), 2=⋮ More
+//                              (opens the Discover context menu — View Request/Edit/Cancel/
+//                              Approve/Decline — sourced from request-detail-request-id/
+//                              -pending/-mine rather than a CardItem; only shown once a request
+//                              exists). Left/Right move within existing slots; Confirm dispatches
+//                              open-request-options/play-trailer/open-discover-menu-from-detail.
+//                              Request opens the Request Options modal rather than exposing
+//                              4K/tags/seasons inline (see below); Trailer button fires
+//                              play-trailer() (Watch Trailer — Discover only, see CLAUDE.md's
+//                              Seerr integration section).
+//   existing_option_zones/handle_key_request_options  Request Options modal: Quality (2K/4K)
+//                              row -> profile row (radio-select) -> tags row -> seasons row ->
+//                              confirm row (Cancel/Request), same skip-absent-zones idiom as
+//                              existing_zones but its own numbering
+//   discover_popup_options/open_discover_popup/handle_key_discover_popup  the Type/Sort/
+//                              Rating/Year single-select popups + Genre/Provider multi-select
+//                              chip popups opened from the filter bar — its own dropdown/
+//                              zone state machine (modeled on, not reused from,
+//                              settings.rs::dispatch_settings/handle_key_request_options,
+//                              since Discover's keyboard model has no existing "capture all
+//                              input while a popup is open" mechanism of its own); mouse
+//                              clicks on PopupOption/FilterChip (discover.slint) set the same
+//                              cursor state then invoke Action::Confirm through this same
+//                              function via the discover-popup-confirm callback, so mouse and
+//                              keyboard can never diverge (the exact bug class Phase 142's
+//                              zone-numbering note documents)
+//   handle_key_discover_filter_bar  Left/Right move the cursor across the 7 pills (Type/
+//                              Genre/Sort/Rating/Year/Provider/Clear), Up returns to the
+//                              search field, Down enters the grid/landing rows, Confirm opens
+//                              the focused pill's popup (or fires Clear); mouse clicks on
+//                              FilterPill mirror the popup pattern above (set state, invoke
+//                              Action::Confirm through this function via discover-filter-bar-
+//                              confirm)
+//   handle_key_landing          Confirm/OpenContextMenu on the Coming Up row's sentinel card
+//                              (last card, row index LANDING_ROW_COMING_UP) special-cased to
+//                              open the calendar / no-op instead of falling through to the
+//                              generic open_discover_item/open_context_menu_discover
+// ─────────────────────────────────────────────────────────────────────────────
+```
+
+Above `existing_detail_btn_slots` (doc listed 3 slots; there are 5 since Watchlist/Blocklist):
+```
+/// Which of zone 0's (button row) 3 possible slots exist for the current
+/// item — same "gaps are fine" idiom as `existing_zones`/
+/// `existing_discover_menu_rows`: 0=Request (at least one tier still ""),
+/// 1=Trailer (found + yt-dlp available), 2=⋮ More (a request already
+/// exists). Slot values are indices into `request-detail-btn-focused`, not
+/// a positional/visual-order constraint — `request_detail.slint` renders
+/// them in this same 0/1/2 order, so here they also happen to match, unlike
+/// the Discover context menu's row 5 (see context_menu.rs's own note on
+/// that).
+```

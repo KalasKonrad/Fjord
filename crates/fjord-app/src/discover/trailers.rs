@@ -1,24 +1,16 @@
-// ── fjord-app · discover/trailers.rs ─────────────────────────────────────────
-//   trailer_url_allowed         https YouTube only — every trailer URL passes it before yt-dlp/mpv
-//                               (2026-10-09 security review; unit-tested)
-//   trailer_candidates          MovieDetails/TvDetails.relatedVideos -> trailer URLs, best first
-//   start_trailer_check         background yt-dlp check of those candidates → request-detail-
-//                               trailer-state "checking"/"ok"/"none" + -trailer-url (2026-10-04)
-//   mark_trailer_unplayable     a trailer that failed to play → remembered, re-check the rest
-//                              (prefers Trailer, falls back to Teaser, else None)
-//   wire_trailers          callbacks moved from main() (0.5.0 step 3): yt-dlp detection (once) + Watch Trailer
+// ── fjord-app · discover/trailers.rs ────────────────────────────────────────
+//   trailer_url_allowed        https YouTube only — every trailer URL passes it before yt-dlp/mpv
+//                              (unit-tested)
+//   trailer_candidates         relatedVideos → trailer URLs, best first (Trailer, then Teaser; max 4)
+//   start_trailer_check        yt-dlp --simulate over the candidates → request-detail-trailer-state
+//                              "checking"/"ok"/"none" + -trailer-url (session cache)
+//   trailer_plays              one yt-dlp check (URL after `--`)
+//   mark_trailer_unplayable    a trailer that failed to play → remembered, re-check the rest
 //   detect_yt_dlp / trailer_ytdl_format  is yt-dlp installed; the format string trailers use
+//   wire_trailers              callbacks moved from main() (0.5.0 step 3): yt-dlp detection (once) + Watch Trailer
 // ─────────────────────────────────────────────────────────────────────────────
 use super::*;
 
-/// The videos to offer as "Watch Trailer", best first: every `Trailer`, then
-/// every `Teaser` (a shorter preview, still trailer-like); a `Clip`/
-/// `Featurette`/etc. isn't what "Watch Trailer" implies. Several, not one
-/// (2026-10-04): TMDB keeps listing videos YouTube has since blocked or
-/// removed, so start_trailer_check walks this list until one actually plays.
-/// Capped at 4 to bound the check. `url` is already a fully-formed YouTube
-/// watch-page link — see `Video`'s own doc comment in fjord-seerr for why
-/// only `kind`/`url` are modeled at all.
 /// A trailer URL Fjord will hand to yt-dlp or mpv: `https` on YouTube only
 /// (2026-10-09 security review). The URL comes from the server: anything
 /// starting with `-` would be read by yt-dlp as an option (`--exec=…` runs
@@ -37,6 +29,11 @@ pub(crate) fn trailer_url_allowed(url: &str) -> bool {
         )
 }
 
+/// The videos to offer as "Watch Trailer", best first: every `Trailer`, then every
+/// `Teaser` (a `Clip`/`Featurette` isn't what "Watch Trailer" means). Several, not one:
+/// TMDB keeps listing videos YouTube has since blocked or removed, so
+/// start_trailer_check walks the list until one plays. Capped at 4; only URLs passing
+/// `trailer_url_allowed`. `url` is a full YouTube watch link (see `Video` in fjord-seerr).
 pub(crate) fn trailer_candidates(videos: &[fjord_seerr::Video]) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     for kind in ["Trailer", "Teaser"] {
@@ -57,15 +54,12 @@ pub(crate) fn trailer_candidates(videos: &[fjord_seerr::Video]) -> Vec<String> {
     out
 }
 
-/// Decides what the RequestDetail Trailer button shows (2026-10-04, live-
-/// reported: a trailer that won't play shouldn't look playable). TMDB lists
-/// trailers YouTube has since blocked for this region or removed, and only
-/// yt-dlp can tell — YouTube's public oEmbed answers 200 for the very video
-/// yt-dlp reports "Video unavailable" (checked live). So: answer from the
-/// session cache when possible, otherwise show greyed "Checking…" and run
-/// `yt-dlp --simulate` (no download) per candidate, best first, until one
-/// resolves. Sets request-detail-trailer-state "ok" (+ -trailer-url) or
-/// "none". UI thread only. `generation` = request-detail-open-gen of the screen
+/// Decides what the RequestDetail Trailer button shows: TMDB lists trailers YouTube
+/// has since blocked or removed, and only yt-dlp can tell (YouTube's oEmbed answers
+/// 200 for videos yt-dlp reports "Video unavailable"). From the session cache when
+/// possible; otherwise greyed "Checking…" while `yt-dlp --simulate` (no download)
+/// tries the candidates best first until one resolves. Sets request-detail-trailer-state
+/// "ok" (+ -trailer-url) or "none". UI thread only. `generation` = request-detail-open-gen of the screen
 /// this is for; a later open of another title discards the result.
 pub(crate) fn start_trailer_check(
     state: &Arc<Mutex<FjordState>>,

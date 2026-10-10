@@ -1,36 +1,19 @@
 // ── fjord-app · discover/landing.rs ──────────────────────────────────────────
-//   ensure_discover_landing    fetches the 5 no-query landing rows (Trending/Popular
-//                              Movies/Popular TV/Upcoming Movies/Upcoming TV) once per
-//                              session (FjordState.discover_landing_fetched guard), on
-//                              first nav arrival at Discover; same text-first-then-posters
-//                              two-phase commit as search
-//   landing_row_get/_set/_lens  AppState accessors for the 9 fixed landing-row lists
-//                              (0=Trending..8=Watchlist), shared by the fetch and by
-//                              handle_key's landing branch; deliberately explicit `7 =>`/`8 =>`
-//                              arms, not a catch-all — a catch-all here would silently alias a
-//                              future 9th row instead of failing to compile (real gap caught
-//                              by an independent plan review when Watchlist/row 8 was added,
-//                              2026-07-20)
-//   request_entry/RequestEntry  one kept request's raw fields for the "Requested" landing row —
-//                              picks status vs status4k based on r.is4k (real bug fixed
-//                              2026-07-18: fetch_requested_row's own availability badge had the
-//                              identical tier-blindness bug as requested_not_available in
-//                              fjord-seerr, just manifesting as a wrong badge instead of a wrong
-//                              filter result); falls back to "requested" when the tier's own
-//                              status is Unknown rather than leaving the main pill blank (real
-//                              bug, live-reported 2026-07-18 — an active 4K request can sit at
-//                              status4k==Unknown indefinitely); computes other_tier_available
-//                              (OTHER tier already available, "Available in 2K/4K" pill) and
-//                              other_tier_requested (OTHER tier ALSO actively requested but not
-//                              yet available, "Also requested in 2K/4K" pill — via the sibling
-//                              dual_tier_tmdb_ids set, since one MediaRequest has no visibility
-//                              into whether a request for the other tier exists)
-//   dual_tier_tmdb_ids          tmdb ids with an active, not-yet-available request in BOTH
-//                              tiers within one requested_not_available result list
-//   fetch_new_in_theaters        canned DiscoverFilters preset (primaryReleaseDateGte=today-45d,
-//                              primaryReleaseDateLte=today, sort=popularity.desc) over the
-//                              existing discover_movies_filtered — an honest approximation,
-//                              Seerr's /discover/movies has no verified "still showing" signal
+//   LANDING_ROW_NEW_IN_THEATERS / LANDING_ROW_COMING_UP  named landing-row indices
+//   landing_row_get/_set/_lens the 9 landing-row models (0=Trending … 8=Watchlist), explicit arms
+//                              (no catch-all), shared by the fetch and handle_key's landing branch
+//   movie_details_to_meta / tv_details_to_meta  Requested-row card meta from a detail fetch
+//   RequestEntry / request_entry  one request for the Requested row: status vs status4k by the
+//                              request's tier ("requested" when that status is Unknown), plus
+//                              other_tier_available ("Available in 2K/4K") and other_tier_requested
+//                              ("Also requested in 2K/4K", via dual_tier_tmdb_ids)
+//   dual_tier_tmdb_ids         tmdb ids with active, unfulfilled requests in BOTH tiers
+//   fetch_requested_row / refresh_requested_row  the Requested row (refreshed after a new request)
+//   fetch_new_in_theaters      canned filter preset (primary release date in the last ~45 days,
+//                              popularity) — an approximation, Seerr can't filter by release type
+//   ensure_discover_landing    all landing rows in parallel, once per session; text first, then
+//                              posters; dedups the discovery rows against Requested; fills
+//                              discover_known_requests and then rebuilds the calendar
 // ─────────────────────────────────────────────────────────────────────────────
 use super::*;
 
@@ -42,23 +25,12 @@ use super::*;
 pub(crate) const LANDING_ROW_NEW_IN_THEATERS: usize = 6;
 
 pub(crate) const LANDING_ROW_COMING_UP: usize = 7;
-// Row 8 = Watchlist (2026-07-20), appended at the end — not inserted —
-// the established "append, don't insert" rule this codebase already
-// follows for landing-row indices, avoiding the renumbering risk a
-// mid-list insert would carry. No named const: unlike Coming Up it has no
-// sentinel card / no keyboard special-case, so nothing outside
-// landing_row_get/_set/_lens needs to know its index by name. Deliberately
-// NOT deduped against the other 5 discovery rows either (Trending/Popular/
-// Upcoming/New in Theaters) — the existing dedup-against-Requested logic
-// below is a special case for Requested specifically, not a general "hide
-// personal-list items elsewhere" rule; Coming Up already sets the
-// precedent of not needing one.
+// Row 8 = Watchlist, appended (landing-row indices are only ever appended, never
+// inserted). No named const: it has no sentinel or keyboard special case. Not deduped
+// against the discovery rows — only Requested dedups (see below).
 
-// landing_row_get/_set deliberately end in explicit `7 =>`/`8 =>` arms, NOT
-// a catch-all `_ =>` — a catch-all here would silently alias a future 9th
-// row to whichever arm the catch-all resolves to instead of failing to
-// compile (real gap caught by an independent plan review before this row
-// was added, 2026-07-20).
+// Explicit `7 =>`/`8 =>` arms, no catch-all `_ =>`: a catch-all would silently
+// alias a new row to an existing one instead of failing to compile.
 pub(crate) fn landing_row_get(g: &AppState, idx: usize) -> ModelRc<CardItem> {
     match idx {
         0 => g.get_discover_trending(),
@@ -162,18 +134,12 @@ fn tv_details_to_meta(
 
 pub(crate) type RequestedRowItem = (DiscoverCardMeta, Option<String>);
 
-/// One kept request's raw fields, tagged with which endpoint its detail
-/// fetch needs — `is4k`/`other_tier_available` are what let the card show
-/// "4K Requested" plus a separate "Available in 2K" badge instead of just a
-/// flat, tier-blind "Requested" (see `requested_not_available`'s own doc
-/// comment in fjord-seerr for why `status`/`status4k` must be picked based
-/// on which tier the request is actually for, not `status` unconditionally
-/// — the identical bug, fixed here too since this row builds its badge
-/// text independently of that filter). `request_id`/`pending`/`mine` feed
-/// the Discover context menu's Edit/Cancel/Approve/Decline row set
-/// (2026-07-18) — `pending`/`mine` are the request's own approval-workflow
-/// state (`MediaRequest.status`/`requestedBy.id`), a different thing from
-/// `availability` (media fulfillment status).
+/// One kept request's raw fields + which endpoint its detail fetch needs.
+/// `is4k`/`other_tier_available` let the card say "4K Requested" + "Available in 2K"
+/// instead of a tier-blind "Requested" (`status` vs `status4k` must follow the request's
+/// tier — see `requested_not_available` in fjord-seerr). `request_id`/`pending`/`mine`
+/// feed the context menu's Edit/Cancel/Approve/Decline rows; `pending`/`mine` are the
+/// request's workflow state, not media availability.
 struct RequestEntry {
     media_type: &'static str,
     tmdb_id: i64,
@@ -206,18 +172,10 @@ fn request_entry(
     } else {
         (media.status(), media.status4k())
     };
-    // A row reaching this function is, by construction, an active request
-    // for this exact tier (requested_not_available's own filter guarantees
-    // it) — but Seerr can still report that tier's own media status as
-    // Unknown well after the request was created (confirmed live,
-    // 2026-07-18: 3 of 49 real 4K requests on a real account had
-    // status4k==Unknown despite a genuine MediaRequest existing — most
-    // likely a TV show whose top-level status hasn't been recomputed from
-    // its season-level state), which must not read as "no request" here
-    // the way availability_tag's blank result correctly does for its
-    // other caller (a plain, unrequested search result). Fall back to
-    // "requested" rather than leaving the main pill blank on a card
-    // that's only ever shown in this row because a request exists.
+    // A row here is always an active request for this tier, but Seerr can report the
+    // tier's media status as Unknown long after the request (seen on 3 of 49 real 4K
+    // requests — likely a series whose top-level status wasn't recomputed). Show
+    // "requested" rather than a blank pill.
     let availability = match availability_tag(requested_status) {
         "" => "requested",
         tag => tag,
@@ -346,19 +304,11 @@ async fn fetch_requested_row(
     out.into_iter().flatten().collect()
 }
 
-/// Re-fetches just the Requested landing row and replaces `discover-requested`
-/// wholesale — called right after a new request is submitted (both the
-/// ordinary Request button and the Discover context menu's Request/Edit
-/// actions). Real bug, live-reported 2026-07-18: "if a request an item the
-/// request row did not update even thou it was added to the requests in the
-/// webinterface" — `submit_request`'s own success handler only patches the
-/// availability badge on whichever card is ALREADY visible somewhere
-/// (`patch_discover_card_availability`); a freshly-created request has never
-/// been in `discover-requested` before that moment, so there was nothing
-/// there for it to patch, and the row otherwise only refreshes once per
-/// session (`ensure_discover_landing`'s own guard). A full re-fetch of this
-/// one row (not all 6 — Trending/Popular/Upcoming didn't change) is cheap
-/// enough for an infrequent action like submitting a request.
+/// Re-fetches just the Requested row and replaces `discover-requested` — after a new
+/// request (Request button, context-menu Request/Edit). A brand-new request was never
+/// in the row, so `patch_discover_card_availability` had nothing to patch, and the row
+/// otherwise loads once per session. Re-fetching this one row is cheap for an
+/// infrequent action.
 pub(crate) fn refresh_requested_row(
     state: Arc<Mutex<FjordState>>,
     ww: Weak<MainWindow>,
@@ -373,11 +323,8 @@ pub(crate) fn refresh_requested_row(
     };
     rt.spawn(async move {
         let requested = fetch_requested_row(&client, my_user_id).await;
-        // Real bug fixed 2026-07-18 — see FjordState.discover_known_requests'
-        // own doc comment. Refreshed here too, not just in
-        // ensure_discover_landing, so a request submitted THIS session is
-        // immediately known everywhere, not just after the next full landing
-        // refresh.
+        // Refresh discover_known_requests here too, so a request made this session is known
+        // everywhere at once.
         state.lock().unwrap().discover_known_requests = known_requests_from_row(&requested);
         let poster_jobs: Vec<(usize, String, String, String)> = requested
             .iter()
@@ -461,25 +408,11 @@ pub(crate) fn refresh_requested_row(
     });
 }
 
-/// Fetches all 6 landing rows in parallel, once per session (guarded by
-/// `FjordState.discover_landing_fetched`, reset on disconnect/reconnect/
-/// sign-out since a different server means a different catalog). Same
-/// two-phase commit as `spawn_discover_search`: text-only cards land first,
-/// posters patch in as they arrive. Row 5 (Requested) is built differently
-/// from rows 0-4 — see `fetch_requested_row`'s doc comment — but folds into
-/// the same `metas_per_row`/`poster_jobs` shape immediately after, so the
-/// rest of this function (commit + poster fetch) doesn't need to know rows
-/// exist in two different shapes.
-/// "New in Theaters" — an honest APPROXIMATION, not a verified "still
-/// showing" signal: Seerr's `/discover/movies` has no `with_release_type`
-/// passthrough (confirmed by reading its real query schema, only a fixed
-/// allowlist), so this can't filter by release TYPE directly. Instead uses
-/// `primaryReleaseDateGte`/`Lte` (already supported, built for Discover
-/// Filters) over roughly the last 6 weeks — most wide releases' `primary`
-/// TMDB release date IS the theatrical date, but this isn't guaranteed for
-/// every title. Reuses `discover_movies_filtered` (Discover Filters'
-/// existing machinery) with a canned preset rather than a new fetch shape.
-/// Watchlist + Release Calendar, 2026-07-18.
+/// "New in Theaters" — an APPROXIMATION, not a verified "still showing" signal:
+/// Seerr's `/discover/movies` can't filter by release type (fixed query allowlist), so
+/// this uses `primaryReleaseDateGte`/`Lte` over roughly the last 6 weeks (a wide
+/// release's primary TMDB date is usually the theatrical one). Reuses
+/// `discover_movies_filtered` with a canned preset.
 async fn fetch_new_in_theaters(
     client: &fjord_seerr::SeerrClient,
 ) -> anyhow::Result<fjord_seerr::SearchResponse> {
@@ -500,6 +433,12 @@ async fn fetch_new_in_theaters(
     client.discover_movies_filtered(1, &filters).await
 }
 
+/// Fetches the landing rows in parallel, once per session
+/// (`FjordState.discover_landing_fetched`, reset on disconnect/reconnect/sign-out — a
+/// different server means a different catalog). Two-phase commit like
+/// `spawn_discover_search`: text cards first, posters patched in as they arrive. Row 5
+/// (Requested) is built differently (`fetch_requested_row`) but folds into the same
+/// `metas_per_row`/`poster_jobs` shape.
 pub(crate) fn ensure_discover_landing(
     state: Arc<Mutex<FjordState>>,
     ww: Weak<MainWindow>,
@@ -535,27 +474,16 @@ pub(crate) fn ensure_discover_landing(
             "new in theaters",
         ];
 
-        // Anything already in the Requested row shouldn't also show up in
-        // Trending/Popular/Upcoming — real gap, live-reported 2026-07-18
-        // ("If the series is in the request row it shuld not show up in any
-        // other row in descovery, but shuld still show up when you search").
-        // Deliberately only dedups against the Requested row, not the other
-        // 5 rows against each other (confirmed via AskUserQuestion) — the
-        // same title appearing in both Trending and Popular is normal for a
-        // discovery page and left alone; search is untouched, per the user's
-        // own explicit ask, since it isn't built from these landing-row
-        // fetches at all. Keyed on (item_type, tmdb id) since a movie and a
-        // tv show can share a raw tmdb id.
+        // Items in the Requested row don't also show in Trending/Popular/Upcoming (search
+        // is untouched). Only Requested dedups — the same title in Trending and Popular is
+        // normal for a discovery page. Keyed on (item_type, tmdb id): a movie and a series
+        // can share a tmdb id.
         let requested_keys: std::collections::HashSet<(&'static str, String)> =
             requested.iter().map(|(m, _)| (m.item_type, m.id.clone())).collect();
 
-        // Real bug fixed 2026-07-18 — see FjordState.discover_known_requests'
-        // own doc comment: without this, an already-requested item that
-        // still shows in Trending/Popular/Upcoming (not deduped out above,
-        // since dedup only excludes items requested_not_available itself
-        // returned) had its context menu offer "Request" instead of
-        // "Edit/Cancel/View Request". Built from `requested` before it's
-        // consumed by row 5's own metas_per_row entry below.
+        // So an already-requested item still shown in another row offers Edit/Cancel/View
+        // Request (see FjordState.discover_known_requests). Built before `requested` is moved
+        // into row 5.
         let known = known_requests_from_row(&requested);
         // Watchlist ids are fetched independently (ensure_discover_watchlist,
         // its own guard/trigger) — read whatever's already cached rather than
@@ -567,18 +495,11 @@ pub(crate) fn ensure_discover_landing(
             s.discover_known_requests = known.clone();
             s.discover_watchlist_ids.clone()
         };
-        // Real bug, live-reported 2026-07-19: `ensure_discover_watchlist`'s own
-        // `build_calendar_entries` call races this task and near-always loses —
-        // it reads `discover_known_requests` before this line above has had a
-        // chance to populate it (this whole tokio::join! above is a network
-        // round trip; the watchlist fetch is comparatively instant), so the
-        // "Coming Up" row's candidate set (discover_watchlist_ids ∪
-        // discover_known_requests) was empty at the one and only time
-        // build_calendar_entries ever ran for a session with no watchlist
-        // items, and nothing re-triggers it afterward — the row silently
-        // stayed sentinel-only forever. Spawned (not awaited) so the calendar
-        // rebuild's own per-item detail fetches don't delay committing the
-        // rest of this landing-row screen.
+        // Rebuild the calendar now that discover_known_requests is filled:
+        // ensure_discover_watchlist's own call usually runs first (its fetch is instant, this
+        // join is a network round trip) and found no request candidates, so without this
+        // Coming Up stayed empty for a session with no watchlist items. Spawned, so its
+        // detail fetches don't delay this screen's commit.
         tokio::spawn(build_calendar_entries(Arc::clone(&state2), ww.clone()));
 
         let mut metas_per_row: Vec<Vec<DiscoverCardMeta>> = Vec::with_capacity(6);
@@ -588,26 +509,9 @@ pub(crate) fn ensure_discover_landing(
         for (row, r) in responses.into_iter().enumerate() {
             match r {
                 Ok(resp) => {
-                    // Real bug, live-reported 2026-08-12 ("Gran Hermano...
-                    // have the Mentalis's poster image" / "Law & order
-                    // missing poster on popular tv shows row but have
-                    // poster when you go in to the detail"). `metas` used
-                    // to be built by filter_map-ing `search_result_to_meta`
-                    // over `results` (which drops BLOCKLISTED items, not
-                    // just non-movie/tv ones), while the poster job's own
-                    // zip separately re-filtered `results` using only a
-                    // media_type check — the two filters disagreed on
-                    // blocklisted entries, so a single blocklisted item
-                    // anywhere in a row's raw results silently shifted
-                    // every SUBSEQUENT poster-job pairing in that row by
-                    // one position, assigning the wrong title's
-                    // poster_path (or none at all, once the shift ran past
-                    // the end) to every card after it. Fixed by deriving
-                    // metas and their poster jobs from one single filter
-                    // pass instead of two independently-filtered views of
-                    // the same data — they can no longer drift apart
-                    // because there's only one filtering decision left,
-                    // made once, per item.
+                    // metas and poster jobs come from ONE filter pass: building them with two different
+                    // filters (search_result_to_meta also drops blocklisted items) shifted every later
+                    // poster in the row by one after a single blocklisted entry.
                     let results: Vec<_> = resp.results.into_iter()
                         .filter(|r| {
                             let item_type = if r.media_type == "movie" { "DiscoverMovie" } else { "DiscoverTv" };
@@ -695,12 +599,8 @@ pub(crate) fn ensure_discover_landing(
         let client_commit = client.clone();
         let _ = slint::invoke_from_event_loop(move || {
             let Some(w) = ww_commit.upgrade() else { return };
-            // Session guard (Bonfire Phase 1, step 8 audit, 2026-08-09) — this
-            // function previously had NO staleness guard of any kind, not
-            // even a generation counter; a sign-out/profile-switch (a
-            // different Jellyfin user can have a different or no Seerr
-            // connection at all) mid-fetch would otherwise land the OLD
-            // connection's Discover rows into the new session's AppState.
+            // Session guard: a sign-out/profile switch mid-fetch must not land the previous
+            // Seerr connection's rows in the new session.
             if !crate::seerr_session_current(&state_commit, &client_commit) { return; }
             let g = AppState::get(&w);
             for (row, metas) in metas_per_row.into_iter().enumerate() {
