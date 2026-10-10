@@ -25,7 +25,8 @@
 //     playback      direct_play_url, report_playback_start/progress/stopped
 //     user actions  mark_played, mark_unplayed, set_favorite, unset_favorite
 //     plugins       get_episode_timestamps (Intro Skipper v2+: intro+credits in one call), get_next_up_for_series
-//     auth          check_auth, get_user_info (GET /Users/{id} — real display name, 2026-08-14:
+//     auth          logout (POST /Sessions/Logout — revokes this client's token, 2026-10-09),
+//                   check_auth, get_user_info (GET /Users/{id} — real display name, 2026-08-14:
 //                     backfills a blank ProfileSettings.display_name on the auto-login path,
 //                     which unlike a fresh password login never sees the login response's name)
 //     server        get_system_info (name + version via /System/Info/Public), get_plugins
@@ -63,6 +64,20 @@ impl JellyfinClient {
 
     // pub(crate), not private — bonfire.rs's own `impl JellyfinClient` block
     // (a separate module, same crate) needs both of these.
+    /// Ends this session on the server: `POST /Sessions/Logout` revokes the
+    /// token this client uses (jellyfin/jellyfin SessionController →
+    /// `SessionManager.Logout(token)`, verified 2026-10-09).
+    pub async fn logout(&self) -> Result<()> {
+        let url = self.api_url("/Sessions/Logout")?;
+        let resp = self.http.post(url).header("Authorization", self.auth_header()).send().await?;
+        let status = resp.status();
+        if !status.is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            anyhow::bail!("HTTP {status}: {}", body.chars().take(200).collect::<String>());
+        }
+        Ok(())
+    }
+
     pub(crate) fn auth_header(&self) -> String {
         format!(
             r#"MediaBrowser Client="Fjord", Device="Linux", DeviceId="{}", Version="0.1.0", Token="{}""#,

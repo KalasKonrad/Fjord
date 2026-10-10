@@ -6011,7 +6011,7 @@ fn main() -> Result<()> {
             // remove — sync_bonfire_subprofiles re-adds them automatically on the
             // next login as this same master, so nothing is lost long-term.
             let signed_out_user_id = s.config.active().user_id.clone();
-            s.config.profiles.retain(|p| {
+            let forgotten = |p: &crate::config::ProfileSettings| {
                 // Bonfire Phase 5: `synced_via` also has to be checked, not
                 // just `master_user_id` — a group account (a foreign
                 // master's own account, discovered via the signed-out
@@ -6022,10 +6022,19 @@ fn main() -> Result<()> {
                 // with no local account left that could ever re-authenticate
                 // a switch into it (switch_to_profile resolves via
                 // `synced_via`, which would now point at nothing).
-                p.user_id != signed_out_user_id
-                    && p.master_user_id != signed_out_user_id
-                    && p.synced_via != signed_out_user_id
-            });
+                p.user_id == signed_out_user_id
+                    || p.master_user_id == signed_out_user_id
+                    || p.synced_via == signed_out_user_id
+            };
+            // Every login forgotten here also ends on the server, in the
+            // background after the save (2026-10-09 security review: their
+            // tokens used to stay valid indefinitely).
+            let device_id = s.config.device.device_id.clone();
+            let to_log_out: Vec<(String, String, String)> = s.config.profiles.iter()
+                .filter(|p| !signed_out_user_id.is_empty() && forgotten(p) && !p.token.is_empty() && !p.server_url.is_empty())
+                .map(|p| (p.server_url.clone(), p.user_id.clone(), p.token.clone()))
+                .collect();
+            s.config.profiles.retain(|p| !forgotten(p));
             if s.config.profiles.is_empty() {
                 // Config.profiles is never empty — a genuine, enforced invariant
                 // (see Config::active()/active_mut()'s own doc comments) — signing
@@ -6064,6 +6073,20 @@ fn main() -> Result<()> {
             let any_accounts_remain = !profile::group_into_accounts(&cfg_to_save.profiles).is_empty();
             drop(s);
             save_config(&cfg_to_save);
+            for (server_url, user_id, token) in to_log_out {
+                let device_id = device_id.clone();
+                rth_so.spawn(async move {
+                    let client = url::Url::parse(&server_url).map_err(anyhow::Error::from)
+                        .and_then(|url| JellyfinClient::new(url, user_id.clone(), token, device_id));
+                    match client {
+                        Ok(c) => match c.logout().await {
+                            Ok(()) => info!("sign-out: ended the server session of {user_id}"),
+                            Err(e) => warn!("sign-out: couldn't end the server session of {user_id}: {e:#}"),
+                        },
+                        Err(e) => warn!("sign-out: no client for {user_id}: {e:#}"),
+                    }
+                });
+            }
             if let Some(w) = window_weak.upgrade() {
                 let g = AppState::get(&w);
                 g.set_show_connecting(false);

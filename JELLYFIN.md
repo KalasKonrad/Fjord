@@ -35,6 +35,15 @@ Tokens do not expire under normal use. They are invalidated if:
 
 On 401, show the login screen. On other errors, proceed (transient network issue).
 
+### Log out **[used]** (verified 2026-10-09 in jellyfin/jellyfin `SessionController`)
+```
+POST /Sessions/Logout
+Authorization: MediaBrowser … Token="<the token to revoke>"
+```
+`[Authorize]`, returns 204; calls `SessionManager.Logout(token)`, which ends that session — the token
+stops working. Fjord calls it for every login Sign Out removes (`main.rs` `on_sign_out`, background,
+best-effort). Without it a token stays valid on the server indefinitely.
+
 ---
 
 ## Time: ticks

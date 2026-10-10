@@ -32,6 +32,9 @@ are bumped together as one step, not separately.
   links were passed to yt-dlp unchecked, so a specially crafted link could
   have made it run a command. Fjord now only accepts https YouTube links for
   trailers and passes them so they can never be read as options.
+- **Security: Sign Out now really signs out.** Fjord forgot your login but
+  the server kept it valid. Signing out now also ends the session on the
+  server — for the account and every profile signed out with it.
 - **Fixed: Fjord's log file contained your Jellyfin access key** (in the
   line logged when the live-update connection starts). It's now hidden there
   and in connection errors and player messages, like it already was for
