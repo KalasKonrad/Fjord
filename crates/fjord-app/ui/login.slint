@@ -68,6 +68,10 @@
 //   zones, just there it's permanent (a LineEdit has no kbd-focused prop of
 //   its own) rather than keyboard-open-only.
 //
+//   On-screen keyboard turned off in Settings (2026-10-10): Enter moves Server →
+//   Username → Password and presses Connect in Password (AppState.open-onscreen-keyboard
+//   returns false); before, it opened an undrawn keyboard that took focus away.
+//
 //   Trigger key: Enter, not Right (changed 2026-08-23, live feedback — "if
 //   they press enter on a textfield they want to enter it to type"). The
 //   first version used Right specifically because pass-input's own native
@@ -293,10 +297,10 @@ export component LoginScreen inherits Rectangle {
                         // and why Password specifically needed its own
                         // accepted handler removed to make this safe there).
                         if event.text == "\u{000a}" {
-                            AppState.onscreen-keyboard-target = "login-server";
-                            AppState.onscreen-keyboard-cursor = AppState.onscreen-keyboard-done-cursor;
-                            AppState.show-onscreen-keyboard = true;
-                            AppState.refocus();
+                            // On-screen keyboard off in Settings: Enter moves on to Username.
+                            if !AppState.open-onscreen-keyboard("login-server") {
+                                user-input.focus();
+                            }
                             return accept;
                         }
                         return reject;
@@ -337,10 +341,10 @@ export component LoginScreen inherits Rectangle {
                             return accept;
                         }
                         if event.text == "\u{000a}" {
-                            AppState.onscreen-keyboard-target = "login-username";
-                            AppState.onscreen-keyboard-cursor = AppState.onscreen-keyboard-done-cursor;
-                            AppState.show-onscreen-keyboard = true;
-                            AppState.refocus();
+                            // On-screen keyboard off in Settings: Enter moves on to Password.
+                            if !AppState.open-onscreen-keyboard("login-username") {
+                                pass-input.focus();
+                            }
                             return accept;
                         }
                         return reject;
@@ -407,10 +411,10 @@ export component LoginScreen inherits Rectangle {
                         // above for why removing that handler is what makes
                         // this safe).
                         if event.text == "\u{000a}" {
-                            AppState.onscreen-keyboard-target = "login-password";
-                            AppState.onscreen-keyboard-cursor = AppState.onscreen-keyboard-done-cursor;
-                            AppState.show-onscreen-keyboard = true;
-                            AppState.refocus();
+                            // On-screen keyboard off in Settings: Enter presses Connect.
+                            if !AppState.open-onscreen-keyboard("login-password") {
+                                AppState.do-login(server-input.text, user-input.text, pass-input.text, AppState.login-append-mode, AppState.login-remember);
+                            }
                             return accept;
                         }
                         return reject;

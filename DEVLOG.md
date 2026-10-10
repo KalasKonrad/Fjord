@@ -2878,6 +2878,14 @@ Decided with the user so outside contributors can send pull requests without ref
 - Not done yet: a CI check on pull requests (`cargo fmt --check`, clippy, tests) — only once outside PRs actually arrive, and on GitHub-hosted runners: the self-hosted runner must never run code from pull requests (PLAN.md → Deferred).
 
 
+### On-screen keyboard off: Enter locked the text fields (2026-10-10, branch `release-0.5`)
+
+Found in the dev smoke test of 0.5.0 steps 1–2 (user report: "if i pressed enter when logging in to both jellyfin and seerr on the password row i could not keyboard navigate or reselect the box"). Not caused by Slint 1.18 or the edition — the bug dates from 2026-08-27, when Settings → UI got the on-screen keyboard off switch.
+
+**Cause.** All 20 places that open the on-screen keyboard (13 LineEdit `key-pressed` Enter branches in login/connect_seerr/profile_edit.slint, a mouse click in bonfire_group.slint, 6 Rust sites in keys.rs/profile_edit.rs) set `show-onscreen-keyboard = true` and (LineEdit screens) called `AppState.refocus()` without looking at the setting. With it off (the user's config), no `QwertyKeyboard` mounts (each mount checks the setting) and keys.rs's keyboard gate stays inactive (it checks it too, deliberately, against exactly this) — but the field had already lost native focus to `fs`, and the screen's own tier only handles its button zones (login zones 0–2 `return false`). Nothing handled any key; the `FieldFocusWrap` ring kept the field looking selected.
+
+**Fix.** One opener per side — `AppState.open-onscreen-keyboard(target) -> bool` (a public function on the global) and `keys::open_onscreen_keyboard(g, target) -> bool` — that change nothing and return `false` when the setting is off; only they set `show-onscreen-keyboard = true` now. On `false` each caller does its own Enter action (the user chose "next field, then Connect"): Login Server → Username → Password → `do-login`; Connect Seerr URL → zone 2 (the method's first field via its local zone mirror; Quick Connect's Get Code button needs `refocus()`), user/email → zone 3, last field → that method's submit with the button's own `!connect-seerr-busy` guard; Profile Edit's D-pad Enter on a text zone sets `profile-edit-text-editing` (focuses the field) and Enter inside a field does nothing; drawn fields (searches, playlist name, join code) — typing already goes in directly, Enter does nothing; the join-code click just `refocus()`es so typing reaches keys.rs. A `debug!` line logs each refusal (`onscreen-kb: not opened for …`). Not live-tested yet (PLAN.md checklist).
+
 ### Security review before 0.5.0 (2026-10-09/10)
 
 Read-only sweep as part of the 0.5.0 release plan (`~/.claude/plans/velvety-mixing-flute.md`), findings S1–S8; fixed on `main` first, one commit each.

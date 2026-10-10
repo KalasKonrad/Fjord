@@ -23,6 +23,12 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Fixed: with the on-screen keyboard turned off, pressing Enter in a text
+  field left the screen stuck** (Login, Connect Seerr, profile editing,
+  searches, playlist name, Bonfire join code) — no key did anything and the
+  field looked selected but took no typing. Enter now moves to the next field;
+  in the last field of the login and Connect Seerr forms it signs in. With the
+  on-screen keyboard on, Enter still opens it.
 - **Updated the UI toolkit (Slint 1.18).** Among its fixes: holding Left on
   the first card of a dashboard row no longer jumps into the sidebar (only a
   fresh press does, as intended), and video placement inside fading overlays
