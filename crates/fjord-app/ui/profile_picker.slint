@@ -1,68 +1,23 @@
 // ── fjord-app · profile_picker.slint ─────────────────────────────────────────
-//   ProfilePickerScreen  Bonfire Phase 1 (2026-08-09) — shown instead of LoginScreen when
-//                        the resolved ACCOUNT (2026-08-14, 2-tier redesign — see
-//                        account_picker.slint's own header and profile.rs's StartupGate) has
-//                        2+ profiles. Always account-scoped now: tiles come from just that one
-//                        account's own Config.profiles, never the flat list. A single
-//                        centered row of avatar tiles (Netflix-style; plain HorizontalLayout,
-//                        no Flickable/scroll — profile counts are realistically small,
-//                        Bonfire itself caps at 5 sub-profiles per master). No trailing
-//                        "+ Add Account" tile anymore (2026-08-14 — that moved up to the
-//                        account tier, since adding an account is an account-tier action, not
-//                        a profile-tier one) — a Back button shows instead, one of two mutually
-//                        exclusive variants per `profile-picker-back-mode` (2026-08-19, real bug
-//                        fix — see app_state.slint's own doc comment): "← Back to Accounts"
-//                        (genuinely came from the account tier) or plain "← Back" (opened
-//                        directly from a live session via the sidebar's "Switch Profile" —
-//                        closes back to it, same profile, without ever touching the account
-//                        tier); keyboard-focusable (2026-08-16 fix — profile-picker-back-focused,
-//                        Up from the tile row to reach it, Down back to the tiles,
-//                        Enter/Escape/Backspace activate it — was mouse-only before). The Quit
-//                        button (bottom-right) got the identical fix the same day
-//                        (profile-picker-quit-focused, Down from the tile row, Up back).
-//                        PIN entry is a layered sub-state (show-profile-pin-entry), not a
-//                        separate screen — same dim-backdrop-plus-centered-box shape as
-//                        RequestOptionsOverlay/PlaylistPicker — embedding VirtualKeyboard
-//                        (widgets.slint) for numeric-only D-pad-friendly entry. Loading
-//                        overlay (2026-08-14, profile-picker-loading) declared last so it
-//                        covers both the tile grid and the PIN modal while a switch is
-//                        in flight — see that property's own doc comment in app_state.slint.
-//                        `main-block`'s (the "Who's watching?"/tile-row block) outer
-//                        VerticalLayout carries an explicit `height: self.preferred-height;`
-//                        (2026-08-14, 3rd live report on the centering — see that binding's own
-//                        doc comment for the root cause: a Layout element directly inside a
-//                        plain Rectangle with no explicit height, the same shape
-//                        ConfirmDialog/RequestOptionsOverlay already documented once).
-//                        `logo-img` (2026-08-14, 4th report, this time with a screenshot) is a
-//                        standalone sibling, not part of main-block — centered independently in
-//                        the empty region above it ([0, main-block.y]), no "FJORD" wordmark
-//                        anymore (icon only, per direct request).
-//                        ProfileTileCard (2026-08-29, picker visual parity with Bonfire's own
-//                        official UI) — a permanent gold ring (Theme.master-ring, a child of the
-//                        avatar Rectangle, inset a few px so it reads as a second concentric ring
-//                        rather than colliding with the keyboard-focus border) when tile.is-root,
-//                        marking the household's own master/root profile — glyph-free by design
-//                        (the screenshot's own crown glyph isn't covered by any bundled font, and
-//                        this app's own star glyphs already mean "Watchlist"). The existing lock
-//                        badge (has-pin) is unchanged.
-//                        Sectioned (2026-08-31, Bonfire Phase 5 follow-up, live-reported "but what
-//                        i shuld still be able to switch to a bonfire master profile with out
-//                        needing to switch 'accaunt'...") — ProfileSectionRow renders ONE
-//                        household's own row of tiles (an optional "{name}'s Bonfire" header +
-//                        its tile row); main-block now holds a genuine `for section[s] in
-//                        AppState.profile-picker-sections:` over these, section 0 always the
-//                        requested account's own group, any further sections OTHER households
-//                        linked via a Bonfire group — reachable directly, no "Switch Account" step.
-//                        2D keyboard nav modeled on Discover's own landing-row pattern
-//                        (profile-picker-section = row, profile-picker-cursor = column within it,
-//                        see keys.rs's show_profile_picker tier) — Left/Right stay clamped within a
-//                        row (no escape, unlike Discover's own sidebar-adjacent Left-at-column-0
-//                        escape: there's no analogous "thing to the left" here), Up/Down move
-//                        between sections and re-clamp the column, preserving it rather than
-//                        jumping to either end. The centering formula below was re-derived to
-//                        route through a `sections-column` wrapper's own preferred-height instead
-//                        of naively centering the whole block — see that binding's own doc comment
-//                        for why the naive version would have been a real ~20-25px regression.
+//   ProfileTileCard      avatar tile: master ring (tile.is-root, Theme.master-ring), lock badge
+//                        (has-pin), focus ring
+//   ProfileSectionRow    one household: optional "{name}'s Bonfire" header + its tile row
+//   ProfilePickerScreen  "Who's watching?" for one account (account_picker.slint is the tier
+//                        above; profile.rs's StartupGate decides): sections of tiles from that
+//                        account's Config.profiles — section 0 its own household, further
+//                        sections other households linked through a Bonfire group (switchable
+//                        directly, no account switch). No scrolling (counts are small).
+//                        Logo centered above main-block; main-block centers the tiles' midpoint.
+//                        Back button by profile-picker-back-mode: "← Back to Accounts" (came from
+//                        the account tier) or "← Back" (opened from a live session — closes back
+//                        to the same profile); Quit bottom-right.
+//                        Keyboard (keys.rs's show_profile_picker tier): profile-picker-section =
+//                        row, profile-picker-cursor = column (Left/Right clamped in the row,
+//                        Up/Down between sections keep the column); Up from the tiles → Back,
+//                        Down → Quit.
+//                        PIN entry: a layered sub-state (show-profile-pin-entry) — dim backdrop +
+//                        box with VirtualKeyboard (numeric) and a Cancel button. Loading overlay
+//                        (profile-picker-loading) declared last, over tiles and PIN box.
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme, ProfileTile, ProfileSection } from "theme.slint";
 import { AppState } from "app_state.slint";
@@ -100,29 +55,12 @@ component ProfileTileCard inherits VerticalLayout {
             active: root.kbd-focused;
         }
 
-        // Master/root ring — picker visual parity (2026-08-29) with
-        // Bonfire's own official "Who's Watching?" UI (a real screenshot
-        // showed a crown badge on the household's own master tile). The
-        // crown glyph itself (U+1F451) isn't covered by any bundled font
-        // (confirmed via the established fc-query cmap check) — using it
-        // would fall through to an uncontrolled system fallback, the exact
-        // tofu/color-emoji risk this app's "Bundled symbol fonts" section
-        // documents eliminating elsewhere. A star glyph IS covered, but
-        // already means "Watchlist" in this app — reusing it here would be
-        // genuinely ambiguous, not just imperfect. This ring is glyph-free
-        // instead: `tile.is-root` is exactly "this is the household's own
-        // master/root profile" (profile.rs::is_true_master — deliberately
-        // NOT `!tile.is-bonfire`, which is wrong for a "pure" Bonfire group
-        // account that was never independently logged into, since its own
-        // is-bonfire is ALSO true; see build_tile's own doc comment).
-        // Declared INSIDE the avatar Rectangle (not as a sibling in the
-        // enclosing VerticalLayout, which would insert it as its own
-        // stacked row instead of overlaying the avatar) and inset a few
-        // px from the outer edge so it reads as a concentric second ring
-        // rather than colliding with the keyboard-focus border drawn on
-        // the parent itself — the two are deliberately different colors
-        // and can both show at once when a keyboard user tabs onto the
-        // master's own tile.
+        // Master/root ring: marks the household's own master tile (Bonfire's picker shows a crown;
+        // U+1F451 isn't in the bundled fonts, and ★ already means Watchlist here). `tile.is-root` =
+        // profile::is_true_master — not `!tile.is-bonfire`, which is wrong for a group account
+        // (see build_tile). Inside the avatar Rectangle (a sibling would become its own layout row),
+        // inset so it reads as a second concentric ring next to the keyboard focus border (a
+        // different colour; both can show).
         if !root.is-add-tile && root.tile.is-root: Rectangle {
             x: 3px;
             y: 3px;
@@ -144,10 +82,8 @@ component ProfileTileCard inherits VerticalLayout {
             height: parent.height;
         }
 
-        // Lock badge — bottom-right, only for a real profile (never the Add
-        // tile) whose has-pin is true; mirrors requires-pin only insofar as
-        // display goes — this badge means "a PIN is set", not "will prompt
-        // right now" (bypassPinOnLocalNetwork can make those differ).
+        // Lock badge: a PIN is set (has-pin) — not necessarily "will prompt now"
+        // (bypassPinOnLocalNetwork can skip it).
         if !root.is-add-tile && root.tile.has-pin: Rectangle {
             width: 30px;
             height: 30px;
@@ -182,17 +118,11 @@ component ProfileTileCard inherits VerticalLayout {
     }
 }
 
-// One household's own row — an optional "{name}'s Bonfire" header (blank
-// for the primary section when it's the only one, matching the original
-// unlabeled look; "Your Bonfire" once a second section exists) followed by
-// that household's own tile row, root/master tile included. `section-index`
-// is the outer loop's own index, threaded through so kbd-focused/activated
-// can compare against `AppState.profile-picker-section` — this component
-// exists specifically so `main-block` below can hold a genuine `for
-// section[s] in AppState.profile-picker-sections:` over a variable number
-// of households (1 today, 2+ once Bonfire-linked), the shape Discover's own
-// landing-row keyboard math already assumes but never previously needed in
-// Slint template form anywhere in this codebase.
+// One household's row: an optional "{name}'s Bonfire" header (none when it's the only
+// section, "Your Bonfire" once there are two) and its tile row, master tile included.
+// `section-index` (the outer loop index) is compared with AppState.profile-picker-section
+// for focus — this component exists so main-block can loop over a variable number of
+// households.
 component ProfileSectionRow inherits VerticalLayout {
     in property <ProfileSection> section;
     in property <int> section-index;
@@ -213,10 +143,7 @@ component ProfileSectionRow inherits VerticalLayout {
 
         for t[i] in section.tiles: ProfileTileCard {
             tile: t;
-            // !back-focused/!quit-focused exclude the tile ring while a
-            // different zone holds focus instead — same "exclude other
-            // on-screen zones from the card's own focus ring" convention
-            // established for LibraryGrid/BrowseItem (CLAUDE.md).
+            // No tile ring while Back/Quit holds focus.
             kbd-focused: AppState.profile-picker-section == root.section-index
                 && AppState.profile-picker-cursor == i
                 && !AppState.profile-picker-back-focused
@@ -238,28 +165,11 @@ component ProfileSectionRow inherits VerticalLayout {
 export component ProfilePickerScreen inherits Rectangle {
     background: Theme.bg;
 
-    // Standalone logo, deliberately NOT part of main-block below — live-
-    // reported 2026-08-14, 4th report on this screen's layout, this time
-    // with an attached screenshot marking the whole empty region above
-    // "Who's watching?" and asking for the icon to sit centered within
-    // IT, not just tucked directly above the text ("the fjord loggo culd
-    // move to the center of the upper part"). Also dropped the "FJORD"
-    // wordmark entirely per direct request ("we dont need to write
-    // fjord") — icon only now. `main-block.y` (a plain sibling read, the
-    // same safe pattern this file already established for `tile-row`'s
-    // own centering) is where "Who's watching?" begins, so `[0,
-    // main-block.y]` is exactly the empty region the screenshot marked;
-    // centering within it needs no coordination with main-block's own
-    // internal layout at all. Still the same `AppState.app-logo-idx`
-    // ternary the sidebar uses, so both places always show the SAME
-    // randomly-chosen-at-startup icon for the whole session — confirmed
-    // already correct by construction, not a bug, just restated as a
-    // requirement in the same report.
+    // Logo (icon only), outside main-block: centered in the empty region above "Who's
+    // watching?" — [0, main-block.y], a plain sibling read. Same app-logo-idx as the sidebar,
+    // so both show the icon picked at startup.
     logo-img := Image {
-        // Grown again 120px -> 180px (2026-08-15, live-reported: "make the
-        // icon/logo even bigger") — still centered independently in
-        // [0, main-block.y] below, which doesn't depend on this size at all,
-        // so growing it just uses more of that already-empty region.
+        // Size doesn't affect the centering below.
         width: 180px;
         height: 180px;
         x: (parent.width - self.width) / 2;
@@ -273,50 +183,13 @@ export component ProfilePickerScreen inherits Rectangle {
     }
 
     main-block := VerticalLayout {
-        // Live-reported 2026-08-14, three times in a row before this:
-        // first "why are the profiles o low" (fixed by anchoring the
-        // WHOLE block at 35% of leftover space — still left a large gap
-        // above the tiles), then "move the profise to the middel of the
-        // screen ... who's watching just above them and then the fjord
-        // loggo/icon abow" (fixed by re-deriving y off tile-row's own
-        // midpoint instead of the block's top — algebraically correct,
-        // but the real bug turned out to be one level deeper, see below),
-        // then a THIRD report with an attached screenshot proving it was
-        // still wrong.
+        // A Layout directly in a plain Rectangle: its height must be bound to preferred-height, or
+        // the rendered height disagrees with what the y formula assumes (the ConfirmDialog trap,
+        // SLINT.md).
         //
-        // Root cause, finally: this VerticalLayout is a Layout element
-        // placed directly inside a plain Rectangle (ProfilePickerScreen)
-        // with no explicit `height:` — the exact same shape CLAUDE.md
-        // already documents once for ConfirmDialog/RequestOptionsOverlay's
-        // own once-broken button row ("a Layout element placed directly in
-        // a plain Rectangle with no explicit height doesn't reliably
-        // default to its own natural content height"). The y: formula
-        // below was never wrong on its own terms — it's the layout's OWN
-        // rendered height silently disagreeing with watching-text/tile-row's
-        // combined preferred-height that threw the actual on-screen
-        // position off, the identical mechanism, just one screen over.
-        // Fixed the same way that bug was: force this layout's height to
-        // equal its own preferred-height explicitly, so there's no
-        // daylight between what the y: math assumes and what actually
-        // renders.
-        //
-        // 2026-08-31, Bonfire Phase 5 follow-up — re-derived for a
-        // variable number of household sections rather than the original
-        // single tile-row. An independent review pass worked through the
-        // algebra on a naive `parent.height/2 - self.height/2` (centering
-        // the whole block) and found it computes a position roughly
-        // `(watching-text.preferred-height + Theme.sp-xl) / 2` (~20-25px)
-        // LOWER than the original formula — a real, measurable regression,
-        // since the original deliberately centers the TILE ROW's own
-        // midpoint, not the whole block, arrived at only after three live
-        // reports. Keeping the exact same formula SHAPE, substituting
-        // `sections-column`'s own preferred-height for `tile-row`'s,
-        // preserves that intent exactly: with exactly one section this is
-        // bit-for-bit identical to the original position
-        // (sections-column.preferred-height == tile-row.preferred-height
-        // in that case); with 2+ sections it generalizes the same "center
-        // on the tiles' own midpoint, title hangs above" intent instead of
-        // introducing a different one.
+        // y centers the TILES' midpoint (the title hangs above), using sections-column's
+        // preferred-height — identical to the original single-row position with one section.
+        // Centering the whole block instead would sit ~20–25 px lower.
         height: self.preferred-height;
         y: parent.height / 2 - watching-text.preferred-height - Theme.sp-xl - sections-column.preferred-height / 2;
         width: parent.width;
@@ -330,18 +203,10 @@ export component ProfilePickerScreen inherits Rectangle {
             horizontal-alignment: center;
         }
 
-        // One row per household — a genuine `for` over a variable-length
-        // list (1 section today, 2+ once Bonfire-linked), each rendered by
-        // ProfileSectionRow above. Plain VerticalLayout, no Flickable/
-        // scroll — household/profile counts are realistically small
-        // (Bonfire itself caps at 5 sub-profiles per master, and a group
-        // is capped too), so keyboard Left/Right/Up/Down just move a
-        // cursor; nothing to scroll into view.
-        // No "+ Add Account" tile anywhere in here (2026-08-14, the 2-tier
-        // redesign) — this screen is always scoped to one already-known
-        // account's own profiles (plus any Bonfire-linked ones) now;
-        // adding a brand-new, unrelated account lives on the account-tier
-        // picker (or Settings → Profiles) instead.
+        // One row per household (ProfileSectionRow). Plain VerticalLayout, no scrolling — counts
+        // are small (Bonfire caps sub-profiles per master, and groups). No "+ Add Account" here:
+        // this screen is one account's profiles; new accounts are added on the account picker or
+        // in Settings → Profiles.
         sections-column := VerticalLayout {
             spacing: Theme.sp-lg;
 
@@ -364,10 +229,7 @@ export component ProfilePickerScreen inherits Rectangle {
         width: 90px;
         x: parent.width - self.width - 16px;
         y: parent.height - self.height - 16px;
-        // 2026-08-16, same keyboard-reachability fix as "← Back to
-        // Accounts" above, prompted directly ("quit it not also reacheble
-        // by keybord navigation") — Down from the tile row focuses it, Up
-        // returns, Enter activates.
+        // Keyboard-reachable: Down from the tile row, Up returns, Enter quits.
         kbd-focused: AppState.profile-picker-quit-focused;
         clicked => {
             AppState.profile-picker-quit-focused = false;
@@ -375,21 +237,10 @@ export component ProfilePickerScreen inherits Rectangle {
         }
     }
 
-    // 2026-08-14, the 2-tier redesign, refined 2026-08-19 (live-reported:
-    // "if you was in fjord and pressed switch profile you shuld go back to
-    // fjord as the same profile you was") — profile-picker-back-mode
-    // ("accounts" | "cancel", set in profile::open_profile_picker) picks
-    // exactly one of these two mutually-exclusive buttons; see that
-    // property's own doc comment in app_state.slint for the full bug.
-    // Both share profile-picker-back-focused for keyboard reachability —
-    // 2026-08-16, real bug: this button was mouse-only — visible and
-    // clickable but with no keyboard CURSOR path onto it at all (only the
-    // Escape/Backspace shortcut reached the same action). kbd-focused
-    // drives FjordButton's own focus-ring + press-pulse automatically;
-    // keys.rs's raw-key dispatch sets profile-picker-back-focused on Up
-    // from the tile row and clears it on Down, matching every other "Back
-    // button" convention in this app (Detail/Season/Collection/Album/
-    // Artist).
+    // profile-picker-back-mode ("accounts" | "cancel", set by profile::open_profile_picker)
+    // picks one of these two buttons (see that property in app_state.slint). Both use
+    // profile-picker-back-focused: keys.rs sets it on Up from the tile row and clears it on
+    // Down, like every other Back button.
     if AppState.profile-picker-back-mode == "accounts": FjordButton {
         text: "← Back to Accounts";
         width: 170px;
@@ -402,10 +253,8 @@ export component ProfilePickerScreen inherits Rectangle {
         }
     }
     if AppState.profile-picker-back-mode == "cancel": FjordButton {
-        // No destination named — this always just closes the picker and
-        // keeps whatever profile/session was already active, so there's
-        // nothing destination-specific to state (same reasoning as
-        // login.slint's own "← Back" button, live-reported the same day).
+        // No destination named: it closes the picker and keeps the current session (same as
+        // login.slint's "← Back").
         text: "← Back";
         width: 110px;
         x: 16px;
@@ -494,15 +343,7 @@ export component ProfilePickerScreen inherits Rectangle {
                     height: pad.preferred-height;
                     pad := VirtualKeyboard {
                         x: (parent.width - self.width) / 2;
-                        // Real bug, live-reported 2026-08-18 ("the hilight
-                        // is on in two places when on the cancel button") —
-                        // this stayed bound to profile-pin-cursor
-                        // unconditionally, so the grid kept showing its own
-                        // last-focused key highlighted at the same time as
-                        // the new Cancel button's own ring. Mirrors
-                        // ProfileEditScreen's own PIN pads exactly (`zone
-                        // == 2 ? cursor : -1`) — clear to -1 (no cell
-                        // highlighted) whenever focus has moved to Cancel.
+                        // No grid highlight while Cancel is focused (-1), like ProfileEditScreen's PIN pads.
                         cursor: AppState.profile-pin-cancel-focused ? -1 : AppState.profile-pin-cursor;
                         key-pressed(k) => {
                             AppState.profile-pin-cancel-focused = false;
@@ -511,13 +352,7 @@ export component ProfilePickerScreen inherits Rectangle {
                     }
                 }
 
-                // Real bug, live-reported 2026-08-17: "there is no
-                // backbutton or so so nothing dpad navigatible or mouse
-                // svigatible to get back... cant close the pin screen
-                // without escape ether" — this was plain hint text with no
-                // actual control behind it. A real FjordButton, D-pad
-                // reachable via Down past the keypad's bottom row (keys.rs)
-                // and mouse-clickable directly.
+                // A real Cancel button: Down past the keypad's bottom row (keys.rs), or click.
                 cancel-btn := FjordButton {
                     text: "← Cancel";
                     width: 120px;
@@ -533,14 +368,9 @@ export component ProfilePickerScreen inherits Rectangle {
         }
     }
 
-    // ── Loading overlay — a switch is in flight (network round trip to
-    // Bonfire's /switch or a plain-account revalidation, then the new
-    // session's own home/series/system-info fetches). Declared last so it
-    // draws on top of both the tile grid AND the PIN modal above — a
-    // PIN-confirmed switch leaves that modal technically still "open"
-    // underneath for the whole duration otherwise. Live-reported
-    // 2026-08-14: "you press enter and nothing happens for a really long
-    // time then you get in to fjord, no feedback whats going on."
+    // ── Loading overlay — a switch is in flight (Bonfire /switch or a plain-account
+    // revalidation, then the new session's fetches). Declared last so it also covers the PIN
+    // modal, which stays technically open during a PIN-confirmed switch.
     if AppState.profile-picker-loading: Rectangle {
         background: #000000c0;
 
