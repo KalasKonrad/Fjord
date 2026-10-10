@@ -1,6 +1,6 @@
 // ── fjord-app · keys/dashboard.rs ────────────────────────────────────────────
-//   dispatch_library   keyboard nav for the library grid (4 focus states: grid → search → sort → back)
 //   handle_global_shortcuts  F/Ctrl+Q/B/1/2/3/S shortcuts shared between Dashboard and Settings
+//   dispatch_dashboard  content grid nav + item actions
 //   focus_bar_on_up / focus_bar_on_down  music-bar / mini-player-bar focus fallbacks
 // ─────────────────────────────────────────────────────────────────────────────
 use super::*;

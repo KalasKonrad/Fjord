@@ -1,5 +1,4 @@
 // ── fjord-app · keys/mode.rs ─────────────────────────────────────────────────
-//                      collision) or from the collision-confirm callbacks in main.rs
 //   AppMode            active UI mode — 20 variants; priority: ContextMenu > QueuePanel > NowPlaying >
 //                      Person > Detail > Season > Series > Artist > Collection > Album > RequestOptions >
 //                      RequestDetail > CalendarDayPopup > Calendar (Seerr) > Blocklist (Seerr, 2026-08-06,
