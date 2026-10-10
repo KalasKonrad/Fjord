@@ -11178,3 +11178,917 @@ Above `export component SidebarProfileMenu inherits Rectangle {`:
 //                      which rows apply (Switch Profile, Manage Profiles) is dynamic
 // ─────────────────────────────────────────────────────────────────────────────
 ```
+
+#### `crates/fjord-app/src/keys/overlays.rs`
+
+Above `pub(crate) fn handle_onscreen_keyboard_keys(g: &crate::AppState, key: &str, ctrl: bool) -> bool {`:
+```
+// On-screen alphanumeric keyboard (Bonfire Phase 3, 2026-08-22; full
+// rollout beyond Login, 2026-08-23) — checked before show_login (and
+// every other screen-scoped gate below), same shape as show-sign-out-
+// confirm: this mechanism is opened from several different screens
+// (Login, ProfileEditScreen, Discover search, Browse search,
+// PlaylistPicker naming, ConnectSeerr — every text-entry surface in the
+// app as of 2026-08-23), so it can't be nested inside any one screen's
+// own tier the way show_profile_pin_entry is nested inside
+// show_profile_picker (PIN entry only ever happens on that one screen —
+// this keyboard doesn't have that luxury). Key VALUES are never read
+// here — only cursor movement and Enter, which just bumps
+// kb-activate-pulse and lets QwertyKeyboard's own _activate-mirror
+// (widgets.slint) resolve what that means; see app_state.slint's own
+// doc comment on show-onscreen-keyboard for why.
+//
+// Also requires settings-onscreen-keyboard-enabled (2026-08-27, the new
+// Settings → UI toggle) — deliberately in ADDITION to every
+// QwertyKeyboard's own mount condition also checking it, not instead
+// of. The mount check alone stops the widget from ever rendering when
+// the setting is off, but says nothing about THIS gate — which runs
+// before every other input tier and unconditionally consumes any key
+// (only Ctrl+Q escapes it) — so if any trigger site (present or
+// future) ever left show-onscreen-keyboard stuck true while the
+// setting is off, this gate alone could still turn into a silent,
+// no-visible-cause input lockout with nothing on screen to explain it.
+// Checking it here too means that failure mode is structurally
+// impossible regardless of what any individual trigger site does.
+```
+
+Above `debug!(`:
+```
+// Debug logging, 2026-08-25 — this whole gate had none at all,
+// which left the ProfileEditScreen focus-race bug undiagnosable
+// from a log alone (see profile_edit.rs's own zone 0/5/6 doc
+// comment for the bug this exists to catch a recurrence of): the
+// next log capture will show directly whether a given keypress
+// ever reached this gate at all, or whether some field's native
+// focus swallowed it first.
+```
+
+Above `g.set_onscreen_keyboard_physical_key("backspace".into());`:
+```
+// Physical-keyboard passthrough, 2026-08-23 — live feedback
+// ("i want it to still work to type on the keybord even if
+// its open"). See app_state.slint's own doc comment on
+// onscreen-keyboard-physical-key for why this is a
+// payload+counter pair, not a direct callback.
+```
+
+Above `if key == key::ESCAPE && g.get_login_append_mode() {`:
+```
+// Real bug, live-reported 2026-08-17: "there is no cancel/back only
+// quit witch will quit jellyfin" — LoginScreen's own "← Back to
+// Profiles"/"Cancel" button (append mode only — see
+// login-append-mode's own doc comment) was mouse-only, with no
+// keyboard path to it at all; Ctrl+Q (quit the whole app) was
+// genuinely the only reachable keyboard action. Escape now invokes
+// the identical cancel-add-account() the button's own click handler
+// does, matching this app's universal Escape=Back convention.
+// Never fires in a genuine first-login (no append mode, nothing to
+// cancel back to) — unchanged there, Escape still does nothing.
+```
+
+Above `let zone = g.get_login_zone();`:
+```
+// Full D-pad nav, 2026-08-19 (zones 3/4), extended 2026-08-21 (zones
+// 5/6, Back/Quit reachability — see login.slint's own header doc
+// comment for the full design). Only reached for zones 3-6, none of
+// which hold native LineEdit focus (login.slint's own key-pressed
+// hooks call AppState.refocus() when leaving zone 2, specifically so
+// this tier starts seeing keys again) — zones 0-2 fall straight
+// through to `return false` below, since Tab/typing/Enter there are
+// all handled by the LineEdit itself, and a `changed login-zone`
+// tracker in login.slint calls the right field's own .focus()
+// whenever Rust sets this back down to 0-2 (Rust can't call a named
+// Slint element's method directly).
+```
+
+Above `match key {`:
+```
+// zone 4 (Connect)'s RETURN has no Rust-side arm at all — the
+// actual do-login call needs live LineEdit.text values Rust
+// can't read directly, same "Rust can only bump
+// kb-activate-pulse, a Slint-side changed tracker does the
+// real work" pattern ProfileEditScreen's own Save button
+// already uses. Handled by login.slint's _pulse-mirror tracker.
+// Zones 5 (Back)/6 (Quit) are two INDEPENDENT entry points off
+// opposite ends of the chain, not chained through each other —
+// real bug, live-reported 2026-08-21 ("the back button is down
+// from connect witch feels wrong as it is top left so it shuld
+// be up from the server right?"): the first version reached
+// Back via Down-from-Connect, requiring a full pass through
+// every field to reach a button sitting top-left, visually
+// ABOVE all of them. Back is now reached via Up from Server
+// (zone 0, handled in that field's own key-pressed hook, since
+// it holds native LineEdit focus and never reaches this match
+// at all) — zone 5's own Down returns to Server the same way.
+// Quit (bottom-right) keeps its original Down-from-Connect
+// reachability, matching its actual on-screen position.
+```
+
+Above `pub(crate) fn handle_profile_picker_keys(g: &crate::AppState, key: &str, ctrl: bool) -> bool {`:
+```
+// ProfilePickerScreen (Bonfire Phase 1, step 6, 2026-08-09) — same tier
+// as show-login above (checked before active_mode() ever runs, never
+// appears as an AppMode value). Raw-key handling, same shape as
+// OfflineScreen below: no native widget focus path, so Left/Right/Enter
+// are matched directly rather than going through the Action/KeyMap
+// layer. PIN entry is a layered sub-state that captures all input first
+// when open — mirrors VirtualKeyboard's own 12-key row-major layout
+// (widgets.slint) exactly, so keyboard and mouse activation always
+// agree on what "cursor N" means.
+```
+
+Above `match key {`:
+```
+// Real bug, live-reported 2026-08-17: "cant use numpad or
+// numbers if you have a real keybord and backspace dont work."
+// Two gaps, both fixed together: (1) no arm at all accepted a
+// raw digit character — a physical-keyboard user had no way to
+// type a PIN except D-pad-navigating the on-screen 12-key grid
+// one key at a time; (2) Backspace CLOSED the whole PIN screen
+// instead of deleting the last digit, the opposite of what
+// Backspace means on every other text-entry surface in this
+// app. Escape alone now closes/cancels; Backspace forwards to
+// the same "backspace" value the on-screen key already sends.
+// Digit keys sync the cursor to the matching on-screen key too,
+// same mouse-sync discipline as everywhere else in this app.
+```
+
+Above `if g.get_profile_picker_quit_focused() {`:
+```
+// 2026-08-16, direct follow-up to the Back-button fix immediately
+// below ("quit it not also reacheble by keybord navigation"): the
+// on-screen Quit button had the identical gap — Ctrl+Q already
+// quits from any screen, but there was no keyboard CURSOR path
+// onto the button itself. Down from the tile row (below) sets
+// this — always reachable, unlike the conditional Back button;
+// Up returns to the tile row, Enter activates, Escape/Backspace
+// un-focuses it without quitting (quitting is a terminal action,
+// not something Escape should trigger as a side effect).
+```
+
+Above `if g.get_profile_picker_back_focused() {`:
+```
+// 2026-08-16, real bug ("the button shows but i cant navigate to
+// it with keybord and press enter"): the "← Back to Accounts"
+// button was mouse-only — visible and clickable, but with no
+// keyboard CURSOR path onto it at all; only the Escape/Backspace
+// shortcut below reached the same action. Handled as its own
+// focus state, mirroring the "Back button focused" convention
+// every other content-style screen in this app already
+// establishes (Detail/Season/Collection/Album/Artist: Up from the
+// top of content focuses Back, Down returns to content, Enter
+// activates) — Up from the tile row below sets this when the
+// button exists; here, Down returns to the tile row and
+// Enter/Escape/Backspace all activate it, same destination the
+// pre-existing shortcut already reaches.
+//
+// 2026-08-19, real bug ("if you was in fjord and pressed switch
+// profile you shuld go back to fjord as the same profile you
+// was"): this used to unconditionally call
+// invoke_profile_picker_back_to_accounts() — now dispatches on
+// profile-picker-back-mode ("accounts" vs "cancel"), matching
+// whichever of the two buttons is actually shown (see that
+// property's own doc comment in app_state.slint for the full bug).
+```
+
+Above `if key == key::ESCAPE || key == key::BACKSPACE {`:
+```
+// 2026-08-14, the 2-tier redesign: Escape/Backspace goes back ONE
+// level at a time — either to the account tier or by cancelling
+// straight back to a live session, per profile-picker-back-mode
+// (see its own doc comment).
+```
+
+Above `let sections = g.get_profile_picker_sections();`:
+```
+// No trailing "+ Add Account" cursor slot anywhere in here
+// (2026-08-14) — this screen is always scoped to one account's own
+// profiles (plus any Bonfire-linked ones), and adding a brand-new,
+// unrelated account lives on the account tier instead.
+//
+// 2026-08-31, Bonfire Phase 5 follow-up ("but what i shuld still be
+// able to switch to a bonfire master profile with out needing to
+// switch 'accaunt'...") — 2D nav, modeled directly on Discover's
+// own landing-row pattern (discover.rs::handle_key_landing), not
+// BonfireGroupScreen's flat 1D zone list (which has no vocabulary
+// for a second axis at all): profile-picker-section picks the ROW
+// (which household has focus), profile-picker-cursor picks the
+// COLUMN within that section's own tile row.
+//
+// Left/Right stay clamped at the row's own edges — no escape to
+// Back/Quit, unlike Discover's own Left-at-column-0 escape (which
+// exists because Discover's sidebar sits physically to its left);
+// there's no analogous "thing to the left" here — Back sits above
+// the tile rows, Quit below, matching the already column-
+// independent Up/Down bindings this screen already had before this
+// change (now just scoped to "section 0"/"the last section"
+// instead of "the only row").
+```
+
+Above `pub(crate) fn handle_account_picker_keys(`:
+```
+// Account picker (2026-08-14, the 2-tier account/profile redesign) —
+// same tier and shape as ProfilePickerScreen just above (checked
+// before active_mode() ever runs); no PIN sub-state at this tier at
+// all (accounts aren't PIN-protected, only profiles within them are —
+// picking a single-profile account either switches directly or opens
+// ProfilePickerScreen's own PIN modal, never one here).
+```
+
+Above `if g.get_account_picker_back_focused() {`:
+```
+// 2026-08-21, real gap — see account-picker-back-focused's own doc
+// comment in app_state.slint. Same shape as the quit-focused block
+// above, and as profile_picker.slint's own back-focused dispatch:
+// Enter/Escape/Backspace all close the picker (this variant never
+// has a destination to distinguish, unlike the profile tier's own
+// "accounts" vs "cancel" split — an account picker Back always just
+// cancels), Up returns to the tile row.
+```
+
+Above `pub(crate) fn handle_connect_seerr_keys(`:
+```
+// ConnectSeerrScreen — full D-pad zone system, 2026-08-23 (was: same
+// native-LineEdit-focus shape as LoginScreen but with no zone nav at
+// all, letting typing/tabbing pass through untouched and only handling
+// Ctrl+Q/Enter-pulse/Escape). See connect_seerr.slint's own header doc
+// comment and app_state.slint's connect-seerr-zone doc comment for the
+// full design — mirrors login-zone's INLINE dispatch shape (not
+// ProfileEditScreen's delegate-to-a-separate-function one), since this
+// screen's zone count, while variable across tabs, stays small enough
+// not to need its own file. Zones -1 (close-✕) and 1 (tab row) are
+// always reachable; zone 1's Left/Right cycle connect-seerr-method
+// directly (wrapping) and clear connect-seerr-error, matching each
+// MethodTab's own mouse click handler exactly. Zones >= 2 that resolve
+// to a plain button (never a LineEdit) are always the LAST zone in
+// existing_connect_seerr_zones' own list for whichever tab is active —
+// see that function's own doc comment for why this holds across every
+// method/polling combination — so `zones.last() == Some(&zone)` is
+// enough to tell a button zone apart from an in-between text-field zone
+// with no need to also check connect-seerr-method here. Zone 0 (url-
+// input) and any in-between zone (2/3 when NOT last) are real LineEdits
+// and never actually reach this tier in practice — native focus
+// intercepts first, each field's own key-pressed hook handles its
+// Up/Down/Enter/Escape — so those fall through to `return false`, same
+// as login-zone's own zones 0-2. `zone` self-heals to `zones[0]`
+// whenever it's not actually present in the current list (2026-08-26,
+// code review — Quick Connect's own zone 2 vanishes the instant
+// qc-polling flips true, and a stale zone can also survive a screen
+// close/reopen; without this, `dispatchable` below is false for the
+// stranded zone and every key fell through to `_ => return false`,
+// leaking input to whatever's rendered behind this modal).
+//
+// Zone 0/1 numbering, fixed 2026-08-26 (real bug, live-reported: "the
+// keybord nav on seerr connect seams off it do not go where you are
+// expekting") — url-input and the tab row were originally numbered 1
+// and 0 respectively, the REVERSE of their actual visual top-to-bottom
+// order (url-field-wrap is declared, and renders, ABOVE the tab row's
+// HorizontalLayout in connect_seerr.slint). Since `next_zone`/
+// `prev_zone` walk the `zones` list purely by list position — with no
+// idea which physical screen element a given number represents —
+// Down from the tab row (list position after 0) landed on url-input,
+// which sits VISUALLY ABOVE it, and Down from url-input's own
+// key-pressed hook jumped straight past the tab row to zone 2,
+// skipping it entirely on the way back down. Renumbered so 0 = url-
+// input (topmost navigable field, right below Close) and 1 = the tab
+// row (matching visual order exactly) — see connect_seerr.slint's own
+// header doc comment for the full before/after zone map.
+```
+
+Above `zone = zones[0];`:
+```
+// Self-heal (code review, 2026-08-26): the previously-focused
+// zone vanished out from under us — Quick Connect's zone 2
+// ("Get Code") disappears the instant qc-polling flips true, or
+// a stale non-zero zone survived a screen reopen. Without this,
+// `dispatchable` (below) is false for a zone not in the list,
+// and every key silently hits `_ => return false`, leaking to
+// whatever's rendered behind this modal for as long as the
+// stale zone persists — a real, confirmed lockout, not
+// hypothetical (verified by tracing the exact Quick Connect
+// polling transition).
+```
+
+Above `if key == key::ESCAPE {`:
+```
+// Escape always closes the whole screen, regardless of zone —
+// matches every zone's own key-pressed Escape branch in
+// connect_seerr.slint (this tier only ever sees Escape at zones
+// -1/0/a button zone; the LineEdit zones handle it themselves,
+// identically, before it can ever reach here). Also clears the
+// on-screen keyboard's 3 properties, mirroring connect_seerr.slint's
+// own close-screen() function — that gate runs before every other
+// screen's own tier, so leaving it stuck true here would silently
+// swallow all subsequent input app-wide, not just on this screen
+// (Bonfire Phase 3's original code review, Finding 1).
+```
+
+Above `_ => {}`:
+```
+// Enter has no Rust-side arm here — the actual submit/get-
+// code call needs live LineEdit.text values Rust can't read
+// directly, same "Rust can only bump kb-activate-pulse, a
+// Slint-side changed tracker does the real work" pattern
+// login-zone's own zone 4 (Connect) already uses. Handled
+// by connect_seerr.slint's own _pulse-mirror (Quick
+// Connect's Get Code) or, for the 3 text-field tabs, their
+// own local copy of it (see that file's header doc comment
+// for why each tab needs its own).
+```
+
+Above `if g.get_manage_profiles_close_focused() {`:
+```
+// Real gap, live-reported 2026-08-21 ("when in the manage profile
+// picker you cant go back without pressing escape, it has a x for
+// the mouse but cant get to it with keybord nav or dpad") — see
+// manage-profiles-close-focused's own doc comment in
+// app_state.slint. Same shape as AccountPickerScreen's own
+// quit-focused block: Enter/Escape/Backspace all close (there's no
+// "quit the app" ambiguity to worry about here, unlike a real Quit
+// button, so Escape closing is fine, not a terminal-action risk).
+```
+
+Above `let list_count = g.get_manage_profiles_list().row_count() as i32;`:
+```
+// Real bug, code-review 2026-08-16: this screen previously had no
+// keyboard navigation at all beyond Escape/Ctrl+Q — a dead end for
+// a D-pad/remote user. Mirrors AccountPickerScreen's own tile-row +
+// trailing "+" tile dispatch exactly (Left/Right cursor, Enter
+// activates); AppState.manage-profiles-cursor was already declared
+// for exactly this, just never wired.
+```
+
+Above `pub(crate) fn handle_bonfire_group_keys(`:
+```
+// BonfireGroupScreen (Bonfire Phase 5, cross-household groups,
+// 2026-08-09; restructured 2026-08-29 from 3 mutually-exclusive states
+// to 2 independent, always-rendered sections — hosting and joining can
+// now both be active at once, matching Bonfire's own official UI) —
+// zone count varies with (is_owner, is_member, member count), so
+// navigation is resolved live via profile::existing_bonfire_group_zones
+// rather than a fixed enum; see that function's own doc comment for the
+// exact host/join/toggle zone-base formula this dispatch mirrors.
+```
+
+Above `debug!(`:
+```
+// Debug logging, 2026-08-29 — added while investigating a live
+// "can't write the join code" report; this whole tier had no
+// per-keypress trace at all, so there was no way to tell from a log
+// whether a keypress reached this screen, and if so which zone it
+// landed on (D-pad-focusing the join-code field is a separate step
+// from actually opening the on-screen keyboard for it — Enter is
+// needed for that, matching every other on-screen-keyboard consumer
+// in this app; a raw letter key typed before that is silently
+// swallowed by this tier's own unconditional `return true`).
+```
+
+Above `let is_owner = g.get_bonfire_group_is_owner();`:
+```
+// Backspace, real bug live-reported 2026-08-29 ("backspace wont
+// remove what have been typeded it will just close it"): this used
+// to be lumped in with Escape above (both unconditionally closed
+// the screen), which meant the join-code-field backspace arm added
+// for the on-screen-keyboard-disabled fix just below was dead
+// code — this check ran first and returned before that arm was
+// ever reached. Split apart: on the join-code field specifically,
+// Backspace deletes a character (a no-op on an already-empty
+// buffer, never a close — matching handle_browse_search's own
+// established "Backspace never means exit" convention for this
+// exact field shape); everywhere else in this screen it still
+// means Back, unchanged.
+// 2026-08-29 restructure: hosting and join are now two INDEPENDENT,
+// always-rendered sections rather than 3 mutually-exclusive states
+// (see existing_bonfire_group_zones' own doc comment in profile.rs
+// for the full formula and why — a real screenshot of Bonfire's own
+// official UI showed both sections together unconditionally).
+// Computed once here since both the BACKSPACE check and the
+// printable-char fallback below need `join_base` too, not just the
+// RETURN dispatch.
+```
+
+Above `k if is_printable(k) && !is_member && zone == join_base => {`:
+```
+// Direct physical typing into the join-code field, real gap
+// live-reported 2026-08-29 ("i have the on screen keybord
+// disabled" — "cant write thje joine code"). Unlike every other
+// hand-drawn field this app already had before the on-screen-
+// keyboard rollout (Discover/Browse/Library search — see e.g.
+// handle_browse_search's own `is_printable(k) => append` arm a
+// few hundred lines below), this field was BUILT entirely
+// within that rollout and had no independent typing path of its
+// own at all: with the setting off, Enter (above) still arms
+// show-onscreen-keyboard, but the widget never mounts and the
+// top-level onscreen-kb dispatch gate never runs (both
+// correctly also gate on settings-onscreen-keyboard-enabled),
+// so every subsequent letter fell straight into this tier's own
+// catch-all and was silently swallowed — the field was
+// completely untypeable with the on-screen keyboard disabled.
+// Fixed by adding the same direct-typing fallback those other
+// fields already have, scoped to the one zone/state it applies
+// to; RETURN's own "open the on-screen keyboard" behavior above
+// is untouched, so D-pad/on-screen-keyboard users keep that
+// path too — both now coexist, matching every sibling field.
+// (Backspace's own equivalent fallback lives in the dedicated
+// check above, not here — it needs to run before this whole
+// match, since Escape/Backspace used to be handled together as
+// a single "close the screen" case at that same earlier point.)
+// `!is_owner` was dropped from this guard the same day it was
+// added — that's precisely what made "an owner types a join
+// code" impossible, the exact gap the 2026-08-29 restructure
+// above exists to fix.
+```
+
+Above `1 => {`:
+```
+// Confirmation dialog, 2026-08-22 — see show-sign-out-
+// confirm's own doc comment in app_state.slint (this is
+// one of its 3 trigger sites). Checked BEFORE this whole
+// if-show-offline block returns, so once open it stays
+// reachable regardless of show-offline's own value.
+```
+
+#### `crates/fjord-app/src/keys/overlays.rs` — file header (TOC)
+```
+// ── fjord-app · keys/overlays.rs ─────────────────────────────────────────────
+//   Raw-key handlers for overlays that show before (or on top of) any AppMode —
+//   handle_key calls each one first, while its show-* flag is set:
+//   handle_onscreen_keyboard_keys, handle_login_keys, handle_profile_picker_keys,
+//   handle_account_picker_keys, handle_sidebar_profile_menu_keys, handle_connect_seerr_keys,
+//   handle_manage_profiles_keys, handle_bonfire_group_keys, handle_offline_keys
+//   show-account-picker tier  Left/Right move the tile cursor (count == "+ Add Account" tile's
+//                        own cursor value); Enter on a real tile → account-picker-select,
+//                        on the trailing tile → account-picker-add-account; Escape/Backspace
+//                        closes only when account-picker-cancelable (the startup-gate open has
+//                        nothing to cancel back to)
+//   show-profile-picker tier  same shape one tier down, always account-scoped; Escape/Backspace
+//                        dispatches on profile-picker-back-mode ("accounts" → profile-picker-
+//                        back-to-accounts, genuinely came from there; "cancel" →
+//                        profile-picker-cancel, closes back to a live session without switching
+//                        — the sidebar's own "Switch Profile" action, which never went through
+//                        the account tier at all; see that property's own doc comment in
+//                        app_state.slint for the real bug this distinction fixes, 2026-08-19)
+// ─────────────────────────────────────────────────────────────────────────────
+```
+
+#### `crates/fjord-app/src/auth.rs`
+
+Above `pub(crate) fn fell_back_to_http(typed: &str, resolved: &Url) -> bool {`:
+```
+/// Candidate server URLs to try, in order, from raw user-typed input.
+/// Live-reported 2026-08-14: the LoginScreen's address field required an
+/// explicit `http://`/`https://` prefix or authentication failed outright
+/// with a raw URL-parse error — user asked for "jellyfin.example.com" to
+/// just work, an explicit scheme (any case — "HTTPS://" included) to still
+/// be respected as-is, and HTTPS to be preferred, falling back to HTTP.
+/// If the trimmed input already starts with a scheme (checked
+/// case-insensitively), that's the ONLY candidate — an explicit scheme is
+/// never second-guessed or retried under a different one. Otherwise HTTPS
+/// is tried first (matching how browsers and every other Jellyfin client
+/// default an ambiguous address today), with a plain HTTP candidate as the
+/// fallback right behind it.
+///
+/// `pub(crate)` since 2026-08-23 — `seerr_auth.rs::resolve_seerr_url` reuses
+/// this verbatim (it has zero Jellyfin-specific typing) rather than
+/// duplicating the same candidate-ordering logic for Seerr's own
+/// server-URL field, which had the identical bare-host-fails-outright gap.
+/// True when `typed` had no scheme and the address that answered is plain
+/// `http://` — https didn't answer and Fjord fell back (the only way a
+/// schemeless address ends up on http, see candidate_server_urls).
+```
+
+Above `pub(crate) fn is_connectivity_failure(e: &anyhow::Error) -> bool {`:
+```
+/// Whether `e` represents a genuine connectivity failure (DNS, refused
+/// connection, TLS handshake failure, timeout) rather than a real HTTP
+/// response that merely failed to parse or returned an error status.
+/// `pub(crate)` since 2026-08-26 — `seerr_auth.rs::resolve_seerr_url` shares
+/// this classifier for the identical HTTPS-then-HTTP fallback shape.
+///
+/// Code review, 2026-08-26: the original classifier here and in
+/// `resolve_seerr_url` (`reqwest::Error::status().is_none()`) was too broad
+/// — a 2xx response with a non-JSON body (a captive portal, an unrelated
+/// service sharing the port, an SSO redirect page) fails inside `.json()`,
+/// and that decode error ALSO has `status() == None` (only
+/// `Error::new(Kind::Status(status), ..)`, from `.error_for_status()`,
+/// carries one) — so a real, reachable-over-HTTPS server whose response
+/// merely didn't parse was silently treated as "unreachable, fall back to
+/// plaintext HTTP," downgrading the connection (and, for the Jellyfin
+/// login path, the plaintext password with it) instead of surfacing the
+/// real, already-reached error. `is_connect()`/`is_timeout()` only return
+/// true for failures that never got a response back at all.
+```
+
+Above `pub(crate) struct LoginOptions {`:
+```
+/// The two "how to handle this login" flags, grouped (clippy's
+/// too-many-arguments threshold, 2026-08-14 — `remember` was the 8th
+/// parameter added to `do_login`) rather than left as loose scalars, same
+/// "group loose scalars into a struct" precedent this codebase already
+/// established for `context_menu.rs::OpenMenuArgs`.
+```
+
+Above `pub append: bool,`:
+```
+/// Bonfire Phase 1, step 6 (2026-08-09 — the picker's own "+ Add
+/// Account" tile) — keep every existing profile intact and add this
+/// one alongside them, rather than overwriting whichever profile is
+/// currently active.
+```
+
+Above `let (server_url, auth) = authenticate_with_fallback(`:
+```
+// Live-reported 2026-08-14: typing a bare host ("jellyfin.example.com",
+// no scheme) failed outright with a raw URL-parse error — every other
+// Jellyfin client and every browser treats a schemeless address as
+// "try to figure it out," not "reject it." See
+// authenticate_with_fallback's own doc comment for the exact rule.
+```
+
+Above `if append {`:
+```
+// `append` (Bonfire Phase 1, step 6, 2026-08-09 — the picker's own
+// "+ Add Account" tile) means "keep every existing profile intact,
+// add this one alongside them" rather than the normal sign-in
+// behavior of overwriting whichever profile is currently active
+// (correct for "sign back into the same slot after sign-out", wrong
+// for genuinely adding a second account). If this exact user_id is
+// already known locally (re-authenticating a profile whose stored
+// token had gone stale), update that entry in place instead of
+// creating a duplicate.
+```
+
+Above `if p.display_name.is_empty() {`:
+```
+// Real bug fix, 2026-08-14, live-reported ("on an old login
+// the profilename is just random letters and numbers instead
+// of the profile name"): a blank display_name (every
+// pre-Bonfire migrated profile, and any profile that's only
+// ever gone through auto-login) fell back to the raw
+// user_id GUID in build_tile — backfill it here from the
+// real Jellyfin username while we have it, same as the
+// brand-new-entry branch below already does via
+// ..Default::default() + this explicit set.
+```
+
+Above `p.remember_login = remember;`:
+```
+// 2026-08-14, the account/profile redesign — "remember
+// this login" is a per-attempt choice, so a re-login
+// (this branch: the profile was already known, e.g. its
+// token had gone stale) always takes whatever the
+// checkbox says on THIS attempt, not whatever it was
+// set to originally.
+```
+
+Above `p.is_bonfire = false;`:
+```
+// Real bug, live-reported 2026-08-29 ("still the same
+// problem"): a genuine, successful username/password
+// authentication against THIS account's own server is
+// direct proof of independent access to it — but this
+// branch, before this fix, never reset any of the
+// Bonfire-discovery fields (is_bonfire/is_group_account/
+// master_user_id) on an already-known entry, only
+// server_url/token/display_name/remember_login. So
+// re-adding an account via "+ Add Account" specifically
+// to recover from the sync_bonfire_subprofiles downgrade
+// bug just above (it left is_bonfire=true, master_user_id
+// pointing at whoever's sync last saw it) silently kept
+// routing every subsequent switch through the Bonfire/PIN
+// path — the very "restore direct access" recovery this
+// codebase already recommends for that bug never actually
+// worked. Fixed generally: any successful direct login
+// onto an already-known entry unconditionally restores it
+// to a plain independent account, regardless of whatever
+// Bonfire-discovery state it previously carried.
+```
+
+Above `p.has_pin = false;`:
+```
+// `has_pin` is a value cached FROM Bonfire's own /list
+// response (config.rs's own doc comment: "a plain
+// (non-Bonfire) account has no PIN concept at all") — a
+// genuine independent login proves exactly that, so any
+// stale true left over from a prior Bonfire-discovery
+// state must not keep demanding a PIN this account no
+// longer has one for.
+```
+
+Above `pub(crate) async fn finish_session_setup(`:
+```
+// ── finish_session_setup ─────────────────────────────────────────────────────
+// Shared tail of every "we already have a valid client for this profile, now
+// make it the active session and show its content" flow — extracted from
+// do_login (Bonfire Phase 1, step 6, 2026-08-09) so profile.rs's own
+// switch_to_profile can reuse it verbatim instead of re-deriving the same
+// ~10-field setup and risking drift, the same reasoning reset_session_state
+// was extracted for. Fetches home data/series/system info/plugins in
+// parallel, persists cfg (already fully mutated by the caller — this fn
+// only reads it), updates FjordState + AppState, starts the WebSocket,
+// spawns poster loading + the movie-collections fetch.
+//
+// Callers differ only in how `client` was obtained (a fresh password
+// sign-in here; a Bonfire-minted or already-stored token in profile.rs) and
+// in what `cfg` looks like going in (do_login mutates cfg.active_mut()
+// in place; a profile switch finds-or-creates a different profiles[] entry
+// instead) — everything from here on is identical either way.
+```
+
+Above `let (seerr_client, seerr_url, cfg_early) = {`:
+```
+// Real bug, live-reported 2026-08-14 with a screenshot ("the settings
+// etc do not seams to be diffferent for different profiles" — Seerr
+// connection/Streaming Region/Discover Region all showing the SAME
+// values after switching to a different profile): `apply_settings_to_
+// window` — the ONLY function that pushes any profile-scoped setting
+// (subtitle/audio language, skip modes, Seerr enabled/connection status/
+// trailer quality, library sort, ...) into AppState at all — was called
+// exactly once in the whole app, at startup, using whichever profile
+// happened to be active on disk at that moment. Neither this function
+// nor switch_to_profile ever called it again, so every one of those
+// settings silently kept reflecting the ORIGINAL profile for the rest
+// of the running session after ANY switch (picker or sidebar) — not
+// just a Settings-screen display bug: subtitle language, skip-mode
+// behavior, and which Seerr account's credentials get used for Discover
+// API calls were all genuinely wrong post-switch, not just displayed
+// wrong. `s.config`/`s.client` are hoisted up here (both already fully
+// known — `cfg`/`client` are plain parameters, not something the join
+// below produces) specifically so BOTH commit closures below (the warm-
+// start one and the post-join one) can call apply_settings_to_window
+// and have it read the correct, already-current profile immediately —
+// the original code only wrote these AFTER the network join completed.
+//
+// `s.seerr_client` had the IDENTICAL gap, one level more severe: it was
+// ONLY ever built once, at app startup (main.rs's own config-load
+// block) — do_login/finish_session_setup/switch_to_profile never
+// rebuilt it at all. push_seerr_status's "connected" check is purely
+// Config-flag-derived (never checks seerr_client itself), so the
+// Settings screen could show a fully plausible "Connected" state for
+// the NEW profile while every actual Discover/Watchlist/etc. API call
+// kept silently using the OLD profile's live Seerr session underneath
+// — a real cross-profile data-isolation gap, not just a display one.
+// Rebuilt the same way startup does (seerr_auth::build_seerr_client),
+// plus the region/language dropdown lists + admin-permission flags
+// (spawn_seerr_settings_fetch) and the version string
+// (spawn_refresh_seerr_version) — both of those were ALSO startup-only
+// before this, mirroring main.rs's own config-load block exactly so
+// there's one canonical "bring Seerr up for whichever profile is now
+// active" sequence instead of two independently-drifting copies of it.
+```
+
+Above `{`:
+```
+// Real gap, live-reported with a video (2026-08-21) — "the profile that
+// is highlighted is blank for several seconds after you have switched
+// profile." The sidebar's own Profile row (avatar/name) is driven by
+// push_current_profile_tile, but it was only ever called from this
+// function's FINAL commit closure, after the whole outer tokio::join!
+// (fetch_home_data/get_all_series/get_system_info/get_plugins, ~2.4s+
+// in a real log) completes. reset_session_state (run just before this
+// function, tearing down the OUTGOING session) already resets
+// current-profile-tile back to a blank Default — so the sidebar showed
+// nothing for the entire fetch window, even though everything this
+// needs (avatar color/initial, display name) comes straight from the
+// Config just set two lines above and needs no network round trip at
+// all. Pushed here instead, immediately — mirroring the same "hoist
+// early so the very first paint already has it" reasoning this
+// function's own doc comment already gives for s.config/s.client
+// themselves.
+```
+
+Above `let user_id_sc = user_id.clone();`:
+```
+// Warm start (2026-08-14, direct follow-up during a live HTPC test:
+// "still takes some time to 'login'" — from a real Bonfire switch, not
+// the general auto-login case the earlier "Login speed" fix already
+// covered). A real log showed the timing instrumentation's own numbers:
+// finish_session_setup's ~2.5s total was almost entirely get_all_series
+// (2.3s) and fetch_home_data's next_up branch (2.0s) — both genuinely
+// needed for a correct refresh, but a profile switch (or a repeat
+// Add-Account login) very plausibly already has its own on-disk home/
+// series cache from a prior session under this exact user_id
+// (namespaced per-profile since Phase 1 step 2) — this function simply
+// never checked. spawn_auto_login already warm-starts from exactly this
+// cache (push_cached_data) before its own background network refresh;
+// mirrored here for the two fields actually on THIS function's blocking
+// path (Movies/Collections/Artists/Albums/Playlists aren't, so they
+// aren't warm-started here either). `warm_started` gates the final
+// commit closure below between a plain first-time build (no earlier
+// paint to preserve, and — critically — items_to_model's own correct
+// watchlist-star lookup, which the "preserving" variant deliberately
+// skips in favor of carrying an OLD row's value forward) and the
+// preserving-posters variant once there IS an earlier paint worth not
+// flashing over.
+// Real bug, code-review 2026-08-16 ("60s cache-save timer overwrites
+// the wrong profile's cache"): a switch/re-login into a profile that's
+// been used on this device before previously never reloaded ITS OWN
+// screen_caches.json at all — only spawn_auto_login did, for the
+// ordinary "resume the same session" path. reset_session_state (run
+// just before this function, as part of tearing down the OUTGOING
+// session) had already cleared all six in-memory caches to empty, so
+// the very next tick of the periodic 60s save timer silently
+// overwrote this profile's real, possibly prewarm-sized persisted
+// file with an almost-empty one. Mirrors spawn_auto_login's own warm-
+// start of this exact file — spawn_blocking, since it can reach
+// ~1.3MB after a library prewarm and a plain synchronous read here
+// would block whatever thread is running this async fn for however
+// long that takes.
+```
+
+Above `let (home_data, series_res, sysinfo_res, plugins_res) = tokio::join!(`:
+```
+// Timed (2026-08-14, "what makes login slow") — fetch_home_data is
+// itself a join, timed the same way internally; this outer join is the
+// true top-level breakdown of finish_session_setup's own cost. That
+// instrumentation found a real, fixable cost: a real login logged
+// `not_watched_tv took 4.103s` against every other branch finishing in
+// 1-2.7s (see fetch_home_data's own doc comment for why — Jellyfin's
+// own SortBy=Random + recursive per-episode unplayed check, not a
+// client bug). include_not_watched=false here — those two rows aren't
+// even shown on the Home dashboard this screen is about to display, so
+// there's no reason login should wait on them; spawn_not_watched_rows
+// below fetches and patches them in separately, without blocking this
+// join at all.
+```
+
+Above `crate::profile::sync_bonfire_subprofiles(`:
+```
+// Bonfire Phase 1, step 6 (2026-08-09): best-effort, always attempted —
+// get_plugins()/bonfire_list_profiles() both already degrade gracefully
+// when the plugin isn't installed, so this costs nothing extra for the
+// overwhelming majority of servers that don't have it.
+```
+
+Above `save_home_cache(&user_id, &home_data);`:
+```
+// Real bug, live-reported 2026-08-21 ("if i close fjord it still shows
+// the old cache before it reloads from the server") — this function
+// saved the fresh series list right below but never the fresh HOME
+// data (Continue Watching/Next Up/Recently Added/Favorites — the bulk
+// of what a session actually shows) at all; save_home_cache wasn't
+// even in this file's own imports. Only spawn_auto_login's own tail
+// (main.rs) ever wrote home.json — the ordinary cold "resume an
+// already-saved session" path. Every session that goes through THIS
+// function instead — a fresh login, an Add-Account login, or (per the
+// live-reported HTPC log that surfaced this) any Bonfire profile
+// switch — fetched and displayed fresh home data correctly for the
+// live session, then silently never wrote it back to disk, so the
+// NEXT launch's warm-start kept reading whatever home.json last held
+// from a genuine cold auto-login, however old that was.
+```
+
+Above `let (watchlist, cfg_snapshot) = {`:
+```
+// Fresh session — no prior CardItem rows for these to carry an existing
+// on_watchlist forward from, so the persisted set has to be read
+// explicitly here (2026-07-20, see FjordState.jellyfin_watchlist_ids'
+// own doc comment). cfg_snapshot is read in the same lock, purely for
+// push_current_profile_tile below (apply_settings_to_window, called a
+// few lines down, reads straight from `state_late` instead and no
+// longer needs a snapshot passed in — see this function's own top-of-
+// body comment for why it's called from here at all now).
+```
+
+Above `apply_settings_to_window(&w, &state_late.lock().unwrap());`:
+```
+// Real bug fix, 2026-08-14 — see this function's own top-of-body
+// comment. apply_settings_to_window already calls
+// refresh_profile_settings_dropdown + sets settings-is-master-
+// profile internally, so those two former standalone calls are
+// folded into it rather than left as duplicate logic; it needs
+// the live FjordState (not just the Config snapshot) for
+// audio_devices/system_fonts display-string lookups.
+```
+
+Above `fn spawn_not_watched_rows(`:
+```
+/// The two rows `fetch_home_data(..., include_not_watched: false)` skipped
+/// above (2026-08-14, "what makes login slow" — see that call site's own
+/// doc comment for the real timing evidence). Fetched here instead, fully
+/// independent of the login-blocking join, and patched in whenever they're
+/// ready — same "fire in the background, patch in later" shape as
+/// `spawn_poster_loading`/`spawn_series_poster_loading`/the
+/// movie-collections fetch right above. A session-guard on the resolved
+/// `AppState.person-id`-style pattern isn't needed here (this isn't a
+/// per-screen open), but the same class of risk — a stale result landing
+/// after a sign-out/switch — is still real, so `crate::session_current` is
+/// checked before writing anything, matching every other background patch
+/// in this codebase.
+```
+
+Above `let signed_out_user_id = s.config.active().user_id.clone();`:
+```
+// Clear only the session — deleting config.json wholesale (pre-CR10-12)
+// also wiped device_id, so the next login generated a fresh DeviceId and
+// Jellyfin invalidated the other machine's token (the exact scenario the
+// per-install DeviceId exists to prevent). Settings survive sign-out too.
+//
+// Removes the signed-out profile's own Config.profiles entry ENTIRELY,
+// along with every Bonfire sub-profile it owns (2026-08-15, real bug
+// live-reported two ways that turned out to share one root cause —
+// see CLAUDE.md's "Sign-out left orphaned Bonfire sub-profiles" section):
+// the old code blanked user_id/token/etc. IN PLACE, leaving the entry
+// itself present with an empty user_id — group_into_accounts filters
+// any entry with an empty user_id out of grouping entirely (correctly,
+// on its own terms), which silently dropped the real "root" member from
+// that account's group while every sub-profile stayed grouped under the
+// now-orphaned master_user_id key; build_account_tile then fell back to
+// group.profiles.first() for the account's own display identity, which
+// was now just whichever sub-profile sorted first — reading as "a
+// profile moved to become the account." Separately, switch_to_profile's
+// own master lookup (`profiles.iter().find(|p| p.user_id ==
+// target.master_user_id)`) could no longer find anything at all once
+// the master's user_id was blanked, failing every sub-profile switch
+// with "the master account for this profile isn't signed in on this
+// device" — visible directly in a live fjord.log. Resolved via
+// AskUserQuestion (remove entirely vs. keep-but-locked); user picked
+// remove — sync_bonfire_subprofiles re-adds them automatically on the
+// next login as this same master, so nothing is lost long-term.
+```
+
+Above `p.user_id == signed_out_user_id`:
+```
+// Bonfire Phase 5: `synced_via` also has to be checked, not
+// just `master_user_id` — a group account (a foreign
+// master's own account, discovered via the signed-out
+// account's OWN group membership) has an intentionally
+// EMPTY `master_user_id` (see that field's own doc comment),
+// so the original `master_user_id` check alone would leave
+// it orphaned in `Config.profiles` forever after sign-out,
+// with no local account left that could ever re-authenticate
+// a switch into it (switch_to_profile resolves via
+// `synced_via`, which would now point at nothing).
+```
+
+Above `let any_accounts_remain =`:
+```
+// Real UX gap, code-review 2026-08-16 ("Sign Out always shows a
+// blank Login screen even when another account with a valid
+// stored token is still known") — resolved via AskUserQuestion:
+// land on the account picker instead of plain Login whenever
+// ANY account remains after removing the signed-out one (and
+// its Bonfire sub-profiles) — pick the remaining one directly
+// (no password needed if its token's still valid), or use its
+// own "+ Add Account" tile — rather than stranding the user on
+// Login with no way back to it short of a restart. Computed
+// from cfg_to_save (post-retain, post-default-push), so the
+// just-pushed blank entry (the "signed out of the only known
+// account" case) correctly counts as zero real accounts and
+// falls through to plain Login below.
+//
+// Threshold loosened from "2+ remain" to "1+ remain," 2026-08-17
+// — live-questioned directly ("i had 2 accaunts but shuld ju
+// not just get to the acaunt picker then so you can chose the
+// remaining accaunt or add a new?"). The remaining account here
+// is a DIFFERENT one from whichever was just signed out of, so
+// showing it (plus Add Account) is strictly more useful than a
+// bare Login form even when only one is left — unlike the
+// ordinary cold-start gate (should_show_picker_at_startup),
+// which deliberately still skips straight through for the
+// single-account steady-state case (that one's "1 account" is
+// the SAME account every normal launch, not a leftover from
+// just having removed a different one).
+```
+
+(The block above `fell_back_to_http` began with `candidate_server_urls`' doc — separated from it when fell_back_to_http was inserted in the 0.5.0 security fix; a trimmed doc is back on candidate_server_urls.)
+
+#### `crates/fjord-app/src/auth.rs` — file header (TOC)
+```
+// ── fjord-app · auth.rs ──────────────────────────────────────────────────────
+//   LoginOptions  { append, remember } — grouped to keep do_login's own arg count under
+//             clippy's too_many_arguments threshold (2026-08-14); `remember` is written into
+//             the just-authenticated ProfileSettings.remember_login in all 3 branches below
+//   fell_back_to_http / note_if_http_fallback  a schemeless address that only answered over
+//             http:// → one log line + toast (Jellyfin login, Seerr connects; 2026-10-09
+//             security review — no silent plain HTTP; unit-tested)
+//   do_login  authenticate, persist config, then finish_session_setup; the authenticate()
+//             HTTP client carries an explicit 30s timeout (previously a bare
+//             reqwest::Client::new() with no timeout — the one call in the app that could
+//             hang indefinitely against an unreachable server); backfills a blank
+//             ProfileSettings.display_name from the login response's own auth.user.name
+//             (2026-08-14 — the append-new/append-existing/normal branches all had this gap;
+//             spawn_auto_login gets the equivalent backfill via a real GET /Users/{id} call,
+//             since the token-resume path never sees a login response at all)
+//   finish_session_setup  shared tail of every "we have a valid client, now make it the
+//             active session" flow (Bonfire Phase 1, step 6, 2026-08-09) — fetch home
+//             data/series/system info/plugins, persist cfg, update FjordState/AppState,
+//             start WebSocket, spawn poster loading + movie-collections fetch, refresh
+//             Settings → Profiles → Default Profile AND Default Account's dropdowns (step 7 +
+//             2026-08-14). Both commit closures also close show-account-picker now (2026-08-14
+//             fix — a switch initiated directly from the account tier, a single-profile
+//             account's own tile, left it visibly stuck open otherwise). Reused verbatim
+//             by profile.rs's switch_to_profile so the two flows can't drift. Warm-starts
+//             from this user_id's own on-disk home/series cache (2026-08-14, "still takes
+//             some time to login") before the blocking network join even starts, mirroring
+//             spawn_auto_login's own push_cached_data — a repeat switch/login for a
+//             previously-used profile can show real content almost immediately instead of
+//             waiting the ~2.5s a real log showed get_all_series/next_up costing. Also now
+//             warm-starts screen_caches.json the same way (2026-08-16, code review — this
+//             file was previously never reloaded on a switch at all, only on plain
+//             auto-login, so the periodic save timer could silently overwrite a real
+//             persisted file with the empty set reset_session_state had just cleared).
+//   wire_login             callbacks moved from main() (0.5.0 step 3): the login screen
+//   wire_sign_out          callbacks moved from main() (0.5.0 step 3): Sign Out
+// ─────────────────────────────────────────────────────────────────────────────
+```

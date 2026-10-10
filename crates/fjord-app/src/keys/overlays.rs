@@ -1,59 +1,31 @@
 // ── fjord-app · keys/overlays.rs ─────────────────────────────────────────────
-//   Raw-key handlers for overlays that show before (or on top of) any AppMode —
-//   handle_key calls each one first, while its show-* flag is set:
-//   handle_onscreen_keyboard_keys, handle_login_keys, handle_profile_picker_keys,
-//   handle_account_picker_keys, handle_sidebar_profile_menu_keys, handle_connect_seerr_keys,
-//   handle_manage_profiles_keys, handle_bonfire_group_keys, handle_offline_keys
-//   show-account-picker tier  Left/Right move the tile cursor (count == "+ Add Account" tile's
-//                        own cursor value); Enter on a real tile → account-picker-select,
-//                        on the trailing tile → account-picker-add-account; Escape/Backspace
-//                        closes only when account-picker-cancelable (the startup-gate open has
-//                        nothing to cancel back to)
-//   show-profile-picker tier  same shape one tier down, always account-scoped; Escape/Backspace
-//                        dispatches on profile-picker-back-mode ("accounts" → profile-picker-
-//                        back-to-accounts, genuinely came from there; "cancel" →
-//                        profile-picker-cancel, closes back to a live session without switching
-//                        — the sidebar's own "Switch Profile" action, which never went through
-//                        the account tier at all; see that property's own doc comment in
-//                        app_state.slint for the real bug this distinction fixes, 2026-08-19)
+//   Raw-key handlers for overlays that show before (or on top of) any AppMode — handle_key calls
+//   each one first, while its show-* flag is set:
+//   handle_onscreen_keyboard_keys  the on-screen keyboard (swallows every key but Ctrl+Q while open)
+//   handle_login_keys          LoginScreen zones 3-6 (Remember/Connect/Back/Quit); 0-2 are LineEdits
+//   handle_profile_picker_keys 2D tile nav (section × cursor), PIN entry sub-state, Back/Quit buttons;
+//                              Escape/Backspace per profile-picker-back-mode ("accounts" / "cancel")
+//   handle_account_picker_keys tile row + "+ Add Account"; Escape/Backspace close only when cancelable
+//   handle_sidebar_profile_menu_keys  the sidebar quick-menu rows
+//   handle_connect_seerr_keys  ConnectSeerrScreen zones (✕, URL, tabs, method fields/button)
+//   handle_manage_profiles_keys  tile row + "+" tile, ✕ button
+//   handle_bonfire_group_keys  BonfireGroupScreen zones (profile::existing_bonfire_group_zones),
+//                              join-code typing/Backspace
+//   handle_offline_keys        OfflineScreen (Retry / Change Server / Quit)
 // ─────────────────────────────────────────────────────────────────────────────
 use super::*;
 
-// On-screen alphanumeric keyboard (Bonfire Phase 3, 2026-08-22; full
-// rollout beyond Login, 2026-08-23) — checked before show_login (and
-// every other screen-scoped gate below), same shape as show-sign-out-
-// confirm: this mechanism is opened from several different screens
-// (Login, ProfileEditScreen, Discover search, Browse search,
-// PlaylistPicker naming, ConnectSeerr — every text-entry surface in the
-// app as of 2026-08-23), so it can't be nested inside any one screen's
-// own tier the way show_profile_pin_entry is nested inside
-// show_profile_picker (PIN entry only ever happens on that one screen —
-// this keyboard doesn't have that luxury). Key VALUES are never read
-// here — only cursor movement and Enter, which just bumps
-// kb-activate-pulse and lets QwertyKeyboard's own _activate-mirror
-// (widgets.slint) resolve what that means; see app_state.slint's own
-// doc comment on show-onscreen-keyboard for why.
-//
-// Also requires settings-onscreen-keyboard-enabled (2026-08-27, the new
-// Settings → UI toggle) — deliberately in ADDITION to every
-// QwertyKeyboard's own mount condition also checking it, not instead
-// of. The mount check alone stops the widget from ever rendering when
-// the setting is off, but says nothing about THIS gate — which runs
-// before every other input tier and unconditionally consumes any key
-// (only Ctrl+Q escapes it) — so if any trigger site (present or
-// future) ever left show-onscreen-keyboard stuck true while the
-// setting is off, this gate alone could still turn into a silent,
-// no-visible-cause input lockout with nothing on screen to explain it.
-// Checking it here too means that failure mode is structurally
-// impossible regardless of what any individual trigger site does.
+// On-screen alphanumeric keyboard — checked before every screen-scoped tier: it can
+// be open over any text-entry screen (Login, Profile Edit, searches, playlist name,
+// Connect Seerr, join code), so it can't live inside one screen's tier. Key VALUES are
+// never read here — only cursor movement, and Enter bumps kb-activate-pulse for
+// QwertyKeyboard's _activate-mirror to resolve (see app_state.slint).
+// Also requires settings-onscreen-keyboard-enabled: this gate swallows every key
+// (except Ctrl+Q), so it must never be active for a keyboard that isn't drawn. The
+// openers (open-onscreen-keyboard / open_onscreen_keyboard) refuse when it's off too.
 pub(crate) fn handle_onscreen_keyboard_keys(g: &crate::AppState, key: &str, ctrl: bool) -> bool {
-    // Debug logging, 2026-08-25 — this whole gate had none at all,
-    // which left the ProfileEditScreen focus-race bug undiagnosable
-    // from a log alone (see profile_edit.rs's own zone 0/5/6 doc
-    // comment for the bug this exists to catch a recurrence of): the
-    // next log capture will show directly whether a given keypress
-    // ever reached this gate at all, or whether some field's native
-    // focus swallowed it first.
+    // Every key reaching the gate is logged at debug, so a log shows whether a key got
+    // here or a field's native focus took it first.
     debug!(
         "onscreen-kb: key={key:?} target={:?} cursor={}",
         g.get_onscreen_keyboard_target(),
@@ -79,11 +51,8 @@ pub(crate) fn handle_onscreen_keyboard_keys(g: &crate::AppState, key: &str, ctrl
     } else if key == key::DOWN {
         g.set_onscreen_keyboard_cursor(onscreen_keyboard_move_row(&row_lens, cursor, 1));
     } else if key == key::BACKSPACE {
-        // Physical-keyboard passthrough, 2026-08-23 — live feedback
-        // ("i want it to still work to type on the keybord even if
-        // its open"). See app_state.slint's own doc comment on
-        // onscreen-keyboard-physical-key for why this is a
-        // payload+counter pair, not a direct callback.
+        // Physical keys still type while the keyboard is open: forwarded as a payload +
+        // counter pair (see app_state.slint's onscreen-keyboard-physical-key).
         g.set_onscreen_keyboard_physical_key("backspace".into());
         g.set_onscreen_keyboard_physical_key_seq(
             g.get_onscreen_keyboard_physical_key_seq().wrapping_add(1),
@@ -117,56 +86,27 @@ pub(crate) fn handle_login_keys(g: &crate::AppState, key: &str, ctrl: bool) -> b
         g.invoke_quit();
         return true;
     }
-    // Real bug, live-reported 2026-08-17: "there is no cancel/back only
-    // quit witch will quit jellyfin" — LoginScreen's own "← Back to
-    // Profiles"/"Cancel" button (append mode only — see
-    // login-append-mode's own doc comment) was mouse-only, with no
-    // keyboard path to it at all; Ctrl+Q (quit the whole app) was
-    // genuinely the only reachable keyboard action. Escape now invokes
-    // the identical cancel-add-account() the button's own click handler
-    // does, matching this app's universal Escape=Back convention.
-    // Never fires in a genuine first-login (no append mode, nothing to
-    // cancel back to) — unchanged there, Escape still does nothing.
+    // Escape = the Back/Cancel button (append mode only; a first login has nothing to
+    // cancel back to).
     if key == key::ESCAPE && g.get_login_append_mode() {
         g.invoke_cancel_add_account();
         return true;
     }
-    // Full D-pad nav, 2026-08-19 (zones 3/4), extended 2026-08-21 (zones
-    // 5/6, Back/Quit reachability — see login.slint's own header doc
-    // comment for the full design). Only reached for zones 3-6, none of
-    // which hold native LineEdit focus (login.slint's own key-pressed
-    // hooks call AppState.refocus() when leaving zone 2, specifically so
-    // this tier starts seeing keys again) — zones 0-2 fall straight
-    // through to `return false` below, since Tab/typing/Enter there are
-    // all handled by the LineEdit itself, and a `changed login-zone`
-    // tracker in login.slint calls the right field's own .focus()
-    // whenever Rust sets this back down to 0-2 (Rust can't call a named
-    // Slint element's method directly).
+    // Zones 3-6 only (Remember, Connect, Back, Quit) — they hold no native focus
+    // (login.slint's hooks refocus() fs when leaving zone 2). Zones 0-2 return false: the
+    // LineEdit handles Tab/typing/Enter, and a `changed login-zone` tracker in login.slint
+    // focuses the right field when Rust sets the zone back to 0-2.
     let zone = g.get_login_zone();
     if (3..=6).contains(&zone) {
         if key == key::RETURN {
             g.set_kb_activate_pulse(g.get_kb_activate_pulse().wrapping_add(1));
         }
         let append = g.get_login_append_mode();
-        // zone 4 (Connect)'s RETURN has no Rust-side arm at all — the
-        // actual do-login call needs live LineEdit.text values Rust
-        // can't read directly, same "Rust can only bump
-        // kb-activate-pulse, a Slint-side changed tracker does the
-        // real work" pattern ProfileEditScreen's own Save button
-        // already uses. Handled by login.slint's _pulse-mirror tracker.
-        // Zones 5 (Back)/6 (Quit) are two INDEPENDENT entry points off
-        // opposite ends of the chain, not chained through each other —
-        // real bug, live-reported 2026-08-21 ("the back button is down
-        // from connect witch feels wrong as it is top left so it shuld
-        // be up from the server right?"): the first version reached
-        // Back via Down-from-Connect, requiring a full pass through
-        // every field to reach a button sitting top-left, visually
-        // ABOVE all of them. Back is now reached via Up from Server
-        // (zone 0, handled in that field's own key-pressed hook, since
-        // it holds native LineEdit focus and never reaches this match
-        // at all) — zone 5's own Down returns to Server the same way.
-        // Quit (bottom-right) keeps its original Down-from-Connect
-        // reachability, matching its actual on-screen position.
+        // Zone 4 (Connect) has no Rust arm: do-login needs the live LineEdit texts, so Rust
+        // only bumps kb-activate-pulse and login.slint's _pulse-mirror submits (like Profile
+        // Edit's Save). Back (zone 5) hangs off Up from Server (handled in that field's own
+        // hook) and Down returns to Server; Quit (zone 6) is Down from Connect — matching their
+        // on-screen positions.
         match key {
             key::UP => g.set_login_zone(match zone {
                 3 => 2,
@@ -198,15 +138,10 @@ pub(crate) fn handle_login_keys(g: &crate::AppState, key: &str, ctrl: bool) -> b
     false
 }
 
-// ProfilePickerScreen (Bonfire Phase 1, step 6, 2026-08-09) — same tier
-// as show-login above (checked before active_mode() ever runs, never
-// appears as an AppMode value). Raw-key handling, same shape as
-// OfflineScreen below: no native widget focus path, so Left/Right/Enter
-// are matched directly rather than going through the Action/KeyMap
-// layer. PIN entry is a layered sub-state that captures all input first
-// when open — mirrors VirtualKeyboard's own 12-key row-major layout
-// (widgets.slint) exactly, so keyboard and mouse activation always
-// agree on what "cursor N" means.
+// ProfilePickerScreen — like the login tier, checked before active_mode() (never an
+// AppMode). Raw keys, no native focus. The PIN entry sub-state captures all input
+// first and follows VirtualKeyboard's 12-key row-major layout (widgets.slint), so
+// keyboard and mouse agree on "cursor N".
 pub(crate) fn handle_profile_picker_keys(g: &crate::AppState, key: &str, ctrl: bool) -> bool {
     if ctrl && (key == "q" || key == "Q") {
         g.invoke_quit();
@@ -245,18 +180,9 @@ pub(crate) fn handle_profile_picker_keys(g: &crate::AppState, key: &str, ctrl: b
             "0",
             "confirm",
         ];
-        // Real bug, live-reported 2026-08-17: "cant use numpad or
-        // numbers if you have a real keybord and backspace dont work."
-        // Two gaps, both fixed together: (1) no arm at all accepted a
-        // raw digit character — a physical-keyboard user had no way to
-        // type a PIN except D-pad-navigating the on-screen 12-key grid
-        // one key at a time; (2) Backspace CLOSED the whole PIN screen
-        // instead of deleting the last digit, the opposite of what
-        // Backspace means on every other text-entry surface in this
-        // app. Escape alone now closes/cancels; Backspace forwards to
-        // the same "backspace" value the on-screen key already sends.
-        // Digit keys sync the cursor to the matching on-screen key too,
-        // same mouse-sync discipline as everywhere else in this app.
+        // A physical keyboard can type the PIN: digit keys add the digit (and move the
+        // on-screen cursor to it, mouse-sync); Backspace deletes the last digit (Escape alone
+        // closes/cancels).
         match key {
             key::LEFT => g.set_profile_pin_cursor((g.get_profile_pin_cursor() - 1).max(0)),
             key::RIGHT => g.set_profile_pin_cursor((g.get_profile_pin_cursor() + 1).min(11)),
@@ -298,15 +224,8 @@ pub(crate) fn handle_profile_picker_keys(g: &crate::AppState, key: &str, ctrl: b
         }
         return true;
     }
-    // 2026-08-16, direct follow-up to the Back-button fix immediately
-    // below ("quit it not also reacheble by keybord navigation"): the
-    // on-screen Quit button had the identical gap — Ctrl+Q already
-    // quits from any screen, but there was no keyboard CURSOR path
-    // onto the button itself. Down from the tile row (below) sets
-    // this — always reachable, unlike the conditional Back button;
-    // Up returns to the tile row, Enter activates, Escape/Backspace
-    // un-focuses it without quitting (quitting is a terminal action,
-    // not something Escape should trigger as a side effect).
+    // Quit button focused (Down from the tile row — always there, unlike Back): Up returns,
+    // Enter quits, Escape/Backspace only un-focus (quitting is never an Escape side effect).
     if g.get_profile_picker_quit_focused() {
         match key {
             key::UP => g.set_profile_picker_quit_focused(false),
@@ -320,27 +239,10 @@ pub(crate) fn handle_profile_picker_keys(g: &crate::AppState, key: &str, ctrl: b
         }
         return true;
     }
-    // 2026-08-16, real bug ("the button shows but i cant navigate to
-    // it with keybord and press enter"): the "← Back to Accounts"
-    // button was mouse-only — visible and clickable, but with no
-    // keyboard CURSOR path onto it at all; only the Escape/Backspace
-    // shortcut below reached the same action. Handled as its own
-    // focus state, mirroring the "Back button focused" convention
-    // every other content-style screen in this app already
-    // establishes (Detail/Season/Collection/Album/Artist: Up from the
-    // top of content focuses Back, Down returns to content, Enter
-    // activates) — Up from the tile row below sets this when the
-    // button exists; here, Down returns to the tile row and
-    // Enter/Escape/Backspace all activate it, same destination the
-    // pre-existing shortcut already reaches.
-    //
-    // 2026-08-19, real bug ("if you was in fjord and pressed switch
-    // profile you shuld go back to fjord as the same profile you
-    // was"): this used to unconditionally call
-    // invoke_profile_picker_back_to_accounts() — now dispatches on
-    // profile-picker-back-mode ("accounts" vs "cancel"), matching
-    // whichever of the two buttons is actually shown (see that
-    // property's own doc comment in app_state.slint for the full bug).
+    // Back button focused (Up from the tile row when the button exists), like the Back
+    // button on every content screen: Down returns, Enter/Escape/Backspace activate.
+    // Where it goes follows profile-picker-back-mode ("accounts" or "cancel" — see
+    // app_state.slint).
     if g.get_profile_picker_back_focused() {
         match key {
             key::DOWN => g.set_profile_picker_back_focused(false),
@@ -365,10 +267,8 @@ pub(crate) fn handle_profile_picker_keys(g: &crate::AppState, key: &str, ctrl: b
         }
         return true;
     }
-    // 2026-08-14, the 2-tier redesign: Escape/Backspace goes back ONE
-    // level at a time — either to the account tier or by cancelling
-    // straight back to a live session, per profile-picker-back-mode
-    // (see its own doc comment).
+    // Escape/Backspace go back ONE level: to the account tier, or cancel back to the live
+    // session, per profile-picker-back-mode.
     if key == key::ESCAPE || key == key::BACKSPACE {
         if g.get_profile_picker_back_mode().as_str() == "accounts" {
             g.invoke_profile_picker_back_to_accounts();
@@ -377,28 +277,10 @@ pub(crate) fn handle_profile_picker_keys(g: &crate::AppState, key: &str, ctrl: b
         }
         return true;
     }
-    // No trailing "+ Add Account" cursor slot anywhere in here
-    // (2026-08-14) — this screen is always scoped to one account's own
-    // profiles (plus any Bonfire-linked ones), and adding a brand-new,
-    // unrelated account lives on the account tier instead.
-    //
-    // 2026-08-31, Bonfire Phase 5 follow-up ("but what i shuld still be
-    // able to switch to a bonfire master profile with out needing to
-    // switch 'accaunt'...") — 2D nav, modeled directly on Discover's
-    // own landing-row pattern (discover.rs::handle_key_landing), not
-    // BonfireGroupScreen's flat 1D zone list (which has no vocabulary
-    // for a second axis at all): profile-picker-section picks the ROW
-    // (which household has focus), profile-picker-cursor picks the
-    // COLUMN within that section's own tile row.
-    //
-    // Left/Right stay clamped at the row's own edges — no escape to
-    // Back/Quit, unlike Discover's own Left-at-column-0 escape (which
-    // exists because Discover's sidebar sits physically to its left);
-    // there's no analogous "thing to the left" here — Back sits above
-    // the tile rows, Quit below, matching the already column-
-    // independent Up/Down bindings this screen already had before this
-    // change (now just scoped to "section 0"/"the last section"
-    // instead of "the only row").
+    // No "+ Add Account" slot here (accounts are added on the account tier). 2D nav like
+    // Discover's landing rows: profile-picker-section = row (household),
+    // profile-picker-cursor = column. Left/Right stay clamped at the row edges (Back is
+    // above the rows, Quit below — nothing to the left).
     let sections = g.get_profile_picker_sections();
     let section_count = sections.row_count() as i32;
     let section = g
@@ -464,12 +346,8 @@ pub(crate) fn handle_profile_picker_keys(g: &crate::AppState, key: &str, ctrl: b
     true
 }
 
-// Account picker (2026-08-14, the 2-tier account/profile redesign) —
-// same tier and shape as ProfilePickerScreen just above (checked
-// before active_mode() ever runs); no PIN sub-state at this tier at
-// all (accounts aren't PIN-protected, only profiles within them are —
-// picking a single-profile account either switches directly or opens
-// ProfilePickerScreen's own PIN modal, never one here).
+// Account picker — same tier and shape as the profile picker; no PIN state here
+// (accounts have no PIN; a single-profile account's PIN uses the profile picker's modal).
 pub(crate) fn handle_account_picker_keys(
     g: &crate::AppState,
     key: &str,
@@ -496,13 +374,8 @@ pub(crate) fn handle_account_picker_keys(
         }
         return true;
     }
-    // 2026-08-21, real gap — see account-picker-back-focused's own doc
-    // comment in app_state.slint. Same shape as the quit-focused block
-    // above, and as profile_picker.slint's own back-focused dispatch:
-    // Enter/Escape/Backspace all close the picker (this variant never
-    // has a destination to distinguish, unlike the profile tier's own
-    // "accounts" vs "cancel" split — an account picker Back always just
-    // cancels), Up returns to the tile row.
+    // Back focused: Enter/Escape/Backspace close the picker (always a plain cancel here),
+    // Up returns to the tile row.
     if g.get_account_picker_back_focused() {
         match key {
             key::DOWN => g.set_account_picker_back_focused(false),
@@ -585,51 +458,13 @@ pub(crate) fn handle_sidebar_profile_menu_keys(
     true
 }
 
-// ConnectSeerrScreen — full D-pad zone system, 2026-08-23 (was: same
-// native-LineEdit-focus shape as LoginScreen but with no zone nav at
-// all, letting typing/tabbing pass through untouched and only handling
-// Ctrl+Q/Enter-pulse/Escape). See connect_seerr.slint's own header doc
-// comment and app_state.slint's connect-seerr-zone doc comment for the
-// full design — mirrors login-zone's INLINE dispatch shape (not
-// ProfileEditScreen's delegate-to-a-separate-function one), since this
-// screen's zone count, while variable across tabs, stays small enough
-// not to need its own file. Zones -1 (close-✕) and 1 (tab row) are
-// always reachable; zone 1's Left/Right cycle connect-seerr-method
-// directly (wrapping) and clear connect-seerr-error, matching each
-// MethodTab's own mouse click handler exactly. Zones >= 2 that resolve
-// to a plain button (never a LineEdit) are always the LAST zone in
-// existing_connect_seerr_zones' own list for whichever tab is active —
-// see that function's own doc comment for why this holds across every
-// method/polling combination — so `zones.last() == Some(&zone)` is
-// enough to tell a button zone apart from an in-between text-field zone
-// with no need to also check connect-seerr-method here. Zone 0 (url-
-// input) and any in-between zone (2/3 when NOT last) are real LineEdits
-// and never actually reach this tier in practice — native focus
-// intercepts first, each field's own key-pressed hook handles its
-// Up/Down/Enter/Escape — so those fall through to `return false`, same
-// as login-zone's own zones 0-2. `zone` self-heals to `zones[0]`
-// whenever it's not actually present in the current list (2026-08-26,
-// code review — Quick Connect's own zone 2 vanishes the instant
-// qc-polling flips true, and a stale zone can also survive a screen
-// close/reopen; without this, `dispatchable` below is false for the
-// stranded zone and every key fell through to `_ => return false`,
-// leaking input to whatever's rendered behind this modal).
-//
-// Zone 0/1 numbering, fixed 2026-08-26 (real bug, live-reported: "the
-// keybord nav on seerr connect seams off it do not go where you are
-// expekting") — url-input and the tab row were originally numbered 1
-// and 0 respectively, the REVERSE of their actual visual top-to-bottom
-// order (url-field-wrap is declared, and renders, ABOVE the tab row's
-// HorizontalLayout in connect_seerr.slint). Since `next_zone`/
-// `prev_zone` walk the `zones` list purely by list position — with no
-// idea which physical screen element a given number represents —
-// Down from the tab row (list position after 0) landed on url-input,
-// which sits VISUALLY ABOVE it, and Down from url-input's own
-// key-pressed hook jumped straight past the tab row to zone 2,
-// skipping it entirely on the way back down. Renumbered so 0 = url-
-// input (topmost navigable field, right below Close) and 1 = the tab
-// row (matching visual order exactly) — see connect_seerr.slint's own
-// header doc comment for the full before/after zone map.
+// ConnectSeerrScreen — zones from seerr_auth::existing_connect_seerr_zones (see
+// app_state.slint's connect-seerr-zone), dispatched inline like login-zone. -1 = ✕ and
+// 1 = the tab row are always there (Left/Right switch method, wrapping, and clear the
+// error — like a tab click). A button zone is always the LAST zone of the current tab,
+// so `zones.last() == Some(&zone)` identifies it. Zone 0 (URL) and in-between text
+// zones are LineEdits whose own hooks handle their keys — they return false here, like
+// login's 0-2. Zone order follows the visual order (URL above the tabs).
 pub(crate) fn handle_connect_seerr_keys(
     g: &crate::AppState,
     key: &str,
@@ -643,16 +478,9 @@ pub(crate) fn handle_connect_seerr_keys(
     let zones = crate::seerr_auth::existing_connect_seerr_zones(g);
     let mut zone = g.get_connect_seerr_zone();
     if !zones.contains(&zone) {
-        // Self-heal (code review, 2026-08-26): the previously-focused
-        // zone vanished out from under us — Quick Connect's zone 2
-        // ("Get Code") disappears the instant qc-polling flips true, or
-        // a stale non-zero zone survived a screen reopen. Without this,
-        // `dispatchable` (below) is false for a zone not in the list,
-        // and every key silently hits `_ => return false`, leaking to
-        // whatever's rendered behind this modal for as long as the
-        // stale zone persists — a real, confirmed lockout, not
-        // hypothetical (verified by tracing the exact Quick Connect
-        // polling transition).
+        // The focused zone is no longer in the list (Quick Connect's Get Code vanishes once
+        // polling starts; a stale zone can survive a reopen): fall back to zones[0], or every
+        // key would fall through and reach whatever is behind this modal.
         zone = zones[0];
         g.set_connect_seerr_zone(zone);
     }
@@ -663,16 +491,9 @@ pub(crate) fn handle_connect_seerr_keys(
     if dispatchable && key == key::RETURN {
         g.set_kb_activate_pulse(g.get_kb_activate_pulse().wrapping_add(1));
     }
-    // Escape always closes the whole screen, regardless of zone —
-    // matches every zone's own key-pressed Escape branch in
-    // connect_seerr.slint (this tier only ever sees Escape at zones
-    // -1/0/a button zone; the LineEdit zones handle it themselves,
-    // identically, before it can ever reach here). Also clears the
-    // on-screen keyboard's 3 properties, mirroring connect_seerr.slint's
-    // own close-screen() function — that gate runs before every other
-    // screen's own tier, so leaving it stuck true here would silently
-    // swallow all subsequent input app-wide, not just on this screen
-    // (Bonfire Phase 3's original code review, Finding 1).
+    // Escape always closes the screen (the LineEdit zones handle it the same way in
+    // connect_seerr.slint). Also clears the on-screen keyboard's state, like the screen's
+    // close-screen() — a stuck keyboard flag would swallow input app-wide.
     if key == key::ESCAPE {
         g.set_show_connect_seerr(false);
         g.set_show_onscreen_keyboard(false);
@@ -731,15 +552,9 @@ pub(crate) fn handle_connect_seerr_keys(
                     g.set_connect_seerr_zone(n);
                 }
             }
-            // Enter has no Rust-side arm here — the actual submit/get-
-            // code call needs live LineEdit.text values Rust can't read
-            // directly, same "Rust can only bump kb-activate-pulse, a
-            // Slint-side changed tracker does the real work" pattern
-            // login-zone's own zone 4 (Connect) already uses. Handled
-            // by connect_seerr.slint's own _pulse-mirror (Quick
-            // Connect's Get Code) or, for the 3 text-field tabs, their
-            // own local copy of it (see that file's header doc comment
-            // for why each tab needs its own).
+            // No Rust arm for Enter: submit/Get Code needs the live LineEdit texts, so Rust only
+            // bumps kb-activate-pulse; connect_seerr.slint's _pulse-mirror (Get Code) or each text
+            // tab's own local copy does the call.
             _ => {}
         },
         _ => return false,
@@ -758,14 +573,7 @@ pub(crate) fn handle_manage_profiles_keys(
         g.invoke_quit();
         return true;
     }
-    // Real gap, live-reported 2026-08-21 ("when in the manage profile
-    // picker you cant go back without pressing escape, it has a x for
-    // the mouse but cant get to it with keybord nav or dpad") — see
-    // manage-profiles-close-focused's own doc comment in
-    // app_state.slint. Same shape as AccountPickerScreen's own
-    // quit-focused block: Enter/Escape/Backspace all close (there's no
-    // "quit the app" ambiguity to worry about here, unlike a real Quit
-    // button, so Escape closing is fine, not a terminal-action risk).
+    // ✕ focused (Up from the tile row): Enter/Escape/Backspace close — no quit ambiguity here.
     if g.get_manage_profiles_close_focused() {
         match key {
             key::DOWN => g.set_manage_profiles_close_focused(false),
@@ -789,12 +597,7 @@ pub(crate) fn handle_manage_profiles_keys(
         window.invoke_grab_keyboard_focus();
         return true;
     }
-    // Real bug, code-review 2026-08-16: this screen previously had no
-    // keyboard navigation at all beyond Escape/Ctrl+Q — a dead end for
-    // a D-pad/remote user. Mirrors AccountPickerScreen's own tile-row +
-    // trailing "+" tile dispatch exactly (Left/Right cursor, Enter
-    // activates); AppState.manage-profiles-cursor was already declared
-    // for exactly this, just never wired.
+    // Tile row + trailing "+" tile, like the account picker: Left/Right move, Enter activates.
     let list_count = g.get_manage_profiles_list().row_count() as i32;
     // The real (server-reported) cap, not a hardcoded 5 — see
     // profile_edit.rs::open_manage_profiles_screen's own doc comment on
@@ -828,29 +631,17 @@ pub(crate) fn handle_manage_profiles_keys(
     true
 }
 
-// BonfireGroupScreen (Bonfire Phase 5, cross-household groups,
-// 2026-08-09; restructured 2026-08-29 from 3 mutually-exclusive states
-// to 2 independent, always-rendered sections — hosting and joining can
-// now both be active at once, matching Bonfire's own official UI) —
-// zone count varies with (is_owner, is_member, member count), so
-// navigation is resolved live via profile::existing_bonfire_group_zones
-// rather than a fixed enum; see that function's own doc comment for the
-// exact host/join/toggle zone-base formula this dispatch mirrors.
+// BonfireGroupScreen — zones vary with (is_owner, is_member, member count), so they're
+// resolved live by profile::existing_bonfire_group_zones (hosting and joining are two
+// independent sections); see it for the zone formula this dispatch mirrors.
 pub(crate) fn handle_bonfire_group_keys(
     g: &crate::AppState,
     key: &str,
     ctrl: bool,
     window: &crate::MainWindow,
 ) -> bool {
-    // Debug logging, 2026-08-29 — added while investigating a live
-    // "can't write the join code" report; this whole tier had no
-    // per-keypress trace at all, so there was no way to tell from a log
-    // whether a keypress reached this screen, and if so which zone it
-    // landed on (D-pad-focusing the join-code field is a separate step
-    // from actually opening the on-screen keyboard for it — Enter is
-    // needed for that, matching every other on-screen-keyboard consumer
-    // in this app; a raw letter key typed before that is silently
-    // swallowed by this tier's own unconditional `return true`).
+    // Every key is logged at debug (zone, owner/member state), so a log shows whether a
+    // key reached this screen and where it landed.
     debug!(
         "bonfire_group: key={key:?} zone={} is_owner={} is_member={} onscreen_kb_open={}",
         g.get_bonfire_group_zone(),
@@ -935,26 +726,10 @@ pub(crate) fn handle_bonfire_group_keys(
         window.invoke_grab_keyboard_focus();
         return true;
     }
-    // Backspace, real bug live-reported 2026-08-29 ("backspace wont
-    // remove what have been typeded it will just close it"): this used
-    // to be lumped in with Escape above (both unconditionally closed
-    // the screen), which meant the join-code-field backspace arm added
-    // for the on-screen-keyboard-disabled fix just below was dead
-    // code — this check ran first and returned before that arm was
-    // ever reached. Split apart: on the join-code field specifically,
-    // Backspace deletes a character (a no-op on an already-empty
-    // buffer, never a close — matching handle_browse_search's own
-    // established "Backspace never means exit" convention for this
-    // exact field shape); everywhere else in this screen it still
-    // means Back, unchanged.
-    // 2026-08-29 restructure: hosting and join are now two INDEPENDENT,
-    // always-rendered sections rather than 3 mutually-exclusive states
-    // (see existing_bonfire_group_zones' own doc comment in profile.rs
-    // for the full formula and why — a real screenshot of Bonfire's own
-    // official UI showed both sections together unconditionally).
-    // Computed once here since both the BACKSPACE check and the
-    // printable-char fallback below need `join_base` too, not just the
-    // RETURN dispatch.
+    // Backspace on the join-code field deletes a character (never closes — like the search
+    // fields); everywhere else here it means Back. Hosting and joining are independent
+    // sections; `join_base` is computed once because the Backspace check, Enter and the
+    // typing fallback all need it.
     let is_owner = g.get_bonfire_group_is_owner();
     let is_member = g.get_bonfire_group_is_member();
     let n_members = g.get_bonfire_group_owned_members().row_count() as i32;
@@ -1077,34 +852,10 @@ pub(crate) fn handle_bonfire_group_keys(
                 }
             }
         }
-        // Direct physical typing into the join-code field, real gap
-        // live-reported 2026-08-29 ("i have the on screen keybord
-        // disabled" — "cant write thje joine code"). Unlike every other
-        // hand-drawn field this app already had before the on-screen-
-        // keyboard rollout (Discover/Browse/Library search — see e.g.
-        // handle_browse_search's own `is_printable(k) => append` arm a
-        // few hundred lines below), this field was BUILT entirely
-        // within that rollout and had no independent typing path of its
-        // own at all: with the setting off, Enter (above) still arms
-        // show-onscreen-keyboard, but the widget never mounts and the
-        // top-level onscreen-kb dispatch gate never runs (both
-        // correctly also gate on settings-onscreen-keyboard-enabled),
-        // so every subsequent letter fell straight into this tier's own
-        // catch-all and was silently swallowed — the field was
-        // completely untypeable with the on-screen keyboard disabled.
-        // Fixed by adding the same direct-typing fallback those other
-        // fields already have, scoped to the one zone/state it applies
-        // to; RETURN's own "open the on-screen keyboard" behavior above
-        // is untouched, so D-pad/on-screen-keyboard users keep that
-        // path too — both now coexist, matching every sibling field.
-        // (Backspace's own equivalent fallback lives in the dedicated
-        // check above, not here — it needs to run before this whole
-        // match, since Escape/Backspace used to be handled together as
-        // a single "close the screen" case at that same earlier point.)
-        // `!is_owner` was dropped from this guard the same day it was
-        // added — that's precisely what made "an owner types a join
-        // code" impossible, the exact gap the 2026-08-29 restructure
-        // above exists to fix.
+        // Physical typing straight into the join-code field (like the search fields'
+        // `is_printable` arms) — the only way to type it with the on-screen keyboard off, and it
+        // works with it on too. Owners can type a join code as well (an owner may join another
+        // group). Backspace is handled in the check above.
         k if is_printable(k) && !is_member && zone == join_base => {
             g.invoke_bonfire_group_join_code_append(k.into());
         }
@@ -1133,11 +884,8 @@ pub(crate) fn handle_offline_keys(g: &crate::AppState, key: &str) -> bool {
         key::RIGHT => g.set_offline_focused((g.get_offline_focused() + 1) % 3),
         key::RETURN => match g.get_offline_focused() {
             0 => g.invoke_retry_connection(),
-            // Confirmation dialog, 2026-08-22 — see show-sign-out-
-            // confirm's own doc comment in app_state.slint (this is
-            // one of its 3 trigger sites). Checked BEFORE this whole
-            // if-show-offline block returns, so once open it stays
-            // reachable regardless of show-offline's own value.
+            // Opens the global sign-out confirmation (one of its 3 triggers). Checked before this
+            // show-offline block returns, so it stays reachable.
             1 => {
                 g.set_sign_out_confirm_focused(0);
                 g.set_show_sign_out_confirm(true);
