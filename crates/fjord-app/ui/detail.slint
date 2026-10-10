@@ -34,14 +34,14 @@ export component DetailPage inherits Rectangle {
     background: Theme.bg;
     property <length> kb-y: clamp(-AppState.detail-scroll,
                                   min(0px, self.height - detail-content.preferred-height), 0px);
-    changed kb-y => { detail-fl.viewport-y = kb-y; }
+    changed kb-y => { detail-fl.content-y = kb-y; }
 
     detail-fl := Flickable {
         width:           parent.width;
         height:          parent.height;
-        viewport-height: detail-content.preferred-height;
-        viewport-width:  self.width;
-        animate viewport-y { duration: 200ms * AppState.settings-scroll-speed; easing: ease-in-out; }
+        content-height: detail-content.preferred-height;
+        content-width:  self.width;
+        animate content-y { duration: 200ms * AppState.settings-scroll-speed; easing: ease-in-out; }
 
         detail-content := VerticalLayout {
 

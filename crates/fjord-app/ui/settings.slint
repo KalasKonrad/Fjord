@@ -74,10 +74,10 @@
 //                    this — only the KEYBOARD-driven overlay at the bottom of this file goes
 //                    through settings.rs's open_dropdown_popup/apply_dropdown_selection.
 //   Row highlight    handled by SettingsRow component (TouchArea lower z, children higher z)
-//   Scroll           viewport-y tracks settings-focused-visual-index (≈64px/row for
+//   Scroll           content-y tracks settings-focused-visual-index (≈64px/row for
 //                    Video/Audio/Player/Integrations, ≈48px for General/Profiles/UI — see kb-y);
-//                    keybinding scroll ≈base + index*44px. viewport-y is only ever assigned
-//                    imperatively from a changed-tracker (native mouse-wheel needs viewport-y
+//                    keybinding scroll ≈base + index*44px. content-y is only ever assigned
+//                    imperatively from a changed-tracker (native mouse-wheel needs content-y
 //                    NOT to be a live binding) — since kb-y's own clamp() means different focus
 //                    positions near a list's edges can share the identical computed value,
 //                    `changed kb-y` alone can silently miss a real transition; two local mirror
@@ -291,9 +291,9 @@ export component SettingsScreen inherits Rectangle {
             // default"): attempt 4 (reset-btn's own real y/height) computed
             // a mathematically-correct scroll target, re-derived by hand —
             // but STILL undershot in practice, which only makes sense if
-            // Flickable re-clamps a programmatic `viewport-y` assignment
-            // against its own `viewport-height` binding (`right-fl`'s
-            // `viewport-height: right-pane.right-vp-h;`), same as it
+            // Flickable re-clamps a programmatic `content-y` assignment
+            // against its own `content-height` binding (`right-fl`'s
+            // `content-height: right-pane.right-vp-h;`), same as it
             // already clamps drag/wheel input — meaning the real bug was
             // never the TARGET value, it was `right-vp-h` itself
             // (ultimately `right-inner.preferred-height`) under-reporting
@@ -337,7 +337,7 @@ export component SettingsScreen inherits Rectangle {
             // every OTHER row (0..kb-total-1) plus the general-settings-row
             // case; the reset-fi-focused case is deliberately excluded from
             // both changed handlers so there is exactly one writer of
-            // `viewport-y` for that specific transition, not two disagreeing
+            // `content-y` for that specific transition, not two disagreeing
             // estimates racing each other.
             property <length> kb-y: AppState.keybinding-focused >= 0 && AppState.keybinding-focused < kb-total
                 ? clamp(-(kb-row-y(AppState.keybinding-focused) - self.height / 2),
@@ -346,13 +346,13 @@ export component SettingsScreen inherits Rectangle {
                 : clamp(-(Theme.sp-xl + 30px + AppState.settings-focused-visual-index * 64px + 28px
                           - self.height / 2),
                          min(0px, self.height - right-vp-h), 0px);
-            changed kb-y => { if AppState.keybinding-focused < kb-total { right-fl.viewport-y = kb-y; } }
+            changed kb-y => { if AppState.keybinding-focused < kb-total { right-fl.content-y = kb-y; } }
             // `changed kb-y` alone misses a real class of navigation step:
             // kb-y's own clamp() means many DIFFERENT focus positions near
             // the top or bottom of a long list resolve to the IDENTICAL
             // pixel value — a ChangeTracker only fires when the tracked
             // value actually differs from its previous evaluation, so
-            // moving between two such positions left viewport-y
+            // moving between two such positions left content-y
             // un-reassigned even though it was legitimately supposed to
             // fire again. `kb-y` itself can't be observed reliably at
             // every step for this reason; mirror the raw navigation state
@@ -360,8 +360,8 @@ export component SettingsScreen inherits Rectangle {
             // re-read `kb-y`'s current value from there.
             property <int>    _kb-fi-mirror: AppState.keybinding-focused;
             property <string> _kb-sf-mirror: AppState.settings-focused;
-            changed _kb-fi-mirror => { if AppState.keybinding-focused < kb-total { right-fl.viewport-y = kb-y; } }
-            changed _kb-sf-mirror => { right-fl.viewport-y = kb-y; }
+            changed _kb-fi-mirror => { if AppState.keybinding-focused < kb-total { right-fl.content-y = kb-y; } }
+            changed _kb-sf-mirror => { right-fl.content-y = kb-y; }
 
             // ── Keyboard dropdown overlay props ───────────────────────────────
             property <length> kbdd-content-h: AppState.settings-dropdown-model.length * 32px + 8px;
@@ -369,7 +369,7 @@ export component SettingsScreen inherits Rectangle {
             property <length> kbdd-w:         min(max(300px, kbdd-vl.preferred-width + 8px), self.width - Theme.sp-xl * 2);
 
             right-fl := Flickable {
-                viewport-height: right-pane.right-vp-h;
+                content-height: right-pane.right-vp-h;
 
             right-inner := VerticalLayout {
                 y: Theme.sp-xl;
@@ -1492,19 +1492,19 @@ export component SettingsScreen inherits Rectangle {
                         // Code review follow-up, 2026-08-08 (5th report —
                         // the mathematically-correct target above was still
                         // being silently re-clamped short by Flickable's
-                        // own `viewport-height` binding, which trusted
+                        // own `content-height` binding, which trusted
                         // `right-inner.preferred-height` and apparently
                         // shouldn't have). Push the real measured content
                         // height up to right-pane on every focus change
                         // (cheap, and this fires on every row navigation
                         // too, not just when Reset itself is focused) so
-                        // `right-vp-h`/`viewport-height` can never be
+                        // `right-vp-h`/`content-height` can never be
                         // smaller than reality while this section is shown
                         // — see right-pane's own `kb-content-h-override`
                         // doc comment for the full reasoning.
                         right-pane.kb-content-h-override = reset-btn.y + reset-btn.height;
                         if AppState.keybinding-focused >= AppState.keybinding-normal.length + AppState.keybinding-player.length {
-                            right-fl.viewport-y = min(0px,
+                            right-fl.content-y = min(0px,
                                 right-pane.height - (Theme.sp-xl * 2 + reset-btn.y + reset-btn.height));
                         }
                     }
@@ -1809,15 +1809,15 @@ export component SettingsScreen inherits Rectangle {
                 clip:          true;
 
                 kbdd-fl := Flickable {
-                    viewport-height: right-pane.kbdd-content-h;
+                    content-height: right-pane.kbdd-content-h;
 
                     // Scroll to keep cursor centred in the overlay panel.
                     property <length> kbdd-scroll: AppState.settings-dropdown-cursor >= 0
                         ? clamp(-(AppState.settings-dropdown-cursor * 32px + 16px - right-pane.kbdd-h / 2),
                                 min(0px, right-pane.kbdd-h - right-pane.kbdd-content-h), 0px)
                         : 0px;
-                    changed kbdd-scroll => { kbdd-fl.viewport-y = kbdd-scroll; }
-                    init    => { kbdd-fl.viewport-y = kbdd-scroll; }
+                    changed kbdd-scroll => { kbdd-fl.content-y = kbdd-scroll; }
+                    init    => { kbdd-fl.content-y = kbdd-scroll; }
 
                     kbdd-vl := VerticalLayout {
                         padding: 4px;

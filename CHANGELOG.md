@@ -23,6 +23,10 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Updated the UI toolkit (Slint 1.18).** Among its fixes: holding Left on
+  the first card of a dashboard row no longer jumps into the sidebar (only a
+  fresh press does, as intended), and video placement inside fading overlays
+  is calculated correctly.
 - **Security: a Jellyfin server could make Fjord write or delete files
   outside its cache folder.** Fjord used the server's item and user ids
   directly as file names, so a malicious server — or anyone tampering with

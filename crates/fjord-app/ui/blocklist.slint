@@ -71,13 +71,13 @@ export component BlocklistScreen inherits Rectangle {
             min(0px, self.height - rows.preferred-height),
             0px
         );
-        changed kb-y => { fl.viewport-y = kb-y; }
+        changed kb-y => { fl.content-y = kb-y; }
 
         fl := Flickable {
             width:  parent.width;
             height: parent.height;
-            viewport-height: max(parent.height, rows.preferred-height);
-            animate viewport-y { duration: 150ms * AppState.settings-scroll-speed; easing: ease-out-expo; }
+            content-height: max(parent.height, rows.preferred-height);
+            animate content-y { duration: 150ms * AppState.settings-scroll-speed; easing: ease-out-expo; }
 
             rows := VerticalLayout {
                 alignment: start;

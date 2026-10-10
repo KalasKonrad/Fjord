@@ -59,14 +59,14 @@ export component AlbumScreen inherits Rectangle {
         min(0px, list-area-h - tracks-content-h),
         0px
     );
-    changed kb-track-y => { track-fl.viewport-y = kb-track-y; }
+    changed kb-track-y => { track-fl.content-y = kb-track-y; }
 
     fl := Flickable {
         width:           parent.width;
         height:          parent.height;
-        viewport-height: album-content.preferred-height;
-        viewport-width:  self.width;
-        animate viewport-y { duration: 200ms * AppState.settings-scroll-speed; easing: ease-in-out; }
+        content-height: album-content.preferred-height;
+        content-width:  self.width;
+        animate content-y { duration: 200ms * AppState.settings-scroll-speed; easing: ease-in-out; }
 
         album-content := VerticalLayout {
 
@@ -202,9 +202,9 @@ export component AlbumScreen inherits Rectangle {
                 track-fl := Flickable {
                     width:           parent.width;
                     height:          parent.height;
-                    viewport-height: max(parent.height, tracks-content-h);
-                    viewport-width:  self.width;
-                    animate viewport-y { duration: 150ms * AppState.settings-scroll-speed; easing: ease-out-expo; }
+                    content-height: max(parent.height, tracks-content-h);
+                    content-width:  self.width;
+                    animate content-y { duration: 150ms * AppState.settings-scroll-speed; easing: ease-out-expo; }
 
                     // Absolutely positioned via each row's own precomputed
                     // row-y-px (2026-08-17, multi-disc separators) instead of

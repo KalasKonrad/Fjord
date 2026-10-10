@@ -72,7 +72,7 @@ export component SectionRow inherits Rectangle {
         }
 
         // kb-x lives on the VerticalLayout (outer container), not on fl itself.
-        // A property on a Flickable that reads self.width / self.viewport-width
+        // A property on a Flickable that reads self.width / self.content-width
         // creates a dependency cycle → "Recursion detected" panic (Slint gotcha).
         // Reading fl.width from a parent element is safe (no self-reference).
         property <length> kb-x: focused-card <= 0 ? 0px
@@ -81,12 +81,12 @@ export component SectionRow inherits Rectangle {
                         min(0px, fl.width - hbox.preferred-width - Theme.sp),
                         0px
                     );
-        changed kb-x => { fl.viewport-x = kb-x; }
+        changed kb-x => { fl.content-x = kb-x; }
 
         fl := Flickable {
             height:         card-h;
-            viewport-width: hbox.preferred-width + Theme.sp;
-            animate viewport-x { duration: 150ms * AppState.settings-scroll-speed; easing: ease-out-expo; }
+            content-width: hbox.preferred-width + Theme.sp;
+            animate content-x { duration: 150ms * AppState.settings-scroll-speed; easing: ease-out-expo; }
 
             hbox := HorizontalLayout {
                 spacing:   10px;
@@ -416,15 +416,15 @@ export component LibraryGrid inherits Rectangle {
                 min(0px, self.height - root.grid-content-height),
                 0px
             );
-            changed kb-y => { fl.viewport-y = kb-y; }
+            changed kb-y => { fl.content-y = kb-y; }
 
             fl := Flickable {
-                viewport-width:  fl-container.width;
-                viewport-height: max(fl-container.height, root.grid-content-height);
-                animate viewport-y { duration: 150ms * AppState.settings-scroll-speed; easing: ease-out-expo; }
-                changed viewport-y => {
+                content-width:  fl-container.width;
+                content-height: max(fl-container.height, root.grid-content-height);
+                animate content-y { duration: 150ms * AppState.settings-scroll-speed; easing: ease-out-expo; }
+                changed content-y => {
                     if AppState.library-sort == 0 && AppState.library-query == "" {
-                        AppState.library-grid-scrolled(round(-self.viewport-y / (card-h + gap)) * AppState.library-cols);
+                        AppState.library-grid-scrolled(round(-self.content-y / (card-h + gap)) * AppState.library-cols);
                     }
                 }
 
@@ -639,12 +639,12 @@ export component HomeScreen inherits Rectangle {
                       min(0px, self.height - rows.preferred-height),
                       0px
                   );
-            changed kb-y => { fl.viewport-y = kb-y; }
+            changed kb-y => { fl.content-y = kb-y; }
 
             fl := Flickable {
-                viewport-width:  home-fl-container.width;
-                viewport-height: max(home-fl-container.height, rows.preferred-height);
-                animate viewport-y { duration: 150ms * AppState.settings-scroll-speed; easing: ease-out-expo; }
+                content-width:  home-fl-container.width;
+                content-height: max(home-fl-container.height, rows.preferred-height);
+                animate content-y { duration: 150ms * AppState.settings-scroll-speed; easing: ease-out-expo; }
 
                 rows := VerticalLayout {
                     padding: Theme.sp-lg;
@@ -813,12 +813,12 @@ export component DashboardScreen inherits Rectangle {
                       min(0px, self.height - rows.preferred-height),
                       0px
                   );
-            changed kb-y => { fl.viewport-y = kb-y; }
+            changed kb-y => { fl.content-y = kb-y; }
 
             fl := Flickable {
-                viewport-width:  dash-fl-container.width;
-                viewport-height: max(dash-fl-container.height, rows.preferred-height);
-                animate viewport-y { duration: 150ms * AppState.settings-scroll-speed; easing: ease-out-expo; }
+                content-width:  dash-fl-container.width;
+                content-height: max(dash-fl-container.height, rows.preferred-height);
+                animate content-y { duration: 150ms * AppState.settings-scroll-speed; easing: ease-out-expo; }
 
                 rows := VerticalLayout {
                     padding: Theme.sp-lg;
@@ -961,12 +961,12 @@ export component MusicDashboard inherits Rectangle {
                       min(0px, root.height - mus-rows.preferred-height),
                       0px
                   );
-            changed kb-y => { mus-fl.viewport-y = kb-y; }
+            changed kb-y => { mus-fl.content-y = kb-y; }
 
             mus-fl := Flickable {
-                viewport-width:  mus-fl-container.width;
-                viewport-height: max(mus-fl-container.height, mus-rows.preferred-height);
-                animate viewport-y { duration: 150ms * AppState.settings-scroll-speed; easing: ease-out-expo; }
+                content-width:  mus-fl-container.width;
+                content-height: max(mus-fl-container.height, mus-rows.preferred-height);
+                animate content-y { duration: 150ms * AppState.settings-scroll-speed; easing: ease-out-expo; }
 
                 mus-rows := VerticalLayout {
                     padding: Theme.sp-lg;
@@ -1065,12 +1065,12 @@ export component CollectionsDashboard inherits Rectangle {
                       min(0px, root.height - coll-rows.preferred-height),
                       0px
                   );
-            changed kb-y => { coll-fl.viewport-y = kb-y; }
+            changed kb-y => { coll-fl.content-y = kb-y; }
 
             coll-fl := Flickable {
-                viewport-width:  coll-fl-container.width;
-                viewport-height: max(coll-fl-container.height, coll-rows.preferred-height);
-                animate viewport-y { duration: 150ms * AppState.settings-scroll-speed; easing: ease-out-expo; }
+                content-width:  coll-fl-container.width;
+                content-height: max(coll-fl-container.height, coll-rows.preferred-height);
+                animate content-y { duration: 150ms * AppState.settings-scroll-speed; easing: ease-out-expo; }
 
                 coll-rows := VerticalLayout {
                     padding: Theme.sp-lg;
