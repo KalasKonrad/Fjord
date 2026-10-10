@@ -1,62 +1,25 @@
 // ── fjord-app · seerr_auth.rs ────────────────────────────────────────────────
-//   build_seerr_client   Config.seerr_* -> SeerrClient, if enabled + a valid
-//                        cookie/key is present (used at startup and after
-//                        every successful ConnectSeerrScreen flow)
-//   connected_label      Config.seerr_auth_method -> human-readable "Connected
-//                        via X" string for the Settings → Integrations row
-//   push_seerr_status    pushes seerr-connected / seerr-connected-label / seerr-unencrypted
-//                        to AppState from a Config snapshot; every successful connect calls
-//                        auth::note_if_http_fallback first
-//   spawn_refresh_seerr_version  GET /status (unauthenticated) -> AppState.seerr-version;
-//                        called after every successful connect and once at startup
-//   resolve_seerr_url    HTTPS-then-HTTP scheme-fallback for a raw, possibly-schemeless
-//                        server URL (2026-08-23, mirroring auth.rs::authenticate_with_fallback
-//                        for Jellyfin's own Login screen) — reuses the cheap, unauthenticated
-//                        get_status probe as both the reachability check AND the version-
-//                        string fetch every auth closure below already needs, so 4 of the 5
-//                        no longer call get_status a second time; classifies a connectivity
-//                        failure via the shared auth::is_connectivity_failure (2026-08-26,
-//                        code review — was a bare status().is_none() check, which also
-//                        matched a JSON-decode failure on a genuinely reachable server)
-//   Quick Connect poll   on_connect_seerr_quickconnect_poll gained an in-flight AtomicBool
-//                        guard + a bounded consecutive-resolve-failure AtomicU32 counter
-//                        (2026-08-26, code review) — the original `Err(_) => return` on a
-//                        resolve failure silently swallowed a mid-poll outage forever (no
-//                        error, qc-polling never reset) while also piling up an overlapping
-//                        probe every 2s tick against a server that was never going to answer
-//   existing_connect_seerr_zones  ConnectSeerrScreen's D-pad zone list, recomputed live off
-//                        connect-seerr-method/-qc-polling (2026-08-23 — this screen had zero
-//                        keyboard nav before), dispatched inline in keys.rs's show_connect_seerr
-//                        tier (mirrors login-zone's inline shape, not ProfileEditScreen's
-//                        delegate-to-a-separate-function one)
-//   wire_connect_seerr   registers all ConnectSeerrScreen callbacks: the 4
-//                        auth methods (API key, Jellyfin login, Quick Connect,
-//                        local account) plus open/disconnect; on_open_connect_seerr
-//                        also resets Quick Connect's polling/code/secret on every
-//                        open (real bug fixed 2026-07-18: these were only ever
-//                        cleared by the poll callback's own success/error arms, so
-//                        closing the screen mid-flow and reopening re-showed a
-//                        stale "waiting for approval" view against an expired secret)
-//                        and, since 2026-08-26 (code review), also connect-seerr-zone
-//                        + the on-screen keyboard's own 3 properties — a stale
-//                        non-zero zone surviving a close/reopen left the D-pad
-//                        completely dead on the next open, since Slint's `changed`
-//                        never re-fires when the value didn't actually change;
-//                        all 5 auth closures resolve their typed server URL via
-//                        resolve_seerr_url instead of a bare Url::parse (2026-08-23)
-//   clear_connection     also resets the 3 discover-watchlist-mixed/movies/tv AppState
-//                        models to empty (2026-07-20, Watchlist row) — same connection-
-//                        scoped cache cleanup this function already does for the
-//                        Calendar/filter caches; also clears person_tmdb_id_cache/
-//                        person_other_work_cache (2026-07-29, Deep Seerr integration)
-//   commit_connection    also calls discover::ensure_discover_watchlist right after a
-//                        fresh connect (2026-07-20, same site spawn_seerr_settings_fetch
-//                        is already called from) and resets the same 3 watchlist models
-//                        before the new connection's own fetch populates them; also
-//                        clears person_tmdb_id_cache/person_other_work_cache (2026-07-29,
-//                        Deep Seerr integration) — a (re)connect may point at a different
-//                        server/catalog, same reasoning as the caches above
-//   spawn_seerr_settings_fetch  Seerr-side settings for the Settings dropdowns (region, languages)
+//   build_seerr_client   Config.seerr_* → SeerrClient when enabled and a cookie/key is present
+//   connected_label      "Connected via X" for the Settings → Integrations row
+//   push_seerr_status    seerr-connected / -connected-label / -unencrypted from a Config snapshot
+//                        (every successful connect calls auth::note_if_http_fallback first)
+//   spawn_refresh_seerr_version  GET /status → AppState.seerr-version (startup + every connect)
+//   resolve_seerr_url    HTTPS-then-HTTP for a possibly-schemeless URL via the get_status probe
+//                        (only on auth::is_connectivity_failure); its StatusInfo supplies the
+//                        version too
+//   existing_connect_seerr_zones  ConnectSeerrScreen's D-pad zones (-1 ✕, 0 URL, 1 tabs, 2+ by
+//                        method/polling), dispatched inline in keys.rs's show_connect_seerr tier
+//   clear_connection / commit_connection  connection-scoped resets (Calendar/filter caches,
+//                        person caches, the 3 watchlist models); commit also starts
+//                        ensure_discover_watchlist
+//   wire_connect_seerr   ConnectSeerrScreen: the 4 auth methods (API key, Jellyfin login, Quick
+//                        Connect, local account) + open/disconnect; every URL goes through
+//                        resolve_seerr_url; open resets Quick Connect state, the zone and the
+//                        on-screen keyboard; the Quick Connect poll runs one probe at a time and
+//                        stops with an error after repeated resolve failures
+//   spawn_seerr_settings_fetch  the Integrations dropdowns' options and current values (regions,
+//                        languages, discover region) + seerr user id / admin / blocklist bits,
+//                        in one round
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
 
@@ -105,25 +68,11 @@ pub(crate) fn spawn_refresh_seerr_version(
     });
 }
 
-/// Resolves a raw, possibly-schemeless Seerr server URL the same way
-/// Login's own `auth::candidate_server_urls`/`authenticate_with_fallback`
-/// already do for Jellyfin (2026-08-23 — the identical bare-host-fails-
-/// outright gap existed here too: every one of `wire_connect_seerr`'s 5
-/// closures did a plain `Url::parse(&url)` with no fallback at all). Tries
-/// each HTTPS-then-HTTP candidate via the cheap, unauthenticated
-/// `get_status` probe, moving to the next candidate only on a genuine
-/// connectivity failure (DNS/connect/TLS/timeout — never got a real HTTP
-/// response back); a candidate that reaches the server (even a non-2xx
-/// status) is the final answer, same reasoning as Login's own fallback —
-/// retrying under a different scheme can't fix a real server-side error.
-/// `get_status` doubles as the version-string fetch every one of
-/// `wire_connect_seerr`'s auth closures already needs after a successful
-/// attempt, so this resolves AND supplies that value in one step — 4 of
-/// the 5 closures that used to call `get_status` a second time afterward
-/// now just reuse the already-fetched `StatusInfo` instead (Quick
-/// Connect's own `start` closure never called `get_status` before this,
-/// so for it specifically this genuinely adds one new, but cheap, network
-/// call it didn't previously make).
+/// Resolves a possibly-schemeless Seerr URL like Login does for Jellyfin
+/// (auth::candidate_server_urls): tries HTTPS then HTTP with the cheap unauthenticated
+/// get_status probe, moving on only on a connectivity failure — a candidate that answers
+/// (even non-2xx) is final. The StatusInfo it returns doubles as the version string the
+/// connect closures need afterwards.
 async fn resolve_seerr_url(url: &str) -> anyhow::Result<(Url, StatusInfo)> {
     let candidates = crate::auth::candidate_server_urls(url);
     let mut last_err: Option<anyhow::Error> = None;
@@ -132,11 +81,8 @@ async fn resolve_seerr_url(url: &str) -> anyhow::Result<(Url, StatusInfo)> {
         match SeerrClient::get_status(&base_url).await {
             Ok(status) => return Ok((base_url, status)),
             Err(e) => {
-                // Code review, 2026-08-26: was `re.status().is_none()`,
-                // which also matches a JSON-decode failure on a genuinely
-                // reachable HTTPS server — see
-                // `auth::is_connectivity_failure`'s own doc comment for the
-                // full "why," shared verbatim rather than re-derived here.
+                // auth::is_connectivity_failure, not `status().is_none()` (which also matches a
+                // JSON decode failure on a reachable server).
                 let is_connectivity = crate::auth::is_connectivity_failure(&e);
                 let is_last = i + 1 == candidates.len();
                 if is_connectivity && !is_last {
@@ -150,22 +96,11 @@ async fn resolve_seerr_url(url: &str) -> anyhow::Result<(Url, StatusInfo)> {
     Err(last_err.unwrap_or_else(|| anyhow::anyhow!("no server address given")))
 }
 
-/// The current, valid ordered zone list for whichever ConnectSeerrScreen
-/// tab/polling-state combination is active (2026-08-23, full D-pad
-/// rollout) — same "gaps are fine, recomputed live off current state, not
-/// cached" shape as `profile_edit::existing_profile_edit_zones`. Zone -1 is
-/// the close-✕ button (reached via Up from zone 0); zone 0 is the shared
-/// `url-input` (always present regardless of tab); zone 1 is the tab row
-/// (always present); zones 2+ vary by `connect-seerr-method` and, for
-/// Quick Connect specifically, `connect-seerr-qc-polling` — a polling Quick
-/// Connect tab has nothing interactive below the URL field at all (its body
-/// swaps to a code display + a 2s-Timer-driven poll, no button to focus).
-/// 0 and 1 were originally swapped relative to this (tab row = 0, url-input
-/// = 1) — a real, live-reported navigation bug fixed 2026-08-26: the list's
-/// own ordering is purely positional (next_zone/prev_zone don't know which
-/// physical element a number represents), so that swap meant Down from the
-/// tab row jumped UP the screen to url-input, which renders visually ABOVE
-/// it. Renumbered to match true visual top-to-bottom order.
+/// The ordered zone list for the current ConnectSeerrScreen tab/polling state (gaps allowed,
+/// recomputed live — like profile_edit::existing_profile_edit_zones). -1 = close ✕ (Up from
+/// zone 0), 0 = url-input, 1 = tab row, 2+ depend on connect-seerr-method; a polling Quick
+/// Connect tab has nothing focusable below the URL. Order must match the visual top-to-bottom
+/// order (next_zone/prev_zone are positional).
 pub(crate) fn existing_connect_seerr_zones(g: &AppState) -> Vec<i32> {
     let mut zones = vec![-1, 0, 1];
     match g.get_connect_seerr_method() {
@@ -246,10 +181,7 @@ pub(crate) fn clear_connection(state: &Arc<Mutex<FjordState>>, ww: &Weak<MainWin
     s.seerr_is_admin = false;
     s.seerr_can_manage_blocklist = false;
     s.seerr_admin_last_refresh = None;
-    // Deep Seerr integration (2026-07-29) — same precedented gap this
-    // function's own doc comment already warns about below: these two hold
-    // request/watchlist-patched results that would otherwise show stale
-    // pill state from the just-cleared connection.
+    // Request/watchlist-patched results from the old connection would show stale pill state.
     s.person_tmdb_id_cache.clear();
     s.person_other_work_cache.clear();
     let cfg = s.config.clone();
@@ -261,12 +193,7 @@ pub(crate) fn clear_connection(state: &Arc<Mutex<FjordState>>, ww: &Weak<MainWin
         push_seerr_status(&g, &profile);
         g.set_seerr_is_admin(false);
         g.set_seerr_can_manage_blocklist(false);
-        // Dashboard Watchlist rows (2026-07-20) — real bug class this
-        // project has already been bitten by once (discover_watchlist_ids/
-        // discover_calendar_entries/seerr_discover_region were originally
-        // missing from this same reset): a disconnect must clear the 3
-        // Slint-side watchlist models too, or they'd show stale content
-        // from the just-cleared connection.
+        // Clear the 3 Slint-side watchlist models too, or they keep the old connection's content.
         g.set_discover_watchlist_mixed(crate::items_to_model(
             &[],
             &std::collections::HashSet::new(),
@@ -364,12 +291,8 @@ fn commit_connection(
         if let Some(v) = version {
             g.set_seerr_version(v.as_str().into());
         }
-        // A fresh connect may point at a different server/catalog — clear
-        // any watchlist content still showing from the previous connection
-        // rather than leaving it visible until ensure_discover_watchlist's
-        // own fetch (above) lands (2026-07-20, same reset-completeness gap
-        // this doc already documents having been bitten by once for
-        // discover_watchlist_ids/discover_calendar_entries/seerr_discover_region).
+        // A fresh connect may be another server: clear the old watchlist content now rather than
+        // when ensure_discover_watchlist's fetch (above) lands.
         g.set_discover_watchlist_mixed(crate::items_to_model(
             &[],
             &std::collections::HashSet::new(),
@@ -421,28 +344,14 @@ pub(crate) fn wire_connect_seerr(
                 let g = AppState::get(&w);
                 g.set_connect_seerr_error(slint::SharedString::new());
                 g.set_connect_seerr_busy(false);
-                // Real bug fixed 2026-07-18: these three were never reset on
-                // open, only by the poll callback's own success/error arms —
-                // closing the screen mid-Quick-Connect (before approval or
-                // expiry) and reopening re-showed the stale "waiting for
-                // approval" view against an old, likely-expired secret, with
-                // no visible way back to the method picker short of closing
-                // the whole screen again (which didn't fix it either, since
-                // nothing here cleared it). Every open now starts clean.
+                // Every open starts clean — reopening mid-Quick-Connect used to show the stale
+                // "waiting for approval" view against an expired secret.
                 g.set_connect_seerr_qc_polling(false);
                 g.set_connect_seerr_qc_code(slint::SharedString::new());
                 g.set_connect_seerr_qc_secret(slint::SharedString::new());
-                // Real bug, code review 2026-08-26: connect-seerr-zone (and
-                // the on-screen keyboard's own state) were never reset here,
-                // unlike every other transient field above. Closing the
-                // screen while a text-field zone was focused (e.g. zone 2)
-                // and reopening left that same zone value in place — since
-                // Slint's `changed` only fires on a genuine value
-                // transition, the zone→focus mirror trackers never re-fire,
-                // so no field gets native focus, and (per keys.rs's own
-                // dispatchable check) zone 2 isn't reachable there either —
-                // the screen looked interactive but the D-pad was
-                // completely dead until the user reached for the mouse.
+                // Reset the zone and keyboard state too: a stale zone value never re-fires the
+                // zone→focus trackers (`changed` needs a real transition), which left the D-pad
+                // dead.
                 g.set_connect_seerr_zone(0);
                 g.set_show_onscreen_keyboard(false);
                 g.set_onscreen_keyboard_target(slint::SharedString::new());
@@ -651,19 +560,9 @@ pub(crate) fn wire_connect_seerr(
         let state = Arc::clone(&state);
         let ww = window.as_weak();
         let rt = rt.clone();
-        // Both captured once, for the lifetime of this closure registration
-        // (this callback is registered exactly once in wire_connect_seerr,
-        // not re-registered per poll) — code review, 2026-08-26, real bug:
-        // `resolve_seerr_url`'s own HTTPS-then-HTTP fallback can genuinely
-        // take longer than the 2s Timer interval against a hung (not
-        // refused) connection, and the ORIGINAL `Err(_) => return` silently
-        // swallowed every resolve failure forever with qc-polling never
-        // reset — a server that goes unreachable mid-poll left the screen
-        // stuck on "waiting for approval," with no error and no way out
-        // short of Escape (abandoning the whole attempt), for as long as
-        // the user left it open, while also piling up a fresh overlapping
-        // probe every 2 seconds against a server that was never going to
-        // answer any of them.
+        // Captured once (the callback is registered once). resolve_seerr_url's fallback can outlast
+        // the 2 s poll Timer against a hung server: one probe at a time (poll_in_flight), and a
+        // resolve failure ends polling with an error instead of waiting forever.
         let poll_in_flight = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let resolve_failures = Arc::new(std::sync::atomic::AtomicU32::new(0));
         move |url, secret| {
@@ -772,19 +671,11 @@ fn set_error(ww: &Weak<MainWindow>, msg: &str) {
 }
 
 // ── Seerr user-settings discovery (region + display language + discover language) ──
-// Same (value, display) shape as fetch_audio_devices/fetch_system_fonts above,
-// but fetched from Seerr instead of a local process, and only once a
-// connection actually exists — called both at startup (if a saved connection
-// exists) and right after a fresh connect (seerr_auth.rs::commit_connection),
-// mirroring spawn_refresh_seerr_version's own dual call sites. Populates all
-// three Settings -> Integrations dropdowns (Streaming Region, Display
-// Language, Discover Language) in ONE round trip — regions/languages fetched
-// in parallel, and the single `get_current_user`+`get_user_settings` call
-// covers streamingRegion/locale/originalLanguage together rather than
-// issuing that same pair of requests three times (2026-07-17: this function
-// used to be streaming-region-only; extended in place rather than adding two
-// near-duplicate sibling functions, since all three genuinely share one
-// underlying settings object).
+// Like fetch_audio_devices/fetch_system_fonts, but from Seerr, once a connection exists — at
+// startup (saved connection) and after a fresh connect (commit_connection), like
+// spawn_refresh_seerr_version. Fills the Integrations dropdowns (streaming region, display
+// language, discover language, discover region) in one round: regions/languages in
+// parallel, one get_current_user + get_user_settings for all the current values.
 pub(crate) fn spawn_seerr_settings_fetch(
     client: Arc<fjord_seerr::SeerrClient>,
     state: Arc<Mutex<FjordState>>,
@@ -817,10 +708,8 @@ pub(crate) fn spawn_seerr_settings_fetch(
         let current_user = client.get_current_user().await.ok();
         let (user_id, is_admin) =
             current_user.as_ref().map(|u| (Some(u.id), u.can_manage_requests())).unwrap_or((None, false));
-        // MANAGE_BLOCKLIST — a genuinely separate permission bit from
-        // MANAGE_REQUESTS/ADMIN (see can_manage_blocklist's own doc
-        // comment) — piggybacks on this same already-fetched user, zero
-        // extra network cost. 2026-08-06, Seerr Blocklist support.
+        // MANAGE_BLOCKLIST is its own permission bit (see can_manage_blocklist) — read from the
+        // same user, no extra request.
         let can_manage_blocklist = current_user.as_ref().is_some_and(|u| u.can_manage_blocklist());
         debug!(
             "seerr: current user id={user_id:?} permissions={:?} can_manage_requests={is_admin} can_manage_blocklist={can_manage_blocklist}",
@@ -843,11 +732,8 @@ pub(crate) fn spawn_seerr_settings_fetch(
             .map(|(_, desc)| desc.clone())
             .unwrap_or_else(|| current_region_code.clone());
 
-        // Discover Region (2026-07-18, Watchlist + Release Calendar) — a
-        // genuinely different setting from streaming_region above (see
-        // resolve_discover_region's own doc comment in discover.rs), just
-        // resolved from the same already-fetched region_pairs list here
-        // rather than a second fetch.
+        // Discover Region — a different setting from the streaming region (see
+        // resolve_discover_region), resolved from the same region list.
         let current_discover_region_code = settings
             .as_ref()
             .and_then(|s| s.discover_region.clone())
@@ -859,10 +745,8 @@ pub(crate) fn spawn_seerr_settings_fetch(
             .map(|(_, desc)| desc.clone())
             .unwrap_or_else(|| current_discover_region_code.clone());
 
-        // "" = "Default (English)" (Seerr's own admin-configured fallback,
-        // see UserGeneralSettings' doc comment — locale is never actually
-        // absent once a settings row exists, but a fresh account's GET can
-        // still omit it, which deserializes to None here).
+        // "" = "Default (English)" (Seerr's admin-configured fallback, see UserGeneralSettings); a
+        // fresh account's GET can omit locale.
         let current_locale_code = settings.as_ref().and_then(|s| s.locale.clone()).unwrap_or_default();
         let current_locale_desc = if current_locale_code.is_empty() {
             "Default (English)".to_string()
@@ -874,10 +758,8 @@ pub(crate) fn spawn_seerr_settings_fetch(
                 .unwrap_or_else(|| current_locale_code.clone())
         };
 
-        // "all" (the literal sentinel, not "") = "Default (All Languages)" —
-        // see discover.ts's createTmdbWithRegionLanguage: an empty string
-        // would fall through to the ADMIN's originalLanguage default
-        // instead of meaning "no filter."
+        // "all" (literal) = "Default (All Languages)": an empty string would fall through to the
+        // admin's originalLanguage (discover.ts createTmdbWithRegionLanguage), not "no filter".
         let current_lang_code = settings
             .as_ref()
             .and_then(|s| s.original_language.clone())
@@ -910,10 +792,8 @@ pub(crate) fn spawn_seerr_settings_fetch(
             region_pairs.iter().map(|(_, d)| slint::SharedString::from(d.as_str())).collect();
         let mut language_display: Vec<slint::SharedString> =
             language_pairs.iter().map(|(_, d)| slint::SharedString::from(d.as_str())).collect();
-        // Both language dropdowns prepend their own "Default" sentinel row —
-        // NOT shared, since the two synthetic labels differ ("Default
-        // (English)" vs "Default (All Languages)"), matching Seerr's own
-        // web UI wording exactly.
+        // Each language dropdown gets its own "Default" row — the labels differ, as in Seerr's web
+        // UI.
         let mut discover_lang_display = language_display.clone();
         language_display.insert(0, slint::SharedString::from("Default (English)"));
         discover_lang_display.insert(0, slint::SharedString::from("Default (All Languages)"));
