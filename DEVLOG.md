@@ -10196,3 +10196,985 @@ Above `existing_detail_btn_slots` (doc listed 3 slots; there are 5 since Watchli
 /// the Discover context menu's row 5 (see context_menu.rs's own note on
 /// that).
 ```
+
+#### `crates/fjord-seerr/src/models.rs`
+
+Above `use serde::{Deserialize, Serialize};`:
+```
+// ── fjord-seerr · models.rs ──────────────────────────────────────────────────
+//   MediaStatus       MediaInfo.status: 1=Unknown 2=Pending 3=Processing
+//                     4=PartiallyAvailable 5=Available 6=Blocklisted 7=Deleted
+//                     (verified against Seerr's real server/constants/media.ts
+//                     after a live bug — see MediaStatus's own doc comment)
+//   MediaInfo         status + status4k (tracked completely independently by Seerr — see
+//                     status4k's own doc comment, real bug fixed 2026-07-18) + tmdbId,
+//                     present only once Seerr has seen an item; requests (only populated
+//                     on the single-item detail endpoints, see its own doc comment)
+//   SearchResponse/SearchResult  GET /search — mediaType discriminates movie/tv/person;
+//                                 genreIds/voteAverage/popularity added 2026-07-18 for
+//                                 client-side filtering+sorting of search results AND
+//                                 merge-sorting the filtered-browse view's Type=All movie+TV
+//                                 interleave (Discover filters — /search itself accepts no
+//                                 filter query params at all, see DiscoverFilters' own doc comment)
+//   DiscoverFilters               GET /discover/movies GET /discover/tv's real filter query
+//                                 params (genre/watchProviders/sortBy/voteAverageGte/date
+//                                 range — confirmed from Seerr's real route source, 2026-07-18);
+//                                 sort/date_gte/date_lte are pre-resolved to the correct
+//                                 value+key name per media type by the caller, since movies/TV
+//                                 genuinely differ there (primary_release_date vs first_air_date);
+//                                 date_lte added 2026-07-18 for "New in Theaters"' upper bound
+//   WatchlistResponse/WatchlistItem  GET /discover/watchlist — local (non-Plex) per-user
+//                                 Watchlist, independent of Requests (2026-07-18, Watchlist +
+//                                 Release Calendar); no poster/richer data, same per-item-
+//                                 detail-fetch situation as a bare MediaRequest
+//   BlocklistResponse/BlocklistItem  GET /blocklist — a genuinely different pagination
+//                                 envelope from every other list endpoint (`{pageInfo:{pages,
+//                                 pageSize,results,page}}`, not `{page,totalPages,totalResults}`
+//                                 — confirmed from Seerr's real route source, 2026-08-06,
+//                                 Seerr Blocklist support). Global per Seerr server, not
+//                                 per-user (the real DB entity's uniqueness is on
+//                                 (tmdbId,mediaType) alone) — `user` only records who
+//                                 blocklisted it, for display ("Blocklisted By"). No poster;
+//                                 `title`/`created_at`/`user` are what the Manage Blocklist
+//                                 screen shows per row with zero extra fetch.
+//   PageInfo                      BlocklistResponse's own pagination shape (see above)
+//   MovieDetails/TvDetails       GET /movie/{id}, /tv/{id} — voteAverage + credits (Cast/Crew)
+//                                 confirmed present in the OpenAPI spec but not deserialized
+//                                 until the RequestDetailScreen redesign (2026-07-16);
+//                                 onUserWatchlist (both) + releases (MovieDetails only, see
+//                                 ReleaseDatesResult below) added 2026-07-18; MovieDetails.collection
+//                                 (belongs_to_collection, {id,name,posterPath,backdropPath}) added
+//                                 2026-07-29 for the Collection screen's missing-items row — resolves
+//                                 a local BoxSet's TMDB collection id via any member movie's already-
+//                                 called get_movie response, no new endpoint needed for that step
+//   MovieCollectionRef            MovieDetails.collection — see above
+//   Collection                    GET /collection/{id} — full TMDB collection membership; `parts`
+//                                 reuses SearchResult verbatim (same mapMovieResult shape as
+//                                 /search, confirmed from Seerr's real source) (2026-07-29)
+//   PersonDetails                 GET /person/{id} — TMDB bio/name/profile-photo, for the
+//                                 TMDB-only person screen (2026-08-13, Discover-cast-with-no-
+//                                 local-match fallback)
+//   PersonCreditCast/PersonCreditCrew/CombinedCredits  GET /person/{id}/combined_credits — an
+//                                 actor/director's full TMDB filmography, backing the Person
+//                                 screen's "Other Work" row (2026-07-29); media_info deliberately
+//                                 not modeled — this endpoint's relation join is watchlist-only,
+//                                 same as /search, so request state is patched client-side instead
+//   ReleaseDatesResult/RegionReleases/ReleaseDateEntry  MovieDetails.releases — TMDB's raw
+//                                 per-region theatrical(3)/digital(4)/physical(5) release-date
+//                                 breakdown, forwarded verbatim by Seerr; TV has no equivalent
+//                                 (2026-07-18, Watchlist + Release Calendar)
+//   Season                       TvDetails.seasons — TMDB-shape, no per-season
+//                                 Jellyfin-availability field in the published spec.
+//                                 posterPath also present in the spec, same
+//                                 previously-undeserialized-field situation as above
+//   Credits/Cast/Crew            MovieDetails/TvDetails.credits — cast (id/name/character/
+//                                 order/profilePath) + crew (id/name/job/department/profilePath)
+//   SeasonsSelector              POST /request body's `seasons`: array or "all"
+//   MediaRequest                 POST /request response + GET /request list entries (media/
+//                                 created_at/requested_by/profile_id/tags/seasons only populated
+//                                 by the latter — Discover "Requested" row + context menu);
+//                                 is4k picks which of media's status/status4k is the relevant
+//                                 fulfillment status (2026-07-18); status: 1=Pending 2=Approved
+//                                 3=Declined 4=Failed 5=Completed (real enum, confirmed from
+//                                 Seerr's source, 2026-07-18); is_pending() checks status==1
+//   RequestedBy                  MediaRequest.requestedBy — id only, ownership check for
+//                                 Edit/Cancel Request (2026-07-18)
+//   SeasonRequestNumber          MediaRequest.seasons entry — Seerr's own tracked per-season
+//                                 request state (seasonNumber only), NOT Season above (TMDB
+//                                 metadata) — pre-fills Edit Request's season picker (2026-07-18)
+//   User                         auth response — id/displayName for "Connected as X";
+//                                 permissions bitmask (can_manage_requests(): MANAGE_REQUESTS
+//                                 bit 16 OR the ADMIN bit 2, which bypasses every permission
+//                                 check server-side and is what the owner account actually
+//                                 carries — fixed 2026-07-18, see the impl's own doc comment)
+//                                 gates Approve/Decline/admin-Cancel in the Discover context
+//                                 menu (2026-07-18); can_manage_blocklist(): same OR-with-
+//                                 ADMIN-bypass shape, but MANAGE_BLOCKLIST bit 268435456 —
+//                                 a genuinely separate permission from MANAGE_REQUESTS,
+//                                 confirmed from Seerr's real server/lib/permissions.ts
+//                                 (2026-08-06, Seerr Blocklist support)
+//   QuickConnect                 POST /auth/jellyfin/quickconnect/initiate response
+//   StatusInfo                   GET /status response — version, shown in Settings sidebar
+//   Tag                          Radarr/Sonarr tag {id, label} — GET /service/{radarr|sonarr}/{id}'s
+//                                 `tags` field, NOT in the published OpenAPI spec (confirmed from
+//                                 Seerr's actual TypeScript source, same class of gap as media_type below)
+//   Profile                      Radarr/Sonarr quality profile {id, name} — same endpoint's `profiles`
+//                                 field; spec shows it as a single object with no array wrapper, but
+//                                 Seerr's TypeScript source confirms it's really QualityProfile[]
+//   ServiceServer                GET /service/{radarr|sonarr} list entry — `id`/`isDefault`/`is4k`
+//                                 (find the default server for a given quality tier to fetch tags/
+//                                 profiles for; no per-server picker in v1)
+//   ServiceServerDetails         GET /service/{radarr|sonarr}/{id} — `tags` + `profiles` extracted;
+//                                 every other field (rootFolders, server, languageProfiles) ignored
+//   ProductionCountry/Network/NextEpisode/WatchProviderEntry/WatchProviderDetail
+//                                 MovieDetails/TvDetails' status/originalLanguage/
+//                                 productionCountries/networks/nextEpisodeToAir/watchProviders —
+//                                 confirmed present in Seerr's real server/models/{Movie,Tv,common}.ts
+//                                 (not in the published OpenAPI spec, same class of gap as Tag/Profile
+//                                 above); added for the request-detail metadata panel (2026-07-17);
+//                                 NextEpisode extended with episode_number/name/season_number
+//                                 2026-07-18 for the "Coming Up" calendar entry label
+//   Video                         MovieDetails/TvDetails.relatedVideos entry — YouTube trailer/
+//                                 teaser/clip links (kind + already-fully-formed url); Watch Trailer
+//                                 feature (2026-07-17)
+//   Region                        GET /watchproviders/regions list entry — populates the Streaming
+//                                 Region picker (Settings -> Integrations)
+//   Language                      GET /languages list entry (TMDB's full ~180-entry list) — backs
+//                                 BOTH the Discover Language and Display Language pickers (Settings
+//                                 -> Integrations, 2026-07-17); Discover Region deliberately NOT
+//                                 mirrored — confirmed dead in Seerr itself, discover.ts's
+//                                 createTmdbWithRegionLanguage reads user.settings.streamingRegion
+//                                 for its "discoverRegion" TMDB param, never discoverRegion
+//   UserGeneralSettings           GET/POST /user/{id}/settings/main — gated by Seerr's own
+//                                 isOwnProfileOrAdmin(), NOT Permission.ADMIN (confirmed from source,
+//                                 corrected a wrong earlier assumption that this needed admin rights)
+//                                 — used to read/write the CONNECTED user's own streamingRegion, which
+//                                 resolve_streaming_region (discover.rs) also reads from for "Currently
+//                                 Streaming On." POST overwrites the whole object, no partial patch —
+//                                 every field skip_serializing_if=is_none (a real 500 live-reproduced
+//                                 otherwise — locale is a NOT NULL DB column, see this struct's own
+//                                 doc comment, 2026-07-17)
+//
+// Every Deserialize struct below carries #[serde(rename_all = "camelCase")] —
+// Seerr's JSON is camelCase throughout (mediaType, posterPath, totalResults,
+// displayName, ...), confirmed directly from the OpenAPI spec. Real bug, found
+// live via the fjord.log warning this crate's own logging added: without this,
+// serde requires an exact field-name match, so any REQUIRED multi-word field
+// (SearchResult.media_type) failed deserialization outright — but every
+// Option<...> field with #[serde(default)] (MovieDetails.poster_path etc.)
+// would have failed *silently* instead, just quietly staying None even when
+// the server sent real data. rename_all fixes both classes at once.
+```
+
+Above `#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]`:
+```
+/// Confirmed directly against Seerr's real source (`server/constants/
+/// media.ts`) after a live report of "Deleted" items surviving the
+/// Discover "Requested" row's filter — the previously-modeled 6-value
+/// enum (`...Available=5, Deleted=6`) was simply wrong past `Available`:
+/// the real enum has a `Blocklisted` value at 6 that was never
+/// represented at all, pushing the real `Deleted` to 7. Every request
+/// this crate had actually seen with a real status of 7 (Deleted) was
+/// silently falling through `from_code` to `None` — indistinguishable
+/// from a genuinely unrecognized code — so `requested_not_available`'s
+/// exclusion check (`Some(Available | Deleted)`) never matched it and
+/// deleted-but-still-request-tracked items stayed listed as "not yet
+/// available."
+```
+
+Above `#[serde(default)]`:
+```
+/// The 4K tier's own fulfillment status, tracked entirely separately
+/// from `status` (confirmed live, 2026-07-18, against a real account
+/// where almost every request is `is4k` — many items had `status: 1`
+/// (Unknown, the non-4K tier was never requested) alongside a genuinely
+/// `status4k: 5` (Available) or still-`status4k: 3` (Processing)).
+/// `requested_not_available`'s original filter checked `status` alone
+/// regardless of which tier was actually requested, which is why
+/// already-fulfilled 4K requests kept showing in the Discover
+/// "Requested" row — see that function's own doc comment.
+```
+
+Above `#[serde(default)]`:
+```
+/// Only populated on the single-item detail endpoints (`GET /movie/
+/// {id}`/`GET /tv/{id}`) — confirmed from Seerr's real source
+/// (`Media.getMedia`, `server/entity/Media.ts`): `relations: {
+/// requests: true, issues: true }`. The list-style endpoints (`/search`,
+/// `/discover/*`) use `Media.getRelatedMedia` instead, which only joins
+/// `watchlists` — `requests` stays empty there, not because no request
+/// exists, but because that query never asked for it. Added 2026-07-18
+/// to let the Discover detail page show a tier-aware, approval-aware
+/// status (`RequestDetailScreen`'s poster badge and status pills) —
+/// picks the request matching a given `is4k` tier via `.iter().find()`.
+```
+
+Above `#[derive(Debug, Clone, Deserialize)]`:
+```
+/// `GET /discover/watchlist` — same `{page, totalPages, totalResults,
+/// results}` shape family as `SearchResponse` (confirmed
+/// `server/interfaces/api/discoverInterfaces.ts`'s `WatchlistResponse`).
+/// For a non-Plex user (every one of Fjord's 4 auth methods), this is the
+/// LOCAL Watchlist table, not a Plex-synced one (confirmed
+/// `server/routes/discover.ts`).
+///
+/// Real bug, live-reported 2026-07-19: this struct originally had no
+/// `#[serde(rename_all = "camelCase")]` (unlike `WatchlistItem` right below
+/// it, which does) — every fetch failed with `missing field 'total_pages'`
+/// since the real response sends `totalPages`. Confirmed against a real
+/// instance (`{"page":1,"totalPages":1,"totalResults":0,"results":[]}`,
+/// queried directly with the saved session cookie, decrypted locally the
+/// same one-off way this project always has — nothing persisted) — the
+/// exact same class of gap this crate's own `#[serde(rename_all =
+/// "camelCase")]` sweep was supposed to have caught everywhere already.
+```
+
+Above `#[derive(Debug, Clone, Deserialize)]`:
+```
+/// One blocklisted title — no poster/richer data (confirmed
+/// `server/interfaces/api/blocklistInterfaces.ts`'s `BlocklistItem`), same
+/// "needs its own per-item detail fetch for a poster" situation as
+/// `WatchlistItem`/`MediaRequest` above. `user`/`created_at` are what let
+/// the Manage Blocklist screen show "Blocklisted by X on Y" with zero extra
+/// round trip — RequestDetailScreen deliberately does NOT fetch this same
+/// detail (see the Blocklist support write-up in CLAUDE.md for why).
+/// `blocklisted_tags` (a Sonarr/Radarr auto-blocklist-by-tag admin feature)
+/// is modeled but not surfaced anywhere in Fjord's UI — out of scope.
+```
+
+Above `#[derive(Debug, Clone, Default)]`:
+```
+/// `GET /discover/movies`/`GET /discover/tv`'s real filter query params
+/// (confirmed from Seerr's actual route source, `server/routes/
+/// discover.ts` — the OpenAPI spec has been wrong/incomplete before, see
+/// this crate's own history of re-verifying against real source rather
+/// than the spec). `GET /search` accepts NONE of these — only `query`/
+/// `page`/`language` — so this struct is only ever used against the two
+/// `/discover/*` endpoints, never search. All fields optional; a `Some`
+/// field is appended to the query string, `None` is omitted entirely
+/// (matching every other optional-query-param pattern already used
+/// elsewhere in this crate, e.g. `create_request`'s `tags`/`profileId`).
+///
+/// `sort`/`date_gte` are pre-resolved to the correct literal TMDB
+/// parameter VALUE (e.g. `"primary_release_date.desc"`) and QUERY KEY
+/// NAME (`primaryReleaseDateGte` for movies vs `firstAirDateGte` for TV)
+/// respectively by the caller — this struct doesn't know which media type
+/// it's being used for, and movies/TV genuinely use different names for
+/// their date-range/date-sort params (confirmed from the real route
+/// source), so resolving that here would need a media-type parameter this
+/// struct has no other use for.
+```
+
+Above `pub date_lte: Option<(&'static str, String)>,`:
+```
+/// Mirrors `date_gte` exactly (`primaryReleaseDateLte`/
+/// `firstAirDateLte`) — added 2026-07-18 for the "New in Theaters" row,
+/// which needs an upper bound too (without one, `date_gte` alone would
+/// also match future not-yet-released titles).
+```
+
+Above `#[derive(Debug, Clone, Deserialize)]`:
+```
+/// TV's `nextEpisodeToAir` — `air_date` was the only field this crate's
+/// consumer needed originally; `episode_number`/`name`/`season_number`
+/// added 2026-07-18 for the "Coming Up" calendar entry label (all already
+/// present in the real `TmdbTvEpisodeResult` shape TMDB returns, confirmed
+/// from Seerr's own `server/api/themoviedb/interfaces.ts`, just unread
+/// until now — `overview`/`still_path` also exist there but aren't
+/// consumed by anything yet, so left unmodeled, same "only what's
+/// consumed" style as `Video`).
+```
+
+Above `#[derive(Debug, Clone, Deserialize)]`:
+```
+/// `MovieDetails.releases` (2026-07-18, Watchlist + Release Calendar) — the
+/// raw TMDB `release_dates` shape, forwarded verbatim by Seerr's own
+/// `mapMovieDetails` (confirmed `server/models/Movie.ts`: `releases:
+/// movie.release_dates`). TV has no equivalent — TMDB doesn't track
+/// per-episode release types, only `nextEpisodeToAir.airDate` above.
+```
+
+Above `#[derive(Debug, Clone, Deserialize, Serialize)]`:
+```
+/// `GET`/`POST /user/{id}/settings/main`'s "general" shape — only the
+/// fields this crate's consumer round-trips. **The POST handler
+/// unconditionally overwrites `username`/`email`/etc. from the body with
+/// no partial-patch semantics** (confirmed from Seerr's real source, not
+/// assumed) — a caller changing just one field (e.g. `streaming_region`)
+/// must `GET` this struct first, mutate the one field, and `POST` the
+/// whole thing back; constructing one from scratch with the rest left at
+/// `Default`/`None` would blank out the user's username/email server-side.
+///
+/// **Every field is `skip_serializing_if = "Option::is_none"` on the way
+/// out — this is load-bearing, not cosmetic.** Live-reproduced: for an
+/// account that has never saved anything under Seerr's own Settings ->
+/// General (a real, unremarkable state — confirmed via `GET /auth/me`
+/// returning `"settings": null` for such a user), `GET .../settings/main`
+/// simply omits keys like `locale` entirely rather than returning them as
+/// `null`, so this struct deserializes them as `None`. Seerr's
+/// `user_settings.locale` DB column is `NOT NULL` with an empty-string
+/// default — sending it back as JSON `null` (which plain `Option<String>`
+/// serialization does unconditionally) reaches the SQL layer unchanged and
+/// the whole write 500s: `{"message":"SQLITE_CONSTRAINT: NOT NULL
+/// constraint failed: user_settings.locale"}` (the exact body, captured by
+/// hand-crafting the same POST directly against a live instance — the
+/// generic `error_for_status()` Fjord's own client used at the time threw
+/// away this message entirely, showing only "500 Internal Server Error"
+/// with no indication of why). Omitting the key outright (confirmed live
+/// against the same instance) lets Seerr fall back to its own column
+/// default instead, which succeeds. Applied to every field, not just
+/// `locale` — the same class of NOT NULL mismatch could exist on any of
+/// these columns on a different Seerr version/install, and omitting an
+/// unset field is also just correct: this client never has an opinion on a
+/// field it never received a real value for.
+```
+
+Above `#[serde(default)]`:
+```
+/// Already computed server-side (confirmed `server/routes/movie.ts`:
+/// `onUserWatchlist: userWatchlist`) — zero extra network calls to know
+/// watchlist state on the detail page (2026-07-18, Watchlist + Release
+/// Calendar).
+```
+
+Above `#[serde(default)]`:
+```
+/// TMDB's per-region theatrical/digital/physical release dates,
+/// forwarded verbatim by Seerr — see `ReleaseDatesResult`'s own doc
+/// comment. TV has no equivalent (2026-07-18, Watchlist + Release
+/// Calendar).
+```
+
+Above `#[serde(default)]`:
+```
+/// The TMDB collection/franchise this movie belongs to, if any —
+/// confirmed present on Seerr's own `GET /movie/{id}` response
+/// (`server/models/Movie.ts`: `movie.belongs_to_collection` mapped to
+/// `{id, name, posterPath, backdropPath}`), just never deserialized
+/// until the Collection screen's "Missing From This Collection" row
+/// (2026-07-29). This is how a local BoxSet's TMDB collection id is
+/// resolved — via any one member movie's already-known TMDB id and this
+/// already-called endpoint — with no new network call of its own.
+```
+
+Above `#[derive(Debug, Clone, Deserialize)]`:
+```
+/// GET /collection/{id} — the full TMDB collection/franchise membership,
+/// used by the Collection screen's "Missing From This Collection" row
+/// (2026-07-29) to diff against a local BoxSet's own member list. `parts`
+/// reuses `SearchResult` verbatim — confirmed from Seerr's real
+/// `server/models/Collection.ts`: `mapCollection`'s `parts` field is built
+/// with the exact same `mapMovieResult` function `/search`/`/discover/*`
+/// already use, i.e. byte-for-byte the same shape.
+```
+
+Above `#[derive(Debug, Clone, Deserialize)]`:
+```
+/// GET /person/{id}/combined_credits — an actor/director's full TMDB
+/// filmography, used by the Person screen's "Other Work" row (2026-07-29)
+/// to show titles not already in the local library. Confirmed from Seerr's
+/// real `server/models/Person.ts`/`server/routes/person.ts`: cast and crew
+/// credits share the same base fields (only what Fjord actually consumes is
+/// modeled here, matching this crate's existing style, e.g. `Video`) plus
+/// `character` (cast) or `department`+`job` (crew). `media_type` is
+/// genuinely optional on some legacy TMDB credit entries. `media_info` is
+/// NOT modeled — confirmed this endpoint's relation join is watchlist-only,
+/// same as `/search`/`/discover/*` (no `requests` populated), so request
+/// state is patched client-side the same way every other list-style
+/// Discover row already is, not read off this response.
+```
+
+Above `#[derive(Debug, Clone, Deserialize)]`:
+```
+/// `GET /person/{id}` — TMDB's own person bio/portrait, forwarded via
+/// Seerr's `mapPersonDetails`. Field shape confirmed live against
+/// `seerr-team/seerr`'s real `server/models/Person.ts` (2026-08-13, not
+/// live-tested against a real running instance — same standing limitation
+/// as every other Seerr model in this crate) rather than assumed from the
+/// OpenAPI spec, which this crate has already caught being wrong/
+/// incomplete more than once. Only the fields Fjord's TMDB-only person
+/// screen actually needs are modeled — `birthday`/`deathday`/
+/// `knownForDepartment`/`gender`/`popularity`/`placeOfBirth`/`adult`/
+/// `imdbId`/`homepage`/`alsoKnownAs` are real fields on the response too,
+/// deliberately left unmapped (same "only what's consumed" style as
+/// `Video`/`NextEpisode` elsewhere in this crate).
+```
+
+Above `#[derive(Debug, Clone, Deserialize)]`:
+```
+/// `status` is the *request* (approval workflow) state — real enum,
+/// confirmed from Seerr's own source (`server/constants/media.ts`,
+/// `MediaRequestStatus`): 1=PENDING, 2=APPROVED, 3=DECLINED, 4=FAILED,
+/// 5=COMPLETED — a different enum from `MediaInfo.status` (fulfillment
+/// state: Unknown/Pending/Processing/PartiallyAvailable/Available/
+/// Blocklisted/Deleted). `media`/`created_at` are only populated by `GET
+/// /request` (the create-request response doesn't need them) — `#[serde(default)]`
+/// so both endpoints deserialize into the same struct. `requested_by`/
+/// `profile_id`/`tags`/`seasons` are all already present on the same `GET
+/// /request` response (confirmed from Seerr's route source —
+/// `leftJoinAndSelect`s `requestedBy`/`seasons`, and `profileId`/`tags` are
+/// plain unguarded columns on the entity), added 2026-07-18 for the
+/// Discover context menu's Edit/Cancel/Approve/Decline actions — no new
+/// network call needed to support them.
+```
+
+Above `#[serde(default)]`:
+```
+/// Which tier THIS request is for — confirmed live (2026-07-18) this is
+/// the field that must pick which of `MediaInfo.status`/`status4k` is
+/// the relevant fulfillment status, not `media.status` alone. Rust
+/// field name matches the JSON key verbatim (`is4k`, already valid
+/// snake_case — no `rename_all` transform needed or relied on, same
+/// reasoning as `status4k` above).
+```
+
+Above `pub fn can_manage_requests(&self) -> bool {`:
+```
+/// **Real bug, live-reported 2026-07-18** ("on requested 4k items I
+/// only got detail on the context menu"): this originally checked bit
+/// 16 (`MANAGE_REQUESTS`) alone. But Seerr's own `hasPermission()`
+/// (`server/lib/permissions.ts`) treats the `ADMIN` bit (2) as a
+/// universal bypass for every permission check — `!!(value &
+/// Permission.ADMIN) || !!(value & total)` — and the owner/first-admin
+/// account is provisioned with exactly `permissions: Permission.ADMIN`
+/// (confirmed from `server/routes/auth.ts`'s account-creation paths),
+/// not the literal `MANAGE_REQUESTS` bit. On a personal single-user
+/// Seerr instance the connected account is almost always this owner
+/// account, so the old bit-16-only check made `can_manage_requests()`
+/// false for the one account most likely to actually have the
+/// server-side permission — Approve/Decline (and the admin bypass on
+/// Cancel) silently never appeared. Mirrors the real OR-bypass exactly.
+```
+
+Above `pub fn can_manage_blocklist(&self) -> bool {`:
+```
+/// Same OR-with-ADMIN-bypass shape as `can_manage_requests` above, but
+/// `MANAGE_BLOCKLIST = 268435456` — confirmed a genuinely separate bit
+/// from `MANAGE_REQUESTS`/`ADMIN` in Seerr's real `server/lib/
+/// permissions.ts` (2026-08-06, Seerr Blocklist support).
+```
+
+#### `crates/fjord-app/ui/widgets.slint`
+
+Above `component VirtualKeyboardKey inherits Rectangle {`:
+```
+// ── VirtualKeyboard (numeric) ────────────────────────────────────────────────
+// On-screen numeric keypad for PIN entry (Bonfire Phase 1, 2026-08-09) — a
+// D-pad-navigable grid of keys, exactly like every other TV-navigable
+// picker already in this app (the alphabet scrubber, SettingsDropdown's
+// popup, the calendar month grid): the CALLER's Rust code owns cursor state
+// and moves it on Up/Down/Left/Right (dispatched through keys.rs like every
+// other key in the app — this widget doesn't capture input directly), this
+// component just renders the highlight and forwards mouse clicks and Enter
+// (via kb-activate-pulse, the same "flash on activation" mechanism every
+// other keyboard-driven control in this app already uses). Deliberately no
+// fixed PIN length assumed — Bonfire's own API docs don't document one —
+// so "confirm" is its own key rather than an auto-submit-at-N-digits guess;
+// the caller decides when to actually invoke bonfire_switch_profile/
+// verify_pin. Grid layout matches calendar.slint's own proven-safe nested
+// VerticalLayout{HorizontalLayout{for}} shape, not Slint's built-in
+// GridLayout (unused anywhere else in this codebase).
+```
+
+Above `in property <bool> active: false;`:
+```
+// Optional persistent "toggled on" state (2026-08-22, code-review fix)
+// — distinct from kb-focused (transient cursor position). Defaults
+// false, so the numeric PIN keypad (none of its 12 keys have a
+// toggle concept) is completely unaffected; QwertyKeyboard's Shift
+// key is the first real consumer, matching the "filled accent when
+// active" convention every other toggle in this app already uses
+// (IconCircleButton, Shuffle/Repeat in MusicPlayerBar).
+```
+
+Above `export component QwertyKeyboard inherits Rectangle {`:
+```
+// ── QwertyKeyboard (alphanumeric) ────────────────────────────────────────────
+// On-screen QWERTY-style keyboard (Bonfire Phase 3, 2026-08-22) — same
+// D-pad-navigable-grid philosophy as VirtualKeyboard above (the caller/Rust
+// owns cursor state via AppState.onscreen-keyboard-cursor, dispatched
+// through keys.rs), reusing VirtualKeyboardKey unmodified. Two real
+// differences from the numeric keyboard: (1) an irregular 10/9/9/3-cell
+// grid instead of a uniform 3x4 one — the row lengths live once on
+// AppState.onscreen-keyboard-row-lens (topology only, read by both this
+// component's own for-loops and keys.rs's cursor math) rather than being
+// duplicated anywhere; (2) key VALUES (the actual letters/symbols) live
+// only here, never duplicated into Rust at all — not even for physical-
+// Enter activation, which instead bumps the shared kb-activate-pulse
+// counter and lets THIS component resolve what that means via the
+// _activate-mirror tracker below, deliberately avoiding the numeric
+// keyboard's own PIN_VALS three-way duplication (keys.rs + profile_edit.rs
+// + widgets.slint all hand-carrying the identical 12 values).
+//
+// Shift is a toggle (not per-keystroke, matching real console/TV on-screen
+// keyboard convention) and Letters/Symbols is a second toggle — both pure
+// internal state; key-pressed(string) only ever fires with a literal
+// character, " ", "backspace", "done", or "left"/"right" (◀ ▶ caret keys,
+// 2026-10-05), never "shift"/"page-toggle".
+// Both pages deliberately share the identical [10,9,9,3] row-length shape
+// so toggling pages never needs the cursor re-clamped. Verified directly
+// against the real Slint 1.16.1 runtime (a throwaway standalone file run
+// through slint-viewer, dumping resolved per-row cell counts/labels via
+// debug()) before this was written for real — this exact irregular-grid
+// shape (an inner for-loop bound that dynamically depends on the outer
+// loop's own iteration variable via array indexing) has no other precedent
+// anywhere in this codebase.
+```
+
+Above `property <length> kb-pad: 16px;`:
+```
+// Real gap, live-reported 2026-08-25: the keyboard originally had no
+// background of its own at all — just the bare keys floating directly
+// over whatever content happened to be behind them, "not nice on some
+// backgrounds" (a real screenshot showed form checkboxes/text visibly
+// legible through the gaps between keys). Now inherits Rectangle
+// (previously a bare component, no background/border-radius/drop-shadow
+// available at all) and gets the same "floating panel" treatment every
+// other overlay dialog in this app already has (Login/ConnectSeerr's
+// own card, ConfirmDialog, PlaylistPicker, RequestOptionsOverlay — all
+// Theme.surface + Theme.radius-lg + a drop shadow). kb-pad insets the
+// keys from the panel's own edges; every caller's own width/height
+// reference (`self.width`/`self.height` in positioning math) picks up
+// the padding automatically, since it's baked into root's own
+// width/height below rather than left for the VerticalLayout to imply.
+```
+
+Above `function handle-raw(row: int, col: int) {`:
+```
+// Uniform funnel for mouse (VirtualKeyboardKey.activated) AND physical
+// Enter (via the mirror below) — shift/page-toggle are intercepted here
+// and never reach the caller. Checked against the RAW grid value
+// (before any shift-casing), not the already-resolved display label —
+// an earlier draft of this design resolved shift-casing first and
+// checked the special-key strings against the (possibly uppercased)
+// result, which would have silently broken "page-toggle"/"done" the
+// instant Shift was active, since neither was excluded from that
+// ternary's uppercase branch the way "shift"/"backspace" were.
+```
+
+Above `pure function max-row-len() -> int {`:
+```
+// Real gap, code-review-confirmed 2026-08-22: width/height used to be
+// literal magic numbers (`10 * 68px + 9 * 10px`, `4 * ...`) instead of
+// deriving from AppState.onscreen-keyboard-row-lens — the exact array
+// this component's own doc comment above names as the single source of
+// truth for grid topology. Today's [10,9,9,3] happens to make row 0 the
+// widest, so the old literals rendered fine by coincidence — but the
+// for-loops below already read the shared array correctly, so any
+// future change to it (a wider row, a different row count) would make
+// them render the new shape while this box silently stayed the old
+// size, clipping the grid and mis-centering it via login.slint's own
+// `x: (parent.width - self.width) / 2`. `max()` over exactly 4 terms is
+// fine here — the row COUNT (4) is a real, static design constant this
+// component already hardcodes elsewhere (letters-vals/symbols-vals both
+// declare exactly 4 rows); only each row's WIDTH is genuinely data-driven.
+```
+
+Above `active: root.vals[row][col] == "shift" && root.shift-active;`:
+```
+// Real gap, code-review-confirmed 2026-08-22: page-toggle's
+// own label already reflects live state ("123"/"ABC"), but
+// Shift (a sticky toggle, not momentary) had no visual
+// on/off indicator at all — checked against the RAW grid
+// value, matching handle-raw's own established discipline
+// (never the already-resolved display label).
+```
+
+Above `in property <string> icon-left:  "";`:
+```
+// Optional icon glyph(s) rendered as their own Text (pinned to the
+// bundled Noto Sans Symbols2, same as every other icon in the app,
+// regardless of Settings → UI → Text font) so callers with a combined
+// icon+label ("▶ Play", "■ Stop") don't force the LABEL word through
+// Noto too — Noto Sans Symbols2 has zero Latin-alphabet coverage, so a
+// single Text mixing both would leave the word falling through to an
+// uncontrolled system fallback. icon-left/icon-right cover prefix
+// ("▶ Play") and suffix ("30s ▶▶") layouts; both default empty, so a
+// plain `text`-only button (the common case) is unaffected.
+```
+
+Above `export component ConfirmDialog inherits Rectangle {`:
+```
+// Generic confirm/cancel modal (2026-08-06, Seerr Blocklist support — first
+// use: CollectionScreen's bulk-blocklist confirmation). Reuses the exact
+// dim-backdrop (#00000088) + Theme.surface-raised box + drop-shadow chrome
+// already copy-pasted identically at PlaylistPicker (context_menu.slint)
+// and RequestOptionsOverlay (request_detail.slint) — first real
+// de-duplication of that shape into a shared component, so a future second
+// use doesn't copy-paste a third time. Cancel is deliberately NOT a
+// FjordButton, same reasoning as RequestOptionsOverlay's own Cancel/Request
+// row: FjordButton always renders filled accent blue, which would make
+// Cancel look just as "primary" as Confirm with no visual hint of which is
+// the safe/reversible choice — a plain outlined ("ghost") button reads as
+// secondary next to Confirm's solid fill instead.
+//
+// Deliberately dumb/reusable: this component owns no keyboard state of its
+// own — `focused` (0=Cancel, 1=Confirm) is driven entirely by the calling
+// screen's own handle_key, matching how RequestOptionsOverlay's confirm row
+// works (Rust orchestrates keyboard focus; Slint components here are
+// presentational plus mouse). `confirmed()`/`cancelled()` fire on their
+// respective button click OR (cancelled only) a backdrop click.
+```
+
+Above `height: self.preferred-height;`:
+```
+// Explicit self-sizing (2026-08-08, live-reported: the button
+// row rendered outside the box). `content` is a Layout element
+// placed directly in a plain Rectangle (not managed by an
+// enclosing Layout), so with no explicit height it fell back to
+// some Slint-internal default rather than its own natural
+// content height — while the OUTER box's height (above) was
+// separately computed from `content.preferred-height`, so the
+// two could disagree: the box was sized correctly, but content
+// wasn't actually laid out to fill exactly that size, leaving
+// the button row past the box's real bottom edge. Binding
+// height to content's own preferred-height removes the
+// ambiguity — both numbers are now guaranteed to agree.
+```
+
+Above `background: active ? Theme.accent-muted`:
+```
+// Single "selected" state — no separate extra-bright tier for "the
+// sidebar literally has keyboard focus right now" vs. "this is just the
+// active section". That two-tier version (bright accent + sidebar-kb-
+// active vs. muted accent) made Browse All and Settings look
+// inconsistent with Home/TV/Movies/Collections/Music: those two open a
+// separate AppMode (Browse/Settings) the instant the sidebar cursor
+// lands on them, so they immediately showed the muted tier while the
+// other five — which all share AppMode::Dashboard regardless of which
+// one is selected — stayed bright while merely being cursor-highlighted.
+// User feedback: the single-state look (already how Browse/Settings/Quit
+// effectively read) is cleaner — apply it uniformly to all sidebar items.
+```
+
+Above `kick-timer.running = false;`:
+```
+// Cancel a still-pending kick-timer — without this, a show
+// true→false transition landing before the 16ms kick fires
+// leaves it armed; it still fires later (unconditionally
+// setting fade-opacity back to 1), flashing the element back
+// to full opacity on top of whatever replaced it, right until
+// unmount-timer catches up. Real bug: show-login defaults to
+// true before the saved-session check flips it to
+// show-connecting, all before the event loop even starts, so
+// this fired on every single cold start with a saved session.
+```
+
+Above `VerticalLayout {`:
+```
+// Inset 3px on every side so the focus/press ring (flush with root,
+// declared last below) has a clear gutter to sit in — content used to
+// extend flush to root's own edges, so the ring's stroke visibly bit
+// into the poster image and the title text's first line. The inset is
+// `padding: 3px` (a native layout property), NOT explicit x/y/width/height
+// geometry bindings on this VerticalLayout: a previous version bound
+// `width: root.width - 6px; height: root.height - 6px;` here and it
+// caused a REAL "Recursion detected" panic on the HTPC (properties.rs:583,
+// fjord.log r716) — LibraryGrid instantiates MediaCard WITHOUT an explicit
+// height, so root.height there is assigned by the row HorizontalLayout's
+// layout cache, and an explicit-geometry binding on a child LAYOUT element
+// that reads root.height feeds back into the very constraint computation
+// that produces root.height → cycle. (An outset ring — root ± constant on
+// the ring Rectangle — crashed the same way earlier on the dev machine;
+// see the "root.width ± constant" gotcha in CLAUDE.md.) SectionRow passes
+// height explicitly, which is why dashboards never crashed — the library
+// grid is the vulnerable instantiation. `padding` is resolved inside the
+// layout's own cache with no external geometry binding, so no cycle.
+```
+
+Above `if item.has-poster: Image {`:
+```
+// Live-reported 2026-08-21, in two parts: first that the
+// fade-in "is like a flash witch dont feels nice" (tried
+// slowing it 200ms→400ms — did not help, the user was already
+// running Settings→UI→Transition speed at 300%, i.e. a real
+// ~1.2s fade, and it still read as flashing), then the direct
+// follow-up that named the actual mechanism: "why do we ned to
+// flash every poster when we trickle in data?" A progressive
+// grid (Discover search, a library grid backfilling from
+// cache) already reveals posters staggered over time as each
+// one's own fetch completes — that staggering IS the
+// progressive reveal. Layering a fade-in motion on TOP of it,
+// repeated once per card as its own poster lands, is what
+// reads as continuous flashing across a whole grid, no matter
+// how slow the fade itself is tuned — the motion is the
+// problem, not its duration. Removed entirely: the poster now
+// renders at full opacity the instant `has-poster` flips true,
+// no animation, no FadeInTrigger. Shared by every screen using
+// MediaCard, not just Discover.
+```
+
+Above `if item.on-watchlist: Rectangle {`:
+```
+// Watchlist star badge (bottom-left — the only free corner;
+// top-left is ♥, top-right is ✓/unplayed-count/availability,
+// bottom-right is the cross-tier pill). Universal — renders on
+// ANY card with on-watchlist true, Discover-sourced or a native
+// Jellyfin card for an already-owned item (2026-07-20, user
+// request: "it shuld show on the poster in any row with that
+// item, and if its in library it shuld also show there").
+// y: parent.height - 30px (not -28px) leaves a clean gap above
+// the 3px progress-bar strip below — unlike Discover cards, a
+// partially-watched AND watchlisted in-library item can
+// legitimately show both at once. Unpinned font (Noto Sans
+// Symbols2 default), matching the identical "★"/"☆" glyphs
+// already used unpinned in context_menu.slint/request_detail.slint.
+```
+
+Above `if item.availability != "": Rectangle {`:
+```
+// Seerr availability pill (Discover cards only — "" on every
+// Jellyfin card, so this never competes with the ✓/unplayed
+// badges above, which are also always false/0 there by
+// construction). Tier-prefixed ("4K Requested" etc.) only when
+// requested-4k — the common non-4K request keeps the original,
+// unprefixed wording rather than cluttering every card with "2K".
+// "blocklisted" (2026-08-06, Seerr Blocklist support) is
+// deliberately NOT tier-prefixed like the others — blocklisting
+// always sets both 2K/4K status together server-side (confirmed
+// from Seerr's real Blocklist entity), so there's no "which
+// tier" distinction to show for this one value.
+```
+
+Above `if item.other-tier-available || item.other-tier-requested: Rectangle {`:
+```
+// Cross-tier pill, bottom-right (mirrors the top-right
+// availability pill's corner-anchoring but at the opposite
+// vertical edge, clear of every other badge on this card).
+// Discover "Requested" row only — both source flags are false
+// on every other card. Two genuinely different states share
+// this one slot, `other-tier-available` taking priority
+// (better news) when somehow both would apply:
+//   - other-tier-available: the OTHER, non-requested tier is
+//     already watchable even though the one actually requested
+//     isn't yet — filled accent, "Available in 2K/4K" (wording
+//     changed from "Also in 2K/4K" 2026-07-18, live feedback —
+//     "Also" read as ambiguous).
+//   - other-tier-requested: BOTH tiers were requested and
+//     NEITHER is available yet — muted surface (matches the
+//     top pill's own available-vs-other color convention),
+//     "Also requested in 2K/4K". Added 2026-07-18 after a user
+//     read "Also in 2K" as meaning this state, which didn't
+//     exist yet — see CardItem's own doc comment (theme.slint).
+```
+
+Above `Rectangle {`:
+```
+// Focus/press ring — a dedicated, last-declared, transparent overlay
+// rather than a border-width on root itself. root's border sits behind
+// the poster image (poster-rect is a separately nested Rectangle flush
+// to root's edges, not the same Rectangle as the border), so it could
+// paint underneath the image depending on compositing order. Declaring
+// this Rectangle last guarantees it paints on top of everything above,
+// the same fix already used for MiniPlayerBar's focus ring.
+// A 3px-outset version of THIS Rectangle (extending beyond root's own
+// bounds so the ring wouldn't overlap the poster/title edge pixels) was
+// tried and reverted: it triggered a live "Recursion detected" Slint
+// panic during mouse-hover geometry evaluation, and separately got
+// visibly clipped by the surrounding Flickable's own viewport edge for
+// edge-of-row cards, since scrollable containers don't reserve margin for
+// content that intentionally overflows an item's own bounds. This
+// Rectangle stays flush with root (the known-stable configuration); the
+// clear gutter instead comes from insetting the *content* 3px inward
+// (the VerticalLayout above), so the ring has room to sit in without
+// touching the poster or title while never leaving root's own bounds.
+```
+
+Above `in property <string> key;`:
+```
+// Phase 0 (2026-08-07): row-index/section (int) replaced by a single
+// stable string key ("general.launch_fullscreen" etc, matching
+// settings.rs's row constants exactly) — see settings.rs's own module
+// doc comment for why. Section is no longer needed here at all: a row
+// is only ever instantiated inside its own section's already-gated
+// `if AppState.settings-section == "...":` block, so there's nothing
+// left to disambiguate.
+```
+
+Above `export component FieldFocusWrap inherits Rectangle {`:
+```
+// ── Field focus-ring wrapper ──────────────────────────────────────────────────
+// Generic bordered wrapper for a text-entry field with no border prop of its
+// own (std-widgets' LineEdit) — shows a 2px focus ring only while `focused`
+// is true, animated the same way every other focus ring in this app is.
+// Extracted 2026-08-22 (code-review simplification finding) from 3 identical
+// copies in login.slint (its server/username/password field wrappers, shown
+// only while the on-screen keyboard is open — native LineEdit focus already
+// supplies its own highlight the rest of the time). Wraps arbitrary content
+// via @children directly on the Rectangle root (no intervening Layout),
+// matching the original absolutely-positioned-LineEdit-child shape exactly,
+// so a wrapped field's own `x: 2px; y: 2px; width: parent.width - 4px; ...`
+// bindings resolve against this component's root the same way they resolved
+// against the old inline Rectangle.
+```
+
+Above `if root.request-status != "": Rectangle {`:
+```
+// Seerr request-status badge (RequestDetailScreen only — "" everywhere
+// else, so this never competes with the Jellyfin badges above, which
+// are also always false/0 there by construction). Already-formatted by
+// the caller (e.g. "4K Needs Approval") — mirrors MediaCard's own
+// availability-pill styling exactly, just anchored to PosterBlock's
+// corner instead of a card's. Added 2026-07-18: "adda a bage to the
+// portait if the item is requested so the user can see it when they
+// are in the descover detail."
+```
+
+Above `callback clicked-header();`:
+```
+// Additive (2026-07-18, keyboard-nav fix) — fires on every header click,
+// alongside toggling `expanded`. Existing callers never connect it (no-op,
+// zero behavior change). Added for RequestDetailScreen, whose own zone/
+// focus keyboard state (request-detail-zone) has no other way to learn a
+// mouse click landed here — a click previously toggled `expanded`
+// correctly but left keyboard focus pointed at whatever zone it was
+// in before, so a following Enter could activate the wrong element.
+```
+
+Above `export component VideoSpot {`:
+```
+// ── Mini-player bar ───────────────────────────────────────────────────────────
+// Full-width bar docked at the top by MainWindow (y=0, width=parent.width).
+// Mode 3 (!video-behind-ui): 108px — live video (192×108, 16:9) + title + Resume/Stop.
+// Mode 2 (video-behind-ui):   56px — compact bar (no thumbnail; video fills window) + title + Resume/Stop.
+// float-card-focused: -1=not focused, 0=Resume, 1=Stop. Up from sidebar nav=0 to focus.
+// ── VideoSpot (HDR Stage 5, 2026-10-05) ──────────────────────────────────────
+// Marks where the video belongs while it's drawn on the subsurface below the
+// window (video_surface.rs): reports this element's absolute position and
+// size into AppState.video-rect-<which>. Draws nothing, takes no input.
+// Mirrors into local properties so `changed` can watch them (Slint only
+// watches the current component's own properties), using root.* geometry.
+```
+
+Above `HorizontalLayout {`:
+```
+// ── Right zone: ⏮Prev/⏭Next/⇌Shuffle/↺Repeat/⋮Queue/♪Lyrics(cond.)/🔉/🔊 ──
+// All 8 use the shared IconCircleButton (38px, same component/style as
+// Now Playing's transport row) rather than a hand-rolled 36px TouchArea+
+// Rectangle each — user-reported inconsistency (2026-07-30): the volume
+// buttons looked/felt different between the Music Bar and Now Playing,
+// even though both already called the identical AppState.volume-up()/
+// -down() callback (confirmed via controls.rs — same ±5 nudge, same
+// overlay, byte-identical). The actual difference was purely visual;
+// user chose to restyle the whole row to match Now Playing, not just
+// the two volume buttons. Width sized for the worst case (8 × 38px
+// icons + 7 × 8px gaps = 360px, up from 344px for the previous 36px
+// icons) — was a stale 240px left over from the original 6-icon set
+// once before, the two volume buttons overflowed past the window edge
+// and got clipped; keep this arithmetic in sync with the icon count.
+```
+
+Above `export component QueuePanel inherits Rectangle {`:
+```
+// ── Queue panel ───────────────────────────────────────────────────────────────
+// Right-side overlay: header "Queue N of M" + "Clear All" + scrollable playlist.
+// Current item rendered with accent background and bold title.
+// Keyboard: Up/Down navigate, Enter = jump to item, Delete/Back = close.
+// "Clear All" opens a ConfirmDialog (show-queue-clear-confirm, 2026-08-22)
+// rather than clearing immediately — declared last in this component so it
+// renders on top of the panel body; dispatch lives in
+// keys.rs::handle_key_queue_panel, this screen's own existing dispatcher.
+```
+
+Above `export component SidebarProfileMenu inherits Rectangle {`:
+```
+// ── Sidebar profile quick-menu (2026-08-14) ────────────────────────────────────
+// Opened from the sidebar's own profile row (layout.slint). Same
+// dim-backdrop + centered-box shape as ConfirmDialog/PlaylistPicker/
+// ContextMenu — row list is pushed entirely by Rust (AppState.sidebar-profile-menu-rows,
+// see profile.rs::sidebar_profile_menu_rows) since which rows apply (Switch
+// Profile only with 2+ known profiles; Manage Profiles only for a master
+// account) is dynamic, not a fixed compile-time set.
+```
+
+(The block above `VideoSpot` began with MiniPlayerBar's comment; it's back above MiniPlayerBar, unchanged.)
+
+#### `crates/fjord-app/ui/widgets.slint` — file header (TOC)
+```
+// ── fjord-app · widgets.slint ────────────────────────────────────────────────
+//   FjordButton        accent / danger push button; kbd-focused draws white border ring;
+//                      optional icon-left/icon-right (font-family hard-pinned to Noto Sans
+//                      Symbols2, kept separate from `text` so the label itself stays on
+//                      whichever font Settings → UI → Text font has selected)
+//   IconCircleButton   38px circle button; gray when inactive, accent when active; ♥/✓ icons
+//                      (also reused for the now_playing.slint transport row); font-family
+//                      hard-pinned per-icon (Adwaita Sans for ♥/✓, Noto Sans Symbols2 for the
+//                      rest) regardless of Settings → UI → Text font
+//   NavItem            sidebar navigation row (icon + label + active indicator)
+//   BrowseItem         single row in the browse / search list
+//   FadeInTrigger      non-visual helper: drop into any element with opacity:0 + animate opacity
+//                      already declared to fade it in on creation (Timer-based, not init =>);
+//                      its own 16ms kick-tick is NOT scaled by settings-animation-speed (it's a
+//                      one-shot "next frame" trick, not a perceptible duration) — the animate
+//                      opacity block it triggers IS scaled; used by player.slint's 3
+//                      skip-segment overlays and main.slint's BrowseScreen/LibraryGrid/
+//                      DiscoverScreen (their own one-time mount fade — every other main.slint
+//                      screen/overlay site moved to FadeGate, and the AppShell dashboard-tab
+//                      sites moved to their own shared sequential fade-out-then-in mechanism,
+//                      2026-08-21, see main.slint's own screen-change-fade doc comment).
+//                      MediaCard's own poster fade-in was removed entirely the same day — see
+//                      MediaCard's own comment below for why.
+//   FadeGate           non-visual helper: symmetric fade in/out, unlike FadeInTrigger's fade-in
+//                      only — owns the mount/unmount decision itself (`show` in, `mounted`/
+//                      `fade-opacity` out) so `if gate.mounted: Element { opacity: gate.fade-opacity; }`
+//                      keeps the element alive through its own fade-out instead of Slint's `if`
+//                      destroying it the instant the raw condition flips false; unmount-timer's
+//                      interval matches the consumer's own `animate opacity` duration (150ms *
+//                      settings-animation-speed, floored at 16ms) so unmount lands right as the
+//                      fade-out finishes — all 29 main.slint screen/overlay sites use this now
+//   PressPulse         non-visual helper: keyboard half of the universal press/click animation;
+//                      trigger: AppState.kb-activate-pulse, active: <focus expr> => pulsing: bool
+//                      (110ms self-resetting); pair with border-width + ta.pressed for mouse —
+//                      border-only by design so pressing never resizes/brightens/bolds text.
+//                      The 110ms hold is NOT scaled by settings-animation-speed (deliberately —
+//                      it's how long the flash is held, not how it eases); the border-width
+//                      animate at each of its ~50 call sites IS scaled
+//   VirtualKeyboard    on-screen numeric keypad for PIN entry (Bonfire Phase 1, 2026-08-09) —
+//                      3x4 grid (1-9, backspace, 0, confirm), cursor externally driven
+//                      (in property <int> cursor), key-pressed(string) callback for both mouse
+//                      and the caller's own Enter-dispatch; VirtualKeyboardKey is its file-local cell
+//   QwertyKeyboard     on-screen alphanumeric keyboard (Bonfire Phase 3, 2026-08-22; rolled out
+//                      (last row 123 · ◀ · space · ▶ · Done since 2026-10-05: "left"/"right" move
+//                      the caret — text-field-caret for drawn targets, onscreen-keyboard-edit for LineEdits)
+//                      to every text-entry surface in the app as of 2026-08-23) — irregular
+//                      10/9/9/3-key QWERTY grid, letters/symbols pages + sticky Shift toggle
+//                      (visually indicated via VirtualKeyboardKey's new `active` prop), reuses
+//                      VirtualKeyboardKey unmodified; now `inherits Rectangle` (2026-08-25,
+//                      live-reported: "not nice on some backgrounds") with its own
+//                      Theme.surface/radius-lg/drop-shadow panel + kb-pad inset, matching every
+//                      other floating dialog in this app — was a bare component with no
+//                      background at all, keys floating directly over whatever was behind them;
+//                      key VALUES live only here, row-length TOPOLOGY is the one deliberate
+//                      exception shared with Rust via AppState.onscreen-keyboard-row-lens (both
+//                      this component's own
+//                      for-loops and its width/height read the same array — see its own doc
+//                      comment above the component for why that single exception is lower-risk
+//                      than the numeric keyboard's PIN_VALS triplication)
+//   FieldFocusWrap     generic bordered wrapper for a text-entry field with no border prop of
+//                      its own (LineEdit); `focused: bool` drives the ring, @children holds the
+//                      field itself — extracted 2026-08-22 from 3 identical copies in login.slint
+//   MediaCard          poster card used in horizontal scroll rows and library grid; clicked + right-clicked callbacks; badges: ✓ played, count pill, ♥ favourite, availability pill (Discover/Seerr cards only — item.availability, "" on every Jellyfin card, tier-prefixed "4K ..." when item.requested-4k), cross-tier pill (Discover "Requested" row only, bottom-right, 2026-07-18 — "Available in 2K/4K" (filled accent) when item.other-tier-available, else "Also requested in 2K/4K" (muted) when item.other-tier-requested), ★ watchlist star (bottom-left, 2026-07-20, universal — item.on-watchlist, renders on ANY card carrying it true, Discover-sourced or a native Jellyfin card for an already-owned item; zero regression risk since every CardItem construction site defaults it to false unless explicitly set — as of 2026-07-20 that now includes item_to_card_item/items_to_model, movies.rs's push_library_cards, home.rs's merge functions, and context_menu.rs's upsert_cards_in_model, not just the original ~7 Discover/Seerr write sites — see FjordState.jellyfin_watchlist_ids's own doc comment in config.rs for why); animated white-tint hover overlay on top of poster image; poster image fades in via FadeInTrigger; title/subtitle are uncapped wrap:word-wrap Text (always show the full title/episode name, no elide) — poster-rect reads the text block's preferred-height and shrinks to make room instead of the text ever overflowing the card, see the vertical-alignment:bottom Slint gotcha in CLAUDE.md
+//   LoadingSpinner     animated ring shown while content loads; dot-cycle Timer interval
+//                      (base 260ms, floored at 16ms) AND each dot's opacity animate both scale
+//                      with settings-animation-speed — unlike PressPulse/FadeInTrigger's Timers,
+//                      this one directly choreographs the animation's own rhythm rather than
+//                      holding a state for something else to ease, so it's scaled too
+//   StatRow            label + value row inside the stats overlay
+//   ToggleSwitch       pill-shaped on/off toggle; checked <=> + toggled callback
+//   SectionHeader      accent label + accent hairline to the right (settings section dividers)
+//   SettingsDropdown   compact dropdown that sizes to current text; popup right-aligns with trigger
+//   SettingsRow        standard settings row: title + subtitle left, @children right, focus highlight + hover
+//                      key must match the stable row-key constant in settings.rs (e.g.
+//                      "general.launch_fullscreen") — see settings.rs's own module doc comment
+//   PosterBlock        160×240 poster with rounded corners; placeholder when no image; badges: ✓ played, progress bar, unplayed count pill, request-status pill (RequestDetailScreen only, 2026-07-18)
+//   MetaLine           year · runtime · rating + optional ★ community rating
+//   CastRow            Flickable row of cast cards: portrait photo + name + role; focused-idx border ring;
+//                      hover overlay; content-x tracks focused-idx for keyboard scroll
+//   StorylineSection   collapsible overview block: "Storyline ▶" header; 3-line preview collapsed,
+//                      full text expanded; click anywhere on header to toggle; clicked-header()
+//                      additive callback (2026-07-18, keyboard-nav fix — RequestDetailScreen
+//                      syncs its own zone/focus state to it, other callers leave unconnected)
+//   MiniPlayerBar      full-width bottom bar; 108px in mode 3 (!video-behind-ui): live video + title + buttons;
+//                      (with video-surface-active its colour skips the thumbnail, which becomes a
+//                      VideoSpot — HDR Stage 5)
+//   VideoSpot          reports its absolute position/size into AppState.video-rect-* (HDR Stage 5)
+//                      56px compact bar in mode 2 (video-behind-ui): NOW PLAYING + title + buttons (no thumbnail);
+//                      float-card-focused (-1=none, 0=Resume, 1=Stop)
+//   MusicPlayerBar     full-width bottom bar 72px; shown when is-audio-playing; three zones:
+//                      left: album art 60×60 + title + artist (click → open-album);
+//                      centre: ⏸/▶ pause/play · ⏹ stop · progress bar · elapsed / total;
+//                      right: ⏮Prev/⏭Next/⇌Shuffle/↺Repeat/⋮Queue/♪Lyrics (slots 4-9)
+//   QueuePanel         right-side overlay panel 400px wide; header "Queue N of M" + Clear All;
+//                      scrollable playlist rows: 40×40 art thumbnail + index · title · artist; current item accented;
+//   LyricsView         full-width overlay panel; Flickable list of LyricEntry lines;
+//                      active line highlighted in accent; auto-scrolls to active line via kb-y binding
+//   ToastNotification  bottom-center error pill; message: string; auto-dismissed by Timer in main.slint
+//   ConfirmDialog      generic dim-backdrop confirm/cancel modal (2026-08-06, Seerr Blocklist support) —
+//                      title/message/confirm-label/focused props, confirmed()/cancelled() callbacks;
+//                      first de-duplication of the PlaylistPicker/RequestOptionsOverlay backdrop+box+shadow
+//                      chrome into a shared component; keyboard-dumb, focus driven by the calling screen
+//   SidebarProfileMenu (2026-08-14) dim-backdrop quick-menu opened from the sidebar's profile row —
+//                      row list pushed entirely by Rust (AppState.sidebar-profile-menu-rows), since
+//                      which rows apply (Switch Profile, Manage Profiles) is dynamic
+// ─────────────────────────────────────────────────────────────────────────────
+```
