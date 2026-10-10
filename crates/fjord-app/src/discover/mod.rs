@@ -10,63 +10,24 @@
 //     requests       request submit/edit/actions, blocklist toggle
 //     trailers       trailer URL allow-list + yt-dlp check
 //     keys           keyboard: Discover grid/landing/filter bar/popups, request detail + options
-//   is_401 / handle_seerr_error 401 (session-auth only) resets the connection via
-//                              seerr_auth::clear_connection + toasts "reconnect in
-//                              Settings"; any other error just toasts
-//   ── Keyboard-navigation fixes (2026-07-18, planned via /plan after 5 parallel
-//      investigation agents traced every Seerr keyboard-dispatch path — see
-//      CLAUDE.md's Seerr integration section) ──
-//   KnownRequest/known_requests_from_row/patch_known_request_state  a request's
-//                              (request_id, pending, mine), built from the Requested row's
-//                              own already-fetched RequestEntry list (no new network call)
-//                              and cached in FjordState.discover_known_requests, keyed
-//                              (item_type, tmdb_id); consulted to patch search-grid and
-//                              non-Requested-landing-row DiscoverCardMetas, which never
-//                              carried real request state before this — their context menu
-//                              offered "Request" instead of "Edit/Cancel/View Request" for
-//                              an already-requested item (real bug)
-//   patch_discover_card_request_state  request_id/pending/mine counterpart to
-//                              patch_discover_card_availability, patches a live
-//                              discover-results row in place — used by submit_request's
-//                              success handler so a freshly-submitted card is correct
-//                              immediately, not just after the next Requested-row refresh
-//   refresh_seerr_admin_status  re-fetches just GET /auth/me's permission bit (not the
-//                              heavier region/language/settings fetch spawn_seerr_settings_fetch
-//                              also does) on Discover-tab arrival, rate-limited to once per
-//                              SEERR_ADMIN_REFRESH_COOLDOWN (60s, FjordState.seerr_admin_last_refresh)
-//                              rather than a fetched-once flag — catches a server-side permission
-//                              change mid-session without a reconnect, while a real HTPC hitch
-//                              (2026-07-31: rapid sidebar cycling fired this on every single
-//                              pass through nav==6, piling up concurrent GET /auth/me calls)
-//                              is now a no-op within the cooldown window
-//   ── Watchlist + Release Calendar (2026-07-18, planned via /plan, 2 rounds of
-//      AskUserQuestion + an independent Plan-agent review — see CLAUDE.md's
-//      Seerr integration section) ──
-//   patch_watchlist_state       CardItem.on-watchlist counterpart to
-//                              patch_known_request_state — consults
-//                              FjordState.discover_watchlist_ids, patched onto
-//                              search/landing DiscoverCardMetas alongside the request-state patch
-//   resolve_discover_region     GET-once-per-connection resolver for the (distinct from
-//                              streamingRegion) discoverRegion user setting, mirrors
-//                              resolve_streaming_region's exact shape, cached in
-//                              FjordState.seerr_discover_region
-//   CalendarEntry/CalendarEntryKind  date/tmdb_id/item_type/title/poster_path/kind/
-//                              episode_label — poster_path added 2026-07-19 (user request,
-//                              "it hust dosent have posters" — reverses the original
-//                              deliberately-text-only design)
-//   ── Deep Seerr integration into existing native screens (2026-07-29) ──────
-//   TMDB_POSTER_BASE/fetch_tmdb_image  bumped pub(crate) — reused directly by
-//                              series.rs's Missing Seasons poster fetch instead of duplicating it
-//   build_person_credit_metas  CombinedCredits (cast+crew, deduped by id+media_type) ->
-//                              (DiscoverCardMeta, poster_path) pairs — Person "Other Work" row
-//   resolve_and_fetch_discovery_row  shared pipeline for all 4 new rows this pass: drops anything
-//                              that resolves to a local item (find_local_item) — the literal
-//                              "discovery = not owned anywhere" rule (user's own words, confirmed
-//                              via AskUserQuestion) — caps the result, patches request/watchlist
-//                              state from the existing caches, fetches posters (bounded
-//                              concurrency). Returns plain Send-safe pairs; discover_cards_from
-//                              (below) builds the actual CardItems inside invoke_from_event_loop
-//   discover_cards_from        UI-thread-only: DiscoverCardMeta+poster pairs -> Vec<CardItem>
+//   TMDB_*_BASE / fetch_tmdb_image  TMDB image URLs + cached fetch (also used by series.rs)
+//   availability_tag    MediaStatus → CardItem.availability ("blocklisted" included)
+//   DiscoverCardMeta    Send-safe card data built off-thread; KnownRequest; CalendarEntry/-Kind
+//   known_requests_from_row / patch_known_request_state / patch_watchlist_state  request and
+//                       watchlist state for cards outside the Requested row, from FjordState caches
+//   search_result_to_meta  SearchResult → meta (blocklisted items are dropped here, for every row)
+//   build_person_credit_metas  CombinedCredits → (meta, poster_path) pairs (Person "Other Work")
+//   resolve_and_fetch_discovery_row  shared pipeline for the discovery rows: drop locally owned
+//                       items, cap, patch request/watchlist state, fetch posters (Send-safe output)
+//   discover_cards_from UI-thread-only: (meta, poster) pairs → Vec<CardItem>
+//   is_401 / handle_seerr_error  a session-auth 401 resets the connection
+//                       (seerr_auth::clear_connection + "reconnect in Settings" toast); else a toast
+//   resolve_streaming_region / resolve_discover_region  the user's streamingRegion /
+//                       discoverRegion (cached per connection, "US" fallback)
+//   refresh_seerr_admin_status  re-reads the permission bits on Discover arrival (60 s cooldown)
+//   patch_discover_card_availability / patch_discover_card_request_state  patch a live grid card
+//   all_card_model_slots / patch_watchlist_on_all_models / remove_card_from_all_models  every
+//                       model that can hold a Discover card (grid, landing rows, dashboard splits)
 // ─────────────────────────────────────────────────────────────────────────────
 
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -127,15 +88,9 @@ fn availability_tag(status: Option<MediaStatus>) -> &'static str {
         Some(MediaStatus::Processing) => "processing",
         Some(MediaStatus::PartiallyAvailable) => "partial",
         Some(MediaStatus::Available) => "available",
-        // Blocklisted split into its own arm, 2026-08-06 (Seerr Blocklist
-        // support) — previously silently mapped to "" alongside Unknown/
-        // Deleted, so a blocklisted item's card showed no indicator at all
-        // and (via tier_status_label, see its own doc comment) its Request
-        // button incorrectly still showed. This is also the ONLY per-card
-        // signal Blocklist needs — unlike Watchlist (a genuinely
-        // independent boolean axis), Blocklisted is just another value of
-        // this same mutually-exclusive status field, so no new CardItem
-        // field/id-set was needed for this feature.
+        // Blocklisted gets its own value: it's just another value of this exclusive status
+        // field (unlike Watchlist, an independent boolean), and it hides the Request button
+        // (tier_status_label). It's the only per-card signal Blocklist needs.
         Some(MediaStatus::Blocklisted) => "blocklisted",
         Some(MediaStatus::Unknown) | Some(MediaStatus::Deleted) | None => "",
     }
@@ -154,10 +109,8 @@ pub(crate) struct DiscoverCardMeta {
     subtitle: String,
     year: i32,
     availability: &'static str,
-    // Requested row only (2026-07-18) — false/false/false on every other
-    // card (search results, landing rows), matching `availability`'s own
-    // "only meaningful for Requested" scoping. See CardItem's own doc
-    // comment (theme.slint) for what these drive.
+    // Requested row only — false on every other card (like `availability`); see
+    // CardItem in theme.slint for what these drive.
     requested_4k: bool,
     other_tier_available: bool,
     other_tier_requested: bool,
@@ -167,12 +120,9 @@ pub(crate) struct DiscoverCardMeta {
     request_id: String,
     request_pending: bool,
     request_mine: bool,
-    // Discover filters (2026-07-18) — NOT surfaced on CardItem at all (never
-    // displayed); used purely by apply_search_filters' client-side genre/
-    // rating filtering of already-fetched search results, kept alongside
-    // the full unfiltered fetch history in FjordState.discover_search_metas.
-    // Empty/0.0 on landing-row/Requested-row cards, which never go through
-    // this filtering path.
+    // Never displayed (not on CardItem): only for apply_search_filters' client-side
+    // genre/rating filtering of fetched search results (kept in
+    // FjordState.discover_search_metas). Empty/0.0 on landing-row cards.
     genre_ids: Vec<i64>,
     vote_average: f64,
     // Type=All filtered-browse merge only (2026-07-18) — see
@@ -238,11 +188,9 @@ pub(crate) struct CalendarEntry {
     pub(crate) item_type: &'static str,
     pub(crate) title: String,
     pub(crate) poster_path: Option<String>,
-    // Snapshotted from FjordState.discover_watchlist_ids at candidate-
-    // selection time (2026-07-19, real bug fix — see build_calendar_entries'
-    // own doc comment) — needed so push_coming_up_row's CardItems don't
-    // silently default on-watchlist to false for an item that's on the
-    // Coming Up row PRECISELY because it was just watchlisted.
+    // Snapshot of FjordState.discover_watchlist_ids at candidate selection, so
+    // push_coming_up_row's cards show the watchlist star — an item is often on Coming Up
+    // precisely because it was just watchlisted.
     pub(crate) on_watchlist: bool,
     pub(crate) kind: CalendarEntryKind,
     // "S2E4 — Episode Name" for a TV entry; None for movies.
@@ -271,12 +219,9 @@ fn known_requests_from_row(
         .collect()
 }
 
-/// Patches `request_id`/`request_pending`/`request_mine` onto a freshly-built
-/// `DiscoverCardMeta` (search result or non-Requested landing-row card) from
-/// the known-requests cache, when a match exists — real bug fixed 2026-07-18,
-/// see `FjordState.discover_known_requests`'s own doc comment for the full
-/// story. A no-op (leaves the meta's zeroed defaults) when the item isn't in
-/// the cache, same as before this fix existed.
+/// Patches `request_id`/`request_pending`/`request_mine` onto a freshly built meta
+/// (search result or non-Requested landing card) from the known-requests cache
+/// (FjordState.discover_known_requests); a no-op when the item isn't there.
 fn patch_known_request_state(
     meta: &mut DiscoverCardMeta,
     known: &std::collections::HashMap<(&'static str, String), KnownRequest>,
@@ -304,18 +249,11 @@ fn search_result_to_meta(r: &SearchResult) -> Option<DiscoverCardMeta> {
     }
     let availability = availability_tag(r.media_info.as_ref().and_then(|mi| mi.status()));
     if availability == "blocklisted" {
-        // Filtered out at the source, 2026-08-06 — real bug, live-reported:
-        // blocklisting an item only ever patched its pill in place, it never
-        // actually left Discover, which defeats the entire stated purpose of
-        // the feature ("for items they dont want to show up"). Every landing
-        // row, search, and filtered-browse fetch routes through this one
-        // function (directly or via `build_filtered_metas`), so filtering
-        // here is the single choke point rather than a special case repeated
-        // at each of the ~9 call sites — mirrors Seerr's own web frontend,
-        // which does the identical filter in `MediaSlider` for any account
-        // without VIEW_BLOCKLIST/MANAGE_BLOCKLIST permission; Fjord has no
-        // "show blocklisted with a badge" mode of its own, so it always
-        // filters, regardless of the connected account's permissions.
+        // Blocklisted items never show in Discover: every landing row, search and
+        // filtered-browse fetch goes through this function (directly or via
+        // `build_filtered_metas`), so this is the one filter point — like Seerr's own web
+        // UI for accounts without blocklist permissions. Fjord has no "show with a badge"
+        // mode, so it always filters.
         return None;
     }
     Some(DiscoverCardMeta {
@@ -342,15 +280,11 @@ fn search_result_to_meta(r: &SearchResult) -> Option<DiscoverCardMeta> {
     })
 }
 
-/// GET /person/{id}/combined_credits → `(DiscoverCardMeta, Option<String>)`
-/// pairs, same shape as `build_filtered_metas` — Person screen's "Other
-/// Work" row (2026-07-29, Deep Seerr integration). Cast and crew are merged
-/// and deduped by `(id, media_type)` since a person can be both cast and
-/// crew on the same title (e.g. an actor-director). `media_info` is
-/// deliberately not read here — confirmed this endpoint's relation join is
-/// watchlist-only (see `PersonCreditCast`'s own doc comment), so
-/// `availability` starts empty and is patched in afterward by
-/// `resolve_and_fetch_discovery_row`, same as every other row built here.
+/// GET /person/{id}/combined_credits → `(DiscoverCardMeta, Option<String>)` pairs
+/// (like `build_filtered_metas`) for the Person screen's "Other Work" row. Cast and
+/// crew are merged and deduped by `(id, media_type)` (an actor-director). This
+/// endpoint carries no `media_info` (see `PersonCreditCast`), so `availability` is
+/// patched in later by `resolve_and_fetch_discovery_row`.
 pub(crate) fn build_person_credit_metas(
     credits: &fjord_seerr::CombinedCredits,
 ) -> Vec<(DiscoverCardMeta, Option<String>)> {
@@ -435,22 +369,13 @@ pub(crate) fn build_person_credit_metas(
     out
 }
 
-/// Shared pipeline for the 4 new discovery-style rows added 2026-07-29 (Deep
-/// Seerr integration: Person Other Work, Detail/Series Recommended,
-/// Collection Missing Items). Takes `(meta, poster_path)` pairs already
-/// built by `build_filtered_metas`/`build_person_credit_metas`), and:
-/// (1) drops anything that resolves to a local Jellyfin item via
-/// `find_local_item` — the literal implementation of "discovery = not owned
-/// anywhere" (user's own words, confirmed via `AskUserQuestion`); (2) caps
-/// the result (`cap`, matching this codebase's established `.take(20)`
-/// precedent for similarly-sized supplementary rows); (3) patches
-/// request/watchlist state from the existing caches, same as every other
-/// Discover-sourced row; (4) fetches posters, bounded concurrency. Returns
-/// plain Send-safe pairs — callers build the final `Vec<CardItem>` via
-/// `discover_cards_from` themselves, inside their own
-/// `invoke_from_event_loop` (this function never touches `AppState`/
-/// `CardItem`, matching the two-phase discipline this codebase learned the
-/// hard way from `push_coming_up_row`'s bug).
+/// Shared pipeline for the discovery rows (Person Other Work, Detail/Series
+/// Recommended, Collection Missing Items), from `(meta, poster_path)` pairs:
+/// (1) drop anything that matches a local Jellyfin item (`find_local_item`) —
+/// discovery = not owned; (2) cap to `cap`; (3) patch request/watchlist state from
+/// the caches; (4) fetch posters with bounded concurrency. Returns Send-safe pairs:
+/// callers build their `CardItem`s with `discover_cards_from` inside their own
+/// `invoke_from_event_loop` (this function never touches `AppState`/`CardItem`).
 pub(crate) async fn resolve_and_fetch_discovery_row(
     state: &Arc<Mutex<FjordState>>,
     items: Vec<(DiscoverCardMeta, Option<String>)>,
@@ -563,14 +488,10 @@ fn is_401(e: &anyhow::Error) -> bool {
         .unwrap_or(false)
 }
 
-/// Session-auth 401 means the cookie expired server-side — reset the
-/// connection so Settings shows "Not connected" and the user can reconnect,
-/// rather than every subsequent call failing silently. API-key auth doesn't
-/// expire, so a 401 there means a revoked/invalid key — surfaced as a plain
-/// error instead (reconnecting wouldn't help without a new key anyway).
-/// `pub(crate)` since 2026-08-06 (Seerr Blocklist support) — `blocklist.rs`/
-/// `collection.rs`'s own blocklist error paths reuse it rather than
-/// duplicating the 401-reconnect logic.
+/// A session-auth 401 means the cookie expired server-side: reset the connection so
+/// Settings shows "Not connected" and the user can reconnect. An API key doesn't
+/// expire, so a 401 there (revoked/invalid key) is shown as a plain error.
+/// Also used by blocklist.rs / collection.rs.
 pub(crate) fn handle_seerr_error(
     state: &Arc<Mutex<FjordState>>,
     ww: &Weak<MainWindow>,
@@ -629,23 +550,12 @@ pub(crate) async fn fetch_tmdb_image(
     Some(bytes)
 }
 
-/// Resolves and caches (`FjordState.seerr_streaming_region`) which
-/// `watch_providers` region entry to display — the CONNECTED user's own
-/// `streamingRegion` preference (`GET /auth/me` then `GET /user/{id}/
-/// settings/main` — corrected from an earlier version of this function that
-/// read the server-wide admin default at `/settings/public` instead, which
-/// doesn't reflect a per-user override and, per Seerr's own frontend source,
-/// isn't even what Seerr's own UI falls back to), falling back to `"US"`
-/// when unset (matching Seerr's own frontend's identical fallback, found
-/// live in `src/components/Settings/SettingsMain/index.tsx`). Also the read
-/// side of the Settings -> Integrations -> Streaming Region picker
-/// (`main.rs`'s `on_streaming_region_selected`), which updates this same
-/// cache on a successful write so "Currently Streaming On" picks up a
-/// change immediately, no reconnect needed. A failed fetch also caches the
-/// `"US"` fallback rather than retrying on every subsequent item open —
-/// this call is cheap and reliable enough, relative to everything else
-/// already required for Discover to work at all, that treating a failure
-/// differently from "not configured" isn't worth the extra state.
+/// Which `watch_providers` region to show ("Currently Streaming On"): the CONNECTED
+/// user's own `streamingRegion` (`GET /auth/me` → `GET /user/{id}/settings/main`),
+/// "US" when unset — Seerr's own frontend fallback (SettingsMain/index.tsx). Cached
+/// in `FjordState.seerr_streaming_region`; the Settings Streaming Region picker updates
+/// the same cache on a successful write. A failed fetch also caches "US" instead of
+/// retrying on every open.
 async fn resolve_streaming_region(
     client: &fjord_seerr::SeerrClient,
     state: &Arc<Mutex<FjordState>>,
@@ -664,11 +574,8 @@ async fn resolve_streaming_region(
     region
 }
 
-/// Mirrors `resolve_streaming_region` exactly, but for the DIFFERENT
-/// `discoverRegion` user setting Seerr's own frontend uses specifically for
-/// release-date display (`src/components/MovieDetails/index.tsx`) — not
-/// the same region as "Currently Streaming On", confirmed from Seerr's real
-/// source (Watchlist + Release Calendar, 2026-07-18).
+/// Like `resolve_streaming_region`, but for Seerr's separate `discoverRegion`
+/// setting, which its frontend uses for release dates (MovieDetails/index.tsx).
 async fn resolve_discover_region(
     client: &fjord_seerr::SeerrClient,
     state: &Arc<Mutex<FjordState>>,
@@ -687,31 +594,12 @@ async fn resolve_discover_region(
     region
 }
 
-/// Re-fetches just the connected account's own id + `MANAGE_REQUESTS`/ADMIN
-/// permission bit (`GET /auth/me`, the same call `spawn_seerr_settings_fetch`
-/// makes at startup/connect, but not the heavier region/language/settings
-/// fetch that goes with it there) — called on every Discover-tab arrival,
-/// unguarded by a "fetched once" flag, unlike `ensure_discover_filter_options`.
-/// Real bug fixed 2026-07-18: `seerr-is-admin` was previously only ever set
-/// once per connection, so a server-side permission change mid-session never
-/// reflected in the Discover context menu's Approve/Decline gating without a
-/// reconnect. Non-blocking and best-effort — the menu opens instantly with
-/// whatever's currently cached; a failed fetch here just leaves that value
-/// unchanged rather than erroring.
-// Rate-limited to at most once every 60s per connection — this used to fire
-// an unconditional `GET /auth/me` on every single arrival at the Discover
-// sidebar tab (deliberate at the time: no once-per-session guard, so a
-// server-side permission change mid-session would be picked up on the very
-// next visit). Live-reported HTPC hitch, 2026-07-31: a user rapidly cycling
-// the sidebar with a held arrow key passes through nav==6 many times a
-// minute — each pass fired its own real network round trip, and a burst of
-// these completing out of order (worse under a lower-end machine's higher
-// latency/thinner thread-pool headroom) queued up `invoke_from_event_loop`
-// closures that visibly collided with the next keypress, the same mechanism
-// already documented for the Browse All rebuild hitch (browse.rs). A 60s
-// cooldown keeps the "catch a mid-session permission change" intent (still
-// checked on the next genuine visit after the cooldown) while making a rapid
-// pass-through a no-op instead of a fresh request every time.
+/// Re-fetches just the account id + MANAGE_REQUESTS/ADMIN bit (`GET /auth/me`, not
+/// the heavier settings fetch) when Discover is opened, so a permission change
+/// mid-session reaches the context menu's Approve/Decline gating. Best-effort and
+/// non-blocking: the menu uses the cached value; a failure leaves it unchanged.
+/// At most once per 60 s: holding an arrow key through the sidebar passed Discover
+/// many times a minute, and the burst of late replies hitched the UI.
 const SEERR_ADMIN_REFRESH_COOLDOWN: Duration = Duration::from_secs(60);
 
 fn refresh_seerr_admin_status(
@@ -781,13 +669,10 @@ fn patch_discover_card_availability(
     }
 }
 
-/// Patches `request_id`/`request_pending`/`request_mine` onto whichever
-/// search-grid card matches `(media_type, tmdb_id)`, if visible — the
-/// `discover-results` counterpart to `patch_discover_card_availability`
-/// above, for the 3 fields that one doesn't touch. Real bug fixed
-/// 2026-07-18: submitting a request from the search grid left that same
-/// card's context menu still offering "Request" until the next full
-/// landing-row refresh, since only `availability` was ever patched here.
+/// Patches `request_id`/`request_pending`/`request_mine` onto the matching
+/// search-grid card, if visible — the counterpart of
+/// `patch_discover_card_availability` for the fields that one doesn't touch, so a card
+/// requested from the grid offers Edit/Cancel right away.
 fn patch_discover_card_request_state(
     g: &AppState,
     media_type: &str,
@@ -817,22 +702,12 @@ fn patch_discover_card_request_state(
     }
 }
 
-/// Every AppState model that can hold a Discover-sourced `CardItem` — the
-/// flat search/filtered-browse grid, all 9 `landing_row_get`/`_set` rows,
-/// AND 5 more that `landing_row_get` does NOT cover: the Movies/TV-specific
-/// split of the Watchlist row (`discover-watchlist-movies`/`-tv`, separate
-/// models from the "mixed" one landing row 8 already reaches) and the
-/// Home/TV/Movies dashboard split of the Coming Up row
-/// (`discover-coming-up-mixed`/`-movies`/`-tv`, separate from landing row
-/// 7's own single Discover-screen instance). Real gap found 2026-08-06
-/// tracing what happens when a watchlisted item gets blocklisted: both
-/// `patch_watchlist_on_all_models` and (the then-new) `remove_card_from_
-/// all_models` only ever walked `landing_row_get`'s 9, so a card patched/
-/// removed on the Discover screen stayed fully visible (and, for a
-/// blocklisted item, requestable) on the Movies/TV dashboard's own
-/// Watchlist row until some unrelated refresh silently caught up. Callers
-/// that only need to read+patch in place (not reassign) can ignore the
-/// second tuple element.
+/// Every AppState model that can hold a Discover-sourced `CardItem`: the flat
+/// search/filtered grid, the 9 landing rows (`landing_row_get`/`_set`), and 5 more —
+/// the Watchlist row's Movies/TV split (`discover-watchlist-movies`/`-tv`) and the
+/// Coming Up row's dashboard split (`discover-coming-up-mixed`/`-movies`/`-tv`). Patch
+/// and remove helpers walk all of them, so a change shows on the dashboards too.
+/// Callers that only patch in place can ignore the setter.
 type CardModelSlot = (ModelRc<CardItem>, Box<dyn Fn(&AppState, ModelRc<CardItem>)>);
 
 fn all_card_model_slots(g: &AppState) -> Vec<CardModelSlot> {
@@ -840,10 +715,8 @@ fn all_card_model_slots(g: &AppState) -> Vec<CardModelSlot> {
         g.get_discover_results(),
         Box::new(|g: &AppState, m| g.set_discover_results(m)),
     )];
-    // Derived from landing_row_lens's own array length rather than a bare
-    // literal repeated here — this exact "hardcoded row count drifts out of
-    // sync with the real row count" gap was caught by an independent plan
-    // review when the Watchlist row (8) was added, 2026-07-20.
+    // Row count from landing_row_lens, not a literal, so it can't drift when a row is
+    // added.
     for row in 0..landing_row_lens(g).len() {
         v.push((
             landing_row_get(g, row),
@@ -873,12 +746,8 @@ fn all_card_model_slots(g: &AppState) -> Vec<CardModelSlot> {
     v
 }
 
-/// Patches `on-watchlist` in place on every Discover card model that might
-/// be showing this item — a watchlisted item can legitimately appear in
-/// Trending/Popular/Upcoming/etc, not just Requested — matching
-/// `discover_request_action`'s own "patch every model, don't just pick one"
-/// shape. Watchlist + Release Calendar, 2026-07-18; widened to the full
-/// `all_card_model_slots` list (was missing 5 of them) 2026-08-06.
+/// Patches `on-watchlist` on every Discover card model that may show this item (an
+/// item can sit in Trending/Popular/… too), via `all_card_model_slots`.
 fn patch_watchlist_on_all_models(g: &AppState, item_type: &str, tmdb_id: i64, on_watchlist: bool) {
     let id_str = tmdb_id.to_string();
     let mut patched = 0;
@@ -899,21 +768,12 @@ fn patch_watchlist_on_all_models(g: &AppState, item_type: &str, tmdb_id: i64, on
     );
 }
 
-/// Removes the matching card from every Discover-visible model (the full
-/// `all_card_model_slots` list) — used by `discover_toggle_blocklist`'s
-/// adding path. Blocklisting means "don't show this in Discover" (see
-/// `search_result_to_meta`'s own doc comment for the full story: a fresh
-/// fetch already filters a blocklisted item out, but a card blocklisted
-/// from an already-open screen — the flat grid, or RequestDetailScreen
-/// opened from one of these rows — is still sitting in an already-built
-/// model and needs to be pulled out immediately rather than left showing a
-/// "Blocklisted" pill). Each model here is always constructed as a
-/// `VecModel<CardItem>` (every setter in `all_card_model_slots` wraps one),
-/// so downcasting back to it and calling `.remove()` fires a real per-row
-/// removal notification rather than rebuilding the whole model — same
-/// reasoning as `blocklist.rs`'s own remove-row idiom, with the identical
-/// defensive rebuild-and-reassign fallback in case that assumption ever
-/// stops holding. 2026-08-06, Seerr Blocklist support.
+/// Removes the matching card from every Discover-visible model
+/// (`all_card_model_slots`) — for `discover_toggle_blocklist`'s add path: a fresh
+/// fetch already filters blocklisted items (`search_result_to_meta`), but cards in
+/// models already on screen must go now. Each model is a `VecModel<CardItem>`, so a
+/// downcast + `.remove()` notifies per row instead of rebuilding, with a
+/// rebuild-and-reassign fallback (like blocklist.rs).
 fn remove_card_from_all_models(g: &AppState, item_type: &str, tmdb_id: i64) {
     let id_str = tmdb_id.to_string();
     let mut removed = 0;
@@ -934,10 +794,7 @@ fn remove_card_from_all_models(g: &AppState, item_type: &str, tmdb_id: i64) {
             }
             removed += hit.len();
         } else {
-            // Defensive fallback — every model here is always constructed as
-            // a VecModel elsewhere in this file, so this should never
-            // actually trigger (same "should never trigger" idiom as
-            // blocklist.rs's own remove-row fallback).
+            // Fallback only — every model here is a VecModel, so this shouldn't run.
             let kept: Vec<CardItem> = (0..model.row_count())
                 .filter(|i| !hit.contains(i))
                 .filter_map(|i| model.row_data(i))

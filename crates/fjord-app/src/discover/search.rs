@@ -1,32 +1,20 @@
-// ── fjord-app · discover/search.rs ───────────────────────────────────────────
-//   spawn_discover_search      debounced (300ms) + generation-guarded search dispatch (page 1);
-//                              text-only cards pushed immediately, posters patched in
-//                              as they arrive (bounded concurrency, TMDB CDN, own disk cache);
-//                              records page/total_pages in FjordState for spawn_discover_search_more
-//   spawn_discover_search_more  fetches+appends the next results page — triggered by
-//                              handle_key's Down-at-last-row via the discover-load-more
-//                              callback (Seerr/TMDB search commonly has far more pages than
-//                              the single page v1 ever fetched, capping results well below
-//                              what Seerr's own web UI shows for the same query); no-ops
-//                              quietly with no next page / a fetch already in flight
-//   fetch_and_patch_posters    bounded-concurrency TMDB poster fetch + in-place model patch,
-//                              shared by both search functions above (idx is pre-offset by
-//                              the caller for the append case)
+// ── fjord-app · discover/search.rs ──────────────────────────────────────────
+//   DISCOVER_AUTOFILL_ROWS / maybe_autofill_grid  load more pages until the grid looks full
+//   spawn_discover_search      debounced (300 ms), generation-guarded search (page 1): text cards at
+//                              once (posters carried over from the previous query by id), posters
+//                              patched as they arrive; records page/total_pages
+//   spawn_discover_search_more next page, appended onto the live VecModel — via discover-load-more
+//                              (Down at the grid's last row); no-op without a next page / while busy
+//   fetch_and_patch_posters    bounded-concurrency TMDB poster fetch + per-row patch, shared by both
 // ─────────────────────────────────────────────────────────────────────────────
 use super::*;
 
 // ── Search ───────────────────────────────────────────────────────────────────
 
-/// Rough target row count for "the grid looks full without scrolling" —
-/// deliberately a fixed estimate, not a pixel-exact viewport-height
-/// computation (that would need a new geometry property pushed from
-/// `MainWindow::sync_layout()`, mirroring `dash-cw`/`dash-ch`/`library-cols`,
-/// for comparatively little payoff over a conservative constant). Real UX
-/// gap, live-reported: "search should fill the screen so you don't need to
-/// go to the end of a row to get new items" — a single TMDB search page
-/// (~20 raw results, fewer once `person` is filtered out) often doesn't
-/// fill even a modest window, so the user hit the Down-triggered load-more
-/// on almost every search before this existed.
+/// Rough row count for "the grid looks full" — a fixed estimate, not a viewport
+/// computation (that needs a new geometry property from `MainWindow::sync_layout()`).
+/// One TMDB page (~20 results, fewer without people) often doesn't fill the window,
+/// so without autofill nearly every search needed a load-more.
 const DISCOVER_AUTOFILL_ROWS: i32 = 6;
 
 /// Called from both search commit closures (page 1 and each appended page)
@@ -87,30 +75,9 @@ pub(crate) async fn fetch_and_patch_posters(
             Some((idx, item_type, tmdb_id, buf))
         });
     }
-    // Live-reported 2026-08-21 ("all the posters flash every time it loads
-    // one item") — investigated as a commit-frequency problem first (a
-    // short-lived batching window landed here, then a wider one was
-    // attempted) before the user's own follow-ups ("why do we ned to flash
-    // every poster when we trickle in data?", "its not good if the user
-    // need to wait log for a big search") made the real shape of the ask
-    // clear: keep the steady per-item trickle — don't delay or batch
-    // commits at all, the first-found result should show the instant it's
-    // ready — and instead stop animating each arrival at all. The actual
-    // "flash" was never commit frequency; `set_row_data(idx, ...)` is
-    // already a genuine single-row patch, confirmed by re-reading it, not
-    // a model rebuild that could explain unrelated cards re-animating. It
-    // was `MediaCard`'s own poster `FadeInTrigger` (widgets.slint) firing
-    // on every has-poster transition — correct, deliberate motion in
-    // isolation, but with ~20 cards each independently popping through
-    // that same fade at a slightly different moment as their own fetch
-    // completes, the accumulated effect across the whole grid reads as
-    // continuous flashing rather than a calm progressive fill. Removed the
-    // fade there instead (see widgets.slint) — a poster now simply appears
-    // the instant its own row is patched, with no motion to draw the eye.
-    // That's what makes committing per-arrival, with no batching window,
-    // safe again: nothing here is trying to reduce how often a card
-    // "flashes" any more, so there is no longer a size/timing dial to get
-    // right — every completed fetch just lands as soon as it's done.
+    // Commit each poster the moment it arrives (no batching): the "flashing" while posters
+    // trickle in came from MediaCard's per-poster fade (removed in widgets.slint), not from
+    // the commits — `set_row_data(idx, …)` is a single-row patch.
     while let Some(res) = set.join_next().await {
         let Ok(Some((idx, item_type, tmdb_id, buf))) = res else {
             continue;
@@ -166,10 +133,7 @@ pub(crate) fn spawn_discover_search(
     }
 
     let Some(client) = state.lock().unwrap().seerr_client.clone() else {
-        // Silent no-op here used to look identical to "found nothing" from
-        // the user's side — no error, no spinner, no log line. Real bug,
-        // found live: a search typed while (for whatever reason)
-        // `seerr_client` was `None` produced literally no feedback at all.
+        // A search with no client looked exactly like "no results" — log it.
         warn!("seerr: search dispatched with no seerr_client set — not connected?");
         show_toast(
             ww,
@@ -179,21 +143,10 @@ pub(crate) fn spawn_discover_search(
     };
     let is_session_auth = client.is_session_auth();
 
-    // Real bug, live-reported with a video (2026-08-21) — the "No results
-    // for X" empty-state text (discover.slint) is correctly gated on
-    // `!discover-searching`, but this used to only flip searching=true
-    // AFTER the 300ms debounce sleep below finished — leaving the whole
-    // debounce window itself (every keystroke, not just the first) with
-    // searching=false and discover-results still holding whatever the
-    // PREVIOUS query left behind (empty, for the very first search from
-    // the landing rows). The video showed exactly this: the full Trending/
-    // Popular grid disappearing straight to a blank "No results" screen
-    // the instant a character was typed, well before any search had
-    // actually run. Fixed by setting it synchronously, right here, before
-    // the debounce delay even starts — a stale (superseded) task's own
-    // early-return below never touches this flag, so it stays true for the
-    // whole gap and only the WINNING (non-superseded) task's own commit
-    // closure or error branch ever clears it back to false.
+    // Set searching=true NOW, before the 300 ms debounce: otherwise the "No results for
+    // X" empty state (gated on !discover-searching) showed during the debounce, replacing
+    // the landing rows on the first keystroke. A superseded task never touches the flag;
+    // only the winning task's commit or error clears it.
     let ww_searching = ww.clone();
     let _ = slint::invoke_from_event_loop(move || {
         if let Some(w) = ww_searching.upgrade() {
@@ -225,28 +178,13 @@ pub(crate) fn spawn_discover_search(
             return; // a newer search already superseded this response
         }
 
-        // Search commonly has far more than one page's worth of results
-        // (a common word can run into the hundreds) — page 1 alone is what
-        // used to cap Fjord's result count well below what Seerr's own web
-        // UI shows for the same query, real bug, live-reported. This state
-        // is what `spawn_discover_search_more` (below) reads to fetch
-        // subsequent pages, triggered as the user's keyboard nav reaches
-        // the last row of the grid.
+        // Paging state for `spawn_discover_search_more` (later pages load as keyboard nav
+        // reaches the grid's last row) — page 1 alone capped results well below Seerr's own UI.
         let results = response.results;
-        // Real bug, live-reported 2026-08-12 ("Gran Hermano... have the
-        // Mentalis's poster image" / "Law & order missing poster..."): metas
-        // and poster_jobs used to be built from two INDEPENDENTLY filtered
-        // views of `results` — `search_result_to_meta` also drops
-        // blocklisted items, not just non-movie/tv ones, while the old
-        // zip's own filter only checked media_type — so a blocklisted item
-        // anywhere in the results silently shifted every poster-job pairing
-        // after it by one position (same root cause as the identical bug in
-        // ensure_discover_landing, see that function's own fix comment).
-        // Fixed the same way: metas and poster_jobs are built together in
-        // one single-pass filter, so they can't drift apart. patch_known_
-        // request_state/patch_watchlist_state still run afterward, under
-        // the lock — they mutate metas in place without changing its
-        // length or order, so doing that second doesn't reopen the bug.
+        // metas and poster_jobs are built in ONE filter pass (search_result_to_meta also
+        // drops blocklisted items; two separate filters shifted every later poster by one —
+        // same as ensure_discover_landing). The request/watchlist patches below change
+        // nothing in length or order.
         let mut metas: Vec<DiscoverCardMeta> = Vec::with_capacity(results.len());
         let mut poster_jobs: Vec<(usize, String, String, String)> = Vec::new();
         for r in &results {
@@ -269,10 +207,8 @@ pub(crate) fn spawn_discover_search(
             s.discover_search_page = 1;
             s.discover_search_total_pages = response.total_pages;
             s.discover_search_loading_more = false;
-            // Real bug fixed 2026-07-18 — see FjordState.discover_known_requests'
-            // own doc comment: search results never carried real request
-            // state at all, so an already-requested item's context menu
-            // offered "Request" instead of "Edit/Cancel/View Request".
+            // Request state from the known-requests cache, so an already-requested result
+            // offers Edit/Cancel/View Request.
             for m in &mut metas {
                 patch_known_request_state(m, &s.discover_known_requests);
                 patch_watchlist_state(m, &s.discover_watchlist_ids);
@@ -288,16 +224,9 @@ pub(crate) fn spawn_discover_search(
         let _ = slint::invoke_from_event_loop(move || {
             if let Some(w) = ww_commit.upgrade() {
                 let g = AppState::get(&w);
-                // A fresh query always replaces the whole result set (a
-                // different query has no reason to keep the same ids in the
-                // same order, so apply_cards_preserving_identity's own
-                // same-shape check would never fire here) — but rapid
-                // keystrokes commonly land on overlapping results ("the
-                // bour" -> "the bourn"), and blanking + re-fetching every
-                // poster on each one is exactly the flash the user reported
-                // while typing. Carry forward already-decoded posters by
-                // (id, item_type) across the swap, same pattern
-                // apply_search_filters already uses for its own re-filter.
+                // Carry already-decoded posters forward by (id, item_type): consecutive keystrokes
+                // ("the bour" → "the bourn") mostly return overlapping results, and re-fetching their
+                // posters each time made the grid flash while typing (like apply_search_filters).
                 let old = g.get_discover_results();
                 let old_posters: std::collections::HashMap<(String, String), (slint::Image, bool)> =
                     (0..old.row_count())
@@ -321,21 +250,9 @@ pub(crate) fn spawn_discover_search(
                         card
                     })
                     .collect();
-                // Real bug, live-reported 2026-08-17 ("still flash every
-                // item"): carrying posters forward (above) fixed the poster
-                // BLANKING, but this still built a brand-new ModelRc every
-                // commit — the exact Phase 96 class of bug (a fresh model
-                // instance makes Slint destroy/recreate every delegate
-                // element regardless of whether the underlying data
-                // changed, re-triggering each card's own FadeInTrigger
-                // fade-in). The doc comment this replaced argued a fresh
-                // query "has no reason to keep the same ids in the same
-                // order," which is true in general but not for the actual
-                // reported case — overlapping keystrokes ("the bour" ->
-                // "the bourn") very often DO return the same top results in
-                // the same relative order (TMDB's own popularity sort is
-                // stable across a narrowing query), so the same-shape check
-                // routinely succeeds and was simply never being attempted.
+                // apply_cards_preserving_identity, not a fresh ModelRc: overlapping keystrokes often
+                // return the same top results in the same order (TMDB's popularity sort is stable),
+                // and a new model re-creates every card (each poster re-fades).
                 g.set_discover_results(crate::apply_cards_preserving_identity(&old, cards));
                 g.set_discover_searching(false);
                 g.set_discover_focused(0);
@@ -470,21 +387,8 @@ pub(crate) fn spawn_discover_search_more(
                     .into_iter()
                     .map(DiscoverCardMeta::into_card_item)
                     .collect();
-                // True incremental append (2026-08-02, real bug live-reported
-                // as "the grid flash several times" while searching): a page
-                // 2/3/4 auto-load only ever ADDS rows to what's already on
-                // screen, but swapping in a brand-new ModelRc — even one
-                // built from the exact same existing rows plus the new ones
-                // — makes Slint destroy and reconstruct every already-shown
-                // card element (this file's own established "Phase 96 flash
-                // bug"), discarding their already-decoded poster Images and
-                // re-running each one's poster FadeInTrigger for no reason.
-                // discover-results is always constructed as a VecModel
-                // elsewhere in this file, so downcasting back to it and
-                // calling extend() (one row_added notification for the
-                // whole batch) appends onto the SAME live model instance —
-                // existing rows are never touched. Falls back to a full
-                // rebuild only if that assumption somehow doesn't hold.
+                // Append page 2+ onto the SAME VecModel (extend: one row_added for the batch) — a new
+                // ModelRc would re-create every card already on screen. Full rebuild only as a fallback.
                 if let Some(vm) = existing.as_any().downcast_ref::<VecModel<CardItem>>() {
                     vm.extend(new_cards);
                 } else {

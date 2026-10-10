@@ -1,75 +1,35 @@
-// ── fjord-app · discover/filters.rs ──────────────────────────────────────────
-//   ── Discover filters (2026-07-18, planned via /plan, 3 rounds of
-//      AskUserQuestion — see CLAUDE.md's Seerr integration section) ──
-//   ensure_discover_filter_options  fetches genre + watch-provider lists (both media
-//                              types) once per session; also restores discover-filters-active
-//                              + the 4 *-desc properties from persisted Config and, if filters
-//                              were already active, kicks off spawn_discover_filtered_browse
-//                              immediately rather than waiting for a pill touch
-//   build_discover_filters      current filter selections -> a real fjord_seerr::DiscoverFilters
-//                              for one media type's /discover/* call; genre NAMES re-resolved
-//                              to that type's own raw id (movie/TV genre id spaces don't match)
-//   build_genre_items/build_provider_items/push_or_merge_genre/refresh_discover_filter_models
-//                              raw Seerr genre/provider lists -> Slint GenreItem/ProviderItem
-//                              chip models; push_or_merge_genre merges a same-named genre's
-//                              movie-side and TV-side ids into one chip (GenreItem carries
-//                              both, since the id spaces don't overlap); providers dedupe by
-//                              id directly (shared across media types, unlike genre)
-//   discover_filters_active/search_filters_active  discover_filters_active: is ANY of the
-//                              6 dimensions non-default (landing-rows vs filtered-browse
-//                              switch); search_filters_active: the narrower subset that
-//                              actually applies to search results (excludes Type — /search
-//                              always mixes both types — and Provider, which /search's
-//                              response carries no data for at all)
-//   apply_search_filters        client-side genre/rating/year/sort pass over the full raw
-//                              fetch history (FjordState.discover_search_metas) — the only
-//                              way filters can apply to search results, since /search takes
-//                              no filter params; preserves posters by id lookup (not index —
-//                              filtering reorders/removes rows); must run strictly AFTER
-//                              fetch_and_patch_posters finishes, never before
-//   build_filtered_metas/merge_filtered_metas/sort_filtered_metas  SearchResult list ->
-//                              (meta, poster_path) pairs; merge_filtered_metas interleaves
-//                              movie+TV results into one grid for Type=All, sorted (via
-//                              sort_filtered_metas, extracted 2026-07-31 so _more can reuse it
-//                              on the FULL accumulated set, not just one page — see below) by
-//                              the active sort key's real value (concatenate-then-sort, not a
-//                              two-pointer merge — the inputs are small enough that this is
-//                              simpler for the same result)
-//   spawn_discover_filtered_browse/_more  the new filtered-browse view (query empty, >=1
-//                              filter active) — mirrors spawn_discover_search/_more's two-
-//                              phase commit shape but sources from discover_movies_filtered/
-//                              discover_tv_filtered (real server-side filtering); fetches both
-//                              types in parallel when Type=All; shares spawn_discover_search's
-//                              OWN discover_gen counter (required — a race between the two
-//                              view types would otherwise clobber discover-results); load-more
-//                              advances both underlying TMDB pages in lockstep, stopping on
-//                              max() of the two total_pages so Type=All doesn't cut off early;
-//                              real bug fixed 2026-07-31 (code review) — _more used to sort
-//                              and commit only each page's own batch, silently breaking global
-//                              sort order across the page boundary; now accumulates every
-//                              fetched page into FjordState.discover_filtered_metas and
-//                              re-sorts the WHOLE set on every page, preserving already-known
-//                              posters by id (same idiom as home.rs::refresh_row_preserving_-
-//                              posters) and skipping a redundant re-fetch for them
-//   build_filtered_metas       bumped pub(crate) — reused verbatim (no changes) by Detail/Series
-//                              Recommended and Collection Missing Items, all of which already
-//                              have a plain &[SearchResult] to convert
+// ── fjord-app · discover/filters.rs ─────────────────────────────────────────
+//   SORT_KEYS / RATING_BUCKETS / YEAR_BUCKETS + discover_*_desc / _key / _value  pill values ↔ display
+//   discover_filters_active / search_filters_active  any of the 6 dimensions set (landing vs filtered
+//                              browse) / the subset that applies to search (no Type, no Provider)
+//   tmdb_sort_value / tmdb_date_gte_key  internal sort key → per-media-type TMDB sortBy / date field
+//   build_discover_filters     selections → fjord_seerr::DiscoverFilters for one media type (genre
+//                              names re-resolved to that type's ids)
+//   build_genre_items / build_provider_items / push_or_merge_genre / refresh_discover_filter_models
+//                              chip models; a same-named genre's movie and TV ids merge into one chip;
+//                              providers dedupe by id
+//   ensure_discover_filter_options  genre + provider lists once per session; restores the persisted
+//                              pills and starts the filtered browse if filters were active
+//   apply_search_filters       client-side genre/rating/year/sort over all fetched search results
+//                              (/search takes no filters); posters kept by id; runs after the poster fetch
+//   build_filtered_metas / merge_filtered_metas / sort_filtered_metas  SearchResult → (meta, poster)
+//                              pairs (also used by Detail/Series Recommended, Collection Missing Items);
+//                              Type=All interleaves movie + TV by the active sort key's value
+//   spawn_discover_filtered_browse / _more  the filtered-browse view (query empty, ≥1 filter): server-
+//                              side filtered fetches (both types in parallel for All), sharing search's
+//                              discover_gen; load-more advances both pages and re-sorts the whole
+//                              accumulated set (FjordState.discover_filtered_metas)
 // ─────────────────────────────────────────────────────────────────────────────
 use super::*;
 
-// ── Discover filters (2026-07-18) ───────────────────────────────────────────
-//
-// Six pills: Type/Sort/Rating/Year are single-value (desc string shown in
-// the pill, internal key/value persisted in Config); Genre/Provider are
-// multi-select chip pickers (GenreItem/ProviderItem models, each row's own
-// `selected` toggled independently — TMDB's with_genres/with_watch_providers
-// both take pipe-separated OR, see DiscoverFilters' own doc comment in
-// fjord-seerr for why). Config stores the INTERNAL representation (""/
-// "movie"/"tv", ""/"rating"/"newest"/"oldest", a raw f32/u32 bucket floor,
-// genre NAMES (stable across the movie/TV id-space mismatch — see
-// GenreItem's own doc comment in theme.slint), provider ids (stable across
-// media types, unlike genre) — never the display string, which is derived
-// fresh by the *_desc functions below every time it's needed.
+// ── Discover filters ────────────────────────────────────────────────────────
+// Six pills: Type/Sort/Rating/Year single-value (the pill shows a desc string,
+// Config keeps the internal key/value); Genre/Provider multi-select chip pickers
+// (GenreItem/ProviderItem models; TMDB's with_genres/with_watch_providers take
+// pipe-separated OR — see DiscoverFilters in fjord-seerr). Config stores internal
+// values — ""/movie/tv, ""/rating/newest/oldest, a bucket floor, genre NAMES (movie
+// and TV genre ids differ), provider ids — never display strings, which the *_desc
+// functions derive.
 
 pub(crate) const SORT_KEYS: &[(&str, &str)] = &[
     ("", "Popularity"),
@@ -586,19 +546,11 @@ pub(crate) fn build_filtered_metas(results: &[SearchResult]) -> Vec<FilteredRowI
         .collect()
 }
 
-/// Merges movie + TV filtered-browse results into one grid for Type=All —
-/// confirmed via `AskUserQuestion`: interleaved by the ACTUAL value of
-/// whichever sort key is active (both types' `popularity`/`vote_average`
-/// are directly comparable; Newest/Oldest compare `year`, already
-/// normalized to a plain int regardless of which date field it came from),
-/// not the simpler movies-then-TV split. Implemented as concatenate-then-
-/// sort rather than a true two-pointer merge — the two inputs are already
-/// server-sorted, but re-sorting the small (≤2 pages') combined list
-/// outright is simpler code for the identical final order.
-/// Extracted from `merge_filtered_metas` (2026-07-31, code review finding)
-/// so `spawn_discover_filtered_browse_more` can re-sort the FULL accumulated
-/// set across a page boundary, not just each page's own batch — see that
-/// function's own doc comment for the bug this fixes.
+/// Sorts the merged movie + TV filtered-browse results for Type=All by the active
+/// sort key's actual value (popularity/vote_average are comparable across types;
+/// Newest/Oldest compare the normalized `year`) — interleaved, not movies-then-TV.
+/// Concatenate-then-sort (the inputs are small). Separate from `merge_filtered_metas`
+/// so `spawn_discover_filtered_browse_more` can re-sort the FULL accumulated set.
 fn sort_filtered_metas(items: &mut [FilteredRowItem], sort_key: &str) {
     match sort_key {
         "rating" => items.sort_by(|a, b| {
@@ -889,12 +841,8 @@ pub(crate) fn spawn_discover_filtered_browse_more(
         let movie_metas = movie_resp.as_ref().map(|r| build_filtered_metas(&r.results)).unwrap_or_default();
         let tv_metas = tv_resp.as_ref().map(|r| build_filtered_metas(&r.results)).unwrap_or_default();
         let new_page_count = movie_metas.len() + tv_metas.len();
-        // Accumulate this page onto the full fetch history, then re-sort the
-        // WHOLE set — real bug, code review 2026-07-31: sorting and
-        // committing only each page's own batch (the old behavior) left the
-        // combined list visibly out of order across the page boundary the
-        // moment a later page's top item outranked an earlier page's tail
-        // item, since a plain append never re-establishes global order.
+        // Accumulate this page onto the whole fetch history and re-sort ALL of it — sorting
+        // only each page left the list out of order across page boundaries.
         let all_metas = {
             let mut s = state2.lock().unwrap();
             s.discover_filtered_page = next_page;

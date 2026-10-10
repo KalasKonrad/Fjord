@@ -1,77 +1,30 @@
 // ── fjord-app · discover/keys.rs ─────────────────────────────────────────────
-//   set_quality                swaps in the other tier's pre-fetched tags/profiles/selected-
-//                              profile-id when Quality actually changes — instant, no
-//                              re-fetch/race, since both tiers were fetched up front; shared
-//                              by the keyboard handler and the request-detail-set-quality
-//                              callback the 2K/4K buttons' mouse clicks go through
-//   handle_key                  Discover screen: replicates dispatch_dashboard's
-//                              focused-section sidebar/content contract itself (Discover has
-//                              its own AppMode, not Dashboard, so doesn't get this for free) —
-//                              fs<0 = sidebar (Up/Down cycle tabs, Right enters); fs>=0 = grid,
-//                              2D nav mirrors LibraryGrid's math (AppState.library-cols),
-//                              Left-at-col-0/Back return to the sidebar. Search-field typing is
-//                              a separate raw-key pre-dispatch in keys.rs (handle_discover_search),
-//                              mirroring browse.rs's handle_browse_search. Action::OpenContextMenu
-//                              (C key) in both the grid and handle_key_landing invokes
-//                              open-context-menu-discover(card) with the focused card (2026-07-18)
-//   existing_zones/handle_key_request_detail  back -> button row -> storyline
-//                              (collapsible overview) -> cast row — Up/Down step to the
-//                              nearest zone that exists for this item.
-//   existing_detail_btn_slots   button row's own "gaps are fine" slot list (2026-07-18,
-//                              generalized from the original hardcoded Request/Trailer binary
-//                              once a 3rd slot joined it): 0=Request (at least one tier still
-//                              requestable), 1=Trailer (found + yt-dlp available), 2=⋮ More
-//                              (opens the Discover context menu — View Request/Edit/Cancel/
-//                              Approve/Decline — sourced from request-detail-request-id/
-//                              -pending/-mine rather than a CardItem; only shown once a request
-//                              exists). Left/Right move within existing slots; Confirm dispatches
-//                              open-request-options/play-trailer/open-discover-menu-from-detail.
-//                              Request opens the Request Options modal rather than exposing
-//                              4K/tags/seasons inline (see below); Trailer button fires
-//                              play-trailer() (Watch Trailer — Discover only, see CLAUDE.md's
-//                              Seerr integration section).
-//   existing_option_zones/handle_key_request_options  Request Options modal: Quality (2K/4K)
-//                              row -> profile row (radio-select) -> tags row -> seasons row ->
-//                              confirm row (Cancel/Request), same skip-absent-zones idiom as
-//                              existing_zones but its own numbering
-//   discover_popup_options/open_discover_popup/handle_key_discover_popup  the Type/Sort/
-//                              Rating/Year single-select popups + Genre/Provider multi-select
-//                              chip popups opened from the filter bar — its own dropdown/
-//                              zone state machine (modeled on, not reused from,
-//                              settings.rs::dispatch_settings/handle_key_request_options,
-//                              since Discover's keyboard model has no existing "capture all
-//                              input while a popup is open" mechanism of its own); mouse
-//                              clicks on PopupOption/FilterChip (discover.slint) set the same
-//                              cursor state then invoke Action::Confirm through this same
-//                              function via the discover-popup-confirm callback, so mouse and
-//                              keyboard can never diverge (the exact bug class Phase 142's
-//                              zone-numbering note documents)
-//   handle_key_discover_filter_bar  Left/Right move the cursor across the 7 pills (Type/
-//                              Genre/Sort/Rating/Year/Provider/Clear), Up returns to the
-//                              search field, Down enters the grid/landing rows, Confirm opens
-//                              the focused pill's popup (or fires Clear); mouse clicks on
-//                              FilterPill mirror the popup pattern above (set state, invoke
-//                              Action::Confirm through this function via discover-filter-bar-
-//                              confirm)
-//   handle_key_landing          Confirm/OpenContextMenu on the Coming Up row's sentinel card
-//                              (last card, row index LANDING_ROW_COMING_UP) special-cased to
-//                              open the calendar / no-op instead of falling through to the
-//                              generic open_discover_item/open_context_menu_discover
+//   discover_popup_options / open_discover_popup / handle_key_discover_popup  filter popups: single-
+//                              select lists (Type/Sort/Rating/Year) and multi-select chips (Genre/
+//                              Provider, Confirm toggles without closing); mouse picks go through the
+//                              same function (discover-popup-confirm)
+//   handle_key_discover_filter_bar  Left/Right over the 7 pills (… Clear), Up → search field, Down →
+//                              grid/landing, Confirm opens the pill's popup; mouse via discover-filter-bar-confirm
+//   handle_key                 Discover grid: fs<0 sidebar (Up/Down tabs, Right enters), fs>=0 grid with
+//                              LibraryGrid's 2D math; Left at col 0 / Back → sidebar; C → context menu
+//   handle_key_landing         landing rows; the Coming Up sentinel opens the calendar
+//   existing_zones / zone_focus_reset / handle_key_request_detail  RequestDetailScreen: back → button row
+//                              → storyline → cast → tags → seasons (existing zones only)
+//   existing_detail_btn_slots  button-row slots: 0=Request 1=Trailer 2=⋮ More 3=Watchlist 4=Blocklist;
+//                              Left/Right within existing slots
+//   existing_option_zones / option_zone_focus_reset / handle_key_request_options  Request Options modal:
+//                              Quality → profile → tags → seasons → Cancel/Request
+//   set_quality                swap in the other tier's pre-fetched tags/profiles (keyboard and the 2K/4K
+//                              buttons both use it)
 // ─────────────────────────────────────────────────────────────────────────────
 use super::*;
 
-// ── Keyboard: Discover filter bar + popups (2026-07-18) ─────────────────────
-//
-// A 4th Discover keyboard mechanism, alongside the search field's raw
-// pre-dispatch, `fs<0` sidebar, and `fs>=0` grid/landing — real, non-trivial
-// wiring, not a drop-in "nearest zone" hand-off (see this module's own
-// notes elsewhere on why). Two states: `discover-filter-bar-active` (no
-// popup open — Left/Right move the pill cursor, matching Library grid's
-// own sort-bar contract of "cursor moves freely, Enter applies"), and
-// `discover-popup-open` (a popup is open — captures ALL input, same as
-// Settings' own `settings-dropdown-open` capture, but built fresh here
-// since `SettingsDropdown` itself has no keyboard path of its own to
-// reuse — see `ensure_discover_filter_options`'s own doc comment).
+// ── Keyboard: Discover filter bar + popups ──────────────────────────────────
+// Discover's 4th keyboard mechanism, next to the search field's raw pre-dispatch,
+// fs<0 sidebar and fs>=0 grid/landing. Two states: `discover-filter-bar-active` (no
+// popup — Left/Right move the pill cursor, Enter applies, like the library sort bar)
+// and `discover-popup-open` (captures ALL input, like Settings' `settings-dropdown-open`,
+// built here because `SettingsDropdown` has no keyboard path of its own).
 
 fn discover_popup_options(kind: &str) -> Vec<&'static str> {
     match kind {
@@ -261,17 +214,11 @@ pub(crate) fn handle_key_discover_filter_bar(action: &Action, g: &AppState) -> b
     }
 }
 
-// ── Keyboard: Discover grid (search-field typing is a raw pre-dispatch in keys.rs) ──
-//
-// `focused_section` (`fs`, shared across every dashboard-tier tab) is the
-// sidebar/content toggle: `< 0` = sidebar has focus, `>= 0` = the screen's own
-// content does. Every other dashboard-tier tab gets this for free from
-// `dispatch_dashboard`; Discover has its own `AppMode` (not `Dashboard`, since
-// its content is a flat poster grid, not `dispatch_dashboard`'s SectionRow
-// model), so it has to replicate the same contract itself — real bug, found
-// live: without this, arriving at Discover with zero results (the state on
-// every first visit, before a query is typed) had no keyboard path out at
-// all, since the old code only ever handled `Action::Up` there.
+// ── Keyboard: Discover grid (search typing is a raw pre-dispatch in keys.rs) ──
+// `focused_section` (fs) is the sidebar/content toggle shared by the dashboard tabs:
+// < 0 = sidebar, >= 0 = content. Discover has its own AppMode (a flat grid, not
+// dispatch_dashboard's SectionRows), so it keeps that contract itself — including
+// with zero results (every first visit), where it's the only way out.
 pub(crate) fn handle_key(action: &Action, g: &AppState) -> bool {
     if !g.get_discover_popup_open().as_str().is_empty() {
         return handle_key_discover_popup(action, g);
@@ -485,13 +432,9 @@ fn handle_key_landing(action: &Action, g: &AppState, fs: i32) -> bool {
         }
         Action::Confirm => {
             let c = g.get_discover_landing_card().max(0);
-            // Real bug caught in review before shipping: handle_key_landing
-            // is one generic function shared by all 8 rows, deriving
-            // media_type from whatever card is focused with no per-card
-            // special case — without this check, Enter on the "Coming Up"
-            // row's trailing sentinel (no real tmdb id) would try to open a
-            // Discover item for garbage data instead of the calendar
-            // (Watchlist + Release Calendar, 2026-07-18).
+            // The Coming Up row's trailing sentinel (no tmdb id) opens the calendar —
+            // handle_key_landing is generic over all rows and would otherwise open a Discover
+            // item from garbage data.
             if fs as usize == LANDING_ROW_COMING_UP && c == count - 1 && count > 0 {
                 g.invoke_open_calendar();
             } else if c < count
@@ -549,15 +492,12 @@ fn existing_zones(g: &AppState) -> Vec<i32> {
     zones
 }
 
-/// Which of zone 0's (button row) 3 possible slots exist for the current
-/// item — same "gaps are fine" idiom as `existing_zones`/
-/// `existing_discover_menu_rows`: 0=Request (at least one tier still ""),
-/// 1=Trailer (found + yt-dlp available), 2=⋮ More (a request already
-/// exists). Slot values are indices into `request-detail-btn-focused`, not
-/// a positional/visual-order constraint — `request_detail.slint` renders
-/// them in this same 0/1/2 order, so here they also happen to match, unlike
-/// the Discover context menu's row 5 (see context_menu.rs's own note on
-/// that).
+/// Which of the button row's slots exist for the current item ("gaps are fine",
+/// like `existing_zones`/`existing_discover_menu_rows`): 0=Request (a tier still
+/// requestable), 1=Trailer (one known to play + yt-dlp), 2=⋮ More (a request
+/// exists), 3=Watchlist (always), 4=Blocklist (untouched or blocklisted item +
+/// MANAGE_BLOCKLIST). Values are `request-detail-btn-focused` ids, rendered in this
+/// order by request_detail.slint.
 pub(crate) fn existing_detail_btn_slots(g: &AppState) -> Vec<i32> {
     let mut slots = Vec::new();
     if g.get_request_detail_status().as_str() == ""
@@ -646,11 +586,8 @@ pub(crate) fn handle_key_request_detail(action: &Action, g: &AppState) -> bool {
                 _ => true,
             };
         }
-        // Cast & Crew row — L/R scroll, Enter opens person detail
-        // (2026-08-13 — mirrors the Slint item-selected click handler in
-        // request_detail.slint; same "keyboard Confirm and a mouse click
-        // reach the identical callback" discipline this whole screen's
-        // other zones already follow).
+        // Cast & Crew row — L/R scroll, Enter opens the person (the same callback as the
+        // mouse click in request_detail.slint).
         2 => {
             let count = g.get_request_detail_cast().row_count() as i32;
             return match action {
@@ -709,12 +646,8 @@ pub(crate) fn handle_key_request_detail(action: &Action, g: &AppState) -> bool {
     // Options modal rather than submitting directly; 4K/tags/seasons are
     // configured there, not on this page.
     let slots = existing_detail_btn_slots(g);
-    // Clamp request-detail-btn-focused to whatever's actually present.
-    // Recomputed on every zone-0 key press rather than only at zone-entry,
-    // so it self-corrects regardless of which transition landed here —
-    // same "gaps are fine" idiom as existing_discover_menu_rows's own
-    // Up/Down, generalized from the original hardcoded Request/Trailer
-    // binary once ⋮ More became a third possible slot (2026-07-18).
+    // Clamp request-detail-btn-focused to an existing slot on every zone-0 key press
+    // (not only on entry), so any transition self-corrects.
     if !slots.contains(&g.get_request_detail_btn_focused()) {
         g.set_request_detail_btn_focused(slots.first().copied().unwrap_or(0));
     }
@@ -751,11 +684,7 @@ pub(crate) fn handle_key_request_detail(action: &Action, g: &AppState) -> bool {
                 0 => g.invoke_open_request_options(),
                 1 => g.invoke_play_trailer(),
                 2 => g.invoke_open_discover_menu_from_detail(),
-                // Real pre-existing bug, fixed 2026-08-06: this match had no
-                // arm for slot 3 (Watchlist) at all — keyboard Enter on that
-                // button silently did nothing, only mouse click worked (via
-                // request_detail.slint's own `clicked =>` handler). Fixed
-                // alongside adding slot 4 so it doesn't inherit the same gap.
+                // Slot 3 (Watchlist) on Enter, like its mouse `clicked` in request_detail.slint.
                 3 => g.invoke_request_detail_toggle_watchlist(),
                 4 => g.invoke_request_detail_toggle_blocklist(),
                 _ => {}
