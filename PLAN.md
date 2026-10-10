@@ -27,6 +27,7 @@ Version history: [CHANGELOG.md](CHANGELOG.md) (git tags `v0.1.0`–`v0.4.2`). Im
 
 ## Pending
 
+- [ ] **`cargo audit` again after the Slint 1.18 upgrade and before tagging 0.5.0** — 2 advisories left (quick-xml 0.39.4 via Slint's accessibility stack, not reachable; see DEVLOG "Security review before 0.5.0").
 - [ ] **Remove the temporary `--cfg slint_debug_property` line from `PKGBUILD`'s `build()`** once the Settings crash (Issues) is understood or hasn't come back for a while — it's there so a repeat names the property in the `PANIC` line.
 
 ## Issues
