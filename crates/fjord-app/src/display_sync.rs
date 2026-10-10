@@ -1,73 +1,33 @@
 // ── fjord-app · display_sync.rs ─────────────────────────────────────────────
-//   Native resolution/refresh-rate/HDR/WCG matching to source, replacing the
-//   external `media_display_sync` Python script's job for Fjord's own
-//   playback (2026-09-18). Ports that script's proven `kscreen-doctor`
-//   mode-selection mechanism, not its detection mechanism — Fjord already
-//   knows synchronously, from its own mpv instance, exactly what's playing
-//   the instant VideoReconfig fires, so none of the script's own external
-//   polling/timeout/grace-period machinery is needed. KDE Plasma Wayland
-//   only; degrades to a silent no-op wherever `kscreen-doctor` isn't found
-//   (X11, other Wayland compositors — Fjord ships `fjord-x11.desktop`).
+//   Native resolution/refresh-rate/HDR/WCG matching to the source (a port of the
+//   media_display_sync script's kscreen-doctor mode selection; Fjord knows what's playing from
+//   its own mpv, so none of the script's polling is needed). KDE Plasma Wayland only; a silent
+//   no-op where kscreen-doctor is missing.
 //
-//   HdrMode / WcgMode      parsed from Config.device.display_sync_hdr_mode/
-//                          _wcg_mode ("yes"/"no"/"always", "auto"/"yes"/"no")
-//   DisplaySyncSettings    everything compute_target_mode/sync_to_source need,
-//                          extracted from DeviceConfig ONCE per trigger (not
-//                          cloning the whole DeviceConfig every 16ms tick)
-//   compute_target_mode    pure, unit-tested port of the proven script's own
-//                          media_display_sync.py:202-237 fps->Hz cadence
-//                          table + fallback chain (exact -> closest Hz at the
-//                          same resolution -> the configured default mode)
-//   get_supported_modes    kscreen-doctor -o output parse -> {(res, hz)} —
-//                          plain string parsing, no regex dependency added
-//                          for this one narrow, well-known CLI format
-//   supported_resolutions_ derived, sorted Vecs over get_supported_modes'
-//     and_hz                own set — backs the "Default resolution"/
-//                          "Default refresh rate" Settings dropdowns
-//                          (main.rs), fetched at startup and again whenever
-//                          Output changes, replacing 2026-09-18's original
-//                          fixed 3-resolution/7-Hz compile-time lists (a
-//                          real dev-machine report: too few choices, and
-//                          none of them guaranteed to be modes the actual
-//                          display supports)
-//   list_outputs_with_       Settings-dropdown option list, paired with each
-//     priority               output's real KDE priority (1 = primary,
-//                          confirmed against libkscreen/kscreen source) so
-//                          main.rs can label it "(Primary)" — AND (via its
-//                          own length at the call site) the one-shot
-//                          "exactly one candidate" pre-fill check — never
-//                          read at runtime by this module itself, only at
-//                          startup (main.rs)
+//   HdrMode / WcgMode      parsed from Config.device.display_sync_hdr_mode/_wcg_mode
+//   DisplaySyncSettings    what compute_target_mode/sync_to_source need, extracted from
+//                          DeviceConfig once per trigger
+//   compute_target_mode    pure, unit-tested: the script's fps→Hz cadence table + fallback chain
+//                          (exact → closest Hz at the same resolution → the default mode)
+//   get_supported_modes    kscreen-doctor -o → {(res, hz)} (strip_ansi, plain string parsing)
+//   supported_resolutions_and_hz  sorted lists for the Default resolution/Hz dropdowns
+//   list_outputs_with_priority  Output dropdown options: connector, KDE priority (1 = primary),
+//                          EDID "Vendor Model" (friendly_output_name / parse_edid_product_name,
+//                          unit-tested); startup only
 //   apply_display_switch   mode + scale and/or HDR + WCG in ONE kscreen-doctor call
-//                          (display_switch_args, unit-tested; 2026-10-06) — best-effort
-//                          logged, a missing binary is a silent one-time-logged no-op
-//   sync_to_source         the real per-item orchestration: get supported
-//                          modes, compute target, apply mode+scale (+3s
-//                          settle) and HDR/WCG only when they actually
-//                          changed from FjordState's own "what's currently
-//                          applied" tracking — called from wire_mpv_timer's
-//                          own hook (playback.rs), which is also what
-//                          sequences this to complete BEFORE HDR Stage 3's
-//                          negotiation ever runs when both are enabled (see
-//                          DEVLOG.md's dated section for the real race this
-//                          avoids — kscreen-doctor's own HDR toggle and
-//                          hdr.rs's Wayland surface negotiation are two
-//                          different, both-heavyweight operations that must
-//                          not fire concurrently)
-//   sync_before_load       display-mode-prefetch (2026-09-25): thin wrapper
-//                          over sync_to_source fed from Jellyfin's
-//                          MediaStreams (width/fps/HDR) instead of mpv —
-//                          called by start_playback BEFORE mpv loads the
-//                          file, so the mode switch no longer blinks
-//                          mid-playback. The post-decode trigger above still
-//                          runs afterwards and is normally a cached no-op.
-//   revert_to_default      called from the 3 genuine-stop call sites
-//                          (quit_cleanup, do_stop_playback, wire_mpv_timer's
-//                          natural-EOF branch once nothing turns out to be
-//                          next) — never from a replace-in-place teardown
-//   needs_revert           pure: revert only if Fjord changed the display this
-//                          session and it isn't back at default (unit-tested)
-//   wire_display_sync      callbacks moved from main() (0.5.0 step 3): display-sync output list (fetched once) + screen/resolution/Hz dropdowns
+//                          (display_switch_args, unit-tested); best-effort, logged
+//   sync_to_source         per item: supported modes → target → apply (+3 s settle) what changed
+//                          vs. FjordState's "currently applied"; from wire_mpv_timer, which runs
+//                          it to completion BEFORE HDR Stage 3 negotiates (they must not overlap)
+//   sync_before_load       pre-decode wrapper over sync_to_source, fed from Jellyfin's
+//                          MediaStreams, called by start_playback before mpv loads the file (no
+//                          mid-playback blink); the post-decode trigger is then a cached no-op
+//   revert_to_default      from the 3 real-stop sites (quit_cleanup, do_stop_playback, natural EOF
+//                          with nothing next) — never from a replace-in-place teardown
+//   needs_revert           pure: revert only if Fjord changed the display this session and it
+//                          isn't back at default (unit-tested)
+//   wire_display_sync      callbacks moved from main() (0.5.0 step 3): output list (fetched once,
+//                          pre-fills a sole candidate) + screen/resolution/Hz dropdowns
 //   spawn_display_sync_modes_fetch  resolutions/Hz of the chosen output (Settings dropdowns)
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -245,10 +205,8 @@ pub(crate) fn compute_target_mode(
 
 // ── kscreen-doctor plumbing ──────────────────────────────────────────────────
 
-/// Strips SGR ANSI color codes (`\x1b[...m`) from `kscreen-doctor`'s own
-/// colorized output — a plain state-machine walk rather than a `regex`
-/// dependency, since this tool's output only ever uses this one escape
-/// shape (confirmed live on this dev machine).
+/// Strips SGR color codes (`\x1b[...m`) from kscreen-doctor's output — the only escape it
+/// uses, so a small state machine instead of a regex dependency.
 fn strip_ansi(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     let mut chars = s.chars();
@@ -354,17 +312,10 @@ pub(crate) fn get_supported_modes(screen: &str) -> HashSet<(String, String)> {
     modes
 }
 
-/// Distinct resolutions and Hz values `screen` genuinely supports, each in a
-/// sensible dropdown order — resolutions by pixel count descending (largest,
-/// most likely intentional choice first), Hz ascending. Backs the Settings
-/// screen's "Default resolution"/"Default refresh rate" dynamic dropdowns
-/// (`main.rs`, same shape as the Output row's own `list_outputs_with_priority`
-/// fetch) — a plain derived view over `get_supported_modes`'s own already-
-/// parsed set, not a second `kscreen-doctor` shell-out. Both empty when the
-/// query itself failed (missing binary, unknown output name) — callers
-/// leave whatever the dropdown already showed untouched in that case, the
-/// same "don't clear a working value over a transient/absent query" precedent
-/// `list_outputs_with_priority`'s own screen-name pre-fill already follows.
+/// The resolutions (by pixel count, largest first) and Hz values (ascending) `screen`
+/// supports — for Settings' Default resolution / Default refresh rate dropdowns, derived from
+/// get_supported_modes (no second shell-out). Both empty when the query failed; callers then
+/// keep what the dropdown already shows.
 pub(crate) fn supported_resolutions_and_hz(screen: &str) -> (Vec<String>, Vec<String>) {
     let modes = get_supported_modes(screen);
     let mut resolutions: Vec<String> = modes
@@ -396,16 +347,9 @@ fn pixel_count(res: &str) -> u64 {
         .unwrap_or(0)
 }
 
-/// Every output currently reported both `enabled` and `connected` by
-/// `kscreen-doctor -o`, paired with its real KDE `priority` (lower = more
-/// preferred; `priority 1` is specifically what `kscreenctl set-primary`
-/// sets to make an output primary — confirmed directly from KDE's own
-/// libkscreen/kscreen source, not assumed), in the order `-o` lists them.
-/// Used by `list_outputs_with_priority` below for both the Settings
-/// dropdown's full option list AND (by checking the returned `Vec`'s own
-/// length at the call site, `main.rs`'s startup fetch) the one-shot "exactly
-/// one candidate" pre-fill check — deliberately one shell-out serving both
-/// purposes rather than two.
+/// Every output kscreen-doctor -o reports enabled and connected, with its KDE `priority`
+/// (lower = preferred; 1 is what `kscreenctl set-primary` sets — checked in libkscreen), in
+/// -o order.
 fn enabled_connected_outputs() -> Vec<(String, u32)> {
     let Some(output) = kscreen_doctor_o() else {
         return Vec::new();
@@ -442,21 +386,12 @@ fn enabled_connected_outputs() -> Vec<(String, u32)> {
     candidates
 }
 
-/// Settings-dropdown option list for `display_sync_screen_name` — every
-/// currently enabled+connected output, paired with its real KDE priority
-/// (`main.rs` marks whichever one has `priority == 1` as "(Primary)") AND a
-/// best-effort friendly "Vendor Model" name read directly from that
-/// output's own EDID (see `friendly_output_name`'s own doc comment — direct
-/// user request: "what is conneceted to the output"). Neither annotation
-/// ever reaches the persisted value itself — `display_sync_screen_name` is
-/// always the bare connector name, same as before either was added. Read
-/// only at app startup (`main.rs`), never at runtime by `display_sync.rs`
-/// itself (see `DeviceConfig.display_sync_screen_name`'s own doc comment
-/// for why re-detecting on every playback would be wrong the moment a
-/// second output exists) — the caller also uses this same list's length to
-/// decide whether to auto-pre-fill an still-empty stored value (exactly one
-/// candidate) or leave it for the user to pick explicitly (zero or 2+
-/// candidates).
+/// Options for the Settings Output row: every enabled+connected output with its KDE priority
+/// (1 → "(Primary)") and a best-effort "Vendor Model" from its EDID
+/// (friendly_output_name). The persisted display_sync_screen_name is always the bare
+/// connector name. Read at startup only (wire_display_sync), never per playback (see
+/// DeviceConfig.display_sync_screen_name); the caller pre-fills an empty stored name only
+/// when there is exactly one candidate.
 pub(crate) fn list_outputs_with_priority() -> Vec<(String, u32, Option<String>)> {
     enabled_connected_outputs()
         .into_iter()
@@ -467,28 +402,12 @@ pub(crate) fn list_outputs_with_priority() -> Vec<(String, u32, Option<String>)>
         .collect()
 }
 
-/// Best-effort "Vendor Model" friendly name for a kscreen-doctor connector
-/// name (e.g. "HDMI-A-2"), read directly from the standard Linux DRM sysfs
-/// EDID attribute (`/sys/class/drm/cardN-<connector>/edid`) and decoded per
-/// the VESA E-EDID standard's Display Product Name descriptor (tag 0xFC) —
-/// no dependency on `kscreen-console` (a separate-package internal KDE
-/// debug tool this project tried and couldn't get to produce any output at
-/// all) or any new external binary, just a plain sysfs file read + a small,
-/// self-contained parser. Confirmed correct against this dev machine's own
-/// 3 real monitors, cross-checked directly against KDE's own Display
-/// Configuration panel (which reads the identical EDID data, just via
-/// libkscreen's C++ API rather than sysfs directly): `card0-HDMI-A-2` →
-/// "Philips 245P", `card1-DP-3` → "HP ZR24w", `card1-HDMI-A-1` → "Philips
-/// 245P" (a second, different physical unit of the same model — its own
-/// distinct serial-number descriptor is deliberately not surfaced here,
-/// since the connector name Fjord already always prefixes the label with
-/// is itself a sufficient, always-unique disambiguator; KDE's own panel
-/// needs the serial specifically because ITS list has no such prefix).
-/// `None` on any failure (missing/unreadable/malformed EDID, no matching
-/// sysfs entry, no Display Product Name descriptor present at all — some
-/// real monitors simply don't carry one) — this is a display nicety layered
-/// on top of the already-working connector-name-based flow, never load-
-/// bearing for anything.
+/// Best-effort "Vendor Model" for a connector name (e.g. "HDMI-A-2"), from the DRM sysfs
+/// EDID (`/sys/class/drm/cardN-<connector>/edid`), Display Product Name descriptor (tag 0xFC)
+/// — a plain file read + small parser, no extra tools. Matches KDE's Display Configuration
+/// panel on 3 test monitors. The serial descriptor isn't used: the connector name already
+/// makes every label unique. `None` on any failure or without a name descriptor — display
+/// only, never load-bearing.
 fn friendly_output_name(connector: &str) -> Option<String> {
     let path = find_edid_sysfs_path(connector)?;
     let data = std::fs::read(path).ok()?;
@@ -651,13 +570,10 @@ pub(crate) async fn sync_to_source(
         (mode_changed, hdr_changed)
     };
 
-    // Mode + scale and HDR + WCG in ONE kscreen-doctor call (2026-10-06):
-    // KWin applies them as one config change, so the TV re-syncs once, and
-    // the single wait below covers it — HDR used to be switched separately,
-    // after the wait, so the film started while the TV was still changing to
-    // HDR (HTPC: "plays 1-3 s, then changes to HDR and loads again"). HDR/WCG
-    // are still only re-applied together and only when HDR's own effective
-    // value changed, as in the proven script.
+    // Mode + scale and HDR + WCG in ONE kscreen-doctor call: KWin applies them as one change,
+    // so the TV re-syncs once and the single wait below covers it (switching HDR separately,
+    // after the wait, made films start while the TV was still changing). HDR/WCG are only
+    // re-applied when HDR's effective value changed.
     if mode_changed || hdr_changed {
         let scale = cfg.scale_for(&target_res);
         let (screen2, res2, hz2) = (screen.clone(), target_res.clone(), target_hz.clone());
@@ -683,22 +599,11 @@ pub(crate) async fn sync_to_source(
     }
 }
 
-/// display-mode-prefetch (2026-09-25) — the pre-decode entry point,
-/// called from `start_playback`'s own new deferred-load task before mpv has
-/// ever been told to load the file, instead of `sync_to_source`'s usual
-/// post-decode trigger in `wire_mpv_timer`. Deliberately a thin wrapper, not
-/// a second implementation: `sync_to_source` itself is untouched, since it
-/// only ever reads `dims.0`/`dims.2` (width/fps) and `meta.gamma` (checked
-/// against `"pq"`/`"hlg"` for the is-this-HDR decision) — everything else on
-/// `SourceHdrMetadata` (primaries, min/max luma, MaxCLL, MaxFALL) is real
-/// per-file SEI data mpv itself reports post-decode, which Jellyfin's own
-/// `MediaStreams` API never exposes at all (live-verified) and which this
-/// pre-decode call has no way to supply — so this only ever builds a
-/// synthetic `gamma` sentinel and leaves every other `meta` field at its
-/// `Default`. HDR Stage 3's own real negotiation (`hdr::maybe_negotiate`)
-/// still runs later, post-decode, with mpv's real precise metadata,
-/// completely unaffected by this call — see DEVLOG.md's display-mode-
-/// prefetch section for the full scope reasoning.
+/// Pre-decode entry point, from start_playback's deferred-load task before mpv loads the
+/// file. A thin wrapper over sync_to_source, which only reads width/fps and meta.gamma:
+/// Jellyfin's MediaStreams has no per-file HDR metadata, so this passes a synthetic gamma
+/// sentinel and defaults for the rest. HDR Stage 3's negotiation (hdr::maybe_negotiate)
+/// still runs post-decode with mpv's real metadata. DEVLOG → display-mode-prefetch.
 pub(crate) async fn sync_before_load(
     state: Arc<Mutex<FjordState>>,
     video_info: fjord_api::models::VideoStreamInfo,
@@ -715,14 +620,9 @@ pub(crate) async fn sync_before_load(
     sync_to_source(state, (video_info.width, 0, video_info.fps), meta, cfg).await;
 }
 
-/// Whether a genuine stop must put the display back to its default mode:
-/// only when Fjord itself applied something this session that differs from
-/// it. Nothing applied yet (both `None`, e.g. the session reset when picking
-/// a profile at startup) → no revert — 2026-10-04, seen on both machines:
-/// the 2026-09-24 version compared `current_mode != Some(default)`, which is
-/// also true for `None`, so every stop with nothing played re-applied the
-/// default mode and HDR off. Already at default (after one revert) → no
-/// revert either, which was the point of the 2026-09-24 fix.
+/// Whether a real stop must put the display back to its default mode: only when Fjord
+/// applied something this session that differs from it. Nothing applied (both None, e.g. the
+/// session reset at profile pick) → no revert; already at default → no revert.
 fn needs_revert(
     current_mode: Option<&(String, String)>,
     current_hdr: Option<bool>,
@@ -801,7 +701,8 @@ pub(crate) async fn revert_to_default(state: Arc<Mutex<FjordState>>) {
 // ── tests ────────────────────────────────────────────────────────────────────
 
 // ── wire_display_sync (moved from main(), 0.5.0 step 3) ──────────────────
-/// Wires display-sync output list (fetched once) + screen/resolution/Hz dropdowns: display_sync_screen_selected, display_sync_resolution_selected, display_sync_hz_selected.
+/// Wires display-sync output list (fetched once) + screen/resolution/Hz dropdowns:
+/// display_sync_screen_selected, display_sync_resolution_selected, display_sync_hz_selected.
 pub(crate) fn wire_display_sync(
     window: &crate::MainWindow,
     state: &std::sync::Arc<std::sync::Mutex<crate::config::FjordState>>,
@@ -812,36 +713,15 @@ pub(crate) fn wire_display_sync(
     let window = slint::ComponentHandle::clone_strong(window);
     let state = std::sync::Arc::clone(state);
     // ── display_sync output list: fetch once at startup ───────────────────────
-    // Same shape as the system-font fetch just above (shell out once, patch
-    // the dropdown's display list in whenever it lands) — this one queries
-    // `kscreen-doctor -o` for every currently enabled+connected output name,
-    // paired with its real KDE priority AND a best-effort friendly "Vendor
-    // Model" name read straight from that output's own EDID via sysfs (see
-    // `display_sync::friendly_output_name`'s own doc comment) — direct user
-    // requests: "mark witch output is the primary" and "what is conneceted
-    // to the output". Priority `== 1` (confirmed against libkscreen/kscreen
-    // source: exactly what `kscreenctl set-primary` sets — not guessed)
-    // gets labeled "(Primary)"; the friendly name, when found, is appended
-    // as "{connector} — {model}" (e.g. "DP-3 — HP ZR24w (Primary)"). Both
-    // annotations are display-only — `FjordState.display_sync_outputs`
-    // (name, label) is the lookup `on_display_sync_screen_selected` below
-    // resolves a picked label back to the real connector name with, mirroring
-    // `audio_devices`'/`on_audio_device_selected`'s own established shape
-    // exactly, since `display_sync_screen_name` must always persist the bare
-    // connector name, never an annotated label.
+    // kscreen-doctor -o once (list_outputs_with_priority), then patch the dropdown when it
+    // lands. Labels are "{connector} — {model}" plus "(Primary)" for priority 1 (e.g. "DP-3 —
+    // HP ZR24w (Primary)"), display only: FjordState.display_sync_outputs (name, label) maps a
+    // picked label back to the bare connector name (like audio devices).
     //
-    // If the stored screen name is still empty (a fresh install, or one that
-    // predates this feature), pre-fills it here — but only when exactly one
-    // candidate exists (`DeviceConfig.display_sync_screen_name`'s own doc
-    // comment: guessing among 2+ plausible outputs would be wrong the
-    // instant a second display is connected) — and persists it immediately
-    // via `invoke_settings_changed()` so this one-time detection never runs
-    // again for this install. Also kicks off the resolution/Hz modes fetch
-    // below for whichever screen name ends up effective (the already-stored
-    // one, or the just-autodetected sole candidate) — real dev-machine
-    // report: the original fixed 3-resolution/7-Hz lists were both too
-    // narrow AND not guaranteed to contain anything the actual display
-    // supports.
+    // An empty stored screen name is pre-filled only when exactly one candidate exists (with 2+
+    // a guess would be wrong once a second display is connected) and saved at once via
+    // invoke_settings_changed(). Then fetches the resolution/Hz options for the effective
+    // screen.
     {
         let ww_ds = window.as_weak();
         let rt_ds = rt.handle().clone();
@@ -926,14 +806,8 @@ pub(crate) fn wire_display_sync(
     }
 
     // ── display_sync screen selected callback ─────────────────────────────────
-    // desc is the annotated display label ("DP-3 (Primary)"), resolved back
-    // to the real bare connector name via FjordState.display_sync_outputs —
-    // same shape as on_audio_device_selected's own name<->desc lookup,
-    // needed here (unlike this row's original "desc is the value" design)
-    // specifically because the label can now differ from the persisted
-    // value. Also re-fetches resolution/Hz options for the newly-selected
-    // output — the previous output's own supported modes are meaningless
-    // for a different display.
+    // desc is the annotated label ("DP-3 (Primary)"), mapped back to the connector name via
+    // FjordState.display_sync_outputs. Re-fetches resolution/Hz options for the new output.
     {
         let ww_dss = window.as_weak();
         let rt_dss = rt.handle().clone();
@@ -983,15 +857,9 @@ pub(crate) fn wire_display_sync(
     }
 }
 
-/// Fetches `display_sync::supported_resolutions_and_hz(screen)` off-thread
-/// and patches `settings-display-sync-resolution-options`/`-hz-options` —
-/// called once at startup for whichever output ends up effective, and again
-/// every time the Output row's own selection actually changes (a previous
-/// output's supported modes are meaningless for a different display). Never
-/// clears an already-populated list on a failed/empty query (missing
-/// binary, unknown output name) — same "don't stomp a working value over a
-/// transient/absent query" precedent `list_outputs_with_priority`'s own
-/// screen-name pre-fill already follows.
+/// Fetches supported_resolutions_and_hz(screen) off-thread and patches
+/// settings-display-sync-resolution-options/-hz-options — at startup and whenever the Output
+/// row changes. A failed/empty query never clears an already-filled list.
 pub(crate) fn spawn_display_sync_modes_fetch(
     ww: slint::Weak<MainWindow>,
     rt_handle: tokio::runtime::Handle,
@@ -1080,13 +948,8 @@ mod tests {
         assert!(needs_revert(None, Some(true), &def));
     }
 
-    // Real 128-byte EDID base blocks, captured directly from
-    // /sys/class/drm/*/edid on the dev machine that verified this whole
-    // friendly_output_name feature (2026-09-19) — cross-checked against
-    // KDE's own Display Configuration panel, which shows the identical
-    // vendor/model/serial for these exact 3 real monitors. Plain hardware
-    // identifiers, nothing sensitive, kept as a permanent regression fixture
-    // rather than a one-off diagnostic.
+    // Real 128-byte EDID base blocks from three monitors (cross-checked with KDE's Display
+    // Configuration panel) — a regression fixture.
     const EDID_PHILIPS_245P_A: [u8; 128] = [
         0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x41, 0x0c, 0x9e, 0x08, 0x41, 0x33, 0x0f,
         0x00, 0x1e, 0x15, 0x01, 0x03, 0x80, 0x34, 0x20, 0x78, 0xee, 0x9f, 0xf5, 0xa6, 0x56, 0x4b,
