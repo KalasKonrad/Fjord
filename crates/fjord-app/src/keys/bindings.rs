@@ -16,6 +16,7 @@
 //                      defaults on load
 //   PendingKeybindRebind  stashed (row, combo) while the rebind-collision confirm dialog is open
 //   apply_rebind       the ONLY place that mutates `keybindings` — called directly (no
+//                      collision) or from the collision-confirm callbacks in main.rs
 //   default_keybindings  hardcoded defaults; user keybindings.json replaces on load
 //   remappable_actions   ordered list of (Action, label, ActionMap) for the settings UI
 //   key_display_name   human-readable label for a Slint key string

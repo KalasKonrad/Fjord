@@ -9,7 +9,6 @@
 //                      action (2026-10-10)
 //   handle_library_search / handle_browse_search  raw-key pre-dispatch for the drawn search fields
 //   handle_playlist_picker  Add-to-playlist picker (raw keys — naming mode needs text input)
-//     discover::handle_key (Discover grid), discover::handle_key_request_detail (Seerr detail/Request)
 //   handle_discover_search  raw-key pre-dispatch for Discover's search field (typing/backspace/
 //                           2026-10-04: Left/Right/Home/End move the caret, Delete deletes after it
 //                      escape), mirrors handle_browse_search — bypasses the Action/KeyMap lookup;
@@ -20,6 +19,8 @@
 //                      user chose directly; Down still reaches the grid via the filter bar);
 //                      Left on an empty query still exits to the sidebar (fs=-1), same
 //                      destination Escape targets — real bug fixed 2026-07-18: this function had
+//                      no Up handler at all (unlike handle_library_search), so Escape was the
+//                      ONLY way out of an empty/cleared search field
 // ─────────────────────────────────────────────────────────────────────────────
 use super::*;
 
