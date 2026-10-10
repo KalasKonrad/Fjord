@@ -48,10 +48,12 @@ Needs `mpv`/libmpv (`pacman -S mpv`). Optional at runtime: `yt-dlp` (trailers), 
 - `main.rs` — entry point: setup, apply saved config, then one `wire_*` call per area — each area's `AppState`
   callbacks live in its own module (`detail::wire_detail`, `music::wire_queue`, …; add new callbacks there, not in
   `main()`). Shared helpers: `show_toast`,
-  `session_current`/`seerr_session_current`, `reset_session_state`, `close_login_screen`,
+  `session_current`/`seerr_session_current`, `close_login_screen`,
   `apply_cards_preserving_identity`, `item_to_card_item`/`items_to_model`, `strip_html_to_text`,
   `trim_last_grapheme` + caret helpers (`insert_at_grapheme`, `delete_before_grapheme`, `with_caret`…),
   `is_unauthorized`/`is_rate_limited`, `should_revalidate`, `timed`.
+- `session.rs` — `reset_session_state`; `startup.rs` — `spawn_auto_login`, `push_cached_data`, screen-cache refresh/save.
+  Helpers that moved out of main.rs are re-exported from it (`crate::reset_session_state` etc. still work).
 - `text_field.rs` — caret editing for the hand-drawn text fields (`DrawnField`) + on-screen-keyboard ◀ ▶.
 - `config.rs` — `Config { device: DeviceConfig, profiles: Vec<ProfileSettings>, active_profile_id }`,
   `FjordState` (runtime state), `BoundedCache`, load/save + migrations, per-profile cache paths.

@@ -23,13 +23,15 @@
 //   spawn_albums_poster_loading        thin wrapper → LibraryKind::Albums
 //   spawn_playlists_poster_loading     thin wrapper → LibraryKind::Playlists
 //   wire_library           callbacks moved from main() (0.5.0 step 3): lazy library grid + Artists/Albums toggle
+//   spawn_library_fetch / spawn_movies_list_fetch  library-grid lists (lazy, once per session) + posters
 // ─────────────────────────────────────────────────────────────────────────────
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use fjord_api::{JellyfinClient, models::MediaItem};
 use slint::{Global, Model, ModelRc, SharedString, VecModel};
 
 use crate::AppState;
+use crate::config::FjordState;
 use crate::poster::{decode_poster_buffer, fetch_poster_cached_tagged};
 use crate::{CardItem, MainWindow};
 
@@ -599,4 +601,330 @@ pub(crate) fn wire_library(
             }
         });
     }
+}
+
+// ── spawn_library_fetch ───────────────────────────────────────────────────────
+// Network-refresh the library list for `nav` (1=TV posters, 2=Movies,
+// 3=Collections, 4=Artists+Albums+Playlists), guarded by the per-session
+// *_fetched flags. Extracted from on_open_library so ws.rs can refresh the
+// currently open grid when a LibraryChanged event clears those flags
+// (cache-staleness fix S3). Each result is applied via
+// home::refresh_row_preserving_posters (not a bare items_to_model) so posters
+// already decoded from the startup cache push survive this first-open-this-
+// session refresh instead of flashing blank (Phase 94).
+pub(crate) fn spawn_library_fetch(
+    nav: i32,
+    state: Arc<Mutex<FjordState>>,
+    ww: slint::Weak<MainWindow>,
+    rt: tokio::runtime::Handle,
+) {
+    // Moved from main.rs: names resolve as they did there.
+    use crate::*;
+    let s = state.lock().unwrap();
+    let Some(client) = s.client.as_ref().map(Arc::clone) else {
+        return;
+    };
+    // Captured once up front (client.user_id — the session this whole call
+    // is under, more direct than re-deriving from state.config.active()),
+    // cloned into each of the nav==3/4 spawned fetches below rather than
+    // re-derived per-task at save time (see home.rs's own cache-namespacing
+    // doc comment).
+    let user_id = client.user_id.clone();
+    if nav == 1 {
+        // TV: all_series already loaded at startup; poster loading runs then too.
+        let series = s.all_series.clone();
+        drop(s);
+        let ww2 = ww.clone();
+        let rth2 = rt.clone();
+        if !series.is_empty() {
+            tracing::debug!(
+                "spawn_library_fetch[TV]: re-decoding {} already-loaded series (grid opened/switched to)",
+                series.len()
+            );
+            spawn_series_poster_loading(client, series, ww2, rth2, Arc::clone(&state));
+        }
+        return;
+    }
+    if nav == 3 {
+        // Collections: lazy-fetch from network once per session.
+        if s.collections_fetched {
+            return;
+        }
+        drop(s);
+        let state2 = Arc::clone(&state);
+        let ww2 = ww.clone();
+        let ww3 = ww.clone();
+        let rt3 = rt.clone();
+        let user_id3 = user_id.clone();
+        rt.spawn(async move {
+            match client.get_all_boxsets().await {
+                Ok(cols) => {
+                    // Same session-guard fix as spawn_movies_list_fetch's
+                    // own copy of this class of bug (code-review 2026-08-16).
+                    if !session_current(&state2, &client) {
+                        debug!("spawn_library_fetch[Collections]: session changed mid-flight, discarding");
+                        return;
+                    }
+                    {
+                        let mut s = state2.lock().unwrap();
+                        s.all_collections    = cols.clone();
+                        s.collections_fetched = true;
+                    }
+                    save_collections_cache(&user_id3, &cols);
+                    let cols2 = cols.clone();
+                    let _ = slint::invoke_from_event_loop(move || {
+                        if let Some(w) = ww2.upgrade() {
+                            let g = AppState::get(&w);
+                            tracing::debug!("spawn_library_fetch[Collections]: network fetch landed, {} item(s)", cols2.len());
+                            g.set_all_collections(refresh_row_preserving_posters(&g.get_all_collections(), &cols2));
+                            if AppState::get(&w).get_show_library() {
+                                browse::refresh_library_display(&w);
+                            }
+                        }
+                    });
+                    spawn_collections_poster_loading(client, cols, ww3, rt3);
+                }
+                Err(e) => warn!("open_library collections: {:#}", e),
+            }
+        });
+        return;
+    }
+    if nav == 4 {
+        let artists_done = s.artists_fetched;
+        let albums_done = s.albums_fetched;
+        let playlists_done = s.playlists_fetched;
+        if artists_done && albums_done && playlists_done {
+            return;
+        }
+        drop(s);
+        // Fetch artists if not yet done.
+        if !artists_done {
+            let state_a = Arc::clone(&state);
+            let ww2 = ww.clone();
+            let ww3 = ww.clone();
+            let rt3 = rt.clone();
+            let client_a = Arc::clone(&client);
+            let user_id_a = user_id.clone();
+            rt.spawn(async move {
+                match client_a.get_album_artists().await {
+                    Ok(artists) => {
+                        if !session_current(&state_a, &client_a) {
+                            debug!("spawn_library_fetch[Artists]: session changed mid-flight, discarding");
+                            return;
+                        }
+                        {
+                            let mut s = state_a.lock().unwrap();
+                            s.all_artists     = artists.clone();
+                            s.artists_fetched = true;
+                        }
+                        save_artists_cache(&user_id_a, &artists);
+                        let artists2 = artists.clone();
+                        let _ = slint::invoke_from_event_loop(move || {
+                            if let Some(w) = ww2.upgrade() {
+                                let g = AppState::get(&w);
+                                tracing::debug!("spawn_library_fetch[Artists]: network fetch landed, {} item(s)", artists2.len());
+                                g.set_all_artists(refresh_row_preserving_posters(&g.get_all_artists(), &artists2));
+                                if AppState::get(&w).get_show_library() && AppState::get(&w).get_library_music_view() == 0 {
+                                    browse::refresh_library_display(&w);
+                                }
+                            }
+                        });
+                        spawn_artists_poster_loading(client_a, artists, ww3, rt3);
+                    }
+                    Err(e) => warn!("open_library artists: {:#}", e),
+                }
+            });
+        }
+        // Fetch albums if not yet done.
+        if !albums_done {
+            let state_b = Arc::clone(&state);
+            let ww2b = ww.clone();
+            let ww3b = ww.clone();
+            let rt3b = rt.clone();
+            let client_b = Arc::clone(&client);
+            let user_id_b = user_id.clone();
+            rt.spawn(async move {
+                match client_b.get_all_albums().await {
+                    Ok(albums) => {
+                        if !session_current(&state_b, &client_b) {
+                            debug!("spawn_library_fetch[Albums]: session changed mid-flight, discarding");
+                            return;
+                        }
+                        {
+                            let mut s = state_b.lock().unwrap();
+                            s.all_albums     = albums.clone();
+                            s.albums_fetched = true;
+                        }
+                        save_albums_cache(&user_id_b, &albums);
+                        let albums2 = albums.clone();
+                        let _ = slint::invoke_from_event_loop(move || {
+                            if let Some(w) = ww2b.upgrade() {
+                                let g = AppState::get(&w);
+                                tracing::debug!("spawn_library_fetch[Albums]: network fetch landed, {} item(s)", albums2.len());
+                                g.set_all_albums(refresh_row_preserving_posters(&g.get_all_albums(), &albums2));
+                                if AppState::get(&w).get_show_library() && AppState::get(&w).get_library_music_view() == 1 {
+                                    browse::refresh_library_display(&w);
+                                }
+                            }
+                        });
+                        spawn_albums_poster_loading(client_b, albums, ww3b, rt3b);
+                    }
+                    Err(e) => warn!("open_library albums: {:#}", e),
+                }
+            });
+        }
+        // Fetch playlists if not yet done.
+        if !playlists_done {
+            let state_p = Arc::clone(&state);
+            let ww2p = ww.clone();
+            let ww3p = ww.clone();
+            let rt3p = rt.clone();
+            let client_p = Arc::clone(&client);
+            let user_id_p = user_id.clone();
+            rt.spawn(async move {
+                match client_p.get_all_playlists().await {
+                    Ok(playlists) => {
+                        if !session_current(&state_p, &client_p) {
+                            debug!("spawn_library_fetch[Playlists]: session changed mid-flight, discarding");
+                            return;
+                        }
+                        {
+                            let mut s = state_p.lock().unwrap();
+                            s.all_playlists     = playlists.clone();
+                            s.playlists_fetched = true;
+                        }
+                        save_playlists_cache(&user_id_p, &playlists);
+                        let playlists2 = playlists.clone();
+                        let _ = slint::invoke_from_event_loop(move || {
+                            if let Some(w) = ww2p.upgrade() {
+                                let g = AppState::get(&w);
+                                tracing::debug!("spawn_library_fetch[Playlists]: network fetch landed, {} item(s)", playlists2.len());
+                                g.set_all_playlists(refresh_row_preserving_posters(&g.get_all_playlists(), &playlists2));
+                                if AppState::get(&w).get_show_library() && AppState::get(&w).get_library_music_view() == 2 {
+                                    browse::refresh_library_display(&w);
+                                }
+                            }
+                        });
+                        spawn_playlists_poster_loading(client_p, playlists, ww3p, rt3p);
+                    }
+                    Err(e) => warn!("open_library playlists: {:#}", e),
+                }
+            });
+        }
+        return;
+    }
+    // Movies (nav == 2): lazy-fetch from network once; cache pre-populates on warm start.
+    drop(s);
+    spawn_movies_list_fetch(state, ww, rt, true);
+}
+
+/// Metadata-only movie-list fetch/cache/state update (guarded by the same
+/// `movies_fetched` per-session flag `spawn_library_fetch`'s nav==2 branch
+/// uses, so whichever caller runs first "wins" and the other becomes a
+/// no-op — except that a later `with_posters` call still loads the posters once,
+/// `movie_posters_loaded`). Poster loading is a separate, optional step (`with_posters`):
+/// `spawn_library_fetch` always wants it, since the grid is genuinely about
+/// to render; `discover.rs` doesn't — it only needs fresh `ProviderIds` for
+/// `find_local_item`'s "already in my library" match (previously, `all_movies`
+/// silently went stale/ProviderIds-less until the user opened the Movies grid
+/// at least once *this session*, unlike `all_series`, which the startup
+/// auto-login path already refreshes unconditionally on every login — real
+/// bug, live-reported as "in-library redirect works for TV but not movies")
+/// — and eagerly downloading/decoding every movie poster just because the
+/// user opened Discover would be a real, unnecessary cost for a large
+/// library.
+pub(crate) fn spawn_movies_list_fetch(
+    state: Arc<Mutex<FjordState>>,
+    ww: slint::Weak<MainWindow>,
+    rt: tokio::runtime::Handle,
+    with_posters: bool,
+) {
+    // Moved from main.rs: names resolve as they did there.
+    use crate::*;
+    let mut s = state.lock().unwrap();
+    let Some(client) = s.client.as_ref().map(Arc::clone) else {
+        return;
+    };
+    if s.movies_fetched {
+        // Fetched already — but maybe only by Discover, which skips posters: the
+        // grid still needs them, once (2026-10-10: after visiting Discover first,
+        // the Movies grid never got posters for the rest of the session).
+        if with_posters && !s.movie_posters_loaded {
+            s.movie_posters_loaded = true;
+            let movies = s.all_movies.clone();
+            drop(s);
+            debug!(
+                "spawn_movies_list_fetch: list already fetched without posters, loading {} poster(s)",
+                movies.len()
+            );
+            spawn_movies_poster_loading(client, movies, ww, rt);
+        }
+        return;
+    }
+    let user_id = client.user_id.clone();
+    drop(s);
+    let state2 = Arc::clone(&state);
+    let ww2 = ww.clone();
+    let ww3 = ww.clone();
+    let ww4 = ww.clone();
+    let rt3 = rt.clone();
+    rt.spawn(async move {
+        match client.get_all_movies().await {
+            Ok(movies) => {
+                // Real bug, code-review 2026-08-16: a profile switch mid-
+                // fetch previously landed the OUTGOING profile's full movie
+                // list into the just-switched-to profile's FjordState/UI,
+                // and permanently set movies_fetched=true so the new
+                // profile never got its own real fetch for the rest of the
+                // session. session_current() is the same guard already
+                // used elsewhere in this file for identical async-result
+                // races (spawn_screen_cache_refresh, spawn_auto_login).
+                if !session_current(&state2, &client) {
+                    debug!("spawn_movies_list_fetch: session changed mid-flight, discarding");
+                    return;
+                }
+                {
+                    let mut s = state2.lock().unwrap();
+                    s.all_movies = movies.clone();
+                    s.movies_fetched = true;
+                    if with_posters {
+                        s.movie_posters_loaded = true;
+                    }
+                }
+                save_movies_cache(&user_id, &movies);
+                let movies2 = movies.clone();
+                let _ = slint::invoke_from_event_loop(move || {
+                    if let Some(w) = ww2.upgrade() {
+                        let g = AppState::get(&w);
+                        tracing::debug!(
+                            "spawn_movies_list_fetch: network fetch landed, {} item(s)",
+                            movies2.len()
+                        );
+                        g.set_all_movies(refresh_row_preserving_posters(
+                            &g.get_all_movies(),
+                            &movies2,
+                        ));
+                        if AppState::get(&w).get_show_library() {
+                            browse::refresh_library_display(&w);
+                        }
+                    }
+                });
+                if with_posters {
+                    spawn_movies_poster_loading(client, movies, ww3, rt3);
+                }
+                // Re-resolve the in-library watchlist star now that all_movies
+                // is genuinely populated (2026-07-20) — the FIRST resync
+                // (triggered by the watchlist fetch itself, early in startup)
+                // reliably runs before this lazy fetch ever completes, so
+                // find_local_item's movie-side lookup finds nothing on that
+                // pass; this is the actual point movie data becomes available,
+                // mirroring the "works for series but not movies" gap this
+                // exact function was already fixed for once (see its own
+                // module-header note in CLAUDE.md). No-op, cheap, if nothing
+                // on the watchlist is a local movie.
+                crate::discover::resync_jellyfin_watchlist_stars(Arc::clone(&state2), ww4).await;
+            }
+            Err(e) => warn!("spawn_movies_list_fetch: {:#}", e),
+        }
+    });
 }
