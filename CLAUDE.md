@@ -53,7 +53,8 @@ Needs `mpv`/libmpv (`pacman -S mpv`). Optional at runtime: `yt-dlp` (trailers), 
 - `text_field.rs` — caret editing for the hand-drawn text fields (`DrawnField`) + on-screen-keyboard ◀ ▶.
 - `config.rs` — `Config { device: DeviceConfig, profiles: Vec<ProfileSettings>, active_profile_id }`,
   `FjordState` (runtime state), `BoundedCache`, load/save + migrations, per-profile cache paths.
-- `keys/` — `mod.rs`: `handle_key()` dispatcher (raw-key overlay tiers, then `active_mode()` routing); `bindings.rs`
+- `keys/` — `mod.rs`: `handle_key()` dispatcher (overlay tiers first, then `active_mode()` routing); `overlays.rs`
+  (raw-key handlers for login, pickers, Connect Seerr, Bonfire…); `bindings.rs`
   (`Action`, `KeyCombo`, `Keybindings`, rebinding), `mode.rs` (`AppMode`, `active_mode()`), `dashboard.rs`, `library.rs`,
   `player.rs`, `text_input.rs` (on-screen keyboard opener, drawn search fields, playlist picker).
 - `playback/` — `mod.rs`: `VideoState`, `start_playback`, `tear_down_player`, `play_trailer`; `render.rs`:

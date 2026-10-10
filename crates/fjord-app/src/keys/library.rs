@@ -1,5 +1,5 @@
 // ── fjord-app · keys/library.rs ──────────────────────────────────────────────
-//                      chapter-prev/next (,/.); sub/audio delay (z/Z/x/X)
+//   dispatch_library   keyboard nav for the library grid (4 focus states: grid → search → sort → back)
 // ─────────────────────────────────────────────────────────────────────────────
 use super::*;
 

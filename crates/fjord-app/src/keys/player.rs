@@ -1,6 +1,6 @@
 // ── fjord-app · keys/player.rs ───────────────────────────────────────────────
-//                        app_state.slint for the real bug this distinction fixes, 2026-08-19)
 //   dispatch_player    ask-timed overlay; ask overlay; Up Next banner; panel nav; player controls;
+//                      chapter-prev/next (,/.); sub/audio delay (z/Z/x/X)
 //   handle_key_queue_panel / handle_key_now_playing  queue panel and Now Playing screen keys
 // ─────────────────────────────────────────────────────────────────────────────
 use super::*;
