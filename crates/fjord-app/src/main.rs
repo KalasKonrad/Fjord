@@ -21,6 +21,8 @@
 //                        settings_snapshot/settings_diff — the settings-changed handler logs
 //                        which settings changed (debug; text values by name only)
 //   panic hook           writes "PANIC" + backtrace to fjord.log (timestamp + thread since 2026-10-08)
+//   restrict_log_permissions  log folder 0700, fjord.log + rotated logs 0600 (best-effort,
+//                        failures logged once; 2026-10-09 security review; unit-tested)
 //   push_cached_data     push on-disk caches (home/movies/series/collections/artists/albums/
 //                        playlists) into AppState/FjordState for instant display — only called
 //                        after spawn_auto_login's probe confirms the server is reachable; takes
@@ -2786,6 +2788,42 @@ const LOG_GENERATIONS_KEPT: usize = 10;
 /// failure (e.g. a stale generation the user has open in another program)
 /// should never block startup; worst case is one generation not shifting
 /// this run, not a crash.
+/// Owner-only logs (2026-10-09 security review — they hold the server
+/// address and user/device ids): folder 0700, `fjord.log` created 0600
+/// before the appender opens it (appending keeps the mode), and every
+/// rotated generation 0600. Best-effort — the HTPC's log folder is a link to
+/// an NFS share — so failures are returned and logged once tracing is up.
+fn restrict_log_permissions(log_dir: &std::path::Path, keep: usize) -> Vec<String> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+        let set = |path: &std::path::Path, mode: u32| {
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode))
+                .err()
+                .map(|e| format!("{}: {e}", path.display()))
+        };
+        let mut errors: Vec<String> = Vec::new();
+        errors.extend(set(log_dir, 0o700));
+        let current = log_dir.join("fjord.log");
+        if let Err(e) = std::fs::OpenOptions::new().create(true).append(true).mode(0o600).open(&current) {
+            errors.push(format!("{}: {e}", current.display()));
+        }
+        errors.extend(set(&current, 0o600));
+        for n in 1..=keep {
+            let rotated = log_dir.join(format!("fjord.log.{n}"));
+            if rotated.exists() {
+                errors.extend(set(&rotated, 0o600));
+            }
+        }
+        errors
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (log_dir, keep);
+        Vec::new()
+    }
+}
+
 fn rotate_logs(log_dir: &std::path::Path, keep: usize) {
     let gen_path = |n: usize| log_dir.join(format!("fjord.log.{n}"));
     let _ = std::fs::remove_file(gen_path(keep));
@@ -2871,6 +2909,7 @@ fn main() -> Result<()> {
     let log_dir = cache_dir.join("logs");
     let _ = std::fs::create_dir_all(&log_dir);
     rotate_logs(&log_dir, LOG_GENERATIONS_KEPT);
+    let log_permission_errors = restrict_log_permissions(&log_dir, LOG_GENERATIONS_KEPT);
     let log_path = log_dir.join("fjord.log");
     let file_appender = tracing_appender::rolling::never(&log_dir, "fjord.log");
     let (file_writer, _guard) = tracing_appender::non_blocking(file_appender);
@@ -2898,6 +2937,9 @@ fn main() -> Result<()> {
         .init();
     info!("log file: {}", log_path.display());
     info!("fjord version: {} ({})", env!("CARGO_PKG_VERSION"), env!("FJORD_BUILD_ID"));
+    if !log_permission_errors.is_empty() {
+        warn!("log permissions not tightened: {}", log_permission_errors.join("; "));
+    }
 
     // Panic hook — writes directly to the log file so Slint "Recursion detected"
     // panics (which would otherwise SIGABRT silently) appear in fjord.log.
@@ -2912,7 +2954,14 @@ fn main() -> Result<()> {
         let thread = std::thread::current().name().unwrap_or("unnamed").to_string();
         let msg = format!("{when} PANIC (thread {thread}): {info}\nBacktrace:\n{bt}\n");
         eprintln!("{msg}");
-        if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&panic_log) {
+        let mut opts = std::fs::OpenOptions::new();
+        opts.create(true).append(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            opts.mode(0o600);
+        }
+        if let Ok(mut f) = opts.open(&panic_log) {
             use std::io::Write;
             let _ = f.write_all(msg.as_bytes());
         }
@@ -6241,6 +6290,28 @@ fn main() -> Result<()> {
     // Send stop report and release screensaver inhibitor if a video was playing when the user quit.
     quit_cleanup(&video, &rt, &state);
     Ok(())
+}
+
+#[cfg(all(test, unix))]
+mod log_permission_tests {
+    use super::restrict_log_permissions;
+    use std::os::unix::fs::PermissionsExt;
+
+    #[test]
+    fn logs_end_up_owner_only() {
+        let dir = std::env::temp_dir().join(format!("fjord-logtest-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let old = dir.join("fjord.log.1");
+        std::fs::write(&old, b"x").unwrap();
+        std::fs::set_permissions(&old, std::fs::Permissions::from_mode(0o644)).unwrap();
+        assert!(restrict_log_permissions(&dir, 10).is_empty());
+        let mode = |p: &std::path::Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode(&dir), 0o700);
+        assert_eq!(mode(&dir.join("fjord.log")), 0o600);
+        assert_eq!(mode(&old), 0o600);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }
 
 #[cfg(test)]

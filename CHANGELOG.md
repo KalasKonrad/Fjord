@@ -42,6 +42,10 @@ are bumped together as one step, not separately.
   type a server address without `https://` and the server only answers over
   plain `http://`, Fjord says so once after signing in (Jellyfin and Seerr),
   and Settings shows "Not encrypted (http://)" under the server.
+- **Security: Fjord's settings file and logs are private to your user.**
+  The settings file (which holds your login) could be readable by other
+  users for a moment while saving, and the logs always were. Both are now
+  readable only by you.
 - **Fixed: Fjord's log file contained your Jellyfin access key** (in the
   line logged when the live-update connection starts). It's now hidden there
   and in connection errors and player messages, like it already was for
