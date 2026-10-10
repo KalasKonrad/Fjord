@@ -1,52 +1,23 @@
 // ── fjord-app · startup.rs ───────────────────────────────────────────────────
 //   Startup / session-start flow (moved from main.rs, 0.5.0 step 3):
-//   push_cached_data     push on-disk caches (home/movies/series/collections/artists/albums/
-//                        playlists) into AppState/FjordState for instant display — only called
-//                        after spawn_auto_login's probe confirms the server is reachable; takes
-//                        the six screen-open caches (Phase 103) as an already-loaded parameter;
-//                        also re-triggers discover::resync_jellyfin_watchlist_stars once
-//                        all_movies/all_series are populated (2026-07-20 — the watchlist-driven
-//                        resync commonly races ahead of this and finds 0 local matches; live-
-//                        confirmed via cargo run before AND after this fix)
-//                        (screen_caches.json can reach ~1.3MB after a prewarm — the caller reads
-//                        + parses it via spawn_blocking before entering invoke_from_event_loop,
-//                        since this function itself runs synchronously on the Slint UI thread)
-//   spawn_screen_cache_refresh  post-login background refresh for the six screen-open caches
-//                        (Phase 103): one batched get_items_by_ids_detailed call refreshes
-//                        item_detail_cache; the 5 relationship caches (no batch endpoint) trickle
-//                        out under a shared semaphore(2) so they never compete with foreground use.
-//                        AMBIENT_REFRESH_LIMIT (40, Phase 104 fix) caps every cache to its most
-//                        recent N keys (BoundedCache::recent_keys) regardless of actual cache
-//                        size — without this, prewarm.rs raising a cache's cap to fit the whole
-//                        library would make this *ambient, unprompted, every-login* sweep repeat
-//                        the prewarm's full request volume every time instead of once;
-//                        session_current() guarded (found in review, 2026-07-11) — this sweep
-//                        writes per-user MediaItem data on every single login, not just when the
-//                        opt-in prewarm button is pressed, so it had the same cross-session
-//                        cache-contamination exposure prewarm.rs was already fixed for
-//   wire_screen_cache_save_timer  60s repeating slint::Timer, flushes the six caches to
-//                        screen_caches.json (Phase 103) — plus person_tmdb_id (2026-07-29,
-//                        Deep Seerr integration; a 7th field on ScreenCachesFile, not a 7th
-//                        cache in this timer's own six-cache framing, see config.rs). Reads
-//                        `s.client`'s own user_id at save time, not `config.active()`
-//                        (2026-08-16, code review — the latter falls back to profiles.first()
-//                        whenever active_profile_id doesn't match, which sign-out deliberately
-//                        clears; that mismatch previously wrote a signed-out session's cleared
-//                        caches into an unrelated still-valid account's file); skips the save
-//                        entirely when there's no live client at all.
-//   spawn_auto_login     probe saved session (check_auth, 8s timeout) → best-effort display_name
-//                        backfill (get_user_info, 2026-08-14 — the auto-login path never sees a
-//                        login response, unlike do_login, so a blank profile name self-heals here
-//                        instead of staying the raw user_id GUID forever) → push_cached_data (also
-//                        pushes the sidebar's current-profile-tile now, previously only done by
-//                        finish_session_setup and never on this, the ordinary launch path) then
-//                        fetch_home_data/get_all_series/get_system_info + start_websocket +
-//                        spawn_screen_cache_refresh, all now guarded by session_current() right
-//                        after the join (2026-08-16, code review — a profile switch completing
-//                        during this ~2.5s join could previously land the OUTGOING session's
-//                        series/plugins/WS-abort-handle into the just-switched-to profile); 401: show-login; anything else (can't reach
-//                        server at all): show-offline. Re-invoked by AppState.retry-connection.
-//   spawn_jellyfin_admin_check  is the signed-in user a Jellyfin admin (Settings gating)
+//   spawn_jellyfin_admin_check  is the signed-in user a Jellyfin admin (Settings gating); runs
+//                        on every session start (session-guarded)
+//   push_cached_data     on-disk caches (home/movies/series/collections/artists/albums/playlists
+//                        + the six screen-open caches, already parsed off-thread by the caller)
+//                        → AppState/FjordState; only after the auth probe found the server;
+//                        re-resolves the watchlist stars
+//   spawn_screen_cache_refresh  post-login refresh of the screen-open caches: one batched call
+//                        for item details, the relationship caches one call per key behind a
+//                        semaphore of 2, at most AMBIENT_REFRESH_LIMIT recent keys per cache;
+//                        session-guarded
+//   wire_screen_cache_save_timer  60 s flush of the screen-open caches (+ person_tmdb_id) to the
+//                        live client's user's screen_caches.json; no client → no save
+//   spawn_auto_login     probe the saved session (check_auth, 8 s) → display_name backfill →
+//                        push_cached_data + profile tile → home data/series/system info,
+//                        WebSocket, screen-cache refresh, Bonfire sync, admin check (all
+//                        session-guarded after the join), 24 h poster-cache cleanup; 401 →
+//                        Login, unreachable → Offline.
+//                        Re-invoked by AppState.retry-connection
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
 
@@ -55,19 +26,9 @@ use fjord_api::JellyfinClient;
 use crate::MainWindow;
 use crate::config::{FjordState, ScreenCachesFile};
 
-// Bonfire Phase 6 (admin actions, 2026-09-04) — the Jellyfin-server-admin
-// counterpart to spawn_seerr_settings_fetch above, same shape. Genuinely
-// new capability: Fjord never modeled Jellyfin's own admin flag before
-// this (see UserDto.policy's own doc comment). `FjordState` is rebuilt
-// fresh on every process start — unlike a persisted Config field, there's
-// no on-disk cache to fall back on — so this has to run unconditionally
-// on EVERY session-establishment path (a fresh login, a switch, and an
-// ordinary auto-login resume), not just when some other value happens to
-// need backfilling; called from finish_session_setup (auth.rs) and
-// spawn_auto_login (this file) directly, one call site each, rather than
-// piggybacking on the existing get_user_info call a few lines up in
-// spawn_auto_login (which is itself gated on `needs_name` and would
-// silently skip this for the common already-named case).
+// Is the signed-in user a Jellyfin server admin (gates the Bonfire Admin Settings row)?
+// Not persisted, so it runs on every session start: finish_session_setup (auth.rs) and
+// spawn_auto_login (this file).
 pub(crate) fn spawn_jellyfin_admin_check(
     client: Arc<JellyfinClient>,
     state: Arc<Mutex<FjordState>>,
@@ -84,15 +45,8 @@ pub(crate) fn spawn_jellyfin_admin_check(
                 return;
             }
         };
-        // Re-check via session_current (Arc::ptr_eq), matching every other
-        // async-result race in this file — NOT a string comparison against
-        // active_profile_id, which was a real bug found in code review:
-        // signing out of an account and immediately re-logging into the
-        // SAME account gives the new session the identical user_id string,
-        // so a stale request from the torn-down OLD session would have
-        // wrongly passed that check and overwritten this session's own
-        // jellyfin_is_server_admin with a result computed for a client
-        // that's no longer live.
+        // session_current (Arc::ptr_eq), not a user_id comparison: signing out and back into the
+        // same account gives the same user_id, so a stale result would pass that check.
         if !session_current(&state, &client) {
             return;
         }
@@ -108,12 +62,9 @@ pub(crate) fn spawn_jellyfin_admin_check(
 }
 
 // ── startup connectivity gate ────────────────────────────────────────────────
-// Push on-disk caches into AppState/FjordState for instant display. Only
-// called once the saved-session auth probe has confirmed the server is
-// reachable (see spawn_auto_login) — showing cached content before that was
-// confirmed made a fully offline cold start look identical to normal quiet
-// operation (nothing distinguished "stale but fine" from "can't reach the
-// server at all").
+// Push on-disk caches into AppState/FjordState for instant display. Only called once
+// spawn_auto_login's probe has confirmed the server is reachable, so an offline start
+// doesn't look like a normal quiet one.
 pub(crate) fn push_cached_data(
     window: &MainWindow,
     client: &Arc<JellyfinClient>,
@@ -208,16 +159,10 @@ pub(crate) fn push_cached_data(
         state.lock().unwrap().all_playlists = cached_playlists;
         AppState::get(window).set_all_playlists(model);
     }
-    // Screen-open caches (Phase 103): loaded here too, so a reopened Detail/
-    // Series/Season/Collection/Album/Artist/Person screen can skip the network
-    // fetch and the loading spinner even on the very first open after a fresh
-    // launch. Freshness is handled by the post-login background refresh
-    // (spawn_auto_login) and WS-driven invalidation (ws.rs), not by discarding
-    // this on load. The actual file read + JSON parse happens BEFORE this
-    // function is called (see the call site) — this file can reach ~1.3MB
-    // after a library prewarm, and this function runs synchronously on the
-    // Slint UI/event-loop thread (invoked from invoke_from_event_loop), so
-    // doing the blocking I/O here would stall rendering for its duration.
+    // Screen-open caches: a reopened screen skips the network fetch even on the first open
+    // after launch. Freshness comes from the post-login refresh (spawn_screen_cache_refresh) and
+    // WebSocket invalidation (ws.rs). The caller reads and parses the file (up to ~1.3 MB after
+    // a prewarm) off-thread — this runs on the UI thread.
     if let Some(file) = screen_caches {
         let mut s = state.lock().unwrap();
         s.item_detail_cache = file.item_detail;
@@ -228,15 +173,9 @@ pub(crate) fn push_cached_data(
         s.container_tracks_cache = file.container_tracks;
         s.person_tmdb_id_cache = file.person_tmdb_id;
     }
-    // Re-resolve the in-library watchlist star now that all_movies/all_series
-    // have just been populated from disk cache (2026-07-20) — the very first
-    // resync (triggered independently by the watchlist fetch itself) commonly
-    // races ahead of this and finds nothing, since it isn't sequenced against
-    // the cache load at all; this is a real, live-confirmed gap (a fresh
-    // `cargo run` logged "resync_jellyfin_watchlist_stars -> 0 local
-    // match(es)" despite 5 real watchlist ids and a populated movies.json).
-    // No-op, cheap, if there's no live Seerr connection yet or nothing on the
-    // watchlist matches anything cached.
+    // Re-resolve the in-library watchlist star now that all_movies/all_series are filled from
+    // cache — the watchlist fetch's own resync usually runs before them and matches nothing.
+    // Cheap no-op without a Seerr connection.
     if state.lock().unwrap().seerr_client.is_some() {
         let state_wl = Arc::clone(state);
         let ww_wl = window.as_weak();
@@ -246,30 +185,16 @@ pub(crate) fn push_cached_data(
     }
 }
 
-/// Post-login background refresh for the six screen-open caches (Phase 103).
-/// Called after the main startup burst (fetch_home_data/get_all_series/
-/// get_system_info + WS) has already been fired — never blocks anything
-/// visible, since the persisted cache (loaded in push_cached_data) is already
-/// painting instantly the whole time this runs.
-///
-/// Fast step: item_detail_cache is refreshed in one batched
-/// get_items_by_ids_detailed call. A requested id missing from the response
-/// is a deleted item — removed from the cache rather than left as a ghost.
-///
-/// Slow step: the 5 relationship caches (similar items / boxset members /
-/// artist albums / person filmography / album+playlist tracks) have no batch
-/// endpoint — each cached key needs its own call. All of them share one
-/// low-concurrency semaphore (2) so they trickle out gradually instead of
-/// bursting, deliberately not competing with whatever the user is actually
-/// doing on a slow connection. A 404 (item deleted) removes that entry; any
-/// other error just leaves the stale entry in place for next time.
-/// Cap on how many entries the *ambient* per-login sweep revalidates per
-/// cache — independent of how large `BoundedCache.cap` has grown via the
-/// opt-in prewarm sweep (`prewarm.rs`, Phase 104), which fills the cache with
-/// the whole library. Without this, a prewarmed library would repeat the
-/// prewarm's full request volume on every single login instead of once.
+/// Cap on how many entries the ambient per-login sweep revalidates per cache, however large
+/// the opt-in prewarm (prewarm.rs) has grown the cache — otherwise every login would repeat
+/// the prewarm's full request volume.
 pub(crate) const AMBIENT_REFRESH_LIMIT: usize = 40;
 
+/// Post-login background refresh of the six screen-open caches; never blocks anything visible
+/// (the persisted caches are already showing). item_detail_cache: one batched
+/// get_items_by_ids_detailed call. The 5 relationship caches have no batch endpoint: one call
+/// per key, sharing a semaphore of 2 so they trickle out. A 404 (item deleted) removes the
+/// entry; any other error keeps the stale one. Session-guarded.
 pub(crate) fn spawn_screen_cache_refresh(
     client: Arc<JellyfinClient>,
     state: Arc<Mutex<FjordState>>,
@@ -463,11 +388,8 @@ pub(crate) fn spawn_screen_cache_refresh(
     });
 }
 
-/// Periodically flushes the six screen-open caches to disk (Phase 103) —
-/// mirrors `wire_nw_timer`'s repeating-`slint::Timer` shape. Always writes
-/// unconditionally every tick rather than tracking a dirty flag: the file is
-/// small and the write is cheap, so there's no real cost to a periodic write
-/// that happened to find nothing new since the last one.
+/// Flushes the six screen-open caches to disk every 60 s. Writes unconditionally (small,
+/// cheap file) instead of tracking a dirty flag.
 pub(crate) fn wire_screen_cache_save_timer(
     state: Arc<Mutex<FjordState>>,
     rt_handle: tokio::runtime::Handle,
@@ -475,43 +397,17 @@ pub(crate) fn wire_screen_cache_save_timer(
     // Moved from main.rs: names resolve as they did there.
     use crate::*;
     let timer = slint::Timer::default();
-    // Back to 60s, 2026-08-01 (was briefly widened to 300s the same day as a
-    // mitigation, then reverted once the actual fix landed): save_screen_-
-    // caches's clone of the six BoundedCaches used to be a genuine O(n)
-    // HashMap+VecDeque copy under the global FjordState lock, real cost for
-    // any session that's run the opt-in library prewarm — widening the
-    // interval only reduced how OFTEN that cost was paid, not the cost
-    // itself. `BoundedCache<V>` now wraps its storage in `Arc` with
-    // `Arc::make_mut`-based copy-on-write (see its own doc comment), so the
-    // clone this timer triggers is O(1) in the common case — no reason left
-    // to save less often than before.
+    // 60 s: the cache clone is O(1) copy-on-write (BoundedCache wraps its storage in Arc).
     timer.start(
         slint::TimerMode::Repeated,
         std::time::Duration::from_secs(60),
         move || {
             let state2 = Arc::clone(&state);
             rt_handle.spawn(async move {
-                // Read live at save time, unlike the fetch-tied call sites
-                // elsewhere in this file — a periodic flush of whatever's
-                // currently in FjordState has no async gap between "whose data
-                // is this" and "whose file do I write it to": both come from
-                // the same instant, inside save_screen_caches's own lock.
-                //
-                // Real bug, code-review 2026-08-16: this used to read
-                // `config.active().user_id`, which can genuinely diverge from
-                // what's actually loaded in FjordState — `Config::active()`
-                // falls back to `profiles.first()` whenever `active_profile_id`
-                // doesn't match any entry (exactly what sign-out does: it
-                // clears active_profile_id, so if another account remains
-                // known, this resolved to THAT unrelated account and wrote the
-                // just-cleared caches into ITS screen_caches.json). Using the
-                // live client's own user_id instead ties the save to the
-                // session that's actually loaded — None (skip entirely) when
-                // signed out or before any login completes, and correctly the
-                // just-switched-to profile mid-switch, matching every other
-                // fetch-tied call site in this file, which already keys off
-                // `client.user_id` rather than `config.active()` for the exact
-                // same reason.
+                // The live client's user_id, not config.active(): active() falls back to
+                // profiles.first() when active_profile_id matches nothing (sign-out clears it),
+                // which wrote one session's caches into another account's file. No client → no
+                // save.
                 let user_id = state2
                     .lock()
                     .unwrap()
@@ -571,18 +467,8 @@ pub(crate) fn spawn_auto_login(
             return;
         }
 
-        // Real bug fix, 2026-08-14, live-reported ("on an old login the
-        // profilename is just random letters and numbers instead of the
-        // profile name"): a profile whose display_name was never populated
-        // — every pre-Bonfire migrated profile, and any profile that's only
-        // ever gone through auto-login rather than a fresh password login
-        // (do_login is the only other place that backfills this, from the
-        // login response's own auth.user.name) — falls back to the raw
-        // user_id GUID everywhere it's shown (the sidebar profile row, the
-        // profile picker). This path never talks to the login endpoint at
-        // all, so it never sees a real name unless fetched explicitly here.
-        // Best-effort, only when actually needed (skips the extra request
-        // for the overwhelmingly common already-named case).
+        // Backfill a missing display_name (otherwise the raw user_id is shown): auto-login never
+        // sees a login response, which is where do_login gets the name. Only when needed.
         let needs_name = state
             .lock()
             .unwrap()
@@ -638,11 +524,8 @@ pub(crate) fn spawn_auto_login(
             g.set_show_connecting(false);
             g.set_show_offline(false);
             g.set_show_login(false);
-            // Real gap fix, 2026-08-14: push_current_profile_tile was only
-            // ever called from finish_session_setup (a fresh login/switch) —
-            // auto-login, the path every ordinary launch actually takes,
-            // never populated the sidebar's avatar/name row at all. Cheap,
-            // local (Config only, no network), safe to call unconditionally.
+            // The sidebar profile tile (finish_session_setup does this for login/switch;
+            // auto-login is the ordinary launch path). Local, cheap.
             let cfg_snapshot = state_cache.lock().unwrap().config.clone();
             crate::profile::push_current_profile_tile(&g, &cfg_snapshot);
             w.invoke_grab_keyboard_focus();
@@ -656,22 +539,9 @@ pub(crate) fn spawn_auto_login(
             client.get_plugins(),
         );
 
-        // Real bug, code-review 2026-08-16: this join is measured elsewhere
-        // in this codebase at ~2.5s on a healthy server (longer on a slow
-        // one) — and the UI is already fully interactive before it even
-        // starts (push_cached_data/grab_keyboard_focus ran synchronously
-        // just above). If a profile switch completes during that window
-        // (the sidebar's Switch Profile/Switch Account and the picker are
-        // fully reachable), every write below this point would otherwise
-        // land the OUTGOING session's data (series list, plugin set, and —
-        // worst of all — the WebSocket abort handle, silently overwriting
-        // whichever of the two sessions' start_websocket calls lost the
-        // race) into the now-current, possibly more-restricted profile.
-        // session_current() is the same guard spawn_screen_cache_refresh
-        // already uses for this exact class of race; bailing the whole
-        // tail here (not just individual writes) is correct since nothing
-        // past this point is meaningful once the session that requested it
-        // is gone.
+        // The UI is interactive during the ~2.5 s join above: if a profile switch completed
+        // meanwhile, everything below (series, plugins, the WebSocket abort handle) would land in
+        // the new session. Bail out entirely.
         if !session_current(&state, &client) {
             debug!("spawn_auto_login: session changed mid-flight, discarding stale results");
             return;
@@ -701,46 +571,23 @@ pub(crate) fn spawn_auto_login(
             s.all_series = series.clone();
             s.available_plugins = plugins;
         }
-        // Real gap found 2026-08-11 from a live HTPC log showing zero
-        // Bonfire-related activity across two separate launches despite the
-        // user having Bonfire installed and genuinely running Fjord on that
-        // machine: sync_bonfire_subprofiles (the ONLY thing that discovers
-        // additional profiles and can ever make should_show_picker_at_startup
-        // return true) was wired into do_login/finish_session_setup and
-        // switch_to_profile, but never into THIS function — the ordinary
-        // "resume an already-saved session" path every real launch uses
-        // after the very first login. On any install using auto-login
-        // (the norm — nobody re-types their password every launch), Bonfire
-        // sub-profile discovery had genuinely never run again since whichever
-        // session first signed in, regardless of server-side Bonfire state.
-        // Same best-effort, always-attempted call finish_session_setup
-        // already makes — get_plugins()/bonfire_list_profiles() both degrade
-        // gracefully when the plugin isn't installed, so this costs nothing
-        // extra for the overwhelming majority of servers that don't have it.
+        // Bonfire sub-profile discovery on the ordinary auto-login path too (it is the only thing
+        // that can make the startup picker appear). Degrades to a no-op without the plugin.
         crate::profile::sync_bonfire_subprofiles(
             Arc::clone(&client),
             Arc::clone(&state),
             rt_handle2.clone(),
             window_weak.clone(),
         );
-        // Bonfire Phase 6 (2026-09-04) — same "must run on every session-
-        // establishment path, not just when something else happens to need
-        // it" reasoning as the sync_bonfire_subprofiles fix directly above:
-        // FjordState.jellyfin_is_server_admin is never persisted, so an
-        // ordinary auto-login resume (the overwhelming majority of real
-        // launches) would otherwise leave it stuck at its default `false`
-        // for the whole session, hiding the Bonfire Admin Settings row even
-        // for a genuine server admin, on every launch after the first.
+        // Admin flag on every session start (not persisted) — see spawn_jellyfin_admin_check.
         crate::spawn_jellyfin_admin_check(
             Arc::clone(&client),
             Arc::clone(&state),
             window_weak.clone(),
             rt_handle2.clone(),
         );
-        // Re-resolve the in-library watchlist star now that all_series holds
-        // the fresh (not just cached) post-login list (2026-07-20) — one more
-        // trigger point alongside push_cached_data's own, for the same
-        // "the first resync commonly races ahead of the library data" reason.
+        // Re-resolve the watchlist star now that all_series holds the fresh list (see
+        // push_cached_data).
         if state.lock().unwrap().seerr_client.is_some() {
             let state_wl = Arc::clone(&state);
             let ww_wl = window_weak.clone();
@@ -812,13 +659,9 @@ pub(crate) fn spawn_auto_login(
                 let a = s.all_artists.iter().map(|i| i.id.clone()).collect();
                 let al = s.all_albums.iter().map(|i| i.id.clone()).collect();
                 let pl = s.all_playlists.iter().map(|i| i.id.clone()).collect();
-                // Cast-member portraits are cached in posters/ under PERSON ids,
-                // which appear nowhere in the six flat library lists — only in
-                // item_detail_cache (person detail entries are keyed by person
-                // id, and every cached item's `people` credits reference more).
-                // Without these, every 24h cleanup deleted the portraits the
-                // image prewarm (Phase 104) and ordinary cast-row browsing had
-                // cached — 8,346 files wiped in one observed run.
+                // Cast-member portraits are cached in posters/ under PERSON ids, which only
+                // appear in item_detail_cache (person entries and every item's `people`).
+                // Without these the 24 h cleanup deleted every cached portrait.
                 let mut det: Vec<String> = Vec::new();
                 for (k, item) in s.item_detail_cache.iter() {
                     for p in &item.people {
@@ -844,5 +687,3 @@ pub(crate) fn spawn_auto_login(
         spawn_screen_cache_refresh(client5, state6, rt_handle2.clone());
     });
 }
-
-// ── entry point ───────────────────────────────────────────────────────────────
