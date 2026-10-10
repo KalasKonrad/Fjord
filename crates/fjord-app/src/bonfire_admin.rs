@@ -225,12 +225,10 @@ pub(crate) fn on_bonfire_admin_reset_pin(state: &Arc<Mutex<FjordState>>, window:
                         let g = AppState::get(&w);
                         let model = g.get_bonfire_admin_rows();
                         for i in 0..model.row_count() {
-                            if let Some(mut row) = model.row_data(i) {
-                                if row.profile_user_id == profile_id_owned {
-                                    row.requires_pin = false;
-                                    model.set_row_data(i, row);
-                                    break;
-                                }
+                            if let Some(mut row) = model.row_data(i) && row.profile_user_id == profile_id_owned {
+                                row.requires_pin = false;
+                                model.set_row_data(i, row);
+                                break;
                             }
                         }
                         show_toast(w.as_weak(), "PIN reset".to_string());
@@ -259,12 +257,10 @@ pub(crate) fn on_bonfire_admin_set_limit(state: &Arc<Mutex<FjordState>>, window:
                         let g = AppState::get(&w);
                         let model = g.get_bonfire_admin_rows();
                         for i in 0..model.row_count() {
-                            if let Some(mut row) = model.row_data(i) {
-                                if row.profile_user_id == user_id_owned {
-                                    row.max_profiles = new_value;
-                                    model.set_row_data(i, row);
-                                    break;
-                                }
+                            if let Some(mut row) = model.row_data(i) && row.profile_user_id == user_id_owned {
+                                row.max_profiles = new_value;
+                                model.set_row_data(i, row);
+                                break;
                             }
                         }
                     }
@@ -431,10 +427,9 @@ pub(crate) fn handle_key(action: &Action, g: &AppState) -> bool {
         // action applies (a PIN-less sub-profile), since row.is_master is
         // false there too.
         Action::Left | Action::Right if tab == 0 => {
-            if let Some(row) = g.get_bonfire_admin_rows().row_data(focused as usize) {
-                if row.is_master && row.requires_pin {
-                    g.set_bonfire_admin_col(1 - g.get_bonfire_admin_col());
-                }
+            if let Some(row) = g.get_bonfire_admin_rows().row_data(focused as usize)
+                && row.is_master && row.requires_pin {
+                g.set_bonfire_admin_col(1 - g.get_bonfire_admin_col());
             }
             true
         }

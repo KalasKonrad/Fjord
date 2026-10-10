@@ -57,11 +57,9 @@ pub(crate) fn apply_alsa_irq_scheduling(enable: bool) {
     let path = conf_path();
 
     if enable {
-        if let Some(dir) = path.parent() {
-            if let Err(e) = std::fs::create_dir_all(dir) {
-                tracing::warn!("could not create wireplumber config dir: {e}");
-                return;
-            }
+        if let Some(dir) = path.parent() && let Err(e) = std::fs::create_dir_all(dir) {
+            tracing::warn!("could not create wireplumber config dir: {e}");
+            return;
         }
         if path.exists() {
             // Config already in place — nothing to change, skip the restart.

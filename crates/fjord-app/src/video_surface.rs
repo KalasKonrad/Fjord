@@ -271,10 +271,8 @@ pub(crate) fn free_render_ctx(ctx: MpvRenderCtx) {
                 drop(ctx);
             }
         }
-        if matches!(*slot, Slot::Broken(_)) {
-            if let Slot::Broken(bp) = std::mem::replace(&mut *slot, Slot::Failed) {
-                bp.destroy();
-            }
+        if matches!(*slot, Slot::Broken(_)) && let Slot::Broken(bp) = std::mem::replace(&mut *slot, Slot::Failed) {
+            bp.destroy();
         }
     })
 }
@@ -923,10 +921,8 @@ impl Backplane {
                 let mut sc = Some(sc);
                 let current = gl.ctx != egl::NO_CONTEXT
                     && gl.with_current(|| if let Some(sc) = sc.take() { sc.destroy() }).is_ok();
-                if !current {
-                    if let Some(sc) = sc.take() {
-                        gl.with_no_context(|| sc.destroy());
-                    }
+                if !current && let Some(sc) = sc.take() {
+                    gl.with_no_context(|| sc.destroy());
                 }
             }
             Present::EglWindow { window: w, .. } => window = w,
@@ -983,30 +979,36 @@ fn present_buffer(child: &WlSurface, sc: &mut Swapchain, i: usize, (w, h): (i32,
 /// The offscreen buffer for a spot of `rw`×`rh` (recreated when the size
 /// changes). Our context must be current.
 unsafe fn ensure_rect_fbo(rect_fbo: &mut Option<(u32, u32, i32, i32)>, rw: i32, rh: i32) -> Result<u32> {
-    if rect_fbo.map(|f| (f.2, f.3)) != Some((rw, rh)) {
-        if let Some((fbo, tex, _, _)) = rect_fbo.take() {
-            crate::playback::delete_fbo(fbo, tex);
+    // SAFETY: our context is current (this fn's contract).
+    unsafe {
+        if rect_fbo.map(|f| (f.2, f.3)) != Some((rw, rh)) {
+            if let Some((fbo, tex, _, _)) = rect_fbo.take() {
+                crate::playback::delete_fbo(fbo, tex);
+            }
+            *rect_fbo = crate::playback::create_fbo(rw.max(1) as u32, rh.max(1) as u32, true)
+                .map(|(fbo, tex)| (fbo, tex, rw, rh));
         }
-        *rect_fbo = crate::playback::create_fbo(rw.max(1) as u32, rh.max(1) as u32, true)
-            .map(|(fbo, tex)| (fbo, tex, rw, rh));
-    }
-    match rect_fbo {
-        Some((fbo, ..)) => Ok(*fbo),
-        None => bail!("couldn't create a {rw}x{rh} video buffer"),
+        match rect_fbo {
+            Some((fbo, ..)) => Ok(*fbo),
+            None => bail!("couldn't create a {rw}x{rh} video buffer"),
+        }
     }
 }
 
 /// Clears framebuffer `dst` (`w`×`h`) to `fill` and copies `src` into `rect`
 /// (in `dst`'s own coordinates). Our context must be current.
 unsafe fn blit_into(dst: u32, src: u32, (w, h): (i32, i32), [x, y, rw, rh]: [i32; 4], fill: [f32; 3]) {
-    gl::BindFramebuffer(gl::FRAMEBUFFER, dst);
-    gl::Disable(gl::SCISSOR_TEST);
-    gl::Viewport(0, 0, w, h);
-    gl::ClearColor(fill[0], fill[1], fill[2], 1.0);
-    gl::Clear(gl::COLOR_BUFFER_BIT);
-    gl::BindFramebuffer(gl::READ_FRAMEBUFFER, src);
-    gl::BlitFramebuffer(0, 0, rw, rh, x, y, x + rw, y + rh, gl::COLOR_BUFFER_BIT, gl::NEAREST);
-    gl::BindFramebuffer(gl::FRAMEBUFFER, 0);
+    // SAFETY: our context is current (this fn's contract).
+    unsafe {
+        gl::BindFramebuffer(gl::FRAMEBUFFER, dst);
+        gl::Disable(gl::SCISSOR_TEST);
+        gl::Viewport(0, 0, w, h);
+        gl::ClearColor(fill[0], fill[1], fill[2], 1.0);
+        gl::Clear(gl::COLOR_BUFFER_BIT);
+        gl::BindFramebuffer(gl::READ_FRAMEBUFFER, src);
+        gl::BlitFramebuffer(0, 0, rw, rh, x, y, x + rw, y + rh, gl::COLOR_BUFFER_BIT, gl::NEAREST);
+        gl::BindFramebuffer(gl::FRAMEBUFFER, 0);
+    }
 }
 
 /// Window configs for our client API, best first (`rank_config`), with their
@@ -1101,21 +1103,27 @@ struct SavedCurrent {
 
 impl SavedCurrent {
     unsafe fn capture(egl: &egl::Egl) -> Self {
-        Self {
-            dpy:  egl.GetCurrentDisplay(),
-            draw: egl.GetCurrentSurface(egl::DRAW as EGLint),
-            read: egl.GetCurrentSurface(egl::READ as EGLint),
-            ctx:  egl.GetCurrentContext(),
+        // SAFETY: plain EGL queries; `egl` is the loaded library.
+        unsafe {
+            Self {
+                dpy:  egl.GetCurrentDisplay(),
+                draw: egl.GetCurrentSurface(egl::DRAW as EGLint),
+                read: egl.GetCurrentSurface(egl::READ as EGLint),
+                ctx:  egl.GetCurrentContext(),
+            }
         }
     }
 
     /// Makes the saved context current again — or, when nothing was current
     /// (e.g. at quit, after Slint's context is gone), releases ours on `dpy`.
     unsafe fn restore(&self, egl: &egl::Egl, dpy: EGLDisplay) -> bool {
-        if self.ctx == egl::NO_CONTEXT {
-            return egl.MakeCurrent(dpy, egl::NO_SURFACE, egl::NO_SURFACE, egl::NO_CONTEXT) == egl::TRUE;
+        // SAFETY: `dpy` and the saved handles come from this EGL library.
+        unsafe {
+            if self.ctx == egl::NO_CONTEXT {
+                return egl.MakeCurrent(dpy, egl::NO_SURFACE, egl::NO_SURFACE, egl::NO_CONTEXT) == egl::TRUE;
+            }
+            egl.MakeCurrent(self.dpy, self.draw, self.read, self.ctx) == egl::TRUE
         }
-        egl.MakeCurrent(self.dpy, self.draw, self.read, self.ctx) == egl::TRUE
     }
 }
 

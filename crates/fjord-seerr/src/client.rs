@@ -261,17 +261,13 @@ impl SeerrClient {
     async fn discover_list(&self, path: &str, page: u32, filters: &DiscoverFilters) -> Result<SearchResponse> {
         let mut url = api_url(&self.base_url, path)?;
         url.query_pairs_mut().append_pair("page", &page.to_string());
-        if let Some(ids) = &filters.genre_ids {
-            if !ids.is_empty() {
-                let joined = ids.iter().map(i64::to_string).collect::<Vec<_>>().join("|");
-                url.query_pairs_mut().append_pair("genre", &joined);
-            }
+        if let Some(ids) = &filters.genre_ids && !ids.is_empty() {
+            let joined = ids.iter().map(i64::to_string).collect::<Vec<_>>().join("|");
+            url.query_pairs_mut().append_pair("genre", &joined);
         }
-        if let Some(ids) = &filters.provider_ids {
-            if !ids.is_empty() {
-                let joined = ids.iter().map(i64::to_string).collect::<Vec<_>>().join("|");
-                url.query_pairs_mut().append_pair("watchProviders", &joined);
-            }
+        if let Some(ids) = &filters.provider_ids && !ids.is_empty() {
+            let joined = ids.iter().map(i64::to_string).collect::<Vec<_>>().join("|");
+            url.query_pairs_mut().append_pair("watchProviders", &joined);
         }
         if let Some(region) = &filters.watch_region {
             url.query_pairs_mut().append_pair("watchRegion", region);

@@ -325,11 +325,7 @@ impl TryFrom<String> for KeyCombo {
                 // on, shift genuinely not held. Reconstructing shift there
                 // too would wrongly turn a real Ctrl+z binding into
                 // Ctrl+Shift+z.
-                if !shift && !ctrl && !alt {
-                    if let Some(ch) = k.chars().next() {
-                        if ch.is_uppercase() { shift = true; }
-                    }
-                }
+                if !shift && !ctrl && !alt && let Some(ch) = k.chars().next() && ch.is_uppercase() { shift = true; }
                 k.to_string()
             }
             k => return Err(format!("unknown key: {k}")),
@@ -1287,10 +1283,9 @@ pub(crate) fn handle_key(
             key::RIGHT => g.set_profile_picker_cursor((g.get_profile_picker_cursor() + 1).min((tile_count - 1).max(0))),
             key::RETURN => {
                 let cursor = g.get_profile_picker_cursor();
-                if let Some(sec) = sections.row_data(section as usize) {
-                    if let Some(t) = sec.tiles.row_data(cursor as usize) {
-                        g.invoke_profile_picker_select(t.user_id);
-                    }
+                if let Some(sec) = sections.row_data(section as usize)
+                    && let Some(t) = sec.tiles.row_data(cursor as usize) {
+                    g.invoke_profile_picker_select(t.user_id);
                 }
             }
             _ => {}
@@ -1845,9 +1840,8 @@ pub(crate) fn handle_key(
             key::DOWN => {
                 if zone == -1 {
                     if let Some(&first) = zones.first() { g.set_bonfire_group_zone(first); }
-                } else if let Some(pos) = zones.iter().position(|&z| z == zone) {
-                    if pos + 1 < zones.len() { g.set_bonfire_group_zone(zones[pos + 1]); }
-                }
+                } else if let Some(pos) = zones.iter().position(|&z| z == zone)
+                    && pos + 1 < zones.len() { g.set_bonfire_group_zone(zones[pos + 1]); }
             }
             key::RETURN => {
                 if zone == -1 {
@@ -2198,9 +2192,7 @@ pub(crate) fn handle_key(
             g.set_queue_panel_cursor(0);
             let items = g.get_queue_items();
             for i in 0..items.row_count() {
-                if let Some(e) = items.row_data(i) {
-                    if e.is_current { g.set_queue_panel_cursor(i as i32); break; }
-                }
+                if let Some(e) = items.row_data(i) && e.is_current { g.set_queue_panel_cursor(i as i32); break; }
             }
             g.set_show_queue_panel(true);
         } else {
@@ -2228,16 +2220,14 @@ pub(crate) fn handle_key(
     // Global playlist controls when audio is playing (fire from any mode except ContextMenu).
     if mode != AppMode::ContextMenu {
         let g = crate::AppState::get(window);
-        if g.get_is_audio_playing() {
-            if let Some(ref a) = action {
-                match a {
-                    Action::PrevTrack      => { g.invoke_queue_prev_track();   return true; }
-                    Action::NextTrack      => { g.invoke_queue_next_track();   return true; }
-                    Action::ToggleShuffle  => { g.invoke_toggle_shuffle();     return true; }
-                    Action::CycleRepeat    => { g.invoke_cycle_repeat();       return true; }
-                    Action::ToggleLyrics   => { g.invoke_toggle_lyrics();      return true; }
-                    _ => {}
-                }
+        if g.get_is_audio_playing() && let Some(ref a) = action {
+            match a {
+                Action::PrevTrack      => { g.invoke_queue_prev_track();   return true; }
+                Action::NextTrack      => { g.invoke_queue_next_track();   return true; }
+                Action::ToggleShuffle  => { g.invoke_toggle_shuffle();     return true; }
+                Action::CycleRepeat    => { g.invoke_cycle_repeat();       return true; }
+                Action::ToggleLyrics   => { g.invoke_toggle_lyrics();      return true; }
+                _ => {}
             }
         }
     }
@@ -2306,9 +2296,8 @@ pub(crate) fn handle_key(
                                 g.invoke_refresh_queue_display();
                                 let items = g.get_queue_items();
                                 for i in 0..items.row_count() {
-                                    if let Some(e) = items.row_data(i) {
-                                        if e.is_current { g.set_queue_panel_cursor(i as i32); break; }
-                                    }
+                                    if let Some(e) = items.row_data(i)
+                                        && e.is_current { g.set_queue_panel_cursor(i as i32); break; }
                                 }
                                 g.set_show_queue_panel(true);
                             }
@@ -2727,11 +2716,9 @@ fn dispatch_library(action: &Action, g: &crate::AppState) -> bool {
                 let c       = g.get_library_scrubber_cursor();
                 let cols    = g.get_library_cols();
                 let offsets = g.get_library_alpha_offsets();
-                if let Some(flat_idx) = offsets.row_data(c as usize) {
-                    if flat_idx >= 0 {
-                        g.set_library_focused(flat_idx);
-                        g.set_library_focused_row(flat_idx / cols);
-                    }
+                if let Some(flat_idx) = offsets.row_data(c as usize) && flat_idx >= 0 {
+                    g.set_library_focused(flat_idx);
+                    g.set_library_focused_row(flat_idx / cols);
                 }
                 g.set_library_scrubber_focused(false);
                 return true;
@@ -2998,9 +2985,7 @@ fn dispatch_player(action: Action, window: &crate::MainWindow) -> bool {
                 g.invoke_refresh_queue_display();
                 let items = g.get_queue_items();
                 for i in 0..items.row_count() {
-                    if let Some(e) = items.row_data(i) {
-                        if e.is_current { g.set_queue_panel_cursor(i as i32); break; }
-                    }
+                    if let Some(e) = items.row_data(i) && e.is_current { g.set_queue_panel_cursor(i as i32); break; }
                 }
                 g.set_show_queue_panel(true);
             }

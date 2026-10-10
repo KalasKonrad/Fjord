@@ -231,5 +231,7 @@ Needs `mpv`/libmpv (`pacman -S mpv`). Optional at runtime: `yt-dlp` (trailers), 
 ## Style
 - `cargo fmt`. `anyhow::Result` at the top level, `thiserror` for library errors, no `unwrap()` in library code.
 - `fjord-api`, `fjord-player`, `fjord-seerr` never import Slint.
+- Edition 2024: nested `if let`s are let-chains (clippy `collapsible_if`); an `unsafe fn` body puts its unsafe
+  calls in an explicit `unsafe {}` block with a `// SAFETY:` line.
 - Every `.rs`/`.slint` file opens with a `// ── <crate> · <filename> ──` header listing its major symbols
   (one line each); long files add `// ──` markers before major functions/blocks.

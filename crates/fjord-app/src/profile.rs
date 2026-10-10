@@ -210,9 +210,7 @@ pub(crate) fn parse_hex_color(s: &str) -> Option<slint::Color> {
 /// "string"). Deterministic, not random, so the same profile keeps the same
 /// color across sessions without needing to persist a randomly-picked one.
 pub(crate) fn avatar_color_for(hex: &str, seed: &str) -> slint::Color {
-    if !hex.is_empty() {
-        if let Some(c) = parse_hex_color(hex) { return c; }
-    }
+    if !hex.is_empty() && let Some(c) = parse_hex_color(hex) { return c; }
     const PALETTE: [(u8, u8, u8); 8] = [
         (0x4a, 0x90, 0xd9), (0xd9, 0x4a, 0x6b), (0x4a, 0xd9, 0x8e), (0xd9, 0xa0, 0x4a),
         (0x9a, 0x4a, 0xd9), (0x4a, 0xc9, 0xd9), (0xd9, 0xd9, 0x4a), (0xd9, 0x6b, 0x4a),
@@ -1190,14 +1188,12 @@ pub(crate) fn on_profile_picker_select(
         return;
     };
     let account_root = account_root_id(&target).to_string();
-    if !already_active_account(state, &account_root) {
-        if let Some(root) = {
-            let s = state.lock().unwrap();
-            account_requires_login(&s.config, &account_root).cloned()
-        } {
-            require_login_for_account(state, window, &account_root, &root);
-            return;
-        }
+    if !already_active_account(state, &account_root) && let Some(root) = {
+        let s = state.lock().unwrap();
+        account_requires_login(&s.config, &account_root).cloned()
+    } {
+        require_login_for_account(state, window, &account_root, &root);
+        return;
     }
     // LAN-bypass PIN staleness fix (2026-09-04) — prefer the live,
     // freshly-synced requires_pin over the persisted has_pin whenever a
@@ -1291,15 +1287,13 @@ pub(crate) fn on_account_picker_select(
         g.set_account_picker_error(ss("That account is no longer available"));
         return;
     };
-    if !already_active_account(state, &group.root_id) {
-        if let Some(root) = {
-            let s = state.lock().unwrap();
-            account_requires_login(&s.config, &group.root_id).cloned()
-        } {
-            debug!("on_account_picker_select({root_id}): remember_login==false, requiring fresh login");
-            require_login_for_account(state, window, &group.root_id, &root);
-            return;
-        }
+    if !already_active_account(state, &group.root_id) && let Some(root) = {
+        let s = state.lock().unwrap();
+        account_requires_login(&s.config, &group.root_id).cloned()
+    } {
+        debug!("on_account_picker_select({root_id}): remember_login==false, requiring fresh login");
+        require_login_for_account(state, window, &group.root_id, &root);
+        return;
     }
     debug!("on_account_picker_select({root_id}): {} profile(s) in group", group.profiles.len());
     if group.profiles.len() < 2 {
@@ -1943,13 +1937,11 @@ pub(crate) fn sync_bonfire_subprofiles(
                 // `bp.is_master` only (i.e. this branch never applies to a
                 // genuine sub-profile entry, which can't be independently
                 // logged into in the first place).
-                if bp.is_master {
-                    if let Some(existing) = s.config.profiles.iter().find(|p| p.user_id == bp.profile_user_id) {
-                        if !existing.is_bonfire && !existing.token.is_empty() {
-                            tracing::debug!("sync_bonfire_subprofiles: skipping {} — already a known independent account on this device", bp.profile_user_id);
-                            continue;
-                        }
-                    }
+                if bp.is_master
+                    && let Some(existing) = s.config.profiles.iter().find(|p| p.user_id == bp.profile_user_id)
+                    && !existing.is_bonfire && !existing.token.is_empty() {
+                    tracing::debug!("sync_bonfire_subprofiles: skipping {} — already a known independent account on this device", bp.profile_user_id);
+                    continue;
                 }
                 // Bonfire Phase 5: `bp.is_master` distinguishes a genuine
                 // sub-profile of MY OWN household from another master's own

@@ -90,20 +90,18 @@ pub(crate) fn open_artist_screen(
 
         // Deleted artist: the ArtistIds album query returns an empty 200 — the
         // ghost is only visible on the detail fetch's 404 (S4).
-        if let Err(e) = &detail_res {
-            if crate::is_not_found(e) {
-                let ww_err = ww2.clone();
-                let _ = slint::invoke_from_event_loop(move || {
-                    if let Some(w) = ww_err.upgrade() {
-                        let g = AppState::get(&w);
-                        if g.get_artist_open_gen() == generation {
-                            g.set_app_content_loading(false);
-                        }
+        if let Err(e) = &detail_res && crate::is_not_found(e) {
+            let ww_err = ww2.clone();
+            let _ = slint::invoke_from_event_loop(move || {
+                if let Some(w) = ww_err.upgrade() {
+                    let g = AppState::get(&w);
+                    if g.get_artist_open_gen() == generation {
+                        g.set_app_content_loading(false);
                     }
-                });
-                crate::purge_deleted_item(&state_task, &ww2, &id2);
-                return;
-            }
+                }
+            });
+            crate::purge_deleted_item(&state_task, &ww2, &id2);
+            return;
         }
 
         let albums = match albums_res {
@@ -409,20 +407,16 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
             }
         }
         Action::Confirm => {
-            if f < total {
-                if let Some(card) = g.get_artist_albums().row_data(f as usize) {
-                    g.invoke_open_album(card.id, card.title);
-                }
+            if f < total && let Some(card) = g.get_artist_albums().row_data(f as usize) {
+                g.invoke_open_album(card.id, card.title);
             }
             true
         }
         Action::OpenContextMenu => {
-            if f < total {
-                if let Some(card) = g.get_artist_albums().row_data(f as usize) {
-                    g.set_context_menu_title(card.title.clone());
-                    g.invoke_open_context_menu(card.id, card.has_played, card.is_favorite,
-                        card.resume_pct, card.item_type, card.series_id);
-                }
+            if f < total && let Some(card) = g.get_artist_albums().row_data(f as usize) {
+                g.set_context_menu_title(card.title.clone());
+                g.invoke_open_context_menu(card.id, card.has_played, card.is_favorite,
+                    card.resume_pct, card.item_type, card.series_id);
             }
             true
         }

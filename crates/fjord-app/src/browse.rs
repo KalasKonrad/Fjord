@@ -385,11 +385,9 @@ pub(crate) fn wire_browse(
             let g       = AppState::get(&w);
             let cols    = g.get_library_cols();
             let offsets = g.get_library_alpha_offsets();
-            if let Some(flat_idx) = offsets.row_data(letter_idx as usize) {
-                if flat_idx >= 0 {
-                    g.set_library_focused(flat_idx);
-                    g.set_library_focused_row(flat_idx / cols);
-                }
+            if let Some(flat_idx) = offsets.row_data(letter_idx as usize) && flat_idx >= 0 {
+                g.set_library_focused(flat_idx);
+                g.set_library_focused_row(flat_idx / cols);
             }
         });
     }
@@ -402,9 +400,7 @@ pub(crate) fn wire_browse(
             let offsets = g.get_library_alpha_offsets();
             let mut letter = 0i32;
             for i in 0..27usize {
-                if let Some(off) = offsets.row_data(i) {
-                    if off >= 0 && off <= top_card { letter = i as i32; }
-                }
+                if let Some(off) = offsets.row_data(i) && off >= 0 && off <= top_card { letter = i as i32; }
             }
             g.set_library_scrubber_cursor(letter);
         });
