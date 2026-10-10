@@ -14,6 +14,9 @@ Version history: [CHANGELOG.md](CHANGELOG.md) (git tags `v0.1.0`–`v0.4.2`). Im
 
 **Check an item off only once it has been clicked through on real hardware** — a clean build/clippy/test says nothing about whether it works. Add a line here the moment something ships "not live-tested". Ticked items are removed at the next cleanup; their story lives in `DEVLOG.md`.
 
+### 0.5.0 steps 1–2 smoke test (branch `release-0.5`)
+- [ ] **Slint 1.18.1 (2026-10-10).** Login; every dashboard (Home/TV/Movies/Music/Discover) with keyboard/remote and mouse wheel (scrolling still follows focus, wheel still scrolls); playback in-window (Separate video surface off) and on the subsurface; HDR title; Back → mini-player thumbnail in the right place; "Video in background" behind a menu; Settings (all sections, toggles, dropdowns); on-screen keyboard; typing in Login / Connect Seerr / Profile Edit fields keeps focus while typing. Held Left on the first card of a row stays there; a fresh Left press enters the sidebar.
+
 ### Security fixes (0.5.0 step 0)
 - [x] **S7 — pinned actions (2026-10-10).** The next push to `main` still produces the "nightly" release (Actions tab green, new `fjord-x86_64.tar.gz`). Confirmed 2026-10-10: the nightly run for `d1a54da` (pinned actions) succeeded.
 - [ ] **S6 — owner-only files (2026-10-10).** After a start: `stat -c '%a %n' ~/.config/fjord/config.json ~/.cache/fjord/logs ~/.cache/fjord/logs/fjord.log*` → 600 / 700 / 600 on both machines; on the HTPC the share files stay readable from the dev machine; no `log permissions not tightened` line (or, on the HTPC, it explains why).

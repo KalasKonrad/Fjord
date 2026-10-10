@@ -76,7 +76,7 @@
 //   PosterBlock        160×240 poster with rounded corners; placeholder when no image; badges: ✓ played, progress bar, unplayed count pill, request-status pill (RequestDetailScreen only, 2026-07-18)
 //   MetaLine           year · runtime · rating + optional ★ community rating
 //   CastRow            Flickable row of cast cards: portrait photo + name + role; focused-idx border ring;
-//                      hover overlay; viewport-x tracks focused-idx for keyboard scroll
+//                      hover overlay; content-x tracks focused-idx for keyboard scroll
 //   StorylineSection   collapsible overview block: "Storyline ▶" header; 3-line preview collapsed,
 //                      full text expanded; click anywhere on header to toggle; clicked-header()
 //                      additive callback (2026-07-18, keyboard-nav fix — RequestDetailScreen
@@ -1327,7 +1327,7 @@ export component SettingsDropdown inherits Rectangle {
             clip:              true;
 
             Flickable {
-                viewport-height: root.model.length * 32px + 8px;
+                content-height: root.model.length * 32px + 8px;
                 items-layout := VerticalLayout {
                     padding: 4px;
                     for opt in root.model: Rectangle {
@@ -1534,7 +1534,7 @@ export component CastRow inherits VerticalLayout {
     spacing: 12px;
 
     // kb-x lives on CastRow (root), not on fl itself.
-    // A property on a Flickable that reads self.width / self.viewport-width creates
+    // A property on a Flickable that reads self.width / self.content-width creates
     // a dependency cycle → "Recursion detected" panic (Slint gotcha). Reading
     // fl.width from the parent element is safe (no self-reference).
     property <length> kb-x: root.focused-idx <= 0 ? 0px
@@ -1543,17 +1543,17 @@ export component CastRow inherits VerticalLayout {
                     min(0px, fl.width - hbox.preferred-width),
                     0px
                 );
-    changed kb-x => { fl.viewport-x = kb-x; }
+    changed kb-x => { fl.content-x = kb-x; }
 
     Text { text: "Cast & Crew"; color: Theme.text; font-size: 16px; font-weight: 700; }
 
-    // Flickable so keyboard navigation (viewport-x tracks focused-idx) scrolls the row.
+    // Flickable so keyboard navigation (content-x tracks focused-idx) scrolls the row.
     // Card stride = 100px width + 16px spacing = 116px.
-    // kb-x drives viewport-x via changed callback; mouse-wheel scroll works natively.
+    // kb-x drives content-x via changed callback; mouse-wheel scroll works natively.
     fl := Flickable {
         height:         162px;
-        viewport-width: hbox.preferred-width;
-        animate viewport-x { duration: 150ms * AppState.settings-scroll-speed; easing: ease-out-expo; }
+        content-width: hbox.preferred-width;
+        animate content-x { duration: 150ms * AppState.settings-scroll-speed; easing: ease-out-expo; }
 
         hbox := HorizontalLayout {
             spacing:   16px;
@@ -2194,14 +2194,14 @@ export component QueuePanel inherits Rectangle {
                 fl := Flickable {
                     width:           parent.width;
                     height:          parent.height;
-                    viewport-height: max(parent.height, list.preferred-height);
+                    content-height: max(parent.height, list.preferred-height);
 
                     property <length> kb-y: clamp(
                         -(AppState.queue-panel-cursor * 56px) + parent.height / 2 - 28px,
                         min(0px, parent.height - list.preferred-height),
                         0px
                     );
-                    changed kb-y => { fl.viewport-y = kb-y; }
+                    changed kb-y => { fl.content-y = kb-y; }
 
                     list := VerticalLayout {
                         alignment: start;
@@ -2353,20 +2353,20 @@ export component LyricsView inherits Rectangle {
         height:     parent.height;
         background: transparent;
 
-        // kb-y + changed-handler (not a direct viewport-y binding) keeps
+        // kb-y + changed-handler (not a direct content-y binding) keeps
         // native mouse-wheel scroll working alongside the auto-follow.
         fl := Flickable {
             width:           parent.width;
             height:          parent.height;
-            viewport-height: max(parent.height, lyric-list.preferred-height);
+            content-height: max(parent.height, lyric-list.preferred-height);
 
             property <length> kb-y: clamp(
                 -(AppState.lyrics-active-idx * 76px) + parent.height / 2 - 38px,
                 min(0px, parent.height - lyric-list.preferred-height),
                 0px
             );
-            changed kb-y => { fl.viewport-y = kb-y; }
-            animate viewport-y { duration: 450ms * AppState.settings-scroll-speed; easing: ease-in-out; }
+            changed kb-y => { fl.content-y = kb-y; }
+            animate content-y { duration: 450ms * AppState.settings-scroll-speed; easing: ease-in-out; }
 
             lyric-list := VerticalLayout {
                 alignment: start;

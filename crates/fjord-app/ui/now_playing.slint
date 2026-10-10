@@ -200,19 +200,19 @@ export component NowPlayingScreen inherits Rectangle {
                     width: parent.width; height: parent.height;
                 }
 
-                // kb-y + changed-handler (not a direct viewport-y binding) keeps
+                // kb-y + changed-handler (not a direct content-y binding) keeps
                 // native mouse-wheel scroll working alongside the auto-follow.
                 if AppState.lyrics-available: lyr-fl := Flickable {
                     width: parent.width; height: parent.height;
-                    viewport-height: max(parent.height, lyr-list.preferred-height);
+                    content-height: max(parent.height, lyr-list.preferred-height);
 
                     property <length> kb-y: clamp(
                         -(AppState.lyrics-active-idx * 76px) + parent.height / 2 - 38px,
                         min(0px, parent.height - lyr-list.preferred-height),
                         0px
                     );
-                    changed kb-y => { lyr-fl.viewport-y = kb-y; }
-                    animate viewport-y { duration: 450ms * AppState.settings-scroll-speed; easing: ease-in-out; }
+                    changed kb-y => { lyr-fl.content-y = kb-y; }
+                    animate content-y { duration: 450ms * AppState.settings-scroll-speed; easing: ease-in-out; }
 
                     lyr-list := VerticalLayout {
                         alignment: start;
@@ -221,9 +221,9 @@ export component NowPlayingScreen inherits Rectangle {
 
                         // Text.width bound to parent.width directly here would
                         // self-reference lyr-list's own layout computation
-                        // (width -> layoutinfo -> min-width -> viewport-width
+                        // (width -> layoutinfo -> min-width -> content-width
                         // -> ... -> width), the same class of binding-loop
-                        // gotcha documented in CLAUDE.md for viewport-y. The
+                        // gotcha documented in CLAUDE.md for content-y. The
                         // TouchArea wrapper (as in widgets.slint's LyricsView,
                         // whose structure this mirrors) isn't layout-sized
                         // from its child, so it breaks the cycle.
@@ -287,16 +287,16 @@ export component NowPlayingScreen inherits Rectangle {
 
                 strip-fl := Flickable {
                     height: strip-h - 16px * 2 - 12px - 8px;
-                    viewport-width:  max(self.width, strip-row.preferred-width);
-                    viewport-height: self.height;
+                    content-width:  max(self.width, strip-row.preferred-width);
+                    content-height: self.height;
 
                     property <length> kb-x: clamp(
                         -(AppState.now-playing-strip-focused * 104px) + parent.width / 2 - 52px,
                         min(0px, parent.width - strip-row.preferred-width),
                         0px
                     );
-                    changed kb-x => { strip-fl.viewport-x = kb-x; }
-                    animate viewport-x { duration: 150ms * AppState.settings-scroll-speed; easing: ease-out-expo; }
+                    changed kb-x => { strip-fl.content-x = kb-x; }
+                    animate content-x { duration: 150ms * AppState.settings-scroll-speed; easing: ease-out-expo; }
 
                     strip-row := HorizontalLayout {
                         spacing: 12px;

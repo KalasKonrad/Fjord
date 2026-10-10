@@ -67,12 +67,12 @@ component TrackPanel inherits Rectangle {
         min(0px, self.height - panel-list.preferred-height),
         0px
     );
-    changed kb-y => { panel-fl.viewport-y = kb-y; }
+    changed kb-y => { panel-fl.content-y = kb-y; }
 
     panel-fl := Flickable {
         height:          parent.height;
-        viewport-width:  parent.width;
-        viewport-height: panel-list.preferred-height;
+        content-width:  parent.width;
+        content-height: panel-list.preferred-height;
 
         panel-list := VerticalLayout {
             padding: 8px;

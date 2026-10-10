@@ -210,17 +210,17 @@ export component ProfileEditScreen inherits Rectangle {
         fl := Flickable {
             x: 0; y: 0;
             width: parent.width; height: parent.height;
-            viewport-width: self.width;
-            viewport-height: inner.preferred-height;
+            content-width: self.width;
+            content-height: inner.preferred-height;
             // Live-reported 2026-08-17: "no animation in the scrol so its
             // instant" — every other keyboard-scrollable Flickable in the
-            // app animates viewport-y (Detail/Series/Season/Settings/etc.,
+            // app animates content-y (Detail/Series/Season/Settings/etc.,
             // all `200ms * settings-scroll-speed, ease-in-out`); this one
             // was the one screen missing it, a real inconsistency, not a
             // deliberate choice — matching the established convention.
-            animate viewport-y { duration: 200ms * AppState.settings-scroll-speed; easing: ease-in-out; }
+            animate content-y { duration: 200ms * AppState.settings-scroll-speed; easing: ease-in-out; }
 
-            // Never a direct viewport-y binding — that blocks native
+            // Never a direct content-y binding — that blocks native
             // mouse-wheel scroll (documented Flickable gotcha). `kb-y`'s
             // own clamp keeps it within real bounds regardless of
             // zone-el-y's accuracy for zones 4/9.
@@ -229,7 +229,7 @@ export component ProfileEditScreen inherits Rectangle {
                 min(0px, self.height - inner.preferred-height),
                 0px
             );
-            changed kb-y => { fl.viewport-y = kb-y; }
+            changed kb-y => { fl.content-y = kb-y; }
 
             inner := VerticalLayout {
                 width: parent.width;
@@ -870,7 +870,7 @@ export component ProfileEditScreen inherits Rectangle {
     // this screen's own form content — a fixed-bottom dock never actually
     // knew where the card's own content ended). active-field-y reads the
     // SAME zone-el-y this screen's own kb-y auto-scroll already uses,
-    // combined with the Flickable's real live scroll offset (fl.viewport-y,
+    // combined with the Flickable's real live scroll offset (fl.content-y,
     // a plain property, not layout-cache-derived — safe to read from here)
     // and the card's own on-screen position (also a plain, non-conditional
     // expression) — the literal, exact on-screen Y of whichever field
@@ -878,7 +878,7 @@ export component ProfileEditScreen inherits Rectangle {
     // with a margin (FieldFocusWrap's own fixed 40px height accounts for
     // the field itself); falls back to ABOVE it if there's no room below
     // (a field near the very bottom of a tall, fully-scrolled form).
-    property <length> active-field-y: card.y + fl.viewport-y + zone-el-y(AppState.profile-edit-zone);
+    property <length> active-field-y: card.y + fl.content-y + zone-el-y(AppState.profile-edit-zone);
     if AppState.show-onscreen-keyboard && AppState.settings-onscreen-keyboard-enabled && root.is-my-onscreen-target(): QwertyKeyboard {
         x: (parent.width - self.width) / 2;
         y: (active-field-y + 40px + 16px + self.height <= parent.height)
@@ -953,14 +953,14 @@ export component ProfileEditScreen inherits Rectangle {
         clip:          true;
 
         ddfl := Flickable {
-            viewport-height: ddvl.preferred-height;
+            content-height: ddvl.preferred-height;
 
             property <length> dd-scroll: AppState.profile-edit-dropdown-cursor >= 0
                 ? clamp(-(AppState.profile-edit-dropdown-cursor * 32px + 16px - self.height / 2),
                         min(0px, self.height - ddvl.preferred-height), 0px)
                 : 0px;
-            changed dd-scroll => { ddfl.viewport-y = dd-scroll; }
-            init    => { ddfl.viewport-y = dd-scroll; }
+            changed dd-scroll => { ddfl.content-y = dd-scroll; }
+            init    => { ddfl.content-y = dd-scroll; }
 
             ddvl := VerticalLayout {
                 padding: 4px;

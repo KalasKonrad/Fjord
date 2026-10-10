@@ -160,13 +160,13 @@ export component BonfireAdminScreen inherits Rectangle {
             min(0px, self.height - mappings-rows.preferred-height),
             0px
         );
-        changed kb-y => { mappings-fl.viewport-y = kb-y; }
+        changed kb-y => { mappings-fl.content-y = kb-y; }
 
         mappings-fl := Flickable {
             width:  parent.width;
             height: parent.height;
-            viewport-height: max(parent.height, mappings-rows.preferred-height);
-            animate viewport-y { duration: 150ms * AppState.settings-scroll-speed; easing: ease-out-expo; }
+            content-height: max(parent.height, mappings-rows.preferred-height);
+            animate content-y { duration: 150ms * AppState.settings-scroll-speed; easing: ease-out-expo; }
 
             mappings-rows := VerticalLayout {
                 alignment: start;
@@ -366,13 +366,13 @@ export component BonfireAdminScreen inherits Rectangle {
             min(0px, self.height - audit-rows.preferred-height),
             0px
         );
-        changed kb-y => { audit-fl.viewport-y = kb-y; }
+        changed kb-y => { audit-fl.content-y = kb-y; }
 
         audit-fl := Flickable {
             width:  parent.width;
             height: parent.height;
-            viewport-height: max(parent.height, audit-rows.preferred-height);
-            animate viewport-y { duration: 150ms * AppState.settings-scroll-speed; easing: ease-out-expo; }
+            content-height: max(parent.height, audit-rows.preferred-height);
+            animate content-y { duration: 150ms * AppState.settings-scroll-speed; easing: ease-out-expo; }
 
             audit-rows := VerticalLayout {
                 alignment: start;
