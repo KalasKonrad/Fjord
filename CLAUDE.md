@@ -63,8 +63,8 @@ Needs `mpv`/libmpv (`pacman -S mpv`). Optional at runtime: `yt-dlp` (trailers), 
   `inhibit.rs`. Submodules are re-exported, so callers use `crate::playback::*`.
 - `controls.rs` (player callbacks), `stats.rs` (stats overlay).
 - Screens: `detail`, `series`, `season`, `collection`, `album` (albums + playlists), `artist`, `person`,
-  `browse`, `home`/`movies`/`poster` (dashboards, library grid, poster loading), `discover` (Discover,
-  RequestDetail, Calendar, Watchlist), `blocklist`, `settings`, `context_menu`.
+  `browse`, `home`/`movies`/`poster` (dashboards, library grid, poster loading), `discover/` (Discover,
+  RequestDetail, Calendar, Watchlist — one file per area, list in `discover/mod.rs`), `blocklist`, `settings`, `context_menu`.
 - Accounts/profiles: `auth.rs` (login, `finish_session_setup`), `profile.rs` (pickers, `switch_to_profile`,
   Bonfire sync, idle lock), `profile_edit.rs`, `bonfire_admin.rs`, `secrets.rs` (secrets encrypted at rest).
 - Integrations/platform: `seerr_auth.rs`, `ws.rs` (Jellyfin WebSocket delta sync), `prewarm.rs`, `hdr.rs`
