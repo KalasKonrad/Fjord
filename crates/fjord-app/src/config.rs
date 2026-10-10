@@ -150,6 +150,8 @@
 //                   next_ep_pending moved to VideoState — cleared automatically on start_playback
 //   path helpers    xdg_config_base, xdg_cache_base (shared), config_path, poster_cache_dir/path, backdrop_cache_dir/path,
 //                   discover_poster_cache_dir/path (Seerr/TMDB posters — separate dir, no Jellyfin tag-revalidation concept), keybindings_path
+//   safe_cache_name server-provided id → cache file/folder name only if it's 32 hex (2026-10-09 security
+//                   review); the cache path helpers return None otherwise (unit-tested)
 //   config I/O      load_config, save_config, ensure_device_id — save_config/save_screen_caches
 //                   both log a real tracing::error! on every failure point (serialize/write/rename),
 //                   2026-08-28 logging audit; load_config's own "corrupted file" fallthrough
@@ -1132,18 +1134,30 @@ pub(crate) fn poster_cache_dir() -> std::path::PathBuf {
 pub(crate) fn backdrop_cache_dir() -> std::path::PathBuf {
     xdg_cache_base().join("fjord").join("backdrops")
 }
-pub(crate) fn poster_cache_path(item_id: &str) -> std::path::PathBuf {
-    poster_cache_dir().join(item_id)
+/// A server-provided id as a cache file or folder name — None unless it is
+/// exactly 32 hex characters (Jellyfin's id format; every existing cache
+/// entry has it). Anything else could leave the cache folder: `../` climbs
+/// out, and an absolute path replaces the base in `Path::join` — a
+/// malicious server, or anyone altering plain-HTTP traffic, could then
+/// write or delete any file the user can (2026-10-09 security review).
+pub(crate) fn safe_cache_name(id: &str) -> Option<&str> {
+    (id.len() == 32 && id.bytes().all(|b| b.is_ascii_hexdigit())).then_some(id)
 }
-pub(crate) fn backdrop_cache_path(item_id: &str) -> std::path::PathBuf {
-    backdrop_cache_dir().join(item_id)
+
+/// None when `item_id` isn't a valid cache name (see safe_cache_name) —
+/// the image is then fetched but not cached.
+pub(crate) fn poster_cache_path(item_id: &str) -> Option<std::path::PathBuf> {
+    Some(poster_cache_dir().join(safe_cache_name(item_id)?))
+}
+pub(crate) fn backdrop_cache_path(item_id: &str) -> Option<std::path::PathBuf> {
+    Some(backdrop_cache_dir().join(safe_cache_name(item_id)?))
 }
 // Bonfire Phase 1 (cache namespacing, 2026-08-09): namespaced under the
 // owning profile's user_id, same as the seven caches in home.rs — see that
 // file's own module-header comment for the full "why explicit, not
 // resolved internally" reasoning.
-pub(crate) fn screen_caches_path(user_id: &str) -> std::path::PathBuf {
-    xdg_cache_base().join("fjord").join("profiles").join(user_id).join("screen_caches.json")
+pub(crate) fn screen_caches_path(user_id: &str) -> Option<std::path::PathBuf> {
+    Some(xdg_cache_base().join("fjord").join("profiles").join(safe_cache_name(user_id)?).join("screen_caches.json"))
 }
 
 /// One-time migration for existing installs: if this profile's namespaced
@@ -1162,6 +1176,7 @@ pub(crate) fn migrate_flat_caches_to_profile(user_id: &str) {
         "home.json", "movies.json", "series.json", "collections.json",
         "artists.json", "albums.json", "playlists.json", "screen_caches.json",
     ];
+    let Some(user_id) = safe_cache_name(user_id) else { return };
     let old_base = xdg_cache_base().join("fjord");
     let new_dir  = old_base.join("profiles").join(user_id);
     for filename in CACHE_FILES {
@@ -1182,8 +1197,12 @@ pub(crate) fn migrate_flat_caches_to_profile(user_id: &str) {
 pub(crate) fn discover_poster_cache_dir() -> std::path::PathBuf {
     xdg_cache_base().join("fjord").join("discover_posters")
 }
-pub(crate) fn discover_poster_cache_path(key: &str) -> std::path::PathBuf {
-    discover_poster_cache_dir().join(key)
+/// None unless `key` is 1–64 characters of `a-z`, `0-9` and `-` (the keys
+/// are built from TMDB's numeric ids; checked anyway, see safe_cache_name).
+pub(crate) fn discover_poster_cache_path(key: &str) -> Option<std::path::PathBuf> {
+    let ok = (1..=64).contains(&key.len())
+        && key.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-');
+    ok.then(|| discover_poster_cache_dir().join(key))
 }
 
 pub(crate) fn fmt_resume_label(secs: f64) -> String {
@@ -1444,7 +1463,7 @@ fn default_person_tmdb_id_cache() -> BoundedCache<Option<i64>> {
 }
 
 pub(crate) fn load_screen_caches(user_id: &str) -> Option<ScreenCachesFile> {
-    let data = std::fs::read_to_string(screen_caches_path(user_id)).ok()?;
+    let data = std::fs::read_to_string(screen_caches_path(user_id)?).ok()?;
     serde_json::from_str(&data).ok()
 }
 
@@ -1469,7 +1488,10 @@ pub(crate) fn save_screen_caches(state: &Arc<std::sync::Mutex<FjordState>>, user
             person_tmdb_id:     s.person_tmdb_id_cache.clone(),
         }
     };
-    let path = screen_caches_path(user_id);
+    let Some(path) = screen_caches_path(user_id) else {
+        tracing::warn!("save_screen_caches: not a valid user id for a cache folder — not saved");
+        return;
+    };
     if let Some(parent) = path.parent() { let _ = std::fs::create_dir_all(parent); }
     // 2026-08-28 logging audit — same silent-failure shape save_config had
     // (this file can reach ~1.3MB after a library prewarm, and this runs
@@ -2280,6 +2302,28 @@ pub(crate) fn upsert_media_item(list: &mut Vec<MediaItem>, item: MediaItem) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cache_names_must_be_jellyfin_ids() {
+        assert_eq!(safe_cache_name("91aecc28b97a57839f4836ba15b6e04b"), Some("91aecc28b97a57839f4836ba15b6e04b"));
+        assert_eq!(safe_cache_name("91AECC28B97A57839F4836BA15B6E04B"), Some("91AECC28B97A57839F4836BA15B6E04B"));
+        for bad in [
+            "", "../../.bashrc", "/home/user/.config/autostart/x.desktop", "a/b",
+            "91aecc28-b97a-5783-9f48-36ba15b6e04b", // dashed GUID form
+            "91aecc28b97a57839f4836ba15b6e04", "91aecc28b97a57839f4836ba15b6e04bb", "91aecc28b97a57839f4836ba15b6e04g",
+            "..\\..\\x", "91aecc28b97a57839f4836ba15b6e0/.",
+        ] {
+            assert_eq!(safe_cache_name(bad), None, "{bad:?}");
+            assert!(poster_cache_path(bad).is_none() && backdrop_cache_path(bad).is_none(), "{bad:?}");
+        }
+        assert!(poster_cache_path("91aecc28b97a57839f4836ba15b6e04b").unwrap().ends_with("posters/91aecc28b97a57839f4836ba15b6e04b"));
+        // Discover keys: lowercase, digits, dashes only.
+        assert!(discover_poster_cache_path("movie-12345").is_some());
+        assert!(discover_poster_cache_path("season-missing-1399-2").is_some());
+        for bad in ["", "../x", "/abs", "Movie-1", "a b", &"x".repeat(65)] {
+            assert!(discover_poster_cache_path(bad).is_none(), "{bad:?}");
+        }
+    }
 
     // A real pre-Phase-1 flat config.json (minus token/seerr fields, which
     // would be genuine encrypted ciphertext here — those round-trip through

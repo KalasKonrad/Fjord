@@ -1,6 +1,8 @@
 // ── fjord-app · poster.rs ────────────────────────────────────────────────────
 //   ImageKind              Poster | Backdrop — selects cache path and API method
-//   fetch_image_cached     shared fetch-or-cache implementation for both kinds
+//   fetch_image_cached     shared fetch-or-cache implementation for both kinds; no disk cache for an id
+//                          that isn't a safe cache name; only bytes passing is_image are written
+//   is_image               JPEG/PNG/WebP header with dimensions (2026-10-09 security review; unit-tested)
 //   fetch_poster_cached    thin wrapper: fetch_image_cached(…, Poster)
 //   fetch_backdrop_cached  thin wrapper: fetch_image_cached(…, Backdrop)
 //   fetch_posters_for_delta  generic concurrent poster fetch for a WS delta batch (any item
@@ -42,6 +44,14 @@ async fn fetch_image_cached(
         ImageKind::Poster   => poster_cache_path(item_id),
         ImageKind::Backdrop => backdrop_cache_path(item_id),
     };
+    // Not a valid cache name (config::safe_cache_name): fetch, but don't cache.
+    let Some(path) = path else {
+        let fetched = match kind {
+            ImageKind::Poster   => client.fetch_poster_bytes(item_id).await,
+            ImageKind::Backdrop => client.fetch_backdrop_bytes(item_id).await,
+        };
+        return fetched.ok().filter(|b| is_image(b));
+    };
     let tag_path = path.with_extension("tag");
     let cached   = tokio::fs::try_exists(&path).await.unwrap_or(false);
 
@@ -61,10 +71,11 @@ async fn fetch_image_cached(
         ImageKind::Backdrop => client.fetch_backdrop_bytes(item_id).await,
     };
     let bytes = match fetched {
-        Ok(b) => b,
-        // Network failure: a stale image beats no image.
-        Err(_) if cached => return tokio::fs::read(&path).await.ok(),
-        Err(_)           => return None,
+        Ok(b) if is_image(&b) => b,
+        // Network failure, or the server sent something that isn't an
+        // image (never written to disk): a stale image beats no image.
+        _ if cached => return tokio::fs::read(&path).await.ok(),
+        _           => return None,
     };
 
     if let Some(parent) = path.parent() { let _ = tokio::fs::create_dir_all(parent).await; }
@@ -106,6 +117,17 @@ pub(crate) async fn fetch_backdrop_cached_tagged(
     client: &JellyfinClient, item_id: &str, tag: Option<&str>,
 ) -> Option<Vec<u8>> {
     fetch_image_cached(client, item_id, ImageKind::Backdrop, tag).await
+}
+
+/// True when `bytes` start like an image Fjord can decode (JPEG/PNG/WebP
+/// header with dimensions) — checked before anything is written to the
+/// cache, so a server can't use it to store other content.
+pub(crate) fn is_image(bytes: &[u8]) -> bool {
+    image::ImageReader::new(std::io::Cursor::new(bytes))
+        .with_guessed_format()
+        .ok()
+        .and_then(|r| r.format().is_some().then_some(r))
+        .is_some_and(|r| r.into_dimensions().is_ok())
 }
 
 /// Fetch + decode posters for a WS delta batch (any mix of item types — library-list
@@ -475,4 +497,21 @@ pub(crate) fn spawn_series_poster_loading(
             push_decoded_series(&meta, &poster_map, &window_weak, &state, &client);
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_image;
+
+    #[test]
+    fn only_real_images_count() {
+        let mut png = Vec::new();
+        image::RgbImage::new(2, 2)
+            .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+            .unwrap();
+        assert!(is_image(&png));
+        assert!(!is_image(b"[Desktop Entry]\nType=Application\nExec=sh -c x\n"));
+        assert!(!is_image(&[0xFF, 0xD8, 0xFF, 0xE0, 0, 0, b'n', b'o', b'p', b'e']));
+        assert!(!is_image(b""));
+    }
 }

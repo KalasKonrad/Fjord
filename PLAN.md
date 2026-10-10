@@ -14,7 +14,8 @@ Version history: [CHANGELOG.md](CHANGELOG.md) (git tags `v0.1.0`–`v0.4.2`). Im
 
 **Check an item off only once it has been clicked through on real hardware** — a clean build/clippy/test says nothing about whether it works. Add a line here the moment something ships "not live-tested". Ticked items are removed at the next cleanup; their story lives in `DEVLOG.md`.
 
-(nothing open)
+### Security fixes (0.5.0 step 0)
+- [ ] **S1 — cache paths (2026-10-10).** Posters, backdrops and dashboard rows still load and stay cached (start Fjord twice: the second start shows posters instantly; `~/.cache/fjord/posters/` keeps growing with 32-hex names). Discover posters too.
 
 ---
 
