@@ -3161,3 +3161,1153 @@ All fields are logged at playback start so the log shows exactly what options we
 - No `unwrap()` in library code — propagate errors
 - Keep `fjord-api` and `fjord-player` free of Slint imports
 - Every `.rs` and `.slint` source file opens with a `// ── <crate> · <filename> ──` header block listing its major symbols/sections (one line each). Longer files additionally carry `// ──` inline section markers immediately before major functions and visual blocks. The header is the first thing in the file, before any `use` statements or declarations. Update the header whenever symbols are added, removed, or their behaviour changes — not just when the name changes.
+
+## Code comment archive (0.5.0 step 4)
+
+Narrative comments taken out of the code in 0.5.0 step 4 (2026-10-10) — dated bug stories, quoted user reports, phase history. Each was replaced in the code by a short what/why comment; the original is kept here verbatim, per file, with the line of code it sat above (line numbers are not kept — search for that line). Comment-only change: the non-comment lines of every file were checked identical.
+
+#### `crates/fjord-app/ui/app_state.slint`
+
+Above `in-out property <bool> show-profile-picker: false;`:
+```
+// ── Profile picker (Bonfire Phase 1, 2026-08-09; sectioned 2026-08-31) ──────
+// Shown instead of show-login at startup when 2+ profiles are already known
+// (nothing to pick between with only one — that case skips straight to the
+// existing silent auto-login, unchanged) and the launch policy calls for it,
+// or when a Remember-Last/Default profile needs a PIN it can't silently
+// supply. There is no "+ Add Account" tile on this screen at all — that
+// tile lives on AccountPickerScreen instead, one tier up (2026-08-14
+// redesign; this doc block used to claim otherwise, a stale leftover from
+// before that redesign, corrected here).
+//
+// profile-picker-sections is a list of household sections (2D nav,
+// modeled directly on Discover's own landing-row pattern — see
+// discover.rs::handle_key_landing): profile-picker-section picks the
+// ROW (which section has focus), profile-picker-cursor picks the COLUMN
+// within that section's own tile row, exactly like Discover's own
+// focused-section/discover-landing-card pair. Section 0 is always
+// profile-picker-account-root-id's own group (its own root/master tile
+// included); any further sections are OTHER households linked via a
+// Bonfire group (profile.rs::linked_account_roots), each ALSO showing
+// that household's own full member list, root tile included — a linked
+// household's own master is just as directly clickable as its
+// sub-profiles. PIN entry is a second, layered state
+// (show-profile-pin-entry), not a separate screen, entered after
+// picking a tile whose requires-pin is true.
+```
+
+Above `in-out property <string> profile-picker-account-root-id: "";`:
+```
+// Account/profile 2-tier redesign (2026-08-14, live-reported design
+// feedback — see profile.rs::should_show_picker_at_startup's own doc
+// comment for the full design). Section 0 of profile-picker-sections is
+// now ALWAYS scoped to one account (profile-picker-account-root-id)
+// rather than the flat Config.profiles list — even the common
+// single-account case is just "the one account this screen was opened
+// with", not a special case.
+```
+
+Above `in-out property <string> profile-picker-back-mode: "accounts";`:
+```
+// Real bug, live-reported 2026-08-19: "if you was in fjord and pressed
+// switch profile you shuld go back to fjord as the same profile you
+// was" — the 2026-08-17 fix below made this button unconditionally
+// "← Back to Accounts", reasoning that a cold-start picker has no live
+// session to cancel back to (true) — but that reasoning doesn't hold
+// for the sidebar's own "Switch Profile" action, which opens this
+// exact screen DIRECTLY from an already-live session, never through
+// the account tier at all; going "back" there should mean "cancel and
+// keep using the profile I already had," not "go to Accounts," which
+// isn't even where the user came from. "accounts" | "cancel" — set by
+// profile::open_profile_picker from (via_account_picker || !cancelable)
+// vs (cancelable && !via_account_picker); the two are mutually
+// exclusive and exhaustive, so exactly one of the two buttons below is
+// ever shown.
+```
+
+Above `in-out property <bool> profile-picker-back-focused: false;`:
+```
+// Real bug, live-reported 2026-08-16: "← Back to Accounts" was visible
+// and mouse-clickable but had no keyboard CURSOR path onto it at all —
+// only the Escape/Backspace shortcut reached it, unlike every other
+// "Back" button in this app (Detail/Season/Collection/Album/Artist all
+// establish the same "Up from row 0 focuses Back, Enter activates it"
+// convention). Up from the tile row (when the button exists) sets this;
+// Down returns to the tile row; Enter/Escape/Backspace all activate it
+// the same as the pre-existing shortcut already did.
+```
+
+Above `in-out property <bool> profile-picker-quit-focused: false;`:
+```
+// Same gap, same fix shape, for the Quit button (2026-08-16, direct
+// follow-up: "quit it not also reacheble by keybord navigation") —
+// Ctrl+Q already quits from any screen, but there was no way to move
+// a keyboard cursor onto the on-screen Quit button and press Enter.
+// Down from the tile row sets this (always reachable, unlike the
+// conditional Back button); Up returns to the tile row;
+// Enter activates; Escape/Backspace un-focuses it without quitting.
+```
+
+Above `in-out property <bool> profile-picker-loading: false;`:
+```
+// True from the moment a tile (or a confirmed PIN) is selected until
+// switch_to_profile's async work resolves — the whole flow (a Bonfire
+// /switch network round trip, or a plain-account check_auth revalidation,
+// then finish_session_setup's own home/series/system-info fetches) can
+// take several real seconds with nothing on screen changing otherwise.
+// Real gap, live-reported 2026-08-14: "you press enter and nothing
+// happens for a really long time then you get in to fjord, no feedback
+// whats going on." Drives a loading overlay in profile_picker.slint and
+// gates on_profile_picker_select/on_profile_pin_key's confirm arm
+// against a second concurrent switch attempt from an impatient repeat
+// press (confirmed as a real risk from the same live session's own log,
+// which showed a burst of repeated switch attempts during an earlier,
+// unrelated stuck-token incident).
+```
+
+Above `in-out property <bool> show-profile-pin-entry: false;`:
+```
+// "+ Add Account" moved to the account-tier picker (2026-08-14, see
+// below) — a profile-tier picker is always scoped to one already-known
+// account, so adding a brand-new one doesn't belong at this tier
+// anymore (also directly requested: "so for the profile choser it
+// shuld be add profile insted of add account").
+```
+
+Above `in-out property <bool> profile-pin-cancel-focused: false;`:
+```
+// Real bug, live-reported 2026-08-17: "there is no backbutton or so so
+// nothing dpad navigatible or mouse svigatible to get back... cant
+// close the pin screen without escape ether" — a real "← Cancel"
+// FjordButton (mouse + D-pad reachable, mirroring
+// profile-picker-back-focused/-quit-focused's own established shape)
+// replaces the plain "Back cancels" hint text, which was never an
+// actual control. Down past the VirtualKeyboard's bottom row focuses
+// it; Up returns to the grid; Enter/Escape/Backspace all cancel.
+```
+
+Above `in-out property <bool> profile-picker-cancelable: false;`:
+```
+// Reopening the picker from a LIVE session (the sidebar "Switch Profile"
+// action, 2026-08-14) vs. the original startup-only gate — the startup
+// picker has nothing to "cancel back to," so it never had Escape/Back
+// handling at all; a live-session reopen needs one, gated by this flag
+// so the original startup path is completely unaffected.
+```
+
+Above `in-out property <bool> show-account-picker: false;`:
+```
+// ── Account picker (2026-08-14, the 2-tier account/profile redesign) ───────
+// Sits ABOVE the profile picker — shown instead of it when 2+ distinct
+// ACCOUNTS exist (an "account" is a plain login, or a whole Bonfire
+// household represented by its master; see profile.rs::AccountGroup).
+// Same shape as the profile picker in every other respect: a tile row
+// (AccountTile now, not ProfileTile) + a trailing "+ Add Account" tile
+// + a loading overlay while a single-profile account's switch is in
+// flight. Picking a tile with more than 1 profile opens the profile
+// picker scoped to it; a 1-profile tile switches directly (or opens
+// the profile-tier PIN modal, reusing that screen's own PIN state —
+// there's no separate account-level PIN concept at all).
+```
+
+Above `in-out property <bool> account-picker-back-focused: false;`:
+```
+// Real gap, live-reported 2026-08-21 ("when chosing switch accaunt
+// there is no back button shuld it shuld have as you can go back with
+// escape if you came from fjord if it shows when you start fjord it
+// shuld not have a back button as its the first screen right") —
+// account-picker-cancelable already distinguished exactly this case
+// (Escape/Backspace only closes the picker when cancelable, keys.rs),
+// but nothing ever surfaced a visible/focusable button for it —
+// AccountPickerScreen had a Quit button but no Back one at all, unlike
+// ProfilePickerScreen's own (always-shown) Back button. This one is
+// conditional on account-picker-cancelable — correctly absent at cold
+// startup, where there's no live session to cancel back to.
+```
+
+Above `in-out property <ProfileTile> current-profile-tile;`:
+```
+// Sidebar profile row (2026-08-14, live-reported: "the profile shuld
+// also be added to the sidebar so you now the user and you shuld be
+// abel to naviget to it and pressit to get options like change user
+// etc") — active-nav == 7, between Discover/Browse All and Settings in
+// the sidebar cycle (browse.rs::sidebar_nav). Shows the CURRENTLY
+// active profile (avatar + name), reusing ProfileTile — pushed by
+// profile.rs::push_current_profile_tile on every session start/switch.
+```
+
+Above `in-out property <string> settings-launch-policy: "always_ask";`:
+```
+// ── Launch policy (Settings → Profiles, Bonfire Phase 1, step 7) ────────────
+// Governs whether show-profile-picker is even considered at startup — see
+// profile.rs::should_show_picker_at_startup. "always_ask" | "remember_last"
+// | "default", same raw strings DeviceConfig.launch_policy stores.
+// settings-default-profile-id/-desc/-display mirror the existing dynamic-
+// dropdown shape (font-family/streaming-region) — the option list is
+// Config.profiles, not a fixed compile-time list, so it's pushed from Rust
+// (profile::refresh_profile_settings_dropdown) rather than declared inline.
+// -id is the raw value persisted to DeviceConfig.default_profile_id; -desc
+// is its display label; -display is the full option list of labels.
+```
+
+Above `in-out property <bool> settings-is-master-profile: true;`:
+```
+// Gates the Manage Profiles row (Bonfire Phase 2) — true when the
+// ACTIVE profile is itself a master account, i.e. NOT a Bonfire
+// sub-profile (Config.active().is_bonfire). Refreshed at the same two
+// points as the default-profile dropdown above (apply_settings_to_window
+// + finish_session_setup) for the same reason: it can only meaningfully
+// change at a session-start boundary.
+```
+
+Above `in-out property <string> settings-account-launch-policy: "always_ask";`:
+```
+// ── Account launch policy (Settings → Profiles, 2026-08-14) ─────────────────
+// The identical shape one tier up — governs whether show-account-picker
+// is considered at startup, same 3 raw strings, same dynamic-dropdown
+// shape for the default-account picker (options are the known accounts'
+// own display names, not a fixed list). Only meaningfully different from
+// anything visible when 2+ accounts actually exist — see
+// should_show_picker_at_startup's own doc comment.
+```
+
+Above `callback settings-add-account();`:
+```
+// Settings → Profiles' own "Add Account" row (2026-08-14) — always
+// reachable regardless of how many accounts already exist, unlike the
+// picker tiles (which only show once there's a 2nd account to switch
+// between) — this is the actual way to go from 1 account to 2.
+```
+
+Above `in-out property <bool> settings-remember-login: true;`:
+```
+// ── Remember this login toggle (Settings → Profiles, 2026-08-17) ────────────
+// Live-questioned: "no why to change this on the accaunt without
+// sinign out and in again" — remember_login (whether this account's
+// root silently resumes at startup vs. always re-prompting for a
+// password, see should_show_picker_at_startup's RequireLogin arm)
+// previously could only ever be set at the moment of an original
+// login, with no way to flip it for an already-added account short of
+// a full sign-out + re-add. Per the user's explicit choice (of 3
+// offered): turning it OFF (more restrictive) is immediate, no proof
+// needed; turning it back ON (resumes silently again) requires a real
+// password re-check first — remember-login-confirm below is that
+// check, a small standalone modal (not the full LoginScreen/do-login
+// pipeline, which would tear down and rebuild the whole active
+// session for something that's really just "prove you still know the
+// password").
+```
+
+Above `in-out property <bool> show-manage-profiles: false;`:
+```
+// ── Manage Profiles + Profile Edit (Bonfire Phase 2, 2026-08-09) ────────────
+// ManageProfilesScreen: same tile-row + "+" shape as ProfilePickerScreen
+// above, reusing ProfileTile — just opens ProfileEditScreen per tile
+// instead of switching sessions. Only reachable when the active profile
+// is itself a master account (Settings gates the row on !is_bonfire; the
+// server would likely reject /list for a sub-profile caller anyway,
+// never live-verified).
+```
+
+Above `in-out property <int> manage-profiles-max-sub-profiles: 5;`:
+```
+// Real bug, live-reported 2026-08-17: "the add profile did not
+// dissapear when max profiles for master accaunt was reached" — the
+// Add-tile visibility gate and Manage Profiles' own subtitle text both
+// hardcoded "5" as Bonfire's sub-profile cap, but the real,
+// authoritative value is per-master (BonfireProfile.max_sub_profiles,
+// returned on the MASTER's own /list entry — the one entry this screen
+// otherwise filters out entirely) and can be raised/lowered server-side
+// via Bonfire's own admin_set_profile_limit. Populated by
+// open_manage_profiles_screen from that field, defaulting to 5 only
+// when the server genuinely reports 0/absent.
+```
+
+Above `in-out property <bool> manage-profiles-close-focused: false;`:
+```
+// Real gap, live-reported 2026-08-21 ("when in the manage profile
+// picker you cant go back without pressing escape, it has a x for the
+// mouse but cant get to it with keybord nav or dpad") — the same class
+// of bug already found and fixed once this session for LoginScreen's
+// Back/Quit and AccountPickerScreen's Back button: the "✕" close
+// button was mouse-only, no kbd-focused binding at all. Up from the
+// tile row focuses it, Down returns, Enter/Escape/Backspace close —
+// same convention as every other "Back button" in this app.
+```
+
+Above `in-out property <bool> show-profile-edit: false;`:
+```
+// ProfileEditScreen: originally built mouse + physical-keyboard driven
+// (native-LineEdit-focus shape, like LoginScreen/ConnectSeerrScreen) —
+// chosen at the time so free-text fields (name, tags) worked without
+// waiting on Phase 3's still-unbuilt full alphanumeric on-screen
+// keyboard (confirmed via AskUserQuestion, not assumed). Gained full
+// D-pad navigation 2026-08-17, live-reported twice ("no keybord
+// navigation in manage profiles" / "still no keybord nav in edit
+// profile") — a second AskUserQuestion confirmed the user wanted the
+// WHOLE screen, not just the two PIN pads. The one thing that's still
+// genuinely out of scope, unchanged from the original decision: typing
+// actual CHARACTERS into Name/Blocked tags/Allowed tags still needs a
+// physical keyboard, since Phase 3's on-screen alphanumeric keyboard
+// still doesn't exist — D-pad can enter/exit those three fields, it
+// just can't type into them. See profile-edit-zone below for the full
+// per-zone design; dispatched from keys.rs::handle_key_profile_edit
+// (profile_edit.rs), not inline in keys.rs itself, matching
+// discover.rs::handle_key_request_options's own factoring for a
+// comparably-sized multi-zone screen.
+```
+
+Above `in-out property <int> profile-edit-zone: 0;`:
+```
+// Stable zone id (not a traversal position — the "gaps are fine" idiom
+// already established by discover.rs's existing_option_zones), top to
+// bottom matching the screen's visual order: 0=Name 1=Avatar color
+// 2=PIN pad 3=Max parental rating 4=Enabled libraries (conditional,
+// absent when the fetched list is empty) 5=Blocked tags 6=Allowed tags
+// 7=Auto-lock dropdown 8=Skip PIN on this network 9=Allowed devices
+// (conditional) 10=Your own account PIN pad 11=Button row. The header
+// ✕ is deliberately not a zone — Escape already closes the screen,
+// matching ConnectSeerrScreen's/ManageProfilesScreen's own ✕ buttons,
+// neither of which is keyboard-focusable either.
+```
+
+Above `in-out property <bool> profile-edit-is-self: false;`:
+```
+// true when this screen was opened via the sidebar's "Edit My Profile"
+// (a master editing itself) rather than via Manage Profiles (a master
+// editing one of its own sub-profiles) — 2026-08-17, live-questioned
+// ("shuld they not be able to changepin etc on there own profile?").
+// Hides Delete (self-delete makes no sense here) and changes where
+// Save/Cancel return to, since there's no Manage Profiles list to
+// reopen for this entry point.
+```
+
+Above `in-out property <string> profile-edit-blocked-tags-initial: "";`:
+```
+// Same "LineEdit starting text" shape for the two tag fields — BonfireProfile
+// (the /list response) DOES carry blocked/allowed tags, unlike
+// max_parental_rating (never returned by /list at all, so that dropdown
+// has no pre-fill and always starts at "Any" — see profile_edit.rs's own
+// doc comment for why leaving it untouched is still correct, not a gap).
+```
+
+Above `in-out property <int> profile-edit-pin-len: 0;`:
+```
+// PIN digits are Rust-only (FjordState.profile_edit_pin_buffer), never
+// round-tripped through Slint — same security discipline as the
+// picker's own profile-pin-len/profile-pin-key. Left empty on save
+// means "don't change the existing PIN" in edit mode, "no PIN" in
+// create mode — typing digits always means "set/replace it".
+```
+
+Above `in-out property <bool> show-profile-edit-delete-confirm: false;`:
+```
+// Confirmation dialog before an actual delete, 2026-08-21 — live-
+// reported directly ("we shuld add a confirmation dialog when deliting
+// profile"): the Delete button previously fired immediately on click/
+// Enter, no way back from an accidental press. Same ConfirmDialog
+// shape (widgets.slint) and "screen owns Left/Right/Confirm/Back,
+// dialog itself is keyboard-dumb" convention already established for
+// Key Bindings' own Reset-to-Defaults/rebind-collision dialogs —
+// reused directly, no new modal mechanism invented. Defaults to
+// Cancel focused, matching that same precedent.
+```
+
+Above `// ── On-screen alphanumeric keyboard ─────────────────────────────────────────`:
+```
+// show-sidebar-profile-menu/-manage-profiles/-profile-edit added
+// 2026-08-16 (code review): none of these three change active-nav
+// away from 7 (the Profile row) or touch focused-section, so
+// without this exclusion the sidebar's own "Profile" row kept
+// double-flashing its press-pulse alongside whatever row/tile
+// inside these overlays the user actually activated (they all
+// bump the same shared kb-activate-pulse counter on Enter).
+// Discover (active-nav==6) deliberately does NOT get its own
+// exclusion here, unlike Settings (10) — Discover now replicates
+// dispatch_dashboard's focused-section sidebar/content contract
+// itself (discover::handle_key), so focused-section < 0 alone
+// correctly means "sidebar focused" there too, same as Home/Movies/TV.
+```
+
+Above `in-out property <bool> show-onscreen-keyboard:   false;`:
+```
+// ── On-screen alphanumeric keyboard (Bonfire Phase 3, 2026-08-22) ───────────
+// Generic, screen-agnostic — a screen opens this by setting
+// onscreen-keyboard-target to its own id, onscreen-keyboard-cursor to 0,
+// show-onscreen-keyboard to true, then calling AppState.refocus() (native
+// LineEdit focus, if any, must be released so keys.rs's own dispatch tier
+// — a sibling, not an ancestor, of any screen — starts seeing keys again).
+// Each screen's own key-pressed(k) handler decides what its own target id
+// means; nothing here is specific to Login, the first screen wired up to
+// use it (ProfileEditScreen, Discover search, Browse search, PlaylistPicker
+// naming, and ConnectSeerr all followed by 2026-08-23). See widgets.slint's
+// QwertyKeyboard for the keyboard widget itself.
+```
+
+Above `out property <[int]> onscreen-keyboard-row-lens: [10, 9, 9, 5];`:
+```
+// Single source of truth for grid TOPOLOGY only (the 4 row lengths) —
+// never key VALUES, which live only inside QwertyKeyboard itself. Both
+// Slint's own for-loops there and keys.rs's cursor-movement math need
+// this one array; deliberately narrower in scope than the numeric
+// VirtualKeyboard's own PIN_VALS, which duplicates full key values by
+// hand in three separate places (keys.rs, profile_edit.rs, widgets.slint)
+// — a stale row-length here can only mis-land a cursor by one cell, it
+// can never silently invoke the wrong action the way a wrong VALUE could.
+// Last row: 123 · ◀ · space · ▶ · Done (◀ ▶ added 2026-10-05).
+```
+
+Above `out property <int> onscreen-keyboard-done-cursor: 32;`:
+```
+// Flat row-major index of the "Done" key — the LAST cell (row 3, col 2)
+// on both pages, per QwertyKeyboard's own doc comment ("both pages
+// deliberately share the identical [10,9,9,3] row-length shape"). Every
+// "open the keyboard" call site sets onscreen-keyboard-cursor to THIS,
+// not 0 (2026-08-25, live-reported: "if the user open it by misstake
+// they just need to press enter/ok to get out of it") — landing on the
+// first letter key meant an accidental open needed real navigation to
+// escape; landing on Done means a stray Enter that opened it can be
+// dismissed by the exact same key. A plain literal, not derived from
+// onscreen-keyboard-row-lens above — has to be kept in sync with it by
+// hand (currently 10+9+9+5-1=32), the same "kept in lockstep by hand,
+// no shared source of truth" caveat that array's own doc comment
+// already carries for a different reason.
+```
+
+#### `crates/fjord-app/ui/app_state.slint`
+
+Above `pure callback onscreen-keyboard-trim-last(string) -> string;`:
+```
+// Two small, generic Rust string utilities — Slint's own `string` type has
+// no `.length`/`.substring()` (only `.character-count()`/`.to-uppercase()`/
+// `.to-lowercase()`/`.is-empty()`, confirmed against the real Slint 1.16.1
+// compiler source), so backspace (removing exactly one Unicode character,
+// not byte) and "get the real UTF-8 byte length" (needed for
+// LineEdit.set-selection-offsets, which operates on byte offsets, not
+// character-count()'s Unicode-scalar count) both need a real Rust
+// implementation. Pure, stateless, no screen/field knowledge — reusable
+// by every future screen this keyboard gets wired into.
+```
+
+Above `in-out property <string> settings-focused: "";   // "" = left pane focus, else the focused row's sta`:
+```
+// Phase 0 (2026-08-07, Bonfire prep): both were `int` (a row-index /
+// section-index) — appending a new section or row anywhere but the very
+// end meant renumbering everything after it by hand, both in settings.rs
+// AND settings.slint, with nothing catching a mismatch except a live
+// test. Stable string keys (e.g. "general.launch_fullscreen",
+// "video") make row/section identity immune to insertion position
+// entirely — see settings.rs's own module doc comment for the full
+// design. "" is the sentinel for "no row/section focused" (was -1).
+```
+
+Above `in-out property <bool> skip-fade-active:   false;`:
+```
+// Drives player.slint's fade-to-black around a skip-segment seek
+// (2026-08-11 — "make intro skip etc more gradual, it feels instant and
+// jarring"). Set true the instant a skip is decided (all 3 paths: auto
+// always-skip, ask-timed countdown expiry, manual Skip confirm), before
+// the real seek fires; playback.rs's own tick loop clears it back to
+// false once the delayed seek has actually happened. See
+// VideoState.pending_skip_seek's own doc comment for the full sequencing.
+```
+
+Above `in property <string> stat-color-in:  "—";`:
+```
+// Split into IN (source file's own mastering info) / OUT (what's actually sent to the
+// display after tone-mapping) 2026-08-15 — was one "stat-color" property; a Dolby
+// Vision/HDR file tone-mapped to SDR shows "bt.2020 · pq" for IN and "bt.709 · bt.1886"
+// (or similar) for OUT, and only OUT answers what a TV's own HDR/gamut mode should
+// actually be set to match. See stats.rs's own doc comment for the full reasoning.
+```
+
+Above `in-out property <[CardItem]> discover-coming-up-mixed:  [];`:
+```
+// Same Coming Up data as discover-coming-up above, but sentinel-free and
+// split mixed/movies/tv (2026-08-02, user request — "the coming up row
+// shuld also be in home dashbord, and it shuld be a coming up in series
+// dashbord that is filtered for series and in movies dashbord that is
+// filtered for movies") — feeds the Home/TV/Movies dashboard rows
+// (home.slint), mirroring discover-watchlist-mixed/-movies/-tv's own
+// 3-way split immediately below exactly (same source function,
+// discover.rs::push_coming_up_row, builds all 4 models together).
+```
+
+Above `in-out property <[CardItem]> discover-watchlist-mixed:  [];`:
+```
+// "Watchlist" (2026-07-20, user request — "add a row for the watchlist
+// as in seerr") — every item on the Seerr watchlist, mixed movies+TV,
+// capped at 20 (discover.rs::fetch_and_store_watchlist, same shape as
+// fetch_requested_row). Deliberately NOT deduped against Coming Up —
+// an item with a known upcoming date legitimately shows in both,
+// matching this codebase's own precedent (Coming Up itself is never
+// deduped against Requested). Also feeds the Home dashboard's own
+// Watchlist row (home.slint) — same property, two screens, since
+// AppState is a global singleton. discover-watchlist-movies/-tv are
+// the client-side-filtered variants feeding the Movies/TV dashboards
+// (mirrors the existing Continue Watching 3-way mixed/movies/tv split,
+// home.rs's cw_movies/cw_tv).
+```
+
+Above `in-out property <string> discover-filter-type-desc:   "All";`:
+```
+// ── Discover filters (2026-07-18) ─────────────────────────────────────────
+// Persisted (Config.discover_filter_*, loaded at startup/on-change saved).
+// Type/Sort/Rating/Year are single-value pills, SettingsDropdown-popup
+// shape (desc = current display string, mirrors settings-streaming-
+// region-desc's own pattern) — but Discover has NO Settings-style
+// dropdown-open keyboard machinery of its own to reuse (SettingsDropdown
+// itself is mouse-only; every keyboard-operable instance today only
+// works because settings.rs::dispatch_settings layers Settings-specific
+// capture logic on top) — discover-popup-open/-cursor below is that
+// machinery's Discover-owned equivalent, built fresh, not shared.
+```
+
+Above `in-out property <bool> discover-filters-active: false;`:
+```
+// Whether ANY of the 6 dimensions is set away from its default — set by
+// Rust (discover.rs::discover_filters_active, the single source of
+// truth) alongside the *-desc properties above, never recomputed here
+// in Slint, so the landing-rows/filtered-browse view switch can't drift
+// out of sync with the identical check Rust itself uses to decide
+// which fetch to trigger (the exact "two places, only one updated"
+// class of bug this project has already hit once — see CLAUDE.md's
+// Seerr integration section).
+```
+
+Above `in-out property <string> request-detail-status:        "";`:
+```
+// 2K tier's own display status: "" (requestable, counts toward showing
+// the Request button) | "Requested" | "Needs Approval" | "Processing" |
+// "Partially Available" | "Available" | "Declined" — the FINAL display
+// text already, computed by discover.rs::tier_status_label (combines
+// Seerr's fulfillment status AND the request's own approval-workflow
+// status; NOT the same short-code scheme as CardItem.availability).
+// request-detail-status-4k is the identical thing for the 4K tier —
+// the two are tracked completely independently by Seerr (real bug fixed
+// 2026-07-18: requesting 4K used to blank BOTH out, hiding 2K's own
+// still-open Request option entirely — see submit_request's own doc
+// comment). The Request button (request_detail.slint) shows whenever
+// EITHER is still "" — clicking it opens the same Request Options modal
+// either way; its Quality toggle is what picks which tier you're
+// actually submitting.
+```
+
+#### `crates/fjord-app/ui/app_state.slint`
+
+Above `in-out property <int> request-detail-btn-focused:   0;`:
+```
+// Button row focus — a "gaps are fine" slot index (same idiom as
+// context_menu.rs's Discover row set), not a fixed 0/1 binary: 0=Request
+// (only when at least one tier is still requestable), 1=Trailer (only
+// when found + yt-dlp available), 2=⋮ More (only when
+// request-detail-request-id is non-empty). discover.rs's
+// existing_detail_btn_slots() resolves which of these exist for the
+// current item and clamps this to a valid one on every zone-0 key press.
+// Every site that changes this (keyboard zone entry, any button's own
+// `clicked` handler) must keep it in sync — see the mouse/keyboard focus
+// desync bug class documented in CLAUDE.md's Seerr integration section
+// (Phase 142's zone-numbering fix) this mirrors.
+```
+
+Above `in-out property <int> request-detail-zone:          0;`:
+```
+// Vertical flow below the back button: 0=button row (Request/4K),
+// 1=storyline (collapsible overview, only if overview non-empty),
+// 2=cast row (only if any), 3=tags row (only if any), 4=seasons row
+// (TV only, only if any). Up/Down step to the nearest zone that exists
+// for the current item — discover.rs owns that "which zones exist" list.
+// Replaced the earlier two-bool (in-tags/in-seasons) model once a third
+// and fourth optional zone (storyline, cast) made one flag per zone
+// stop scaling.
+```
+
+Above `in-out property <string> context-menu-jf-tmdb-id:     "";`:
+```
+// Jellyfin context-menu Watchlist row (2026-07-19, real gap live-
+// reported — "you cant add anyting from the library to the watchlist":
+// an already-in-library item redirects straight to the real Jellyfin
+// DetailPage/its Jellyfin-flavored context menu, which never had a
+// Watchlist row at all). "" = no resolvable TMDB id for this item (row
+// 8 hidden) — resolved server-side by open_context_menu_state via
+// MediaItem.provider_ids["Tmdb"], Movie/Series only (matches Seerr's
+// own Watchlist mediaType enum). context-menu-jf-media-type is
+// "movie"/"tv", the exact string discover_toggle_watchlist expects.
+// context-menu-on-watchlist (above) is reused for this row's own
+// Add/Remove label too, not a second bool — the two menu families are
+// mutually exclusive per open, so there's no risk of them colliding.
+```
+
+Above `callback playlist-picker-name-append(string);`:
+```
+// On-screen keyboard rollout (2026-08-23) — real callbacks, mirroring
+// discover-search-append/-backspace's shape, rather than the on-screen
+// keyboard mutating playlist-picker-name directly from Slint. Also
+// reused by handle_playlist_picker's own EXISTING physical-typing
+// branches (previously a direct g.set_playlist_picker_name(...)
+// mutation) so both input paths share one grapheme-cluster-correct
+// implementation instead of two independently-mutating ones.
+```
+
+Above `in-out property <bool> show-keybinding-reset-confirm:      false;`:
+```
+// Reset to Defaults confirmation (2026-08-07, live-tested feedback: the
+// button gave no visual indication it was focused/pressed, and reset
+// fired immediately on Confirm/click with no way to back out of an
+// accidental press). keybinding-focused stays at its "on the Reset
+// button" value (== keybinding-normal.length + keybinding-player.length)
+// for the whole time this is open, whether it was opened by keyboard or
+// mouse — see settings.rs::dispatch_keybinding_nav's own doc comment.
+```
+
+Above `in-out property <bool> show-keybinding-collision-confirm:      false;`:
+```
+// Rebind-collision confirmation (2026-08-08) — rebinding a key already
+// used by a DIFFERENT action used to silently steal it with no warning
+// at all (plain HashMap::insert overwrite). keys.rs::rebind_action now
+// stashes the pending combo in FjordState.pending_keybind_rebind and
+// shows this instead of applying it; keybinding-collision-confirmed/
+// -cancelled (main.rs) resolve it either way.
+```
+
+Above `in-out property <bool> settings-display-sync-enabled:            false;`:
+```
+// ── display_sync (2026-09-18) — resolution/refresh-rate/HDR/WCG matched
+// to source, ported from the user's proven external media_display_sync
+// script (kscreen-doctor on KDE Plasma Wayland). See CLAUDE.md's own
+// display_sync section for the full design, including why this is
+// gated on two separate one-shot flags in wire_mpv_timer (playback.rs)
+// rather than folded into HDR Stage 3's own trigger. screen-options is
+// populated once at startup by shelling out to `kscreen-doctor -o`
+// (main.rs); screen-name is the actual persisted value, never auto-
+// re-detected at runtime — see display_sync::detect_active_output's own
+// doc comment for why guessing every run would be wrong the moment a
+// second output exists. screen-options' entries can be annotated
+// ("HDMI-A-2 (Primary)" for whichever output KDE reports as priority 1)
+// — screen-desc is the CURRENTLY selected entry's own annotated label,
+// kept separate from screen-name (always the bare connector name) the
+// same way audio-device-desc is kept separate from the raw device name
+// main.rs resolves it back to via FjordState.display_sync_outputs.
+// resolution-options/hz-options are likewise fetched at startup (for
+// whichever screen ends up selected) AND re-fetched every time the
+// Output selection actually changes — a previous output's supported
+// modes are meaningless for a different display — via
+// display_sync::supported_resolutions_and_hz; both are real per-output
+// query results, not the fixed 3-resolution/7-Hz compile-time lists
+// this originally shipped with.
+```
+
+Above `in-out property <bool> settings-onscreen-keyboard-enabled: true;`:
+```
+// ── On-screen alphanumeric keyboard (Settings → UI, 2026-08-27) — plain
+// persisted toggle, Config.device.onscreen_keyboard_enabled, default
+// true (Fjord must stay usable with no physical keyboard attached,
+// which is the whole reason this feature exists). Read by every
+// QwertyKeyboard mount condition across the app (so the widget never
+// renders when this is off) AND by keys.rs's own on-screen-keyboard
+// dispatch gate (so a lingering show-onscreen-keyboard=true from
+// before the setting was turned off can never turn into an input
+// lockout — that gate runs before every other tier and unconditionally
+// consumes any key while active).
+```
+
+Above `in-out property <bool> settings-seerr-enabled: false;`:
+```
+// ── Seerr integration (Settings → Integrations, discover.rs/seerr_auth.rs) ──
+// settings-seerr-enabled is the persisted toggle; seerr-connected +
+// seerr-connected-label are live state pushed by Rust whenever the
+// connection changes (login, disconnect, a 401 re-auth reset) OR the
+// toggle itself changes (seerr_auth::push_seerr_status's own `connected`
+// computation ANDs in `c.seerr_enabled` — confirmed live, corrected
+// 2026-07-17: this comment previously (wrongly) called enabled/connected
+// fully independent). What genuinely IS independent, and what that
+// claim was really about: the underlying Config credentials
+// (seerr_api_key/seerr_session_cookie) are never cleared just by
+// toggling seerr-enabled off — disabling only hides/pauses everything
+// Seerr-related (seerr-connected goes false, the live seerr_client is
+// torn down, on_settings_changed) without forgetting the saved
+// connection, so re-enabling reconnects instantly with no re-auth.
+```
+
+Above `in-out property <bool> show-seerr-disconnect-confirm: false;`:
+```
+// Confirmation before an actual disconnect, 2026-08-22 — direct request
+// ("mabey shuld add it to other destructive things like sing out etc
+// too?"), alongside Sign Out and Clear Queue below. Settings-only
+// (single trigger context — the Integrations Connect/Disconnect row),
+// so dispatch lives entirely inside settings.rs::dispatch_settings
+// rather than needing a global pre-active_mode() tier the way Sign Out
+// does. Same ConfirmDialog shape/reuse as every other instance in this
+// app; dialog declared last in settings.slint so it renders on top.
+```
+
+Above `in-out property <string> settings-discover-region-desc: "";`:
+```
+// Discover Region (Settings -> Integrations, 2026-07-18, Watchlist +
+// Release Calendar) -- a real, live setting, correcting the stale claim
+// this file used to make above. discoverRegion genuinely IS dead for
+// the /discover/movies /discover/tv LIST query (streamingRegion is what
+// that reads, confirmed) -- but Seerr's own MovieDetails page reads
+// discoverRegion directly to pick which region's theatrical/digital/
+// physical release dates to show, a real, separate use this app's own
+// release-date resolver (discover.rs::resolve_discover_region) now
+// relies on. Reuses settings-streaming-region-display (the SAME
+// fetched region list) rather than a second fetch -- only the desc
+// value differs, since it's a different underlying setting on the same
+// catalog of regions.
+```
+
+Above `in-out property <string> settings-trailer-quality: "1080p";`:
+```
+// Trailer Quality (Settings → Integrations, only shown when
+// seerr-connected, same gate as Streaming Region) — a plain **static**
+// dropdown (unlike Streaming Region/Text font/Audio device above): the
+// option list ("Best"/"1080p"/"720p"/"480p") is fixed at compile time,
+// no async fetch needed, so this uses the generic dropdown_model/
+// current_value_str/apply_dropdown_selection path in settings.rs — same
+// shape as e.g. the Seeking rows, not a special-cased dynamic one.
+// Caps mpv's ytdl-format for Watch Trailer playback (main.rs::
+// trailer_ytdl_format); "1080p" is the default (Config.trailer_quality) —
+// display-ready values stored directly, same idiom as settings-sub-color.
+```
+
+Above `in-out property <bool> show-connect-seerr:       false;`:
+```
+// ── ConnectSeerrScreen (connect_seerr.slint / seerr_auth.rs) ────────────
+// method: 0=API key, 1=Jellyfin login, 2=Quick Connect, 3=Local account.
+// qc-* is Quick Connect's own sub-state (code shown to the user, secret
+// threaded back on each poll tick, polling bool gates the Timer).
+//
+// connect-seerr-zone (2026-08-23, full D-pad rollout — this screen had
+// ZERO keyboard navigation before this, pure mouse + native Tab order)
+// — the same "gaps are fine, current valid list recomputed live off
+// current state" pattern as ProfileEditScreen's own zone system
+// (profile_edit.rs::existing_profile_edit_zones), just resolved here as
+// seerr_auth.rs::existing_connect_seerr_zones and dispatched inline in
+// keys.rs's show_connect_seerr tier (mirroring login-zone's shape, not
+// ProfileEditScreen's delegate-to-a-separate-function one — this
+// screen's zone count, while variable, stays small enough not to need
+// its own file the way ProfileEditScreen's 12+ zones did). Zone -1 =
+// the close-✕ button (reached via Up from zone 0, mirroring how
+// login-zone's own Back sits above zone 0 too); zone 0 = url-input
+// (shared across every tab, the topmost navigable field right below
+// Close); zone 1 = the tab row (Left/Right cycles connect-seerr-method
+// directly, also clearing connect-seerr-error — matching each
+// MethodTab's own mouse click handler exactly); zones 2+ vary by
+// connect-seerr-method AND, for Quick Connect specifically,
+// connect-seerr-qc-polling (a polling QC tab has nothing interactive
+// below the URL field at all — its body swaps to a code display with a
+// 2s-Timer-driven poll, no button to focus). Native LineEdit focus
+// (zone 0 and whichever text-field zones 2+ resolve to) is entered via
+// each field's own key-pressed hook calling AppState.refocus() +
+// setting connect-seerr-zone, same mechanism login-zone's own zones
+// 0-2 already use — the global fs FocusScope is a sibling, not
+// ancestor, of this free-floating overlay, so keys.rs's own dispatch
+// tier never sees a key at all while a LineEdit holds real focus.
+// Zones 0/1 were swapped 2026-08-26 (real, live-reported navigation
+// bug: "the keybord nav on seerr connect seams off it do not go where
+// you are expekting") — originally 0=tab row/1=url-input, the REVERSE
+// of the screen's actual visual order (url-field-wrap renders ABOVE
+// the tab row in connect_seerr.slint), so navigating "down" the zone
+// list from the tab row visually moved UP the screen to the URL
+// field. See seerr_auth::existing_connect_seerr_zones' own doc comment
+// for the corrected map.
+```
+
+Above `public pure function section-len(s: int) -> int {`:
+```
+// ── Nav helper pure functions (used by MainWindow keyboard handler) ──────────
+// Watchlist row (2026-07-20, nav 0/1/2 only): 2 of these 6 functions
+// (section-len, section-card-item) are ternary chains keyed on `s == N`,
+// each ending in an IMPLICIT trailing else that silently covered "any
+// s >= 4" — extending to a 6th row (s==5) requires an EXPLICIT `s == 4`
+// branch inserted before the new else, in all 3 nav branches, across
+// both functions — otherwise s==5 silently reads s==4's own data
+// instead of failing to compile (caught by an independent plan review
+// before this row was added). The other 4 functions
+// (find-first/next/prev-section, section-card-id at the time) use a
+// different literal pattern (`section-len(N)`/`from ± N`) or were
+// extended separately — their own bound bumped from 4 to 5.
+//
+// Coming Up row (2026-08-02, nav 0/1/2 only, 7th row): the exact same
+// extension repeated one row further — an explicit branch for row index
+// five inserted before a new trailing else (row index six), in all 3
+// nav branches of the (then 3, now 2 — see section-card-item's own doc
+// comment) ternary-chain functions, and the find-first/next/prev-section
+// bound bumped from 5 to 6. Self-check: grepping for the literal
+// five-equality comparison used in the ternary chains below should show
+// exactly 6 hits in the code (2 functions × 3 navs, down from 9 once
+// section-card-id was removed 2026-09-16) — the same shape the
+// Watchlist row's own self-check established one row earlier.
+```
+
+Above `public pure function section-card-item(s: int, c: int) -> CardItem {`:
+```
+// section-card-id was removed 2026-09-16 — it was a byte-for-byte
+// duplicate ternary chain of section-card-item below (same routing,
+// just returning .id instead of the whole CardItem), kept in sync by
+// hand for no reason once its one Rust caller (dispatch_dashboard's
+// Confirm arm, keys.rs) was fixed to need the full card (to branch on
+// item-type for Discover-sourced rows) and switched to calling
+// section-card-item directly instead. One fewer of these ladder
+// functions to keep in lockstep whenever a dashboard row changes.
+```
+
+Above `callback do-login(string, string, string, bool, bool);`:
+```
+// ── Callbacks — auth / nav ────────────────────────────────────────────────
+// 4th bool: append (Bonfire Phase 1, "+ Add Account") — true keeps every
+// existing profile intact and adds this one alongside them, instead of
+// the normal sign-in behavior of overwriting whichever profile is
+// currently active. LoginScreen passes login-append-mode verbatim.
+// 5th bool (2026-08-14, the account/profile redesign): "remember this
+// login" — persisted onto the resulting ProfileSettings.remember_login;
+// see should_show_picker_at_startup's own doc comment for what it
+// gates. LoginScreen passes login-remember verbatim.
+```
+
+Above `in-out property <int> login-zone: 0;`:
+```
+// Full D-pad navigation, 2026-08-19, live-questioned ("why?" — pushing
+// back on "no D-pad path to Remember/Connect, accepted scope
+// boundary") — the exact zone-based pattern already proven for
+// ProfileEditScreen this same session (LineEdit key-pressed hooks for
+// Up/Down + a changed-tracker mirror to call .focus() from Rust-set
+// state, since Rust can't call a named Slint element's method
+// directly), applied here now that the marginal cost is low. 0=server
+// 1=username 2=password 3=Remember toggle 4=Connect button. Zones 0-2
+// hold real native LineEdit focus (Tab already cycles them); zones 3/4
+// don't, so login.slint's key-pressed hooks give focus back to `fs`
+// (AppState.refocus()) when leaving zone 2, and a changed login-zone
+// tracker calls the right field's own .focus() when re-entering 0-2.
+// Extended 2026-08-21 with zones 5=Back/Cancel (append mode only) and
+// 6=Quit (always) — real gap, live-reported ("back and quit is not
+// reachable with keybord/dpad"): the original design left them un-zoned
+// on the theory that Escape/Ctrl+Q already reached them from any zone,
+// matching ProfileEditScreen's own precedent for not zoning its header
+// ✕ — but a raw shortcut existing isn't the same as the button itself
+// being D-pad-focusable, which every equivalent button elsewhere in
+// this app (ProfilePickerScreen/AccountPickerScreen's own Back/Quit)
+// already needed the identical fix for. See login.slint's own header
+// doc comment for the full Up/Down chain and Escape-at-Quit reasoning.
+```
+
+#### `crates/fjord-app/ui/app_state.slint`
+
+Above `in-out property <string> login-server-prefill: "";`:
+```
+// Pre-fills the server field (2026-08-14, the RequireLogin StartupGate
+// outcome — an account with remember-login off still gets its known
+// server address filled in; only the password genuinely needs
+// re-entry, since that's the one thing never persisted at all).
+```
+
+Above `in-out property <string> login-username-prefill: "";`:
+```
+// Pre-fills the username field too (2026-08-15, live-reported: "it
+// shuld remember server and username right" — the server-only prefill
+// above left the username itself unnecessarily blank; sourced from the
+// account's own ProfileSettings.display_name, which for a real
+// Jellyfin login IS the login name, not a separate display-only
+// field). Cleared (alongside login-server-prefill) whenever Add
+// Account opens, so a stale RequireLogin prefill from earlier this
+// session can't leak into a genuinely different, brand-new account.
+```
+
+Above `in-out property <bool> show-sign-out-confirm: false;`:
+```
+// Confirmation dialog, 2026-08-22 — direct request ("mabey shuld add it
+// to other destructive things like sing out etc too?"), extending the
+// ProfileEditScreen delete-confirm pattern to Sign Out. Reachable from
+// 3 genuinely different contexts (Settings' Profiles row, the sidebar
+// quick-menu, OfflineScreen's Change Server button) — unlike every
+// other ConfirmDialog in this app so far, none of which are shared
+// across more than one screen, this one is GLOBAL (declared once in
+// main.slint's top level, not owned by any single screen's own
+// component) and dispatched from keys.rs's pre-active_mode() raw-key
+// tier, same shape as show-remember-login-confirm right above it,
+// since it has to intercept keys regardless of which of those 3
+// contexts is currently showing underneath it.
+```
+
+Above `in-out property <bool> show-queue-clear-confirm: false;`:
+```
+// Confirmation before an actual clear, 2026-08-22 — same request as
+// Sign Out/Disconnect Seerr above ("destructive things ... etc").
+// Single-context (only ever reachable from inside QueuePanel itself,
+// via the header's "Clear All" row/button) — unlike Sign Out, this
+// doesn't need a global main.slint-level dialog; the ConfirmDialog
+// instance lives inside QueuePanel's own component (widgets.slint,
+// declared last for z-order) and dispatch lives inside
+// keys.rs::handle_key_queue_panel, the panel's own existing dispatcher.
+```
+
+Above `in-out property <bool> show-cancel-request-confirm: false;`:
+```
+// Confirmation before the actual DELETE /request, 2026-08-22 — same
+// request as Sign Out/Disconnect Seerr/Clear Queue above; this one
+// permanently deletes the underlying request, no undo, unlike
+// Approve/Decline which just change status. context-discover-cancel-
+// request() (above) now only opens this dialog — the real delete is
+// cancel-request-confirmed() below, called on Confirm. Reachable from
+// 2 screens (the Discover grid's own context menu, and
+// RequestDetailScreen's ⋮ More menu, which reuses this exact overlay
+// — see context_menu.rs's own doc comment) so this is a GLOBAL dialog
+// (main.slint top level), same shape as show-sign-out-confirm, not
+// owned by either screen.
+```
+
+Above `// ── Bonfire Group (cross-household groups) ──────────────────────────────────`:
+```
+// record-activity() was removed on the event-loop branch (2026-09-08) —
+// Bonfire Phase 4's idle-lock mouse-activity signal now comes from a
+// true global winit-level hook (activity::FjordActivityHandler, wired
+// in main.rs before MainWindow::new()) that sees every raw
+// CursorMoved/MouseInput/MouseWheel before Slint's own hit-testing, not
+// just movement over uncovered background — no Slint-side callback
+// needed at all anymore.
+```
+
+Above `in-out property <bool> show-bonfire-group: false;`:
+```
+// ── Bonfire Group (Phase 5, cross-household groups, 2026-08-29) ────────────
+// Reached from Settings → Profiles → "Bonfire Group" (master accounts
+// only — same settings-is-master-profile gate as Manage Profiles, now
+// correctly true while impersonating a foreign group account too, see
+// profile.rs::is_true_master). Free-floating overlay, same shape as
+// ManageProfilesScreen — mounted + fade-gated by main.slint, reached
+// mid-session, not at startup.
+```
+
+Above `in-out property <bool> jellyfin-is-server-admin: false;`:
+```
+// Bonfire Phase 6 (admin actions, 2026-09-04) — a genuinely different
+// audience from everything above: Jellyfin's own server-admin flag
+// (verified directly against the real plugin controller source, not
+// Bonfire's own household-master concept), not persisted, re-fetched
+// on every session-establishment path — see FjordState.
+// jellyfin_is_server_admin's own doc comment. Gates Settings ->
+// Profiles -> "Bonfire Admin".
+```
+
+Above `in-out property <bool> bonfire-admin-back-focused: false;`:
+```
+// Real gap, live-reported 2026-09-07 ("the keybord navigation to back
+// dont work in bonfire admin") — this screen's own header doc comment
+// claimed to mirror blocklist.rs's shape, but never actually gave the
+// "← Back" button a focus state the way BlocklistScreen's own
+// blocklist-back-focused does (Up from the tab switcher, Down returns
+// to it, Confirm/Back activates it). Fixed to match exactly, including
+// Up-while-back-focused returning false to hand off to the shared
+// focus_bar_on_up mini-player-bar mechanism, same as Blocklist.
+```
+
+#### `crates/fjord-app/ui/app_state.slint` — file header (TOC)
+```
+// ── fjord-app · app_state.slint ──────────────────────────────────────────────
+//   Screen routing        show-login, show-detail, show-series, show-library, show-album, show-artist, app-content-loading, etc.
+//                         show-connecting/show-offline (startup connectivity gate, checked before
+//                         show-login) + retry-connection callback (OfflineScreen's Retry button)
+//   Profile picker        (Bonfire Phase 1, 2026-08-09; sectioned 2026-08-31, Bonfire Phase 5
+//                         follow-up) show-profile-picker + profile-picker-sections ([ProfileSection],
+//                         each { header, tiles: [ProfileTile] }) + profile-picker-section (which
+//                         section/row has focus) + profile-picker-cursor (column within that
+//                         section, like Discover's landing-row nav) + -error, checked before
+//                         show-login when the resolved ACCOUNT (see below) has 2+ profiles OR any
+//                         Bonfire-linked account; section 0 is always profile-picker-account-root-id's
+//                         own group (root tile included), any further sections are OTHER households
+//                         linked via a Bonfire group, each ALSO showing that household's own full
+//                         member list; show-profile-pin-entry is a layered sub-state
+//                         (profile-pin-target-id/-name/-value/-cursor/-error) for a locked profile
+//   Account picker         (2026-08-14, 2-tier account/profile redesign) show-account-picker +
+//                         account-picker-accounts ([AccountTile]) — sits ABOVE the profile picker,
+//                         checked first, shown only with 2+ known ACCOUNTS (a plain login, or a
+//                         whole Bonfire household grouped under its master); account-picker-select/
+//                         -add-account callbacks; login-append-mode/-source/-server-prefill/-remember
+//                         thread through LoginScreen for both "Add Account" entry points (account
+//                         picker's own tile, and Settings → Profiles → Add Account) and for
+//                         StartupGate::RequireLogin (a remember_login==false account, pre-filling
+//                         the server address so the user only has to retype credentials, not the URL)
+//   On-screen keyboard    (Bonfire Phase 3, 2026-08-22, rolled out to every text-entry surface —
+//                         Login/ProfileEditScreen/Discover/Browse/PlaylistPicker/ConnectSeerr — as of
+//                         2026-08-23) show-onscreen-keyboard, onscreen-keyboard-target/-cursor, onscreen-keyboard-row-lens
+//                         ([10,9,9,3], topology-only SSOT shared with widgets.slint's QwertyKeyboard),
+//                         onscreen-keyboard-trim-last/-byte-len callbacks — checked before every
+//                         other input tier in keys.rs::handle_key, since the keyboard can be open
+//                         on any screen that's wired up to it; see the property block's own doc
+//                         comment below for the generic open/dispatch contract a future screen follows;
+//                         open-onscreen-keyboard(target) is the one Slint way to open it (false, nothing
+//                         changed, when Settings → UI has it off — 2026-10-10)
+//   Bonfire Group          (Phase 5, cross-household groups, 2026-08-29) show-bonfire-group +
+//                         status fields (bonfire-group-is-owner/-is-member/-owned-code/
+//                         -owned-members ([BonfireGroupMemberTile])/-joined-owner-name/-has-pin/
+//                         -is-administrator), the 3 settings toggles (hide-my/-others-sub-profiles,
+//                         allow-lan-bypass — OFF->ON gated by a ConfirmDialog on the Slint side),
+//                         join-code entry (bonfire-group-join-code + append/backspace/submit
+//                         callbacks, hand-drawn field + the shared QwertyKeyboard, same shape as
+//                         discover-search-append/-backspace), bonfire-group-zone (D-pad, resolved
+//                         live per state via profile.rs::existing_bonfire_group_zones — see its
+//                         own doc comment), and 4 ConfirmDialog gates (Kick/Leave/Delete Group/
+//                         LAN-bypass-warning) — see profile.rs::open_bonfire_group_screen
+//   Bonfire Admin          (Phase 6, admin actions, 2026-09-04) jellyfin-is-server-admin (Jellyfin's
+//                         own core admin flag, NOT Bonfire's household-master concept — gates the
+//                         "Bonfire Admin" Settings row), show-bonfire-admin + bonfire-admin-tab
+//                         (0=Mappings/1=Audit Logs)/-cursor (-1=tab switcher)/-col (which action
+//                         within a MASTER row: 0=Reset PIN/1=limit stepper) + bonfire-admin-rows
+//                         ([BonfireAdminRow], a flat list — see bonfire_admin.rs for why not a
+//                         nested/expandable tree) + bonfire-admin-audit-rows ([BonfireAuditRow],
+//                         fetched lazily on first Audit Logs tab visit) + a Reset PIN ConfirmDialog
+//                         (reachable from both a master's and a sub-profile's own row, so it stashes
+//                         which profile it's acting on) — see bonfire_admin.rs::open_bonfire_admin_screen
+//   Toast notification    toast-message: string, toast-visible: bool (auto-dismissed after 4 s)
+//   Navigation state      active-nav, focused-section, focused-card, settings-focused (string, ""
+//                         = left pane; Phase 0, 2026-08-07, was an int), settings-section (string,
+//                         "" = sidebar), settings-focused-visual-index (int, scroll-to-view only),
+//                         float-card-focused
+//   Server info           server-url, server-name, server-version, client-version (Fjord's own build, set once at startup)
+//   Library grid          library-cols, library-query, library-header-focused, library-sort (0-4),
+//                         library-filter-unwatched, library-filter-favorites, library-sort-focused,
+//                         library-sort-cursor, library-back-focused, library-scrubber-focused,
+//                         library-scrubber-cursor (0=#, 1=A..26=Z, tracks scroll + keyboard),
+//                         library-alpha-offsets (27 ints A-Z+#),
+//                         library-has-filters (false for Collections/Music — hides Unwatched/Favorites toggles)
+//                         library-music-view (0=Artists 1=Albums 2=Playlists, Music only)
+//   Browse list           media-items, current-item, browse-query, browse-header-focused
+//   Dashboard data        continue-watching, next-up, recently-added, recently-added-albums, recently-played-albums, etc.
+//   Auto-advance          show-next-ep-banner, next-ep-title, next-ep-ends-at, next-ep-secs
+//   Volume overlay        show-volume-overlay, volume-level, audio-passthrough-active (transient ~1.5 s)
+//   Segment skip          show-skip-segment, skip-segment-label (Intro Skipper: ask mode)
+//                         show-skip-timed, skip-timed-label/secs/focused (ask-timed mode: 2-btn + countdown)
+//   Player state          is-playing, is-paused, playing-artist,
+//                         video-frame, playback-ends-at,
+//   Music bar             is-audio-playing, music-bar-title/artist/album-id/art/has-art/pos/elapsed/total/paused,
+//                         music-bar-play-pause, music-bar-stop, music-bar-open-album, play-album-all
+//   Now Playing            show-now-playing, now-playing-in-strip/-ctrl-focused/-strip-focused, open-now-playing
+//                         seek-hover-time, buffering-active/pct, playback-stalled, buffered-pos, playback-total-secs, track panels,
+//                         seek-dragging (true while seek bar is held; blocks PausePlay from keyboard)
+//                         chapter-marks ([float] 0-1), chapter-osd-visible/text, chapter-prev/next callbacks,
+//                         chapter-entries ([TrackEntry]), current-chapter, chapter-jump (Chapters panel)
+//                         delay-osd-visible/text (sub/audio delay OSD ~2 s), sub/audio-delay-ms (Sync panel),
+//                         sub/audio-delay-inc/dec callbacks
+//   Detail page           detail-id, detail-item-type, detail-resume-secs, detail-title, detail-tagline,
+//                         detail-studio, detail-is-favorite, detail-has-played, detail-focused-row,
+//                         detail-cast-focused, detail-collection-focused, detail-similar-focused,
+//                         detail-series-id, detail-scroll, detail-focused-btn, detail-ends-at,
+//                         detail-cast, detail-similar, detail-collection-title, detail-collection, etc.;
+//                         detail-recommended/-focused (row 4, 2026-07-29, Deep Seerr integration)
+//   Series state          series-id, seasons, episode-cards (horizontal SectionRow), poster, backdrop,
+//                         tagline, studio, is-favorite, meta/genres/rating-label, next-up card (+ section-title with ends-at), cast, similar;
+//                         series-recommended/-focused + series-missing-seasons/-focused (2026-07-29,
+//                         Deep Seerr integration — see series.rs's own TOC header)
+//   Season detail state   show-season, season-id/title/overview/meta, poster/backdrop, cast, focused-ep
+//   Person detail state   show-person, person-id/name/bio, portrait, filmography, film-focused, in-film-row;
+//                         person-other-work/-focused, person-in-other-work-row (2026-07-29, Deep Seerr integration)
+//   Album detail state    show-album, album-id/title/artist/meta/overview, poster, tracks ([TrackItem]),
+//                         album-focused-track, album-back-focused, album-is-favorite, album-has-played, album-open-gen, album-btn-focused,
+//                         album-overview-expanded (collapsible bio section)
+//   Artist detail state   show-artist, artist-id/title/overview/meta, portrait, albums ([CardItem]),
+//                         artist-focused, artist-back-focused, artist-open-gen,
+//                         artist-is-favorite, artist-btn-focused (-1=none,0=▶,1=♥),
+//                         artist-overview-expanded (collapsible bio); play-artist-all, toggle-artist-fav
+//   Seerr integration      settings-seerr-enabled, seerr-connected/-label, open-connect-seerr, seerr-disconnect
+//                         (seerr-connected genuinely requires seerr-enabled too, confirmed 2026-07-17 — see
+//                         this block's own doc comment); settings-streaming-region-desc/-display,
+//                         streaming-region-selected, settings-display-language-desc/-display,
+//                         display-language-selected, settings-discover-language-desc/-display,
+//                         discover-language-selected, settings-discover-region-desc/discover-region-selected
+//                         (2026-07-18, reuses settings-streaming-region-display's own fetched list)
+//                         (Settings → Integrations, only shown while connected —
+//                         dynamic dropdowns, same shape as settings-font-family-*; Display/Discover Language
+//                         share one fetched TMDB language list, 2026-07-17); settings-trailer-quality (Settings →
+//                         Integrations → Trailer Quality, same visibility gate, but a plain static
+//                         dropdown); yt-dlp-available (gates Watch Trailer button visibility);
+//                         seerr-is-admin (MANAGE_REQUESTS bit, set alongside seerr-connected — gates
+//                         Approve/Decline in the Discover context menu, 2026-07-18);
+//                         request-detail-trailer-url/-btn-focused, play-trailer (Watch Trailer button
+//                         request-detail-trailer-state (""/checking/ok/none, 2026-10-04); discover-query-cursor/
+//                         -shown + discover-search-delete (search-field caret, 2026-10-04);
+//                         settings-display-sync-trailers (2026-10-04)
+//                         on RequestDetailScreen — Discover only, see CLAUDE.md);
+//                         ConnectSeerrScreen: show-connect-seerr, connect-seerr-zone (D-pad, 2026-08-23),
+//                         connect-seerr-method (0-3), connect-seerr-error/busy, connect-seerr-qc-code/-secret/-polling
+//                         (Quick Connect), connect-seerr-api-key/-jellyfin/-local/-quickconnect-start/-poll callbacks
+//                         (discover.rs/seerr_auth.rs)
+//   Discover screen        discover-query, discover-searching, discover-results ([CardItem]),
+//                         discover-focused/-focused-row, discover-header-focused, discover-search-*,
+//                         open-discover-item(media-type, tmdb-id) (redirects to the real Jellyfin
+//                         item via detail::open_detail when a local library match exists, instead
+//                         of the Seerr request-detail flow); landing rows (query==""):
+//                         discover-trending/-popular-movies/-popular-tv/-upcoming-movies/-upcoming-tv/
+//                         -requested/-new-in-theaters/-coming-up/-watchlist-mixed ([CardItem], 9 rows
+//                         0-8 — watchlist-mixed appended 2026-07-20, user request, EVERY watchlisted
+//                         item vs. coming-up's date-filtered subset, not deduped against it),
+//                         discover-landing-card (column within focused-section 0-8);
+//                         discover-watchlist-movies/-tv ([CardItem], same data filtered by type,
+//                         2026-07-20) also feed the Home/Movies/TV dashboard Watchlist rows via
+//                         main.slint — see home.slint's HomeScreen/DashboardScreen doc comments
+//   Discover filters       (2026-07-18) discover-filter-type/-sort/-rating/-year-desc (single-value
+//                         pills) + discover-filter-genres/-providers ([GenreItem]/[ProviderItem],
+//                         multi-select chip pickers) + discover-filter-clear; discover-filter-bar-
+//                         active/-focused (bar's own keyboard zone) + discover-popup-open/-cursor
+//                         (own dropdown/chip-popup keyboard machinery, NOT settings.rs's — see
+//                         discover.rs's notes on why); persisted via Config.discover_filter_*
+//   Request detail state   show-request-detail, request-detail-media-type/-tmdb-id/-title/-meta/-overview,
+//                         request-detail-rating ("★ 7.9", empty = no badge), request-detail-overview-expanded,
+//                         request-detail-poster/-backdrop, request-detail-status ("" | requested | processing |
+//                         partial | available), request-detail-cast ([CastMember]) + -focused-cast,
+//                         request-detail-seasons ([SeasonItem], TV only) + -focused-season,
+//                         request-detail-back-focused, request-detail-zone (0=button row,1=storyline,2=cast —
+//                         vertical flow on the main page only; quality/profile/tags/seasons live in the
+//                         Request Options modal below), request-detail-want-4k,
+//                         request-detail-tags ([TagItem], Radarr/Sonarr default-server tags) + -focused-tag,
+//                         request-detail-profiles ([ProfileItem], quality profiles on that same server,
+//                         row 0 a synthetic "Default" entry) + -focused-profile + -selected-profile-id
+//                         (radio, 0=Default); request-detail-tags-alt/-profiles-alt/-selected-profile-id-alt
+//                         (the other quality tier, pre-fetched — request-detail-set-quality swaps these in
+//                         instead of re-fetching on toggle), request-detail-open-gen, request-detail-requesting,
+//                         request-detail-toggle-season/-tag/-request,
+//                         open-request-options (Request button -> modal instead of inlining every picker on
+//                         the page); show-request-options, request-options-zone (0=Quality row,1=Profile row,
+//                         2=tags row,3=seasons row,4=confirm row — same skip-absent-zones idiom as
+//                         request-detail-zone), request-options-confirm-focused (0=Cancel,1=Request);
+//                         request-options-editing/-editing-request-id (Edit Request, Discover context
+//                         menu, 2026-07-18 — reuses this modal, hides the Quality row, Confirm calls
+//                         update_request/PUT instead of create_request/POST)
+//   Context menu          show-context-menu, context-menu-* state, context-menu-focused;
+//                         context-menu-request-id/-availability/-request-pending/-request-mine +
+//                         open-context-menu-discover(CardItem) (Discover cards only, 2026-07-18 —
+//                         entirely separate row family in context_menu.slint, see its own doc comment);
+//                         context-menu-jf-tmdb-id/-jf-media-type + context-jf-toggle-watchlist()
+//                         (2026-07-19 — Watchlist row 8 on the JELLYFIN menu family too, gated on a
+//                         resolvable TMDB id; reuses context-menu-on-watchlist for its own label)
+//   Settings state        hwdec, interpolation, audio-spdif, sub-lang, skip-*-mode/secs, etc.
+//   Key binding editor    keybinding-normal/player rows, keybinding-focused, keybinding-rebinding;
+//                         show-keybinding-reset-confirm/keybinding-reset-confirm-focused (Reset to
+//                         Defaults ConfirmDialog); show-keybinding-collision-confirm/
+//                         keybinding-collision-confirm-focused/keybinding-collision-message +
+//                         keybinding-collision-confirmed()/keybinding-collision-cancelled()
+//                         callbacks (2026-08-07, rebind-collision confirm — see keys.rs's
+//                         PendingKeybindRebind); settings-row-focused(string) callback (mouse
+//                         click on a SettingsRow, keeps settings-focused-visual-index in sync)
+//   Nav helpers           section-len, find-first/next/prev-section, section-card-item
+//                         (2026-07-20: nav 0/1/2 each gained an explicit s==4 branch + a new
+//                         s==5 Watchlist-row branch in section-len/section-card-item — these 2
+//                         are hand-enumerated ternary chains with an IMPLICIT trailing else, so
+//                         the s==4 case had to be made explicit before appending s==5 or it
+//                         would silently alias to the new row's data instead of failing to
+//                         compile; find-first/next/prev-section use a different
+//                         section-len(N)/from±N pattern, bounds bumped 4->5 there.
+//                         section-card-id was a 3rd such chain until removed 2026-09-16 — see
+//                         section-card-item's own doc comment)
+//   Callbacks — auth      do-login, sign-out, quit, toggle-fullscreen
+//   Callbacks — browse    nav-selected, filter-changed, browse-search-*, library-search-*
+//   Callbacks — play      item-play, play/resume-detail, open-detail/series, open-album, play-album-track
+//   Callbacks — player    pause-play-toggle, seek-*, volume-*, mute, select-*, stop
+//   Queue                 queue-count, queue-repeat-mode, queue-shuffle, playlist callbacks; show-queue-panel, queue-items, queue-panel-cursor;
+//                         open-queue-panel (mouse entry point — refresh + focus grab, mirrors the 'q' key, CR11-6)
+//   Lyrics                show-lyrics, lyrics-available, lyrics-lines ([LyricEntry]), lyrics-active-idx, toggle-lyrics
+//   Callbacks — context   open-context-menu, context-mark-played, context-toggle-fav, context-play-from-start
+//   Callbacks — misc      show-controls, cancel-auto-advance, play-next-ep, close-detail/series, close-album, close-artist, refocus
+//   Callbacks — keys      handle-key (main dispatch), keybinding-reset-defaults
+// ─────────────────────────────────────────────────────────────────────────────
+```
