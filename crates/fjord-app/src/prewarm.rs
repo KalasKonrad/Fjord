@@ -1,20 +1,14 @@
 // ── fjord-app · prewarm.rs ───────────────────────────────────────────────────
-//   spawn_metadata_prewarm  opt-in, re-runnable full-library sweep: item_detail_cache
-//                           (batched, top-level items) + unique cast members' own
-//                           detail+filmography + 4 relationship caches (boxset/artist/
-//                           tracks/similar), each rate-limited (semaphore); progress via
-//                           FjordState.prewarm_metadata_* fields, read by a 1s AppState
-//                           timer (main.rs::wire_prewarm_progress_timer); cost-logging
-//                           summary (request counts by category + elapsed) on completion;
-//                           every write and the finalization block are guarded by
-//                           crate::session_current (main.rs) against a sign-out mid-sweep
-//   spawn_image_prewarm     backdrops (tag-revalidated) + cast portraits (disk-check-
-//                           first, explicitly pre-checked here for accurate "already
-//                           cached" cost accounting) for whatever's currently in
-//                           item_detail_cache — independent of whether metadata prewarm
-//                           has run; same progress/cost-logging pattern
-//   wire_prewarm           callbacks moved from main() (0.5.0 step 3): library prewarm
-//   wire_prewarm_progress_timer  Settings → prewarm progress refresh
+//   spawn_metadata_prewarm  opt-in, re-runnable full-library sweep: item_detail_cache (batched,
+//                           top-level items) + every cast member's detail + filmography + the
+//                           relationship caches (boxset/artist/tracks/similar), each rate-limited
+//                           (semaphore); progress in FjordState.prewarm_metadata_*; a cost summary
+//                           (requests by category + elapsed) at the end; session-guarded
+//   spawn_image_prewarm     backdrops (tag-revalidated) + cast portraits (disk check first, for
+//                           honest "already cached" counts) for whatever is in item_detail_cache;
+//                           same progress/cost pattern; session-guarded
+//   wire_prewarm            callbacks moved from main() (0.5.0 step 3): library prewarm
+//   wire_prewarm_progress_timer  1 s timer pushing the progress fields to Settings
 // ─────────────────────────────────────────────────────────────────────────────
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
@@ -88,12 +82,8 @@ pub(crate) fn spawn_metadata_prewarm(
         top_ids.extend(album_ids.iter().cloned());
         top_ids.extend(playlist_ids.iter().cloned());
 
-        // Rough total up front (movies+series+etc detail, plus each container's own
-        // relationship-cache request); refined once person ids are known below.
-        // Also raise each cache's cap to fit what's about to be inserted — the
-        // default 40 (sized for "recently viewed items") would otherwise evict
-        // almost everything mid-sweep (confirmed via a real run: ~11,700
-        // requests made, 40 entries survived per cache).
+        // Rough total up front (refined once the person ids are known). Also raise each cache's cap
+        // to fit the sweep — the default 40 would evict almost everything mid-sweep.
         {
             let mut s = state.lock().unwrap();
             s.prewarm_metadata_total = top_ids.len()
@@ -418,17 +408,8 @@ pub(crate) fn spawn_image_prewarm(
             let (client, state, sem) = (client.clone(), Arc::clone(&state), Arc::clone(&sem));
             set.spawn(async move {
                 let _permit = sem.acquire_owned().await.ok();
-                // Session guard (Bonfire Phase 1, step 8 audit, 2026-08-09) —
-                // this function had no guard at all, unlike its sibling
-                // spawn_metadata_prewarm just above, an inconsistency within
-                // this same file. The images themselves are server-global,
-                // shared-cache artwork (not per-user restricted content —
-                // see the plan's own "poster/backdrop caches stay shared"
-                // note), so the real risk here is narrower than the other
-                // sites fixed in this pass: a stray sweep from an outgoing
-                // session finishing after a switch and stomping the NEW
-                // session's prewarm-progress counters/summary, confusing
-                // whatever the Settings UI shows. Still worth closing.
+                // Session guard: the images are shared artwork, but a sweep from the old session
+                // must not overwrite the new session's prewarm progress/summary.
                 if !crate::session_current(&state, &client) { return; }
                 fetch_backdrop_cached_tagged(&client, &id, Some(&tag)).await;
                 if crate::session_current(&state, &client) { state.lock().unwrap().prewarm_image_done += 1; }
@@ -492,10 +473,8 @@ pub(crate) fn wire_prewarm(
     }
 }
 
-/// Reads the library-prewarm progress fields (Phase 104) every second and
-/// pushes them to AppState — decouples the UI update rate from the actual
-/// fetch rate inside prewarm.rs's two spawn_*_prewarm functions, which would
-/// otherwise need an invoke_from_event_loop call per item processed.
+/// Pushes the prewarm progress fields to AppState every second — the UI update rate is
+/// decoupled from the fetch rate (no invoke_from_event_loop per item).
 pub(crate) fn wire_prewarm_progress_timer(
     window_weak: slint::Weak<MainWindow>,
     state: Arc<Mutex<FjordState>>,

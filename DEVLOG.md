@@ -21506,3 +21506,149 @@ Above `HorizontalLayout {`:
 //                    Slint gotchas section.
 // ─────────────────────────────────────────────────────────────────────────────
 ```
+
+#### `crates/fjord-app/ui/bonfire_group.slint`
+
+Above `Text {`:
+```
+// Real bug, live-reported 2026-08-29: the label and ToggleSwitch never
+// lined up. Same shape (and same fix) as ProfileEditScreen's own
+// "Skip PIN on this network" row (see that file's own lan-bypass-row
+// doc comment) — a bare HorizontalLayout with no explicit padding-top/
+// -bottom doesn't reliably vertically-center children whose preferred
+// heights differ (a single-line Text vs. ToggleSwitch's fixed 28px),
+// rather than an ambiguous Layout cross-axis default. Explicit y
+// positioning for each child sidesteps that entirely.
+```
+
+Above `if !AppState.bonfire-group-loading: VerticalLayout {`:
+```
+// Restructured 2026-08-29 from 3 mutually-exclusive states
+// to 2 independent, always-rendered sections (hosting +
+// join), once a real screenshot of Bonfire's own official
+// "Who's Watching?" UI confirmed an account can genuinely
+// be an owner AND a member of a different group at the same
+// time. Zone-base bookkeeping mirrors
+// profile.rs::existing_bonfire_group_zones/keys.rs's own
+// formula byte-for-byte — no shared source of truth between
+// the three, same caveat this app already carries for a
+// few other Rust/Slint dual-side D-pad zone schemes.
+```
+
+Above `if AppState.show-bonfire-kick-confirm: ConfirmDialog {`:
+```
+// Kick / Leave / Delete Group / LAN-bypass-warning — all reuse
+// ConfirmDialog, same "screen owns Left/Right/Confirm/Back, dialog
+// itself is keyboard-dumb" shape as ProfileEditScreen's own delete
+// confirm; keys.rs's show-bonfire-group tier dispatches all 4.
+```
+
+#### `crates/fjord-app/src/prewarm.rs`
+
+Above `{`:
+```
+// Rough total up front (movies+series+etc detail, plus each container's own
+// relationship-cache request); refined once person ids are known below.
+// Also raise each cache's cap to fit what's about to be inserted — the
+// default 40 (sized for "recently viewed items") would otherwise evict
+// almost everything mid-sweep (confirmed via a real run: ~11,700
+// requests made, 40 entries survived per cache).
+```
+
+Above `if !crate::session_current(&state, &client) { return; }`:
+```
+// Session guard (Bonfire Phase 1, step 8 audit, 2026-08-09) —
+// this function had no guard at all, unlike its sibling
+// spawn_metadata_prewarm just above, an inconsistency within
+// this same file. The images themselves are server-global,
+// shared-cache artwork (not per-user restricted content —
+// see the plan's own "poster/backdrop caches stay shared"
+// note), so the real risk here is narrower than the other
+// sites fixed in this pass: a stray sweep from an outgoing
+// session finishing after a switch and stomping the NEW
+// session's prewarm-progress counters/summary, confusing
+// whatever the Settings UI shows. Still worth closing.
+```
+
+Above `pub(crate) fn wire_prewarm_progress_timer(`:
+```
+/// Reads the library-prewarm progress fields (Phase 104) every second and
+/// pushes them to AppState — decouples the UI update rate from the actual
+/// fetch rate inside prewarm.rs's two spawn_*_prewarm functions, which would
+/// otherwise need an invoke_from_event_loop call per item processed.
+```
+
+#### `crates/fjord-app/ui/bonfire_group.slint` — file header (TOC)
+```
+// ── fjord-app · bonfire_group.slint ──────────────────────────────────────────
+//   GroupToggleRow      file-local — labeled ToggleSwitch row, kbd-focused
+//                       ring + PressPulse, shared by the owner/member bodies
+//   GroupMemberRow      file-local — one owned member (username + Kick button)
+//   BonfireGroupScreen  Bonfire Phase 5 (cross-household groups, 2026-08-09;
+//                       restructured 2026-08-29 — see below) — reached from
+//                       Settings → Profiles → "Bonfire Group" (master accounts
+//                       only, same settings-is-master-profile gate as Manage
+//                       Profiles — now correctly true while impersonating a
+//                       foreign group account too, see profile.rs::is_true_master).
+//                       Same overlay-card shell convention as ManageProfilesScreen.
+//                       Body is TWO INDEPENDENT, always-rendered sections —
+//                       hosting (AppState.bonfire-group-is-owner) and joining
+//                       (AppState.bonfire-group-is-member) — not 3 mutually
+//                       exclusive states as originally shipped; a real
+//                       screenshot of Bonfire's own official "Who's Watching?"
+//                       web UI showed both a "Your Hosted Bonfire" section
+//                       AND a "Join a Bonfire" section together,
+//                       unconditionally, confirming an account can genuinely
+//                       host its own group AND be a member of a different
+//                       one at the same time. Hosting: !is-owner shows a
+//                       "Generate Join Code" button; is-owner shows the code
+//                       display + member list (per-row Kick) + Delete Group.
+//                       Join: !is-member shows the join-code entry field +
+//                       Join button; is-member shows "Joined X's group" +
+//                       Leave Group. A single shared copy of the 3 group
+//                       settings toggles (hide-my/-others-sub-profiles,
+//                       allow-lan-bypass) sits below both sections,
+//                       regardless of state — the underlying API call is a
+//                       plain per-account POST, not scoped to one
+//                       relationship. D-pad zones resolved live via
+//                       profile.rs::existing_bonfire_group_zones — the zone
+//                       COUNT varies with (is-owner, is-member, member
+//                       count), so this is NOT a fixed enum (see that
+//                       function's own doc comment for the exact host/join/
+//                       toggle zone-base formula this screen's own matching
+//                       host-count/join-base/toggle-base properties mirror).
+//                       Join-code entry is a hand-drawn field + the shared
+//                       (caret drawn while focused, bonfire-group-join-code-cursor — text_field.rs, 2026-10-05)
+//                       on-screen QwertyKeyboard (Bonfire codes are
+//                       alphanumeric — the numeric VirtualKeyboard doesn't
+//                       apply), same shape as Discover/Browse search (see
+//                       discover.slint's own header comment for the general
+//                       pattern). Keyboard dispatch lives in keys.rs's own
+//                       show_bonfire_group raw-key tier, including the 4
+//                       ConfirmDialog gates (Kick/Leave/Delete Group/
+//                       LAN-bypass-warning) — this screen itself is
+//                       keyboard-dumb like every other ConfirmDialog consumer.
+// ─────────────────────────────────────────────────────────────────────────────
+```
+
+#### `crates/fjord-app/src/prewarm.rs` — file header (TOC)
+```
+// ── fjord-app · prewarm.rs ───────────────────────────────────────────────────
+//   spawn_metadata_prewarm  opt-in, re-runnable full-library sweep: item_detail_cache
+//                           (batched, top-level items) + unique cast members' own
+//                           detail+filmography + 4 relationship caches (boxset/artist/
+//                           tracks/similar), each rate-limited (semaphore); progress via
+//                           FjordState.prewarm_metadata_* fields, read by a 1s AppState
+//                           timer (main.rs::wire_prewarm_progress_timer); cost-logging
+//                           summary (request counts by category + elapsed) on completion;
+//                           every write and the finalization block are guarded by
+//                           crate::session_current (main.rs) against a sign-out mid-sweep
+//   spawn_image_prewarm     backdrops (tag-revalidated) + cast portraits (disk-check-
+//                           first, explicitly pre-checked here for accurate "already
+//                           cached" cost accounting) for whatever's currently in
+//                           item_detail_cache — independent of whether metadata prewarm
+//                           has run; same progress/cost-logging pattern
+//   wire_prewarm           callbacks moved from main() (0.5.0 step 3): library prewarm
+//   wire_prewarm_progress_timer  Settings → prewarm progress refresh
+// ─────────────────────────────────────────────────────────────────────────────
+```
