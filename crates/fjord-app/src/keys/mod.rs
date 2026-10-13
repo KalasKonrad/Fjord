@@ -8,45 +8,21 @@
 //     player     player, queue panel and Now Playing dispatch
 //     text_input on-screen keyboard opener/cursor math, drawn search fields, playlist picker
 //   key          Slint key string constants
-//   lookup_action  KeyCombo → Action (case-insensitive fallback)
-//   handle_key         router: show-onscreen-keyboard gate (Bonfire Phase 3 — checked before
-//                        EVERYTHING else, including show-login, since the keyboard can be open
-//                        on any wired-up screen; Left/Right/Up/Down move the flat cursor via
-//                        onscreen_keyboard_move_row, Enter bumps kb-activate-pulse, Ctrl+Q quits)
-//                        → show-login bypass → startup connectivity gate (show-connecting
-//                        swallows all keys; show-offline: Enter → retry-connection, OfflineScreen's
-//                        only interactive element has no native widget focus) → show-profile-picker
-//                        / show-account-picker raw-key tiers (both pre-AppMode, same reason
-//                        show-login is — can show before any session/AppMode-relevant state
-//                        exists yet; 2026-08-14, 2-tier account/profile redesign) → search
-//                        bypasses → loading-guard (app-content-loading) → rebind capture →
-//                        key lookup → active_mode() → match per-screen arm
-//   caret_key          Left/Right/Home/End → text_field caret for the drawn fields (Discover/Browse/
-//                      Library search, new-playlist name — Right still creates when the caret is
-//                      at the end — and the Bonfire join code), 2026-10-05; Delete per field
-//   Settings dispatch → crate::settings (dispatch_settings, settings_row_action)
-//   Per-screen key handlers live in their own modules:
-//     context_menu::handle_key, series::handle_key, season::handle_key,
-//     detail::handle_key, browse::handle_key,
-//     discover::handle_key (Discover grid), discover::handle_key_request_detail (Seerr detail/Request)
-//   ── Keyboard-navigation fixes (2026-07-18, see discover.rs's own header block for
-//      the full investigation this came from) ── AppMode::RequestDetail/RequestOptions
-//      added to 3 global pre-dispatch exclusion lists (ResumePlayer, music-bar-focused,
-//      mini-player-bar-focused) that already excluded their peer group
-//      (Person/Detail/Season/.../Album) but were missing these two — real bug: 'r' could
-//      yank the user into the fullscreen player mid-request-flow, and a stale
-//      music-bar-focused/float-card-focused left over from earlier keyboard nav could
-//      hijack these screens' own arrow keys after a mouse-driven screen switch.
-//      active_mode()'s RequestOptions arm also gained the same !is_playing guard every
-//      sibling overlay already had (real bug: the modal could get stuck rendered on top
-//      of a resumed fullscreen video).
-//   ── Watchlist + Release Calendar (2026-07-18, see discover.rs's own header block) ──
-//      AppMode::Calendar/CalendarDayPopup added to active_mode() (own !is_playing guard,
-//      same as every sibling overlay) and to the same 3 global exclusion lists
-//      (ResumePlayer, music-bar-focused, mini-player-bar-focused) RequestDetail/
-//      RequestOptions were added to above — CalendarScreen/its day popup dispatch to
-//      discover::handle_key_calendar/handle_key_calendar_day_popup.
-//   wire_key_dispatch      callbacks moved from main() (0.5.0 step 3): the global key dispatch (fs FocusScope → handle_key)
+//   lookup_action  KeyCombo → Action (exact match first; with Shift held, a printable key
+//                  falls back to its unshifted binding)
+//   handle_key   router: on-screen keyboard gate (first — the keyboard can be open on any wired
+//                screen; arrows move its cursor, Enter bumps kb-activate-pulse, only Ctrl+Q passes)
+//                → login → startup gate (connecting swallows keys; offline: Enter retries) →
+//                profile/account picker tiers → global confirm dialogs and the other raw-key
+//                overlay tiers → search bypasses → loading guard → rebind capture → key lookup →
+//                global shortcuts (Ctrl+Q, R resume, bar focus — excluding overlay/detail modes)
+//                → active_mode() → per-screen handler (context_menu, series, season, detail,
+//                browse, discover…, settings::dispatch_settings)
+//   caret_key    Left/Right/Home/End/Delete → text_field caret for the drawn fields (Discover/
+//                Browse/Library search, playlist name — Right still creates at the end — and the
+//                Bonfire join code)
+//   wire_key_dispatch  callbacks moved from main() (0.5.0 step 3): the global key dispatch (fs
+//                FocusScope → handle_key)
 // ─────────────────────────────────────────────────────────────────────────────
 
 use serde::{Deserialize, Serialize};
@@ -163,10 +139,8 @@ pub(crate) fn handle_key(
         return handle_connect_seerr_keys(&g, key, ctrl, window);
     }
 
-    // "Remember this login" confirm-password modal (2026-08-17, see
-    // app_state.slint's own doc comment for the full design). No grid/zone
-    // nav needed — a single password field, Cancel/Confirm reachable via
-    // the password LineEdit's own accepted=>/Escape.
+    // "Remember this login" confirm-password modal (see app_state.slint). No zones — one
+    // password field; Cancel/Confirm through its accepted=>/Escape.
     if g.get_show_remember_login_confirm() {
         if ctrl && (key == "q" || key == "Q") {
             g.invoke_quit();
@@ -182,14 +156,9 @@ pub(crate) fn handle_key(
         return true;
     }
 
-    // Sign Out confirmation (2026-08-22, see show-sign-out-confirm's own
-    // doc comment in app_state.slint) — reachable from 3 genuinely
-    // different contexts (Settings' Profiles row, the sidebar quick-menu,
-    // OfflineScreen's Change Server button), so this dialog is GLOBAL
-    // (main.slint top-level), not owned by any one screen. Checked here,
-    // before active_mode() ever runs, so it takes priority regardless of
-    // which of those 3 contexts triggered it — same shape as show-
-    // remember-login-confirm right above.
+    // Sign Out confirmation (see show-sign-out-confirm): global (main.slint), opened from
+    // Settings' Profiles row, the sidebar quick-menu and OfflineScreen's Change Server — checked
+    // before active_mode() so it wins wherever it was opened.
     if g.get_show_sign_out_confirm() {
         if ctrl && (key == "q" || key == "Q") {
             g.invoke_quit();
@@ -210,11 +179,8 @@ pub(crate) fn handle_key(
         return true;
     }
 
-    // Cancel-Seerr-request confirmation (2026-08-22, see show-cancel-
-    // request-confirm's own doc comment in app_state.slint) — reachable
-    // from 2 screens (the Discover grid's own context menu, and
-    // RequestDetailScreen's ⋮ More menu, which reuses that same overlay),
-    // so this is also global, same shape as show-sign-out-confirm above.
+    // Cancel-Seerr-request confirmation (see show-cancel-request-confirm): global too — the
+    // Discover context menu and RequestDetailScreen's ⋮ More both open it.
     if g.get_show_cancel_request_confirm() {
         if ctrl && (key == "q" || key == "Q") {
             g.invoke_quit();
@@ -242,27 +208,18 @@ pub(crate) fn handle_key(
         return handle_bonfire_group_keys(&g, key, ctrl, window);
     }
 
-    // ProfileEditScreen — full D-pad dispatch, 2026-08-17 (was Escape/
-    // Ctrl+Q/press-pulse only; see app_state.slint's profile-edit-zone doc
-    // comment for the full 12-zone design). Escape is special-cased here
-    // rather than inside handle_key_profile_edit itself, since it needs to
-    // distinguish "close the dropdown popup" from "cancel the whole
-    // screen" — and is skipped entirely while a LineEdit holds real focus
-    // (profile-edit-text-editing), since that key never reaches this tier
-    // at all in that state (consumed by the field's own key-pressed(event)
-    // hook in profile_edit.slint).
+    // ProfileEditScreen — full D-pad dispatch (zones: profile-edit-zone in app_state.slint).
+    // Escape is handled here (it must tell "close the dropdown" from "cancel the screen") and
+    // skipped while a LineEdit has focus (profile-edit-text-editing) — the field's own
+    // key-pressed consumes it then.
     if g.get_show_profile_edit() {
         if ctrl && (key == "q" || key == "Q") {
             g.invoke_quit();
             return true;
         }
-        // Delete-profile confirmation (2026-08-21) — same "screen owns
-        // Left/Right/Confirm/Back, ConfirmDialog itself is keyboard-dumb"
-        // shape as dispatch_keybinding_nav's own Reset/rebind-collision
-        // gates, just expressed against raw keys since this whole tier is
-        // a pre-active_mode() raw-key dispatch, not an Action/KeyMap one.
-        // Checked before the plain Escape-closes-screen handler below so
-        // Escape/Backspace cancel the dialog first, not the whole screen.
+        // Delete-profile confirmation: this tier owns Left/Right/Confirm/Back (ConfirmDialog has no
+        // key handling), as raw keys. Checked before Escape-closes-screen, so Escape/Backspace
+        // cancel the dialog first.
         if g.get_show_profile_edit_delete_confirm() {
             if key == key::LEFT {
                 g.set_profile_edit_delete_confirm_focused(0);
@@ -406,11 +363,8 @@ pub(crate) fn handle_key(
     }
     drop(g);
 
-    // Ctrl+Q quits from ANY mode. Quit has no per-screen meaning, so it is
-    // handled here once instead of per-mode — the old per-screen arms only
-    // covered dashboard/settings/series/season/detail/person, which is why
-    // q/Q never worked in the library grid, browse, player, or the music
-    // screens (CR10-4 follow-up).
+    // Ctrl+Q quits from ANY mode — handled once here, not per screen (per-mode arms missed
+    // several screens).
     if action == Some(Action::Quit) {
         crate::AppState::get(window).invoke_quit();
         return true;
@@ -425,11 +379,9 @@ pub(crate) fn handle_key(
         return true;
     }
 
-    // Global R: resume background player from any non-fullscreen, non-detail, non-overlay mode.
-    // RequestDetail/RequestOptions added 2026-07-18 (real bug) — they're the
-    // same class of detail/overlay screen as Person/Detail/.../Album above but
-    // were missing from this list, so 'r' could yank the user into the
-    // fullscreen player mid-request-flow.
+    // Global R: resume the background player from any non-fullscreen, non-detail, non-overlay
+    // mode (RequestDetail/RequestOptions included in the exclusions — R must not jump to the
+    // player mid-request).
     if action == Some(Action::ResumePlayer)
         && !matches!(
             mode,
@@ -554,11 +506,8 @@ pub(crate) fn handle_key(
     // Layout: [art (0)] | [⏸/▶ (1)] [⏹ (2)] | [timeline (3)] | [⏮ (4)] [⏭ (5)] [⇌ (6)] [↺ (7)] [⋮ (8)] [♪ (9)] [🔉 (10)] [🔊 (11)]
     //         Left zone   Centre zone            Below buttons   Right zone (9 only when lyrics-available; 10/11 always)
     // Left/Right: 0↔1↔2 → 4↔5↔6↔7↔8↔(9)↔10↔11 (skip over 3, and over 9 when lyrics unavailable); Down from any button→3; Up from 3→1.
-    // RequestDetail/RequestOptions added 2026-07-18 (real bug, same class as
-    // the QueuePanel/NowPlaying exclusions already here) — a stale
-    // music-bar-focused >= 0 left over from earlier keyboard navigation
-    // survives a mouse-driven screen switch (mouse clicks bypass handle_key
-    // entirely) and would otherwise hijack this screen's own arrow keys/Enter.
+    // Excluded screens: a stale music-bar-focused from earlier keyboard use survives a
+    // mouse-driven screen switch and would hijack that screen's arrows/Enter.
     if !matches!(
         mode,
         AppMode::Player
