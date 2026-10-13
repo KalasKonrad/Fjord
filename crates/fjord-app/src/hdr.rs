@@ -1,68 +1,31 @@
-// ── fjord-app · hdr.rs ────────────────────────────────────────────────────
-//   spawn_worker      entry point, called once from activity::
-//                     FjordApplicationHandler the instant real wl_display/
-//                     wl_surface handles first become available — spawns a
-//                     dedicated OS thread and returns immediately, never
-//                     touching the Slint/UI thread. Stage 1+2 name was
-//                     `spawn_capability_diagnostic`; renamed since the thread
-//                     now does real negotiation, not just diagnostics.
-//   run_worker        the actual unsafe FFI + persistent command loop.
-//                     Setup (Stage 1+2, unchanged in spirit): attaches a
-//                     SECOND, independent wayland-client event queue to the
-//                     same Wayland socket winit already owns
-//                     (Backend::from_foreign_display), binds
-//                     wp_color_manager_v1 if advertised, logs every
-//                     capability it reports, wraps Fjord's own existing
-//                     wl_surface as a typed proxy. Stage 3 addition: instead
-//                     of exiting after setup, the thread then blocks on
-//                     `for cmd in rx { ... }`, negotiating a real HDR image
-//                     description per HdrCommand::SetHdr and applying/
-//                     clearing it on the surface — see HdrCommand's own doc
-//                     comment for the full per-command flow. Every fallible
-//                     step logs and either skips the command or (for a
-//                     genuine Wayland protocol/dispatch error, which is
-//                     fatal to the WHOLE connection) exits the thread
-//                     entirely — this thread must be structurally incapable
-//                     of destabilizing the app regardless of what it
-//                     discovers about the compositor.
-//   HdrCommand        SetHdr(HdrParams, target) | Unset — sent via send_command(); target =
-//                     the video subsurface's wl_surface (HDR Stage 5, 2026-10-05) or None for
-//                     the window; the worker keeps one Target (surface + colour-management
-//                     object) per surface and unsets whichever was last tagged
-//   HdrParams         optional real per-file mastering-luminance/CLL/FALL
-//                     metadata for an eligible (PQ + BT.2020) video; TF/
-//                     primaries are hardcoded for v1, not fields (see
-//                     build_hdr_params's own doc comment)
-//   HdrStatus         Idle | Disabled | NotApplicable | Unavailable |
-//                     Negotiating | Active | Failed — the stats overlay's
-//                     "HDR" row reads this via status_text()
-//   send_command      pub(crate), best-effort — a no-op if the worker was
-//                     never spawned (X11) or has since exited
-//   maybe_negotiate   pub(crate) — called once per playback (see playback.rs's
-//                     wire_mpv_timer hook) with the source's real HDR
-//                     metadata; runs eligibility, sets status, sends SetHdr
-//   set_status_disabled  pub(crate) — called instead of maybe_negotiate when
-//                     the "HDR passthrough" Settings toggle is off; sets
-//                     status only, sends no Wayland command at all
-//   build_hdr_params  pure eligibility function — Some only for gamma=="pq"
-//                     && primaries=="bt.2020" (this exact compositor doesn't
-//                     advertise Hlg — see the live capability log this was
-//                     designed against)
-//   WorkerState       the worker thread's own Dispatch target AND general
-//                     mutable state for its whole lifetime — not consumed
-//                     anywhere else
-//
-//   Cross-thread state note: HDR_STATUS/HDR_CHANNEL below are the one place
-//   in this codebase using a module-level `static` instead of the usual
-//   Arc::clone()-from-main() convention — see HDR_CHANNEL's own doc comment
-//   for exactly why (a genuine bootstrap-ordering constraint, not a
-//   shortcut): confirmed from main.rs that FjordApplicationHandler —  the
-//   only code that ever learns the real wl_display/wl_surface handles — is
-//   constructed and registered before MainWindow::new(), which is itself
-//   before FjordState/VideoState exist at all, so there is no point before
-//   FjordApplicationHandler's own construction where an Arc<Mutex<...>>
-//   clone of either could be threaded in.
-// ───────────────────────────────────────────────────────────────────────────
+// ── fjord-app · hdr.rs ────────────────────────────────────────────────────────
+//   Wayland colour management (wp_color_manager_v1) on a worker thread: tags the video surface
+//   (or Fjord's window) with an HDR10 image description during HDR passthrough.
+//   spawn_worker      called once from activity::FjordApplicationHandler when the real
+//                     wl_display/wl_surface handles exist; spawns the worker thread and returns
+//   run_worker        the unsafe FFI + command loop: a second wayland-client event queue on
+//                     winit's socket (Backend::from_foreign_display), binds wp_color_manager_v1,
+//                     logs its capabilities, then handles HdrCommands (handle_set_hdr). Failures
+//                     log and skip; a protocol/dispatch error (fatal to the shared connection) ends
+//                     the thread — it must never destabilize the app
+//   HdrCommand        SetHdr(HdrParams, target) | Unset, via send_command(); target = the video
+//                     subsurface's wl_surface (Stage 5) or None for the window; one Target
+//                     (surface + colour-management object, wrap_surface) per surface, Unset clears
+//                     the last tagged one
+//   HdrParams         optional per-file mastering luminance / MaxCLL / MaxFALL; transfer function
+//                     and primaries are fixed (HDR10)
+//   HdrStatus         Idle | Disabled | NotApplicable | Unavailable | Negotiating | Active | Failed
+//                     — status_text() for the stats overlay, is_active() for wire_mpv_timer
+//   send_command      best-effort (no-op without a worker); Unset resets the status synchronously
+//   maybe_negotiate   once per playback from wire_mpv_timer's hook with the source's HDR metadata:
+//                     eligibility, status, SetHdr
+//   set_status_disabled  instead of maybe_negotiate when "HDR passthrough" is off (status only)
+//   build_hdr_params  pure eligibility: Some only for gamma "pq" + primaries "bt.2020"
+//   WorkerState       the worker's Dispatch target and state
+//   Statics           HDR_STATUS / HDR_CHANNEL are module statics, not Arcs from main(): the
+//                     handler that learns the Wayland handles is built before MainWindow::new(),
+//                     before FjordState/VideoState exist (see HDR_CHANNEL)
+// ─────────────────────────────────────────────────────────────────────────────
 
 use std::ffi::c_void;
 use std::ptr::NonNull;
@@ -86,18 +49,11 @@ use wayland_protocols::wp::color_management::v1::client::wp_image_description_v1
 
 // ── on-screen/status surface ────────────────────────────────────────────────
 
-/// The stats overlay's "HDR" row (Stage 3) reads this on the same ~500ms
-/// cadence it reads every other stats field on. Written from two different
-/// threads for two different reasons: the app-level trigger in
-/// `playback.rs` sets `Disabled`/`NotApplicable`/`Negotiating` *before* any
-/// Wayland command is even sent; the worker thread sets `Active`/`Failed`/
-/// `Unavailable` once it actually knows the outcome. `Unset` unconditionally
-/// resets it to `Idle` regardless of whether anything was actually active —
-/// see `run_worker`'s own `HdrCommand::Unset` arm for why this must be
-/// unconditional (a real gap an independent review pass caught: without it,
-/// an HDR video's terminal status visibly lingered through a following
-/// audio-only track, since the stats overlay's VIDEO section isn't hidden
-/// during audio playback and the whole trigger is skipped for audio items).
+/// The stats overlay's "HDR" row reads this (~500 ms cadence). Written from two threads:
+/// the playback trigger sets Disabled/NotApplicable/Negotiating before any Wayland command;
+/// the worker sets Active/Failed/Unavailable once it knows. `Unset` always resets to Idle
+/// (see run_worker's Unset arm) — otherwise an HDR video's status lingered through a
+/// following audio-only track.
 #[derive(Clone, Copy, PartialEq, Eq, Default)]
 enum HdrStatus {
     #[default]
@@ -136,11 +92,8 @@ pub(crate) fn status_text() -> &'static str {
     HDR_STATUS.lock().unwrap().as_str()
 }
 
-/// hdr branch, Stage 4 (2026-09-16) — read from `wire_mpv_timer`'s own poll
-/// to detect the Idle/Negotiating→Active transition and apply real mpv HDR
-/// output settings exactly once per item. Deliberately doesn't leak
-/// `HdrStatus` itself outside this module (which stays private) — a plain
-/// bool is all any caller actually needs.
+/// For wire_mpv_timer's poll: detects Idle/Negotiating → Active to apply mpv's HDR output
+/// settings once per item. HdrStatus stays private; a bool is all callers need.
 pub(crate) fn is_active() -> bool {
     *HDR_STATUS.lock().unwrap() == HdrStatus::Active
 }
@@ -190,27 +143,14 @@ static HDR_CHANNEL: LazyLock<HdrChannel> = LazyLock::new(|| {
     (tx, Mutex::new(Some(rx)))
 });
 
-/// Best-effort, matching this module's established non-fatal ethos: a no-op
-/// if the worker thread was never spawned (non-Wayland launch) or has since
-/// exited (compositor doesn't advertise the global, or a fatal protocol
-/// error killed the connection).
+/// Best-effort: a no-op if the worker was never spawned (not Wayland) or has exited (no
+/// colour-management global, or a fatal protocol error).
 ///
-/// `Unset` synchronously resets `HDR_STATUS` to `Idle` on the *calling*
-/// thread, before the command is even queued — real bug, found during Stage
-/// 4 planning (2026-09-16): the worker only resets the status once it
-/// actually gets around to processing a queued `Unset`, on its own isolated
-/// thread, with no guarantee this has happened by the time `tear_down_player`
-/// (the only caller of `Unset`) returns and the next item's own
-/// `reset_video_state_for_playback`/`wire_mpv_timer` ticks start running.
-/// Harmless before Stage 4 (the only reader was a passive stats-overlay
-/// string), but Stage 4's own poll for "did negotiation just succeed" would
-/// otherwise see a stale `Active` left over from the *previous* item and
-/// wrongly apply real-HDR-output mpv properties to the *new* item's Player
-/// before its own negotiation has even started. `set_status`/`HDR_STATUS`
-/// are a plain `Mutex`, freely callable from any thread, so this is safe;
-/// the worker's own eventual `Unset` handling still runs (to actually tear
-/// down the real Wayland surface state) and still sets `Idle` itself —
-/// redundant but idempotent by then.
+/// `Unset` resets HDR_STATUS to Idle synchronously on the CALLING thread, before queueing:
+/// the worker resets it only when it gets to the command, and the next item's
+/// wire_mpv_timer could otherwise see a stale Active and apply HDR output settings before
+/// its own negotiation. HDR_STATUS is a plain Mutex, fine from any thread; the worker's own
+/// Unset still tears down the surface state and sets Idle again (idempotent).
 pub(crate) fn send_command(cmd: HdrCommand) {
     if matches!(cmd, HdrCommand::Unset) {
         set_status(HdrStatus::Idle);
@@ -242,15 +182,9 @@ pub(crate) fn set_status_disabled() {
     set_status(HdrStatus::Disabled);
 }
 
-/// Eligibility — deliberately narrow for v1: only genuine HDR10 (PQ +
-/// BT.2020) content, the one combination this exact compositor is confirmed
-/// (live, Stage 2) to advertise support for. `gamma`/`primaries` values
-/// already empirically confirmed live for real HDR10 content on this exact
-/// server ("bt.2020 · pq", from the earlier CLR IN/OUT freeze-bug
-/// investigation). HLG content and anything with non-named/custom primaries
-/// deliberately stay at today's tone-mapped behavior — see CLAUDE.md's HDR
-/// section for the full reasoning; revisit if a future KWin version
-/// advertises `Hlg`.
+/// Eligibility, deliberately narrow: only HDR10 (PQ + BT.2020) — the one combination KWin
+/// advertises (verified live; real HDR10 files report "bt.2020 · pq"). HLG and custom
+/// primaries stay tone-mapped; revisit if KWin advertises Hlg.
 fn build_hdr_params(meta: &fjord_player::SourceHdrMetadata) -> Option<HdrParams> {
     if meta.gamma != "pq" || meta.primaries != "bt.2020" {
         return None;
@@ -598,17 +532,9 @@ fn handle_set_hdr(
         let max_scaled = max_l.round() as u32;
         creator.set_mastering_luminance(min_scaled, max_scaled);
 
-        // max_cll/max_fall are ONLY ever attempted alongside a
-        // validated mastering-luminance range, checked against that
-        // real range in cd/m² — the protocol's own version-1-only
-        // bound ("max_cll/max_fall must be > min L and <= max L of
-        // the mastering range") applied unconditionally regardless
-        // of which interface version actually negotiated, since
-        // satisfying the stricter check is always also valid under
-        // the more permissive v2+ rule. A value sent outside this
-        // bound would raise a FATAL invalid_luminance protocol
-        // error on the shared connection — real gap an independent
-        // review pass caught, fixed here rather than left open.
+        // max_cll/max_fall only with a validated mastering range, and inside it in cd/m² (the
+        // protocol's v1 bound, applied for every version — it also satisfies v2+): a value outside
+        // it raises a FATAL invalid_luminance error on the shared connection.
         let cll_ok = params.max_cll.is_some_and(|c| c > min_l && c <= max_l);
         if let Some(cll) = params.max_cll.filter(|_| cll_ok) {
             creator.set_max_cll(cll.round() as u32);
