@@ -23,6 +23,11 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Improved: library posters appear as they load.** The Movies, TV,
+  Collections and Music grids used to stay blank until every poster had been
+  fetched; now they fill in from the top while the rest arrive. The Shuffle
+  sort also no longer reshuffles the grid while posters load or while you
+  type a search.
 - **Improved: a YouTube trailer that hangs while opening is started again**
   after 7 seconds (it usually opens at once the second time) instead of
   showing a black screen for half a minute; if it still doesn't open, Fjord

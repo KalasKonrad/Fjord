@@ -2,7 +2,8 @@
 //   refresh_library_display  current sort + filter + query → library-display (preserving
 //                            identity) + alpha-offsets; #[track_caller] logs the caller
 //   build_alpha_offsets      [i32; 27] first flat index for A–Z + # in the display model
-//   pseudo_shuffle           deterministic Fisher-Yates with an LCG seed
+//   pseudo_shuffle / SHUFFLE_SEED / reseed_shuffle  deterministic Fisher-Yates; the Shuffle
+//                            sort's seed changes only when a sort is applied or a grid opens
 //   update_library_filter    set library-query, then refresh_library_display (#[track_caller])
 //   populate_browse_async    filter all_movies + all_series off the UI thread
 //   wire_browse              browse + library-search + sort + jump callbacks (edits at the caret
@@ -27,6 +28,19 @@ use crate::config::FjordState;
 use crate::{CardItem, MainWindow, display_names, to_slint_model};
 
 // ── Sort helpers ──────────────────────────────────────────────────────────────
+
+/// The Shuffle sort's seed. Kept until a sort is applied or a library grid opens
+/// (reseed_shuffle), so other refreshes — poster batches, typing a search — keep the order.
+static SHUFFLE_SEED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(42);
+
+/// A new random order for the Shuffle sort.
+pub(crate) fn reseed_shuffle() {
+    let seed = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.subsec_nanos() as u64)
+        .unwrap_or(42);
+    SHUFFLE_SEED.store(seed, std::sync::atomic::Ordering::Relaxed);
+}
 
 fn pseudo_shuffle(items: &mut [CardItem], seed: u64) {
     let n = items.len();
@@ -128,13 +142,10 @@ pub(crate) fn refresh_library_display(w: &MainWindow) {
                     .cmp(&b.title.as_str().to_lowercase()),
             )
         }),
-        4 => {
-            let seed = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.subsec_nanos() as u64)
-                .unwrap_or(42);
-            pseudo_shuffle(&mut items, seed);
-        }
+        4 => pseudo_shuffle(
+            &mut items,
+            SHUFFLE_SEED.load(std::sync::atomic::Ordering::Relaxed),
+        ),
         _ => {}
     }
 
@@ -383,6 +394,7 @@ pub(crate) fn wire_browse(
             let Some(w) = ww.upgrade() else { return };
             let g = AppState::get(&w);
             let nav = g.get_active_nav();
+            reseed_shuffle();
             g.set_library_sort(sort);
             g.set_library_filter_unwatched(fw);
             g.set_library_filter_favorites(ff);

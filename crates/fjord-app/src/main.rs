@@ -9,7 +9,7 @@
 //   strip_html_to_text   server HTML (overviews) → plain text (unit-tested)
 //   model helpers        item_to_card_item / items_to_model (watchlist set consulted at
 //                        construction), apply_cards_preserving_identity (patch rows in place when
-//                        ids/order match — no delegate rebuild, no poster flash),
+//                        ids/order match, only rows that changed — no delegate rebuild, no flash),
 //                        push_section_model / get_section_model (HomeSection), to_slint_model,
 //                        display_names, timed (logs `timing:` lines)
 //   text helpers         trim_last_grapheme; grapheme_count / insert_at_grapheme /
@@ -380,8 +380,12 @@ pub(crate) fn apply_cards_preserving_identity(
             "apply_cards_preserving_identity: {} row(s), same_shape=true",
             fresh.len()
         );
-        for (i, card) in fresh.into_iter().enumerate() {
-            old.set_row_data(i, card);
+        // Only rows that changed: a poster batch (movies.rs/poster.rs load_grid_posters) touches
+        // a few rows of hundreds, many times per load.
+        for (i, (card, prev)) in fresh.into_iter().zip(old_rows).enumerate() {
+            if card != prev {
+                old.set_row_data(i, card);
+            }
         }
         return old.clone();
     }

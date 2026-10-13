@@ -15,7 +15,11 @@
 //                          spawn_ callers take `state` for the check)
 //   spawn_poster_loading   parallel poster fetch for [(HomeSection, Vec<MediaItem>); 17]; sets
 //                          series-id on Episode cards
-//   spawn_series_poster_loading  same for series cards → AppState.all-series
+//   load_grid_posters / PosterBufs  a library grid's posters: 8 parallel fetch+decode tasks, the
+//                          decoded buffers pushed in batches (POSTER_BATCH_INTERVAL 150 ms, then a
+//                          final push) so the grid fills as they arrive; `timing:` first batch/total
+//   spawn_series_poster_loading / push_decoded_series  the TV grid through load_grid_posters →
+//                          AppState.all-series (a row keeps the poster it already shows)
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
 
@@ -374,14 +378,12 @@ fn push_decoded_section(
     });
 }
 
-/// Decode series poster bytes and push the completed CardItem model to
-/// AppState.all-series (and library-display when the TV grid is open).
-/// Called from both the normal completion path (last poster arrives) and
-/// the post-loop flush (task panics left some posters unresolved — the
-/// normal push never fires when the last task in the channel panicked).
+/// One load_grid_posters batch → AppState.all-series (and library-display when the TV grid is
+/// open): every card from `meta`, the newly decoded posters for rows that have none yet (a row
+/// keeps the poster it already shows).
 fn push_decoded_series(
     meta: &SeriesMeta,
-    poster_map: &std::collections::HashMap<String, std::sync::Arc<Vec<u8>>>,
+    mut bufs: PosterBufs,
     ww: &slint::Weak<MainWindow>,
     state: &Arc<Mutex<FjordState>>,
     client: &Arc<JellyfinClient>,
@@ -389,7 +391,7 @@ fn push_decoded_series(
     let decoded: Vec<DecodedSeriesCard> = meta
         .iter()
         .map(|(cid, title, subtitle, year, played, is_fav, rpct, upc)| {
-            let buf = poster_map.get(cid).and_then(|b| decode_poster_buffer(b));
+            let buf = bufs.remove(cid);
             (
                 SharedString::from(cid.as_str()),
                 SharedString::from(title.as_str()),
@@ -553,6 +555,80 @@ pub(crate) fn spawn_poster_loading(
     });
 }
 
+/// Decoded poster buffers by item id — one batch for a library grid.
+pub(crate) type PosterBufs =
+    std::collections::HashMap<String, slint::SharedPixelBuffer<slint::Rgba8Pixel>>;
+
+/// How often a library grid gets the posters decoded so far.
+const POSTER_BATCH_INTERVAL: std::time::Duration = std::time::Duration::from_millis(150);
+
+/// Fetches and decodes a library grid's posters, 8 at a time — each task decodes its own
+/// poster, off the UI thread. `push` gets the buffers decoded since its last call: at most
+/// every POSTER_BATCH_INTERVAL while fetches are still running, then once at the end (always,
+/// even with nothing new), so the grid fills as posters arrive instead of all at once. Fetches
+/// start in `items` order (the semaphore is FIFO), so the first rows fill first. `items` =
+/// (id, primary image tag). Logs `timing:` for the first batch and the whole run.
+pub(crate) async fn load_grid_posters(
+    client: &Arc<JellyfinClient>,
+    items: &[(String, Option<String>)],
+    label: &str,
+    mut push: impl FnMut(PosterBufs),
+) {
+    let started = std::time::Instant::now();
+    let sem = Arc::new(tokio::sync::Semaphore::new(8));
+    let mut set: tokio::task::JoinSet<(
+        String,
+        Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>,
+    )> = tokio::task::JoinSet::new();
+    for (id, tag) in items {
+        let client = Arc::clone(client);
+        let sem = Arc::clone(&sem);
+        let (id, tag) = (id.clone(), tag.clone());
+        set.spawn(async move {
+            let Ok(_permit) = sem.acquire_owned().await else {
+                return (id, None);
+            };
+            let buf = fetch_poster_cached_tagged(&client, &id, tag.as_deref())
+                .await
+                .and_then(|b| decode_poster_buffer(&b));
+            (id, buf)
+        });
+    }
+    let mut fresh = PosterBufs::new();
+    let (mut decoded, mut pushes) = (0usize, 0usize);
+    let mut last_push = std::time::Instant::now();
+    while let Some(res) = set.join_next().await {
+        match res {
+            Ok((id, Some(buf))) => {
+                decoded += 1;
+                fresh.insert(id, buf);
+            }
+            Ok((_, None)) => {}
+            Err(e) => tracing::warn!("{label} poster task panicked: {e}"),
+        }
+        if !set.is_empty() && !fresh.is_empty() && last_push.elapsed() >= POSTER_BATCH_INTERVAL {
+            if pushes == 0 {
+                tracing::debug!(
+                    "timing: {label} posters — first batch ({} of {}) after {:.3}s",
+                    fresh.len(),
+                    items.len(),
+                    started.elapsed().as_secs_f64()
+                );
+            }
+            push(std::mem::take(&mut fresh));
+            pushes += 1;
+            last_push = std::time::Instant::now();
+        }
+    }
+    push(fresh);
+    tracing::debug!(
+        "timing: {label} posters — {decoded} of {} decoded in {:.3}s, {} push(es)",
+        items.len(),
+        started.elapsed().as_secs_f64(),
+        pushes + 1
+    );
+}
+
 pub(crate) fn spawn_series_poster_loading(
     client: Arc<JellyfinClient>,
     series: Vec<MediaItem>,
@@ -562,15 +638,15 @@ pub(crate) fn spawn_series_poster_loading(
 ) {
     rt_handle.spawn(async move {
         use std::collections::HashSet;
-        use std::sync::Arc as SArc;
 
-        // Deduplicate by ID before building metadata — a duplicate ID in `pending`
-        // would cause the first task to empty the set and fire push_decoded_series
-        // before the second task's bytes arrive, leaving one card with no poster.
+        // Deduplicate by ID: every card is pushed once per batch by id.
         let mut seen: HashSet<String> = HashSet::new();
-        let meta: SeriesMeta = series
+        let unique: Vec<&MediaItem> = series
             .iter()
             .filter(|i| seen.insert(i.id.clone()))
+            .collect();
+        let meta: SeriesMeta = unique
+            .iter()
             .map(|i| {
                 (
                     i.id.clone(),
@@ -584,65 +660,15 @@ pub(crate) fn spawn_series_poster_loading(
                 )
             })
             .collect();
-        let mut pending: HashSet<String> = meta
+        // (id, primary image tag) — the tag revalidates cached artwork.
+        let ids: Vec<(String, Option<String>)> = unique
             .iter()
-            .map(|(id, _, _, _, _, _, _, _)| id.clone())
+            .map(|i| (i.id.clone(), i.primary_image_tag().map(str::to_string)))
             .collect();
-        // id → primary image tag for artwork revalidation.
-        let tags: std::collections::HashMap<String, String> = series
-            .iter()
-            .filter_map(|i| i.primary_image_tag().map(|t| (i.id.clone(), t.to_string())))
-            .collect();
-
-        let sem = Arc::new(tokio::sync::Semaphore::new(8));
-        let mut fetch_set: tokio::task::JoinSet<(String, Option<SArc<Vec<u8>>>)> =
-            tokio::task::JoinSet::new();
-        for (id, _, _, _, _, _, _, _) in &meta {
-            let client = Arc::clone(&client);
-            let sem = Arc::clone(&sem);
-            let id = id.clone();
-            let tag = tags.get(&id).cloned();
-            fetch_set.spawn(async move {
-                let Ok(_permit) = sem.acquire_owned().await else {
-                    return (id, None);
-                };
-                let bytes = fetch_poster_cached_tagged(&client, &id, tag.as_deref())
-                    .await
-                    .map(SArc::new);
-                (id, bytes)
-            });
-        }
-
-        let mut poster_map: std::collections::HashMap<String, SArc<Vec<u8>>> = Default::default();
-
-        while let Some(res) = fetch_set.join_next().await {
-            let (id, bytes) = match res {
-                Ok(pair) => pair,
-                Err(e) => {
-                    tracing::warn!("series poster task panicked: {e}");
-                    continue;
-                }
-            };
-            if let Some(b) = bytes {
-                poster_map.insert(id.clone(), b);
-            }
-            pending.remove(&id);
-            if !pending.is_empty() {
-                continue;
-            }
-            push_decoded_series(&meta, &poster_map, &window_weak, &state, &client);
-        }
-
-        // Post-loop flush: the normal push above only fires when the last poster
-        // arrives without panicking. If the last task(s) panicked, pending is still
-        // non-empty here — push whatever partial results we have.
-        if !pending.is_empty() {
-            tracing::warn!(
-                "series poster: {} item(s) never resolved — pushing partial results",
-                pending.len()
-            );
-            push_decoded_series(&meta, &poster_map, &window_weak, &state, &client);
-        }
+        load_grid_posters(&client, &ids, "Series", |bufs| {
+            push_decoded_series(&meta, bufs, &window_weak, &state, &client);
+        })
+        .await;
     });
 }
 

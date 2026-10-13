@@ -5,7 +5,8 @@
 //                                      apply_cards_preserving_identity; keeps each row's existing
 //                                      poster, unplayed_count and on_watchlist; library-display
 //                                      goes through browse::refresh_library_display (sorted order)
-//   spawn_library_poster_loading       shared async: parallel poster fetch → AppState model
+//   spawn_library_poster_loading       shared async: poster::load_grid_posters batches →
+//                                      push_library_cards (the grid fills as posters arrive)
 //   spawn_movies/collections/artists/albums/playlists_poster_loading  thin wrappers per kind
 //   wire_library                       callbacks moved from main() (0.5.0 step 3): lazy library
 //                                      grid + Artists/Albums toggle
@@ -22,7 +23,6 @@ use slint::{Global, Model, ModelRc, SharedString, VecModel};
 
 use crate::AppState;
 use crate::config::FjordState;
-use crate::poster::{decode_poster_buffer, fetch_poster_cached_tagged};
 use crate::{CardItem, MainWindow};
 
 // (id, title, subtitle, year, played, is_favorite, resume_pct, unplayed_count) — raw
@@ -194,9 +194,6 @@ fn spawn_library_poster_loading(
     kind: LibraryKind,
 ) {
     rt_handle.spawn(async move {
-        use std::collections::HashSet;
-        use std::sync::Arc as SArc;
-
         if items.is_empty() {
             let ww = window_weak.clone();
             let _ = slint::invoke_from_event_loop(move || {
@@ -222,57 +219,15 @@ fn spawn_library_poster_loading(
                 )
             })
             .collect();
-        let mut pending: HashSet<String> = meta
+        // (id, primary image tag) — the tag revalidates cached artwork.
+        let ids: Vec<(String, Option<String>)> = items
             .iter()
-            .map(|(id, _, _, _, _, _, _, _)| id.clone())
+            .map(|i| (i.id.clone(), i.primary_image_tag().map(str::to_string)))
             .collect();
-        // id → primary image tag for artwork revalidation.
-        let tags: std::collections::HashMap<String, String> = items
-            .iter()
-            .filter_map(|i| i.primary_image_tag().map(|t| (i.id.clone(), t.to_string())))
-            .collect();
-
-        let sem = Arc::new(tokio::sync::Semaphore::new(8));
-        let mut fetch_set: tokio::task::JoinSet<(String, Option<SArc<Vec<u8>>>)> =
-            tokio::task::JoinSet::new();
-        for (id, _, _, _, _, _, _, _) in &meta {
-            let client = Arc::clone(&client);
-            let sem = Arc::clone(&sem);
-            let id = id.clone();
-            let tag = tags.get(&id).cloned();
-            fetch_set.spawn(async move {
-                let Ok(_permit) = sem.acquire_owned().await else {
-                    return (id, None);
-                };
-                let bytes = fetch_poster_cached_tagged(&client, &id, tag.as_deref())
-                    .await
-                    .map(SArc::new);
-                (id, bytes)
-            });
-        }
-
-        let mut poster_map: std::collections::HashMap<String, SArc<Vec<u8>>> = Default::default();
-
-        while let Some(res) = fetch_set.join_next().await {
-            let (id, bytes) = match res {
-                Ok(pair) => pair,
-                Err(e) => {
-                    tracing::warn!("{} poster task panicked: {e}", kind.item_type());
-                    continue;
-                }
-            };
-            if let Some(b) = bytes {
-                poster_map.insert(id.clone(), b);
-            }
-            pending.remove(&id);
-            if !pending.is_empty() {
-                continue;
-            }
-
+        crate::poster::load_grid_posters(&client, &ids, kind.item_type(), |mut bufs| {
             let decoded: Vec<DecodedCard> = meta
                 .iter()
                 .map(|(cid, title, subtitle, year, played, is_fav, rpct, upc)| {
-                    let buf = poster_map.get(cid).and_then(|b| decode_poster_buffer(b));
                     (
                         SharedString::from(cid.as_str()),
                         SharedString::from(title.as_str()),
@@ -282,39 +237,13 @@ fn spawn_library_poster_loading(
                         *is_fav,
                         *rpct,
                         *upc,
-                        buf,
+                        bufs.remove(cid),
                     )
                 })
                 .collect();
             push_library_cards(decoded, kind, window_weak.clone());
-        }
-
-        // Post-loop flush: push with partial results if tasks panicked.
-        if !pending.is_empty() {
-            tracing::warn!(
-                "{} poster: {} item(s) never resolved — pushing partial results",
-                kind.item_type(),
-                pending.len()
-            );
-            let decoded: Vec<DecodedCard> = meta
-                .iter()
-                .map(|(cid, title, subtitle, year, played, is_fav, rpct, upc)| {
-                    let buf = poster_map.get(cid).and_then(|b| decode_poster_buffer(b));
-                    (
-                        SharedString::from(cid.as_str()),
-                        SharedString::from(title.as_str()),
-                        SharedString::from(subtitle.as_str()),
-                        *year,
-                        *played,
-                        *is_fav,
-                        *rpct,
-                        *upc,
-                        buf,
-                    )
-                })
-                .collect();
-            push_library_cards(decoded, kind, window_weak.clone());
-        }
+        })
+        .await;
     });
 }
 
@@ -418,6 +347,7 @@ pub(crate) fn wire_library(
                 };
                 if let Some(w) = ww_ol.upgrade() {
                     let g = AppState::get(&w);
+                    crate::browse::reseed_shuffle();
                     g.set_library_sort(sort_val as i32);
                     g.set_library_filter_unwatched(false);
                     g.set_library_filter_favorites(false);
