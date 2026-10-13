@@ -1,48 +1,17 @@
-// ── fjord-app · activity.rs ───────────────────────────────────────────────
-//   ActivityClock            lock-free, Clone-able "when did the user last
-//                            do anything" timestamp — shared by the keyboard
-//                            path (main.rs::on_handle_key), the winit-level
-//                            mouse tap below, and profile::wire_idle_lock_timer's
-//                            own idle check.
-//   FjordApplicationHandler  CustomApplicationHandler impl, registered once
-//                            via slint::BackendSelector at the top of
-//                            main(), before MainWindow::new() — Slint only
-//                            ever allows ONE such handler (confirmed
-//                            directly from i-slint-backend-selector's own
-//                            source: a single `Option<Box<dyn
-//                            CustomApplicationHandler>>`, not composable),
-//                            so this struct carries every concern that needs
-//                            this one hook, not just its original one. Two
-//                            responsibilities today: (1) the mouse-activity
-//                            tap — observes every raw CursorMoved/MouseInput/
-//                            MouseWheel winit event BEFORE Slint's own
-//                            hit-testing/dispatch, so unlike the old
-//                            AppState.record-activity() mechanism (fed from
-//                            exactly 3 Slint TouchAreas, replaced by this
-//                            same-day, event-loop branch) it sees mouse
-//                            activity anywhere on the window — including
-//                            over a MediaCard/FjordButton/NavItem that would
-//                            otherwise swallow it; (2) hdr branch (2026-09-10,
-//                            extended to real negotiation 2026-09-14) — a
-//                            one-time capture of the real winit Window's raw
-//                            wl_display/wl_surface handles, the instant they
-//                            first become available (a real winit Window
-//                            doesn't exist at all until the event loop has
-//                            run at least one iteration past show()/run() —
-//                            this callback is the first point that's ever
-//                            true), handed off to hdr.rs's spawn_worker,
-//                            which both logs the compositor's Wayland
-//                            color-management capabilities and — once real
-//                            HDR content plays, if enabled in Settings —
-//                            negotiates a real image description onto
-//                            Fjord's own surface. The same handles also go to
-//                            video_surface::set_wayland_handles (HDR Stage 5,
-//                            2026-10-04 — the video backplane subsurface).
-//                            Pure observation either
-//                            way from THIS callback's own perspective:
-//                            always returns EventResult::Propagate, Slint's
-//                            own dispatch is completely unaffected.
-// ───────────────────────────────────────────────────────────────────────────
+// ── fjord-app · activity.rs ───────────────────────────────────────────────────
+//   ActivityClock            lock-free, Clone-able "last user activity" timestamp — touched by the
+//                            key dispatch (keys::wire_key_dispatch), the mouse tap below and
+//                            profile::wire_idle_lock_timer (while media plays); read by the idle
+//                            lock
+//   FjordApplicationHandler  the one CustomApplicationHandler Slint allows (registered via
+//                            slint::BackendSelector before MainWindow::new()), so it carries every
+//                            concern needing that hook: (1) the mouse-activity tap — sees every
+//                            raw CursorMoved/MouseInput/MouseWheel before Slint's hit-testing, so
+//                            mouse activity over any element counts; (2) a one-time capture of the
+//                            real wl_display/wl_surface once the winit Window exists, handed to
+//                            hdr::spawn_worker and video_surface::set_wayland_handles. Pure
+//                            observation: always EventResult::Propagate.
+// ─────────────────────────────────────────────────────────────────────────────
 
 use slint::winit_030::winit::raw_window_handle::{
     HasDisplayHandle, HasWindowHandle, RawDisplayHandle, RawWindowHandle,
@@ -100,12 +69,8 @@ impl ActivityClock {
 /// once, from `main()`, via `BackendSelector::with_winit_custom_application_handler`.
 pub(crate) struct FjordApplicationHandler {
     pub(crate) clock: ActivityClock,
-    /// hdr branch (2026-09-10) — guards the one-time wl_display/wl_surface
-    /// capture below. Plain `bool`, no `Arc`/atomics needed:
-    /// `CustomApplicationHandler::window_event` takes `&mut self`
-    /// (confirmed directly from i-slint-backend-winit's own trait
-    /// definition) and only the winit event loop's own single thread ever
-    /// calls it.
+    /// Guards the one-time wl_display/wl_surface capture below. A plain bool: window_event takes
+    /// `&mut self` and runs only on the winit event-loop thread.
     pub(crate) hdr_handles_captured: bool,
 }
 
@@ -128,15 +93,9 @@ impl CustomApplicationHandler for FjordApplicationHandler {
             self.clock.touch();
         }
 
-        // hdr branch (2026-09-10), Stage 1 — the real winit Window (and
-        // therefore a real wl_surface/wl_display) doesn't exist at all
-        // until the event loop has run at least one iteration past
-        // show()/run() (confirmed directly against WinitWindowAdapter's own
-        // source: ensure_window() needs a live &ActiveEventLoop, which only
-        // exists inside a running event-loop callback like this one) — so
-        // this is the first point in the whole app where `winit_window` can
-        // ever be `Some`. Fires at most once per process, regardless of how
-        // many more window_event calls follow.
+        // The real winit Window (and its wl_surface/wl_display) only exists once the event loop has
+        // run past show()/run() (WinitWindowAdapter's ensure_window needs a live ActiveEventLoop) —
+        // this is the first point it can be Some. Fires once per process.
         if !self.hdr_handles_captured
             && let Some(w) = winit_window
         {

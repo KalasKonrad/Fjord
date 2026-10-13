@@ -1,5 +1,6 @@
 // ── fjord-app · music.rs ─────────────────────────────────────────────────────
-//   Music bar, Now Playing, queue controls/panel and lyrics callbacks (moved from main(), 0.5.0 step 3)
+//   Music bar, Now Playing, queue controls/panel and lyrics callbacks (moved from main(), 0.5.0
+//   step 3)
 //   wire_music_bar         music bar, Now Playing, queue panel open
 //   wire_queue             queue prev/next/shuffle/repeat, queue panel, lyrics
 //   push_queue_display / spawn_queue_poster_loading  queue panel model + its posters
@@ -8,7 +9,8 @@
 use crate::{AppState, MainWindow};
 
 // ── wire_music_bar (moved from main(), 0.5.0 step 3) ─────────────────────
-/// Wires music bar, Now Playing, queue panel open: music_bar_play_pause, music_bar_stop, music_bar_seek, music_bar_seek_rel, music_bar_open_album, open_now_playing, open_queue_panel.
+/// Wires music bar, Now Playing, queue panel open: music_bar_play_pause, music_bar_stop,
+/// music_bar_seek, music_bar_seek_rel, music_bar_open_album, open_now_playing, open_queue_panel.
 pub(crate) fn wire_music_bar(
     window: &crate::MainWindow,
     state: &std::sync::Arc<std::sync::Mutex<crate::config::FjordState>>,
@@ -110,10 +112,8 @@ pub(crate) fn wire_music_bar(
     }
     {
         let ww_qp = window.as_weak();
-        // Mouse entry point for the queue panel (music-bar ⋮ button). Mirrors the
-        // 'q' keyboard path in keys.rs, which doesn't need a focus re-grab since a
-        // keypress reaching handle_key already proves fs has focus — a mouse click
-        // after a stretch of mouse-only interaction can't assume that (CR11-6).
+        // Mouse entry point for the queue panel (music-bar ⋮). Unlike the 'q' key path (keys.rs),
+        // it re-grabs focus: after mouse-only use `fs` may not have it.
         AppState::get(&window).on_open_queue_panel(move || {
             let Some(w) = ww_qp.upgrade() else { return };
             let g = AppState::get(&w);
@@ -135,7 +135,9 @@ pub(crate) fn wire_music_bar(
 }
 
 // ── wire_queue (moved from main(), 0.5.0 step 3) ─────────────────────────
-/// Wires queue prev/next/shuffle/repeat, queue panel, lyrics: queue_prev_track, queue_next_track, toggle_shuffle, cycle_repeat, refresh_queue_display, queue_jump, queue_remove, queue_clear, toggle_lyrics.
+/// Wires queue prev/next/shuffle/repeat, queue panel, lyrics: queue_prev_track, queue_next_track,
+/// toggle_shuffle, cycle_repeat, refresh_queue_display, queue_jump, queue_remove, queue_clear,
+/// toggle_lyrics.
 pub(crate) fn wire_queue(
     window: &crate::MainWindow,
     state: &std::sync::Arc<std::sync::Mutex<crate::config::FjordState>>,

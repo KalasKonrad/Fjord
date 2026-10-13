@@ -1,18 +1,20 @@
 // ── fjord-app · controls.rs ──────────────────────────────────────────────────
 //   wire_controls  registers all AppState player callbacks on the window
 //     playback     pause_play_toggle, seek_*, stop_playback
-//     seek / intro seek_to (throttled ≤10/s), seek_drag_started (pause during scrub, queries mpv directly),
-//                  seek_committed (seek + resume + optimistic playback-pos),
-//                  skip_segment (ask mode), dismiss_skip_timed (ask-timed mode), update-seek-hover
-//     track panels select_sub/audio/video, commit_panel_selection (panels 1-4); panel 4 = chapter jump;
-//                  panels 1/2 also remember the picked language per series (state.remembered_tracks),
-//                  read back by playback.rs's track auto-select for the rest of that series
+//     seek / intro seek_to (throttled ≤10/s), seek_drag_started (pause during scrub, queries mpv
+//                  directly), seek_committed (seek + resume + optimistic playback-pos),
+//                  skip_segment (ask mode — delayed seek + fade like the automatic paths),
+//                  dismiss_skip_timed (ask-timed mode), update-seek-hover; keyboard seeks
+//                  accumulate (logged) and run in wire_mpv_timer
+//     track panels select_sub/audio/video, commit_panel_selection (panels 1-4; 4 = chapter jump);
+//                  panels 1/2 also remember the picked language per series
+//                  (state.remembered_tracks), read back by the track auto-select
 //     volume / misc volume_up/down, show_controls, resume_player, mute, stats, minimize
-//     chapters     chapter_prev/chapter_next: step ±1, compute OSD name, set chapter-osd for ~2 s
-//                  chapter_jump(idx): seek to vs.chapters[idx].0; also called from commit_panel (panel=4)
-//     delays       sub_delay_inc/dec (z/Z ±100 ms), audio_delay_inc/dec (x/X ±100 ms);
-//                  set delay-osd-text + delay-osd-visible for ~2 s; also update sub/audio-delay-ms (Sync panel)
-//   wire_up_next           callbacks moved from main() (0.5.0 step 3): Up Next banner
+//     chapters     chapter_prev/chapter_next: step ±1, set chapter-osd for ~2 s;
+//                  chapter_jump(idx): seek to vs.chapters[idx].0 (also from commit_panel, panel 4)
+//     delays       sub_delay_inc/dec (z/Z ±100 ms), audio_delay_inc/dec (x/X ±100 ms); delay OSD
+//                  for ~2 s; sub/audio-delay-ms for the Sync panel
+//   wire_up_next   callbacks moved from main() (0.5.0 step 3): Up Next banner
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
@@ -191,16 +193,9 @@ pub(crate) fn wire_controls(
             let accumulated = vs.seek_pending_secs;
             let pos = vs.player.as_ref().map(|p| p.get_position()).unwrap_or(0.0);
             let dur = vs.player.as_ref().map(|p| p.get_duration()).unwrap_or(0.0);
-            // Debug logging added 2026-08-28 — this whole keyboard-seek
-            // accumulation+debounce path (this handler, plus its execution
-            // in wire_mpv_timer below) previously logged nothing at all,
-            // unlike the immediate seek-button handlers just above, which
-            // made a real live report ("left and right did not skip")
-            // undiagnosable from the log: its silence was consistent with
-            // both "worked correctly, just never logged" and "the keypress
-            // never reached here at all," with no way to tell which from
-            // a log capture alone. This line confirms the keypress at
-            // least reached this handler and accumulated correctly.
+            // Logged: the keyboard-seek accumulation (and its execution in wire_mpv_timer) used to
+            // be silent, so "Left/Right didn't skip" couldn't be told apart from "the key never got
+            // here".
             debug!("seek_acc: delta={delta:+.1}s accumulated={accumulated:+.1}s pos={pos:.1}s dur={dur:.1}s player_present={}", vs.player.is_some());
             drop(vs);
 
@@ -327,16 +322,10 @@ pub(crate) fn wire_controls(
     }
     // ── seek / skip segment ───────────────────────────────────────────────────
     {
-        // Manual "Skip →" confirm (ask mode) / "Skip" button (ask-timed mode)
-        // — arms the same delayed-seek + fade-to-black as the two automatic
-        // skip paths in playback.rs's own tick loop, rather than seeking
-        // instantly (2026-08-11, direct request: "make intro skip etc more
-        // gradual, it feels instant and jarring"). skip_segment_handled is
-        // set here too, not left to the natural post-seek position change —
-        // with the seek now delayed, position hasn't moved yet by the very
-        // next tick, so without this the tick loop's mode-dispatch would
-        // keep re-evaluating (and re-showing an already-dismissed overlay)
-        // for the whole fade-out window.
+        // Manual "Skip →" (ask) / "Skip" (ask-timed): arms the same delayed seek + fade-to-black as
+        // the automatic paths in the tick loop. skip_segment_handled is set here: the position
+        // doesn't move until the delayed seek, and the tick loop would otherwise re-show the
+        // dismissed overlay during the fade.
         let video = Arc::clone(&video);
         let ww = window.as_weak();
         AppState::get(window).on_skip_segment(move || {
