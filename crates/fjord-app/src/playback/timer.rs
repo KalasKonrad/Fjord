@@ -13,6 +13,9 @@
 //                             first open before FileLoaded) → reload at the last good position, budget
 //                             by connection health (ws_connected/keep-alive); a failed open uses the same
 //                             budget; playback-stalled drives the "Reconnecting…" overlay
+//                           - trailers: a YouTube trailer not open TRAILER_OPEN_RETRY_SECS after
+//                             starting is restarted once (start_trailer, retry), then closed like a
+//                             failed open
 //                           - duration guard: an EOF far short of the duration is never a real end
 //                           - HDR Stage 3/4 (Branch A) and display sync (Branch B) — mutually exclusive
 //                           - video-init diagnostic (no VideoReconfig 5 s after load)
@@ -48,7 +51,8 @@ pub(crate) fn wire_mpv_timer(
             (s.config.device.gapless_audio, s.config.active().now_playing_auto_open, healthy)
         };
         let (finished, banner_trigger, gapless_commit, auto_open_now_playing, credits_mark_played,
-             hide_next_ep_banner, stalled_now, stall_reload, stall_give_up, trailer_failed) = {
+             hide_next_ep_banner, stalled_now, stall_reload, stall_give_up, trailer_failed,
+             trailer_restart) = {
             let mut vs = video_timer.lock().unwrap();
             let mut banner_trigger: Option<(String, Option<Arc<JellyfinClient>>, u32, bool)> = None;
             // Stall auto-recovery outputs — see the doc comment on the check
@@ -62,6 +66,8 @@ pub(crate) fn wire_mpv_timer(
             // Some(url) = a trailer failed to open — close with a toast and
             // mark that link unplayable (2026-10-04).
             let mut trailer_failed: Option<String> = None;
+            // Some((url, title, config)) = restart a YouTube trailer that didn't open in time.
+            let mut trailer_restart: Option<(String, String, PlayerConfig)> = None;
             // Set true by the rewind-past-credits revert below when it cancels an
             // in-flight Up Next countdown; acted on after the lock releases, same
             // deferred pattern as everything else in this tuple.
@@ -1119,6 +1125,25 @@ pub(crate) fn wire_mpv_timer(
                 }
             }
 
+            // A YouTube trailer still not open TRAILER_OPEN_RETRY_SECS after starting: restart it
+            // once (a fresh yt-dlp resolution usually opens at once); a second miss closes it like
+            // a failed open.
+            if vs.is_trailer
+                && vs.player.is_some() // stopped meanwhile: nothing to restart
+                && trailer_failed.is_none()
+                && loaded_since.is_none()
+                && vs.play_start.is_some_and(|t| t.elapsed() >= Duration::from_secs(TRAILER_OPEN_RETRY_SECS))
+                && let Some(url) = vs.trailer_url.clone()
+            {
+                match vs.trailer_retry.take() {
+                    Some((title, config)) => trailer_restart = Some((url, title, config)),
+                    None => {
+                        info!("trailer still not open {TRAILER_OPEN_RETRY_SECS} s after its retry — giving up");
+                        trailer_failed = Some(url);
+                    }
+                }
+            }
+
             // Gapless transition: mpv already plays the preloaded entry — commit
             // the bookkeeping and hand the UI/report work to the code below.
             let mut gapless_commit: Option<(QueueItem, u64, Option<String>, i64)> = None;
@@ -1138,7 +1163,8 @@ pub(crate) fn wire_mpv_timer(
             }
 
             (finished, banner_trigger, gapless_commit, auto_open_now_playing, credits_mark_played,
-             hide_next_ep_banner, stalled_now, stall_reload, stall_give_up, trailer_failed)
+             hide_next_ep_banner, stalled_now, stall_reload, stall_give_up, trailer_failed,
+             trailer_restart)
         };
 
         if hide_next_ep_banner && let Some(w) = window_timer.upgrade() {
@@ -1182,6 +1208,10 @@ pub(crate) fn wire_mpv_timer(
             do_stop_playback(&video_timer, &window_timer, &rt_handle, &state_timer);
             crate::show_toast(window_timer.clone(), TRAILER_FAILED_TOAST.to_string());
             crate::discover::mark_trailer_unplayable(&state_timer, &window_timer, &rt_handle, url);
+        }
+        if let Some((url, title, config)) = trailer_restart {
+            info!("trailer not open after {TRAILER_OPEN_RETRY_SECS} s — starting it once more");
+            start_trailer(url, title, config, TrailerSource::YouTube, true, &video_timer, &window_timer, &rt_handle);
         }
 
         // Auto-open Now Playing: fires here, after `vs` is released, so its

@@ -23,6 +23,10 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Improved: a YouTube trailer that hangs while opening is started again**
+  after 7 seconds (it usually opens at once the second time) instead of
+  showing a black screen for half a minute; if it still doesn't open, Fjord
+  says the trailer is unavailable.
 - **New: Trailer button on movie and series pages.** Like on Discover it shows
   "Checking…" while Fjord looks for a trailer that actually plays, then
   "▶ Trailer" (or a greyed "No trailer"). A trailer file stored on your
