@@ -1,5 +1,6 @@
 // ── fjord-app · browse.slint ─────────────────────────────────────────────────
-//   BrowseScreen  keyboard-driven search bar (browse-query, caret at browse-query-cursor) + scrollable ListView
+//   BrowseScreen  Browse All: keyboard-driven search bar (browse-query, caret at browse-query-cursor)
+//                 + scrollable list; on-screen keyboard window-centered, target-guarded
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
@@ -62,14 +63,8 @@ export component BrowseScreen inherits Rectangle {
                         alignment: start;
 
                         Text {
-                            // U+2315 (⌕) was pinned to Noto Sans Symbols 2 on
-                            // the assumption it lived there — it doesn't (confirmed
-                            // via fc-query cmap inspection against the actual bundled
-                            // .ttf, 2026-07-22, PLAN.md Issues: "my htpc dosent have
-                            // the symbol for search"), so the font-family pin never
-                            // helped and this fell through to system fallback, tofu
-                            // on any minimal install. U+1F50D (🔍, the real magnifying-
-                            // glass codepoint) genuinely IS in Symbols2's cmap.
+                            // U+1F50D 🔍 — in Noto Sans Symbols 2 (U+2315 ⌕ isn't, and showed as tofu without a system
+                            // fallback).
                             text: "🔍";
                             font-family: "Noto Sans Symbols 2";
                             color: AppState.browse-header-focused ? Theme.accent : Theme.text-muted;
@@ -129,13 +124,8 @@ export component BrowseScreen inherits Rectangle {
                 VerticalLayout {
                     for item[i] in AppState.media-items: BrowseItem {
                         text: item.text;
-                        // Same bug/fix as LibraryGrid's own card highlight
-                        // (2026-08-12) — current-item stays set to whatever
-                        // row you were on when Up-from-row-0 moves focus to
-                        // the search field (browse-header-focused), so
-                        // without this exclusion that row kept showing
-                        // selected even though the search field is what
-                        // actually has focus now.
+                        // No row highlight while the search field has focus (current-item keeps the old row), like
+                        // LibraryGrid.
                         selected: i == AppState.current-item && !AppState.browse-header-focused;
                         clicked => { AppState.current-item = i; AppState.browse-header-focused = false; }
                         activated => { AppState.play-item(i); }
@@ -180,22 +170,13 @@ export component BrowseScreen inherits Rectangle {
         }
     }
 
-    // On-screen alphanumeric keyboard (2026-08-23, full rollout beyond
-    // Login). Real gap this screen needs guarding against that Discover
-    // doesn't: BrowseScreen is a PERMANENTLY-mounted sibling (visible:
-    // AppState.show-browse toggles it, per this screen's own established
-    // mount-lifecycle history), never conditionally created/destroyed — so
-    // without the target check below, this tracker would fire on EVERY
-    // other screen's physical-keyboard keystroke too, not just its own,
-    // even while Browse is fully hidden.
+    // On-screen alphanumeric keyboard. BrowseScreen is permanently mounted (toggled with
+    // `visible`), so the target check is essential — without it this would react to every other
+    // screen's keys while hidden.
     if AppState.show-onscreen-keyboard && AppState.settings-onscreen-keyboard-enabled && AppState.onscreen-keyboard-target == "browse-search": QwertyKeyboard {
         x: (parent.width - self.width) / 2;
-        // Window-centered, not docked at the very bottom (2026-08-25, live-
-        // reported: "not nice on some backgrounds... move it up more to
-        // the center"). Safe here specifically because the search field
-        // this targets sits in a fixed 54px header bar at the true top of
-        // the screen, nowhere near where a vertically-centered keyboard
-        // renders, regardless of window size.
+        // Window-centered: the search field sits in the top header bar, never under a centered
+        // keyboard.
         y: (parent.height - self.height) / 2;
         cursor: AppState.onscreen-keyboard-cursor;
         active: AppState.show-onscreen-keyboard;

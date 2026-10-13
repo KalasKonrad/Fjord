@@ -20926,3 +20926,232 @@ Above `g.invoke_bonfire_admin_cycle_limit(row.profile_user_id.clone());`:
 //   wire_bonfire_admin     callbacks moved from main() (0.5.0 step 3): BonfireAdminScreen
 // ─────────────────────────────────────────────────────────────────────────────
 ```
+
+#### `crates/fjord-app/ui/collection.slint`
+
+Above `Rectangle {`:
+```
+// Deterministic fixed-position fix (2026-07-18,
+// replaces an earlier height:240px+spacer version
+// that didn't reliably hold up live — see
+// detail.slint's identical fix for the full "why").
+// Plain Rectangle fixed at 240px (matching
+// PosterBlock); title/item-count/overview sit at
+// its top in their own VerticalLayout, the ♥/✓ row
+// is pinned via explicit `y: parent.height - 38px`
+// (IconCircleButton is a hard-coded 38px in
+// widgets.slint) — neither child's position
+// depends on the other's size.
+```
+
+Above `width: root.width - 48px - 48px - 160px - 32px;`:
+```
+// Explicit computed width off root.width, not
+// horizontal-stretch:1 (confirmed LIVE not to
+// work on a plain Rectangle) and not parent.width
+// (a genuine compile-time binding loop, since a
+// HorizontalLayout's own width can't depend on a
+// child that reads it back) — see detail.slint's
+// identical fix for the full three-attempt "why".
+// root.width minus the HorizontalLayout's own
+// padding-left/padding-right (48+48), PosterBlock's
+// fixed 160px, and the 32px spacing between them.
+```
+
+Above `if AppState.seerr-can-manage-blocklist: IconCircleButton {`:
+```
+// Bulk-blocklist this collection (2026-08-06,
+// Seerr Blocklist support) — no `active` state
+// to reflect (there's no clean single boolean
+// for "is this whole TMDB collection currently
+// blocklisted," see the confirm dialog's own
+// doc comment below), opens a confirm dialog
+// rather than acting directly since this
+// blocklists every part of the franchise,
+// globally, at once.
+```
+
+#### `crates/fjord-app/ui/browse.slint`
+
+Above `text: "🔍";`:
+```
+// U+2315 (⌕) was pinned to Noto Sans Symbols 2 on
+// the assumption it lived there — it doesn't (confirmed
+// via fc-query cmap inspection against the actual bundled
+// .ttf, 2026-07-22, PLAN.md Issues: "my htpc dosent have
+// the symbol for search"), so the font-family pin never
+// helped and this fell through to system fallback, tofu
+// on any minimal install. U+1F50D (🔍, the real magnifying-
+// glass codepoint) genuinely IS in Symbols2's cmap.
+```
+
+Above `selected: i == AppState.current-item && !AppState.browse-header-focused;`:
+```
+// Same bug/fix as LibraryGrid's own card highlight
+// (2026-08-12) — current-item stays set to whatever
+// row you were on when Up-from-row-0 moves focus to
+// the search field (browse-header-focused), so
+// without this exclusion that row kept showing
+// selected even though the search field is what
+// actually has focus now.
+```
+
+Above `if AppState.show-onscreen-keyboard && AppState.settings-onscreen-keyboard-enabled && AppState.onscre`:
+```
+// On-screen alphanumeric keyboard (2026-08-23, full rollout beyond
+// Login). Real gap this screen needs guarding against that Discover
+// doesn't: BrowseScreen is a PERMANENTLY-mounted sibling (visible:
+// AppState.show-browse toggles it, per this screen's own established
+// mount-lifecycle history), never conditionally created/destroyed — so
+// without the target check below, this tracker would fire on EVERY
+// other screen's physical-keyboard keystroke too, not just its own,
+// even while Browse is fully hidden.
+```
+
+Above `y: (parent.height - self.height) / 2;`:
+```
+// Window-centered, not docked at the very bottom (2026-08-25, live-
+// reported: "not nice on some backgrounds... move it up more to
+// the center"). Safe here specifically because the search field
+// this targets sits in a fixed 54px header bar at the true top of
+// the screen, nowhere near where a vertically-centered keyboard
+// renders, regardless of window size.
+```
+
+#### `crates/fjord-app/ui/collection.slint` — file header (TOC)
+```
+// ── fjord-app · collection.slint ─────────────────────────────────────────────
+//   CollectionScreen  BoxSet detail: backdrop hero + Back button + title +
+//                     overview + ♥/✓/⛔ buttons + member grid + "Missing From This Collection"
+//                     SectionRow (2026-07-29, Deep Seerr integration — first SectionRow on
+//                     this screen, below the grid; collection-missing-focused >= 0 = 4th
+//                     keyboard zone, Down from the grid's last row enters it); ⛔ (2026-08-06,
+//                     Seerr Blocklist support, only rendered when seerr-can-manage-blocklist)
+//                     opens a ConfirmDialog (widgets.slint) rather than acting directly —
+//                     bulk-blocklists every part of the TMDB collection at once, globally
+//                     Opened when Enter is pressed on a BoxSet in the Collections library.
+//                     collection-focused: int (focused card index); collection-back-focused: bool
+//                     Enter on card → open-detail; C → context menu; Back → close
+//                     Title column is a plain Rectangle fixed at height:240px, width:
+//                     root.width - 288px (NOT parent.width — compile-time binding loop, see
+//                     the Slint gotchas section) (matching PosterBlock) with two independently-
+//                     positioned children — title/item-count/overview at its top, the ♥/✓
+//                     row pinned via explicit y: parent.height - 38px (2026-07-18, three-
+//                     attempt fix, confirmed live-working on detail.slint's identical
+//                     structure — see CLAUDE.md's Seerr integration section for the full story).
+// ─────────────────────────────────────────────────────────────────────────────
+```
+
+#### `crates/fjord-app/ui/season.slint`
+
+Above `Rectangle {`:
+```
+// Deterministic fixed-position fix (2026-07-18, replaces
+// an earlier height:195px+spacer version that didn't
+// reliably hold up live — see detail.slint's identical
+// fix for the full "why"). Plain Rectangle fixed at
+// 195px matching this screen's own 130x195 poster (not
+// 240px — that's PosterBlock's size, used on Detail/
+// Collection/RequestDetail, not here). Title/meta sit
+// at its top in their own VerticalLayout, the ♥/✓ row
+// is pinned via explicit `y: parent.height - 38px`
+// (IconCircleButton is a hard-coded 38px in
+// widgets.slint) — neither child's position depends on
+// the other's size.
+```
+
+Above `width: root.width - 48px - 48px - 130px - 28px;`:
+```
+// Explicit computed width off root.width — see
+// detail.slint's identical fix for the full three-
+// attempt "why" (horizontal-stretch:1 confirmed live
+// not to work on a plain Rectangle; parent.width
+// caused a genuine compile-time binding loop, since
+// a HorizontalLayout's own width can't depend on a
+// child reading it back). This screen's Rectangle
+// had inherited horizontal-stretch:1 from the
+// VerticalLayout it replaced and had the same latent
+// bug, just not yet live-tested/reported. root.width
+// minus the HorizontalLayout's own padding-left/
+// padding-right (48+48), this screen's own 130px
+// poster, and the 28px spacing between them
+// (season.slint uses 28px here, not the 32px
+// Detail/Collection/RequestDetail use).
+```
+
+#### `crates/fjord-app/ui/artist.slint`
+
+Above `Rectangle {`:
+```
+// Deterministic fixed-position fix (2026-07-18,
+// replaces an earlier height:160px+spacer version
+// that didn't reliably hold up live — see
+// detail.slint's identical fix for the full "why").
+// Plain Rectangle fixed at 160px matching the
+// circular portrait above. Title/meta sit at its
+// top in their own VerticalLayout, the ▶ Play All/
+// ♥ row is pinned via explicit `y: parent.height -
+// 38px` (IconCircleButton is a hard-coded 38px in
+// widgets.slint and dominates FjordButton's own
+// 34px override here) — neither child's position
+// depends on the other's size. This deliberately
+// trades the previous alignment:center (title+meta+
+// buttons floating as a vertically-centered group,
+// re-centering whenever the optional meta line
+// appeared/disappeared) for a top-anchored column
+// with a bottom-pinned button row, matching the
+// other detail-style screens.
+```
+
+Above `width: root.width - 48px - 48px - 160px - 32px;`:
+```
+// Explicit computed width off root.width — see
+// detail.slint's identical fix for the full
+// three-attempt "why" (horizontal-stretch:1
+// confirmed live not to work on a plain
+// Rectangle; parent.width caused a genuine
+// compile-time binding loop). root.width minus
+// the HorizontalLayout's own padding-left/
+// padding-right (48+48), the circular portrait's
+// fixed 160px, and the 32px spacing between them.
+```
+
+#### `crates/fjord-app/ui/season.slint` — file header (TOC)
+```
+// ── fjord-app · season.slint ──────────────────────────────────────────────────
+//   SeasonScreen  scrollable page: backdrop · poster/title/meta/overview ·
+//                 episode SectionRow (reuses AppState.series-episode-cards) ·
+//                 CastRow (season-specific people)
+//   Keyboard scroll: kb-y property on fl; cast-anchor tracks cast section Y.
+//   Episodes reuse series-episode-cards from AppState (already loaded for the
+//   selected season); season-focused-ep tracks focus independently.
+//   Title column is a plain Rectangle fixed at height:195px, width: root.width - 254px
+//   (NOT parent.width — compile-time binding loop, see the Slint gotchas section)
+//   (matching this screen's own 130x195 poster) with the ♥/✓ row pinned via explicit
+//   y: parent.height - 38px (2026-07-18, three-attempt fix — see detail.slint's
+//   identical structure, confirmed live-working there, for the full story).
+// ─────────────────────────────────────────────────────────────────────────────
+```
+
+#### `crates/fjord-app/ui/artist.slint` — file header (TOC)
+```
+// ── fjord-app · artist.slint ──────────────────────────────────────────────────
+//   ArtistScreen  MusicArtist detail: portrait + meta + album grid
+//                 artist-focused: int (focused album card flat index)
+//                 artist-back-focused: bool (Back button has focus)
+//                 artist-btn-focused: int (-1=none, 0=▶ Play All, 1=♥, 2=bio)
+//                 artist-overview-expanded: bool (collapsible bio below header)
+//                 Enter on card → open-album; C → context menu; Back → close-artist
+//                 ▶ Play All → play-artist-all; ♥ → toggle-artist-fav
+//                 Title column: plain Rectangle fixed at height:160px, width:
+//                 root.width - 288px (NOT parent.width — compile-time binding loop,
+//                 see the Slint gotchas section) (matching the circular portrait),
+//                 button row pinned via explicit y: parent.height - 38px (2026-07-18,
+//                 three-attempt fix — see detail.slint's identical structure,
+//                 confirmed live-working there, for the full story). Trades the old
+//                 vertically-centered title+meta+buttons group (alignment:center,
+//                 which re-centered whenever the meta line appeared/disappeared) for a
+//                 top-anchored column with a fixed bottom-pinned button row, matching
+//                 Detail/Collection/Season/RequestDetail.
+// ─────────────────────────────────────────────────────────────────────────────
+```

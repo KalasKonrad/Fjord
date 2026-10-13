@@ -6,16 +6,9 @@
 //                 artist-overview-expanded: bool (collapsible bio below header)
 //                 Enter on card → open-album; C → context menu; Back → close-artist
 //                 ▶ Play All → play-artist-all; ♥ → toggle-artist-fav
-//                 Title column: plain Rectangle fixed at height:160px, width:
-//                 root.width - 288px (NOT parent.width — compile-time binding loop,
-//                 see the Slint gotchas section) (matching the circular portrait),
-//                 button row pinned via explicit y: parent.height - 38px (2026-07-18,
-//                 three-attempt fix — see detail.slint's identical structure,
-//                 confirmed live-working there, for the full story). Trades the old
-//                 vertically-centered title+meta+buttons group (alignment:center,
-//                 which re-centered whenever the meta line appeared/disappeared) for a
-//                 top-anchored column with a fixed bottom-pinned button row, matching
-//                 Detail/Collection/Season/RequestDetail.
+//                 Title column: a plain Rectangle fixed at the portrait's 160px, width from
+//                 root.width (not parent.width — binding loop), the button row pinned at
+//                 y = parent.height - 38px.
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
@@ -90,35 +83,14 @@ export component ArtistScreen inherits Rectangle {
                             }
                         }
 
-                        // Deterministic fixed-position fix (2026-07-18,
-                        // replaces an earlier height:160px+spacer version
-                        // that didn't reliably hold up live — see
-                        // detail.slint's identical fix for the full "why").
-                        // Plain Rectangle fixed at 160px matching the
-                        // circular portrait above. Title/meta sit at its
-                        // top in their own VerticalLayout, the ▶ Play All/
-                        // ♥ row is pinned via explicit `y: parent.height -
-                        // 38px` (IconCircleButton is a hard-coded 38px in
-                        // widgets.slint and dominates FjordButton's own
-                        // 34px override here) — neither child's position
-                        // depends on the other's size. This deliberately
-                        // trades the previous alignment:center (title+meta+
-                        // buttons floating as a vertically-centered group,
-                        // re-centering whenever the optional meta line
-                        // appeared/disappeared) for a top-anchored column
-                        // with a bottom-pinned button row, matching the
-                        // other detail-style screens.
+                        // Plain Rectangle fixed at 160px (the circular portrait): title/meta at the top, the
+                        // ▶ Play All / ♥ row pinned at `y: parent.height - 38px` (IconCircleButton's 38px sets the
+                        // row height) — neither depends on the other's size; top-anchored like the other detail
+                        // screens (same fix as detail.slint).
                         Rectangle {
                             height: 160px;
-                            // Explicit computed width off root.width — see
-                            // detail.slint's identical fix for the full
-                            // three-attempt "why" (horizontal-stretch:1
-                            // confirmed live not to work on a plain
-                            // Rectangle; parent.width caused a genuine
-                            // compile-time binding loop). root.width minus
-                            // the HorizontalLayout's own padding-left/
-                            // padding-right (48+48), the circular portrait's
-                            // fixed 160px, and the 32px spacing between them.
+                            // Width from root.width (see detail.slint): minus the padding (48+48), the 160px portrait
+                            // and the spacing (32).
                             width: root.width - 48px - 48px - 160px - 32px;
 
                             VerticalLayout {
