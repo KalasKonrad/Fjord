@@ -21652,3 +21652,168 @@ Above `pub(crate) fn wire_prewarm_progress_timer(`:
 //   wire_prewarm_progress_timer  Settings → prewarm progress refresh
 // ─────────────────────────────────────────────────────────────────────────────
 ```
+
+#### `crates/fjord-app/src/controls.rs`
+
+Above `debug!("seek_acc: delta={delta:+.1}s accumulated={accumulated:+.1}s pos={pos:.1}s dur={dur:.1}s play`:
+```
+// Debug logging added 2026-08-28 — this whole keyboard-seek
+// accumulation+debounce path (this handler, plus its execution
+// in wire_mpv_timer below) previously logged nothing at all,
+// unlike the immediate seek-button handlers just above, which
+// made a real live report ("left and right did not skip")
+// undiagnosable from the log: its silence was consistent with
+// both "worked correctly, just never logged" and "the keypress
+// never reached here at all," with no way to tell which from
+// a log capture alone. This line confirms the keypress at
+// least reached this handler and accumulated correctly.
+```
+
+Above `let video = Arc::clone(&video);`:
+```
+// Manual "Skip →" confirm (ask mode) / "Skip" button (ask-timed mode)
+// — arms the same delayed-seek + fade-to-black as the two automatic
+// skip paths in playback.rs's own tick loop, rather than seeking
+// instantly (2026-08-11, direct request: "make intro skip etc more
+// gradual, it feels instant and jarring"). skip_segment_handled is
+// set here too, not left to the natural post-seek position change —
+// with the seek now delayed, position hasn't moved yet by the very
+// next tick, so without this the tick loop's mode-dispatch would
+// keep re-evaluating (and re-showing an already-dismissed overlay)
+// for the whole fade-out window.
+```
+
+#### `crates/fjord-app/src/activity.rs`
+
+Above `pub(crate) hdr_handles_captured: bool,`:
+```
+/// hdr branch (2026-09-10) — guards the one-time wl_display/wl_surface
+/// capture below. Plain `bool`, no `Arc`/atomics needed:
+/// `CustomApplicationHandler::window_event` takes `&mut self`
+/// (confirmed directly from i-slint-backend-winit's own trait
+/// definition) and only the winit event loop's own single thread ever
+/// calls it.
+```
+
+Above `if !self.hdr_handles_captured`:
+```
+// hdr branch (2026-09-10), Stage 1 — the real winit Window (and
+// therefore a real wl_surface/wl_display) doesn't exist at all
+// until the event loop has run at least one iteration past
+// show()/run() (confirmed directly against WinitWindowAdapter's own
+// source: ensure_window() needs a live &ActiveEventLoop, which only
+// exists inside a running event-loop callback like this one) — so
+// this is the first point in the whole app where `winit_window` can
+// ever be `Some`. Fires at most once per process, regardless of how
+// many more window_event calls follow.
+```
+
+#### `crates/fjord-app/src/activity.rs` — file header (TOC)
+```
+// ── fjord-app · activity.rs ───────────────────────────────────────────────
+//   ActivityClock            lock-free, Clone-able "when did the user last
+//                            do anything" timestamp — shared by the keyboard
+//                            path (main.rs::on_handle_key), the winit-level
+//                            mouse tap below, and profile::wire_idle_lock_timer's
+//                            own idle check.
+//   FjordApplicationHandler  CustomApplicationHandler impl, registered once
+//                            via slint::BackendSelector at the top of
+//                            main(), before MainWindow::new() — Slint only
+//                            ever allows ONE such handler (confirmed
+//                            directly from i-slint-backend-selector's own
+//                            source: a single `Option<Box<dyn
+//                            CustomApplicationHandler>>`, not composable),
+//                            so this struct carries every concern that needs
+//                            this one hook, not just its original one. Two
+//                            responsibilities today: (1) the mouse-activity
+//                            tap — observes every raw CursorMoved/MouseInput/
+//                            MouseWheel winit event BEFORE Slint's own
+//                            hit-testing/dispatch, so unlike the old
+//                            AppState.record-activity() mechanism (fed from
+//                            exactly 3 Slint TouchAreas, replaced by this
+//                            same-day, event-loop branch) it sees mouse
+//                            activity anywhere on the window — including
+//                            over a MediaCard/FjordButton/NavItem that would
+//                            otherwise swallow it; (2) hdr branch (2026-09-10,
+//                            extended to real negotiation 2026-09-14) — a
+//                            one-time capture of the real winit Window's raw
+//                            wl_display/wl_surface handles, the instant they
+//                            first become available (a real winit Window
+//                            doesn't exist at all until the event loop has
+//                            run at least one iteration past show()/run() —
+//                            this callback is the first point that's ever
+//                            true), handed off to hdr.rs's spawn_worker,
+//                            which both logs the compositor's Wayland
+//                            color-management capabilities and — once real
+//                            HDR content plays, if enabled in Settings —
+//                            negotiates a real image description onto
+//                            Fjord's own surface. The same handles also go to
+//                            video_surface::set_wayland_handles (HDR Stage 5,
+//                            2026-10-04 — the video backplane subsurface).
+//                            Pure observation either
+//                            way from THIS callback's own perspective:
+//                            always returns EventResult::Propagate, Slint's
+//                            own dispatch is completely unaffected.
+// ───────────────────────────────────────────────────────────────────────────
+```
+
+#### `crates/fjord-app/src/controls.rs` — file header (TOC)
+```
+// ── fjord-app · controls.rs ──────────────────────────────────────────────────
+//   wire_controls  registers all AppState player callbacks on the window
+//     playback     pause_play_toggle, seek_*, stop_playback
+//     seek / intro seek_to (throttled ≤10/s), seek_drag_started (pause during scrub, queries mpv directly),
+//                  seek_committed (seek + resume + optimistic playback-pos),
+//                  skip_segment (ask mode), dismiss_skip_timed (ask-timed mode), update-seek-hover
+//     track panels select_sub/audio/video, commit_panel_selection (panels 1-4); panel 4 = chapter jump;
+//                  panels 1/2 also remember the picked language per series (state.remembered_tracks),
+//                  read back by playback.rs's track auto-select for the rest of that series
+//     volume / misc volume_up/down, show_controls, resume_player, mute, stats, minimize
+//     chapters     chapter_prev/chapter_next: step ±1, compute OSD name, set chapter-osd for ~2 s
+//                  chapter_jump(idx): seek to vs.chapters[idx].0; also called from commit_panel (panel=4)
+//     delays       sub_delay_inc/dec (z/Z ±100 ms), audio_delay_inc/dec (x/X ±100 ms);
+//                  set delay-osd-text + delay-osd-visible for ~2 s; also update sub/audio-delay-ms (Sync panel)
+//   wire_up_next           callbacks moved from main() (0.5.0 step 3): Up Next banner
+// ─────────────────────────────────────────────────────────────────────────────
+```
+
+#### `crates/fjord-app/src/season.rs`
+
+Above `if is_cache_hit && crate::should_revalidate(&state, &season_id) {`:
+```
+// Cache-hit only: the screen above already showed instantly from cached
+// data. Real gap, live-reported: Jellyfin's WebSocket only delivers
+// LibraryChanged to the most-recently-connected client when multiple
+// clients share a session (JELLYFIN.md) — this can silently starve Fjord
+// of the event, leaving item_detail_cache stale indefinitely with no
+// other fallback. This revalidation is what closes that gap for
+// whatever's actually on screen right now.
+```
+
+Above `if let Ok(d) = &detail_res {`:
+```
+// Sign-out (or a different account signing in on a shared HTPC)
+// mid-fetch must not let this per-user data land in the new session's
+// cache — same guard class as main.rs::session_current's own doc
+// comment (CR11-2). Applies to both the original open and a
+// background revalidate call alike.
+```
+
+Above `if !crate::session_current(&state2, &client) {`:
+```
+// Session guard (Bonfire Phase 1, step 8 audit, 2026-08-09) —
+// same reasoning as series.rs's own spawn_main: the id check
+// above (helped by reset_session_state now clearing season-id
+// on a switch/sign-out) doesn't cover an Err(detail) path or a
+// coincidental same-id reopen under a new profile.
+```
+
+#### `crates/fjord-app/src/music.rs`
+
+Above `AppState::get(&window).on_open_queue_panel(move || {`:
+```
+// Mouse entry point for the queue panel (music-bar ⋮ button). Mirrors the
+// 'q' keyboard path in keys.rs, which doesn't need a focus re-grab since a
+// keypress reaching handle_key already proves fs has focus — a mouse click
+// after a stretch of mouse-only interaction can't assume that (CR11-6).
+```

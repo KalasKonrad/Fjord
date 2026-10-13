@@ -1,8 +1,8 @@
 // ── fjord-app · season.rs ────────────────────────────────────────────────────
-//   open_season_screen  reset AppState season props; checks item_detail_cache (Part 2) —
-//                       only sets app-content-loading=true on a cache miss; pre-fill title
-//                       from series model; spawn async fetch for detail (skipped on cache
-//                       hit) + poster + backdrop + ALL cast portraits; defers
+//   open_season_screen  reset AppState season props; checks item_detail_cache — only sets
+//                       app-content-loading=true on a cache miss (a hit revalidates); pre-fill
+//                       the title from the series model; spawn async fetch for detail (skipped on
+//                       a cache hit) + poster + backdrop + ALL cast portraits; defers
 //                       set_show_season until all data is ready (no trickle-in)
 //   handle_key          keyboard dispatch for the season detail screen:
 //                       episode row (default) ↔ cast row (when cast-focused ≥ 0);
@@ -93,13 +93,9 @@ pub(crate) fn open_season_screen(
         rt: rt.clone(),
     });
 
-    // Cache-hit only: the screen above already showed instantly from cached
-    // data. Real gap, live-reported: Jellyfin's WebSocket only delivers
-    // LibraryChanged to the most-recently-connected client when multiple
-    // clients share a session (JELLYFIN.md) — this can silently starve Fjord
-    // of the event, leaving item_detail_cache stale indefinitely with no
-    // other fallback. This revalidation is what closes that gap for
-    // whatever's actually on screen right now.
+    // Cache hit: the screen already showed from cache. Revalidate what's on screen — Jellyfin
+    // only sends LibraryChanged to the most recently connected client of a shared session
+    // (JELLYFIN.md).
     if is_cache_hit && crate::should_revalidate(&state, &season_id) {
         spawn_season_fetch(SeasonFetchArgs {
             sid: season_id,
@@ -145,11 +141,8 @@ fn spawn_season_fetch(args: SeasonFetchArgs) {
         };
         let (detail_res, poster_bytes) =
             tokio::join!(detail_fut, fetch_poster_cached(&client, &sid),);
-        // Sign-out (or a different account signing in on a shared HTPC)
-        // mid-fetch must not let this per-user data land in the new session's
-        // cache — same guard class as main.rs::session_current's own doc
-        // comment (CR11-2). Applies to both the original open and a
-        // background revalidate call alike.
+        // Per-user data must not land in a new session's cache after a mid-fetch sign-out or switch
+        // (the original open and a revalidate alike).
         if let Ok(d) = &detail_res {
             if !crate::session_current(&state2, &client) {
                 return;
@@ -296,11 +289,8 @@ fn spawn_season_fetch(args: SeasonFetchArgs) {
             if AppState::get(&w).get_season_id().as_str() != sid2 {
                 return;
             }
-            // Session guard (Bonfire Phase 1, step 8 audit, 2026-08-09) —
-            // same reasoning as series.rs's own spawn_main: the id check
-            // above (helped by reset_session_state now clearing season-id
-            // on a switch/sign-out) doesn't cover an Err(detail) path or a
-            // coincidental same-id reopen under a new profile.
+            // Session guard (like series.rs's spawn_main): the id check above misses an Err(detail)
+            // path and the same id reopened under a new profile.
             if !crate::session_current(&state2, &client) {
                 return;
             }
