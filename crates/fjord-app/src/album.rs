@@ -1,29 +1,20 @@
 // ── fjord-app · album.rs ──────────────────────────────────────────────────────
-//   media_items_to_tracks  MediaItem → TrackItem, incl. multi-disc separators
-//                         (2026-08-17): 2-pass — determines whether the album is
-//                         genuinely multi-disc (distinct ParentIndexNumber count),
-//                         then computes each row's disc_header ("" or "Disc N",
-//                         set on a disc's first track only) and row_y_px (absolute
-//                         precomputed Y, accounting for every disc-header's own
-//                         extra height above it) — see album.slint's own header
-//                         for why the Slint side needs these precomputed rather
-//                         than iterating the model itself
+//   media_items_to_tracks  MediaItem → TrackItem incl. multi-disc separators: disc_header ("" or
+//                         "Disc N" on a disc's first track) and precomputed row_y_px (album.slint's
+//                         scroll math reads them by index)
 //   open_album_screen     → open_music_screen(is_playlist=false)
-//   open_playlist_screen  → open_music_screen(is_playlist=true): AlbumScreen reuse —
-//                         get_playlist_items, position numbering, entry-id per row,
-//                         artist line "Playlist", non-audio entries filtered
-//   open_music_screen     reset AppState album props; increment album-open-gen; checks
-//                         container_tracks_cache + item_detail_cache (Part 2) — only sets
-//                         app-content-loading=true when either is a miss; spawn async: fetch
-//                         tracks + cover poster in parallel (cached ones skip their network
-//                         call); populate TrackItem model; generation-guarded invoke_from_event_loop
-//                         shows page
-//   handle_key            keyboard dispatch: Back button / ▶+♥ button row / bio (slot 2) / track list;
-//                         Up from track 0 → bio (or button row); C → open-context-menu;
-//                         Delete → playlist-remove-entry (playlists only);
-//                         Enter on track → play-album-track; Down at last track → returns false
-//   wire_album             callbacks moved from main() (0.5.0 step 3): album / playlist screen
-//   wire_album_play_all    callbacks moved from main() (0.5.0 step 3): Play all on the album screen
+//   open_playlist_screen  → open_music_screen(is_playlist=true): AlbumScreen reused —
+//                         get_playlist_items, position numbering, entry-id per row, artist line
+//                         "Playlist", non-audio entries filtered out
+//   open_music_screen     reset the album props, bump album-open-gen, check container_tracks_cache
+//                         + item_detail_cache (loading overlay only on a miss); tracks + cover in
+//                         parallel; generation- and session-guarded commit shows the page; a cache
+//                         hit revalidates
+//   handle_key            Back / ▶ + ♥ button row / bio (slot 2) / track list; Up from track 0 →
+//                         bio (or the buttons); C → context menu; Delete → playlist-remove-entry
+//                         (playlists); Enter → play-album-track; Down at the last track → false
+//   wire_album            callbacks moved from main() (0.5.0 step 3): album / playlist screen
+//   wire_album_play_all   callbacks moved from main() (0.5.0 step 3): Play all on the album screen
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
 
@@ -45,22 +36,11 @@ use crate::{AppState, MainWindow};
 const TRACK_ROW_H_PX: f32 = 48.0;
 const DISC_SEP_H_PX: f32 = 28.0;
 
-/// Real bug, live-reported 2026-08-17: multi-disc "Play All" order was
-/// fixed server-side (fjord-api::get_album_tracks now sorts
-/// ParentIndexNumber,IndexNumber), but the tracklist UI itself gave no
-/// visual indication a new disc had started — "now it just hop fron the
-/// last track to firs with no explenation." Two-pass: first determine
-/// whether the album is genuinely multi-disc at all (a plain single-disc
-/// album should never show a "Disc 1" label nobody asked for), then walk
-/// the already-correctly-ordered items once, computing each row's
-/// `disc_header` (only set on the first track of each new disc) and its
-/// absolute `row_y_px` — the position it should render at, already
-/// accounting for the extra height every disc-header before it adds. Both
-/// computed here, not in Slint, so `kb-track-y`'s scroll-to-view math can
-/// do a single O(1) indexed model read (`AppState.album-tracks[i].row-y-px`,
-/// the same safe `model[idx]` pattern already used elsewhere in this
-/// codebase, e.g. home.slint's `library-alpha-offsets[li]`) instead of
-/// iterating the model to sum up preceding separators on every keystroke.
+/// MediaItem → TrackItem with disc separators. Two passes: is the album multi-disc at all
+/// (a single-disc album gets no "Disc 1" label), then, over the already disc/track-ordered
+/// items (get_album_tracks), each row's `disc_header` (first track of a disc only) and
+/// absolute `row_y_px` (including every header above it) — computed here so album.slint's
+/// kb-track-y reads one indexed value instead of summing separators per keystroke.
 fn media_items_to_tracks(
     items: &[fjord_api::models::MediaItem],
     is_playlist: bool,
@@ -300,12 +280,8 @@ fn open_music_screen(
             if g.get_album_open_gen() != generation {
                 return;
             }
-            // Session guard (Bonfire Phase 1, step 8 audit, 2026-08-09) —
-            // the generation counter alone doesn't catch a sign-out/profile-switch
-            // that happens after this screen was backed out of but before
-            // this fetch resolves, since nothing increments it on either
-            // path. See collection.rs's own open_collection_screen for the
-            // full reasoning (same fix, same shape).
+            // Session guard: the generation counter doesn't catch a sign-out/switch after this
+            // screen was left (see collection.rs's open_collection_screen).
             if !crate::session_current(&state_task, &client) {
                 return;
             }
@@ -357,13 +333,9 @@ fn open_music_screen(
         });
     });
 
-    // Cache-hit only: the screen above already showed instantly from cached
-    // data. Real gap, live-reported: Jellyfin's WebSocket only delivers
-    // LibraryChanged to the most-recently-connected client when multiple
-    // clients share a session (JELLYFIN.md) — this can silently starve Fjord
-    // of the event, leaving these caches stale indefinitely with no other
-    // fallback. This revalidation is what closes that gap for whatever's
-    // actually on screen right now.
+    // Cache hit: the screen already showed from cache. Revalidate what's on screen — Jellyfin
+    // only sends LibraryChanged to the most recently connected client of a shared session
+    // (JELLYFIN.md).
     if is_cache_hit {
         spawn_album_revalidate(
             id_revalidate,
@@ -400,10 +372,8 @@ fn spawn_album_revalidate(
         let (Ok(tracks), Ok(detail)) = (tracks_res, detail_res) else {
             return;
         };
-        // Sign-out (or a different account signing in on a shared HTPC)
-        // mid-fetch must not let this per-user data land in the new session's
-        // cache — same guard class as main.rs::session_current's own doc
-        // comment (CR11-2).
+        // Per-user data must not land in a new session's cache after a mid-fetch sign-out or
+        // switch.
         if !crate::session_current(&state, &client) {
             return;
         }
@@ -597,7 +567,8 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
 }
 
 // ── wire_album (moved from main(), 0.5.0 step 3) ─────────────────────────
-/// Wires album / playlist screen: open_album, close_album, play_album_track, playlist_remove_entry, toggle_album_fav, toggle_album_played.
+/// Wires album / playlist screen: open_album, close_album, play_album_track, playlist_remove_entry,
+/// toggle_album_fav, toggle_album_played.
 pub(crate) fn wire_album(
     window: &crate::MainWindow,
     state: &std::sync::Arc<std::sync::Mutex<crate::config::FjordState>>,
@@ -754,12 +725,8 @@ pub(crate) fn wire_album(
                     crate::show_toast(ww2, "Couldn't remove from playlist".to_string());
                     return;
                 }
-                // Screen-open cache (Phase 102/103): container_tracks_cache holds
-                // this playlist's track list keyed by its own id. Without
-                // invalidating it here, reopening this exact playlist (even just
-                // by navigating away and back) hits the cache and shows the
-                // just-removed track again until an unrelated WS event or the
-                // ambient refresh happens to correct it.
+                // Invalidate this playlist's cached track list, or reopening it shows the removed
+                // track again.
                 state_pr2
                     .lock()
                     .unwrap()

@@ -20566,3 +20566,199 @@ Above `if AppState.account-picker-cancelable: FjordButton {`:
 //                        in theme.slint for why.
 // ─────────────────────────────────────────────────────────────────────────────
 ```
+
+#### `crates/fjord-app/src/movies.rs`
+
+Above `if let Some(on_watchlist) = existing_watchlist {`:
+```
+// Carry forward on_watchlist the same way the poster is carried
+// forward above — this function has no FjordState access (pure
+// Slint-model merge), so a live patch from
+// resync_jellyfin_watchlist_stars/discover_toggle_watchlist onto
+// this row survives the next rebuild instead of silently
+// resetting to false (real bug, live-reported 2026-07-20 — "the
+// watch list symbol do not show up on items i the library
+// screens"; the Library Grid's Movies view is built exclusively
+// through this function).
+```
+
+Above `pub(crate) fn spawn_library_fetch(`:
+```
+// ── spawn_library_fetch ───────────────────────────────────────────────────────
+// Network-refresh the library list for `nav` (1=TV posters, 2=Movies,
+// 3=Collections, 4=Artists+Albums+Playlists), guarded by the per-session
+// *_fetched flags. Extracted from on_open_library so ws.rs can refresh the
+// currently open grid when a LibraryChanged event clears those flags
+// (cache-staleness fix S3). Each result is applied via
+// home::refresh_row_preserving_posters (not a bare items_to_model) so posters
+// already decoded from the startup cache push survive this first-open-this-
+// session refresh instead of flashing blank (Phase 94).
+```
+
+Above `pub(crate) fn spawn_movies_list_fetch(`:
+```
+/// Metadata-only movie-list fetch/cache/state update (guarded by the same
+/// `movies_fetched` per-session flag `spawn_library_fetch`'s nav==2 branch
+/// uses, so whichever caller runs first "wins" and the other becomes a
+/// no-op — except that a later `with_posters` call still loads the posters once,
+/// `movie_posters_loaded`). Poster loading is a separate, optional step (`with_posters`):
+/// `spawn_library_fetch` always wants it, since the grid is genuinely about
+/// to render; `discover.rs` doesn't — it only needs fresh `ProviderIds` for
+/// `find_local_item`'s "already in my library" match (previously, `all_movies`
+/// silently went stale/ProviderIds-less until the user opened the Movies grid
+/// at least once *this session*, unlike `all_series`, which the startup
+/// auto-login path already refreshes unconditionally on every login — real
+/// bug, live-reported as "in-library redirect works for TV but not movies")
+/// — and eagerly downloading/decoding every movie poster just because the
+/// user opened Discover would be a real, unnecessary cost for a large
+/// library.
+```
+
+Above `if !session_current(&state2, &client) {`:
+```
+// Real bug, code-review 2026-08-16: a profile switch mid-
+// fetch previously landed the OUTGOING profile's full movie
+// list into the just-switched-to profile's FjordState/UI,
+// and permanently set movies_fetched=true so the new
+// profile never got its own real fetch for the rest of the
+// session. session_current() is the same guard already
+// used elsewhere in this file for identical async-result
+// races (spawn_screen_cache_refresh, spawn_auto_login).
+```
+
+Above `crate::discover::resync_jellyfin_watchlist_stars(Arc::clone(&state2), ww4).await;`:
+```
+// Re-resolve the in-library watchlist star now that all_movies
+// is genuinely populated (2026-07-20) — the FIRST resync
+// (triggered by the watchlist fetch itself, early in startup)
+// reliably runs before this lazy fetch ever completes, so
+// find_local_item's movie-side lookup finds nothing on that
+// pass; this is the actual point movie data becomes available,
+// mirroring the "works for series but not movies" gap this
+// exact function was already fixed for once (see its own
+// module-header note in CLAUDE.md). No-op, cheap, if nothing
+// on the watchlist is a local movie.
+```
+
+#### `crates/fjord-app/src/movies.rs` — file header (TOC)
+```
+// ── fjord-app · movies.rs ────────────────────────────────────────────────────
+//   LibraryKind                        Movies | Collections | Artists | Albums | Playlists enum;
+//                                      get_all/set_all accessors used by apply_cards_preserving_identity
+//   push_library_cards                 build decoded cards, apply via apply_cards_preserving_identity;
+//                                      reuses each row's existing poster Image if present instead of
+//                                      always decoding a new one (Phase 98 — avoids swapping every
+//                                      card's texture in one batch even when same_shape=true); routes
+//                                      the library-display update through browse::refresh_library_display
+//                                      instead of a direct set (Phase 99 — a direct set used raw
+//                                      network/decode order, not the sorted order); threads
+//                                      unplayed_count through meta/decoded (Phase 100 — was left at
+//                                      CardItem::default()'s 0, stomping the metadata-merge pass's
+//                                      correct value on the next poster-decode landing); carries
+//                                      on_watchlist forward from the old row too (2026-07-20, real
+//                                      bug fix, same idiom as the poster preservation right above —
+//                                      this is the Library Grid's exclusive landing point for Movies,
+//                                      so without this a resync/toggle's live patch onto all_movies
+//                                      got silently wiped by the next network refresh)
+//   spawn_library_poster_loading       shared async: parallel poster fetch → AppState model
+//   spawn_movies_poster_loading        thin wrapper → LibraryKind::Movies
+//   spawn_collections_poster_loading   thin wrapper → LibraryKind::Collections
+//   spawn_artists_poster_loading       thin wrapper → LibraryKind::Artists
+//   spawn_albums_poster_loading        thin wrapper → LibraryKind::Albums
+//   spawn_playlists_poster_loading     thin wrapper → LibraryKind::Playlists
+//   wire_library           callbacks moved from main() (0.5.0 step 3): lazy library grid + Artists/Albums toggle
+//   spawn_library_fetch / spawn_movies_list_fetch  library-grid lists (lazy, once per session) + posters
+// ─────────────────────────────────────────────────────────────────────────────
+```
+
+#### `crates/fjord-app/src/album.rs`
+
+Above `fn media_items_to_tracks(`:
+```
+/// Real bug, live-reported 2026-08-17: multi-disc "Play All" order was
+/// fixed server-side (fjord-api::get_album_tracks now sorts
+/// ParentIndexNumber,IndexNumber), but the tracklist UI itself gave no
+/// visual indication a new disc had started — "now it just hop fron the
+/// last track to firs with no explenation." Two-pass: first determine
+/// whether the album is genuinely multi-disc at all (a plain single-disc
+/// album should never show a "Disc 1" label nobody asked for), then walk
+/// the already-correctly-ordered items once, computing each row's
+/// `disc_header` (only set on the first track of each new disc) and its
+/// absolute `row_y_px` — the position it should render at, already
+/// accounting for the extra height every disc-header before it adds. Both
+/// computed here, not in Slint, so `kb-track-y`'s scroll-to-view math can
+/// do a single O(1) indexed model read (`AppState.album-tracks[i].row-y-px`,
+/// the same safe `model[idx]` pattern already used elsewhere in this
+/// codebase, e.g. home.slint's `library-alpha-offsets[li]`) instead of
+/// iterating the model to sum up preceding separators on every keystroke.
+```
+
+Above `if !crate::session_current(&state_task, &client) {`:
+```
+// Session guard (Bonfire Phase 1, step 8 audit, 2026-08-09) —
+// the generation counter alone doesn't catch a sign-out/profile-switch
+// that happens after this screen was backed out of but before
+// this fetch resolves, since nothing increments it on either
+// path. See collection.rs's own open_collection_screen for the
+// full reasoning (same fix, same shape).
+```
+
+Above `if is_cache_hit {`:
+```
+// Cache-hit only: the screen above already showed instantly from cached
+// data. Real gap, live-reported: Jellyfin's WebSocket only delivers
+// LibraryChanged to the most-recently-connected client when multiple
+// clients share a session (JELLYFIN.md) — this can silently starve Fjord
+// of the event, leaving these caches stale indefinitely with no other
+// fallback. This revalidation is what closes that gap for whatever's
+// actually on screen right now.
+```
+
+Above `if !crate::session_current(&state, &client) {`:
+```
+// Sign-out (or a different account signing in on a shared HTPC)
+// mid-fetch must not let this per-user data land in the new session's
+// cache — same guard class as main.rs::session_current's own doc
+// comment (CR11-2).
+```
+
+Above `state_pr2`:
+```
+// Screen-open cache (Phase 102/103): container_tracks_cache holds
+// this playlist's track list keyed by its own id. Without
+// invalidating it here, reopening this exact playlist (even just
+// by navigating away and back) hits the cache and shows the
+// just-removed track again until an unrelated WS event or the
+// ambient refresh happens to correct it.
+```
+
+#### `crates/fjord-app/src/album.rs` — file header (TOC)
+```
+// ── fjord-app · album.rs ──────────────────────────────────────────────────────
+//   media_items_to_tracks  MediaItem → TrackItem, incl. multi-disc separators
+//                         (2026-08-17): 2-pass — determines whether the album is
+//                         genuinely multi-disc (distinct ParentIndexNumber count),
+//                         then computes each row's disc_header ("" or "Disc N",
+//                         set on a disc's first track only) and row_y_px (absolute
+//                         precomputed Y, accounting for every disc-header's own
+//                         extra height above it) — see album.slint's own header
+//                         for why the Slint side needs these precomputed rather
+//                         than iterating the model itself
+//   open_album_screen     → open_music_screen(is_playlist=false)
+//   open_playlist_screen  → open_music_screen(is_playlist=true): AlbumScreen reuse —
+//                         get_playlist_items, position numbering, entry-id per row,
+//                         artist line "Playlist", non-audio entries filtered
+//   open_music_screen     reset AppState album props; increment album-open-gen; checks
+//                         container_tracks_cache + item_detail_cache (Part 2) — only sets
+//                         app-content-loading=true when either is a miss; spawn async: fetch
+//                         tracks + cover poster in parallel (cached ones skip their network
+//                         call); populate TrackItem model; generation-guarded invoke_from_event_loop
+//                         shows page
+//   handle_key            keyboard dispatch: Back button / ▶+♥ button row / bio (slot 2) / track list;
+//                         Up from track 0 → bio (or button row); C → open-context-menu;
+//                         Delete → playlist-remove-entry (playlists only);
+//                         Enter on track → play-album-track; Down at last track → returns false
+//   wire_album             callbacks moved from main() (0.5.0 step 3): album / playlist screen
+//   wire_album_play_all    callbacks moved from main() (0.5.0 step 3): Play all on the album screen
+// ─────────────────────────────────────────────────────────────────────────────
+```

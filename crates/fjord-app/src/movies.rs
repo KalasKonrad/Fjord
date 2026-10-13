@@ -1,29 +1,19 @@
 // ── fjord-app · movies.rs ────────────────────────────────────────────────────
-//   LibraryKind                        Movies | Collections | Artists | Albums | Playlists enum;
-//                                      get_all/set_all accessors used by apply_cards_preserving_identity
-//   push_library_cards                 build decoded cards, apply via apply_cards_preserving_identity;
-//                                      reuses each row's existing poster Image if present instead of
-//                                      always decoding a new one (Phase 98 — avoids swapping every
-//                                      card's texture in one batch even when same_shape=true); routes
-//                                      the library-display update through browse::refresh_library_display
-//                                      instead of a direct set (Phase 99 — a direct set used raw
-//                                      network/decode order, not the sorted order); threads
-//                                      unplayed_count through meta/decoded (Phase 100 — was left at
-//                                      CardItem::default()'s 0, stomping the metadata-merge pass's
-//                                      correct value on the next poster-decode landing); carries
-//                                      on_watchlist forward from the old row too (2026-07-20, real
-//                                      bug fix, same idiom as the poster preservation right above —
-//                                      this is the Library Grid's exclusive landing point for Movies,
-//                                      so without this a resync/toggle's live patch onto all_movies
-//                                      got silently wiped by the next network refresh)
+//   LibraryKind                        Movies | Collections | Artists | Albums | Playlists;
+//                                      get_all/set_all accessors
+//   push_library_cards                 decoded cards → the kind's model via
+//                                      apply_cards_preserving_identity; keeps each row's existing
+//                                      poster, unplayed_count and on_watchlist; library-display
+//                                      goes through browse::refresh_library_display (sorted order)
 //   spawn_library_poster_loading       shared async: parallel poster fetch → AppState model
-//   spawn_movies_poster_loading        thin wrapper → LibraryKind::Movies
-//   spawn_collections_poster_loading   thin wrapper → LibraryKind::Collections
-//   spawn_artists_poster_loading       thin wrapper → LibraryKind::Artists
-//   spawn_albums_poster_loading        thin wrapper → LibraryKind::Albums
-//   spawn_playlists_poster_loading     thin wrapper → LibraryKind::Playlists
-//   wire_library           callbacks moved from main() (0.5.0 step 3): lazy library grid + Artists/Albums toggle
-//   spawn_library_fetch / spawn_movies_list_fetch  library-grid lists (lazy, once per session) + posters
+//   spawn_movies/collections/artists/albums/playlists_poster_loading  thin wrappers per kind
+//   wire_library                       callbacks moved from main() (0.5.0 step 3): lazy library
+//                                      grid + Artists/Albums toggle
+//   spawn_library_fetch                the grid's list for a nav, once per session; also ws.rs's
+//                                      refresh after LibraryChanged
+//   spawn_movies_list_fetch            the movie list with or without posters (Discover needs only
+//                                      ProviderIds); session-guarded; posters at most once per
+//                                      session (movie_posters_loaded)
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
 
@@ -159,15 +149,10 @@ fn push_library_cards(
                         h.poster = slint::Image::from_rgba8(spb);
                         h.has_poster = true;
                     }
-                    // Carry forward on_watchlist the same way the poster is carried
-                    // forward above — this function has no FjordState access (pure
-                    // Slint-model merge), so a live patch from
-                    // resync_jellyfin_watchlist_stars/discover_toggle_watchlist onto
-                    // this row survives the next rebuild instead of silently
-                    // resetting to false (real bug, live-reported 2026-07-20 — "the
-                    // watch list symbol do not show up on items i the library
-                    // screens"; the Library Grid's Movies view is built exclusively
-                    // through this function).
+                    // Carry on_watchlist forward like the poster (no FjordState here): a patch from
+                    // resync_jellyfin_watchlist_stars/discover_toggle_watchlist must survive the
+                    // next rebuild — the Library Grid's Movies view is built only through this
+                    // function.
                     if let Some(on_watchlist) = existing_watchlist {
                         h.on_watchlist = on_watchlist;
                     }
@@ -413,7 +398,8 @@ pub(crate) fn wire_library(
         let ww_ol = window.as_weak();
         let rth_ol = rt.handle().clone();
         AppState::get(&window).on_open_library(move |nav| {
-            // Synchronously initialise sort/filter/query for this library type before any async work.
+            // Synchronously initialise sort/filter/query for this library type before any async
+            // work.
             {
                 let sort_val = {
                     let s = state_ol.lock().unwrap();
@@ -604,14 +590,11 @@ pub(crate) fn wire_library(
 }
 
 // ── spawn_library_fetch ───────────────────────────────────────────────────────
-// Network-refresh the library list for `nav` (1=TV posters, 2=Movies,
-// 3=Collections, 4=Artists+Albums+Playlists), guarded by the per-session
-// *_fetched flags. Extracted from on_open_library so ws.rs can refresh the
-// currently open grid when a LibraryChanged event clears those flags
-// (cache-staleness fix S3). Each result is applied via
-// home::refresh_row_preserving_posters (not a bare items_to_model) so posters
-// already decoded from the startup cache push survive this first-open-this-
-// session refresh instead of flashing blank (Phase 94).
+// Network-refresh the library list for `nav` (1 TV, 2 Movies, 3 Collections, 4
+// Artists + Albums + Playlists), once per session (*_fetched flags); ws.rs calls it to
+// refresh the open grid after LibraryChanged clears those flags. Applied through
+// home::refresh_row_preserving_posters so posters already decoded from the startup cache
+// don't flash.
 pub(crate) fn spawn_library_fetch(
     nav: i32,
     state: Arc<Mutex<FjordState>>,
@@ -818,21 +801,12 @@ pub(crate) fn spawn_library_fetch(
     spawn_movies_list_fetch(state, ww, rt, true);
 }
 
-/// Metadata-only movie-list fetch/cache/state update (guarded by the same
-/// `movies_fetched` per-session flag `spawn_library_fetch`'s nav==2 branch
-/// uses, so whichever caller runs first "wins" and the other becomes a
-/// no-op — except that a later `with_posters` call still loads the posters once,
-/// `movie_posters_loaded`). Poster loading is a separate, optional step (`with_posters`):
-/// `spawn_library_fetch` always wants it, since the grid is genuinely about
-/// to render; `discover.rs` doesn't — it only needs fresh `ProviderIds` for
-/// `find_local_item`'s "already in my library" match (previously, `all_movies`
-/// silently went stale/ProviderIds-less until the user opened the Movies grid
-/// at least once *this session*, unlike `all_series`, which the startup
-/// auto-login path already refreshes unconditionally on every login — real
-/// bug, live-reported as "in-library redirect works for TV but not movies")
-/// — and eagerly downloading/decoding every movie poster just because the
-/// user opened Discover would be a real, unnecessary cost for a large
-/// library.
+/// Metadata-only movie-list fetch/cache/state update, guarded by `movies_fetched` like
+/// spawn_library_fetch's nav 2 branch (whichever runs first wins; a later `with_posters` call
+/// still loads the posters once — `movie_posters_loaded`). `with_posters`:
+/// spawn_library_fetch wants them (the grid is about to render); Discover doesn't — it only
+/// needs fresh ProviderIds for find_local_item's in-library match, and decoding every
+/// poster for that would be wasteful.
 pub(crate) fn spawn_movies_list_fetch(
     state: Arc<Mutex<FjordState>>,
     ww: slint::Weak<MainWindow>,
@@ -871,14 +845,8 @@ pub(crate) fn spawn_movies_list_fetch(
     rt.spawn(async move {
         match client.get_all_movies().await {
             Ok(movies) => {
-                // Real bug, code-review 2026-08-16: a profile switch mid-
-                // fetch previously landed the OUTGOING profile's full movie
-                // list into the just-switched-to profile's FjordState/UI,
-                // and permanently set movies_fetched=true so the new
-                // profile never got its own real fetch for the rest of the
-                // session. session_current() is the same guard already
-                // used elsewhere in this file for identical async-result
-                // races (spawn_screen_cache_refresh, spawn_auto_login).
+                // A profile switch mid-fetch must not land the old profile's movie list in the new
+                // session (or set movies_fetched for it).
                 if !session_current(&state2, &client) {
                     debug!("spawn_movies_list_fetch: session changed mid-flight, discarding");
                     return;
@@ -912,16 +880,9 @@ pub(crate) fn spawn_movies_list_fetch(
                 if with_posters {
                     spawn_movies_poster_loading(client, movies, ww3, rt3);
                 }
-                // Re-resolve the in-library watchlist star now that all_movies
-                // is genuinely populated (2026-07-20) — the FIRST resync
-                // (triggered by the watchlist fetch itself, early in startup)
-                // reliably runs before this lazy fetch ever completes, so
-                // find_local_item's movie-side lookup finds nothing on that
-                // pass; this is the actual point movie data becomes available,
-                // mirroring the "works for series but not movies" gap this
-                // exact function was already fixed for once (see its own
-                // module-header note in CLAUDE.md). No-op, cheap, if nothing
-                // on the watchlist is a local movie.
+                // Re-resolve the watchlist stars now that all_movies is filled — the first resync
+                // (from the watchlist fetch at startup) runs before this lazy fetch completes.
+                // Cheap no-op otherwise.
                 crate::discover::resync_jellyfin_watchlist_stars(Arc::clone(&state2), ww4).await;
             }
             Err(e) => warn!("spawn_movies_list_fetch: {:#}", e),
