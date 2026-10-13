@@ -1,24 +1,10 @@
 // ── fjord-app · stats.rs ─────────────────────────────────────────────────────
-//   update_stats_window  format StatsData fields and push to AppState stat-* props
-//                        VSYNC row: reads video_sync_mode (mpv "video-sync" property) directly;
-//                        vsync-ratio unused for mode label (render API never populates it)
-//                        SPEED row: audio/video speed corrections (key #39 debug signal)
-//                        DROP row:  VO drops  ·  decoder drops  ·  mistimed frames
-//                        COLOR IN/OUT rows (2026-08-15) — fmt_color, shared by both, formats
-//                        primaries/gamma/sig-peak into one line; IN reads the decoded
-//                        SOURCE's own mastering info (video-params). OUT was meant to read
-//                        video-target-params (2026-08-17 fix from video-out-params, which
-//                        never reflected tone-mapping at all) but that property is itself
-//                        confirmed (2026-08-17, live-reported "the clr out is just empty" +
-//                        a direct empirical check) to always be unavailable under vo=libmpv
-//                        — it reflects a real VO's own swapchain target, which mpv never
-//                        manages under the render API. color_out now shows an explicit
-//                        "n/a" instead of a bare "—" when both fields are empty, distinct
-//                        from CLR IN's transient "still buffering" dash since this one never
-//                        resolves under the current architecture. See CLAUDE.md's HDR
-//                        section for the fuller story, including create_fbo()'s own
-//                        unconditional 8-bit-RGBA FBO format — a second, more fundamental
-//                        reason real output-colorspace introspection isn't available yet
+//   update_stats_window  StatsData → AppState stat-* props
+//                        VSYNC: mpv's video-sync mode (vsync-ratio is never set under the
+//                        render API); SPEED: audio/video speed corrections; DROP: VO drops ·
+//                        decoder drops · mistimed frames; CLR IN/OUT via fmt_color (IN = the
+//                        source's video-params; OUT = video-target-params, never available under
+//                        vo=libmpv → "n/a"); HDR row from hdr::status_text
 // ─────────────────────────────────────────────────────────────────────────────
 use slint::{Global, SharedString};
 
@@ -63,15 +49,10 @@ pub(crate) fn update_stats_window(w: &MainWindow, s: &fjord_player::StatsData) {
         "—".into()
     };
 
-    // fmt_color: shared by both rows below (2026-08-15, live HDR/gamut troubleshooting —
-    // "shuld i use wide gammut" / "you have that toggle both on kde and the lg oled").
-    // color_in reads video-params (the DECODED SOURCE's own mastering info — for Dolby
-    // Vision/HDR content this stays "bt.2020 · pq" even once tone-mapped away); color_out
-    // reads video-target-params (2026-08-17 fix, was video-out-params — see StatsData's
-    // own doc comment in fjord-player for why that never actually reflected tone-mapping)
-    // — the only field that answers "what am I actually sending to my TV," since Fjord has
-    // no target-prim/gamut setting of its own and tone-mapping's whole job is converting
-    // the two apart.
+    // fmt_color formats primaries/gamma/peak for both rows. CLR IN = video-params (the decoded
+    // source — Dolby Vision/HDR stays "bt.2020 · pq" even when tone-mapped); CLR OUT =
+    // video-target-params (video-out-params never reflected tone-mapping; see StatsData in
+    // fjord-player).
     let fmt_color = |prim: &str, gamma: &str, sig_peak: f64| -> String {
         let hdr = match gamma {
             "pq" => format!("  ·  HDR10 (peak {:.0} nits)", sig_peak * 100.0),
@@ -85,18 +66,10 @@ pub(crate) fn update_stats_window(w: &MainWindow, s: &fjord_player::StatsData) {
         }
     };
     let color_in = fmt_color(&s.video_primaries, &s.video_gamma, s.video_sig_peak);
-    // CLR OUT: video-target-params is confirmed (2026-08-17, live-reported "the clr out is
-    // just empty" + a direct empirical check) to always come back unavailable under
-    // vo=libmpv — the property reflects a real VO's own swapchain target, and mpv never
-    // manages a swapchain at all under the render API (Slint does, entirely outside mpv's
-    // knowledge). This isn't a transient "still buffering" gap like CLR IN's own "—"
-    // fallback can be — it structurally never resolves under this architecture, so it gets
-    // its own explicit message rather than being confused with CLR IN's dash. Separately,
-    // and more fundamentally: even if this property somehow populated, `create_fbo()`
-    // (playback.rs) hardcodes the FBO mpv renders into as 8-bit RGBA unconditionally, so
-    // any HDR precision is already discarded before Slint ever sees the frame — see
-    // CLAUDE.md's HDR section / the hdr-branch notes for what real output introspection
-    // (and real HDR passthrough at all) actually needs.
+    // CLR OUT: video-target-params is always unavailable under vo=libmpv — it describes a VO's
+    // own swapchain, and under the render API mpv has none. Shown as an explicit "n/a" (CLR IN's
+    // "—" just means not yet known). What actually reaches the screen is Fjord's FBO (8-bit,
+    // or 10-bit RGB10_A2 with HDR passthrough — create_fbo) and the surface tagging (hdr.rs).
     let color_out = if s.video_out_primaries.is_empty() && s.video_out_gamma.is_empty() {
         "n/a — not reported under this render path".into()
     } else {
@@ -197,12 +170,9 @@ pub(crate) fn update_stats_window(w: &MainWindow, s: &fjord_player::StatsData) {
         s.video_bitrate / 1_000_000.0,
         s.audio_bitrate / 1_000.0
     );
-    // cache_state (cache-buffering-state) is "% until playback unpauses"
-    // (cache-pause-wait, 1s by default) — NOT how full the real configured
-    // buffer is, so it reads ~100% almost immediately during normal
-    // playback regardless of cache size; cache_duration_secs (a separate,
-    // sometimes-unavailable mpv guess — shown only when > 0) is the actual
-    // seconds currently held.
+    // cache_state (cache-buffering-state) is "% until playback unpauses" (cache-pause-wait,
+    // 1 s), not how full the buffer is — ~100% almost at once; cache_duration_secs (shown only
+    // when > 0) is the seconds actually held.
     let cache = if s.cache_duration_secs > 0.0 {
         format!(
             "{}%  ·  {:.1}s buffered",

@@ -1,34 +1,24 @@
 // ── fjord-app · detail.rs ────────────────────────────────────────────────────
-//   DetailCtx           shared context for the three parallel detail fetch tasks;
-//                       cached_detail: Option<MediaItem> — Part 2 screen-open cache hit, if any
-//     spawn_main        parallel metadata+poster fetch (skips the get_item_detail network call
-//                       on a cache hit); backdrop; all cast portraits (before show); emits
-//                       app-loading-progress=0.5 at midpoint; single invoke shows page with all
-//                       data + portraits ready; sets app-content-loading=false + show-detail=true;
-//                       caches the fetched/reused detail in FjordState.item_detail_cache
-//     spawn_similar     fetch similar items row (FjordState.similar_items_cache, keyed by this
-//                       item's id); applies via apply_cards_preserving_identity
-//     spawn_collection  fetch BoxSet siblings row (retries while movie_collections builds;
-//                       FjordState.boxset_items_cache, keyed by the resolved boxset id); applies
-//                       via apply_cards_preserving_identity
-//     spawn_recommended  "Recommended" row (2026-07-29, Deep Seerr integration) — TMDB
-//                       recommendations via Seerr, filtered to titles not already owned
-//                       (discover::resolve_and_fetch_discovery_row), shown below More Like This;
-//                       independent of the other two spawns, silently no-ops if Seerr isn't
-//                       connected or this movie has no resolvable TMDB id
-//   open_detail      routes by item_type ("Series" → open_series_screen, else detail page);
-//                    resets UI state; checks item_detail_cache for this id — only sets
-//                    app-content-loading=true on a cache miss (a hit skips the spinner entirely,
-//                    since the remaining work is disk-cached and fast); page shown only after
-//                    spawn_main completes; spawns all four DetailCtx tasks
-//   handle_key       keyboard dispatch for the detail page; row 4 = Recommended (2026-07-29),
-//                    extends the existing int-row-index nav (0=header,1=cast,2=collection,
-//                    3=similar,4=recommended)
-//   fetch_card_posters  async: parallel poster fetch for a slice of MediaItems; returns pixel buffers
-//   items_to_cards      build Vec<CardItem> from items + pre-fetched buffers (call on UI thread)
-//   wire_detail            callbacks moved from main() (0.5.0 step 3): open the detail page
-//   wire_detail_play       callbacks moved from main() (0.5.0 step 3): detail page play / resume / close
-//   wire_detail_toggles    callbacks moved from main() (0.5.0 step 3): detail page favourite / played
+//   DetailCtx           shared context for the detail fetch tasks; cached_detail = a screen-open
+//                       cache hit; revalidate = the background re-fetch after a hit (patches in
+//                       place)
+//     spawn_main        metadata + poster in parallel (no get_item_detail call on a cache hit),
+//                       backdrop, cast portraits; one commit shows the page fully loaded; caches
+//                       the detail in item_detail_cache. Session-guarded
+//     spawn_similar     "More Like This" (similar_items_cache)
+//     spawn_collection  BoxSet siblings (retries while movie_collections builds;
+//                       boxset_items_cache)
+//     spawn_recommended "Recommended": Seerr/TMDB recommendations not in the library
+//   open_detail         routes by item_type ("Series" → open_series_screen); resets UI state;
+//                       loading overlay only on an item_detail_cache miss; page shown after
+//                       spawn_main; spawns the DetailCtx tasks
+//   handle_key          rows: 0 header, 1 cast, 2 collection, 3 similar, 4 recommended
+//   fetch_card_posters  async: parallel poster fetch for a slice of MediaItems → pixel buffers
+//   items_to_cards      Vec<CardItem> from items + pre-fetched buffers (UI thread)
+//   wire_detail         callbacks moved from main() (0.5.0 step 3): open the detail page
+//   wire_detail_play    callbacks moved from main() (0.5.0 step 3): detail page play / resume /
+//                       close
+//   wire_detail_toggles callbacks moved from main() (0.5.0 step 3): detail page favourite / played
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
 
@@ -116,16 +106,10 @@ struct DetailCtx {
     rt: tokio::runtime::Handle,
     state: Arc<Mutex<FjordState>>,
     cached_detail: Option<fjord_api::models::MediaItem>,
-    // Background staleness self-heal (real gap, live-reported): Jellyfin's
-    // WebSocket only delivers LibraryChanged to the most-recently-connected
-    // client when multiple clients share a session (JELLYFIN.md) — editing
-    // through Jellyfin's own web UI while Fjord sits connected can silently
-    // starve it of the event. `revalidate=true` means this DetailCtx is the
-    // *second*, background call fired right after a cache-hit already showed
-    // the page — it always fetches fresh (cached_detail is None for this
-    // call) and patches fields in place without touching show-detail/
-    // app-content-loading/app-loading-progress, which the first call already
-    // handled.
+    // Background self-heal: Jellyfin only sends LibraryChanged to the most recently connected
+    // client of a shared session (JELLYFIN.md), so a cache hit is followed by this second
+    // call: `revalidate=true` always fetches fresh (cached_detail None) and patches fields in
+    // place, without touching show-detail/app-content-loading/app-loading-progress.
     revalidate: bool,
 }
 
@@ -167,11 +151,8 @@ impl DetailCtx {
                     return;
                 }
             };
-            // Sign-out (or a different account signing in on a shared HTPC)
-            // mid-fetch must not let this per-user data land in the new
-            // session's cache — same guard class as main.rs::session_current's
-            // own doc comment (CR11-2). Applies to both the original open and
-            // a background revalidate call alike.
+            // Per-user data must not land in a new session's cache after a mid-fetch sign-out or
+            // switch (the original open and a revalidate alike).
             if !crate::session_current(&state, &client) {
                 return;
             }
@@ -333,12 +314,9 @@ impl DetailCtx {
                 if AppState::get(&w).get_detail_id().as_str() != id_c {
                     return;
                 }
-                // Session guard (Bonfire Phase 1, step 8 audit, 2026-08-09) —
-                // the id check above (helped by reset_session_state now
-                // clearing detail-id on a switch/sign-out) still leaves a
-                // coincidental same-id reopen under a NEW profile as a real
-                // gap, since the earlier session_current check further up
-                // this fn runs before this closure was even scheduled.
+                // Session guard: the id check above misses the same id reopened under a new
+                // profile, and the earlier session_current check ran before this closure was
+                // scheduled.
                 if !crate::session_current(&state, &client) {
                     return;
                 }
@@ -586,14 +564,9 @@ impl DetailCtx {
         });
     }
 
-    /// "Recommended" row (2026-07-29, Deep Seerr integration) — TMDB
-    /// recommendations via Seerr, filtered to titles not already in the
-    /// local library (`resolve_and_fetch_discovery_row`'s own "discovery =
-    /// not owned anywhere" filter), shown below the existing local-only
-    /// "More Like This" row. Independent of `spawn_similar`/
-    /// `spawn_collection` — silently does nothing if Seerr isn't connected
-    /// or this item has no resolvable TMDB id, same best-effort shape as
-    /// every other row this pass adds.
+    /// "Recommended" row: TMDB recommendations via Seerr minus what's in the library
+    /// (resolve_and_fetch_discovery_row), below "More Like This". Independent of
+    /// spawn_similar/spawn_collection; does nothing without Seerr or a resolvable TMDB id.
     fn spawn_recommended(&self) {
         let id = self.id.clone();
         let state = Arc::clone(&self.state);
@@ -839,7 +812,8 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
                     g.set_detail_focused_btn(0);
                 }
                 0 if g.get_detail_focused_btn() == 5 => {
-                    // Overview focused → proceed to content below (btn stays 5 so Up from cast returns here)
+                    // Overview focused → proceed to content below (btn stays 5 so Up from cast
+                    // returns here)
                     if cast_len > 0 {
                         g.set_detail_focused_row(1);
                         g.set_detail_cast_focused(0);
