@@ -20340,3 +20340,229 @@ Above `if !matches!(`:
 //   wire_key_dispatch      callbacks moved from main() (0.5.0 step 3): the global key dispatch (fs FocusScope → handle_key)
 // ─────────────────────────────────────────────────────────────────────────────
 ```
+
+#### `crates/fjord-app/ui/detail.slint`
+
+Above `Rectangle {`:
+```
+// Real bug, live-reported 2026-07-18: the earlier
+// height:240px + vertical-stretch:1 spacer version
+// of this fix didn't reliably land the button row
+// at a fixed position — the flex/stretch math
+// doesn't hold up the way a first read of Slint's
+// layout model suggests once optional-line count
+// varies. Replaced with a deterministic version:
+// a plain (non-Layout) Rectangle fixed at 240px
+// (matching PosterBlock) holding two INDEPENDENTLY
+// positioned children — the title/meta stack at
+// its top (y:0, sized to its own content, free to
+// grow or shrink) and the button row pinned via an
+// explicit `y: parent.height - 38px` (both
+// FjordButton and IconCircleButton are a fixed
+// 38px tall, confirmed in widgets.slint, so this
+// is a hard constant, not a guess). Neither
+// child's position depends on the other's size at
+// all, which is what actually guarantees the fixed
+// Y — the previous version's bug was exactly that
+// the button row's position WAS still derived from
+// the text stack's height via the spacer.
+```
+
+Above `width: root.width - 48px - 48px - 160px - 32px;`:
+```
+// Real bug, live-reported 2026-07-18 (three
+// rounds, each confirmed against the actual
+// running app, not guessed): a plain Rectangle
+// (unlike the VerticalLayout it replaced) does
+// NOT automatically claim a sensible width from
+// the parent HorizontalLayout — without one, it
+// collapses to near-zero, and the inner
+// VerticalLayout's `width: parent.width` self-
+// referenced that same collapse, wrapping every
+// line of text to near-nothing and ballooning
+// the column's real height hundreds of pixels
+// past 240px (metadata ended up rendering below
+// "Ends" instead of above the buttons). Attempt
+// 1, `horizontal-stretch: 1`, was confirmed LIVE
+// to NOT work on a plain Rectangle the way it
+// does on a Layout element (no children-driven
+// preferred size for stretch to expand from).
+// Attempt 2, `width: parent.width - ...` (parent
+// = the HorizontalLayout), failed at COMPILE
+// TIME with a genuine binding loop (layoutinfo-h
+// -> layout-cache -> width -> width ->
+// layoutinfo-h) — a HorizontalLayout's own width
+// depends on its children's layout info, so a
+// child can't read that same in-progress width
+// back. Fix: `root.width` instead — DetailPage's
+// own top-level width, resolved by a separate,
+// already-completed layout pass (the Flickable
+// at the top of this component sets `width:
+// parent.width` = root.width and `viewport-
+// width: self.width`, so root.width threads
+// through unchanged to here) — minus the
+// HorizontalLayout's own padding-left/right
+// (48+48), PosterBlock's fixed 160px, and the
+// 32px spacing between them.
+```
+
+Above `if AppState.detail-ends-at != "": Text {`:
+```
+// Ends HH:MM — shown below the action buttons,
+// centered under the Play button specifically
+// (110px, matching Play's own explicit width above)
+// rather than left-aligned with the whole column —
+// user feedback, 2026-07-18.
+```
+
+#### `crates/fjord-app/ui/detail.slint` — file header (TOC)
+```
+// ── fjord-app · detail.slint ─────────────────────────────────────────────────
+//   DetailPage  header block: backdrop image covers poster+title area (image-fit cover,
+//               dark gradient overlay); semi-transparent overlay makes text readable;
+//               muted text uses #cccccc when backdrop present for legibility.
+//               Play / Resume / "Series →" buttons; ♥ fav IconCircleButton (gray=not fav,
+//               blue=fav) · ✓ watched IconCircleButton; "Ends HH:MM" text below buttons.
+//               Title column's inner block is a plain Rectangle fixed at height:240px
+//               (matching PosterBlock), width: root.width - 288px (NOT parent.width — that's
+//               a genuine compile-time binding loop against the enclosing HorizontalLayout,
+//               see the Slint gotchas section in this doc), holding two independently-
+//               positioned children — title/meta/tagline/etc. at its top, the button row
+//               pinned via an explicit y: parent.height - 38px (2026-07-18; three-attempt
+//               fix — vertical-stretch:1 spacer, then horizontal-stretch:1, both confirmed
+//               live not to work, before landing on root.width arithmetic — see CLAUDE.md's
+//               Seerr integration section for the full story). "Ends" stays outside the
+//               Rectangle as a normal next-in-flow sibling, width:110px + center-aligned to
+//               match the Play button above it.
+//               CastRow (on plain bg below header block); collection SectionRow;
+//               "More Like This" SectionRow; "Recommended" SectionRow (2026-07-29, Deep Seerr
+//               integration — Discover-sourced, row 4, below More Like This); scrollable overview.
+//               button focus: detail-focused-btn (-1=Back, 0=Play, 1=Resume, 2=Series, 3=Fav, 4=Watched)
+//               cast focus: detail-cast-focused (Right past last btn enters; Left from 0 exits)
+//   Page is shown only after initial metadata+poster+backdrop have loaded (see detail.rs
+//   spawn_main) — app-content-loading overlay on previous screen during fetch.
+//   Back while background player is minimized clears playback-from-detail so stop won't
+//   re-open detail; mini card / video-behind-ui remains active in the sidebar.
+// ─────────────────────────────────────────────────────────────────────────────
+```
+
+#### `crates/fjord-app/ui/account_picker.slint`
+
+Above `if !root.is-add-tile && root.tile.has-pin: Rectangle {`:
+```
+// Lock badge — picker visual parity (2026-08-29), mirroring
+// ProfilePickerScreen's own ProfileTileCard badge exactly (same
+// position/size/glyph — U+1F512 is confirmed covered by the
+// bundled NotoSansSymbols2 font, unlike the crown/flame glyphs
+// below). Scoped to profile-count == 1 — see AccountTile.has-pin's
+// own doc comment in theme.slint for why that's the one case a
+// lock warning on THIS tile (rather than ProfilePickerScreen's own
+// per-profile ones) is unambiguous.
+```
+
+Above `if !root.is-add-tile && root.tile.is-group-account: Rectangle {`:
+```
+// Bonfire Phase 5 — a real UX gap found while designing cross-household
+// groups: without this, another master's own account (reached via a
+// Bonfire group) was visually indistinguishable from one of the user's
+// OWN saved accounts, despite now correctly showing as its own separate
+// tile. Independent of the "N profiles" line above (a group account
+// could also have sub-profiles of its own, once discovered).
+//
+// Restyled 2026-08-29 from a plain full-sentence subtitle to a compact
+// pill badge, picker visual parity with Bonfire's own official UI (a
+// real screenshot showed a small flame badge marking a connected
+// household). The flame glyph itself (U+1F525) isn't covered by any
+// bundled font (confirmed via the established fc-query cmap check) —
+// this stays text-only, just restyled as a badge rather than a
+// caption, sidestepping the coverage gap entirely.
+```
+
+Above `width: badge-content.preferred-width;`:
+```
+// Explicit content-derived width, NOT left unset — a bare
+// Rectangle with no width, as a child of this component's own
+// enclosing VerticalLayout, would stretch to the full 132px tile
+// width by default (the same "unconstrained Layout child fills its
+// parent" behavior this app's own Slint-gotchas history already
+// documents once), turning a small pill badge into a full-width
+// banner strip instead.
+```
+
+Above `x: (parent.width - self.width) / 2;`:
+```
+// Explicit centering, matching this exact component's own avatar
+// Rectangle above (`x: (parent.width - self.width) / 2`, already
+// confirmed working live) — a narrower, explicitly-sized child of
+// this VerticalLayout isn't reliably auto-centered by the layout
+// itself, the same "don't trust implicit Layout positioning,
+// compute it explicitly" discipline this app's own history
+// establishes repeatedly.
+```
+
+Above `width: 180px;`:
+```
+// Grown again 120px -> 180px (2026-08-15, live-reported: "make the
+// icon/logo even bigger"), matching profile_picker.slint's own
+// identical change — same centered-in-empty-region shape, unaffected
+// by the size bump.
+```
+
+Above `if AppState.account-picker-cancelable: FjordButton {`:
+```
+// Real gap, live-reported 2026-08-21 — see account-picker-back-focused's
+// own doc comment in app_state.slint. Only ever shown when this screen
+// was reached from a live session (account-picker-cancelable) — never
+// at cold startup, where there's genuinely nothing to go back to.
+// Mirrors profile_picker.slint's own "cancel" variant exactly: no
+// destination named, just closes the picker and keeps whatever was
+// already active. refocus() re-grabs the global keyboard-dispatch
+// FocusScope, the same call the raw-key Escape/Backspace path already
+// makes directly (keys.rs) — needed since a mouse click doesn't run
+// through that path at all.
+```
+
+#### `crates/fjord-app/ui/account_picker.slint` — file header (TOC)
+```
+// ── fjord-app · account_picker.slint ─────────────────────────────────────────
+//   AccountPickerScreen  2026-08-14, the account/profile 2-tier redesign — sits ABOVE
+//                        ProfilePickerScreen, shown instead of it (or of the plain
+//                        startup auto-login) when 2+ distinct ACCOUNTS are known (a
+//                        plain login, or a whole Bonfire household represented by its
+//                        master — see profile.rs::AccountGroup). Same shape as
+//                        ProfilePickerScreen throughout: centered tile row (no
+//                        Flickable — account counts are realistically small) + a
+//                        trailing "+ Add Account" tile + a loading overlay while a
+//                        single-profile account's switch is in flight. Picking a tile
+//                        whose profile-count is 1 switches directly (or opens
+//                        ProfilePickerScreen's own PIN modal, reusing that screen's
+//                        state — there's no separate account-level PIN concept at
+//                        all); 2+ opens ProfilePickerScreen scoped to it. Deliberately
+//                        NOT a merge with ProfilePickerScreen into one parameterized
+//                        component — the two screens' data models (AccountTile vs.
+//                        ProfileTile) and per-tile behavior differ enough that sharing
+//                        one file risked more complexity than the ~80% visual overlap
+//                        saved. Quit button keyboard-focusable (2026-08-16, same fix as
+//                        profile_picker.slint's own Quit button — account-picker-quit-focused,
+//                        Down from the tile row, Up back, Enter activates; was mouse-only).
+//                        Back button (2026-08-21, real gap — this screen had no Back button
+//                        at all, mouse or keyboard, unlike profile_picker.slint's own
+//                        always-shown one) — conditional on account-picker-cancelable, so it
+//                        only appears when this screen was reached from a live session
+//                        ("Switch Account"), never at cold startup where there's nothing to
+//                        cancel back to; account-picker-back-focused, Up from the tile row
+//                        (only when cancelable) focuses it, Down back, Enter/Escape/Backspace
+//                        close the picker and refocus() the global FocusScope.
+//                        AccountTileCard (2026-08-29, Bonfire Phase 5) — a compact "LINKED"
+//                        pill badge when tile.is-group-account, so another master's own
+//                        account (reached via a cross-household group) doesn't look
+//                        indistinguishable from one of the user's own saved accounts
+//                        (restyled same day from a plain full-sentence subtitle to a
+//                        badge, picker visual parity with Bonfire's own official UI —
+//                        text-only, since the screenshot's own flame glyph isn't covered
+//                        by any bundled font); a lock badge (mirroring ProfilePickerScreen's
+//                        own, same position/glyph) when tile.has-pin, scoped to
+//                        profile-count == 1 — see AccountTile.has-pin's own doc comment
+//                        in theme.slint for why.
+// ─────────────────────────────────────────────────────────────────────────────
+```

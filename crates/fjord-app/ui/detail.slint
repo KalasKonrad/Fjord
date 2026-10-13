@@ -1,29 +1,17 @@
 // ── fjord-app · detail.slint ─────────────────────────────────────────────────
-//   DetailPage  header block: backdrop image covers poster+title area (image-fit cover,
-//               dark gradient overlay); semi-transparent overlay makes text readable;
-//               muted text uses #cccccc when backdrop present for legibility.
-//               Play / Resume / "Series →" buttons; ♥ fav IconCircleButton (gray=not fav,
-//               blue=fav) · ✓ watched IconCircleButton; "Ends HH:MM" text below buttons.
-//               Title column's inner block is a plain Rectangle fixed at height:240px
-//               (matching PosterBlock), width: root.width - 288px (NOT parent.width — that's
-//               a genuine compile-time binding loop against the enclosing HorizontalLayout,
-//               see the Slint gotchas section in this doc), holding two independently-
-//               positioned children — title/meta/tagline/etc. at its top, the button row
-//               pinned via an explicit y: parent.height - 38px (2026-07-18; three-attempt
-//               fix — vertical-stretch:1 spacer, then horizontal-stretch:1, both confirmed
-//               live not to work, before landing on root.width arithmetic — see CLAUDE.md's
-//               Seerr integration section for the full story). "Ends" stays outside the
-//               Rectangle as a normal next-in-flow sibling, width:110px + center-aligned to
-//               match the Play button above it.
-//               CastRow (on plain bg below header block); collection SectionRow;
-//               "More Like This" SectionRow; "Recommended" SectionRow (2026-07-29, Deep Seerr
-//               integration — Discover-sourced, row 4, below More Like This); scrollable overview.
-//               button focus: detail-focused-btn (-1=Back, 0=Play, 1=Resume, 2=Series, 3=Fav, 4=Watched)
-//               cast focus: detail-cast-focused (Right past last btn enters; Left from 0 exits)
-//   Page is shown only after initial metadata+poster+backdrop have loaded (see detail.rs
-//   spawn_main) — app-content-loading overlay on previous screen during fetch.
-//   Back while background player is minimized clears playback-from-detail so stop won't
-//   re-open detail; mini card / video-behind-ui remains active in the sidebar.
+//   DetailPage  header: backdrop (cover, dark gradient; muted text #cccccc over it), PosterBlock,
+//               title column — a plain Rectangle fixed at 240px, width from root.width (not
+//               parent.width — binding loop), title/meta at its top and the button row pinned at
+//               y = parent.height - 38px: Play / Resume / "Series →", ♥ favourite and ✓ watched
+//               IconCircleButtons; "Ends HH:MM" below, centered under Play.
+//               Then CastRow, the collection row, "More Like This", "Recommended" (Seerr), and the
+//               scrollable overview.
+//               Button focus: detail-focused-btn (-1 Back, 0 Play, 1 Resume, 2 Series, 3 Fav,
+//               4 Watched); cast focus: detail-cast-focused (Right past the last button enters,
+//               Left from 0 leaves).
+//               Shown only once metadata + poster + backdrop have loaded (detail.rs spawn_main;
+//               app-content-loading covers the previous screen meanwhile). Back with a minimized
+//               background player clears playback-from-detail, so stopping won't reopen this.
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme, CastMember } from "theme.slint";
 import { AppState } from "app_state.slint";
@@ -97,63 +85,17 @@ export component DetailPage inherits Rectangle {
                             spacing: 8px;
                             alignment: start;
 
-                            // Real bug, live-reported 2026-07-18: the earlier
-                        // height:240px + vertical-stretch:1 spacer version
-                        // of this fix didn't reliably land the button row
-                        // at a fixed position — the flex/stretch math
-                        // doesn't hold up the way a first read of Slint's
-                        // layout model suggests once optional-line count
-                        // varies. Replaced with a deterministic version:
-                        // a plain (non-Layout) Rectangle fixed at 240px
-                        // (matching PosterBlock) holding two INDEPENDENTLY
-                        // positioned children — the title/meta stack at
-                        // its top (y:0, sized to its own content, free to
-                        // grow or shrink) and the button row pinned via an
-                        // explicit `y: parent.height - 38px` (both
-                        // FjordButton and IconCircleButton are a fixed
-                        // 38px tall, confirmed in widgets.slint, so this
-                        // is a hard constant, not a guess). Neither
-                        // child's position depends on the other's size at
-                        // all, which is what actually guarantees the fixed
-                        // Y — the previous version's bug was exactly that
-                        // the button row's position WAS still derived from
-                        // the text stack's height via the spacer.
+                            // A plain (non-Layout) Rectangle fixed at 240px (PosterBlock's height) with two
+                            // independently positioned children: the title/meta stack at the top (sized to its content)
+                            // and the button row at `y: parent.height - 38px` (FjordButton and IconCircleButton are
+                            // 38px). Neither depends on the other's size, so the buttons always sit at the same y — a
+                            // spacer-based layout let the text height push them around.
                         Rectangle {
                                 height: 240px;
-                            // Real bug, live-reported 2026-07-18 (three
-                            // rounds, each confirmed against the actual
-                            // running app, not guessed): a plain Rectangle
-                            // (unlike the VerticalLayout it replaced) does
-                            // NOT automatically claim a sensible width from
-                            // the parent HorizontalLayout — without one, it
-                            // collapses to near-zero, and the inner
-                            // VerticalLayout's `width: parent.width` self-
-                            // referenced that same collapse, wrapping every
-                            // line of text to near-nothing and ballooning
-                            // the column's real height hundreds of pixels
-                            // past 240px (metadata ended up rendering below
-                            // "Ends" instead of above the buttons). Attempt
-                            // 1, `horizontal-stretch: 1`, was confirmed LIVE
-                            // to NOT work on a plain Rectangle the way it
-                            // does on a Layout element (no children-driven
-                            // preferred size for stretch to expand from).
-                            // Attempt 2, `width: parent.width - ...` (parent
-                            // = the HorizontalLayout), failed at COMPILE
-                            // TIME with a genuine binding loop (layoutinfo-h
-                            // -> layout-cache -> width -> width ->
-                            // layoutinfo-h) — a HorizontalLayout's own width
-                            // depends on its children's layout info, so a
-                            // child can't read that same in-progress width
-                            // back. Fix: `root.width` instead — DetailPage's
-                            // own top-level width, resolved by a separate,
-                            // already-completed layout pass (the Flickable
-                            // at the top of this component sets `width:
-                            // parent.width` = root.width and `viewport-
-                            // width: self.width`, so root.width threads
-                            // through unchanged to here) — minus the
-                            // HorizontalLayout's own padding-left/right
-                            // (48+48), PosterBlock's fixed 160px, and the
-                            // 32px spacing between them.
+                            // Width from root.width (DetailPage's own, from a completed layout pass): a plain
+                            // Rectangle doesn't take a width from the HorizontalLayout (collapsed to ~0 and wrapped
+                            // every line), horizontal-stretch doesn't work on it, and parent.width is a binding loop.
+                            // Minus the layout padding (48+48), PosterBlock (160) and the spacing (32).
                             width: root.width - 48px - 48px - 160px - 32px;
 
                                 VerticalLayout {
@@ -249,11 +191,7 @@ export component DetailPage inherits Rectangle {
                                 }
                             }
 
-                            // Ends HH:MM — shown below the action buttons,
-                        // centered under the Play button specifically
-                        // (110px, matching Play's own explicit width above)
-                        // rather than left-aligned with the whole column —
-                        // user feedback, 2026-07-18.
+                            // Ends HH:MM — below the buttons, centered under the Play button (110px, Play's width).
                         if AppState.detail-ends-at != "": Text {
                                 text: "Ends " + AppState.detail-ends-at;
                                 color: AppState.detail-has-backdrop ? #eeeeee : Theme.text-muted;
