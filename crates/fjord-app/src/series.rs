@@ -5,8 +5,9 @@
 //                           screen-open cache hit (spawn_main only)
 //     spawn_main    detail (no network on a cache hit) + poster + seasons in parallel (seasons and
 //                   first-season episodes never cached — stale-fetch guards); backdrop, first
-//                   episodes, cast portraits; one commit shows the page fully loaded, then episode
-//                   thumbnails. Guarded by series_open_id and session_current
+//                   episodes, cast portraits; one commit shows the page fully loaded (and starts
+//                   the Trailer check), then episode thumbnails. Guarded by series_open_id and
+//                   session_current
 //     spawn_next_up next unwatched episode (always fresh) → series-has-next-up + thumb
 //     spawn_similar similar series (similar_items_cache) → series-similar row
 //   spawn_recommended       "Recommended": Seerr/TMDB recommendations not in the library
@@ -20,6 +21,8 @@
 //   open_series_screen      reset AppState, check item_detail_cache (loading overlay only on a
 //                           miss), claim series_open_id, spawn the tasks (show-series waits for
 //                           spawn_main)
+//   existing_series_buttons / fix_trailer_focus  header buttons Left/Right step through (Back,
+//                           Trailer when "ok", ♥, ✓ — must match series.slint)
 //   handle_key              rows top to bottom: season tabs/episodes → missing seasons → cast →
 //                           similar → recommended; C on a season tab opens its context menu
 //   wire_series             callbacks moved from main() (0.5.0 step 3): series drill-down
@@ -205,6 +208,9 @@ impl SeriesCtx {
                 }
                 return;
             }
+            // For the Trailer button (RemoteTrailers / LocalTrailerCount).
+            let trailer_item = detail_res.as_ref().ok().cloned();
+            let rt_trailer = rth.clone();
             let backdrop_bytes = match &detail_res {
                 Ok(d) if !d.backdrop_image_tags.is_empty() => {
                     fetch_backdrop_cached_tagged(
@@ -517,6 +523,20 @@ impl SeriesCtx {
                     g.set_app_content_loading(false);
                     g.set_app_loading_progress(0.0);
                     w.invoke_grab_keyboard_focus();
+                }
+                // Trailer button. On a revalidate only when the first pass found none — the
+                // fresh item may list trailers an older cached copy didn't.
+                if let Some(item) = &trailer_item
+                    && (!revalidate || g.get_series_trailer_state() == "none")
+                {
+                    crate::discover::start_library_trailer_check(
+                        crate::discover::TrailerScreen::Series,
+                        item,
+                        &client_guard,
+                        &state,
+                        &ww,
+                        &rt_trailer,
+                    );
                 }
             });
 
@@ -883,6 +903,8 @@ pub(crate) fn open_series_screen(
         g.set_series_missing_seasons(ModelRc::new(VecModel::<CardItem>::default()));
         g.set_series_missing_seasons_focused(-1);
         g.set_series_focused_btn(-1);
+        g.set_series_trailer_state("".into());
+        g.set_series_trailer_url("".into());
         g.set_series_overview_expanded(false);
         g.set_series_has_next_up(false);
         g.set_series_next_up_id("".into());
@@ -1260,6 +1282,25 @@ pub(crate) fn activate_missing_season(
 
 // ── Keyboard dispatch ─────────────────────────────────────────────────────────
 
+/// The header buttons Left/Right step through, in on-screen order (series-focused-btn ids):
+/// 0 Back, 4 Trailer (only when "ok" — greyed isn't a stop), 1 ♥, 2 ✓. Must match
+/// series.slint's `if` conditions.
+fn existing_series_buttons(g: &crate::AppState) -> Vec<i32> {
+    let mut v = vec![0];
+    if g.get_series_trailer_state() == "ok" {
+        v.push(4);
+    }
+    v.extend([1, 2]);
+    v
+}
+
+/// The Trailer button stopped being a D-pad stop (checking again / none): focus ♥ instead.
+pub(crate) fn fix_trailer_focus(g: &crate::AppState) {
+    if g.get_series_focused_btn() == 4 {
+        g.set_series_focused_btn(1);
+    }
+}
+
 pub(crate) fn handle_key(action: &crate::keys::Action, g: &crate::AppState) -> bool {
     use crate::keys::Action;
     if *action == Action::Back {
@@ -1274,16 +1315,16 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &crate::AppState) -> b
         return true;
     }
 
-    // ── Header buttons (Back / ♥ / ✓ Watched) ────────────────────────────────
+    // ── Header buttons (Back / Trailer / ♥ / ✓ Watched) ──────────────────────
     if g.get_series_focused_btn() == 0 {
-        // Back button: Down → ♥ fav; Right → ♥; Enter → close
+        // Back button: Down → ♥ fav; Right → the first header button; Enter → close
         return match action {
             Action::Down => {
                 g.set_series_focused_btn(1);
                 true
             }
             Action::Right => {
-                g.set_series_focused_btn(1);
+                g.set_series_focused_btn(existing_series_buttons(g)[1]);
                 true
             }
             Action::Confirm => {
@@ -1303,19 +1344,17 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &crate::AppState) -> b
         };
     }
     if g.get_series_focused_btn() >= 1 {
-        // ♥ (1) and ✓ Watched (2): Left/Right cycle; Up → Back button; Down → content
+        // Trailer (4), ♥ (1), ✓ Watched (2): Left/Right step (Left from the first → Back);
+        // Up → Back button; Down → content. Overview (3): Up/Down only.
         return match action {
-            Action::Left => {
+            Action::Left | Action::Right => {
                 let b = g.get_series_focused_btn();
-                if (1..=2).contains(&b) {
-                    g.set_series_focused_btn(b - 1);
-                }
-                true
-            }
-            Action::Right => {
-                let b = g.get_series_focused_btn();
-                if b < 2 {
-                    g.set_series_focused_btn(b + 1);
+                if b != 3 {
+                    let slots = existing_series_buttons(g);
+                    let dir = if *action == Action::Right { 1 } else { -1 };
+                    let pos = slots.iter().position(|&s| s == b).unwrap_or(1) as i32;
+                    let next = (pos + dir).clamp(0, slots.len() as i32 - 1);
+                    g.set_series_focused_btn(slots[next as usize]);
                 }
                 true
             }
@@ -1359,6 +1398,7 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &crate::AppState) -> b
                     1 => g.invoke_toggle_series_fav(),
                     2 => g.invoke_toggle_series_played(),
                     3 => g.set_series_overview_expanded(!g.get_series_overview_expanded()),
+                    4 if g.get_series_trailer_state() == "ok" => g.invoke_play_series_trailer(),
                     _ => {}
                 }
                 true

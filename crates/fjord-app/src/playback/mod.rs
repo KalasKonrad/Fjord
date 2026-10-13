@@ -33,9 +33,11 @@
 //                           skipped when replacing a live player for the same item; a stop mid-switch
 //                           reverts the display)
 //   prestart_still_current  that task's staleness check — generation unchanged AND a player still set
-//   play_trailer            Watch Trailer (refuses URLs failing discover::trailer_url_allowed); no Jellyfin
-//                           client/item, so no reporting or auto-advance; display sync only when
-//                           device.display_sync_trailers; a failed open closes with "Trailer unavailable"
+//   TrailerSource           YouTube (a server-provided link) | Server (a stream URL Fjord builds)
+//   play_trailer            Watch Trailer (a YouTube source must pass trailer_url_allowed); no
+//                           Jellyfin client/item, so no reporting, auto-advance or played/resume
+//                           changes; display sync only when device.display_sync_trailers; a failed
+//                           open closes with "Trailer unavailable"
 // ─────────────────────────────────────────────────────────────────────────────
 use std::num::NonZeroU32;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
@@ -1368,8 +1370,19 @@ pub(crate) fn start_playback(
     }
 }
 
+/// Where a trailer comes from — decides the URL check in play_trailer.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum TrailerSource {
+    /// A YouTube link from the server (Seerr relatedVideos, Jellyfin RemoteTrailers): must pass
+    /// discover::trailer_url_allowed; mpv resolves it through yt-dlp.
+    YouTube,
+    /// A trailer file on the Jellyfin server: the stream URL is built by Fjord
+    /// (JellyfinClient::direct_play_url for a validated id), never taken from the server.
+    Server,
+}
+
 // ── play_trailer ──────────────────────────────────────────────────────────────
-// Watch Trailer (Discover / RequestDetailScreen). Not routed through `start_playback`:
+// Watch Trailer (Discover, movie detail page, series page). Not routed through `start_playback`:
 // that path reports to Jellyfin (playback start/progress/stopped, intro/credits
 // fetch, series auto-advance) and needs a real `Arc<JellyfinClient>`. Here
 // `vs.client`/`item_id`/`playing_series_id` stay `None`, which is what makes progress
@@ -1379,14 +1392,18 @@ pub(crate) fn play_trailer(
     url: String,
     title: String,
     config: PlayerConfig,
+    source: TrailerSource,
     video: &Arc<Mutex<VideoState>>,
     window_weak: &slint::Weak<MainWindow>,
     rt_handle: &tokio::runtime::Handle,
 ) {
-    info!("playing trailer: {}", fjord_player::redact_api_key(&url));
+    info!(
+        "playing trailer ({source:?}): {}",
+        fjord_player::redact_api_key(&url)
+    );
     // Server-provided URL: only https YouTube reaches mpv (2026-10-09
     // security review; the callers already filter, this is the last gate).
-    if !crate::discover::trailer_url_allowed(&url) {
+    if source == TrailerSource::YouTube && !crate::discover::trailer_url_allowed(&url) {
         warn!("trailer not played: not an https YouTube URL");
         crate::show_toast(window_weak.clone(), "Trailer unavailable".into());
         return;
@@ -1428,7 +1445,9 @@ pub(crate) fn play_trailer(
                 vs.playing_series_id = None;
                 vs.client = None;
                 vs.is_trailer = true;
-                vs.trailer_url = Some(url.clone());
+                // Only a YouTube link is remembered (to mark it unplayable on failure); a server
+                // stream URL carries the api_key and has nothing to mark.
+                vs.trailer_url = (source == TrailerSource::YouTube).then(|| url.clone());
                 // Trailers have no video_info/Jellyfin item, so they never
                 // go through start_playback's own deferred-load path — stamp
                 // play_start immediately here, matching today's exact

@@ -49,10 +49,12 @@
 //                         chapter-prev/next/-jump; delay-osd-*, sub/audio-delay-ms + inc/dec
 //   Detail page           detail-id/-item-type/-resume-secs/-title/-tagline/-studio/-is-favorite/-has-played,
 //                         detail-focused-row/-btn, detail-cast/-similar/-collection/-recommended (+ -focused),
-//                         detail-series-id, detail-scroll, detail-ends-at, …
+//                         detail-series-id, detail-scroll, detail-ends-at, detail-trailer-state/-url +
+//                         play-detail-trailer, …
 //   Series / season       series-id, seasons, episode-cards, poster, backdrop, tagline, studio, is-favorite,
 //                         meta/genres/rating-label, next-up card, cast, similar, series-recommended,
-//                         series-missing-seasons (+ -focused); show-season, season-id/title/overview/meta,
+//                         series-missing-seasons (+ -focused), series-trailer-state/-url +
+//                         play-series-trailer; show-season, season-id/title/overview/meta,
 //                         poster/backdrop, cast, focused-ep
 //   Person                show-person, person-id/name/bio, portrait, filmography, film-focused, in-film-row,
 //                         person-other-work (+ -focused), person-in-other-work-row
@@ -791,7 +793,13 @@ export global AppState {
     in-out property <string> detail-item-type:    "";    // item type cached from fetch (Movie, Episode, etc.)
     in-out property <float> detail-resume-secs:   0;    // resume position in seconds (cached from fetch)
     in-out property <bool> detail-loading:       false;
-    in-out property <int> detail-focused-btn:      0;    // 0=Play 1=Resume 2=Series 3=Fav 4=Watched 5=Overview
+    in-out property <int> detail-focused-btn:      0;    // 0=Play 1=Resume 2=Series 3=Fav 4=Watched 5=Overview 6=Trailer
+    // Trailer button (movies only; discover::start_library_trailer_check): "" hidden | "checking"
+    // | "ok" | "none", like request-detail-trailer-state. -url = the YouTube link ("" when a trailer
+    // file on the server plays — no yt-dlp needed for that one).
+    in-out property <string> detail-trailer-state: "";
+    in-out property <string> detail-trailer-url:   "";
+    callback play-detail-trailer();
     in-out property <bool> detail-overview-expanded: false;
     in-out property <string> detail-title:        "";
     in-out property <string> detail-tagline:      "";    // first tagline or ""
@@ -876,8 +884,12 @@ export global AppState {
     // Fired on Confirm/click for a focused missing-season card — wired in
     // main.rs (needs state/rt, unavailable to keys.rs::handle_key directly).
     callback series-missing-season-activate(int);
-    // Header button focus: -1=not focused, 0=Back, 1=♥ fav, 2=✓ Watched, 3=Overview
+    // Header button focus: -1=not focused, 0=Back, 1=♥ fav, 2=✓ Watched, 3=Overview, 4=Trailer
     in-out property <int> series-focused-btn:        -1;
+    // Trailer button, same as detail-trailer-state/-url.
+    in-out property <string> series-trailer-state: "";
+    in-out property <string> series-trailer-url:   "";
+    callback play-series-trailer();
     in-out property <bool> series-overview-expanded:  false;
 
     // ── Season detail state ───────────────────────────────────────────────────

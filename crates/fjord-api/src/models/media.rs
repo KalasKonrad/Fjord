@@ -3,11 +3,13 @@
 //   UserData        played status, resume position, unplayed count, is_favorite, played_percentage
 //                   (series; only with Fields=RecursiveItemCount)
 //   StudioInfo      studio name (from Studios array in item detail)
+//   RemoteTrailer   one RemoteTrailers entry (Url, optional Name)
 //   MediaItem       full item: id, name, type, series info, user data, runtime, image_tags, status/end_date,
 //                   date_created (WS delta-sync Recently Added ordering), season_id (episode → season routing),
 //                   provider_ids ("Tmdb"/"Imdb"/"Tvdb" -> value, movies/series only — Discover TMDB-match);
 //                   helpers: primary_image_tag(), card_title(), card_subtitle() (Jellyfin-style card rows);
-//                   detail fields: genres, rating, backdrop, people, taglines, studios, recursive_item_count
+//                   detail fields: genres, rating, backdrop, people, taglines, studios, recursive_item_count,
+//                   remote_trailers, local_trailer_count
 //                   music fields: album_artist, album (track → parent album name, index_number = track #)
 //                   playlist fields: media_type, playlist_item_id (entry id for removal), child_count
 //                   media_streams: Vec<MediaStream> (Fields=MediaStreams only); video_stream_info() ->
@@ -89,6 +91,20 @@ where
     Ok(v)
 }
 
+/// One `RemoteTrailers` entry: a trailer link (YouTube watch URLs on the verified server) and,
+/// for movies, its title ("Official Trailer", "Teaser", "TV Spot"…); series entries have no name.
+fn is_zero(n: &u32) -> bool {
+    *n == 0
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
+pub struct RemoteTrailer {
+    #[serde(rename = "Url", default)]
+    pub url: String,
+    #[serde(rename = "Name", default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize, Default)]
 pub struct PersonInfo {
     #[serde(rename = "Id", default)]
@@ -138,6 +154,17 @@ pub struct MediaItem {
     // is matched client-side against the already-cached library list.
     #[serde(rename = "ProviderIds", default)]
     pub provider_ids: std::collections::HashMap<String, String>,
+    /// Trailer links — with Fields=RemoteTrailers (the single-item detail sends them anyway).
+    #[serde(
+        rename = "RemoteTrailers",
+        default,
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    pub remote_trailers: Vec<RemoteTrailer>,
+    /// Trailer files stored with the item on the server — with Fields=LocalTrailerCount (the
+    /// single-item detail sends it anyway); get_local_trailers lists them.
+    #[serde(rename = "LocalTrailerCount", default, skip_serializing_if = "is_zero")]
+    pub local_trailer_count: u32,
     // Detail fields — only populated via get_item_detail()
     #[serde(rename = "Genres", default)]
     pub genres: Vec<String>,

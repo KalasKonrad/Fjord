@@ -2,13 +2,15 @@
 //   DetailPage  header: backdrop (cover, dark gradient; muted text #cccccc over it), PosterBlock,
 //               title column — a plain Rectangle fixed at 240px, width from root.width (not
 //               parent.width — binding loop), title/meta at its top and the button row pinned at
-//               y = parent.height - 38px: Play / Resume / "Series →", ♥ favourite and ✓ watched
-//               IconCircleButtons; "Ends HH:MM" below, centered under Play.
+//               y = parent.height - 38px: Play / Resume / "Series →" / Trailer (movies: greyed
+//               "Checking…"/"No trailer" until detail-trailer-state "ok"; hidden without yt-dlp unless
+//               a server trailer file is ok), ♥ favourite and ✓ watched IconCircleButtons; "Ends
+//               HH:MM" below, centered under Play.
 //               Then CastRow, the collection row, "More Like This", "Recommended" (Seerr), and the
 //               scrollable overview.
-//               Button focus: detail-focused-btn (-1 Back, 0 Play, 1 Resume, 2 Series, 3 Fav,
-//               4 Watched); cast focus: detail-cast-focused (Right past the last button enters,
-//               Left from 0 leaves).
+//               Button focus: detail-focused-btn (-1 Back, 0 Play, 1 Resume, 2 Series, 6 Trailer,
+//               3 Fav, 4 Watched — Left/Right order in detail.rs's existing_detail_buttons; 5 =
+//               Overview, below); cast focus: detail-cast-focused.
 //               Shown only once metadata + poster + backdrop have loaded (detail.rs spawn_main;
 //               app-content-loading covers the previous screen meanwhile). Back with a minimized
 //               background player clears playback-from-detail, so stopping won't reopen this.
@@ -173,6 +175,18 @@ export component DetailPage inherits Rectangle {
                                             AppState.close-detail();
                                             AppState.open-series(AppState.detail-series-id);
                                         }
+                                    }
+                                    // Trailer (movies): greyed while checking / when none plays; hidden
+                                    // without yt-dlp unless a trailer file on the server is "ok".
+                                    if AppState.detail-trailer-state != "" && (AppState.yt-dlp-available || AppState.detail-trailer-state == "ok"): FjordButton {
+                                        enabled: AppState.detail-trailer-state == "ok";
+                                        icon-left: AppState.detail-trailer-state == "ok" ? "▶" : "";
+                                        text: AppState.detail-trailer-state == "ok" ? "Trailer"
+                                            : AppState.detail-trailer-state == "checking" ? "Checking…"
+                                            : "No trailer";
+                                        width: 130px;
+                                        kbd-focused: AppState.detail-focused-btn == 6 && AppState.detail-cast-focused < 0;
+                                        clicked => { AppState.play-detail-trailer(); }
                                     }
                                 // ♥ favourite — gray when not fav, accent when fav
                                 IconCircleButton {

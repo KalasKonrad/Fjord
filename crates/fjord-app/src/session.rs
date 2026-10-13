@@ -103,7 +103,8 @@ pub(crate) fn reset_session_state(
     s.pending_keybind_rebind = None;
     s.available_plugins.clear();
     s.trailer_playable.clear();
-    s.request_detail_trailers.clear();
+    s.trailer_candidates.clear();
+    s.local_trailers.clear();
     // ManageProfilesScreen/ProfileEditScreen (Bonfire Phase 2, 2026-08-09) —
     // same "clear it here, don't wait to discover the gap live" precedent
     // as everything else in this function.
@@ -140,6 +141,8 @@ pub(crate) fn reset_session_state(
         // profile's data. (The worst sites also check session_current.)
         g.set_detail_id(ss(""));
         g.set_series_id(ss(""));
+        g.set_detail_trailer_state(ss(""));
+        g.set_series_trailer_state(ss(""));
         g.set_season_id(ss(""));
         g.set_person_id(ss(""));
         g.set_collection_id(ss(""));

@@ -1,6 +1,7 @@
 // ── fjord-app · series.slint ─────────────────────────────────────────────────
-//   SeriesScreen  scrollable page: header (backdrop over poster + title, dark gradient) · ♥ and ✓
-//                 IconCircleButtons · poster badges (played/unplayed count) · season tabs (accent
+//   SeriesScreen  scrollable page: header (backdrop over poster + title, dark gradient) · Trailer
+//                 button (series-trailer-state, like the detail page's; series-focused-btn 4) · ♥ and
+//                 ✓ IconCircleButtons · poster badges (played/unplayed count) · season tabs (accent
 //                 underline when focused) · episode row · Missing Seasons · CastRow · More Like
 //                 This · Recommended
 //   Keyboard scroll: 0-height anchor Rectangles (next-up-, seasons-, ep-, missing-seasons-, cast-,
@@ -146,6 +147,18 @@ export component SeriesScreen inherits Rectangle {
                             HorizontalLayout {
                                 spacing: 12px;
                                 alignment: start;
+                                // Trailer: greyed while checking / when none plays; hidden without
+                                // yt-dlp unless a trailer file on the server is "ok".
+                                if AppState.series-trailer-state != "" && (AppState.yt-dlp-available || AppState.series-trailer-state == "ok"): FjordButton {
+                                    enabled: AppState.series-trailer-state == "ok";
+                                    icon-left: AppState.series-trailer-state == "ok" ? "▶" : "";
+                                    text: AppState.series-trailer-state == "ok" ? "Trailer"
+                                        : AppState.series-trailer-state == "checking" ? "Checking…"
+                                        : "No trailer";
+                                    width: 130px;
+                                    kbd-focused: AppState.series-focused-btn == 4;
+                                    clicked => { AppState.play-series-trailer(); }
+                                }
                             // ♥ favourite — gray when not fav, accent when fav
                             IconCircleButton {
                                     icon: "❤";

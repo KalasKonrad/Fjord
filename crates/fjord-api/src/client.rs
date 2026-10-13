@@ -19,6 +19,8 @@
 //                   create_playlist, add_to_playlist, remove_from_playlist (EntryIds)
 //     favorites     get_favorites(item_types)
 //     playback      direct_play_url, report_playback_start/progress/stopped
+//     trailers      get_local_trailers (GET /Items/{id}/LocalTrailers?userId=); RemoteTrailers +
+//                   LocalTrailerCount come with get_item_detail / get_items_by_ids_detailed
 //     user actions  mark_played, mark_unplayed, set_favorite, unset_favorite
 //     plugins       get_episode_timestamps (Intro Skipper v2+: intro + credits),
 //                   get_next_up_for_series
@@ -288,7 +290,7 @@ impl JellyfinClient {
             "Overview,RunTimeTicks,SeriesName,SeasonName,IndexNumber,ParentIndexNumber,\
              ProductionYear,UserData,Genres,OfficialRating,CommunityRating,\
              BackdropImageTags,People,Taglines,Studios,RecursiveItemCount,ProviderIds,\
-             MediaStreams",
+             MediaStreams,RemoteTrailers,LocalTrailerCount",
         );
         Ok(self
             .http
@@ -391,6 +393,29 @@ impl JellyfinClient {
     }
 
     /// Direct-play URL: mpv can open this as-is.
+    /// Trailer files stored with an item — `GET /Items/{id}/LocalTrailers?userId=` (verified on
+    /// 10.11; the older `/Users/{userId}/Items/{id}/LocalTrailers` answers too). A bare JSON
+    /// array of playable items.
+    pub async fn get_local_trailers(&self, item_id: &str) -> Result<Vec<MediaItem>> {
+        let mut url = self.api_url(&format!("/Items/{}/LocalTrailers", item_id))?;
+        url.query_pairs_mut().append_pair("userId", &self.user_id);
+        let resp = self
+            .http
+            .get(url)
+            .header("Authorization", self.auth_header())
+            .send()
+            .await?;
+        let status = resp.status();
+        if !status.is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            anyhow::bail!(
+                "HTTP {status}: {}",
+                body.chars().take(200).collect::<String>()
+            );
+        }
+        Ok(resp.json::<Vec<MediaItem>>().await?)
+    }
+
     pub fn direct_play_url(&self, item_id: &str) -> String {
         format!(
             "{}/Videos/{}/stream?static=true&api_key={}",
@@ -819,7 +844,8 @@ impl JellyfinClient {
                 "Overview,RunTimeTicks,SeriesName,SeriesId,SeasonName,SeasonId,\
                 IndexNumber,ParentIndexNumber,ProductionYear,UserData,Genres,OfficialRating,\
                 CommunityRating,BackdropImageTags,People,Taglines,Studios,RecursiveItemCount,\
-                AlbumArtist,ChildCount,DateCreated,MediaStreams",
+                AlbumArtist,ChildCount,DateCreated,MediaStreams,ProviderIds,RemoteTrailers,\
+                LocalTrailerCount",
             );
         Ok(self
             .http
