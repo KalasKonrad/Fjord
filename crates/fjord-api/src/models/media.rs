@@ -1,6 +1,7 @@
 // ── fjord-api · models/media.rs ──────────────────────────────────────────────
 //   ItemsResponse   envelope for GET /Users/{id}/Items responses
-//   UserData        played status, resume position, unplayed count, is_favorite
+//   UserData        played status, resume position, unplayed count, is_favorite, played_percentage
+//                   (series; only with Fields=RecursiveItemCount)
 //   StudioInfo      studio name (from Studios array in item detail)
 //   MediaItem       full item: id, name, type, series info, user data, runtime, image_tags, status/end_date,
 //                   date_created (WS delta-sync Recently Added ordering), season_id (episode → season routing),
@@ -35,6 +36,14 @@ pub struct UserData {
     pub is_favorite: bool,
     #[serde(rename = "UnplayedItemCount", default)]
     pub unplayed_item_count: i32,
+    /// Share of a series' (folder's) items played, 0–100. Jellyfin only sends it when the
+    /// request's Fields include RecursiveItemCount (verified live); None otherwise.
+    #[serde(
+        rename = "PlayedPercentage",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub played_percentage: Option<f64>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, Default)]

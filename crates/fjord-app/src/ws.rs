@@ -364,7 +364,7 @@ fn maybe_spawn_delta_refresh(
         // relationship caches is invalidated (no batch endpoint, and the event doesn't say whether
         // metadata or membership changed).
         let (home_data, items_res, detailed_res) = tokio::join!(
-            fetch_home_data(&client2, true),
+            fetch_home_data(&client2, Some(&state2)),
             client2.get_items_by_ids(&upsert_ids),
             client2.get_items_by_ids_detailed(&upsert_ids),
         );

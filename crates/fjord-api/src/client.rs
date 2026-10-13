@@ -30,7 +30,8 @@
 //   Fields          ProviderIds on detail/boxset/filmography/by-ids fetches (TMDB resolution);
 //                   MediaStreams on get_item_detail, get_items_by_ids_detailed (keep in sync),
 //                   get_next_up_for_series and get_series_episodes (video_stream_info() before
-//                   playback)
+//                   playback); RecursiveItemCount on get_all_series and get_items_by_ids (makes
+//                   Jellyfin send UserData.PlayedPercentage)
 // ─────────────────────────────────────────────────────────────────────────────
 use anyhow::Result;
 use reqwest::StatusCode;
@@ -320,8 +321,13 @@ impl JellyfinClient {
 
     /// All series in the library.
     pub async fn get_all_series(&self) -> Result<Vec<MediaItem>> {
-        self.get_all_paged("Series", "Overview,ProductionYear,UserData,ProviderIds")
-            .await
+        // RecursiveItemCount makes Jellyfin include UserData.PlayedPercentage (the "Not watched"
+        // TV pick needs it); no measurable cost (~0.6 s for 188 series either way).
+        self.get_all_paged(
+            "Series",
+            "Overview,ProductionYear,UserData,ProviderIds,RecursiveItemCount",
+        )
+        .await
     }
 
     /// All seasons for a series.
@@ -753,13 +759,14 @@ impl JellyfinClient {
         Ok(all)
     }
 
-    // ProviderIds as in get_all_movies/get_all_series: this is the WS delta upsert path, and
-    // leaving it out would wipe provider_ids on every refresh of a cached movie/series.
+    // ProviderIds (and RecursiveItemCount → PlayedPercentage) as in get_all_movies/
+    // get_all_series: this is the WS delta upsert path, and leaving them out would wipe them on
+    // every refresh of a cached movie/series.
     async fn get_items_by_ids_page(&self, ids: &[String]) -> Result<Vec<MediaItem>> {
         let mut url = self.api_url(&format!("/Users/{}/Items", self.user_id))?;
         url.query_pairs_mut()
             .append_pair("Ids", &ids.join(","))
-            .append_pair("Fields", "Overview,ProductionYear,UserData,AlbumArtist,ChildCount,DateCreated,SeasonId,SeriesId,IndexNumber,ParentIndexNumber,ProviderIds");
+            .append_pair("Fields", "Overview,ProductionYear,UserData,AlbumArtist,ChildCount,DateCreated,SeasonId,SeriesId,IndexNumber,ParentIndexNumber,ProviderIds,RecursiveItemCount");
         Ok(self
             .http
             .get(url)

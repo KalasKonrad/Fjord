@@ -153,6 +153,19 @@ GET /Users/{userId}/Items
     &Recursive=true
     &Limit=15
 ```
+**[used]** for Movies only. For `IncludeItemTypes=Series`, `IsUnplayed` means "not fully
+watched" (it matches `UserData.Played == false`, so half-watched series are included) and is
+slow — 2–7 s on a 188-series library, the recursive played check runs per series. Fjord's
+"Not watched" TV row is picked client-side instead (next section).
+
+### Series played share: `UserData.PlayedPercentage` **[used]** (verified live 2026-10-13)
+Sent for series **only when `Fields` includes `RecursiveItemCount`** — with `Fields=UserData`
+alone it is absent (0 of 188 series); with `UserData,RecursiveItemCount` all 188 had it
+(95 × 0, 16 partial, 77 × 100). No measurable cost on the series list (~0.6 s either way).
+Server side (`Folder.FillUserDataDtoValues`): `PlayedPercentage = played / total × 100`,
+`UnplayedItemCount = total − played`, `Played = played ≥ total`. A half-watched episode is not
+played, so a series whose only activity is an in-progress episode still reports 0 — Fjord
+also excludes series that have an episode in Continue Watching or Next Up.
 
 ### Similar / related items
 ```

@@ -9,10 +9,15 @@
 //   home cache      load_home_cache, save_home_cache (home.json)
 //   library caches  load/save_movies_cache, _series_cache, _collections_cache, _artists_cache,
 //                   _albums_cache, _playlists_cache
+//   "Not watched" TV  NOT_WATCHED_ROW_LEN; pick_never_started_series (pure, unit-tested): random
+//                   series with PlayedPercentage 0 that aren't in started_series_ids (Continue
+//                   Watching / Next Up; _from_models reads the rows on screen); not_watched_tv
+//                   picks from FjordState.all_series, fetching the series list only when it has
+//                   no PlayedPercentage
 //   fetch_home_data async: every home row in parallel (Recently Added via /Items/Latest — grouped,
-//                   played included, like the web home); include_not_watched = false skips the slow
-//                   Not Watched rows (only finish_session_setup's login join; auth.rs's
-//                   spawn_not_watched_rows fetches them afterwards)
+//                   played included, like the web home); Not Watched rows only with Some(state)
+//                   (Movies: server query, TV: not_watched_tv) — None for finish_session_setup's
+//                   login join (auth.rs's spawn_not_watched_rows fills them afterwards)
 //   push_home_data  HomeData → AppState (UI thread); takes the watchlist id snapshot (a fresh build
 //                   has no old row to carry on_watchlist from)
 //   push_home_data_preserving_posters / refresh_row_preserving_posters  merge fresh items against
@@ -21,21 +26,21 @@
 //                   refresh and spawn_library_fetch
 //   home_data_sections  HomeData → [(HomeSection, Vec<MediaItem>); 17]
 //   refresh_favorites   re-fetch the favorites rows after a toggle (posters preserved)
-//   wire_nw_timer   30 s timer: refresh the Not Watched rows when idle + tab visible; failures are
-//                   logged, and a movies failure doesn't skip the TV fetch
+//   wire_nw_timer   30 s timer: refresh the Not Watched rows when idle + tab visible (TV via
+//                   not_watched_tv); failures are logged, and a movies failure doesn't skip TV
 //   fetch_movie_collections  background: movie_id → (boxset_id, boxset_name) map
 //   run_poster_cache_cleanup  delete orphaned posters/ + backdrops/ files (24 h guard; known ids =
 //                   the six library lists + detail cache keys + credited person ids)
 //   wire_item_play  callbacks moved from main() (0.5.0 step 3): play from home / library rows
 // ─────────────────────────────────────────────────────────────────────────────
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use fjord_api::{JellyfinClient, models::MediaItem};
 use serde::{Deserialize, Serialize};
-use tracing::warn;
+use tracing::{debug, warn};
 
 use crate::AppState;
 use crate::config::{FjordState, backdrop_cache_dir, poster_cache_dir, xdg_cache_base};
@@ -218,15 +223,120 @@ pub(crate) fn save_playlists_cache(user_id: &str, items: &[MediaItem]) {
     save_cache(playlists_cache_path(user_id), items)
 }
 
-/// `include_not_watched`: the Not Watched Movies/TV rows are the slowest queries (Jellyfin's
-/// SortBy=Random + recursive unplayed filter for series takes seconds server-side) and only
-/// appear on the Movies/TV dashboards, so login doesn't wait for them: `false` only for
-/// finish_session_setup's login join (auth.rs fetches them afterwards). With `true` (WS delta,
-/// playback stop, auto-login refresh — all background) the pair runs as its own join right
-/// after the main 12-branch one.
+// ── "Not watched" TV ──────────────────────────────────────────────────────────
+
+/// Cards in each "Not watched" row.
+pub(crate) const NOT_WATCHED_ROW_LEN: usize = 15;
+
+/// Series the user has started, for the "Not watched" TV pick: every series with an episode
+/// in Continue Watching or Next Up (an episode watched halfway doesn't count as played, so
+/// PlayedPercentage alone misses it).
+pub(crate) fn started_series_ids(
+    continue_watching: &[MediaItem],
+    next_up: &[MediaItem],
+) -> HashSet<String> {
+    continue_watching
+        .iter()
+        .chain(next_up)
+        .filter_map(|i| match i.item_type.as_str() {
+            "Series" => Some(i.id.clone()),
+            _ => i.series_id.clone(),
+        })
+        .collect()
+}
+
+/// started_series_ids from the Continue Watching / Next Up rows already on screen (UI thread).
+pub(crate) fn started_series_ids_from_models(g: &AppState) -> HashSet<String> {
+    g.get_continue_watching()
+        .iter()
+        .chain(g.get_next_up().iter())
+        .filter_map(|c| match c.item_type.as_str() {
+            "Series" => Some(c.id.to_string()),
+            _ => (!c.series_id.is_empty()).then(|| c.series_id.to_string()),
+        })
+        .collect()
+}
+
+/// "Not watched" TV: up to `n` random series nobody has started — 0 % played
+/// (UserData.PlayedPercentage) and not in `started`. None when no series in the list carries
+/// PlayedPercentage (fetched without RecursiveItemCount, e.g. an older cache): the caller then
+/// fetches the series list itself.
+pub(crate) fn pick_never_started_series(
+    series: &[MediaItem],
+    started: &HashSet<String>,
+    n: usize,
+    seed: u64,
+) -> Option<Vec<MediaItem>> {
+    if !series
+        .iter()
+        .any(|s| s.user_data.played_percentage.is_some())
+    {
+        return None;
+    }
+    let mut pool: Vec<&MediaItem> = series
+        .iter()
+        .filter(|s| {
+            !s.user_data.played
+                && s.user_data.played_percentage.is_some_and(|p| p <= 0.0)
+                && !started.contains(&s.id)
+        })
+        .collect();
+    // Partial Fisher-Yates (same LCG as browse.rs's pseudo_shuffle): the first `take` slots.
+    let take = n.min(pool.len());
+    let mut rng = seed;
+    for i in 0..take {
+        rng = rng
+            .wrapping_mul(6364136223846793005u64)
+            .wrapping_add(1442695040888963407u64);
+        let j = i + (rng >> 33) as usize % (pool.len() - i);
+        pool.swap(i, j);
+    }
+    Some(pool[..take].iter().map(|s| (*s).clone()).collect())
+}
+
+/// The "Not watched" TV row, picked locally from FjordState.all_series (no slow server query).
+/// Only when that list has no PlayedPercentage yet is the series list fetched once for it.
+pub(crate) async fn not_watched_tv(
+    client: &JellyfinClient,
+    state: &Mutex<FjordState>,
+    started: &HashSet<String>,
+) -> anyhow::Result<Vec<MediaItem>> {
+    let t = Instant::now();
+    let seed = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos() as u64)
+        .unwrap_or(1);
+    let (picked, total) = {
+        let s = state.lock().unwrap();
+        (
+            pick_never_started_series(&s.all_series, started, NOT_WATCHED_ROW_LEN, seed),
+            s.all_series.len(),
+        )
+    };
+    if let Some(items) = picked {
+        debug!(
+            "timing: not_watched_tv (local pick: {} of {total} series, {} started excluded) took {:.3}s",
+            items.len(),
+            started.len(),
+            t.elapsed().as_secs_f64()
+        );
+        return Ok(items);
+    }
+    debug!(
+        "not_watched_tv: all_series ({total}) has no PlayedPercentage — fetching the series list"
+    );
+    let series = crate::timed("not_watched_tv (series fetch)", client.get_all_series()).await?;
+    Ok(pick_never_started_series(&series, started, NOT_WATCHED_ROW_LEN, seed).unwrap_or_default())
+}
+
+/// `not_watched`: the state to pick "Not watched" TV from (Some), or None to skip both Not
+/// Watched rows — finish_session_setup's login join, where all_series isn't stored yet and the
+/// Movies row is a slow server query (SortBy=Random + IsUnplayed); auth.rs fills both afterwards.
+/// With Some (WS delta, playback stop, auto-login refresh — all background) the pair runs as its
+/// own join right after the main 12-branch one.
 pub(crate) async fn fetch_home_data(
     client: &JellyfinClient,
-    include_not_watched: bool,
+    not_watched: Option<&Mutex<FjordState>>,
 ) -> HomeData {
     let (cw, nu, ra, ram, rac, uwc, raa, rpa, fam, fas, fal, pls) = tokio::join!(
         crate::timed("continue_watching", client.get_continue_watching()),
@@ -248,10 +358,14 @@ pub(crate) async fn fetch_home_data(
         crate::timed("favorite_albums", client.get_favorites("MusicAlbum")),
         crate::timed("playlists", client.get_all_playlists()),
     );
-    let (nwm, nwt) = if include_not_watched {
+    let (nwm, nwt) = if let Some(state) = not_watched {
+        let started = started_series_ids(
+            cw.as_deref().unwrap_or_default(),
+            nu.as_deref().unwrap_or_default(),
+        );
         tokio::join!(
             crate::timed("not_watched_movies", client.get_unwatched(Some("Movie"))),
-            crate::timed("not_watched_tv", client.get_unwatched(Some("Series"))),
+            not_watched_tv(client, state, &started),
         )
     } else {
         (Ok(vec![]), Ok(vec![]))
@@ -624,6 +738,11 @@ pub(crate) fn wire_nw_timer(
             if !due_movies && !due_tv {
                 return;
             }
+            let started = if due_tv {
+                started_series_ids_from_models(&AppState::get(&w))
+            } else {
+                HashSet::new()
+            };
 
             let client = state.lock().unwrap().client.as_ref().map(Arc::clone);
             let Some(client) = client else { return };
@@ -678,9 +797,9 @@ pub(crate) fn wire_nw_timer(
                     }
                 }
                 if due_tv {
-                    match client.get_unwatched(Some("Series")).await {
+                    match not_watched_tv(&client, &state2, &started).await {
                         Err(e) if crate::is_unauthorized(&e) => {
-                            warn!("get_unwatched (tv) 401 — session expired");
+                            warn!("not_watched_tv 401 — session expired");
                             let ww2 = ww.clone();
                             let _ = slint::invoke_from_event_loop(move || {
                                 if let Some(w) = ww2.upgrade() {
@@ -692,7 +811,7 @@ pub(crate) fn wire_nw_timer(
                         }
                         Err(e) => {
                             // See the identical fix on the movies branch above.
-                            warn!("get_unwatched (tv) failed: {e:#}");
+                            warn!("not_watched_tv failed: {e:#}");
                         }
                         Ok(items) => {
                             state2.lock().unwrap().last_nw_tv_refresh = Some(Instant::now());
@@ -1041,5 +1160,89 @@ pub(crate) fn wire_item_play(
                 });
             });
         });
+    }
+}
+
+#[cfg(test)]
+mod not_watched_tests {
+    use super::*;
+
+    fn item(v: serde_json::Value) -> MediaItem {
+        serde_json::from_value(v).unwrap()
+    }
+
+    /// A series as Jellyfin sends it (PlayedPercentage only with RecursiveItemCount in Fields).
+    fn series(id: &str, played_pct: Option<f64>, played: bool) -> MediaItem {
+        let mut ud = serde_json::json!({ "Played": played });
+        if let Some(p) = played_pct {
+            ud["PlayedPercentage"] = p.into();
+        }
+        item(serde_json::json!({ "Id": id, "Name": id, "Type": "Series", "UserData": ud }))
+    }
+
+    fn ids(items: &[MediaItem]) -> Vec<String> {
+        let mut v: Vec<String> = items.iter().map(|i| i.id.clone()).collect();
+        v.sort();
+        v
+    }
+
+    #[test]
+    fn picks_only_never_started_series() {
+        let all = vec![
+            series("new1", Some(0.0), false),
+            series("half", Some(40.0), false),
+            series("done", Some(100.0), true),
+            series("new2", Some(0.0), false),
+            series("in_cw", Some(0.0), false),
+        ];
+        let started: HashSet<String> = ["in_cw".to_string()].into();
+        let got = pick_never_started_series(&all, &started, 15, 7).unwrap();
+        assert_eq!(ids(&got), vec!["new1", "new2"]);
+    }
+
+    #[test]
+    fn caps_at_n_without_duplicates() {
+        let all: Vec<MediaItem> = (0..40)
+            .map(|i| series(&format!("s{i:02}"), Some(0.0), false))
+            .collect();
+        for seed in [1, 2, 99, u64::MAX] {
+            let got = pick_never_started_series(&all, &HashSet::new(), 15, seed).unwrap();
+            assert_eq!(got.len(), 15);
+            let mut u = ids(&got);
+            u.dedup();
+            assert_eq!(u.len(), 15);
+        }
+        // Different seeds give different picks (the row is random).
+        let a = ids(&pick_never_started_series(&all, &HashSet::new(), 15, 1).unwrap());
+        let b = ids(&pick_never_started_series(&all, &HashSet::new(), 15, 2).unwrap());
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn unknown_percentage_means_no_local_pick() {
+        // A list fetched without RecursiveItemCount (older cache): the caller must fetch.
+        let all = vec![series("a", None, false), series("b", None, false)];
+        assert!(pick_never_started_series(&all, &HashSet::new(), 15, 1).is_none());
+        // An empty list is "unknown" too.
+        assert!(pick_never_started_series(&[], &HashSet::new(), 15, 1).is_none());
+        // Everything started: a real, empty row (not a fallback).
+        let all = vec![series("a", Some(50.0), false)];
+        let got = pick_never_started_series(&all, &HashSet::new(), 15, 1);
+        assert_eq!(got.map(|v| v.len()), Some(0));
+    }
+
+    #[test]
+    fn started_ids_from_rows() {
+        let ep = |id: &str, sid: &str| {
+            item(serde_json::json!({ "Id": id, "Name": id, "Type": "Episode", "SeriesId": sid }))
+        };
+        let movie = item(serde_json::json!({ "Id": "m1", "Name": "m1", "Type": "Movie" }));
+        let got = started_series_ids(
+            &[ep("e1", "s1"), movie],
+            &[ep("e2", "s2"), series("s3", None, false)],
+        );
+        let mut v: Vec<String> = got.into_iter().collect();
+        v.sort();
+        assert_eq!(v, vec!["s1", "s2", "s3"]);
     }
 }
