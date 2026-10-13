@@ -21817,3 +21817,162 @@ Above `AppState::get(&window).on_open_queue_panel(move || {`:
 // keypress reaching handle_key already proves fs has focus — a mouse click
 // after a stretch of mouse-only interaction can't assume that (CR11-6).
 ```
+
+#### `crates/fjord-app/ui/manage_profiles.slint`
+
+Above `in property <bool> kbd-focused: false;`:
+```
+// Real bug, code-review 2026-08-16: this screen had NO keyboard
+// navigation at all — tile-pulse.active was hardcoded to `false`
+// below, and nothing anywhere set a per-tile focus ring, even though
+// AppState.manage-profiles-cursor already existed for exactly this
+// (declared, never wired). Mirrors AccountPickerScreen/
+// ProfilePickerScreen's own tile-row kbd-focused pattern.
+```
+
+Above `width: min(inner.preferred-width, parent.width - 48px);`:
+```
+// Real bug, live-reported 2026-08-17: "the manage profile box do
+// not rezise" — width was a bare fixed 640px cap, unrelated to how
+// many tiles are actually on screen. The tile row (5 tiles alone:
+// 5*120px + 4*20px spacing = 680px) already overflows a 640px box
+// before the trailing "+" tile is even counted, and this Rectangle
+// has no `clip: true`, so the overflow just spilled visibly past
+// the box edges instead of the box growing to fit. Height already
+// correctly derives from inner.preferred-height (below) — width
+// gets the identical treatment, same established
+// read-a-child-Layout's-preferred-size pattern.
+```
+
+#### `crates/fjord-api/src/bonfire.rs`
+
+Above `async fn ok_or_body_err(resp: Response) -> Result<Response> {`:
+```
+/// Reads the real response body on a non-success status before erroring,
+/// instead of `error_for_status()`'s own behavior of discarding it
+/// entirely. Real bug, live-reported 2026-08-29 ("the switch accaunt will
+/// not work any more when i have joined the group") — every one of this
+/// module's endpoints used bare `error_for_status()`, so a genuine,
+/// actionable server explanation (confirmed live for `bonfire_switch_profile`:
+/// a plain-text 400 body reading "This account has no PIN set, so it
+/// cannot be opened from a shared Bonfire. Its owner must set a profile
+/// PIN before it can be switched into." — a real, correct server-side
+/// requirement, not a Fjord bug) was silently discarded everywhere,
+/// leaving only a bare "400 Bad Request" for the caller to show. Applied
+/// uniformly across every endpoint in this file rather than just the one
+/// that happened to be reported, matching this project's own "generalize
+/// the mechanism" review discipline — any future failure from any of these
+/// 22 methods now self-diagnoses from the real body, not just this one.
+```
+
+#### `crates/fjord-app/ui/layout.slint`
+
+Above `Rectangle {`:
+```
+// Sidebar profile row (2026-08-14, live-reported: "the profile
+// shuld also be added to the sidebar so you now the user and
+// you shuld be abel to naviget to it and pressit to get options
+// like change user etc"). Not a plain NavItem — needs a leading
+// avatar circle NavItem has no slot for — but mirrors its exact
+// background/pulse chrome by hand: background reads active-nav
+// alone (matching NavItem's own single-tier "selected" design,
+// see its own doc comment above), the press-pulse additionally
+// requires sidebar-kb-active (same reasoning). active-nav == 7,
+// inserted into the sidebar cycle right before Settings
+// (browse.rs::sidebar_nav). Enter/click opens a small quick-menu
+// (Switch Profile / Manage Profiles / Profile Settings / Sign
+// Out — profile.rs::sidebar_profile_menu_rows decides which
+// apply).
+```
+
+#### `crates/fjord-api/src/models/bonfire.rs`
+
+Above `#[serde(default)]`:
+```
+// Live-verified 2026-08-29 against a real server (an is_owner:true,
+// is_member:false response): the plugin's real `/bonfire/status` body
+// omitted exactly these three fields entirely — `#[serde(default)]`
+// (false) is the conservative reading for all three, and matches this
+// whole module's own already-established "the docs' non-optional
+// fields aren't reliably present" lesson (see e.g.
+// BonfireProfile.max_sub_profiles above). Fjord had never actually
+// called this endpoint before Phase 5 shipped, so this was the first
+// real exercise of it.
+```
+
+#### `crates/fjord-api/src/models/bonfire.rs` — file header (TOC)
+```
+// ── fjord-api · models/bonfire.rs ────────────────────────────────────────────
+//   BonfireProfile         GET /plugins/profiles/list entry
+//   SwitchResult            POST /plugins/profiles/switch response
+//   CreateProfileRequest    POST /plugins/profiles/create body
+//   CreateProfileResult     POST /plugins/profiles/create response
+//   UpdateProfileRequest    POST /plugins/profiles/update body
+//   BonfireLibrary          GET /plugins/profiles/libraries entry
+//   BonfireDevice           GET /plugins/profiles/devices entry
+//   BonfireGroupMember      shared shape for ownedMembers (status) / members (generate)
+//   BonfireGroupStatus      GET /plugins/profiles/bonfire/status response
+//   BonfireGroupInfo        POST /plugins/profiles/bonfire/generate response
+//   BonfireJoinResult       POST /plugins/profiles/bonfire/join response
+//   BonfirePreferences      GET/POST /plugins/profiles/preferences body+response (switcherMode: "gate"|"native")
+//   AdminMasterUser/AdminSubProfile/AdminMappings  GET /plugins/profiles/admin/mappings response
+//   AuditLogEntry           GET /plugins/profiles/admin/audit-logs entry
+//
+// Field NAMES below are quoted from the plugin's own real developer-api.md
+// (github.com/AHouseOfBards/Bonfire-JellyProfiles, fetched 2026-08-09), but
+// the CASING was wrong from the start — this whole module originally
+// assumed camelCase ("a third-party plugin, its own convention," reasoning
+// by analogy with Seerr, a genuinely different Node.js/TypeScript service)
+// with a caveat that it was "not yet live-verified against a real
+// Bonfire-enabled server." That caveat turned out to matter: live-tested
+// 2026-08-12 against a real server (4 real profiles, one master + three
+// sub-profiles) via a one-off diagnostic query (raw HTTP + the already-
+// decrypted token from this dev machine's own saved config.json, same
+// technique this project has used before for Seerr endpoints — see
+// CLAUDE.md), and the real response is **PascalCase** throughout
+// (`ProfileUserId`, not `profileUserId`) — the same convention every OTHER
+// Jellyfin-core-facing struct in this crate already correctly uses
+// (`models/system.rs`, `models/plugins.rs`). This makes sense in hindsight:
+// Bonfire is a Jellyfin plugin running on Jellyfin's own ASP.NET Core
+// pipeline, not a standalone service with its own serialization choice —
+// there was never a real reason to expect it to diverge from Jellyfin's own
+// convention, the developer-api.md's camelCase-looking examples
+// notwithstanding. This was the actual root cause of "Bonfire doesn't
+// work" — `bonfire_list_profiles()` failed to deserialize on every call
+// with "missing field `profileUserId`" (silently swallowed by
+// `sync_bonfire_subprofiles`'s own `Err => debug!(...); return;` — visible
+// only once that function's logging was added, see its own doc comment in
+// profile.rs), so `Config.profiles` could never grow past 1 and the picker
+// could never trigger, regardless of the auto-login wiring fix from the
+// day before. The rest of this module (17 endpoints total) has NOT been
+// individually live-verified beyond this one — the casing fix applies
+// uniformly since it's a property of the whole plugin, not a per-endpoint
+// quirk, but per-field required/optional mismatches on the other 16
+// remain unconfirmed until each is actually exercised live.
+// ─────────────────────────────────────────────────────────────────────────────
+```
+
+#### `crates/fjord-app/ui/manage_profiles.slint` — file header (TOC)
+```
+// ── fjord-app · manage_profiles.slint ────────────────────────────────────────
+//   ManageProfilesScreen  Bonfire Phase 2 (2026-08-09) — reached from Settings →
+//                         Profiles → Manage Profiles (master accounts only).
+//                         Same tile-row + "+" shape as ProfilePickerScreen
+//                         (profile_picker.slint) — literally reuses ProfileTile
+//                         — but selecting a tile opens ProfileEditScreen in
+//                         edit mode instead of switching sessions, and the "+"
+//                         tile opens it in create mode. Free-floating overlay,
+//                         mounted + fade-gated by main.slint (ConnectSeerrScreen's
+//                         own precedent), not a full-screen replacement like
+//                         ProfilePickerScreen — this is reached mid-session, not
+//                         at startup. Keyboard-navigable (2026-08-16, code review —
+//                         was mouse-only: AppState.manage-profiles-cursor was
+//                         declared from Phase 2 but never wired to anything; now
+//                         drives each ManageProfileTile's kbd-focused prop, Left/
+//                         Right/Enter dispatched from keys.rs). The "✕" close
+//                         button got the identical fix 2026-08-21 (was mouse-only
+//                         too, only Escape reached the same action) —
+//                         manage-profiles-close-focused, Up from the tile row,
+//                         Down back, Enter/Escape/Backspace close.
+// ─────────────────────────────────────────────────────────────────────────────
+```

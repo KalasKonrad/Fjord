@@ -8,8 +8,9 @@
 //     preferences  get_preferences/set_preferences (switcherMode: "gate"|"native")
 //     admin        admin_mappings, admin_reset_pin, admin_set_profile_limit, admin_audit_logs
 //   All endpoints live on the SAME Jellyfin server as every other JellyfinClient call (a plugin
-//   extends the core API), so this is an `impl JellyfinClient` block sharing auth_header()/api_url(),
-//   not a separate client type — unlike fjord-seerr, which talks to a genuinely different service.
+//   extends the core API), so this is an `impl JellyfinClient` block sharing
+//   auth_header()/api_url(), not a separate client type — unlike fjord-seerr, which talks to a
+//   genuinely different service.
 //   Deliberately excluded (per the plan): GET /plugins/profiles/profiles.js (web-client injection
 //   script, irrelevant to a native client) and POST /plugins/profiles/admin/retry-injection (fixes
 //   that same injection mechanism). GET /plugins/profiles/image/{profileId} is an unauthenticated
@@ -26,21 +27,10 @@ use crate::models::{
     CreateProfileResult, SwitchResult, UpdateProfileRequest,
 };
 
-/// Reads the real response body on a non-success status before erroring,
-/// instead of `error_for_status()`'s own behavior of discarding it
-/// entirely. Real bug, live-reported 2026-08-29 ("the switch accaunt will
-/// not work any more when i have joined the group") — every one of this
-/// module's endpoints used bare `error_for_status()`, so a genuine,
-/// actionable server explanation (confirmed live for `bonfire_switch_profile`:
-/// a plain-text 400 body reading "This account has no PIN set, so it
-/// cannot be opened from a shared Bonfire. Its owner must set a profile
-/// PIN before it can be switched into." — a real, correct server-side
-/// requirement, not a Fjord bug) was silently discarded everywhere,
-/// leaving only a bare "400 Bad Request" for the caller to show. Applied
-/// uniformly across every endpoint in this file rather than just the one
-/// that happened to be reported, matching this project's own "generalize
-/// the mechanism" review discipline — any future failure from any of these
-/// 22 methods now self-diagnoses from the real body, not just this one.
+/// Puts the response body into the error on a non-success status (error_for_status()
+/// discards it): Bonfire explains real failures in plain text, e.g. a 400 from switch_profile
+/// "This account has no PIN set, so it cannot be opened from a shared Bonfire…". Used by
+/// every endpoint in this file.
 async fn ok_or_body_err(resp: Response) -> Result<Response> {
     if resp.status().is_success() {
         Ok(resp)
