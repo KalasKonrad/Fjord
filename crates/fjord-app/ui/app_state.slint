@@ -522,26 +522,12 @@ export global AppState {
         refocus();
         return true;
     }
-    // Physical-keyboard passthrough while the on-screen keyboard is open
-    // (2026-08-23, live feedback: "i want it to still work to type on the
-    // keybord even if its open") — keys.rs forwards any ordinary printable
-    // key it sees while show-onscreen-keyboard is true (or Backspace, as
-    // the sentinel "backspace", matching QwertyKeyboard's own key-pressed
-    // vocabulary exactly) into whichever field onscreen-keyboard-target
-    // points at. A payload+counter pair, not a callback Rust invokes
-    // directly — Rust can't call a named Slint element's own method or
-    // mutate a screen's local LineEdit state directly (the same reason
-    // .focus() calls elsewhere in this app go through a changed-tracker
-    // mirror, not a direct call). A plain string payload alone isn't
-    // enough on its own: Slint's `changed` only fires on a genuine VALUE
-    // change, so typing the same character twice in a row would silently
-    // drop the second press if nothing else changed — the counter (bumped
-    // unconditionally on every forward, mirroring kb-activate-pulse's own
-    // reasoning) is what guarantees the mirror's `changed` fires every
-    // time regardless of what was typed. Rust sets the payload BEFORE
-    // bumping the counter; Slint property writes are synchronous within
-    // one Rust function call, so the mirror's own changed handler always
-    // reads the already-final payload value.
+    // Physical-keyboard passthrough while the on-screen keyboard is open: keys.rs forwards
+    // printable keys (and Backspace as "backspace", QwertyKeyboard's vocabulary) to the field
+    // onscreen-keyboard-target names. A payload + counter rather than a call (Rust can't call a
+    // screen's element methods): the counter is bumped on every forward so `changed` fires even
+    // for the same character twice; Rust sets the payload first, so the mirror reads the final
+    // value.
     in-out property <string> onscreen-keyboard-physical-key: "";
     in-out property <int> onscreen-keyboard-physical-key-seq: 0;
     // Two pure Rust string helpers — Slint strings have no length/substring:
@@ -549,14 +535,12 @@ export global AppState {
     // (LineEdit.set-selection-offsets takes byte offsets). Screen-agnostic.
     pure callback onscreen-keyboard-trim-last(string) -> string;
     pure callback onscreen-keyboard-byte-len(string) -> int;
-    // Caret editing (2026-10-05, text_field.rs). caret-text(text, caret,
-    // glyph): the text with `glyph` drawn at the caret (grapheme index,
-    // -1/past the end = end) — the drawn fields' display. onscreen-keyboard-
-    // edit(text, caret, key): one on-screen key applied at the caret, for the
-    // LineEdit targets (LineEdit has no cursor getter, so the keyboard keeps
-    // its own caret in onscreen-keyboard-caret, reset to the end each time
-    // the keyboard opens — main.slint). text-field-caret(target, delta): ◀ ▶
-    // on a drawn target.
+    // Caret editing (text_field.rs). caret-text(text, caret, glyph): the text with `glyph` drawn
+    // at the caret (grapheme index, -1/past the end = end) — the drawn fields' display.
+    // onscreen-keyboard-edit(text, caret, key): one on-screen key applied at the caret, for the
+    // LineEdit targets (LineEdit has no cursor getter, so the keyboard keeps its own caret in
+    // onscreen-keyboard-caret, reset to the end each time the keyboard opens — main.slint).
+    // text-field-caret(target, delta): ◀ ▶ on a drawn target.
     pure callback caret-text(string, int, string) -> string;
     pure callback onscreen-keyboard-edit(string, int, string) -> OskEdit;
     in-out property <int> onscreen-keyboard-caret: -1;
@@ -681,12 +665,11 @@ export global AppState {
 
     // ── Player state ──────────────────────────────────────────────────────────
     in property <image> video-frame;
-    // HDR Stage 5 (2026-10-05) — video on its own Wayland subsurface below
-    // the window (video_surface.rs). video-surface-active: set by Rust once
-    // the current player's frames are drawn there (cleared on stop) — the
-    // window then goes transparent and the four video Images give way to
-    // VideoSpots. video-rect-*: where each spot is, reported by VideoSpot.
-    // window-bg: the background the subsurface fills around the video.
+    // HDR Stage 5 — video on its own Wayland subsurface below the window (video_surface.rs).
+    // video-surface-active: set by Rust once the current player's frames are drawn there
+    // (cleared on stop) — the window then goes transparent and the four video Images give way to
+    // VideoSpots. video-rect-*: where each spot is, reported by VideoSpot. window-bg: the
+    // background the subsurface fills around the video.
     in-out property <bool> video-surface-active: false;
     in-out property <VideoRect> video-rect-player;
     in-out property <VideoRect> video-rect-bg;
@@ -789,10 +772,8 @@ export global AppState {
     // bt.1886" out) — OUT is what a TV's HDR/gamut mode should match. See stats.rs.
     in property <string> stat-color-in:  "—";
     in property <string> stat-color-out: "—";
-    // hdr branch, Stage 3 (2026-09-14) — real Wayland color-management
-    // negotiation status (Idle/Disabled/Not applicable/Unavailable/
-    // Negotiating…/Active (HDR10)/Failed), Fjord's own state, not an mpv
-    // property — see hdr.rs's HdrStatus/status_text().
+    // Wayland colour-management status (Idle/Disabled/Not applicable/Unavailable/Negotiating…/
+    // Active (HDR10)/Failed) — Fjord's own state, not an mpv property; hdr.rs's status_text().
     in property <string> stat-hdr:      "—";
     in property <string> stat-hwdec:    "—";
     in property <string> stat-aud-in:   "—";
@@ -959,10 +940,8 @@ export global AppState {
     // collection.rs::spawn_missing_items.
     in-out property <[CardItem]> collection-missing:          [];
     in-out property <int> collection-missing-focused:  -1;
-    // Bulk-blocklist-this-collection confirm dialog (2026-08-06, Seerr
-    // Blocklist support) — checked first in collection.rs::handle_key,
-    // same "overlay on top of the screen" precedent as skip-segment
-    // overlays/the Up Next banner elsewhere in this app.
+    // Bulk-blocklist-this-collection confirm dialog — checked first in collection.rs's
+    // handle_key (an overlay on top of the screen).
     in-out property <bool> collection-blocklist-confirm-open:     false;
     in-out property <int> collection-blocklist-confirm-focused:  0; // 0=Cancel, 1=Confirm
     callback collection-blocklist-confirm();
@@ -1052,19 +1031,14 @@ export global AppState {
     // detail fetch, not directly from the row's own listing endpoint (GET
     // /request carries only a tmdbId) — same CardItem shape either way.
     in-out property <[CardItem]> discover-requested:        [];
-    // "New in Theaters" (2026-07-18) — an approximation (primary TMDB
-    // release date in roughly the last 6 weeks), not a verified "still
-    // showing" signal — see discover.rs::fetch_new_in_theaters's own doc
-    // comment for why Seerr's /discover/movies can't filter by release
-    // type directly.
+    // "New in Theaters" — an approximation (primary TMDB release date in roughly the last 6
+    // weeks), not a verified "still showing" signal — see discover's fetch_new_in_theaters for
+    // why Seerr's /discover/movies can't filter by release type.
     in-out property <[CardItem]> discover-new-in-theaters:  [];
-    // "Coming Up" (2026-07-18, Watchlist + Release Calendar) — Watchlist +
-    // Requested-but-not-yet-available items with a known future release/
-    // air date, soonest first, capped (see build_calendar_entries). LAST
-    // card is a poster-less sentinel ("Full Calendar") opening
-    // CalendarScreen instead of an item detail — see handle_key_landing's
-    // own explicit special-case for why this needs one, not the generic
-    // per-card open/context-menu path every other row uses.
+    // "Coming Up" — watchlisted and requested-but-unavailable items with a known future
+    // release/air date, soonest first, capped (build_calendar_entries). The LAST card is a
+    // poster-less sentinel ("Full Calendar") that opens CalendarScreen — handle_key_landing
+    // special-cases it.
     in-out property <[CardItem]> discover-coming-up:        [];
     // Coming Up without the sentinel, split mixed/movies/tv for the Home/TV/Movies
     // dashboard rows (home.slint) — the same 3-way split as discover-watchlist-*;
@@ -1190,13 +1164,10 @@ export global AppState {
     // modal's Quality toggle picks the tier.
     in-out property <string> request-detail-status:        "";
     in-out property <string> request-detail-status-4k:     "";
-    // Same "" | "requested" | "processing" | "partial" | "available" |
-    // "blocklisted" vocabulary as CardItem.availability, base/2K tier only
-    // (2026-08-06, Seerr Blocklist support) — deliberately NOT the same
-    // field as request-detail-status above, which mixes in request-
-    // workflow labels ("Needs Approval"/"Declined") that have nothing to
-    // do with Blocklist eligibility. This is what the Blocklist button
-    // actually gates on.
+    // Same "" | "requested" | "processing" | "partial" | "available" | "blocklisted"
+    // vocabulary as CardItem.availability, base/2K tier only — NOT request-detail-status above
+    // (which mixes in workflow labels like "Needs Approval"/"Declined"). The Blocklist button
+    // gates on this.
     in-out property <string> request-detail-availability:  "";
     // The MediaRequest the ⋮ More button's context menu (View Request/Edit/
     // Cancel/Approve/Decline — the same one used by the Discover grid's
@@ -1208,17 +1179,13 @@ export global AppState {
     in-out property <string> request-detail-request-id:      "";
     in-out property <bool> request-detail-request-pending: false;
     in-out property <bool> request-detail-request-mine:    false;
-    // Watchlist + Release Calendar (2026-07-18) — from MovieDetails/
-    // TvDetails.onUserWatchlist on open, kept in sync by
-    // discover_toggle_watchlist's own patch when this exact page is open.
-    // Independent of request state — always shown, unlike Request which
-    // hides once a status pill replaces it.
+    // From MovieDetails/TvDetails.onUserWatchlist on open, kept in sync by
+    // discover_toggle_watchlist's patch while this page is open. Independent of request state —
+    // always shown.
     in-out property <bool> request-detail-on-watchlist:    false;
     callback request-detail-toggle-watchlist();
-    // Blocklist (2026-08-06, Seerr Blocklist support) — same toggle shape
-    // as Watchlist above, but "adding" is derived from request-detail-
-    // availability != "blocklisted" rather than a separate bool, since
-    // Blocklisted rides on the same field every other status pill uses.
+    // Blocklist toggle — like Watchlist, but "adding" is derived from request-detail-availability
+    // != "blocklisted" (Blocklisted is one more value of that field).
     callback request-detail-toggle-blocklist();
     // Watch Trailer (Discover only — see CLAUDE.md's Seerr integration
     // section). "" = no trailer found in MovieDetails/TvDetails.
@@ -1299,13 +1266,11 @@ export global AppState {
     // the Request button instead of showing all four inline on the page) ──
     callback open-request-options();
     in-out property <bool> show-request-options:               false;
-    // Edit Request mode (Discover context menu, 2026-07-18) — reuses this
-    // same modal rather than a second one. When true: the Quality (2K/4K)
-    // row is hidden (Seerr's PUT /request/{id} cannot change is4k — see
-    // fjord-seerr::SeerrClient::update_request's own doc comment), and
-    // Confirm calls update_request instead of create_request against
-    // request-options-editing-request-id. Reset to false/"" whenever the
-    // modal is closed or a fresh (non-edit) Request is opened.
+    // Edit Request mode (Discover context menu) — reuses this modal. When true: the Quality
+    // (2K/4K) row is hidden (Seerr's PUT /request/{id} can't change is4k — see
+    // SeerrClient::update_request), and Confirm calls update_request against
+    // request-options-editing-request-id instead of create_request. Reset to false/"" whenever
+    // the modal closes or a fresh Request opens.
     in-out property <bool> request-options-editing:            false;
     in-out property <string> request-options-editing-request-id: "";
     // 0=Quality row (2K/4K, always), 1=Profile row (if any configured),
@@ -1326,14 +1291,11 @@ export global AppState {
     in-out property <bool> context-menu-has-played:  false;
     in-out property <bool> context-menu-is-favorite: false;
     in-out property <float> context-menu-resume-pct:  0;
-    // Discover context menu only (2026-07-18) — "" everywhere else, same
-    // zero-risk-elsewhere pattern as CardItem's own Discover-only fields.
-    // context-menu-item-type starting with "Discover" is what selects the
-    // entirely separate row family in context_menu.slint; these four only
-    // matter within that branch. context-menu-availability mirrors
-    // CardItem.availability ("" | "requested" | "processing" | "partial" |
-    // "available" | "blocklisted" — the last added 2026-08-06, Seerr
-    // Blocklist support); context-menu-request-id "" means "not yet requested".
+    // Discover context menu only — "" everywhere else. A context-menu-item-type starting with
+    // "Discover" selects the separate row family in context_menu.slint; these four only matter
+    // there. context-menu-availability mirrors CardItem.availability ("" | "requested" |
+    // "processing" | "partial" | "available" | "blocklisted"); context-menu-request-id "" = not
+    // requested yet.
     in-out property <string> context-menu-request-id:      "";
     in-out property <string> context-menu-availability:    "";
     in-out property <bool> context-menu-request-pending: false; // this tier's own MediaRequest.status == Pending
@@ -1486,11 +1448,9 @@ export global AppState {
     in-out property <[string]> settings-audio-device-display:  [];
     in-out property <bool> settings-device-is-pipewire:    true;  // auto = pipewire by default
     in-out property <bool> settings-alsa-irq-scheduling:   false;
-    // Whether the skip-segment fade mutes audio during SPDIF passthrough
-    // (Settings → Audio → Passthrough, 2026-08-11 follow-up) — gates ONLY
-    // the passthrough mute; the video fade and the PCM volume ramp stay
-    // unconditional regardless of this toggle. See playback.rs's
-    // arm_skip_fade and CLAUDE.md's Skip fade section.
+    // Whether the skip-segment fade mutes audio during SPDIF passthrough (Settings → Audio) —
+    // gates ONLY that mute; the video fade and the PCM volume ramp always run. See playback's
+    // arm_skip_fade.
     in-out property <bool> settings-skip-fade-mute-passthrough: true;
     callback audio-device-selected(string);
     callback passthrough-device-selected(string);
@@ -1511,12 +1471,9 @@ export global AppState {
     // ── Player seek step (Settings → Player → Seeking) ───────────────────────
     in-out property <int> settings-seek-step-secs:       10;
     in-out property <int> settings-seek-step-long-secs:  30;
-    // Base ms of the skip-segment fade-to-black + audio ramp/mute (2026-08-11),
-    // before the settings-animation-speed multiplier — read live by both
-    // player.slint's own `skip-fade` animate block and wire_mpv_timer's
-    // Rust-side wait/ramp computation, so the two can never drift out of
-    // sync with each other or with a live settings change. 0 = instant,
-    // same hard cut as before this feature shipped.
+    // Base ms of the skip-segment fade-to-black + audio ramp/mute, before the
+    // settings-animation-speed multiplier — read live by player.slint's `skip-fade` animation and
+    // wire_mpv_timer's wait/ramp, so the two always agree. 0 = an instant cut.
     in-out property <int> settings-skip-fade-ms:        200;
 
     // ── UI animation speed (Settings → UI) — ratios (1.0 = 100%, hand-tuned
@@ -1580,16 +1537,12 @@ export global AppState {
     in-out property <[string]> settings-streaming-region-display: [];
     callback streaming-region-selected(string);
 
-    // Display Language + Discover Language (Settings → Integrations, only
-    // shown when seerr-connected, same gate + dynamic-dropdown shape as
-    // Streaming Region — 2026-07-17). Both share one fetched list
-    // (fjord_seerr::Language, GET /languages — TMDB's full ~180-entry list,
-    // NOT Seerr's own smaller UI-translation locale set; see that struct's
-    // doc comment for why). "Default (English)"/"Default (All Languages)"
-    // are synthetic row-0 entries prepended client-side, matching Seerr's
-    // own web UI wording exactly — selecting them writes "" (locale) /
-    // "all" (originalLanguage, the literal sentinel Seerr's frontend uses,
-    // NOT an empty string — see main.rs's write handlers).
+    // Display Language + Discover Language (Settings → Integrations, only when seerr-connected,
+    // like Streaming Region). Both use one fetched list (fjord_seerr::Language, GET /languages —
+    // TMDB's ~180 languages, not Seerr's UI locales). "Default (English)"/"Default (All
+    // Languages)" are synthetic first rows, worded like Seerr's web UI — selecting them writes
+    // "" (locale) / "all" (originalLanguage — the literal sentinel, NOT ""; see settings.rs's
+    // wire_regions).
     in-out property <string> settings-display-language-desc:     "Default (English)";
     in-out property <[string]> settings-display-language-display:  [];
     callback display-language-selected(string);
@@ -1609,13 +1562,10 @@ export global AppState {
     // set alongside seerr-connected by spawn_seerr_settings_fetch, reset on
     // disconnect/sign-out. Gates Approve/Decline in the Discover context menu.
     in-out property <bool> seerr-is-admin: false;
-    // Whether the connected Seerr account has MANAGE_BLOCKLIST (2026-08-06,
-    // Seerr Blocklist support) — a genuinely SEPARATE permission bit from
-    // MANAGE_REQUESTS/ADMIN above (see fjord_seerr::User::
-    // can_manage_blocklist's own doc comment), set/reset the same way.
-    // Gates the Discover context menu's Blocklist row, RequestDetailScreen's
-    // Blocklist button, CollectionScreen's bulk blocklist button, and the
-    // Settings -> Integrations -> Manage Blocklist row.
+    // Whether the connected Seerr account has MANAGE_BLOCKLIST — a separate permission bit from
+    // MANAGE_REQUESTS/ADMIN (see fjord_seerr::User::can_manage_blocklist), set/reset the same
+    // way. Gates the Discover menu's Blocklist row, RequestDetailScreen's Blocklist button,
+    // CollectionScreen's bulk blocklist and Settings → Integrations → Manage Blocklist.
     in-out property <bool> seerr-can-manage-blocklist: false;
 
     // Trailer Quality (Settings → Integrations, shown when seerr-connected): a static
@@ -1808,10 +1758,9 @@ export global AppState {
     // Connect — see login.slint's header for the chain and Escape-at-Quit.
     in-out property <int> login-zone: 0;
     in-out property <bool> login-append-mode: false;
-    // Which screen a successful/cancelled Add-Account login should return
-    // to (2026-08-14) — "" (a plain first-time login, or Settings → Profiles'
-    // own "Add Account" row, nothing to reopen) | "account_picker" (opened
-    // from the account-tier picker's own "+ Add Account" tile).
+    // Where a successful/cancelled Add-Account login returns to — "" (a first login, or
+    // Settings → Profiles' "Add Account": nothing to reopen) | "account_picker" (the account
+    // picker's "+ Add Account" tile).
     in-out property <string> login-append-source: "";
     // Pre-fills the server field (RequireLogin startup outcome: an account with
     // remember-login off keeps its known server; only the password, never stored, is asked).
@@ -1955,11 +1904,9 @@ export global AppState {
     callback context-mark-played(string, bool);       // id, currently-played → Rust toggles
     callback context-toggle-fav(string, bool);        // id, currently-favorite → Rust toggles
     callback context-play-from-start(string);
-    // Discover context menu (2026-07-18) — carries the whole card struct
-    // rather than N new scalars, since every field the menu needs
-    // (id/item-type/title/availability/request-id/requested-4k) is already
-    // on CardItem. Right-click/C-key on any Discover card (search grid, the
-    // 6 landing rows) routes here instead of open-context-menu.
+    // Discover context menu — takes the whole card (id/item-type/title/availability/request-id/
+    // requested-4k are all on CardItem). Right-click/C on any Discover card (search grid,
+    // landing rows) comes here instead of open-context-menu.
     callback open-context-menu-discover(CardItem);
     callback context-discover-view-details();          // View Details row — same as Enter/click (find_local_item redirect included)
     callback context-discover-view-request();           // View Request row (requested only) — same fetch, but skips the find_local_item redirect so a partially-in-library item's Seerr request stays reachable
@@ -1978,19 +1925,14 @@ export global AppState {
     callback context-discover-decline-request();         // Decline row — admin only
     callback context-discover-toggle-watchlist();        // Add/Remove Watchlist row (2026-07-18, always visible, not gated on request state)
     callback context-discover-toggle-blocklist();        // Add/Remove Blocklist row (2026-08-06, Seerr Blocklist support — gated on seerr-can-manage-blocklist + eligible availability)
-    // RequestDetailScreen's own ⋮ More button (2026-07-18) — populates the
-    // SAME context-menu-* state open-context-menu-discover does, but sourced
-    // from request-detail-* (tmdb id/media type/title/request info) since
-    // this page has no CardItem of its own to pass. Reuses the existing
-    // ContextMenu overlay/row set entirely — no separate menu built for
-    // this page.
+    // RequestDetailScreen's ⋮ More — fills the same context-menu-* state as
+    // open-context-menu-discover, from request-detail-* (this page has no CardItem), and reuses
+    // the ContextMenu overlay.
     callback open-discover-menu-from-detail();
 
-    // ── Calendar screen state (Watchlist + Release Calendar, 2026-07-18) ──────
-    // Opened from the Discover "Coming Up" landing row's trailing sentinel
-    // card (handle_key_landing's own explicit special-case, discover.rs) —
-    // a full-page overlay joining the FadeGate'd list in main.slint, same
-    // floating "← Back" convention every other overlay uses.
+    // ── Calendar screen state ─────────────────────────────────────────────────────
+    // Opened from the Discover "Coming Up" row's trailing sentinel card (handle_key_landing) —
+    // a full-page overlay FadeGate'd in main.slint, with the floating "← Back".
     in-out property <bool> show-calendar: false;
     // Fired by both the "Coming Up" row's sentinel card (mouse, discover.slint)
     // and its keyboard equivalent (handle_key_landing, discover.rs) — Rust
@@ -2038,12 +1980,10 @@ export global AppState {
     callback calendar-day-selected(int); // day-of-month, 1-based
     callback calendar-day-popup-entry-selected(int); // index into calendar-day-popup-entries
 
-    // ── Manage Blocklist screen state (2026-08-06, Seerr Blocklist support) ───
-    // Opened from Settings -> Integrations -> Manage Blocklist (settings.rs's
-    // INT_MANAGE_BLOCKLIST row) — a full-page overlay, same FadeGate'd/
-    // floating-Back-button shell shape as CalendarScreen, but plain text
-    // rows (blocklist.rs, GET /blocklist carries no poster path at all)
-    // instead of a month grid.
+    // ── Manage Blocklist screen state ───────────────────────────────────────────
+    // Opened from Settings → Integrations → Manage Blocklist (settings.rs's INT_MANAGE_BLOCKLIST)
+    // — a full-page overlay like CalendarScreen, with plain text rows (blocklist.rs; GET
+    // /blocklist has no posters).
     in-out property <bool> show-blocklist: false;
     callback open-blocklist();
     in-out property <[BlocklistRow]> blocklist-items: [];
