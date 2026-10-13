@@ -109,6 +109,19 @@ GET /Users/{userId}/Items/{itemId}
 ```
 Returns full item including `UserData`, `People[]`, `Chapters[]`, `MediaStreams[]`.
 
+### Trailers **[used]** (verified live 2026-10-13, server 10.11.11)
+- `RemoteTrailers`: `[{ "Url", "Name" }]` — list queries return it only with
+  `Fields=RemoteTrailers`; the single-item detail sends it anyway. On the verified server 586 of
+  617 movies and 19 of 188 series had entries, all `https://www.youtube.com/watch?v=…`; movies
+  average ~6 entries (names: "…Trailer…" 1,168, "Teaser" 194, the rest mostly "TV Spot",
+  "In Cinemas", promos); **series entries have no `Name`**. The first entry is a "Trailer" for
+  505 of the 586 movies.
+- `LocalTrailerCount`: trailer files stored with the item — with `Fields=LocalTrailerCount` on
+  list queries, sent by default on the single-item detail. 0 for every item on the verified server.
+- `GET /Items/{itemId}/LocalTrailers?userId={userId}` → bare JSON array of playable items (the
+  10.9+ route); the old `GET /Users/{userId}/Items/{itemId}/LocalTrailers` answers too. Both
+  return `200 []` for an item without trailer files — the non-empty case is not verified live.
+
 ### Continue watching **[used]**
 ```
 GET /Users/{userId}/Items

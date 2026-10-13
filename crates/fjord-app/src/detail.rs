@@ -4,7 +4,8 @@
 //                       place)
 //     spawn_main        metadata + poster in parallel (no get_item_detail call on a cache hit),
 //                       backdrop, cast portraits; one commit shows the page fully loaded; caches
-//                       the detail in item_detail_cache. Session-guarded
+//                       the detail in item_detail_cache; starts the Trailer check for a movie.
+//                       Session-guarded
 //     spawn_similar     "More Like This" (similar_items_cache)
 //     spawn_collection  BoxSet siblings (retries while movie_collections builds;
 //                       boxset_items_cache)
@@ -12,6 +13,8 @@
 //   open_detail         routes by item_type ("Series" → open_series_screen); resets UI state;
 //                       loading overlay only on an item_detail_cache miss; page shown after
 //                       spawn_main; spawns the DetailCtx tasks
+//   existing_detail_buttons / fix_trailer_focus  the header buttons Left/Right step through (Play,
+//                       Resume, Series →, Trailer when "ok", ♥, ✓ — must match detail.slint)
 //   handle_key          rows: 0 header, 1 cast, 2 collection, 3 similar, 4 recommended
 //   fetch_card_posters  async: parallel poster fetch for a slice of MediaItems → pixel buffers
 //   items_to_cards      Vec<CardItem> from items + pre-fetched buffers (UI thread)
@@ -122,6 +125,7 @@ impl DetailCtx {
         let rt = self.rt.clone();
         let cached = self.cached_detail.clone();
         let revalidate = self.revalidate;
+        let rt_trailer = rt.clone();
         rt.spawn(async move {
             // Fetch metadata and poster in parallel; skip the network call for
             // metadata when a recent cached copy exists (Part 2 screen-open cache).
@@ -377,6 +381,20 @@ impl DetailCtx {
                     g.set_app_content_loading(false);
                     g.set_app_loading_progress(0.0);
                     w.invoke_grab_keyboard_focus();
+                }
+                // Trailer button (movies only). On a revalidate only when the first pass found
+                // none — the fresh item may list trailers an older cached copy didn't.
+                if detail.item_type == "Movie"
+                    && (!revalidate || g.get_detail_trailer_state() == "none")
+                {
+                    crate::discover::start_library_trailer_check(
+                        crate::discover::TrailerScreen::Detail,
+                        &detail,
+                        &client,
+                        &state,
+                        &ww2,
+                        &rt_trailer,
+                    );
                 }
             })
             .ok();
@@ -643,6 +661,8 @@ pub(crate) fn open_detail(
         g.set_detail_has_backdrop(false);
         g.set_detail_has_poster(false);
         g.set_detail_focused_btn(0);
+        g.set_detail_trailer_state("".into());
+        g.set_detail_trailer_url("".into());
         g.set_detail_overview_expanded(false);
         g.set_detail_cast(ModelRc::new(VecModel::<CastMember>::default()));
         g.set_detail_focused_row(0);
@@ -692,6 +712,36 @@ pub(crate) fn open_detail(
 }
 
 // ── Keyboard dispatch ─────────────────────────────────────────────────────────
+
+/// The header buttons Left/Right step through, in on-screen order (detail-focused-btn ids):
+/// 0 Play, 1 Resume, 2 Series →, 6 Trailer (only when "ok" — greyed isn't a stop), 3 ♥,
+/// 4 ✓. Must match detail.slint's `if` conditions.
+fn existing_detail_buttons(g: &AppState) -> Vec<i32> {
+    let mut v = vec![0];
+    if g.get_detail_can_resume() {
+        v.push(1);
+    }
+    if !g.get_detail_series_id().is_empty() {
+        v.push(2);
+    }
+    if g.get_detail_trailer_state() == "ok" {
+        v.push(6);
+    }
+    v.extend([3, 4]);
+    v
+}
+
+/// The Trailer button stopped being a D-pad stop (checking again / none): move focus to the
+/// button before it.
+pub(crate) fn fix_trailer_focus(g: &AppState) {
+    if g.get_detail_focused_btn() == 6 {
+        let prev = existing_detail_buttons(g)
+            .into_iter()
+            .rfind(|&b| b != 3 && b != 4)
+            .unwrap_or(0);
+        g.set_detail_focused_btn(prev);
+    }
+}
 
 pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
     use crate::keys::Action;
@@ -891,8 +941,7 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
             let dir = if *action == Action::Right { 1i32 } else { -1 };
             match row {
                 0 => {
-                    // Fixed slots: -1=Back, 0=Play, 1=Resume (cond), 2=Series (cond), 3=Fav, 4=Watched
-                    // 5=Overview is reached via Down, not Left/Right
+                    // -1=Back and 5=Overview are reached via Up/Down, not Left/Right.
                     let cur = g.get_detail_focused_btn();
                     if cur < 0 {
                         return true;
@@ -904,20 +953,10 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
                         }
                         return true;
                     }
-                    let has_resume = g.get_detail_can_resume();
-                    let has_series = !g.get_detail_series_id().is_empty();
-                    let mut next = (cur + dir).clamp(0, 4);
-                    if next == 1 && !has_resume {
-                        next = if dir > 0 { 2 } else { 0 };
-                    }
-                    if next == 2 && !has_series {
-                        next = if dir > 0 {
-                            3
-                        } else {
-                            if has_resume { 1 } else { 0 }
-                        };
-                    }
-                    g.set_detail_focused_btn(next);
+                    let slots = existing_detail_buttons(g);
+                    let pos = slots.iter().position(|&b| b == cur).unwrap_or(0) as i32;
+                    let next = (pos + dir).clamp(0, slots.len() as i32 - 1);
+                    g.set_detail_focused_btn(slots[next as usize]);
                 }
                 1 => {
                     let fi = g.get_detail_cast_focused();
@@ -984,6 +1023,9 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
                         }
                         5 => {
                             g.set_detail_overview_expanded(!g.get_detail_overview_expanded());
+                        }
+                        6 if g.get_detail_trailer_state() == "ok" => {
+                            g.invoke_play_detail_trailer();
                         }
                         _ => {
                             g.invoke_play_detail();

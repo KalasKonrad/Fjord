@@ -38,7 +38,8 @@
 //                   BoundedCaches (persisted together) + person caches, Seerr state
 //                   (client, regions, languages, permissions, watchlist/calendar/known requests,
 //                   jellyfin_watchlist_ids + its resync generation), screen_revalidate_last_run,
-//                   pending_keybind_rebind, trailer_playable, display_sync_current_mode.
+//                   pending_keybind_rebind, trailer_playable/trailer_candidates/local_trailers,
+//                   display_sync_current_mode.
 //                   Idle tracking lives in activity::ActivityClock, not here. Every transient field
 //                   is reset in reset_session_state (session.rs)
 //   path helpers    xdg_config_base, xdg_cache_base, config_path, poster/backdrop cache dir/path,
@@ -2043,10 +2044,14 @@ pub(crate) struct FjordState {
     // sign-out/disconnect.
     pub yt_dlp_available: bool,
     // Trailer check (discover::start_trailer_check): YouTube URL → plays or not.
-    // Session-only, cleared in reset_session_state. request_detail_trailers = the
-    // candidates of the RequestDetail screen showing, so a failed play can re-check the rest.
+    // Session-only, cleared in reset_session_state. trailer_candidates = per screen, the
+    // (key, candidates) of the title showing, so a failed play can re-check the rest;
+    // local_trailers = per library screen, (item id, trailer file's item id) when the server
+    // has a trailer file (played as a server stream).
     pub trailer_playable: std::collections::HashMap<String, bool>,
-    pub request_detail_trailers: Vec<String>,
+    pub trailer_candidates:
+        std::collections::HashMap<crate::discover::TrailerScreen, (String, Vec<String>)>,
+    pub local_trailers: std::collections::HashMap<crate::discover::TrailerScreen, (String, String)>,
     // What's currently applied to the physical output, so a same-mode item (back-to-back
     // episodes) doesn't re-switch and pay the ~3 s settle again. None = nothing applied
     // this session. Not reset on sign-out/profile switch — a fact about the display.
@@ -2153,7 +2158,8 @@ impl FjordState {
             seerr_admin_last_refresh: None,
             yt_dlp_available: false,
             trailer_playable: std::collections::HashMap::new(),
-            request_detail_trailers: Vec::new(),
+            trailer_candidates: std::collections::HashMap::new(),
+            local_trailers: std::collections::HashMap::new(),
             display_sync_current_mode: None,
             display_sync_current_hdr: None,
         }

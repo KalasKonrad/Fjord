@@ -23,6 +23,12 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **New: Trailer button on movie and series pages.** Like on Discover it shows
+  "Checking…" while Fjord looks for a trailer that actually plays, then
+  "▶ Trailer" (or a greyed "No trailer"). A trailer file stored on your
+  server plays first; otherwise the YouTube trailers your server knows about
+  (needs yt-dlp). Watching a trailer never marks anything as watched or
+  changes where you left off.
 - **Changed: "Not watched" on the TV dashboard now means series you haven't
   started** (no episode watched, none in progress) — before, it also listed
   series you were halfway through. It's also much faster: the row is picked

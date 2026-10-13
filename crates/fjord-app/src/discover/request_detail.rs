@@ -1073,7 +1073,8 @@ pub(crate) fn open_discover_item_ex(
                 &state,
                 &ww,
                 &rt_trailer,
-                generation,
+                TrailerScreen::RequestDetail,
+                generation.to_string(),
                 fields.trailer_candidates,
             );
             if let Some(buf) = poster_buf {
