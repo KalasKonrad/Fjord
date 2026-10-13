@@ -6,10 +6,9 @@
 use super::*;
 
 // ── Bar focus fallbacks ───────────────────────────────────────────────────────
-// Both the video mini-bar and the music bar are docked at the bottom of the
-// window (Phase 49+). focus_bar_on_down is called when a screen's Down handler
-// falls off the bottom; it focuses whichever bar is currently visible.
-// focus_bar_on_up is kept as a no-op so call sites compile without change.
+// The video mini-bar and the music bar are both docked at the bottom: focus_bar_on_down
+// (a screen's Down falling off the bottom) focuses whichever is visible; focus_bar_on_up is a
+// no-op kept for its call sites.
 pub(crate) fn focus_bar_on_up(_action: &Action, _window: &crate::MainWindow) -> bool {
     false
 }
@@ -142,17 +141,9 @@ pub(crate) fn dispatch_dashboard(
         let g = crate::AppState::get(window);
         let fs = g.get_focused_section();
         if fs < 0 && g.get_active_nav() == 7 {
-            // Real bug, live-reported 2026-08-14: the Profile sidebar row
-            // (nav==7) has no content section at all — falling through to
-            // the generic "enter content" branch below set focused_section
-            // to whatever invoke_find_first_section() happened to return
-            // for a nav value that was never meant to have one, leaving
-            // keyboard nav stuck (Up/Down/Left/Right routed through the
-            // content-navigation arms instead of sidebar ones) until Back
-            // reset focused_section back to -1. Mouse already worked
-            // because its own clicked handler calls open-sidebar-profile-
-            // menu() directly (layout.slint) — mirror that here instead of
-            // touching focused_section at all.
+            // The Profile row (nav 7) has no content section: open its quick-menu like the mouse
+            // does (layout.slint), and leave focused_section alone (entering "content" here
+            // stranded the keys).
             g.invoke_open_sidebar_profile_menu();
         } else if fs < 0 && g.get_active_nav() < 10 {
             g.set_focused_section(g.invoke_find_first_section());
@@ -166,17 +157,10 @@ pub(crate) fn dispatch_dashboard(
         return true;
     }
 
-    // Watchlist/Coming Up rows (2026-07-20/08-02) mix Discover/TMDB-sourced
-    // cards into these otherwise-Jellyfin dashboards. Mouse click already
-    // routes those correctly (SectionRow's own item-play(id, item-type)
-    // Slint callback branches on the card's real type — see home.slint).
-    // These three keyboard arms never did: real bug, live-reported
-    // 2026-09-16 — Enter on an unowned Discover card blindly tried
-    // `item-play` (a Jellyfin fetch/play against a raw TMDB id: 400 Bad
-    // Request, then a play attempt anyway) instead of opening the Discover
-    // item; `I`/`C` had the identical gap. Mirrors the routing already
-    // established for mixed-content rows on Detail/Series/Collection/
-    // Person's own Recommended/Other Work/Missing-Items rows.
+    // Watchlist/Coming Up rows mix Discover/TMDB cards into these Jellyfin dashboards: Enter,
+    // I and C route them like the mouse does (SectionRow's item-play branches on the type) —
+    // otherwise a TMDB id went to Jellyfin (400). Same routing as the Recommended/Other
+    // Work/Missing rows.
     if *action == Action::OpenDetail {
         let g = crate::AppState::get(window);
         let fs = g.get_focused_section();

@@ -3,10 +3,8 @@
 //                         optional "Off" row (has-off-row), hover rows, mouse-wheel via Flickable
 //   video frame           mpv render output (AppState.video-frame Image) — hidden, root transparent
 //                         and a VideoSpot reports the area while video-surface-active (HDR Stage 5)
-//   mouse-activity         the idle-lock timer's mouse coverage now comes from a true global
-//                         winit-level hook (activity.rs, event-loop branch 2026-09-08), not from
-//                         these TouchAreas — both still do their own real jobs (show-controls,
-//                         pause-toggle, cursor position) unrelated to activity tracking
+//   mouse areas           TouchAreas for show-controls, pause toggle and cursor position (idle
+//                         detection comes from activity.rs's winit hook, not from these)
 //   skip-segment fade     full-screen black Rectangle, opacity mirrors AppState.skip-fade-active;
 //                         dips to black around a skip-segment seek (all 3 paths) instead of an
 //                         instant hard cut — see playback.rs's VideoState.pending_skip_seek.
@@ -230,27 +228,17 @@ export component PlayerScreen inherits Rectangle {
     }
 
     // ── skip-segment fade-to-black ────────────────────────────────────────────
-    // 2026-08-11, direct request ("make intro skip etc more gradual, it
-    // feels instant and jarring") — the actual mpv seek behind an
-    // intro/recap/preview/commercial skip is still an instant hard cut (no
-    // way to smoothly scrub between two arbitrary points in a video file),
-    // so this dips the screen to black first, lets Rust perform the seek
-    // while hidden (see AppState.skip-fade-active's own doc comment for the
-    // Rust-side sequencing), then fades back in on the new frame — same
-    // "always mounted, animate a float mirror of a bool" idiom as the
-    // buffering/stalled overlays above. Plain Rectangle with no TouchArea,
-    // so it never blocks clicks to the video/controls beneath it even at
-    // full opacity.
+    // The seek behind a skip is a hard cut, so the screen dips to black, Rust seeks while it's
+    // hidden (see AppState.skip-fade-active), and it fades back in on the new frame. Always
+    // mounted, a float mirror of a bool (like the buffering/stalled overlays); no TouchArea, so
+    // it never blocks clicks.
     Rectangle {
         width: parent.width;
         height: parent.height;
         background: black;
         property <float> skip-fade-opacity: AppState.skip-fade-active ? 1.0 : 0.0;
-        // Base ms is now Settings-configurable (AppState.settings-skip-fade-ms,
-        // 2026-08-11 follow-up — "mabey the 200ms is to short? mabey make it
-        // a setting so i can test") — wire_mpv_timer's own Rust-side wait
-        // computation reads the identical two properties, so the two sides
-        // can never drift out of sync with each other or with a live change.
+        // Base ms from Settings (settings-skip-fade-ms) × animation speed — wire_mpv_timer's wait
+        // reads the same two properties.
         animate skip-fade-opacity {
             duration: AppState.settings-skip-fade-ms * 1ms * AppState.settings-animation-speed;
             easing: ease-out-expo;
@@ -946,11 +934,8 @@ export component PlayerScreen inherits Rectangle {
                 label: "OUT";
                 value: AppState.stat-vid-out;
             }
-            // Split IN/OUT (2026-08-15) — the source file's own mastering colorspace vs.
-            // what mpv actually sends to the display after tone-mapping; see app_state.slint's
-            // own doc comment on these two properties for why they can genuinely disagree.
-            // Labels kept short ("CLR" not "COLOR") — StatRow's label column is a fixed 60px,
-            // and "COLOR OUT" risks clipping there, longer than anything else in this panel.
+            // IN = the source file's colorspace, OUT = what mpv sends after tone-mapping (see these
+            // properties in app_state.slint). "CLR", not "COLOR": StatRow's label column is 60px.
             StatRow {
                 label: "CLR IN";
                 value: AppState.stat-color-in;

@@ -1,21 +1,13 @@
 // ── fjord-app · series.slint ─────────────────────────────────────────────────
-//   SeriesScreen  scrollable page: header block (backdrop image covers poster+title area,
-//                 dark gradient overlay) · ♥ fav IconCircleButton · ✓ watched IconCircleButton ·
-//                 poster badges (played/unplayed-count) · season tabs (accent bottom border
-//                 when focused) · episode SectionRow · Missing Seasons SectionRow (2026-07-29,
-//                 Deep Seerr integration, between Episodes and Cast) · CastRow ·
-//                 More Like This SectionRow · Recommended SectionRow (2026-07-29, Deep Seerr
-//                 integration, below More Like This)
-//   Keyboard scroll: 0-height anchor Rectangles (next-up-anchor, seasons-anchor, ep-anchor,
-//                 missing-seasons-anchor, cast-anchor, similar-anchor, recommended-anchor)
-//                 track section Y positions;
-//                 kb-y property on fl maps focused section → content-y target;
-//                 changed kb-y => { self.content-y = kb-y; } keeps mouse-wheel
-//                 native while keyboard nav auto-scrolls.
-//   Season tabs kb-x: uses root.width (NOT self.width) to avoid "Recursion detected"
-//                 crash — self.width inside a conditional Rectangle comes from the
-//                 content layout cache, which is already being evaluated when the
-//                 ChangeTracker initialises.
+//   SeriesScreen  scrollable page: header (backdrop over poster + title, dark gradient) · ♥ and ✓
+//                 IconCircleButtons · poster badges (played/unplayed count) · season tabs (accent
+//                 underline when focused) · episode row · Missing Seasons · CastRow · More Like
+//                 This · Recommended
+//   Keyboard scroll: 0-height anchor Rectangles (next-up-, seasons-, ep-, missing-seasons-, cast-,
+//                 similar-, recommended-anchor) give each section's y; kb-y on fl maps the focused
+//                 section to a content-y, assigned in `changed kb-y` (mouse wheel stays native).
+//   Season tabs kb-x: root.width, not self.width (a conditional Rectangle's self.width comes from
+//                 the layout cache being evaluated → "Recursion detected").
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme, SeasonEntry, CardItem } from "theme.slint";
 import { AppState } from "app_state.slint";
@@ -294,15 +286,8 @@ export component SeriesScreen inherits Rectangle {
                                     AppState.series-season-idx = i;
                                     AppState.open-season-detail(s.id, AppState.series-id);
                                 }
-                                // Right-click → context menu (Mark Watched/
-                                // Favourite/View Details), live-reported
-                                // 2026-08-12. Also syncs series-season-idx +
-                                // series-in-season-row the way every other
-                                // mouse-interaction site in this app already
-                                // has to (see the Phase 142 zone-numbering
-                                // note in CLAUDE.md) so a following keyboard
-                                // Confirm/Left/Right acts on the row that was
-                                // actually just right-clicked, not stale state.
+                                // Right-click → context menu (Mark Watched/Favourite/View Details); also syncs
+                                // series-season-idx + series-in-season-row so the next key acts on this tab.
                                 pointer-event(e) => {
                                     if e.button == PointerEventButton.right && e.kind == PointerEventKind.up {
                                         AppState.series-season-idx = i;
