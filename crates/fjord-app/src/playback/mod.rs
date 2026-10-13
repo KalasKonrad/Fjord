@@ -38,6 +38,8 @@
 //                           Jellyfin client/item, so no reporting, auto-advance or played/resume
 //                           changes; display sync only when device.display_sync_trailers; a failed
 //                           open closes with "Trailer unavailable"
+//   start_trailer / TRAILER_OPEN_RETRY_SECS  play_trailer's body; a YouTube first attempt keeps
+//                           vs.trailer_retry (title + config) for wire_mpv_timer's one restart (7 s)
 // ─────────────────────────────────────────────────────────────────────────────
 use std::num::NonZeroU32;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
@@ -286,6 +288,10 @@ pub(crate) struct VideoState {
     // `trailer_url` is the YouTube link, to mark it unplayable on failure.
     pub is_trailer: bool,
     pub trailer_url: Option<String>,
+    // A YouTube trailer's first attempt keeps what a restart needs (title + player config):
+    // wire_mpv_timer restarts it once if it hasn't opened after TRAILER_OPEN_RETRY_SECS.
+    // None on the retry (and for every other kind of playback).
+    pub trailer_retry: Option<(String, PlayerConfig)>,
     // HDR Stage 5 (2026-10-05): this player's render context lives on the
     // video subsurface's GL context (decided once, at render-context
     // creation — see wire_rendering_notifier); and the spot last logged.
@@ -391,6 +397,7 @@ impl Default for VideoState {
             current_is_audio: false,
             is_trailer: false,
             trailer_url: None,
+            trailer_retry: None,
             video_on_subsurface: false,
             video_spot_logged: None,
             video_spot_waits: 0,
@@ -457,6 +464,7 @@ pub(crate) fn tear_down_player(
     vs.render_ctx = None;
     vs.player = None;
     vs.pending_load_url = None;
+    vs.trailer_retry = None;
     // display-mode-prefetch: a stop during the pre-decode wait must also
     // drop the "Loading…" spinner signal — the deferred task bails without
     // clearing it once it sees vs.player is gone (see start_playback).
@@ -722,6 +730,7 @@ fn reset_video_state_for_playback(
     vs.startup_snapshot_ticks = 0;
     vs.is_trailer = false; // play_trailer sets these after this reset
     vs.trailer_url = None;
+    vs.trailer_retry = None;
     vs.stall_last_progress_pos = config.start_position_secs.unwrap_or(0.0);
     vs.stall_last_progress_at = None; // re-armed on the first tick after this player starts
     // A fresh player means the very first tick has nothing meaningful to
@@ -1397,8 +1406,28 @@ pub(crate) fn play_trailer(
     window_weak: &slint::Weak<MainWindow>,
     rt_handle: &tokio::runtime::Handle,
 ) {
+    start_trailer(url, title, config, source, false, video, window_weak, rt_handle);
+}
+
+/// A YouTube trailer with no FileLoaded this long after starting gets one fresh start (a new
+/// yt-dlp resolution): working opens take 1–2 s in the logs, stuck ones ~29 s.
+pub(crate) const TRAILER_OPEN_RETRY_SECS: u64 = 7;
+
+/// play_trailer, or (`retry`) wire_mpv_timer's one restart of a trailer that didn't open.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn start_trailer(
+    url: String,
+    title: String,
+    config: PlayerConfig,
+    source: TrailerSource,
+    retry: bool,
+    video: &Arc<Mutex<VideoState>>,
+    window_weak: &slint::Weak<MainWindow>,
+    rt_handle: &tokio::runtime::Handle,
+) {
     info!(
-        "playing trailer ({source:?}): {}",
+        "playing trailer ({source:?}{}): {}",
+        if retry { ", retry" } else { "" },
         fjord_player::redact_api_key(&url)
     );
     // Server-provided URL: only https YouTube reaches mpv (2026-10-09
@@ -1436,11 +1465,13 @@ pub(crate) fn play_trailer(
         });
     }
 
+    let retry_with = (source == TrailerSource::YouTube && !retry).then(|| (title.clone(), config.clone()));
     match Player::new(&config) {
         Ok(player) => {
             {
                 let mut vs = video.lock().unwrap();
                 reset_video_state_for_playback(&mut vs, player, &config, false, &url);
+                vs.trailer_retry = retry_with;
                 vs.item_id = None;
                 vs.playing_series_id = None;
                 vs.client = None;
