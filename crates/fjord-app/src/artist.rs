@@ -1,11 +1,10 @@
 // ── fjord-app · artist.rs ─────────────────────────────────────────────────────
 //   open_artist_screen   reset AppState artist props; increment artist-open-gen; checks
-//                        artist_albums_cache + item_detail_cache (Part 2) — only sets
-//                        app-content-loading=true when either is a miss; spawn async: fetch
-//                        artist albums + portrait + detail in parallel (cached ones skip their
-//                        network call); build CardItem model with posters, applied via
-//                        apply_cards_preserving_identity; generation-guarded invoke_from_event_loop
-//                        shows page (show-artist=true)
+//                        artist_albums_cache + item_detail_cache — only sets
+//                        app-content-loading=true when either is a miss (a hit revalidates);
+//                        artist albums + portrait + detail in parallel (cached parts skip the
+//                        network); CardItem model with posters via apply_cards_preserving_identity;
+//                        a generation- and session-guarded commit shows the page
 //   handle_key           keyboard dispatch: Back button / btn row / bio (slot 2) / album grid;
 //                        Up from row 0 → bio (or btn row); btn row → Back / bio / grid;
 //                        Enter on album → open-album; C → context menu
@@ -277,13 +276,9 @@ pub(crate) fn open_artist_screen(
         });
     });
 
-    // Cache-hit only: the screen above already showed instantly from cached
-    // data. Real gap, live-reported: Jellyfin's WebSocket only delivers
-    // LibraryChanged to the most-recently-connected client when multiple
-    // clients share a session (JELLYFIN.md) — this can silently starve Fjord
-    // of the event, leaving these caches stale indefinitely with no other
-    // fallback. This revalidation is what closes that gap for whatever's
-    // actually on screen right now.
+    // Cache hit: the screen already showed from cache. Revalidate what's on screen — Jellyfin
+    // only sends LibraryChanged to the most recently connected client of a shared session
+    // (JELLYFIN.md).
     if is_cache_hit {
         spawn_artist_revalidate(
             id_revalidate,
@@ -314,10 +309,8 @@ fn spawn_artist_revalidate(
         let (Ok(albums), Ok(detail)) = (albums_res, detail_res) else {
             return;
         };
-        // Sign-out (or a different account signing in on a shared HTPC)
-        // mid-fetch must not let this per-user data land in the new session's
-        // cache — same guard class as main.rs::session_current's own doc
-        // comment (CR11-2).
+        // Per-user data must not land in a new session's cache after a mid-fetch sign-out or
+        // switch.
         if !crate::session_current(&state, &client) {
             return;
         }

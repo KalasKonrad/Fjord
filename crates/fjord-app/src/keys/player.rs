@@ -15,13 +15,8 @@ pub(crate) fn dispatch_player(action: Action, window: &crate::MainWindow) -> boo
     if g.get_show_skip_timed() {
         match action {
             Action::Left | Action::Right | Action::SeekBackward | Action::SeekForward => {
-                // Debug logging added 2026-08-28 — a real live report of
-                // "left/right don't seek" turned out to have no way to
-                // confirm from the log whether it was silently swallowed
-                // here (this branch never logs, and neither does the
-                // real seek path below it). If show-skip-timed is ever
-                // left stuck true outside a genuine Intro Skipper prompt,
-                // this line is what would reveal it.
+                // Logged: if show-skip-timed were ever stuck true outside a real Intro Skipper
+                // prompt, this branch would swallow Left/Right silently.
                 debug!(
                     "dispatch_player: {action:?} intercepted by show-skip-timed overlay, not seeking"
                 );
@@ -253,10 +248,8 @@ pub(crate) fn dispatch_player(action: Action, window: &crate::MainWindow) -> boo
 pub(crate) fn handle_key_queue_panel(action: &Action, g: &crate::AppState) -> bool {
     use slint::Model;
 
-    // Clear-queue confirmation (2026-08-22, see show-queue-clear-confirm's
-    // own doc comment in app_state.slint) — checked first, same shape as
-    // every other ConfirmDialog gate in this app: intercepts all panel
-    // input while open.
+    // Clear-queue confirmation (see show-queue-clear-confirm in app_state.slint) — checked first,
+    // like every ConfirmDialog gate: takes all panel input while open.
     if g.get_show_queue_clear_confirm() {
         match action {
             Action::Left => g.set_queue_clear_confirm_focused(0),
