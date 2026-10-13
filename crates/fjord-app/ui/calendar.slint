@@ -1,46 +1,16 @@
 // ── fjord-app · calendar.slint ───────────────────────────────────────────────
-//   CalendarDayCell  file-local month-grid cell — day number + the day's first
-//                    release's own title (2026-07-19, replaced a bare count pill —
-//                    user request, "write you the relese in the calander instead of
-//                    just a small marker"; `+N` suffix appended when 2+ entries share
-//                    the day, full list still only in the day-popup); blank (day==0)
-//                    cells are non-interactive. Mouse click fires
-//                    `AppState.calendar-day-selected(day)`, the SAME callback keyboard
-//                    Enter routes through (`handle_key_calendar` in discover.rs), so
-//                    mouse/keyboard can't diverge on what a cell does.
-//   CalendarScreen   Watchlist + Release Calendar (2026-07-18) — a new full-page overlay,
-//                    opened from the Discover "Coming Up" row's trailing sentinel card
-//                    (AppState.open-calendar()). Same floating "← Back" FjordButton
-//                    top-left convention every other overlay uses (collection.slint etc),
-//                    same FadeGate mount in main.slint. Month grid built with the REAL
-//                    established pattern for "a grid sized to fill a whole screen" in
-//                    this codebase — nested VerticalLayout{for week: HorizontalLayout{for
-//                    col: CalendarDayCell}}} — confirmed by reading LibraryGrid's actual
-//                    code (home.slint) rather than assumed; an EARLIER draft of this
-//                    feature's plan claimed a manual-Rectangle-pixel-math grid was the
-//                    established pattern, which an independent plan review caught was
-//                    false (no such pattern exists anywhere in this codebase) — see
-//                    CLAUDE.md's Seerr integration section for the full story. Header row:
-//                    Back + month/year title + ◀/▶ month-nav buttons, the latter three
-//                    grouped into one HorizontalLayout (2026-07-19, real bug live-reported
-//                    via TWO screenshots — first fix attempt still overlapped because a
-//                    bare Layout child fills its parent's full width rather than sizing to
-//                    content; real fix is `width: parent.width` + `alignment: center`, not
-//                    a computed `x`, see the HorizontalLayout's own inline comment for the
-//                    full story). Left/Right in the header zone (`calendar-cursor-row < 0`)
-//                    cycle Back/Prev/Next as before — Confirm activates whichever is
-//                    focused; Left/Right at the EDGE of a day-grid row (Sunday/Saturday)
-//                    now continue past it into the adjacent month instead (2026-07-19,
-//                    corrected after a live report that the first design fired from the
-//                    Back position too and did nothing in the grid — see
-//                    discover.rs::handle_key_calendar's own doc comment for the full
-//                    design). Day-of-week label row (Sunday-first, an arbitrary but
-//                    consistent choice — this app has no established locale precedent).
-//                    Day-detail popup (`show-calendar-day-popup`): same small fixed-size
-//                    dim-backdrop-plus-centered-box shape as RequestOptionsOverlay
-//                    (request_detail.slint) — fixed pixel width, not content-derived, for
-//                    the identical layout-risk reasons documented throughout CLAUDE.md's
-//                    Slint gotchas section.
+//   CalendarDayCell  month-grid cell: day number + the day's first release title (+N when more;
+//                    the full list is in the day popup); blank cells (day 0) inert. A click calls
+//                    AppState.calendar-day-selected(day), the same callback keyboard Enter uses.
+//   CalendarScreen   Release calendar overlay (from Discover's "Coming Up" sentinel card,
+//                    AppState.open-calendar()), FadeGate-mounted in main.slint, floating "← Back".
+//                    Header: Back, then ◀ · month/year · ▶ (one centered HorizontalLayout). Day-of-week
+//                    row (Sunday first). Month grid as nested layouts (VerticalLayout → week
+//                    HorizontalLayouts → cells, like LibraryGrid). Keyboard
+//                    (discover/calendar.rs handle_key_calendar): header row = Back/Prev/Next; in the
+//                    grid Left on Sunday / Right on Saturday continue into the adjacent month.
+//                    Day popup (show-calendar-day-popup): fixed-size dim-backdrop box like
+//                    RequestOptionsOverlay.
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
@@ -129,30 +99,10 @@ export component CalendarScreen inherits Rectangle {
             kbd-focused: AppState.calendar-cursor-row < 0 && AppState.calendar-cursor-col == 0;
             clicked => { AppState.show-calendar = false; }
         }
-        // Real bug, live-reported 2026-07-19 (screenshot showed "ctober 202"
-        // with both ends clipped by the nav buttons): the title Text and the
-        // two FjordButtons were each independently positioned with fixed
-        // pixel offsets from center, sized for a narrow title — any month
-        // name wide enough ("September 2026" etc, in practice most of them)
-        // overlapped the buttons instead of leaving room.
-        //
-        // First fix attempt (same day) — grouping the three into a
-        // HorizontalLayout with `x: (parent.width - self.width) / 2` — was
-        // ALSO wrong, confirmed by a second screenshot: the layout, as a
-        // bare Layout child of a plain Rectangle with no explicit width,
-        // filled the Rectangle's FULL width rather than sizing to its
-        // content, so `self.width` was the parent's own width and the
-        // computed `x` collapsed to 0 — the ◀ button ended up pinned at the
-        // Rectangle's left edge (overlapping "← Back"), ▶ pinned at the
-        // right edge, with only the Text (which implicitly stretched to
-        // absorb the leftover width, its own `horizontal-alignment: center`
-        // keeping the STRING visually centered even though its enclosing
-        // box spanned nearly the whole header) looking correctly placed.
-        // Real fix: `width: parent.width` (accept the full-width fill
-        // rather than fight it) + `alignment: center`, the actual Slint
-        // HorizontalLayout property for centering a group of non-stretching
-        // children within extra space — Text now also gets an explicit
-        // `horizontal-stretch: 0` so it can't reclaim that space itself.
+        // ◀, title, ▶ in one HorizontalLayout with `width: parent.width` + `alignment:
+        // center` (a bare Layout in a plain Rectangle fills its width, so a computed centering `x`
+        // collapses to 0); the title gets `horizontal-stretch: 0` so it can't take the extra space.
+        // Fixed pixel offsets overlapped long month names.
         HorizontalLayout {
             y: 13px;
             width: parent.width;

@@ -21305,3 +21305,204 @@ Above `let cache = if s.cache_duration_secs > 0.0 {`:
 //                        reason real output-colorspace introspection isn't available yet
 // ─────────────────────────────────────────────────────────────────────────────
 ```
+
+#### `crates/fjord-app/src/keys/dashboard.rs`
+
+Above `pub(crate) fn focus_bar_on_up(_action: &Action, _window: &crate::MainWindow) -> bool {`:
+```
+// ── Bar focus fallbacks ───────────────────────────────────────────────────────
+// Both the video mini-bar and the music bar are docked at the bottom of the
+// window (Phase 49+). focus_bar_on_down is called when a screen's Down handler
+// falls off the bottom; it focuses whichever bar is currently visible.
+// focus_bar_on_up is kept as a no-op so call sites compile without change.
+```
+
+Above `g.invoke_open_sidebar_profile_menu();`:
+```
+// Real bug, live-reported 2026-08-14: the Profile sidebar row
+// (nav==7) has no content section at all — falling through to
+// the generic "enter content" branch below set focused_section
+// to whatever invoke_find_first_section() happened to return
+// for a nav value that was never meant to have one, leaving
+// keyboard nav stuck (Up/Down/Left/Right routed through the
+// content-navigation arms instead of sidebar ones) until Back
+// reset focused_section back to -1. Mouse already worked
+// because its own clicked handler calls open-sidebar-profile-
+// menu() directly (layout.slint) — mirror that here instead of
+// touching focused_section at all.
+```
+
+Above `if *action == Action::OpenDetail {`:
+```
+// Watchlist/Coming Up rows (2026-07-20/08-02) mix Discover/TMDB-sourced
+// cards into these otherwise-Jellyfin dashboards. Mouse click already
+// routes those correctly (SectionRow's own item-play(id, item-type)
+// Slint callback branches on the card's real type — see home.slint).
+// These three keyboard arms never did: real bug, live-reported
+// 2026-09-16 — Enter on an unowned Discover card blindly tried
+// `item-play` (a Jellyfin fetch/play against a raw TMDB id: 400 Bad
+// Request, then a play attempt anyway) instead of opening the Discover
+// item; `I`/`C` had the identical gap. Mirrors the routing already
+// established for mixed-content rows on Detail/Series/Collection/
+// Person's own Recommended/Other Work/Missing-Items rows.
+```
+
+#### `crates/fjord-app/ui/player.slint`
+
+Above `Rectangle {`:
+```
+// ── skip-segment fade-to-black ────────────────────────────────────────────
+// 2026-08-11, direct request ("make intro skip etc more gradual, it
+// feels instant and jarring") — the actual mpv seek behind an
+// intro/recap/preview/commercial skip is still an instant hard cut (no
+// way to smoothly scrub between two arbitrary points in a video file),
+// so this dips the screen to black first, lets Rust perform the seek
+// while hidden (see AppState.skip-fade-active's own doc comment for the
+// Rust-side sequencing), then fades back in on the new frame — same
+// "always mounted, animate a float mirror of a bool" idiom as the
+// buffering/stalled overlays above. Plain Rectangle with no TouchArea,
+// so it never blocks clicks to the video/controls beneath it even at
+// full opacity.
+```
+
+Above `animate skip-fade-opacity {`:
+```
+// Base ms is now Settings-configurable (AppState.settings-skip-fade-ms,
+// 2026-08-11 follow-up — "mabey the 200ms is to short? mabey make it
+// a setting so i can test") — wire_mpv_timer's own Rust-side wait
+// computation reads the identical two properties, so the two sides
+// can never drift out of sync with each other or with a live change.
+```
+
+Above `StatRow {`:
+```
+// Split IN/OUT (2026-08-15) — the source file's own mastering colorspace vs.
+// what mpv actually sends to the display after tone-mapping; see app_state.slint's
+// own doc comment on these two properties for why they can genuinely disagree.
+// Labels kept short ("CLR" not "COLOR") — StatRow's label column is a fixed 60px,
+// and "COLOR OUT" risks clipping there, longer than anything else in this panel.
+```
+
+#### `crates/fjord-app/ui/player.slint` — file header (TOC), one entry
+```
+//   mouse-activity         the idle-lock timer's mouse coverage now comes from a true global
+//                         winit-level hook (activity.rs, event-loop branch 2026-09-08), not from
+//                         these TouchAreas — both still do their own real jobs (show-controls,
+//                         pause-toggle, cursor position) unrelated to activity tracking
+```
+
+#### `crates/fjord-app/ui/series.slint`
+
+Above `pointer-event(e) => {`:
+```
+// Right-click → context menu (Mark Watched/
+// Favourite/View Details), live-reported
+// 2026-08-12. Also syncs series-season-idx +
+// series-in-season-row the way every other
+// mouse-interaction site in this app already
+// has to (see the Phase 142 zone-numbering
+// note in CLAUDE.md) so a following keyboard
+// Confirm/Left/Right acts on the row that was
+// actually just right-clicked, not stale state.
+```
+
+#### `crates/fjord-app/ui/calendar.slint`
+
+Above `HorizontalLayout {`:
+```
+// Real bug, live-reported 2026-07-19 (screenshot showed "ctober 202"
+// with both ends clipped by the nav buttons): the title Text and the
+// two FjordButtons were each independently positioned with fixed
+// pixel offsets from center, sized for a narrow title — any month
+// name wide enough ("September 2026" etc, in practice most of them)
+// overlapped the buttons instead of leaving room.
+//
+// First fix attempt (same day) — grouping the three into a
+// HorizontalLayout with `x: (parent.width - self.width) / 2` — was
+// ALSO wrong, confirmed by a second screenshot: the layout, as a
+// bare Layout child of a plain Rectangle with no explicit width,
+// filled the Rectangle's FULL width rather than sizing to its
+// content, so `self.width` was the parent's own width and the
+// computed `x` collapsed to 0 — the ◀ button ended up pinned at the
+// Rectangle's left edge (overlapping "← Back"), ▶ pinned at the
+// right edge, with only the Text (which implicitly stretched to
+// absorb the leftover width, its own `horizontal-alignment: center`
+// keeping the STRING visually centered even though its enclosing
+// box spanned nearly the whole header) looking correctly placed.
+// Real fix: `width: parent.width` (accept the full-width fill
+// rather than fight it) + `alignment: center`, the actual Slint
+// HorizontalLayout property for centering a group of non-stretching
+// children within extra space — Text now also gets an explicit
+// `horizontal-stretch: 0` so it can't reclaim that space itself.
+```
+
+#### `crates/fjord-app/ui/series.slint` — file header (TOC)
+```
+// ── fjord-app · series.slint ─────────────────────────────────────────────────
+//   SeriesScreen  scrollable page: header block (backdrop image covers poster+title area,
+//                 dark gradient overlay) · ♥ fav IconCircleButton · ✓ watched IconCircleButton ·
+//                 poster badges (played/unplayed-count) · season tabs (accent bottom border
+//                 when focused) · episode SectionRow · Missing Seasons SectionRow (2026-07-29,
+//                 Deep Seerr integration, between Episodes and Cast) · CastRow ·
+//                 More Like This SectionRow · Recommended SectionRow (2026-07-29, Deep Seerr
+//                 integration, below More Like This)
+//   Keyboard scroll: 0-height anchor Rectangles (next-up-anchor, seasons-anchor, ep-anchor,
+//                 missing-seasons-anchor, cast-anchor, similar-anchor, recommended-anchor)
+//                 track section Y positions;
+//                 kb-y property on fl maps focused section → content-y target;
+//                 changed kb-y => { self.content-y = kb-y; } keeps mouse-wheel
+//                 native while keyboard nav auto-scrolls.
+//   Season tabs kb-x: uses root.width (NOT self.width) to avoid "Recursion detected"
+//                 crash — self.width inside a conditional Rectangle comes from the
+//                 content layout cache, which is already being evaluated when the
+//                 ChangeTracker initialises.
+// ─────────────────────────────────────────────────────────────────────────────
+```
+
+#### `crates/fjord-app/ui/calendar.slint` — file header (TOC)
+```
+// ── fjord-app · calendar.slint ───────────────────────────────────────────────
+//   CalendarDayCell  file-local month-grid cell — day number + the day's first
+//                    release's own title (2026-07-19, replaced a bare count pill —
+//                    user request, "write you the relese in the calander instead of
+//                    just a small marker"; `+N` suffix appended when 2+ entries share
+//                    the day, full list still only in the day-popup); blank (day==0)
+//                    cells are non-interactive. Mouse click fires
+//                    `AppState.calendar-day-selected(day)`, the SAME callback keyboard
+//                    Enter routes through (`handle_key_calendar` in discover.rs), so
+//                    mouse/keyboard can't diverge on what a cell does.
+//   CalendarScreen   Watchlist + Release Calendar (2026-07-18) — a new full-page overlay,
+//                    opened from the Discover "Coming Up" row's trailing sentinel card
+//                    (AppState.open-calendar()). Same floating "← Back" FjordButton
+//                    top-left convention every other overlay uses (collection.slint etc),
+//                    same FadeGate mount in main.slint. Month grid built with the REAL
+//                    established pattern for "a grid sized to fill a whole screen" in
+//                    this codebase — nested VerticalLayout{for week: HorizontalLayout{for
+//                    col: CalendarDayCell}}} — confirmed by reading LibraryGrid's actual
+//                    code (home.slint) rather than assumed; an EARLIER draft of this
+//                    feature's plan claimed a manual-Rectangle-pixel-math grid was the
+//                    established pattern, which an independent plan review caught was
+//                    false (no such pattern exists anywhere in this codebase) — see
+//                    CLAUDE.md's Seerr integration section for the full story. Header row:
+//                    Back + month/year title + ◀/▶ month-nav buttons, the latter three
+//                    grouped into one HorizontalLayout (2026-07-19, real bug live-reported
+//                    via TWO screenshots — first fix attempt still overlapped because a
+//                    bare Layout child fills its parent's full width rather than sizing to
+//                    content; real fix is `width: parent.width` + `alignment: center`, not
+//                    a computed `x`, see the HorizontalLayout's own inline comment for the
+//                    full story). Left/Right in the header zone (`calendar-cursor-row < 0`)
+//                    cycle Back/Prev/Next as before — Confirm activates whichever is
+//                    focused; Left/Right at the EDGE of a day-grid row (Sunday/Saturday)
+//                    now continue past it into the adjacent month instead (2026-07-19,
+//                    corrected after a live report that the first design fired from the
+//                    Back position too and did nothing in the grid — see
+//                    discover.rs::handle_key_calendar's own doc comment for the full
+//                    design). Day-of-week label row (Sunday-first, an arbitrary but
+//                    consistent choice — this app has no established locale precedent).
+//                    Day-detail popup (`show-calendar-day-popup`): same small fixed-size
+//                    dim-backdrop-plus-centered-box shape as RequestOptionsOverlay
+//                    (request_detail.slint) — fixed pixel width, not content-derived, for
+//                    the identical layout-risk reasons documented throughout CLAUDE.md's
+//                    Slint gotchas section.
+// ─────────────────────────────────────────────────────────────────────────────
+```
