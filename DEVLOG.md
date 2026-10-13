@@ -19545,3 +19545,347 @@ Above `y: (parent.height - self.height) / 2;`:
 //                   like it ran off the end of the screen. Both fixed to account for all 8 rows.
 // ─────────────────────────────────────────────────────────────────────────────
 ```
+
+#### `crates/fjord-app/src/collection.rs`
+
+Above `if !crate::session_current(&state_task, &client) {`:
+```
+// Session guard (Bonfire Phase 1, step 8 audit, 2026-08-09): the
+// generation counter above only catches a SAME-TYPE re-open — nothing
+// increments it on sign-out or a profile switch, so a stale
+// fetch from a torn-down session can still match it and
+// silently re-open this screen (with the OLD session's data)
+// moments after reset_session_state just force-closed it. Same
+// guard class as spawn_collection_revalidate's own, applied
+// here too since that one only covers the cache-hit revalidate
+// path, not this, the actual open-screen path.
+```
+
+Above `let revalidate_handle = if is_cache_hit {`:
+```
+// Cache-hit only: the screen above already showed instantly from cached
+// data. Real gap, live-reported: Jellyfin's WebSocket only delivers
+// LibraryChanged to the most-recently-connected client when multiple
+// clients share a session (JELLYFIN.md) — editing through Jellyfin's own
+// web UI while Fjord sits connected can silently starve it of the event,
+// leaving this cache stale indefinitely with no other fallback. This
+// revalidation is what closes that gap for whatever the user is actually
+// looking at right now. Started before spawn_missing_items (below) so
+// its JoinHandle is ready to hand over — see that function's own doc
+// comment for why it needs to know about this specific revalidate.
+```
+
+Above `if !crate::session_current(&state, &client) {`:
+```
+// Sign-out (or a different account signing in on a shared HTPC) mid-
+// fetch must not let this stale/wrong-session data land in the new
+// session's caches — same guard class as main.rs::session_current's
+// own doc comment (CR11-2), reapplied here since this is exactly the
+// "background fetch writes per-user data into shared FjordState"
+// pattern that guard exists for.
+```
+
+Above `fn spawn_missing_items(`:
+```
+/// "Missing From This Collection" row (2026-07-29, Deep Seerr integration) —
+/// resolves this BoxSet's TMDB collection id (free path via the BoxSet
+/// item's own `ProviderIds`, falling back to its first eligible member
+/// movie's own TMDB id + the already-used `get_movie` call's `.collection`
+/// field — a movie belongs to at most one TMDB collection, so any one
+/// member is as good a source as any; not worth iterating every member),
+/// fetches the full TMDB collection membership, and shows whatever isn't
+/// already owned anywhere in the local library. `resolve_and_fetch_discovery_row`'s
+/// own "not owned anywhere" filter already covers "not a member of THIS
+/// boxset specifically" for free, since every boxset member is by
+/// definition a local item — no separate boxset-membership diff needed.
+/// Independent task, same reasoning as `person.rs::spawn_other_work` — this
+/// row's resolution can fail outright (no TMDB collection at all, e.g. a
+/// user-curated folder that isn't a real franchise) or take an extra
+/// network round trip, and shouldn't hold up the main grid from showing.
+///
+/// `revalidate_handle`: real bug fixed 2026-08-02, live-reported ("why did
+/// they not update when i was in it?") — a first-time resolution failure
+/// often just means `boxset_items_cache`/`item_detail_cache` haven't been
+/// revalidated yet (e.g. the cached BoxSet member items still show no
+/// `ProviderIds`, before Jellyfin/the cache had a chance to catch up). The
+/// SAME screen open, on a cache hit, already kicks off `spawn_collection_-
+/// revalidate` in parallel to refresh exactly those two caches — but the two
+/// tasks were entirely independent, so the row just silently stayed empty
+/// until the user reopened the screen a second time and got a fresh
+/// resolution attempt against by-then-fresher data. If a revalidate is
+/// genuinely in flight for this exact open, awaiting its `JoinHandle` here
+/// and retrying once reuses ITS fetch (already written into the caches this
+/// function reads) instead of firing a redundant one of its own.
+```
+
+Above `async fn resolve_missing_items_collection_id(`:
+```
+/// One resolution attempt (free `ProviderIds` path, then the multi-member
+/// fallback loop) — extracted from `spawn_missing_items` 2026-08-02 so it
+/// can be called twice: once immediately against whatever's cached right
+/// now, and once more after an in-flight revalidate finishes, without
+/// duplicating the whole resolution logic inline at both call sites.
+```
+
+Above `pub(crate) fn resolve_and_blocklist_collection(`:
+```
+/// Bulk-blocklists every part of this BoxSet's TMDB collection at once
+/// (`POST /blocklist/collection/{id}`, resolved server-side from just the
+/// id) — the confirm dialog's own Confirm action. Reuses
+/// `resolve_missing_items_collection_id` for the same free-`ProviderIds`-
+/// then-member-movie-fallback resolution the Missing Items row already
+/// does; no separate revalidate-and-retry here (unlike `spawn_missing_items`)
+/// since this is a deliberate, infrequent user action, not an ambient
+/// screen-open fetch — a failed resolution just toasts and the user can
+/// retry after the screen's own background revalidate catches up, same as
+/// it would for Missing Items. On success, re-invokes `spawn_missing_items`
+/// (not a hand-patch of individual member cards) so the row reflects
+/// whatever Seerr's own bulk-exclusion semantics actually did server-side,
+/// rather than Fjord guessing at them. 2026-08-06, Seerr Blocklist support.
+```
+
+Above `if g.get_collection_blocklist_confirm_open() {`:
+```
+// ── Blocklist-collection confirm dialog (2026-08-06, Seerr Blocklist
+// support) — checked first, same as every other overlay-on-top-of-a-
+// screen precedent in this app (skip-segment overlays, Up Next banner):
+// while it's open, nothing else on this screen should react to input.
+```
+
+Above `let max_btn = if g.get_seerr_can_manage_blocklist() {`:
+```
+// 3rd button (⛔ Blocklist Collection) only actually renders when
+// seerr-can-manage-blocklist is true (collection.slint's own `if`
+// gate) — capping at 1 instead of 2 when it's false keeps keyboard
+// focus from landing on a button that isn't there, the exact
+// focus/visibility mismatch this codebase has been bitten by
+// before elsewhere. 2026-08-06, Seerr Blocklist support.
+```
+
+Above `{`:
+```
+// Collection bulk blocklist (2026-08-06, Seerr Blocklist support) —
+// the confirm dialog's own Confirm button, not the ⛔ button itself
+// (which just opens the dialog, a pure Slint-side state flip with no
+// Rust callback needed).
+```
+
+#### `crates/fjord-app/src/home.rs`
+
+Above `fn profile_cache_dir(user_id: &str) -> Option<PathBuf> {`:
+```
+// Bonfire Phase 1 (cache namespacing, 2026-08-09): every on-disk cache below
+// is scoped under the OWNING profile's Jellyfin user_id (a GUID — safe to
+// use directly as a path segment, no sanitization needed) so a second
+// profile signing in on the same install doesn't briefly see the first
+// profile's library/watch-state at warm start. Poster/backdrop caches stay
+// shared (server-global artwork, not per-user). `user_id` is always an
+// explicit parameter, never resolved internally from "whatever's active
+// right now" — the data being saved was usually fetched under a specific
+// profile's session well before the save call runs (an async gap a profile
+// switch could cross), so the caller must capture user_id at the same point
+// it captured the client/fetch, not re-derive it at save time.
+// None when user_id isn't a valid cache name (config::safe_cache_name) —
+// nothing is then read or written.
+```
+
+Above `pub(crate) async fn fetch_home_data(`:
+```
+/// `include_not_watched`: the Not Watched Movies/TV rows are the one real,
+/// evidence-based finding from adding per-branch timing (2026-08-14, "what
+/// makes login slow") — a real login logged `not_watched_tv took 4.103s`
+/// against every other branch finishing in 1-2.7s. Jellyfin's own
+/// SortBy=Random combined with a recursive per-episode "is this series
+/// unplayed" filter is genuinely expensive server-side (confirmed by the
+/// much cheaper Movie-typed equivalent, `not_watched_movies`, finishing in
+/// line with everything else that same run) — not a client bug to fix by
+/// reformulating the request. What IS a real, fixable client-side choice:
+/// neither Not Watched row is shown on the Home dashboard at all (only
+/// Movies/TV, per this file's own `HomeSection` doc) — there's no reason
+/// the very first thing the user sees after logging in should be gated on
+/// a query for a dashboard they haven't even opened yet. `false` only for
+/// `finish_session_setup`'s own login-blocking join (`auth.rs`) — every
+/// other caller (WS delta-sync, playback-stop/natural-end refresh,
+/// auto-login's background refresh) passes `true`, unchanged. With `true`
+/// the not-watched pair runs as its own `tokio::join!` right after the
+/// main 12-branch one, not concurrently with it — a real, deliberate,
+/// accepted trade-off: every `true` caller is already a background refresh
+/// nobody is watching a spinner for (auto-login's own refresh runs AFTER
+/// cached data is already shown), so a couple of extra seconds there is
+/// fine in exchange for not duplicating the whole 12-branch join a second
+/// time just to keep one pair of branches inside it. See `auth.rs`'s own
+/// `finish_session_setup` for how the `false` case eventually gets these
+/// two rows anyway, just without blocking login on them.
+```
+
+Above `pub(crate) fn push_home_data(`:
+```
+/// `watchlist` (the caller's `FjordState.jellyfin_watchlist_ids` snapshot) is
+/// only genuinely needed here — this is a wholesale fresh build with no
+/// prior CardItem row to carry an existing `on_watchlist` forward from,
+/// unlike `refresh_row_preserving_posters`'s own merge path (2026-07-20).
+```
+
+Above `pub(crate) fn refresh_row_preserving_posters(`:
+```
+// Merge fresh server data into a home-row model while preserving already-decoded
+// posters for rows that persist across the refresh (matched by id) — same idea as
+// context_menu::upsert_cards_in_model, but rebuilt strictly from `fresh` so removed
+// rows disappear too (matching push_home_data's exact membership) rather than
+// upserting on top of the old rows, which would never remove anything. The actual
+// apply — mutate in place when nothing structurally changed, else rebuild — is
+// delegated to apply_cards_preserving_identity (Phase 96) so this function only
+// owns the poster-preserving merge, which is specific to it.
+```
+
+Above `let mut card = crate::item_to_card_item(item, &std::collections::HashSet::new());`:
+```
+// No FjordState access here (this is a pure merge fn, no state
+// param) — item_to_card_item's own watchlist lookup always misses,
+// same as a brand-new card. Carried forward from `old` immediately
+// below instead, same idiom as the poster preservation right after
+// it: whatever was already correctly patched onto this row (by
+// resync_jellyfin_watchlist_stars or a toggle) survives the merge,
+// real bug fixed 2026-07-20 — see FjordState.jellyfin_watchlist_ids'
+// own doc comment for why a live patch alone isn't enough.
+```
+
+Above `pub(crate) fn refresh_favorites(`:
+```
+/// Re-fetch Movie/Series/MusicAlbum favorites from the server and update the three favorites rows
+/// in AppState. Called after any successful favourite toggle so the rows update immediately
+/// without waiting for the next full home refresh or app restart. Uses
+/// refresh_row_preserving_posters (Phase 96) so rows already showing a poster elsewhere don't flash.
+```
+
+Above `warn!("get_unwatched (movies) failed: {e:#}");`:
+```
+// 2026-08-28 logging audit — two real bugs, not
+// just a missing log. (1) This branch was a bare
+// `Err(_) => return` — silently swallowing any
+// non-401 error (a transient network blip, a
+// server 500) with zero trace, on a timer that
+// runs continuously every 30s for the whole
+// session; "the Not Watched row hasn't refreshed
+// in a while" would have been undiagnosable from
+// the log. (2) That bare `return` exits this
+// WHOLE async block, not just the movies branch —
+// since `if due_tv {...}` runs afterward in the
+// SAME block, a movies-fetch failure silently
+// skipped the completely independent TV fetch too,
+// even when due_tv was also true. Fixed by only
+// logging here and letting the function fall
+// through — no early return.
+```
+
+Above `pub(crate) async fn run_poster_cache_cleanup(`:
+```
+/// Delete orphaned files from `posters/` and `backdrops/` cache directories.
+/// A file is orphaned when its name (= item ID) is not in the current library.
+/// `detail_ids` carries item_detail_cache keys + every cached item's credited
+/// person ids — cast portraits are cached under person ids, which the six flat
+/// library lists never contain, so without this every 24h sweep deleted the
+/// portraits the image prewarm (Phase 104) and cast-row browsing had cached.
+/// Skips the run if the combined library ID set is empty (network error /
+/// first run — `detail_ids` alone doesn't count, it can be non-empty from the
+/// persisted screen-cache file even when the library fetch failed) or if
+/// cleanup ran within the last 24 h.
+```
+
+#### `crates/fjord-app/src/home.rs` — file header (TOC)
+```
+// ── fjord-app · home.rs ──────────────────────────────────────────────────────
+//   HomeSection     named enum for the 17 poster-loading sections (replaces raw usize)
+//   HomeData        continue-watching, next-up, recently-added, collections + music rows + favorites
+//   profile_cache_dir/cache_path  XDG_CACHE_HOME resolver: ~/.cache/fjord/profiles/<user_id>/<filename>;
+//                   None (nothing read/written) unless user_id passes config::safe_cache_name
+//                   (Bonfire Phase 1, 2026-08-09 — every cache below takes an explicit user_id,
+//                   never resolved internally, so an async gap between fetch and save can't
+//                   attribute one profile's data to another's cache file)
+//   load_cache<T>   read + deserialize a JSON cache file
+//   save_cache<T>   serialize + write a JSON cache file
+//   home cache      load_home_cache, save_home_cache (JSON at ~/.cache/fjord/profiles/<user_id>/home.json)
+//   library caches  load/save_movies_cache, load/save_series_cache, load/save_collections_cache, load/save_artists_cache, load/save_albums_cache, load/save_playlists_cache
+//   fetch_home_data async: fetch all home rows in parallel; Recently Added rows use
+//                   /Items/Latest (grouped, played incl.) — same as the Jellyfin web home.
+//                   include_not_watched (2026-08-14, "what makes login slow" — real timing
+//                   evidence found not_watched_tv alone taking 4x longer than every other
+//                   branch, a Jellyfin-side SortBy=Random + recursive per-episode cost, not a
+//                   client bug): false skips both Not Watched rows entirely (auth.rs's
+//                   finish_session_setup — see its own call site — fetches them separately via
+//                   spawn_not_watched_rows so login isn't gated on them); every other caller
+//                   (ws.rs delta-sync, playback.rs stop/natural-end refresh, main.rs auto-login
+//                   background refresh) passes true, unchanged
+//   push_home_data  write HomeData into AppState global (called from UI thread); takes a
+//                   `watchlist: &HashSet<String>` param (2026-07-20 — a genuinely fresh build
+//                   with no prior CardItem row to carry an existing on_watchlist forward from,
+//                   unlike refresh_row_preserving_posters below, so the caller's
+//                   FjordState.jellyfin_watchlist_ids snapshot has to be passed in explicitly)
+//   push_home_data_preserving_posters  same writes as push_home_data, but merges each row via
+//   refresh_row_preserving_posters     refresh_row_preserving_posters — merges fresh MediaItems
+//                   against the old model (preserving already-decoded posters by id), then
+//                   delegates the actual apply to crate::apply_cards_preserving_identity (Phase 96
+//                   — shared with poster.rs/movies.rs/context_menu.rs) so unchanged rows mutate in
+//                   place instead of destroying/recreating card elements (which would re-trigger
+//                   FadeInTrigger's fade-in for no reason). Used by ws.rs's delta-sync task and
+//                   (directly, per-row) by main.rs's spawn_auto_login startup refresh +
+//                   spawn_library_fetch's first-open-this-session refresh. Also now carries
+//                   on_watchlist forward from the old row (2026-07-20, same real-bug fix as
+//                   movies.rs::push_library_cards's own poster-preservation idiom) — no
+//                   signature change needed here, since it already has an old-row map to
+//                   carry forward from, unlike push_home_data
+//   home_data_sections  split HomeData into [(HomeSection, Vec<MediaItem>); 17]
+//   refresh_favorites   re-fetch Movie/Series/MusicAlbum favorites and update AppState + posters
+//   wire_nw_timer   30 s timer: refresh Not Watched rows when idle + tab visible; a non-401
+//                   fetch failure now logs a warn! instead of silently swallowing it, and no
+//                   longer short-circuits the independent TV fetch when the movies fetch fails
+//                   (the old bare `Err(_) => return` exited the whole async block, skipping
+//                   `if due_tv` entirely) — 2026-08-28 logging audit
+//   fetch_movie_collections  background: build movie_id → (boxset_id, boxset_name) map
+//   run_poster_cache_cleanup  delete orphaned files from posters/ + backdrops/ (24 h guard;
+//                   known-ID set = six flat library lists + detail_ids, which carries
+//                   item_detail_cache keys + credited person ids so cast portraits survive)
+//   wire_item_play         callbacks moved from main() (0.5.0 step 3): play from home / library rows
+// ─────────────────────────────────────────────────────────────────────────────
+```
+
+#### `crates/fjord-app/src/collection.rs` — file header (TOC)
+```
+// ── fjord-app · collection.rs ─────────────────────────────────────────────────
+//   open_collection_screen  reset AppState collection props; increment collection-open-gen;
+//                           checks boxset_items_cache + item_detail_cache (Part 2) — only sets
+//                           app-content-loading=true when either is a miss; spawn async: fetch
+//                           BoxSet items + poster + item-detail in parallel (cached ones skip
+//                           their network call); sets collection-overview,
+//                           collection-is-favorite, collection-has-played from detail;
+//                           backdrop only when backdrop_image_tags non-empty;
+//                           stale-request guard (generation check, handles same-ID re-opens) +
+//                           early-return-on-error with toast;
+//                           single invoke_from_event_loop sets all data then shows page;
+//                           also spawns spawn_missing_items (independent task)
+//   spawn_missing_items     "Missing From This Collection" row (2026-07-29, Deep Seerr
+//                           integration) — resolves this BoxSet's TMDB collection id (free path:
+//                           the BoxSet's own ProviderIds; guaranteed fallback: first member
+//                           movie's TMDB id + get_movie's new .collection field), fetches the
+//                           full TMDB collection, shows whatever isn't owned anywhere locally
+//                           (resolve_and_fetch_discovery_row's own filter already covers "not a
+//                           member of THIS boxset" for free — every boxset member is by
+//                           definition a local item); first SectionRow on this screen (previously
+//                           a plain grid only)
+//   resolve_and_blocklist_collection  bulk-blocklists every part of this BoxSet's TMDB
+//                           collection at once (POST /blocklist/collection/{id}, 2026-08-06,
+//                           Seerr Blocklist support) — reuses resolve_missing_items_collection_id
+//                           for the same id resolution the Missing Items row already does; on
+//                           success re-invokes spawn_missing_items rather than hand-patching
+//                           member cards, so the row reflects Seerr's own real server-side result
+//   handle_key              keyboard dispatch for the collection screen:
+//                           grid nav (Up/Down/Left/Right + Enter → open-detail + C → ctx-menu);
+//                           Back button focus (Up from row 0); button row now 3-wide (♥/✓/⛔,
+//                           2026-08-06 — ⛔ opens the blocklist-collection confirm dialog rather
+//                           than acting directly, checked first in this function since it's an
+//                           overlay on top of the screen); Down from grid's last row enters
+//                           the Missing Items row (2026-07-29) if non-empty; Back → close
+//   wire_collection        callbacks moved from main() (0.5.0 step 3): open the collection screen
+//   wire_collection_toggles callbacks moved from main() (0.5.0 step 3): collection favourite / played / blocklist confirm
+// ─────────────────────────────────────────────────────────────────────────────
+```

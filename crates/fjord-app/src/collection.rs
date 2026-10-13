@@ -1,39 +1,23 @@
 // ── fjord-app · collection.rs ─────────────────────────────────────────────────
-//   open_collection_screen  reset AppState collection props; increment collection-open-gen;
-//                           checks boxset_items_cache + item_detail_cache (Part 2) — only sets
-//                           app-content-loading=true when either is a miss; spawn async: fetch
-//                           BoxSet items + poster + item-detail in parallel (cached ones skip
-//                           their network call); sets collection-overview,
-//                           collection-is-favorite, collection-has-played from detail;
-//                           backdrop only when backdrop_image_tags non-empty;
-//                           stale-request guard (generation check, handles same-ID re-opens) +
-//                           early-return-on-error with toast;
-//                           single invoke_from_event_loop sets all data then shows page;
-//                           also spawns spawn_missing_items (independent task)
-//   spawn_missing_items     "Missing From This Collection" row (2026-07-29, Deep Seerr
-//                           integration) — resolves this BoxSet's TMDB collection id (free path:
-//                           the BoxSet's own ProviderIds; guaranteed fallback: first member
-//                           movie's TMDB id + get_movie's new .collection field), fetches the
-//                           full TMDB collection, shows whatever isn't owned anywhere locally
-//                           (resolve_and_fetch_discovery_row's own filter already covers "not a
-//                           member of THIS boxset" for free — every boxset member is by
-//                           definition a local item); first SectionRow on this screen (previously
-//                           a plain grid only)
-//   resolve_and_blocklist_collection  bulk-blocklists every part of this BoxSet's TMDB
-//                           collection at once (POST /blocklist/collection/{id}, 2026-08-06,
-//                           Seerr Blocklist support) — reuses resolve_missing_items_collection_id
-//                           for the same id resolution the Missing Items row already does; on
-//                           success re-invokes spawn_missing_items rather than hand-patching
-//                           member cards, so the row reflects Seerr's own real server-side result
-//   handle_key              keyboard dispatch for the collection screen:
-//                           grid nav (Up/Down/Left/Right + Enter → open-detail + C → ctx-menu);
-//                           Back button focus (Up from row 0); button row now 3-wide (♥/✓/⛔,
-//                           2026-08-06 — ⛔ opens the blocklist-collection confirm dialog rather
-//                           than acting directly, checked first in this function since it's an
-//                           overlay on top of the screen); Down from grid's last row enters
-//                           the Missing Items row (2026-07-29) if non-empty; Back → close
-//   wire_collection        callbacks moved from main() (0.5.0 step 3): open the collection screen
-//   wire_collection_toggles callbacks moved from main() (0.5.0 step 3): collection favourite / played / blocklist confirm
+//   open_collection_screen  reset the collection props, bump collection-open-gen, check
+//                           boxset_items_cache + item_detail_cache (loading overlay only on a
+//                           miss); fetch BoxSet items + poster + detail in parallel (cached parts
+//                           skip the network), overview/favourite/played from the detail, backdrop
+//                           when tagged; generation + session guards, toast on error; one commit
+//                           shows the page; a cache hit revalidates (spawn_collection_revalidate);
+//                           spawns spawn_missing_items
+//   spawn_missing_items     "Missing From This Collection" row: TMDB collection id (BoxSet
+//                           ProviderIds, else a member movie's get_movie `.collection`) → the TMDB
+//                           collection minus what's in the library; retries once after an
+//                           in-flight revalidate (resolve_missing_items_collection_id)
+//   resolve_and_blocklist_collection  blocklist the whole TMDB collection
+//                           (POST /blocklist/collection/{id}), then re-run spawn_missing_items
+//   handle_key              grid (arrows, Enter open-detail, C menu); Up from row 0 → Back; button
+//                           row ♥/✓/⛔ (⛔ only with seerr-can-manage-blocklist, opens a confirm
+//                           dialog — checked first); Down past the grid → the Missing Items row
+//   wire_collection         callbacks moved from main() (0.5.0 step 3): open the collection screen
+//   wire_collection_toggles callbacks moved from main() (0.5.0 step 3): collection favourite /
+//                           played / blocklist confirm
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
 
@@ -201,19 +185,14 @@ pub(crate) fn open_collection_screen(
             let Some(w) = ww_task.upgrade() else { return };
             let g = AppState::get(&w);
 
-            // Stale-request guard: abort if superseded by any newer open (same or different collection).
+            // Stale-request guard: abort if superseded by any newer open (same or different
+            // collection).
             if g.get_collection_open_gen() != generation {
                 return;
             }
-            // Session guard (Bonfire Phase 1, step 8 audit, 2026-08-09): the
-            // generation counter above only catches a SAME-TYPE re-open — nothing
-            // increments it on sign-out or a profile switch, so a stale
-            // fetch from a torn-down session can still match it and
-            // silently re-open this screen (with the OLD session's data)
-            // moments after reset_session_state just force-closed it. Same
-            // guard class as spawn_collection_revalidate's own, applied
-            // here too since that one only covers the cache-hit revalidate
-            // path, not this, the actual open-screen path.
+            // Session guard: the generation counter only catches a re-open of this screen — a stale
+            // fetch from a torn-down session would otherwise re-open it with the old session's data
+            // right after reset_session_state closed it.
             if !crate::session_current(&state_task, &client) {
                 return;
             }
@@ -257,16 +236,9 @@ pub(crate) fn open_collection_screen(
         });
     });
 
-    // Cache-hit only: the screen above already showed instantly from cached
-    // data. Real gap, live-reported: Jellyfin's WebSocket only delivers
-    // LibraryChanged to the most-recently-connected client when multiple
-    // clients share a session (JELLYFIN.md) — editing through Jellyfin's own
-    // web UI while Fjord sits connected can silently starve it of the event,
-    // leaving this cache stale indefinitely with no other fallback. This
-    // revalidation is what closes that gap for whatever the user is actually
-    // looking at right now. Started before spawn_missing_items (below) so
-    // its JoinHandle is ready to hand over — see that function's own doc
-    // comment for why it needs to know about this specific revalidate.
+    // Cache hit: the screen already showed from cache. Revalidate what's on screen — Jellyfin
+    // only sends LibraryChanged to the most recently connected client of a shared session
+    // (JELLYFIN.md). Started before spawn_missing_items, which takes its JoinHandle.
     let revalidate_handle = if is_cache_hit {
         spawn_collection_revalidate(
             id_revalidate,
@@ -303,12 +275,8 @@ fn spawn_collection_revalidate(
         let (Ok(items), Ok(detail)) = (items_res, detail_res) else {
             return;
         };
-        // Sign-out (or a different account signing in on a shared HTPC) mid-
-        // fetch must not let this stale/wrong-session data land in the new
-        // session's caches — same guard class as main.rs::session_current's
-        // own doc comment (CR11-2), reapplied here since this is exactly the
-        // "background fetch writes per-user data into shared FjordState"
-        // pattern that guard exists for.
+        // Per-user data must not land in a new session's caches after a mid-fetch sign-out or
+        // switch.
         if !crate::session_current(&state, &client) {
             return;
         }
@@ -339,35 +307,16 @@ fn spawn_collection_revalidate(
     }))
 }
 
-/// "Missing From This Collection" row (2026-07-29, Deep Seerr integration) —
-/// resolves this BoxSet's TMDB collection id (free path via the BoxSet
-/// item's own `ProviderIds`, falling back to its first eligible member
-/// movie's own TMDB id + the already-used `get_movie` call's `.collection`
-/// field — a movie belongs to at most one TMDB collection, so any one
-/// member is as good a source as any; not worth iterating every member),
-/// fetches the full TMDB collection membership, and shows whatever isn't
-/// already owned anywhere in the local library. `resolve_and_fetch_discovery_row`'s
-/// own "not owned anywhere" filter already covers "not a member of THIS
-/// boxset specifically" for free, since every boxset member is by
-/// definition a local item — no separate boxset-membership diff needed.
-/// Independent task, same reasoning as `person.rs::spawn_other_work` — this
-/// row's resolution can fail outright (no TMDB collection at all, e.g. a
-/// user-curated folder that isn't a real franchise) or take an extra
-/// network round trip, and shouldn't hold up the main grid from showing.
+/// "Missing From This Collection" row: resolve the BoxSet's TMDB collection id (its own
+/// ProviderIds, else a member movie's TMDB id + get_movie's `.collection` — a movie is in at
+/// most one collection), fetch the TMDB collection and show what isn't in the library
+/// (resolve_and_fetch_discovery_row's "not owned anywhere" filter covers boxset membership
+/// too). Its own task, like person.rs's spawn_other_work: resolution can fail (not a real
+/// franchise) or take a round trip, and must not hold up the grid.
 ///
-/// `revalidate_handle`: real bug fixed 2026-08-02, live-reported ("why did
-/// they not update when i was in it?") — a first-time resolution failure
-/// often just means `boxset_items_cache`/`item_detail_cache` haven't been
-/// revalidated yet (e.g. the cached BoxSet member items still show no
-/// `ProviderIds`, before Jellyfin/the cache had a chance to catch up). The
-/// SAME screen open, on a cache hit, already kicks off `spawn_collection_-
-/// revalidate` in parallel to refresh exactly those two caches — but the two
-/// tasks were entirely independent, so the row just silently stayed empty
-/// until the user reopened the screen a second time and got a fresh
-/// resolution attempt against by-then-fresher data. If a revalidate is
-/// genuinely in flight for this exact open, awaiting its `JoinHandle` here
-/// and retrying once reuses ITS fetch (already written into the caches this
-/// function reads) instead of firing a redundant one of its own.
+/// `revalidate_handle`: a first failure often just means the cached members lack ProviderIds
+/// yet; if this open's spawn_collection_revalidate is in flight, await it and retry once on
+/// the fresher caches (instead of staying empty until the next open).
 fn spawn_missing_items(
     id: String,
     state: Arc<Mutex<FjordState>>,
@@ -415,11 +364,8 @@ fn spawn_missing_items(
     });
 }
 
-/// One resolution attempt (free `ProviderIds` path, then the multi-member
-/// fallback loop) — extracted from `spawn_missing_items` 2026-08-02 so it
-/// can be called twice: once immediately against whatever's cached right
-/// now, and once more after an in-flight revalidate finishes, without
-/// duplicating the whole resolution logic inline at both call sites.
+/// One resolution attempt (ProviderIds, then the member fallback), callable twice: now, and
+/// after an in-flight revalidate.
 async fn resolve_missing_items_collection_id(
     id: &str,
     client: &Arc<fjord_api::JellyfinClient>,
@@ -506,19 +452,11 @@ async fn resolve_missing_items_collection_id(
     collection_id
 }
 
-/// Bulk-blocklists every part of this BoxSet's TMDB collection at once
-/// (`POST /blocklist/collection/{id}`, resolved server-side from just the
-/// id) — the confirm dialog's own Confirm action. Reuses
-/// `resolve_missing_items_collection_id` for the same free-`ProviderIds`-
-/// then-member-movie-fallback resolution the Missing Items row already
-/// does; no separate revalidate-and-retry here (unlike `spawn_missing_items`)
-/// since this is a deliberate, infrequent user action, not an ambient
-/// screen-open fetch — a failed resolution just toasts and the user can
-/// retry after the screen's own background revalidate catches up, same as
-/// it would for Missing Items. On success, re-invokes `spawn_missing_items`
-/// (not a hand-patch of individual member cards) so the row reflects
-/// whatever Seerr's own bulk-exclusion semantics actually did server-side,
-/// rather than Fjord guessing at them. 2026-08-06, Seerr Blocklist support.
+/// Blocklists every part of this BoxSet's TMDB collection (`POST /blocklist/collection/{id}`,
+/// resolved server-side) — the confirm dialog's Confirm. Same resolution as the Missing
+/// Items row, without the revalidate retry (a deliberate action: a failure toasts, the user
+/// can retry). On success re-runs spawn_missing_items so the row shows what Seerr actually
+/// excluded.
 pub(crate) fn resolve_and_blocklist_collection(
     id: String,
     state: Arc<Mutex<FjordState>>,
@@ -567,10 +505,8 @@ pub(crate) fn resolve_and_blocklist_collection(
 pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
     use crate::keys::Action;
 
-    // ── Blocklist-collection confirm dialog (2026-08-06, Seerr Blocklist
-    // support) — checked first, same as every other overlay-on-top-of-a-
-    // screen precedent in this app (skip-segment overlays, Up Next banner):
-    // while it's open, nothing else on this screen should react to input.
+    // ── Blocklist-collection confirm dialog — checked first: while it's open nothing else on
+    // this screen reacts to input.
     if g.get_collection_blocklist_confirm_open() {
         return match action {
             Action::Left => {
@@ -617,12 +553,8 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
     // ── ♥/✓/⛔ button row focused ───────────────────────────────────────────────
     let btn = g.get_collection_btn_focused();
     if btn >= 0 {
-        // 3rd button (⛔ Blocklist Collection) only actually renders when
-        // seerr-can-manage-blocklist is true (collection.slint's own `if`
-        // gate) — capping at 1 instead of 2 when it's false keeps keyboard
-        // focus from landing on a button that isn't there, the exact
-        // focus/visibility mismatch this codebase has been bitten by
-        // before elsewhere. 2026-08-06, Seerr Blocklist support.
+        // The 3rd button (⛔ Blocklist Collection) only renders with seerr-can-manage-blocklist
+        // (collection.slint's `if`), so cap focus at 1 without it.
         let max_btn = if g.get_seerr_can_manage_blocklist() {
             2
         } else {
@@ -820,7 +752,8 @@ pub(crate) fn wire_collection(
 }
 
 // ── wire_collection_toggles (moved from main(), 0.5.0 step 3) ────────────
-/// Wires collection favourite / played / blocklist confirm: toggle_collection_fav, toggle_collection_played, collection_blocklist_confirm.
+/// Wires collection favourite / played / blocklist confirm: toggle_collection_fav,
+/// toggle_collection_played, collection_blocklist_confirm.
 pub(crate) fn wire_collection_toggles(
     window: &crate::MainWindow,
     state: &std::sync::Arc<std::sync::Mutex<crate::config::FjordState>>,
@@ -922,10 +855,8 @@ pub(crate) fn wire_collection_toggles(
             });
         });
     }
-    // Collection bulk blocklist (2026-08-06, Seerr Blocklist support) —
-    // the confirm dialog's own Confirm button, not the ⛔ button itself
-    // (which just opens the dialog, a pure Slint-side state flip with no
-    // Rust callback needed).
+    // Collection bulk blocklist — the confirm dialog's Confirm (the ⛔ button only opens the
+    // dialog, Slint-side).
     {
         let state2 = Arc::clone(&state);
         let ww2 = window.as_weak();
