@@ -1,55 +1,32 @@
 // ── fjord-app · home.rs ──────────────────────────────────────────────────────
-//   HomeSection     named enum for the 17 poster-loading sections (replaces raw usize)
-//   HomeData        continue-watching, next-up, recently-added, collections + music rows + favorites
-//   profile_cache_dir/cache_path  XDG_CACHE_HOME resolver: ~/.cache/fjord/profiles/<user_id>/<filename>;
-//                   None (nothing read/written) unless user_id passes config::safe_cache_name
-//                   (Bonfire Phase 1, 2026-08-09 — every cache below takes an explicit user_id,
-//                   never resolved internally, so an async gap between fetch and save can't
-//                   attribute one profile's data to another's cache file)
-//   load_cache<T>   read + deserialize a JSON cache file
-//   save_cache<T>   serialize + write a JSON cache file
-//   home cache      load_home_cache, save_home_cache (JSON at ~/.cache/fjord/profiles/<user_id>/home.json)
-//   library caches  load/save_movies_cache, load/save_series_cache, load/save_collections_cache, load/save_artists_cache, load/save_albums_cache, load/save_playlists_cache
-//   fetch_home_data async: fetch all home rows in parallel; Recently Added rows use
-//                   /Items/Latest (grouped, played incl.) — same as the Jellyfin web home.
-//                   include_not_watched (2026-08-14, "what makes login slow" — real timing
-//                   evidence found not_watched_tv alone taking 4x longer than every other
-//                   branch, a Jellyfin-side SortBy=Random + recursive per-episode cost, not a
-//                   client bug): false skips both Not Watched rows entirely (auth.rs's
-//                   finish_session_setup — see its own call site — fetches them separately via
-//                   spawn_not_watched_rows so login isn't gated on them); every other caller
-//                   (ws.rs delta-sync, playback.rs stop/natural-end refresh, main.rs auto-login
-//                   background refresh) passes true, unchanged
-//   push_home_data  write HomeData into AppState global (called from UI thread); takes a
-//                   `watchlist: &HashSet<String>` param (2026-07-20 — a genuinely fresh build
-//                   with no prior CardItem row to carry an existing on_watchlist forward from,
-//                   unlike refresh_row_preserving_posters below, so the caller's
-//                   FjordState.jellyfin_watchlist_ids snapshot has to be passed in explicitly)
-//   push_home_data_preserving_posters  same writes as push_home_data, but merges each row via
-//   refresh_row_preserving_posters     refresh_row_preserving_posters — merges fresh MediaItems
-//                   against the old model (preserving already-decoded posters by id), then
-//                   delegates the actual apply to crate::apply_cards_preserving_identity (Phase 96
-//                   — shared with poster.rs/movies.rs/context_menu.rs) so unchanged rows mutate in
-//                   place instead of destroying/recreating card elements (which would re-trigger
-//                   FadeInTrigger's fade-in for no reason). Used by ws.rs's delta-sync task and
-//                   (directly, per-row) by main.rs's spawn_auto_login startup refresh +
-//                   spawn_library_fetch's first-open-this-session refresh. Also now carries
-//                   on_watchlist forward from the old row (2026-07-20, same real-bug fix as
-//                   movies.rs::push_library_cards's own poster-preservation idiom) — no
-//                   signature change needed here, since it already has an old-row map to
-//                   carry forward from, unlike push_home_data
-//   home_data_sections  split HomeData into [(HomeSection, Vec<MediaItem>); 17]
-//   refresh_favorites   re-fetch Movie/Series/MusicAlbum favorites and update AppState + posters
-//   wire_nw_timer   30 s timer: refresh Not Watched rows when idle + tab visible; a non-401
-//                   fetch failure now logs a warn! instead of silently swallowing it, and no
-//                   longer short-circuits the independent TV fetch when the movies fetch fails
-//                   (the old bare `Err(_) => return` exited the whole async block, skipping
-//                   `if due_tv` entirely) — 2026-08-28 logging audit
-//   fetch_movie_collections  background: build movie_id → (boxset_id, boxset_name) map
-//   run_poster_cache_cleanup  delete orphaned files from posters/ + backdrops/ (24 h guard;
-//                   known-ID set = six flat library lists + detail_ids, which carries
-//                   item_detail_cache keys + credited person ids so cast portraits survive)
-//   wire_item_play         callbacks moved from main() (0.5.0 step 3): play from home / library rows
+//   HomeSection     named enum for the 17 poster-loading sections
+//   HomeData        continue-watching, next-up, recently-added, collections + music rows +
+//                   favorites
+//   profile_cache_dir/cache_path  ~/.cache/fjord/profiles/<user_id>/<filename>; None (nothing
+//                   read/written) unless user_id passes config::safe_cache_name; user_id is always
+//                   passed in, never resolved here
+//   load_cache<T> / save_cache<T>  JSON cache file read / write
+//   home cache      load_home_cache, save_home_cache (home.json)
+//   library caches  load/save_movies_cache, _series_cache, _collections_cache, _artists_cache,
+//                   _albums_cache, _playlists_cache
+//   fetch_home_data async: every home row in parallel (Recently Added via /Items/Latest — grouped,
+//                   played included, like the web home); include_not_watched = false skips the slow
+//                   Not Watched rows (only finish_session_setup's login join; auth.rs's
+//                   spawn_not_watched_rows fetches them afterwards)
+//   push_home_data  HomeData → AppState (UI thread); takes the watchlist id snapshot (a fresh build
+//                   has no old row to carry on_watchlist from)
+//   push_home_data_preserving_posters / refresh_row_preserving_posters  merge fresh items against
+//                   the old model (posters and on_watchlist kept by id), applied through
+//                   apply_cards_preserving_identity — used by ws.rs's delta sync, the auto-login
+//                   refresh and spawn_library_fetch
+//   home_data_sections  HomeData → [(HomeSection, Vec<MediaItem>); 17]
+//   refresh_favorites   re-fetch the favorites rows after a toggle (posters preserved)
+//   wire_nw_timer   30 s timer: refresh the Not Watched rows when idle + tab visible; failures are
+//                   logged, and a movies failure doesn't skip the TV fetch
+//   fetch_movie_collections  background: movie_id → (boxset_id, boxset_name) map
+//   run_poster_cache_cleanup  delete orphaned posters/ + backdrops/ files (24 h guard; known ids =
+//                   the six library lists + detail cache keys + credited person ids)
+//   wire_item_play  callbacks moved from main() (0.5.0 step 3): play from home / library rows
 // ─────────────────────────────────────────────────────────────────────────────
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -134,19 +111,11 @@ pub(crate) struct HomeData {
     pub playlists: Vec<MediaItem>,
 }
 
-// Bonfire Phase 1 (cache namespacing, 2026-08-09): every on-disk cache below
-// is scoped under the OWNING profile's Jellyfin user_id (a GUID — safe to
-// use directly as a path segment, no sanitization needed) so a second
-// profile signing in on the same install doesn't briefly see the first
-// profile's library/watch-state at warm start. Poster/backdrop caches stay
-// shared (server-global artwork, not per-user). `user_id` is always an
-// explicit parameter, never resolved internally from "whatever's active
-// right now" — the data being saved was usually fetched under a specific
-// profile's session well before the save call runs (an async gap a profile
-// switch could cross), so the caller must capture user_id at the same point
-// it captured the client/fetch, not re-derive it at save time.
-// None when user_id isn't a valid cache name (config::safe_cache_name) —
-// nothing is then read or written.
+// Every on-disk cache below is scoped under the OWNING profile's Jellyfin user_id, so a
+// second profile never sees the first one's library/watch state at warm start (posters and
+// backdrops stay shared). `user_id` is always passed in, captured with the client/fetch —
+// never re-derived at save time (a profile switch can happen in between). None when user_id
+// isn't a valid cache name (config::safe_cache_name): nothing is read or written.
 fn profile_cache_dir(user_id: &str) -> Option<PathBuf> {
     Some(
         xdg_cache_base()
@@ -249,31 +218,12 @@ pub(crate) fn save_playlists_cache(user_id: &str, items: &[MediaItem]) {
     save_cache(playlists_cache_path(user_id), items)
 }
 
-/// `include_not_watched`: the Not Watched Movies/TV rows are the one real,
-/// evidence-based finding from adding per-branch timing (2026-08-14, "what
-/// makes login slow") — a real login logged `not_watched_tv took 4.103s`
-/// against every other branch finishing in 1-2.7s. Jellyfin's own
-/// SortBy=Random combined with a recursive per-episode "is this series
-/// unplayed" filter is genuinely expensive server-side (confirmed by the
-/// much cheaper Movie-typed equivalent, `not_watched_movies`, finishing in
-/// line with everything else that same run) — not a client bug to fix by
-/// reformulating the request. What IS a real, fixable client-side choice:
-/// neither Not Watched row is shown on the Home dashboard at all (only
-/// Movies/TV, per this file's own `HomeSection` doc) — there's no reason
-/// the very first thing the user sees after logging in should be gated on
-/// a query for a dashboard they haven't even opened yet. `false` only for
-/// `finish_session_setup`'s own login-blocking join (`auth.rs`) — every
-/// other caller (WS delta-sync, playback-stop/natural-end refresh,
-/// auto-login's background refresh) passes `true`, unchanged. With `true`
-/// the not-watched pair runs as its own `tokio::join!` right after the
-/// main 12-branch one, not concurrently with it — a real, deliberate,
-/// accepted trade-off: every `true` caller is already a background refresh
-/// nobody is watching a spinner for (auto-login's own refresh runs AFTER
-/// cached data is already shown), so a couple of extra seconds there is
-/// fine in exchange for not duplicating the whole 12-branch join a second
-/// time just to keep one pair of branches inside it. See `auth.rs`'s own
-/// `finish_session_setup` for how the `false` case eventually gets these
-/// two rows anyway, just without blocking login on them.
+/// `include_not_watched`: the Not Watched Movies/TV rows are the slowest queries (Jellyfin's
+/// SortBy=Random + recursive unplayed filter for series takes seconds server-side) and only
+/// appear on the Movies/TV dashboards, so login doesn't wait for them: `false` only for
+/// finish_session_setup's login join (auth.rs fetches them afterwards). With `true` (WS delta,
+/// playback stop, auto-login refresh — all background) the pair runs as its own join right
+/// after the main 12-branch one.
 pub(crate) async fn fetch_home_data(
     client: &JellyfinClient,
     include_not_watched: bool,
@@ -366,10 +316,8 @@ pub(crate) async fn fetch_home_data(
     }
 }
 
-/// `watchlist` (the caller's `FjordState.jellyfin_watchlist_ids` snapshot) is
-/// only genuinely needed here — this is a wholesale fresh build with no
-/// prior CardItem row to carry an existing `on_watchlist` forward from,
-/// unlike `refresh_row_preserving_posters`'s own merge path (2026-07-20).
+/// `watchlist` (FjordState.jellyfin_watchlist_ids snapshot): a fresh build has no previous
+/// row to carry on_watchlist from (unlike refresh_row_preserving_posters).
 pub(crate) fn push_home_data(
     window: &MainWindow,
     hd: &HomeData,
@@ -410,14 +358,9 @@ pub(crate) fn push_home_data(
     g.set_music_playlists(crate::items_to_model(&hd.playlists, watchlist));
 }
 
-// Merge fresh server data into a home-row model while preserving already-decoded
-// posters for rows that persist across the refresh (matched by id) — same idea as
-// context_menu::upsert_cards_in_model, but rebuilt strictly from `fresh` so removed
-// rows disappear too (matching push_home_data's exact membership) rather than
-// upserting on top of the old rows, which would never remove anything. The actual
-// apply — mutate in place when nothing structurally changed, else rebuild — is
-// delegated to apply_cards_preserving_identity (Phase 96) so this function only
-// owns the poster-preserving merge, which is specific to it.
+// Merge fresh server data into a home-row model, keeping already-decoded posters for rows
+// that persist (by id). Rebuilt strictly from `fresh`, so removed rows disappear (an upsert
+// would never remove). The apply itself is apply_cards_preserving_identity.
 pub(crate) fn refresh_row_preserving_posters(
     old: &ModelRc<CardItem>,
     fresh: &[MediaItem],
@@ -429,14 +372,8 @@ pub(crate) fn refresh_row_preserving_posters(
     let rows: Vec<CardItem> = fresh
         .iter()
         .map(|item| {
-            // No FjordState access here (this is a pure merge fn, no state
-            // param) — item_to_card_item's own watchlist lookup always misses,
-            // same as a brand-new card. Carried forward from `old` immediately
-            // below instead, same idiom as the poster preservation right after
-            // it: whatever was already correctly patched onto this row (by
-            // resync_jellyfin_watchlist_stars or a toggle) survives the merge,
-            // real bug fixed 2026-07-20 — see FjordState.jellyfin_watchlist_ids'
-            // own doc comment for why a live patch alone isn't enough.
+            // No state here, so item_to_card_item's watchlist lookup misses; on_watchlist is
+            // carried over from `old` like the poster (see FjordState.jellyfin_watchlist_ids).
             let mut card = crate::item_to_card_item(item, &std::collections::HashSet::new());
             if let Some(existing) = old_by_id.get(&item.id) {
                 if existing.has_poster {
@@ -591,10 +528,9 @@ pub(crate) fn home_data_sections(hd: &HomeData) -> [(HomeSection, Vec<MediaItem>
     ]
 }
 
-/// Re-fetch Movie/Series/MusicAlbum favorites from the server and update the three favorites rows
-/// in AppState. Called after any successful favourite toggle so the rows update immediately
-/// without waiting for the next full home refresh or app restart. Uses
-/// refresh_row_preserving_posters (Phase 96) so rows already showing a poster elsewhere don't flash.
+/// Re-fetch Movie/Series/MusicAlbum favorites and update the three favorites rows — after
+/// every favourite toggle, so they update at once. Posters preserved
+/// (refresh_row_preserving_posters).
 pub(crate) fn refresh_favorites(
     client: Arc<JellyfinClient>,
     ww: slint::Weak<MainWindow>,
@@ -713,22 +649,8 @@ pub(crate) fn wire_nw_timer(
                             return;
                         }
                         Err(e) => {
-                            // 2026-08-28 logging audit — two real bugs, not
-                            // just a missing log. (1) This branch was a bare
-                            // `Err(_) => return` — silently swallowing any
-                            // non-401 error (a transient network blip, a
-                            // server 500) with zero trace, on a timer that
-                            // runs continuously every 30s for the whole
-                            // session; "the Not Watched row hasn't refreshed
-                            // in a while" would have been undiagnosable from
-                            // the log. (2) That bare `return` exits this
-                            // WHOLE async block, not just the movies branch —
-                            // since `if due_tv {...}` runs afterward in the
-                            // SAME block, a movies-fetch failure silently
-                            // skipped the completely independent TV fetch too,
-                            // even when due_tv was also true. Fixed by only
-                            // logging here and letting the function fall
-                            // through — no early return.
+                            // Log and fall through — no early return, which would also skip the
+                            // independent TV fetch below (this runs every 30 s).
                             warn!("get_unwatched (movies) failed: {e:#}");
                         }
                         Ok(items) => {
@@ -854,16 +776,12 @@ fn read_last_cleanup() -> Option<u64> {
         .ok()
 }
 
-/// Delete orphaned files from `posters/` and `backdrops/` cache directories.
-/// A file is orphaned when its name (= item ID) is not in the current library.
-/// `detail_ids` carries item_detail_cache keys + every cached item's credited
-/// person ids — cast portraits are cached under person ids, which the six flat
-/// library lists never contain, so without this every 24h sweep deleted the
-/// portraits the image prewarm (Phase 104) and cast-row browsing had cached.
-/// Skips the run if the combined library ID set is empty (network error /
-/// first run — `detail_ids` alone doesn't count, it can be non-empty from the
-/// persisted screen-cache file even when the library fetch failed) or if
-/// cleanup ran within the last 24 h.
+/// Delete orphaned files from the `posters/` and `backdrops/` caches (name = item id not in
+/// the library). `detail_ids` = item_detail_cache keys + every cached item's credited person
+/// ids — cast portraits are cached under person ids, which the flat library lists never
+/// contain. Skipped when the library id set is empty (network error / first run;
+/// `detail_ids` alone doesn't count — it can come from the persisted screen cache) or when it
+/// ran within 24 h.
 pub(crate) async fn run_poster_cache_cleanup(
     movie_ids: Vec<String>,
     series_ids: Vec<String>,
