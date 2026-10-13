@@ -1,15 +1,11 @@
 // ── fjord-app · season.slint ──────────────────────────────────────────────────
-//   SeasonScreen  scrollable page: backdrop · poster/title/meta/overview ·
-//                 episode SectionRow (reuses AppState.series-episode-cards) ·
-//                 CastRow (season-specific people)
-//   Keyboard scroll: kb-y property on fl; cast-anchor tracks cast section Y.
-//   Episodes reuse series-episode-cards from AppState (already loaded for the
-//   selected season); season-focused-ep tracks focus independently.
-//   Title column is a plain Rectangle fixed at height:195px, width: root.width - 254px
-//   (NOT parent.width — compile-time binding loop, see the Slint gotchas section)
-//   (matching this screen's own 130x195 poster) with the ♥/✓ row pinned via explicit
-//   y: parent.height - 38px (2026-07-18, three-attempt fix — see detail.slint's
-//   identical structure, confirmed live-working there, for the full story).
+//   SeasonScreen  scrollable page: backdrop · poster/title/meta/overview · episode SectionRow
+//                 (reuses AppState.series-episode-cards, already loaded for the selected season;
+//                 season-focused-ep tracks its own focus) · CastRow (season-specific people).
+//                 Keyboard scroll: kb-y on fl; cast-anchor tracks the cast section's y.
+//                 Title column: a plain Rectangle fixed at the poster's 195px, width from
+//                 root.width (not parent.width — binding loop), ♥/✓ pinned at
+//                 y = parent.height - 38px.
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme, CardItem } from "theme.slint";
 import { AppState } from "app_state.slint";
@@ -87,35 +83,13 @@ export component SeasonScreen inherits Rectangle {
                             }
                         }
 
-                        // Deterministic fixed-position fix (2026-07-18, replaces
-                    // an earlier height:195px+spacer version that didn't
-                    // reliably hold up live — see detail.slint's identical
-                    // fix for the full "why"). Plain Rectangle fixed at
-                    // 195px matching this screen's own 130x195 poster (not
-                    // 240px — that's PosterBlock's size, used on Detail/
-                    // Collection/RequestDetail, not here). Title/meta sit
-                    // at its top in their own VerticalLayout, the ♥/✓ row
-                    // is pinned via explicit `y: parent.height - 38px`
-                    // (IconCircleButton is a hard-coded 38px in
-                    // widgets.slint) — neither child's position depends on
-                    // the other's size.
+                        // Plain Rectangle fixed at 195px (this screen's 130×195 poster, not PosterBlock's 240):
+                        // title/meta at the top, the ♥/✓ row pinned at `y: parent.height - 38px` (IconCircleButton
+                        // is 38px) — neither depends on the other's size (same fix as detail.slint).
                     Rectangle {
                             height: 195px;
-                        // Explicit computed width off root.width — see
-                        // detail.slint's identical fix for the full three-
-                        // attempt "why" (horizontal-stretch:1 confirmed live
-                        // not to work on a plain Rectangle; parent.width
-                        // caused a genuine compile-time binding loop, since
-                        // a HorizontalLayout's own width can't depend on a
-                        // child reading it back). This screen's Rectangle
-                        // had inherited horizontal-stretch:1 from the
-                        // VerticalLayout it replaced and had the same latent
-                        // bug, just not yet live-tested/reported. root.width
-                        // minus the HorizontalLayout's own padding-left/
-                        // padding-right (48+48), this screen's own 130px
-                        // poster, and the 28px spacing between them
-                        // (season.slint uses 28px here, not the 32px
-                        // Detail/Collection/RequestDetail use).
+                        // Width from root.width (see detail.slint): minus the padding (48+48), the 130px poster and
+                        // this screen's 28px spacing.
                         width: root.width - 48px - 48px - 130px - 28px;
 
                             VerticalLayout {
