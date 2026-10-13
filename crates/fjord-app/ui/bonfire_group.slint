@@ -1,51 +1,19 @@
 // ── fjord-app · bonfire_group.slint ──────────────────────────────────────────
-//   GroupToggleRow      file-local — labeled ToggleSwitch row, kbd-focused
-//                       ring + PressPulse, shared by the owner/member bodies
-//   GroupMemberRow      file-local — one owned member (username + Kick button)
-//   BonfireGroupScreen  Bonfire Phase 5 (cross-household groups, 2026-08-09;
-//                       restructured 2026-08-29 — see below) — reached from
-//                       Settings → Profiles → "Bonfire Group" (master accounts
-//                       only, same settings-is-master-profile gate as Manage
-//                       Profiles — now correctly true while impersonating a
-//                       foreign group account too, see profile.rs::is_true_master).
-//                       Same overlay-card shell convention as ManageProfilesScreen.
-//                       Body is TWO INDEPENDENT, always-rendered sections —
-//                       hosting (AppState.bonfire-group-is-owner) and joining
-//                       (AppState.bonfire-group-is-member) — not 3 mutually
-//                       exclusive states as originally shipped; a real
-//                       screenshot of Bonfire's own official "Who's Watching?"
-//                       web UI showed both a "Your Hosted Bonfire" section
-//                       AND a "Join a Bonfire" section together,
-//                       unconditionally, confirming an account can genuinely
-//                       host its own group AND be a member of a different
-//                       one at the same time. Hosting: !is-owner shows a
-//                       "Generate Join Code" button; is-owner shows the code
-//                       display + member list (per-row Kick) + Delete Group.
-//                       Join: !is-member shows the join-code entry field +
-//                       Join button; is-member shows "Joined X's group" +
-//                       Leave Group. A single shared copy of the 3 group
-//                       settings toggles (hide-my/-others-sub-profiles,
-//                       allow-lan-bypass) sits below both sections,
-//                       regardless of state — the underlying API call is a
-//                       plain per-account POST, not scoped to one
-//                       relationship. D-pad zones resolved live via
-//                       profile.rs::existing_bonfire_group_zones — the zone
-//                       COUNT varies with (is-owner, is-member, member
-//                       count), so this is NOT a fixed enum (see that
-//                       function's own doc comment for the exact host/join/
-//                       toggle zone-base formula this screen's own matching
-//                       host-count/join-base/toggle-base properties mirror).
-//                       Join-code entry is a hand-drawn field + the shared
-//                       (caret drawn while focused, bonfire-group-join-code-cursor — text_field.rs, 2026-10-05)
-//                       on-screen QwertyKeyboard (Bonfire codes are
-//                       alphanumeric — the numeric VirtualKeyboard doesn't
-//                       apply), same shape as Discover/Browse search (see
-//                       discover.slint's own header comment for the general
-//                       pattern). Keyboard dispatch lives in keys.rs's own
-//                       show_bonfire_group raw-key tier, including the 4
-//                       ConfirmDialog gates (Kick/Leave/Delete Group/
-//                       LAN-bypass-warning) — this screen itself is
-//                       keyboard-dumb like every other ConfirmDialog consumer.
+//   GroupToggleRow      labeled ToggleSwitch row (focus ring + PressPulse)
+//   GroupMemberRow      one owned member (username + Kick)
+//   BonfireGroupScreen  Bonfire cross-household groups, from Settings → Profiles → "Bonfire Group"
+//                       (master accounts — profile::is_true_master); overlay card like
+//                       ManageProfilesScreen. Two independent sections, always shown: hosting
+//                       (bonfire-group-is-owner — "Generate Join Code", or the code + member list
+//                       with Kick + Delete Group) and joining (bonfire-group-is-member — code entry +
+//                       Join, or "Joined X's group" + Leave). The 3 group toggles (hide my/others'
+//                       sub-profiles, allow LAN bypass) sit below both (a per-account setting).
+//                       D-pad zones vary with owner/member/member count: host-count/join-base/
+//                       toggle-base mirror profile.rs's existing_bonfire_group_zones. The join code
+//                       is a hand-drawn field (caret at bonfire-group-join-code-cursor) with the
+//                       alphanumeric on-screen keyboard. Keys, incl. the 4 ConfirmDialogs (Kick/
+//                       Leave/Delete Group/LAN-bypass warning): keys/overlays.rs's
+//                       handle_bonfire_group_keys.
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme, BonfireGroupMemberTile } from "theme.slint";
 import { AppState } from "app_state.slint";
@@ -76,14 +44,8 @@ component GroupToggleRow inherits Rectangle {
         active: root.kbd-focused;
     }
 
-    // Real bug, live-reported 2026-08-29: the label and ToggleSwitch never
-    // lined up. Same shape (and same fix) as ProfileEditScreen's own
-    // "Skip PIN on this network" row (see that file's own lan-bypass-row
-    // doc comment) — a bare HorizontalLayout with no explicit padding-top/
-    // -bottom doesn't reliably vertically-center children whose preferred
-    // heights differ (a single-line Text vs. ToggleSwitch's fixed 28px),
-    // rather than an ambiguous Layout cross-axis default. Explicit y
-    // positioning for each child sidesteps that entirely.
+    // Explicit y for the label and the ToggleSwitch: a HorizontalLayout didn't vertically
+    // center children of different heights (same fix as ProfileEditScreen's lan-bypass-row).
     Text {
         x: 12px;
         y: (parent.height - self.height) / 2;
@@ -205,16 +167,9 @@ export component BonfireGroupScreen inherits Rectangle {
                     font-size: 13px;
                 }
 
-                // Restructured 2026-08-29 from 3 mutually-exclusive states
-                // to 2 independent, always-rendered sections (hosting +
-                // join), once a real screenshot of Bonfire's own official
-                // "Who's Watching?" UI confirmed an account can genuinely
-                // be an owner AND a member of a different group at the same
-                // time. Zone-base bookkeeping mirrors
-                // profile.rs::existing_bonfire_group_zones/keys.rs's own
-                // formula byte-for-byte — no shared source of truth between
-                // the three, same caveat this app already carries for a
-                // few other Rust/Slint dual-side D-pad zone schemes.
+                // Two independent sections, always shown — hosting and joining — since an account can host
+                // its own group AND be a member of another. The zone bases mirror
+                // profile.rs's existing_bonfire_group_zones (and keys.rs) by hand.
                 if !AppState.bonfire-group-loading: VerticalLayout {
                     spacing: Theme.sp-lg;
                     property <int> n-members: AppState.bonfire-group-owned-members.length;
@@ -480,10 +435,8 @@ export component BonfireGroupScreen inherits Rectangle {
         }
     }
 
-    // Kick / Leave / Delete Group / LAN-bypass-warning — all reuse
-    // ConfirmDialog, same "screen owns Left/Right/Confirm/Back, dialog
-    // itself is keyboard-dumb" shape as ProfileEditScreen's own delete
-    // confirm; keys.rs's show-bonfire-group tier dispatches all 4.
+    // Kick / Leave / Delete Group / LAN-bypass warning — ConfirmDialogs; their keys are handled
+    // by keys/overlays.rs's handle_bonfire_group_keys (ConfirmDialog has none).
     if AppState.show-bonfire-kick-confirm: ConfirmDialog {
         title: "Remove Member?";
         message: "Remove " + AppState.bonfire-kick-target-name + " from your Bonfire group?";
