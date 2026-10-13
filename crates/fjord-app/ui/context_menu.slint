@@ -1,49 +1,22 @@
 // ── fjord-app · context_menu.slint ───────────────────────────────────────────
-//   DiscoverMenuRow  file-local reusable row (icon+label, focus ring, press-pulse — same
-//                    chrome as the 8 Jellyfin rows below, extracted since the Discover
-//                    row family below has 5 near-identical rows); row-index picks which
-//                    context-menu-focused value activates it; activated() callback
-//   ContextMenu      overlay, entirely different row family depending on
-//                    context-menu-item-type (is-discover-item): Jellyfin cards get the
-//                    original 8-row set (Resume if resume-pct>0, Play from Start, Play
-//                    Next, Add to Queue, Mark Played/Unplayed, Favourite/Unfavourite,
-//                    View Details, Add to Playlist row 7 Audio/MusicAlbum only) PLUS a 9th,
-//                    Watchlist row 8 (2026-07-19, real gap live-reported — "you cant add
-//                    anyting from the library to the watchlist": an already-in-library
-//                    item redirects straight to THIS menu family, which never had a
-//                    Watchlist row before), gated on a resolvable TMDB provider id
-//                    (Movie/Series only, resolved by context_menu.rs::
-//                    resolve_tmdb_for_jellyfin_item) AND seerr-connected — reuses
-//                    discover_toggle_watchlist (discover.rs) verbatim, the identical
-//                    function the Discover-card menu's own Watchlist row calls; Discover
-//                    cards (search grid/6 landing rows, 2026-07-18) get View Details(0),
-//                    Request(1, not yet requested) OR Edit Request(1, requested+(mine||
-//                    admin) — the two never coexist so share an index), Cancel Request(2,
-//                    requested+(admin||(mine&&pending))), Approve(3)/Decline(4, requested+
-//                    admin) — mirrors Seerr's real per-endpoint permission checks, not a
-//                    blanket "pending" gate (PUT/approve/decline need no pending status,
-//                    only a non-admin's own DELETE does), Watchlist toggle(6, 2026-07-18,
-//                    always visible — unlike Request/Edit/Cancel/Approve/Decline this isn't
-//                    gated on request state at all) — fixed index scheme,
-//                    existing_discover_menu_rows() in context_menu.rs resolves which
-//                    indices exist for Up/Down looping, same "gaps are fine" idiom the
-//                    Jellyfin row 0 (Resume) already uses. **These 4 `if` conditions must
-//                    stay in lockstep with existing_discover_menu_rows()'s own logic by
-//                    hand — real bug, live-reported 2026-07-18: the Rust-side row-index
-//                    resolver was fixed to the real permission model but this file's own
-//                    separately-written conditions were never touched in that pass, so
-//                    keyboard Up/Down could reach a row (e.g. Cancel Request, via the
-//                    Rust-only index list) that never actually rendered — the menu looked
-//                    unchanged while the underlying focus silently pointed at nothing.**
-//                    Blocklist toggle(7, 2026-08-06, Seerr Blocklist support) — gated on
-//                    seerr-can-manage-blocklist (a genuinely separate permission from
-//                    admin/MANAGE_REQUESTS) AND the item being untouched or already
-//                    blocklisted, mirroring Seerr's own real UI gate; same lockstep-by-hand
-//                    warning as rows 0-6 above applies to this 5th `if` condition too.
-//                    triggered by C key or right-click on any card
-//                    keyboard: Up/Down loop; Enter confirms; Esc closes
-//   PlaylistPicker  add-to-playlist modal: + New playlist… (name input) + playlist list;
-//                   cursor 0 = new row, 1..N = items; keyboard in keys.rs handle_playlist_picker
+//   DiscoverMenuRow  reusable row for the Discover family (icon + label, focus ring, press
+//                    pulse); row-index = the context-menu-focused value that activates it
+//   ContextMenu      overlay (C key or right-click on a card); the row family depends on
+//                    context-menu-item-type (is-discover-item). Row indices are fixed with gaps;
+//                    the Rust lists of existing rows must match these `if` conditions by hand.
+//                    Jellyfin: 0 Resume (resume-pct > 0), 1 Play from Start, 2 Play Next, 3 Add
+//                    to Queue, 4 Mark Played/Unplayed, 5 Favourite, 6 View Details, 7 Add to
+//                    Playlist (Audio/MusicAlbum), 8 Watchlist (resolvable TMDB id + Seerr); a
+//                    Season shows 4/5/6 only (existing_jellyfin_menu_rows).
+//                    Discover: 0 View Details, 5 View Request (a request exists — second in
+//                    traversal), 1 Request / Edit Request (mine or admin), 2 Cancel (admin, or
+//                    mine + pending), 3 Approve / 4 Decline (admin), 6 Watchlist (always),
+//                    7 Blocklist (manage-blocklist permission; untouched or blocklisted) —
+//                    Seerr's real per-endpoint permissions (existing_discover_menu_rows).
+//                    Keyboard: Up/Down loop, Enter confirms, Esc closes.
+//   PlaylistPicker   add-to-playlist modal: row 0 "+ New playlist…" (turns into a name input),
+//                    then the audio playlists (cursor 1..N = items[cursor-1]); keyboard in
+//                    keys.rs's handle_playlist_picker; on-screen keyboard docked below it
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
@@ -191,10 +164,8 @@ export component ContextMenu inherits Rectangle {
                     }
                 }
 
-                // Row 1 — Play from Start (not applicable to a Season — no
-            // /Videos/{id}/stream for a season, only its episodes; gated
-            // out 2026-08-12 alongside rows 2/3, matching the Rust-side
-            // existing_jellyfin_menu_rows exclusion — see its own comment)
+                // Row 1 — Play from Start (not for a Season: only its episodes are playable; rows 1/2/3 are
+                // excluded together, as in existing_jellyfin_menu_rows)
             if AppState.context-menu-item-type != "Season": Rectangle {
                     height: 44px;
                     border-radius: Theme.radius;
@@ -484,13 +455,8 @@ export component ContextMenu inherits Rectangle {
 
                     ta6 := TouchArea {
                         clicked => {
-                        // "Season" is a genuinely separate screen/callback
-                        // (season.rs::open_season_screen, keyed by
-                        // season-id + series-id — DetailPage has no concept
-                        // of a season) rather than routing through the
-                        // generic open-detail(id, item-type) path every
-                        // other item type uses. Added 2026-08-12 for the
-                        // season-tab context menu's View Details row.
+                        // A Season opens its own screen (season.rs::open_season_screen, by season-id + series-id) —
+                        // DetailPage has no concept of a season.
                         if AppState.context-menu-item-type == "Season" {
                                 AppState.open-season-detail(AppState.context-menu-item-id, AppState.context-menu-series-id);
                             } else {
@@ -553,21 +519,10 @@ export component ContextMenu inherits Rectangle {
                     }
                 }
 
-                // Row 8 — Watchlist (2026-07-19, real gap live-reported: "you
-            // cant add anyting from the library to the watchlist" — an
-            // already-in-library item redirects straight to THIS Jellyfin-
-            // flavored menu, which never had a Watchlist row at all before).
-            // Gated on context-menu-jf-tmdb-id being resolvable (Movie/
-            // Series with a real TMDB provider id, resolved server-side by
-            // open_context_menu_state) AND seerr-connected — same "☆"/"★"
-            // glyphs as the Discover menu's own Watchlist row, reuses
-            // context-menu-on-watchlist for the label/icon state too.
-            // **This condition must stay in lockstep with
-            // context_menu.rs::existing_jellyfin_menu_rows()'s own row-8
-            // check by hand** — the exact same two-copies-of-one-rule risk
-            // that already caused a real bug once for the Discover menu
-            // family above (see its own header comment) — there is no
-            // shared source of truth between the two files.
+                // Row 8 — Watchlist: needs a resolvable TMDB id (Movie/Series, from open_context_menu_state)
+                // and a Seerr connection; ☆/★ like the Discover menu's row, state from
+                // context-menu-on-watchlist. **Must match existing_jellyfin_menu_rows()'s row-8 check
+                // (context_menu.rs) by hand.**
             if AppState.context-menu-jf-tmdb-id != "" && AppState.seerr-connected: Rectangle {
                     height: 44px;
                     border-radius: Theme.radius;
@@ -628,13 +583,8 @@ export component ContextMenu inherits Rectangle {
                     label: "View Details";
                     activated => { AppState.context-discover-view-details(); }
                 }
-                // View Request (2026-07-18, row-index 5 — see this file's own
-                // header comment for why the numeric index is highest despite
-                // being visually/traversal-order second): only shown once a
-                // request exists. Reuses View Details' own "ℹ" glyph rather
-                // than introducing a new one — same reuse-an-existing-icon-
-                // for-a-related-action precedent as Cancel/Decline sharing
-                // "✕" below.
+                // View Request (row-index 5 — see the header for why it's highest but second): only once a
+                // request exists. Reuses View Details' "ℹ" glyph.
                 if AppState.context-menu-request-id != "": DiscoverMenuRow {
                     row-index: 5;
                     icon-text: "ℹ";
@@ -675,14 +625,8 @@ export component ContextMenu inherits Rectangle {
                     label: "Decline";
                     activated => { AppState.context-discover-decline-request(); }
                 }
-                // Watchlist (2026-07-18) — row-index 6, appended after the
-                // existing 0-5 scheme rather than renumbering (same
-                // append-don't-insert reasoning as every other row-index
-                // choice in this file). Always visible, unlike Request —
-                // watchlisting isn't gated on availability. "☆"/"★"
-                // (outline/filled, both confirmed covered by Noto Sans
-                // Symbols2 via fc-query) toggle with on-watchlist state,
-                // matching the label.
+                // Watchlist — row-index 6, always visible (not gated on availability). ☆/★ (Noto Sans
+                // Symbols2) follow on-watchlist, like the label.
                 DiscoverMenuRow {
                     row-index: 6;
                     icon-text: AppState.context-menu-on-watchlist ? "★" : "☆";
@@ -690,17 +634,9 @@ export component ContextMenu inherits Rectangle {
                     label: AppState.context-menu-on-watchlist ? "Remove from Watchlist" : "Add to Watchlist";
                     activated => { AppState.context-discover-toggle-watchlist(); }
                 }
-                // Blocklist (2026-08-06, Seerr Blocklist support) — row-index
-                // 7, same append-don't-insert reasoning as Watchlist above.
-                // Gated on seerr-can-manage-blocklist (a permission
-                // genuinely separate from admin/MANAGE_REQUESTS) AND the
-                // item being untouched or already blocklisted — mirrors
-                // Seerr's own real UI gate (never shown for Requested/
-                // Processing/Partial/Available). Must be kept in lockstep
-                // by hand with existing_discover_menu_rows's own copy of
-                // this same condition (context_menu.rs) — no shared source
-                // of truth between the two files, see that function's own
-                // warning.
+                // Blocklist — row-index 7: seerr-can-manage-blocklist AND the item untouched or already
+                // blocklisted (Seerr's own UI rule). **Must match existing_discover_menu_rows
+                // (context_menu.rs) by hand.**
                 if AppState.seerr-can-manage-blocklist
                     && (AppState.context-menu-availability == "" || AppState.context-menu-availability == "blocklisted"):
                     DiscoverMenuRow {
@@ -723,13 +659,8 @@ export component ContextMenu inherits Rectangle {
 export component PlaylistPicker inherits Rectangle {
     background: #00000088;
 
-    // Close on backdrop click. Real gap, code review, 2026-08-23: a mouse
-    // close while the on-screen keyboard was still open (naming mode)
-    // would have left show-onscreen-keyboard stuck true, the same
-    // critical-lockout bug class already found and fixed once for
-    // LoginScreen — checked here specifically (not blindly cleared) so a
-    // coincidentally-mounted OTHER screen's own keyboard interaction is
-    // never stomped on.
+    // Close on backdrop click — and close the on-screen keyboard if it's this picker's (a stray
+    // show-onscreen-keyboard swallows all input); another screen's keyboard is left alone.
     TouchArea {
         width: parent.width;
         height: parent.height;
@@ -910,22 +841,12 @@ export component PlaylistPicker inherits Rectangle {
         }
     }
 
-    // On-screen alphanumeric keyboard (2026-08-23, full rollout beyond
-    // Login). Target-guarded (not just show-onscreen-keyboard alone) the
-    // same way Discover/Browse are — PlaylistPicker is reachable as an
-    // overlay from either of those screens' own grids, both of which now
-    // have their own keyboard interaction too, so this and their trackers
-    // must never fire for a different screen's field.
+    // On-screen alphanumeric keyboard, target-guarded: the picker opens over Discover/Browse,
+    // which have keyboard targets of their own.
     if AppState.show-onscreen-keyboard && AppState.settings-onscreen-keyboard-enabled && AppState.onscreen-keyboard-target == "playlist-picker-name": QwertyKeyboard {
         x: (parent.width - self.width) / 2;
-        // Anchored below the dialog itself, not window-centered (real
-        // reasoning, not copied from Discover/Browse/Library-search
-        // unchecked, 2026-08-25): this dialog is ITSELF roughly centered
-        // in the window, with its own naming input near ITS top — a
-        // window-centered keyboard would land almost exactly on top of the
-        // dialog's own vertical range instead of clearing it. Matches
-        // Login/ConnectSeerr's own "anchor below the card" precedent,
-        // clamped so it can't render off the bottom of a short window.
+        // Below the dialog, not window-centered (the dialog itself is centered with its name input
+        // near its top), clamped to the window bottom — like Login/ConnectSeerr.
         y: min(dialog.y + dialog.height + 16px, parent.height - self.height - 16px);
         cursor: AppState.onscreen-keyboard-cursor;
         active: AppState.show-onscreen-keyboard;

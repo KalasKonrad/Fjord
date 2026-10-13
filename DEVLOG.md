@@ -19889,3 +19889,314 @@ Above `pub(crate) async fn run_poster_cache_cleanup(`:
 //   wire_collection_toggles callbacks moved from main() (0.5.0 step 3): collection favourite / played / blocklist confirm
 // ─────────────────────────────────────────────────────────────────────────────
 ```
+
+#### `crates/fjord-app/ui/context_menu.slint`
+
+Above `if AppState.context-menu-item-type != "Season": Rectangle {`:
+```
+// Row 1 — Play from Start (not applicable to a Season — no
+// /Videos/{id}/stream for a season, only its episodes; gated
+// out 2026-08-12 alongside rows 2/3, matching the Rust-side
+// existing_jellyfin_menu_rows exclusion — see its own comment)
+```
+
+Above `if AppState.context-menu-item-type == "Season" {`:
+```
+// "Season" is a genuinely separate screen/callback
+// (season.rs::open_season_screen, keyed by
+// season-id + series-id — DetailPage has no concept
+// of a season) rather than routing through the
+// generic open-detail(id, item-type) path every
+// other item type uses. Added 2026-08-12 for the
+// season-tab context menu's View Details row.
+```
+
+Above `if AppState.context-menu-jf-tmdb-id != "" && AppState.seerr-connected: Rectangle {`:
+```
+// Row 8 — Watchlist (2026-07-19, real gap live-reported: "you
+// cant add anyting from the library to the watchlist" — an
+// already-in-library item redirects straight to THIS Jellyfin-
+// flavored menu, which never had a Watchlist row at all before).
+// Gated on context-menu-jf-tmdb-id being resolvable (Movie/
+// Series with a real TMDB provider id, resolved server-side by
+// open_context_menu_state) AND seerr-connected — same "☆"/"★"
+// glyphs as the Discover menu's own Watchlist row, reuses
+// context-menu-on-watchlist for the label/icon state too.
+// **This condition must stay in lockstep with
+// context_menu.rs::existing_jellyfin_menu_rows()'s own row-8
+// check by hand** — the exact same two-copies-of-one-rule risk
+// that already caused a real bug once for the Discover menu
+// family above (see its own header comment) — there is no
+// shared source of truth between the two files.
+```
+
+Above `if AppState.context-menu-request-id != "": DiscoverMenuRow {`:
+```
+// View Request (2026-07-18, row-index 5 — see this file's own
+// header comment for why the numeric index is highest despite
+// being visually/traversal-order second): only shown once a
+// request exists. Reuses View Details' own "ℹ" glyph rather
+// than introducing a new one — same reuse-an-existing-icon-
+// for-a-related-action precedent as Cancel/Decline sharing
+// "✕" below.
+```
+
+Above `DiscoverMenuRow {`:
+```
+// Watchlist (2026-07-18) — row-index 6, appended after the
+// existing 0-5 scheme rather than renumbering (same
+// append-don't-insert reasoning as every other row-index
+// choice in this file). Always visible, unlike Request —
+// watchlisting isn't gated on availability. "☆"/"★"
+// (outline/filled, both confirmed covered by Noto Sans
+// Symbols2 via fc-query) toggle with on-watchlist state,
+// matching the label.
+```
+
+Above `if AppState.seerr-can-manage-blocklist`:
+```
+// Blocklist (2026-08-06, Seerr Blocklist support) — row-index
+// 7, same append-don't-insert reasoning as Watchlist above.
+// Gated on seerr-can-manage-blocklist (a permission
+// genuinely separate from admin/MANAGE_REQUESTS) AND the
+// item being untouched or already blocklisted — mirrors
+// Seerr's own real UI gate (never shown for Requested/
+// Processing/Partial/Available). Must be kept in lockstep
+// by hand with existing_discover_menu_rows's own copy of
+// this same condition (context_menu.rs) — no shared source
+// of truth between the two files, see that function's own
+// warning.
+```
+
+Above `TouchArea {`:
+```
+// Close on backdrop click. Real gap, code review, 2026-08-23: a mouse
+// close while the on-screen keyboard was still open (naming mode)
+// would have left show-onscreen-keyboard stuck true, the same
+// critical-lockout bug class already found and fixed once for
+// LoginScreen — checked here specifically (not blindly cleared) so a
+// coincidentally-mounted OTHER screen's own keyboard interaction is
+// never stomped on.
+```
+
+Above `if AppState.show-onscreen-keyboard && AppState.settings-onscreen-keyboard-enabled && AppState.onscre`:
+```
+// On-screen alphanumeric keyboard (2026-08-23, full rollout beyond
+// Login). Target-guarded (not just show-onscreen-keyboard alone) the
+// same way Discover/Browse are — PlaylistPicker is reachable as an
+// overlay from either of those screens' own grids, both of which now
+// have their own keyboard interaction too, so this and their trackers
+// must never fire for a different screen's field.
+```
+
+Above `y: min(dialog.y + dialog.height + 16px, parent.height - self.height - 16px);`:
+```
+// Anchored below the dialog itself, not window-centered (real
+// reasoning, not copied from Discover/Browse/Library-search
+// unchecked, 2026-08-25): this dialog is ITSELF roughly centered
+// in the window, with its own naming input near ITS top — a
+// window-centered keyboard would land almost exactly on top of the
+// dialog's own vertical range instead of clearing it. Matches
+// Login/ConnectSeerr's own "anchor below the card" precedent,
+// clamped so it can't render off the bottom of a short window.
+```
+
+#### `crates/fjord-app/ui/context_menu.slint` — file header (TOC)
+```
+// ── fjord-app · context_menu.slint ───────────────────────────────────────────
+//   DiscoverMenuRow  file-local reusable row (icon+label, focus ring, press-pulse — same
+//                    chrome as the 8 Jellyfin rows below, extracted since the Discover
+//                    row family below has 5 near-identical rows); row-index picks which
+//                    context-menu-focused value activates it; activated() callback
+//   ContextMenu      overlay, entirely different row family depending on
+//                    context-menu-item-type (is-discover-item): Jellyfin cards get the
+//                    original 8-row set (Resume if resume-pct>0, Play from Start, Play
+//                    Next, Add to Queue, Mark Played/Unplayed, Favourite/Unfavourite,
+//                    View Details, Add to Playlist row 7 Audio/MusicAlbum only) PLUS a 9th,
+//                    Watchlist row 8 (2026-07-19, real gap live-reported — "you cant add
+//                    anyting from the library to the watchlist": an already-in-library
+//                    item redirects straight to THIS menu family, which never had a
+//                    Watchlist row before), gated on a resolvable TMDB provider id
+//                    (Movie/Series only, resolved by context_menu.rs::
+//                    resolve_tmdb_for_jellyfin_item) AND seerr-connected — reuses
+//                    discover_toggle_watchlist (discover.rs) verbatim, the identical
+//                    function the Discover-card menu's own Watchlist row calls; Discover
+//                    cards (search grid/6 landing rows, 2026-07-18) get View Details(0),
+//                    Request(1, not yet requested) OR Edit Request(1, requested+(mine||
+//                    admin) — the two never coexist so share an index), Cancel Request(2,
+//                    requested+(admin||(mine&&pending))), Approve(3)/Decline(4, requested+
+//                    admin) — mirrors Seerr's real per-endpoint permission checks, not a
+//                    blanket "pending" gate (PUT/approve/decline need no pending status,
+//                    only a non-admin's own DELETE does), Watchlist toggle(6, 2026-07-18,
+//                    always visible — unlike Request/Edit/Cancel/Approve/Decline this isn't
+//                    gated on request state at all) — fixed index scheme,
+//                    existing_discover_menu_rows() in context_menu.rs resolves which
+//                    indices exist for Up/Down looping, same "gaps are fine" idiom the
+//                    Jellyfin row 0 (Resume) already uses. **These 4 `if` conditions must
+//                    stay in lockstep with existing_discover_menu_rows()'s own logic by
+//                    hand — real bug, live-reported 2026-07-18: the Rust-side row-index
+//                    resolver was fixed to the real permission model but this file's own
+//                    separately-written conditions were never touched in that pass, so
+//                    keyboard Up/Down could reach a row (e.g. Cancel Request, via the
+//                    Rust-only index list) that never actually rendered — the menu looked
+//                    unchanged while the underlying focus silently pointed at nothing.**
+//                    Blocklist toggle(7, 2026-08-06, Seerr Blocklist support) — gated on
+//                    seerr-can-manage-blocklist (a genuinely separate permission from
+//                    admin/MANAGE_REQUESTS) AND the item being untouched or already
+//                    blocklisted, mirroring Seerr's own real UI gate; same lockstep-by-hand
+//                    warning as rows 0-6 above applies to this 5th `if` condition too.
+//                    triggered by C key or right-click on any card
+//                    keyboard: Up/Down loop; Enter confirms; Esc closes
+//   PlaylistPicker  add-to-playlist modal: + New playlist… (name input) + playlist list;
+//                   cursor 0 = new row, 1..N = items; keyboard in keys.rs handle_playlist_picker
+// ─────────────────────────────────────────────────────────────────────────────
+```
+
+#### `crates/fjord-app/src/hdr.rs`
+
+Above `#[derive(Clone, Copy, PartialEq, Eq, Default)]`:
+```
+/// The stats overlay's "HDR" row (Stage 3) reads this on the same ~500ms
+/// cadence it reads every other stats field on. Written from two different
+/// threads for two different reasons: the app-level trigger in
+/// `playback.rs` sets `Disabled`/`NotApplicable`/`Negotiating` *before* any
+/// Wayland command is even sent; the worker thread sets `Active`/`Failed`/
+/// `Unavailable` once it actually knows the outcome. `Unset` unconditionally
+/// resets it to `Idle` regardless of whether anything was actually active —
+/// see `run_worker`'s own `HdrCommand::Unset` arm for why this must be
+/// unconditional (a real gap an independent review pass caught: without it,
+/// an HDR video's terminal status visibly lingered through a following
+/// audio-only track, since the stats overlay's VIDEO section isn't hidden
+/// during audio playback and the whole trigger is skipped for audio items).
+```
+
+Above `pub(crate) fn is_active() -> bool {`:
+```
+/// hdr branch, Stage 4 (2026-09-16) — read from `wire_mpv_timer`'s own poll
+/// to detect the Idle/Negotiating→Active transition and apply real mpv HDR
+/// output settings exactly once per item. Deliberately doesn't leak
+/// `HdrStatus` itself outside this module (which stays private) — a plain
+/// bool is all any caller actually needs.
+```
+
+Above `pub(crate) fn send_command(cmd: HdrCommand) {`:
+```
+/// Best-effort, matching this module's established non-fatal ethos: a no-op
+/// if the worker thread was never spawned (non-Wayland launch) or has since
+/// exited (compositor doesn't advertise the global, or a fatal protocol
+/// error killed the connection).
+///
+/// `Unset` synchronously resets `HDR_STATUS` to `Idle` on the *calling*
+/// thread, before the command is even queued — real bug, found during Stage
+/// 4 planning (2026-09-16): the worker only resets the status once it
+/// actually gets around to processing a queued `Unset`, on its own isolated
+/// thread, with no guarantee this has happened by the time `tear_down_player`
+/// (the only caller of `Unset`) returns and the next item's own
+/// `reset_video_state_for_playback`/`wire_mpv_timer` ticks start running.
+/// Harmless before Stage 4 (the only reader was a passive stats-overlay
+/// string), but Stage 4's own poll for "did negotiation just succeed" would
+/// otherwise see a stale `Active` left over from the *previous* item and
+/// wrongly apply real-HDR-output mpv properties to the *new* item's Player
+/// before its own negotiation has even started. `set_status`/`HDR_STATUS`
+/// are a plain `Mutex`, freely callable from any thread, so this is safe;
+/// the worker's own eventual `Unset` handling still runs (to actually tear
+/// down the real Wayland surface state) and still sets `Idle` itself —
+/// redundant but idempotent by then.
+```
+
+Above `fn build_hdr_params(meta: &fjord_player::SourceHdrMetadata) -> Option<HdrParams> {`:
+```
+/// Eligibility — deliberately narrow for v1: only genuine HDR10 (PQ +
+/// BT.2020) content, the one combination this exact compositor is confirmed
+/// (live, Stage 2) to advertise support for. `gamma`/`primaries` values
+/// already empirically confirmed live for real HDR10 content on this exact
+/// server ("bt.2020 · pq", from the earlier CLR IN/OUT freeze-bug
+/// investigation). HLG content and anything with non-named/custom primaries
+/// deliberately stay at today's tone-mapped behavior — see CLAUDE.md's HDR
+/// section for the full reasoning; revisit if a future KWin version
+/// advertises `Hlg`.
+```
+
+Above `let cll_ok = params.max_cll.is_some_and(|c| c > min_l && c <= max_l);`:
+```
+// max_cll/max_fall are ONLY ever attempted alongside a
+// validated mastering-luminance range, checked against that
+// real range in cd/m² — the protocol's own version-1-only
+// bound ("max_cll/max_fall must be > min L and <= max L of
+// the mastering range") applied unconditionally regardless
+// of which interface version actually negotiated, since
+// satisfying the stricter check is always also valid under
+// the more permissive v2+ rule. A value sent outside this
+// bound would raise a FATAL invalid_luminance protocol
+// error on the shared connection — real gap an independent
+// review pass caught, fixed here rather than left open.
+```
+
+#### `crates/fjord-app/src/hdr.rs` — file header (TOC)
+```
+// ── fjord-app · hdr.rs ────────────────────────────────────────────────────
+//   spawn_worker      entry point, called once from activity::
+//                     FjordApplicationHandler the instant real wl_display/
+//                     wl_surface handles first become available — spawns a
+//                     dedicated OS thread and returns immediately, never
+//                     touching the Slint/UI thread. Stage 1+2 name was
+//                     `spawn_capability_diagnostic`; renamed since the thread
+//                     now does real negotiation, not just diagnostics.
+//   run_worker        the actual unsafe FFI + persistent command loop.
+//                     Setup (Stage 1+2, unchanged in spirit): attaches a
+//                     SECOND, independent wayland-client event queue to the
+//                     same Wayland socket winit already owns
+//                     (Backend::from_foreign_display), binds
+//                     wp_color_manager_v1 if advertised, logs every
+//                     capability it reports, wraps Fjord's own existing
+//                     wl_surface as a typed proxy. Stage 3 addition: instead
+//                     of exiting after setup, the thread then blocks on
+//                     `for cmd in rx { ... }`, negotiating a real HDR image
+//                     description per HdrCommand::SetHdr and applying/
+//                     clearing it on the surface — see HdrCommand's own doc
+//                     comment for the full per-command flow. Every fallible
+//                     step logs and either skips the command or (for a
+//                     genuine Wayland protocol/dispatch error, which is
+//                     fatal to the WHOLE connection) exits the thread
+//                     entirely — this thread must be structurally incapable
+//                     of destabilizing the app regardless of what it
+//                     discovers about the compositor.
+//   HdrCommand        SetHdr(HdrParams, target) | Unset — sent via send_command(); target =
+//                     the video subsurface's wl_surface (HDR Stage 5, 2026-10-05) or None for
+//                     the window; the worker keeps one Target (surface + colour-management
+//                     object) per surface and unsets whichever was last tagged
+//   HdrParams         optional real per-file mastering-luminance/CLL/FALL
+//                     metadata for an eligible (PQ + BT.2020) video; TF/
+//                     primaries are hardcoded for v1, not fields (see
+//                     build_hdr_params's own doc comment)
+//   HdrStatus         Idle | Disabled | NotApplicable | Unavailable |
+//                     Negotiating | Active | Failed — the stats overlay's
+//                     "HDR" row reads this via status_text()
+//   send_command      pub(crate), best-effort — a no-op if the worker was
+//                     never spawned (X11) or has since exited
+//   maybe_negotiate   pub(crate) — called once per playback (see playback.rs's
+//                     wire_mpv_timer hook) with the source's real HDR
+//                     metadata; runs eligibility, sets status, sends SetHdr
+//   set_status_disabled  pub(crate) — called instead of maybe_negotiate when
+//                     the "HDR passthrough" Settings toggle is off; sets
+//                     status only, sends no Wayland command at all
+//   build_hdr_params  pure eligibility function — Some only for gamma=="pq"
+//                     && primaries=="bt.2020" (this exact compositor doesn't
+//                     advertise Hlg — see the live capability log this was
+//                     designed against)
+//   WorkerState       the worker thread's own Dispatch target AND general
+//                     mutable state for its whole lifetime — not consumed
+//                     anywhere else
+//
+//   Cross-thread state note: HDR_STATUS/HDR_CHANNEL below are the one place
+//   in this codebase using a module-level `static` instead of the usual
+//   Arc::clone()-from-main() convention — see HDR_CHANNEL's own doc comment
+//   for exactly why (a genuine bootstrap-ordering constraint, not a
+//   shortcut): confirmed from main.rs that FjordApplicationHandler —  the
+//   only code that ever learns the real wl_display/wl_surface handles — is
+//   constructed and registered before MainWindow::new(), which is itself
+//   before FjordState/VideoState exist at all, so there is no point before
+//   FjordApplicationHandler's own construction where an Arc<Mutex<...>>
+//   clone of either could be threaded in.
+// ───────────────────────────────────────────────────────────────────────────
+```
