@@ -1406,7 +1406,16 @@ pub(crate) fn play_trailer(
     window_weak: &slint::Weak<MainWindow>,
     rt_handle: &tokio::runtime::Handle,
 ) {
-    start_trailer(url, title, config, source, false, video, window_weak, rt_handle);
+    start_trailer(
+        url,
+        title,
+        config,
+        source,
+        false,
+        video,
+        window_weak,
+        rt_handle,
+    );
 }
 
 /// A YouTube trailer with no FileLoaded this long after starting gets one fresh start (a new
@@ -1465,7 +1474,8 @@ pub(crate) fn start_trailer(
         });
     }
 
-    let retry_with = (source == TrailerSource::YouTube && !retry).then(|| (title.clone(), config.clone()));
+    let retry_with =
+        (source == TrailerSource::YouTube && !retry).then(|| (title.clone(), config.clone()));
     match Player::new(&config) {
         Ok(player) => {
             {
