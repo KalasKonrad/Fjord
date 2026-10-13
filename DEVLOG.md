@@ -22214,3 +22214,228 @@ Above `#[derive(Debug, Deserialize, Default)]`:
 //                 Fjord never modeled Jellyfin's own server-admin flag before this
 // ─────────────────────────────────────────────────────────────────────────────
 ```
+
+#### `crates/fjord-app/ui/app_state.slint`
+
+Above `in-out property <string> onscreen-keyboard-physical-key: "";`:
+```
+// Physical-keyboard passthrough while the on-screen keyboard is open
+// (2026-08-23, live feedback: "i want it to still work to type on the
+// keybord even if its open") — keys.rs forwards any ordinary printable
+// key it sees while show-onscreen-keyboard is true (or Backspace, as
+// the sentinel "backspace", matching QwertyKeyboard's own key-pressed
+// vocabulary exactly) into whichever field onscreen-keyboard-target
+// points at. A payload+counter pair, not a callback Rust invokes
+// directly — Rust can't call a named Slint element's own method or
+// mutate a screen's local LineEdit state directly (the same reason
+// .focus() calls elsewhere in this app go through a changed-tracker
+// mirror, not a direct call). A plain string payload alone isn't
+// enough on its own: Slint's `changed` only fires on a genuine VALUE
+// change, so typing the same character twice in a row would silently
+// drop the second press if nothing else changed — the counter (bumped
+// unconditionally on every forward, mirroring kb-activate-pulse's own
+// reasoning) is what guarantees the mirror's `changed` fires every
+// time regardless of what was typed. Rust sets the payload BEFORE
+// bumping the counter; Slint property writes are synchronous within
+// one Rust function call, so the mirror's own changed handler always
+// reads the already-final payload value.
+```
+
+Above `pure callback caret-text(string, int, string) -> string;`:
+```
+// Caret editing (2026-10-05, text_field.rs). caret-text(text, caret,
+// glyph): the text with `glyph` drawn at the caret (grapheme index,
+// -1/past the end = end) — the drawn fields' display. onscreen-keyboard-
+// edit(text, caret, key): one on-screen key applied at the caret, for the
+// LineEdit targets (LineEdit has no cursor getter, so the keyboard keeps
+// its own caret in onscreen-keyboard-caret, reset to the end each time
+// the keyboard opens — main.slint). text-field-caret(target, delta): ◀ ▶
+// on a drawn target.
+```
+
+Above `in-out property <bool> video-surface-active: false;`:
+```
+// HDR Stage 5 (2026-10-05) — video on its own Wayland subsurface below
+// the window (video_surface.rs). video-surface-active: set by Rust once
+// the current player's frames are drawn there (cleared on stop) — the
+// window then goes transparent and the four video Images give way to
+// VideoSpots. video-rect-*: where each spot is, reported by VideoSpot.
+// window-bg: the background the subsurface fills around the video.
+```
+
+Above `in property <string> stat-hdr:      "—";`:
+```
+// hdr branch, Stage 3 (2026-09-14) — real Wayland color-management
+// negotiation status (Idle/Disabled/Not applicable/Unavailable/
+// Negotiating…/Active (HDR10)/Failed), Fjord's own state, not an mpv
+// property — see hdr.rs's HdrStatus/status_text().
+```
+
+Above `in-out property <bool> collection-blocklist-confirm-open:     false;`:
+```
+// Bulk-blocklist-this-collection confirm dialog (2026-08-06, Seerr
+// Blocklist support) — checked first in collection.rs::handle_key,
+// same "overlay on top of the screen" precedent as skip-segment
+// overlays/the Up Next banner elsewhere in this app.
+```
+
+Above `in-out property <[CardItem]> discover-new-in-theaters:  [];`:
+```
+// "New in Theaters" (2026-07-18) — an approximation (primary TMDB
+// release date in roughly the last 6 weeks), not a verified "still
+// showing" signal — see discover.rs::fetch_new_in_theaters's own doc
+// comment for why Seerr's /discover/movies can't filter by release
+// type directly.
+```
+
+Above `in-out property <[CardItem]> discover-coming-up:        [];`:
+```
+// "Coming Up" (2026-07-18, Watchlist + Release Calendar) — Watchlist +
+// Requested-but-not-yet-available items with a known future release/
+// air date, soonest first, capped (see build_calendar_entries). LAST
+// card is a poster-less sentinel ("Full Calendar") opening
+// CalendarScreen instead of an item detail — see handle_key_landing's
+// own explicit special-case for why this needs one, not the generic
+// per-card open/context-menu path every other row uses.
+```
+
+Above `in-out property <string> request-detail-availability:  "";`:
+```
+// Same "" | "requested" | "processing" | "partial" | "available" |
+// "blocklisted" vocabulary as CardItem.availability, base/2K tier only
+// (2026-08-06, Seerr Blocklist support) — deliberately NOT the same
+// field as request-detail-status above, which mixes in request-
+// workflow labels ("Needs Approval"/"Declined") that have nothing to
+// do with Blocklist eligibility. This is what the Blocklist button
+// actually gates on.
+```
+
+Above `in-out property <bool> request-detail-on-watchlist:    false;`:
+```
+// Watchlist + Release Calendar (2026-07-18) — from MovieDetails/
+// TvDetails.onUserWatchlist on open, kept in sync by
+// discover_toggle_watchlist's own patch when this exact page is open.
+// Independent of request state — always shown, unlike Request which
+// hides once a status pill replaces it.
+```
+
+Above `callback request-detail-toggle-blocklist();`:
+```
+// Blocklist (2026-08-06, Seerr Blocklist support) — same toggle shape
+// as Watchlist above, but "adding" is derived from request-detail-
+// availability != "blocklisted" rather than a separate bool, since
+// Blocklisted rides on the same field every other status pill uses.
+```
+
+Above `in-out property <bool> request-options-editing:            false;`:
+```
+// Edit Request mode (Discover context menu, 2026-07-18) — reuses this
+// same modal rather than a second one. When true: the Quality (2K/4K)
+// row is hidden (Seerr's PUT /request/{id} cannot change is4k — see
+// fjord-seerr::SeerrClient::update_request's own doc comment), and
+// Confirm calls update_request instead of create_request against
+// request-options-editing-request-id. Reset to false/"" whenever the
+// modal is closed or a fresh (non-edit) Request is opened.
+```
+
+Above `in-out property <string> context-menu-request-id:      "";`:
+```
+// Discover context menu only (2026-07-18) — "" everywhere else, same
+// zero-risk-elsewhere pattern as CardItem's own Discover-only fields.
+// context-menu-item-type starting with "Discover" is what selects the
+// entirely separate row family in context_menu.slint; these four only
+// matter within that branch. context-menu-availability mirrors
+// CardItem.availability ("" | "requested" | "processing" | "partial" |
+// "available" | "blocklisted" — the last added 2026-08-06, Seerr
+// Blocklist support); context-menu-request-id "" means "not yet requested".
+```
+
+Above `in-out property <bool> settings-skip-fade-mute-passthrough: true;`:
+```
+// Whether the skip-segment fade mutes audio during SPDIF passthrough
+// (Settings → Audio → Passthrough, 2026-08-11 follow-up) — gates ONLY
+// the passthrough mute; the video fade and the PCM volume ramp stay
+// unconditional regardless of this toggle. See playback.rs's
+// arm_skip_fade and CLAUDE.md's Skip fade section.
+```
+
+Above `in-out property <int> settings-skip-fade-ms:        200;`:
+```
+// Base ms of the skip-segment fade-to-black + audio ramp/mute (2026-08-11),
+// before the settings-animation-speed multiplier — read live by both
+// player.slint's own `skip-fade` animate block and wire_mpv_timer's
+// Rust-side wait/ramp computation, so the two can never drift out of
+// sync with each other or with a live settings change. 0 = instant,
+// same hard cut as before this feature shipped.
+```
+
+Above `in-out property <string> settings-display-language-desc:     "Default (English)";`:
+```
+// Display Language + Discover Language (Settings → Integrations, only
+// shown when seerr-connected, same gate + dynamic-dropdown shape as
+// Streaming Region — 2026-07-17). Both share one fetched list
+// (fjord_seerr::Language, GET /languages — TMDB's full ~180-entry list,
+// NOT Seerr's own smaller UI-translation locale set; see that struct's
+// doc comment for why). "Default (English)"/"Default (All Languages)"
+// are synthetic row-0 entries prepended client-side, matching Seerr's
+// own web UI wording exactly — selecting them writes "" (locale) /
+// "all" (originalLanguage, the literal sentinel Seerr's frontend uses,
+// NOT an empty string — see main.rs's write handlers).
+```
+
+Above `in-out property <bool> seerr-can-manage-blocklist: false;`:
+```
+// Whether the connected Seerr account has MANAGE_BLOCKLIST (2026-08-06,
+// Seerr Blocklist support) — a genuinely SEPARATE permission bit from
+// MANAGE_REQUESTS/ADMIN above (see fjord_seerr::User::
+// can_manage_blocklist's own doc comment), set/reset the same way.
+// Gates the Discover context menu's Blocklist row, RequestDetailScreen's
+// Blocklist button, CollectionScreen's bulk blocklist button, and the
+// Settings -> Integrations -> Manage Blocklist row.
+```
+
+Above `in-out property <string> login-append-source: "";`:
+```
+// Which screen a successful/cancelled Add-Account login should return
+// to (2026-08-14) — "" (a plain first-time login, or Settings → Profiles'
+// own "Add Account" row, nothing to reopen) | "account_picker" (opened
+// from the account-tier picker's own "+ Add Account" tile).
+```
+
+Above `callback open-context-menu-discover(CardItem);`:
+```
+// Discover context menu (2026-07-18) — carries the whole card struct
+// rather than N new scalars, since every field the menu needs
+// (id/item-type/title/availability/request-id/requested-4k) is already
+// on CardItem. Right-click/C-key on any Discover card (search grid, the
+// 6 landing rows) routes here instead of open-context-menu.
+```
+
+Above `callback open-discover-menu-from-detail();`:
+```
+// RequestDetailScreen's own ⋮ More button (2026-07-18) — populates the
+// SAME context-menu-* state open-context-menu-discover does, but sourced
+// from request-detail-* (tmdb id/media type/title/request info) since
+// this page has no CardItem of its own to pass. Reuses the existing
+// ContextMenu overlay/row set entirely — no separate menu built for
+// this page.
+```
+
+Above `in-out property <bool> show-calendar: false;`:
+```
+// ── Calendar screen state (Watchlist + Release Calendar, 2026-07-18) ──────
+// Opened from the Discover "Coming Up" landing row's trailing sentinel
+// card (handle_key_landing's own explicit special-case, discover.rs) —
+// a full-page overlay joining the FadeGate'd list in main.slint, same
+// floating "← Back" convention every other overlay uses.
+```
+
+Above `in-out property <bool> show-blocklist: false;`:
+```
+// ── Manage Blocklist screen state (2026-08-06, Seerr Blocklist support) ───
+// Opened from Settings -> Integrations -> Manage Blocklist (settings.rs's
+// INT_MANAGE_BLOCKLIST row) — a full-page overlay, same FadeGate'd/
+// floating-Back-button shell shape as CalendarScreen, but plain text
+// rows (blocklist.rs, GET /blocklist carries no poster path at all)
+// instead of a month grid.
+```
