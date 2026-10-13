@@ -11,7 +11,9 @@
 //             the new profile, sidebar tile, warm start from this user's cached home/series/screen
 //             caches, then home data/series/system info/plugins in parallel; persists caches, starts
 //             the WebSocket, posters, movie collections, Bonfire sync; closes the pickers
-//   spawn_not_watched_rows  the slow "Not watched" rows, off the login path (session-guarded)
+//   spawn_not_watched_rows / push_not_watched_row  the "Not watched" rows off the login path: TV
+//             at once (home::not_watched_tv), Movies after its server query; each row then its
+//             posters (session-guarded)
 //   wire_login             callbacks moved from main() (0.5.0 step 3): the login screen
 //   wire_sign_out          callbacks moved from main() (0.5.0 step 3): Sign Out — removes the account and
 //             its Bonfire sub-profiles/group accounts, logs their server sessions out, keeps
@@ -421,14 +423,11 @@ pub(crate) async fn finish_session_setup(
         });
     }
 
-    // Timed (the `timing:` lines). include_not_watched=false: the "Not watched" rows are
-    // slow (Jellyfin's SortBy=Random + recursive unplayed check, seconds) and not shown on
-    // Home, so login doesn't wait for them — spawn_not_watched_rows patches them in later.
+    // Timed (the `timing:` lines). No "Not watched" rows here (None): they aren't on Home, the
+    // TV pick needs the all_series this join fetches, and the Movies row is a slow server query
+    // — spawn_not_watched_rows fills them afterwards.
     let (home_data, series_res, sysinfo_res, plugins_res) = tokio::join!(
-        crate::timed(
-            "fetch_home_data (all rows)",
-            fetch_home_data(&client, false)
-        ),
+        crate::timed("fetch_home_data (all rows)", fetch_home_data(&client, None)),
         crate::timed("get_all_series", client.get_all_series()),
         crate::timed("get_system_info", client.get_system_info()),
         crate::timed("get_plugins", client.get_plugins()),
@@ -439,6 +438,7 @@ pub(crate) async fn finish_session_setup(
         vec![]
     });
     info!("loaded {} series", series.len());
+    let started = crate::home::started_series_ids(&home_data.continue_watching, &home_data.next_up);
     let (srv_name, srv_ver) = sysinfo_res
         .map(|i| (i.server_name, i.version))
         .unwrap_or_else(|e| {
@@ -558,50 +558,91 @@ pub(crate) async fn finish_session_setup(
         let map = fetch_movie_collections(&client3).await;
         state_coll.lock().unwrap().movie_collections = map;
     });
-    spawn_not_watched_rows(client5, Arc::clone(&state), window_weak, &rt_handle_inner);
+    spawn_not_watched_rows(
+        client5,
+        Arc::clone(&state),
+        started,
+        window_weak,
+        &rt_handle_inner,
+    );
 }
 
-/// The two rows `fetch_home_data(…, include_not_watched: false)` skipped above, fetched
-/// off the login path and patched in when ready (like the poster loaders). Checks
-/// `crate::session_current` first — a result must not land after a sign-out/switch.
+/// The two rows `fetch_home_data(…, None)` skipped above, filled off the login path: TV at
+/// once (a local pick from the just-stored all_series), Movies when its server query returns —
+/// each row, then its posters. Checks `crate::session_current` first — a result must not land
+/// after a sign-out/switch.
 fn spawn_not_watched_rows(
     client: Arc<JellyfinClient>,
     state: Arc<Mutex<FjordState>>,
+    started: std::collections::HashSet<String>,
     window_weak: slint::Weak<MainWindow>,
     rt_handle: &tokio::runtime::Handle,
 ) {
+    let rt = rt_handle.clone();
     rt_handle.spawn(async move {
-        let (nwm, nwt) = tokio::join!(
-            crate::timed(
-                "not_watched_movies (deferred)",
-                client.get_unwatched(Some("Movie"))
-            ),
-            crate::timed(
-                "not_watched_tv (deferred)",
-                client.get_unwatched(Some("Series"))
-            ),
+        let tv = crate::home::not_watched_tv(&client, &state, &started)
+            .await
+            .unwrap_or_else(|e| {
+                warn!("not_watched_tv: {:#}", e);
+                vec![]
+            });
+        push_not_watched_row(
+            crate::home::HomeSection::NotWatchedTv,
+            tv,
+            &client,
+            &state,
+            &window_weak,
+            &rt,
         );
-        let not_watched_movies = nwm.unwrap_or_else(|e| {
+        let movies = crate::timed(
+            "not_watched_movies (deferred)",
+            client.get_unwatched(Some("Movie")),
+        )
+        .await
+        .unwrap_or_else(|e| {
             warn!("not_watched_movies: {:#}", e);
             vec![]
         });
-        let not_watched_tv = nwt.unwrap_or_else(|e| {
-            warn!("not_watched_tv: {:#}", e);
-            vec![]
-        });
-        let watchlist = state.lock().unwrap().jellyfin_watchlist_ids.clone();
-        let _ = slint::invoke_from_event_loop(move || {
-            let Some(w) = window_weak.upgrade() else {
-                return;
-            };
-            if !crate::session_current(&state, &client) {
-                return;
-            }
-            let g = AppState::get(&w);
-            g.set_not_watched_movies(items_to_model(&not_watched_movies, &watchlist));
-            g.set_not_watched_tv(items_to_model(&not_watched_tv, &watchlist));
-        });
+        push_not_watched_row(
+            crate::home::HomeSection::NotWatchedMovies,
+            movies,
+            &client,
+            &state,
+            &window_weak,
+            &rt,
+        );
     });
+}
+
+/// One "Not watched" row from spawn_not_watched_rows: the cards now, posters after.
+fn push_not_watched_row(
+    sec: crate::home::HomeSection,
+    items: Vec<fjord_api::models::MediaItem>,
+    client: &Arc<JellyfinClient>,
+    state: &Arc<Mutex<FjordState>>,
+    window_weak: &slint::Weak<MainWindow>,
+    rt: &tokio::runtime::Handle,
+) {
+    if !crate::session_current(state, client) {
+        return;
+    }
+    let watchlist = state.lock().unwrap().jellyfin_watchlist_ids.clone();
+    let model_items = items.clone();
+    let ww = window_weak.clone();
+    let _ = slint::invoke_from_event_loop(move || {
+        if let Some(w) = ww.upgrade() {
+            crate::push_section_model(&w, sec, items_to_model(&model_items, &watchlist));
+        }
+    });
+    let mut sections = crate::home::HomeSection::empty_array();
+    sections[sec as usize].1 = items;
+    crate::spawn_poster_loading(
+        Arc::clone(client),
+        sections,
+        window_weak.clone(),
+        rt.clone(),
+        Arc::clone(state),
+    );
 }
 
 // ── wire_login (moved from main(), 0.5.0 step 3) ─────────────────────────

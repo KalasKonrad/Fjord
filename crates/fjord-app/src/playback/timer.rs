@@ -1437,7 +1437,7 @@ pub(crate) fn wire_mpv_timer(
                     if let Err(e) = cli.report_playback_stopped(&id, final_ticks).await {
                         warn!("report_playback_stopped (natural end) failed: {e}");
                     }
-                    let home_data = fetch_home_data(&cli, true).await;
+                    let home_data = fetch_home_data(&cli, Some(&state_home)).await;
                     let sections  = home_data_sections(&home_data);
                     let ww2       = ww_home.clone();
                     let watchlist = state_home.lock().unwrap().jellyfin_watchlist_ids.clone();

@@ -23,6 +23,12 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Changed: "Not watched" on the TV dashboard now means series you haven't
+  started** (no episode watched, none in progress) — before, it also listed
+  series you were halfway through. It's also much faster: the row is picked
+  from the series list Fjord already has instead of a slow server query
+  (2–7 s before), and after signing in both "Not watched" rows now get their
+  posters straight away.
 - **Fixed: the Movies library could show no posters** after Discover had been
   opened first in the same session; they only appeared after a profile switch
   or restart.
