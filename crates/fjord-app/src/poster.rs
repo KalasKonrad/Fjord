@@ -1,19 +1,20 @@
 // ── fjord-app · poster.rs ────────────────────────────────────────────────────
 //   ImageKind              Poster | Backdrop — selects cache path and API method
-//   fetch_image_cached     shared fetch-or-cache implementation for both kinds; no disk cache for an id
-//                          that isn't a safe cache name; only bytes passing is_image are written
-//   is_image               JPEG/PNG/WebP header with dimensions (2026-10-09 security review; unit-tested)
+//   fetch_image_cached     shared fetch-or-cache implementation for both kinds; no disk cache for
+//                          an id that isn't a safe cache name; only bytes passing is_image are
+//                          written
+//   is_image               JPEG/PNG/WebP header with dimensions (unit-tested)
 //   fetch_poster_cached    thin wrapper: fetch_image_cached(…, Poster)
 //   fetch_backdrop_cached  thin wrapper: fetch_image_cached(…, Backdrop)
 //   fetch_posters_for_delta  generic concurrent poster fetch for a WS delta batch (any item
 //                          type mix); doesn't replace a model — caller patches rows itself
 //   decode_scaled / decode_poster_buffer (≤600px) / decode_backdrop_buffer (≤3840px)
 //                          decode-to-size: originals are 1000-3000px, cards render ≤400px
-//   push_decoded_section   decode poster bytes for one section and invoke_from_event_loop to push it;
-//                          session_current-guarded (Bonfire Phase 1, step 8, 2026-08-09) — writes
-//                          genuinely Jellyfin-restricted content, so both push_ functions and their
-//                          two spawn_ callers now take an extra `state` param for the check
-//   spawn_poster_loading   parallel poster fetch for [(HomeSection, Vec<MediaItem>); 17]; sets series-id on Episode cards
+//   push_decoded_section   decode poster bytes for one section and push it on the UI thread;
+//                          session-guarded (per-profile content — the push_ functions and their
+//                          spawn_ callers take `state` for the check)
+//   spawn_poster_loading   parallel poster fetch for [(HomeSection, Vec<MediaItem>); 17]; sets
+//                          series-id on Episode cards
 //   spawn_series_poster_loading  same for series cards → AppState.all-series
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
@@ -312,12 +313,8 @@ fn push_decoded_section(
     let client = Arc::clone(client);
     let _ = slint::invoke_from_event_loop(move || {
         if let Some(w) = ww.upgrade() {
-            // Session guard (Bonfire Phase 1, step 8 audit, 2026-08-09) —
-            // this writes genuinely Jellyfin-restricted content (Home
-            // dashboard rows: Continue Watching, Favorites, etc.) with no
-            // guard of any kind before this; a sign-out or profile switch
-            // mid-fetch could otherwise land the OUTGOING profile's own
-            // dashboard content into the incoming profile's UI.
+            // Session guard: these are per-profile Home rows (Continue Watching, Favorites…) — a
+            // mid-fetch sign-out or switch must not show the old profile's in the new session.
             if !crate::session_current(&state, &client) {
                 return;
             }
@@ -411,10 +408,7 @@ fn push_decoded_series(
     let client = Arc::clone(client);
     let _ = slint::invoke_from_event_loop(move || {
         if let Some(w) = ww.upgrade() {
-            // Session guard (Bonfire Phase 1, step 8 audit, 2026-08-09) —
-            // same reasoning as push_decoded_section: all-series is
-            // genuinely Jellyfin-restricted per-profile content, and this
-            // had no staleness guard at all before this.
+            // Session guard: all-series is per-profile content too (see push_decoded_section).
             if !crate::session_current(&state, &client) {
                 return;
             }
