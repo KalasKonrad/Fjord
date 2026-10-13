@@ -1,42 +1,22 @@
 // ── fjord-app · bonfire_admin.rs ─────────────────────────────────────────────
-//   Bonfire Phase 6 (admin actions, 2026-09-04) — Settings -> Profiles -> "Bonfire Admin",
-//   gated on the genuinely-new FjordState.jellyfin_is_server_admin flag (Jellyfin's own core
-//   Policy.IsAdministrator, verified directly against the real plugin controller source — NOT
-//   Bonfire's household-master concept). Scoped to just the 4 already-modeled admin methods
-//   (mappings/reset-pin/set-profile-limit/audit-logs); the other 14 real admin/* endpoints
-//   this same investigation turned up (session control, config export/import, avatar-folder
-//   scanning, a "panic code" duress feature, global plugin settings) are explicitly out of
-//   scope for this pass — see CLAUDE.md's own dated section.
-//   build_admin_rows        merges AdminMappings' two separate lists (master_users/sub_profiles)
-//                           into one flat, grouped Vec<BonfireAdminRow> — see its own doc
-//                           comment for why this is a real merge, not a naive concatenation,
-//                           and why the whole screen is a flat list rather than a
-//                           lazily-expanding tree
-//   open_bonfire_admin_screen  gates on jellyfin_is_server_admin (toast+return if not — same
-//                           authority-check shape as open_bonfire_group_screen/
-//                           open_manage_profiles_screen), resets transient state, fetches
-//                           Mappings (the default tab) — Audit Logs are fetched lazily, only
-//                           on first switch to that tab (see handle_key's Left/Right arm)
-//   on_bonfire_admin_reset_pin  ConfirmDialog-gated (a real, if easily-reversed, destructive
-//                           action — forcibly clears someone's PIN); patches the row in place
-//                           on success rather than re-fetching the whole list
-//   on_bonfire_admin_set_limit  applies one exact profile-limit value (patches the row, toasts
-//                           on failure) — the shared write path callers below funnel through
-//   on_bonfire_admin_cycle_limit  the profile-limit "stepper"'s single source of truth for
-//                           "what's the next value" (next_limit_step off the row's current
-//                           one) — reached identically by keyboard Confirm (handle_key) and a
-//                           mouse click on the control, so the two can never disagree; see
-//                           handle_key's own doc comment for why this is Enter/click-cycles-
-//                           through-values, not Left/Right-adjusts-a-value (a genuine D-pad
-//                           dead end for col 0 -> col 1 -> "how do I get back")
-//   handle_key              genuine AppMode::BonfireAdmin dispatch (Action-based, like
-//                           blocklist.rs — this screen has no text entry at all, so it doesn't
-//                           need BonfireGroupScreen's raw-key-tier shape): the reset-confirm
-//                           dialog intercepts first, then the tab switcher (cursor == -1,
-//                           the same sentinel every other "Up from row 0" zone in this app
-//                           uses), then Up/Down/Left/Right/Confirm within the active tab's
-//                           own flat row list
-//   wire_bonfire_admin     callbacks moved from main() (0.5.0 step 3): BonfireAdminScreen
+//   Bonfire Admin (Settings → Profiles), gated on FjordState.jellyfin_is_server_admin (Jellyfin's
+//   Policy.IsAdministrator — what the plugin's admin endpoints check, not household ownership).
+//   Covers mappings / reset-pin / set-profile-limit / audit-logs; Bonfire's other admin/*
+//   endpoints are out of scope (DEVLOG → Bonfire Phase 6).
+//   build_admin_rows        AdminMappings' two lists (master_users/sub_profiles) → one flat list,
+//                           each master followed by its sub-profiles (see its doc comment)
+//   audit_entry_to_row      AuditLogEntry → BonfireAuditRow
+//   open_bonfire_admin_screen  admin check (toast if not), reset state, fetch Mappings; Audit Logs
+//                           load on first switch to that tab (ensure_audit_logs)
+//   on_bonfire_admin_tab_selected  tab switch (mouse)
+//   on_bonfire_admin_reset_pin  after the ConfirmDialog; patches the row in place
+//   on_bonfire_admin_set_limit / on_bonfire_admin_cycle_limit  the limit stepper: next value from
+//                           next_limit_step (LIMIT_STEPS), one path for keyboard and mouse
+//   handle_key              AppMode::BonfireAdmin (Action-based — no text entry): confirm dialog
+//                           first, then the tab switcher (cursor -1), then the active tab's rows;
+//                           Left/Right between a row's two actions (default_col_for_row),
+//                           Enter activates
+//   wire_bonfire_admin      callbacks moved from main() (0.5.0 step 3): BonfireAdminScreen
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
 
@@ -52,12 +32,9 @@ fn ss(s: &str) -> SharedString {
     SharedString::from(s)
 }
 
-/// Profile-limit stepper's own value sequence — a small fixed range plus
-/// the -1 ("use the server's own default") sentinel at both ends, so Enter
-/// cycles through it in one direction with no separate "reset" control
-/// needed. Real per-master caps observed in this project's own prior
-/// Bonfire research have all been small (5 is the plugin's own documented
-/// default), so 20 is a generous ceiling, not a tight one.
+/// The profile-limit stepper's values: a small fixed range plus the -1 ("server default")
+/// sentinel, so Enter cycles in one direction with no separate reset. Real caps are small (5
+/// is Bonfire's default); 20 is a generous ceiling.
 const LIMIT_STEPS: [i32; 21] = [
     -1, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
 ];
@@ -497,19 +474,9 @@ pub(crate) fn handle_key(action: &Action, g: &AppState) -> bool {
             }
             true
         }
-        // Mappings tab only, and only when the row genuinely has BOTH
-        // actions — a sub-profile has just the one (Reset PIN, when it has
-        // a PIN at all), and a master with no PIN set has just the one too
-        // (the limit stepper) — real bug, live-questioned 2026-09-07 ("why
-        // can i reset pin on test master accaunt?"): Reset PIN used to
-        // render/act unconditionally regardless of row.requires_pin, which
-        // was harmless server-side (ResetPinAdmin just sets PinHash to
-        // empty again, verified against the real controller source) but
-        // genuinely confusing — offering an action with zero observable
-        // effect. Left/Right toggling was already correctly a no-op for a
-        // single-action row; now also correctly a no-op when NEITHER
-        // action applies (a PIN-less sub-profile), since row.is_master is
-        // false there too.
+        // Mappings tab, only when the row has BOTH actions: a sub-profile has at most Reset PIN (if
+        // it has a PIN), a PIN-less master only the limit stepper, a PIN-less sub-profile nothing
+        // (Reset PIN is hidden without a PIN — it would do nothing visible).
         Action::Left | Action::Right if tab == 0 => {
             if let Some(row) = g.get_bonfire_admin_rows().row_data(focused as usize)
                 && row.is_master
@@ -537,20 +504,11 @@ pub(crate) fn handle_key(action: &Action, g: &AppState) -> bool {
                 g.set_bonfire_admin_reset_confirm_focused(0);
                 g.set_show_bonfire_admin_reset_confirm(true);
             } else if col == 1 && row.is_master {
-                // The profile-limit "stepper" — deliberately an
-                // Enter-cycles-through-values control, not a Left/Right-
-                // adjusts-a-value one. The latter was the original design
-                // but turned out to be a genuine D-pad dead end: once
-                // Left/Right moved focus INTO the stepper column, there
-                // was no way for Left to ever move focus back OUT to
-                // Reset PIN again, since Left there would be consumed by
-                // the value-adjust instead. Enter avoids the ambiguity
-                // entirely — Left/Right always just move between the 2
-                // actions on this row, and Enter always means "activate
-                // whatever's focused," consistent for both columns.
-                // Routed through the same callback a mouse click on this
-                // control uses (bonfire-admin-cycle-limit), so keyboard and
-                // mouse can never compute a different "next" value.
+                // The limit stepper cycles on Enter instead of adjusting with Left/Right: Left
+                // inside the stepper would adjust the value and never move focus back to Reset PIN.
+                // Left/Right always move between the row's two actions; Enter activates. Same
+                // callback as the mouse (bonfire-admin-cycle-limit), so both compute the same next
+                // value.
                 g.invoke_bonfire_admin_cycle_limit(row.profile_user_id.clone());
             }
             // else: neither guard matched — a sub-profile with no PIN has
@@ -566,7 +524,8 @@ pub(crate) fn handle_key(action: &Action, g: &AppState) -> bool {
 }
 
 // ── wire_bonfire_admin (moved from main(), 0.5.0 step 3) ─────────────────
-/// Wires BonfireAdminScreen: open_bonfire_admin, bonfire_admin_tab_selected, bonfire_admin_reset_pin, bonfire_admin_set_limit, bonfire_admin_cycle_limit.
+/// Wires BonfireAdminScreen: open_bonfire_admin, bonfire_admin_tab_selected,
+/// bonfire_admin_reset_pin, bonfire_admin_set_limit, bonfire_admin_cycle_limit.
 pub(crate) fn wire_bonfire_admin(
     window: &crate::MainWindow,
     state: &std::sync::Arc<std::sync::Mutex<crate::config::FjordState>>,

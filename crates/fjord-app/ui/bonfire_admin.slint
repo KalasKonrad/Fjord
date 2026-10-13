@@ -1,28 +1,14 @@
 // ── fjord-app · bonfire_admin.slint ──────────────────────────────────────────
-//   AdminTab           small tab-switcher pill (Mappings / Audit Logs) — same
-//                      active-fill + focus-ring + press-pulse shape as
-//                      connect_seerr.slint's MethodTab, including its own
-//                      already-fixed "ring only lights on the SELECTED tab"
-//                      AND(kbd-focused, active) rule (kbd-focused is bound
-//                      identically on both instances — the ring's own AND
-//                      is what narrows it correctly, not the binding itself)
-//   BonfireAdminScreen Bonfire Phase 6 (admin actions, 2026-09-04) — reached from
-//                      Settings -> Profiles -> "Bonfire Admin" (Jellyfin server
-//                      admins only). Same floating "← Back" FjordButton
-//                      top-left + FadeGate-mounted-by-main.slint convention as
-//                      every other overlay. Header: Back + title + the
-//                      Mappings/Audit Logs tab switcher. Mappings tab: a FLAT
-//                      scrollable list (BlocklistScreen's own Flickable/kb-y
-//                      shape) of BonfireAdminRow — master rows (avatar, name,
-//                      PIN badge, Reset PIN + a profile-limit stepper) each
-//                      immediately followed by their own indented sub-profile
-//                      rows (Reset PIN only — Left/Right/col is a no-op there,
-//                      see bonfire_admin.rs). Audit Logs tab: the identical
-//                      list shape but read-only rows, no per-row action.
-//                      Reset PIN reuses the shared ConfirmDialog (widgets.slint),
-//                      keyboard-dumb by design — all dispatch lives in
-//                      bonfire_admin.rs::handle_key, a genuine AppMode, not a
-//                      raw-key tier (this screen has no text entry at all).
+//   AdminTab           tab pill (Mappings / Audit Logs) — MethodTab's shape (connect_seerr.slint):
+//                      the ring shows only on the active tab
+//   BonfireAdminScreen Settings → Profiles → "Bonfire Admin" (Jellyfin server admins only); a
+//                      FadeGate overlay from main.slint with the floating "← Back". Header: Back,
+//                      title, tab switcher. Mappings: a flat scrollable list (BlocklistScreen's
+//                      Flickable/kb-y) of BonfireAdminRow — each master (avatar, name, PIN badge,
+//                      Reset PIN when it has a PIN, profile-limit stepper) followed by its indented
+//                      sub-profiles (Reset PIN when they have one). Audit Logs: the same list,
+//                      read-only. Reset PIN asks via ConfirmDialog. All keys in bonfire_admin.rs's
+//                      handle_key (an AppMode — no text entry here).
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme, BonfireAdminRow, BonfireAuditRow } from "theme.slint";
 import { AppState } from "app_state.slint";
@@ -112,16 +98,8 @@ export component BonfireAdminScreen inherits Rectangle {
                 label: "Mappings";
                 active: AppState.bonfire-admin-tab == 0;
                 kbd-focused: AppState.bonfire-admin-cursor < 0 && !AppState.bonfire-admin-back-focused;
-                // Reset the cursor (and, 2026-09-07, back-focused) on a
-                // direct mouse click too — the D-pad path structurally
-                // guarantees cursor == -1 (and back-focused == false)
-                // whenever a tab switch happens via keyboard, but a mouse
-                // click on the pill can fire from any state; without this,
-                // a stale cursor from the OLD tab could point past the new
-                // tab's own (possibly shorter) row count, or the Back
-                // button could keep showing a ring simultaneously with the
-                // tab that was just clicked, until the next keypress
-                // self-corrects it.
+                // Reset the cursor and back-focused on a mouse click too (the keyboard path guarantees
+                // both): a stale cursor could point past the new tab's rows, and Back would keep its ring.
                 clicked => { AppState.bonfire-admin-cursor = -1; AppState.bonfire-admin-back-focused = false; AppState.bonfire-admin-tab-selected(0); }
             }
 
@@ -202,12 +180,8 @@ export component BonfireAdminScreen inherits Rectangle {
                     clicked => {
                         AppState.bonfire-admin-cursor = i;
                         AppState.bonfire-admin-back-focused = false;
-                        // Same "land on whatever's actually there" default
-                        // as bonfire_admin.rs::default_col_for_row — a
-                        // master with no PIN has only the limit stepper
-                        // (col 1); anything else defaults to col 0 (Reset
-                        // PIN, when it exists, or a genuine don't-care for
-                        // a PIN-less sub-profile with no action at all).
+                        // Lands on what exists, like bonfire_admin.rs's default_col_for_row: a master without a PIN
+                        // has only the limit stepper (col 1); otherwise col 0.
                         AppState.bonfire-admin-col = row.requires-pin ? 0 : (row.is-master ? 1 : 0);
                     }
 
@@ -288,19 +262,9 @@ export component BonfireAdminScreen inherits Rectangle {
                                 spacing: 16px;
                                 alignment: end;
 
-                                // Hidden entirely when the row has no PIN to
-                                // reset — real gap, live-questioned 2026-09-07
-                                // ("why can i reset pin on test master
-                                // accaunt?"): the real ResetPinAdmin endpoint
-                                // is a harmless idempotent "set PinHash to
-                                // empty" (verified against the real
-                                // controller source, no error either way),
-                                // but offering an action with zero observable
-                                // effect on a profile that has no PIN at all
-                                // is genuinely confusing. See
-                                // bonfire_admin.rs::default_col_for_row for
-                                // the matching keyboard-side fix (the stored
-                                // column now always lands somewhere real).
+                                // Hidden when the row has no PIN: ResetPinAdmin on such a profile does nothing visible
+                                // (it just sets an empty PinHash), so offering it was confusing. Keyboard side:
+                                // bonfire_admin.rs's default_col_for_row.
                                 if row.requires-pin: reset-ta := TouchArea {
                                     width: 100px;
                                     height: 32px;
