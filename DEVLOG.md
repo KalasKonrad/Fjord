@@ -22111,3 +22111,106 @@ Above `for trk[i] in AppState.album-tracks: Rectangle {`:
 //                and album.rs::media_items_to_tracks for the Rust-side half.
 // ─────────────────────────────────────────────────────────────────────────────
 ```
+
+#### `crates/fjord-app/src/poster.rs`
+
+Above `if !crate::session_current(&state, &client) {`:
+```
+// Session guard (Bonfire Phase 1, step 8 audit, 2026-08-09) —
+// this writes genuinely Jellyfin-restricted content (Home
+// dashboard rows: Continue Watching, Favorites, etc.) with no
+// guard of any kind before this; a sign-out or profile switch
+// mid-fetch could otherwise land the OUTGOING profile's own
+// dashboard content into the incoming profile's UI.
+```
+
+Above `if !crate::session_current(&state, &client) {`:
+```
+// Session guard (Bonfire Phase 1, step 8 audit, 2026-08-09) —
+// same reasoning as push_decoded_section: all-series is
+// genuinely Jellyfin-restricted per-profile content, and this
+// had no staleness guard at all before this.
+```
+
+#### `crates/fjord-app/ui/remember_login_confirm.slint`
+
+Above `height: self.preferred-height;`:
+```
+// Explicit self-sizing, code review 2026-09-06 — the exact bug
+// ConfirmDialog (widgets.slint) was live-fixed for once already:
+// a Layout element placed directly in a plain Rectangle (not
+// managed by an enclosing Layout) doesn't reliably default to
+// its own natural content height, while `card`'s own height
+// above is separately computed from `content.preferred-height`
+// — the two could disagree, especially here where content's
+// real height varies a lot (password field always, plus an
+// optional error line, plus either a spinner or a button row).
+```
+
+#### `crates/fjord-api/src/models/auth.rs`
+
+Above `#[derive(Debug, Deserialize, Default)]`:
+```
+// Bonfire Phase 6 (admin actions, 2026-09-04): Bonfire's own admin/*
+// endpoints gate on Jellyfin's core Policy.IsAdministrator (verified
+// directly against the real plugin controller source — no Bonfire-
+// specific permission concept exists at all), which Fjord had never
+// modeled anywhere before this — UserDto only ever carried id/name.
+// #[serde(default)] on both the field and the struct: a login/user-info
+// response missing or reshaping Policy degrades safely to
+// is_administrator: false, the correct default for a security-relevant
+// flag (never default-open).
+```
+
+#### `crates/fjord-app/src/poster.rs` — file header (TOC)
+```
+// ── fjord-app · poster.rs ────────────────────────────────────────────────────
+//   ImageKind              Poster | Backdrop — selects cache path and API method
+//   fetch_image_cached     shared fetch-or-cache implementation for both kinds; no disk cache for an id
+//                          that isn't a safe cache name; only bytes passing is_image are written
+//   is_image               JPEG/PNG/WebP header with dimensions (2026-10-09 security review; unit-tested)
+//   fetch_poster_cached    thin wrapper: fetch_image_cached(…, Poster)
+//   fetch_backdrop_cached  thin wrapper: fetch_image_cached(…, Backdrop)
+//   fetch_posters_for_delta  generic concurrent poster fetch for a WS delta batch (any item
+//                          type mix); doesn't replace a model — caller patches rows itself
+//   decode_scaled / decode_poster_buffer (≤600px) / decode_backdrop_buffer (≤3840px)
+//                          decode-to-size: originals are 1000-3000px, cards render ≤400px
+//   push_decoded_section   decode poster bytes for one section and invoke_from_event_loop to push it;
+//                          session_current-guarded (Bonfire Phase 1, step 8, 2026-08-09) — writes
+//                          genuinely Jellyfin-restricted content, so both push_ functions and their
+//                          two spawn_ callers now take an extra `state` param for the check
+//   spawn_poster_loading   parallel poster fetch for [(HomeSection, Vec<MediaItem>); 17]; sets series-id on Episode cards
+//   spawn_series_poster_loading  same for series cards → AppState.all-series
+// ─────────────────────────────────────────────────────────────────────────────
+```
+
+#### `crates/fjord-app/ui/remember_login_confirm.slint` — file header (TOC)
+```
+// ── fjord-app · remember_login_confirm.slint ─────────────────────────────────
+//   RememberLoginConfirmOverlay  Settings → Profiles → "Remember this login" toggle,
+//                       turning it back ON (2026-08-17, live-questioned: "no why to
+//                       change this on the accaunt without sinign out and in
+//                       again" — user's explicit choice, of 3 offered: OFF is
+//                       immediate, ON needs a real password re-check first).
+//                       Deliberately a small, standalone modal — NOT the full
+//                       LoginScreen/do-login pipeline, which would tear down and
+//                       rebuild the whole active session for what's really just
+//                       "prove you still know the password." Same dim-backdrop
+//                       + centered-box shape as ConfirmDialog/PlaylistPicker/
+//                       RequestOptionsOverlay; server + username are read-only
+//                       display text (already known, never re-typed), only the
+//                       password field is editable. Free-floating overlay,
+//                       mounted+FadeGate'd from main.slint like every other
+//                       screen-level modal in this app.
+// ─────────────────────────────────────────────────────────────────────────────
+```
+
+#### `crates/fjord-api/src/models/auth.rs` — file header (TOC)
+```
+// ── fjord-api · models/auth.rs ───────────────────────────────────────────────
+//   AuthResponse  top-level login response (AccessToken + User)
+//   UserDto       user id + display name + admin policy from login/GET /Users/{id}
+//   UserPolicy    (Bonfire Phase 6, 2026-09-04) IsAdministrator — genuinely new;
+//                 Fjord never modeled Jellyfin's own server-admin flag before this
+// ─────────────────────────────────────────────────────────────────────────────
+```

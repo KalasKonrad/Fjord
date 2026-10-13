@@ -1,8 +1,7 @@
 // ── fjord-api · models/auth.rs ───────────────────────────────────────────────
 //   AuthResponse  top-level login response (AccessToken + User)
 //   UserDto       user id + display name + admin policy from login/GET /Users/{id}
-//   UserPolicy    (Bonfire Phase 6, 2026-09-04) IsAdministrator — genuinely new;
-//                 Fjord never modeled Jellyfin's own server-admin flag before this
+//   UserPolicy    IsAdministrator (Jellyfin's server-admin flag; gates Bonfire Admin)
 // ─────────────────────────────────────────────────────────────────────────────
 use serde::Deserialize;
 
@@ -14,15 +13,9 @@ pub struct AuthResponse {
     pub user: UserDto,
 }
 
-// Bonfire Phase 6 (admin actions, 2026-09-04): Bonfire's own admin/*
-// endpoints gate on Jellyfin's core Policy.IsAdministrator (verified
-// directly against the real plugin controller source — no Bonfire-
-// specific permission concept exists at all), which Fjord had never
-// modeled anywhere before this — UserDto only ever carried id/name.
-// #[serde(default)] on both the field and the struct: a login/user-info
-// response missing or reshaping Policy degrades safely to
-// is_administrator: false, the correct default for a security-relevant
-// flag (never default-open).
+// Jellyfin's Policy.IsAdministrator — what Bonfire's admin/* endpoints check (verified in
+// the plugin's controller source). #[serde(default)] on the field and the struct: a missing
+// or reshaped Policy means is_administrator false (never default-open).
 #[derive(Debug, Deserialize, Default)]
 pub struct UserPolicy {
     #[serde(rename = "IsAdministrator", default)]

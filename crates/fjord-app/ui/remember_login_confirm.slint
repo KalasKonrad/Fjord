@@ -1,19 +1,10 @@
 // ── fjord-app · remember_login_confirm.slint ─────────────────────────────────
-//   RememberLoginConfirmOverlay  Settings → Profiles → "Remember this login" toggle,
-//                       turning it back ON (2026-08-17, live-questioned: "no why to
-//                       change this on the accaunt without sinign out and in
-//                       again" — user's explicit choice, of 3 offered: OFF is
-//                       immediate, ON needs a real password re-check first).
-//                       Deliberately a small, standalone modal — NOT the full
-//                       LoginScreen/do-login pipeline, which would tear down and
-//                       rebuild the whole active session for what's really just
-//                       "prove you still know the password." Same dim-backdrop
-//                       + centered-box shape as ConfirmDialog/PlaylistPicker/
-//                       RequestOptionsOverlay; server + username are read-only
-//                       display text (already known, never re-typed), only the
-//                       password field is editable. Free-floating overlay,
-//                       mounted+FadeGate'd from main.slint like every other
-//                       screen-level modal in this app.
+//   RememberLoginConfirmOverlay  Settings → Profiles → "Remember this login" turned back ON
+//                       (OFF is immediate; ON re-checks the password first). A small modal, not
+//                       the LoginScreen/do-login pipeline (which would rebuild the whole session
+//                       just to verify a password). Dim backdrop + centered box like
+//                       ConfirmDialog; server + username are read-only, only the password is
+//                       editable. FadeGate-mounted from main.slint.
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
@@ -55,15 +46,9 @@ export component RememberLoginConfirmOverlay inherits Rectangle {
             x: 16px;
             y: 16px;
             width: parent.width - 32px;
-            // Explicit self-sizing, code review 2026-09-06 — the exact bug
-            // ConfirmDialog (widgets.slint) was live-fixed for once already:
-            // a Layout element placed directly in a plain Rectangle (not
-            // managed by an enclosing Layout) doesn't reliably default to
-            // its own natural content height, while `card`'s own height
-            // above is separately computed from `content.preferred-height`
-            // — the two could disagree, especially here where content's
-            // real height varies a lot (password field always, plus an
-            // optional error line, plus either a spinner or a button row).
+            // A Layout directly in a plain Rectangle: bind its height to preferred-height, or it can
+            // disagree with card's height (computed from content.preferred-height), which varies here
+            // (optional error line, spinner or buttons) — the ConfirmDialog fix.
             height: self.preferred-height;
             spacing: 14px;
 
