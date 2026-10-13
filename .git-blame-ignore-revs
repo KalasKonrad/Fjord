@@ -5,3 +5,5 @@
 c5860f60c708a9ba095b7dcd82b86572ba74b39a
 # style: format the .slint files with Slint's formatter
 503a5c283e8b3a85d359eedcdb9c1c9fd8f74e1d
+# style: cargo fmt of 6a9018d (playback/mod.rs)
+63f79b5117eeebd52ac33e49c2da37c7d76d63e1
