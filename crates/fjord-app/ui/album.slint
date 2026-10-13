@@ -8,13 +8,10 @@
 //                ♥/✓ buttons toggle fav/played
 //                ▶ Play All button → play-album-all callback
 //                Back → close-album
-//                Multi-disc separators (2026-08-17): track rows are absolutely
-//                positioned via each TrackItem's precomputed row-y-px (not a
-//                VerticalLayout) so a variable-height "Disc N" label can sit
-//                above a disc's first track; kb-track-y/tracks-content-h read
-//                the model directly (O(1) index) instead of summing separator
-//                heights in Slint — see TrackItem's own doc comment (theme.slint)
-//                and album.rs::media_items_to_tracks for the Rust-side half.
+//                Multi-disc separators: track rows are positioned by each TrackItem's
+//                precomputed row-y-px (not a VerticalLayout) so a "Disc N" label can sit
+//                above a disc's first track; kb-track-y/tracks-content-h read the model by
+//                index (album.rs::media_items_to_tracks computes the values).
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
@@ -37,10 +34,8 @@ export component AlbumScreen inherits Rectangle {
     // 130px = StorylineSection collapsed (44px header + 66px preview + 20px padding)
     property <length> bio-h: AppState.album-overview != "" ? 130px : 0px;
 
-    // Total scrollable content height, from the last track's own
-    // precomputed row-y-px (2026-08-17, multi-disc separators — see
-    // TrackItem's own doc comment in theme.slint) plus its row height —
-    // already accounts for every disc-header's extra height above it.
+    // Total scrollable height: the last track's precomputed row-y-px (includes every disc header
+    // above it, see TrackItem in theme.slint) plus its row height.
     property <length> tracks-content-h: AppState.album-tracks.length > 0
         ? AppState.album-tracks[AppState.album-tracks.length - 1].row-y-px * 1px + track-h
         : 0px;
@@ -227,12 +222,8 @@ export component AlbumScreen inherits Rectangle {
                         easing: ease-out-expo;
                     }
 
-                    // Absolutely positioned via each row's own precomputed
-                    // row-y-px (2026-08-17, multi-disc separators) instead of
-                    // a VerticalLayout's automatic uniform-height stacking —
-                    // rows aren't all the same height once a disc-header
-                    // label is involved, so the layout can't compute this
-                    // for us; album.rs already did the real math once.
+                    // Positioned by each row's precomputed row-y-px, not a VerticalLayout: rows differ in height
+                    // once a disc header is involved (album.rs does the math).
                     for trk[i] in AppState.album-tracks: Rectangle {
                         property <bool> focused: !AppState.album-back-focused && AppState.album-btn-focused < 0 && i == AppState.album-focused-track;
                         x: 0px;

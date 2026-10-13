@@ -21976,3 +21976,138 @@ Above `#[serde(default)]`:
 //                         Down back, Enter/Escape/Backspace close.
 // ─────────────────────────────────────────────────────────────────────────────
 ```
+
+#### `crates/fjord-app/src/keys/mode.rs`
+
+Above `else if g.get_show_request_options() && !g.get_is_playing() {`:
+```
+// Checked ahead of RequestDetail so the modal captures all input while
+// open — show-request-options can only ever be true while already on
+// that screen, so there's no ordering conflict with it taking priority.
+// !is_playing mirrors every other overlay-style mode above (real bug,
+// 2026-07-18: this was the one Seerr overlay missing it — resuming a
+// backgrounded player via 'r' while the modal was open left it stuck
+// rendered on top of the fullscreen video, still eating all keyboard
+// input meant for playback).
+```
+
+Above `else if g.get_show_calendar_day_popup() && !g.get_is_playing() {`:
+```
+// Calendar (2026-07-18, Watchlist + Release Calendar) — same tier and
+// !is_playing guard as RequestOptions/RequestDetail above, for the
+// identical reason (see that fix's own comment). DayPopup checked
+// first so it captures all input while open, same nesting shape as
+// RequestOptions-over-RequestDetail.
+```
+
+#### `crates/fjord-app/src/keys/player.rs`
+
+Above `debug!(`:
+```
+// Debug logging added 2026-08-28 — a real live report of
+// "left/right don't seek" turned out to have no way to
+// confirm from the log whether it was silently swallowed
+// here (this branch never logs, and neither does the
+// real seek path below it). If show-skip-timed is ever
+// left stuck true outside a genuine Intro Skipper prompt,
+// this line is what would reveal it.
+```
+
+Above `if g.get_show_queue_clear_confirm() {`:
+```
+// Clear-queue confirmation (2026-08-22, see show-queue-clear-confirm's
+// own doc comment in app_state.slint) — checked first, same shape as
+// every other ConfirmDialog gate in this app: intercepts all panel
+// input while open.
+```
+
+#### `crates/fjord-app/src/artist.rs`
+
+Above `if is_cache_hit {`:
+```
+// Cache-hit only: the screen above already showed instantly from cached
+// data. Real gap, live-reported: Jellyfin's WebSocket only delivers
+// LibraryChanged to the most-recently-connected client when multiple
+// clients share a session (JELLYFIN.md) — this can silently starve Fjord
+// of the event, leaving these caches stale indefinitely with no other
+// fallback. This revalidation is what closes that gap for whatever's
+// actually on screen right now.
+```
+
+Above `if !crate::session_current(&state, &client) {`:
+```
+// Sign-out (or a different account signing in on a shared HTPC)
+// mid-fetch must not let this per-user data land in the new session's
+// cache — same guard class as main.rs::session_current's own doc
+// comment (CR11-2).
+```
+
+#### `crates/fjord-app/ui/album.slint`
+
+Above `property <length> tracks-content-h: AppState.album-tracks.length > 0`:
+```
+// Total scrollable content height, from the last track's own
+// precomputed row-y-px (2026-08-17, multi-disc separators — see
+// TrackItem's own doc comment in theme.slint) plus its row height —
+// already accounts for every disc-header's extra height above it.
+```
+
+Above `for trk[i] in AppState.album-tracks: Rectangle {`:
+```
+// Absolutely positioned via each row's own precomputed
+// row-y-px (2026-08-17, multi-disc separators) instead of
+// a VerticalLayout's automatic uniform-height stacking —
+// rows aren't all the same height once a disc-header
+// label is involved, so the layout can't compute this
+// for us; album.rs already did the real math once.
+```
+
+#### `crates/fjord-app/src/keys/mode.rs` — file header (TOC)
+```
+// ── fjord-app · keys/mode.rs ─────────────────────────────────────────────────
+//   AppMode            active UI mode — 20 variants; priority: ContextMenu > QueuePanel > NowPlaying >
+//                      Person > Detail > Season > Series > Artist > Collection > Album > RequestOptions >
+//                      RequestDetail > CalendarDayPopup > Calendar (Seerr) > Blocklist (Seerr, 2026-08-06,
+//                      Manage Blocklist) > Player > Library > Browse > Discover (Seerr) > Settings > Dashboard
+//   active_mode        derive AppMode from AppState flags (single source of screen priority)
+// ─────────────────────────────────────────────────────────────────────────────
+```
+
+#### `crates/fjord-app/src/artist.rs` — file header (TOC)
+```
+// ── fjord-app · artist.rs ─────────────────────────────────────────────────────
+//   open_artist_screen   reset AppState artist props; increment artist-open-gen; checks
+//                        artist_albums_cache + item_detail_cache (Part 2) — only sets
+//                        app-content-loading=true when either is a miss; spawn async: fetch
+//                        artist albums + portrait + detail in parallel (cached ones skip their
+//                        network call); build CardItem model with posters, applied via
+//                        apply_cards_preserving_identity; generation-guarded invoke_from_event_loop
+//                        shows page (show-artist=true)
+//   handle_key           keyboard dispatch: Back button / btn row / bio (slot 2) / album grid;
+//                        Up from row 0 → bio (or btn row); btn row → Back / bio / grid;
+//                        Enter on album → open-album; C → context menu
+//   wire_artist            callbacks moved from main() (0.5.0 step 3): artist screen
+// ─────────────────────────────────────────────────────────────────────────────
+```
+
+#### `crates/fjord-app/ui/album.slint` — file header (TOC)
+```
+// ── fjord-app · album.slint ───────────────────────────────────────────────────
+//   AlbumScreen  MusicAlbum detail: cover art + metadata + tracklist
+//                album-focused-track: int (focused track index)
+//                album-back-focused: bool (Back button has focus)
+//                album-btn-focused: int (-1=none, 0=▶ Play All, 1=♥, 2=bio)
+//                album-overview-expanded: bool (collapsible bio below header)
+//                Enter on track → play-album-track; C → open-context-menu
+//                ♥/✓ buttons toggle fav/played
+//                ▶ Play All button → play-album-all callback
+//                Back → close-album
+//                Multi-disc separators (2026-08-17): track rows are absolutely
+//                positioned via each TrackItem's precomputed row-y-px (not a
+//                VerticalLayout) so a variable-height "Disc N" label can sit
+//                above a disc's first track; kb-track-y/tracks-content-h read
+//                the model directly (O(1) index) instead of summing separator
+//                heights in Slint — see TrackItem's own doc comment (theme.slint)
+//                and album.rs::media_items_to_tracks for the Rust-side half.
+// ─────────────────────────────────────────────────────────────────────────────
+```

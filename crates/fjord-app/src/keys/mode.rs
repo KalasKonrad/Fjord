@@ -1,8 +1,8 @@
 // ── fjord-app · keys/mode.rs ─────────────────────────────────────────────────
-//   AppMode            active UI mode — 20 variants; priority: ContextMenu > QueuePanel > NowPlaying >
-//                      Person > Detail > Season > Series > Artist > Collection > Album > RequestOptions >
-//                      RequestDetail > CalendarDayPopup > Calendar (Seerr) > Blocklist (Seerr, 2026-08-06,
-//                      Manage Blocklist) > Player > Library > Browse > Discover (Seerr) > Settings > Dashboard
+//   AppMode            active UI mode; priority: ContextMenu > QueuePanel > NowPlaying > Person >
+//                      Detail > Season > Series > Artist > Collection > Album > RequestOptions >
+//                      RequestDetail > CalendarDayPopup > Calendar > Blocklist > Player > Library >
+//                      Browse > Discover > Settings > Dashboard
 //   active_mode        derive AppMode from AppState flags (single source of screen priority)
 // ─────────────────────────────────────────────────────────────────────────────
 // ── AppMode ───────────────────────────────────────────────────────────────────
@@ -59,24 +59,16 @@ pub(crate) fn active_mode(g: &crate::AppState) -> AppMode {
     } else if g.get_show_album() && !g.get_is_playing() {
         AppMode::Album
     }
-    // Checked ahead of RequestDetail so the modal captures all input while
-    // open — show-request-options can only ever be true while already on
-    // that screen, so there's no ordering conflict with it taking priority.
-    // !is_playing mirrors every other overlay-style mode above (real bug,
-    // 2026-07-18: this was the one Seerr overlay missing it — resuming a
-    // backgrounded player via 'r' while the modal was open left it stuck
-    // rendered on top of the fullscreen video, still eating all keyboard
-    // input meant for playback).
+    // Ahead of RequestDetail so the modal takes all input (it only exists on that screen).
+    // !is_playing like every overlay mode — otherwise resuming the player with R left the modal
+    // stuck over the video, eating its keys.
     else if g.get_show_request_options() && !g.get_is_playing() {
         AppMode::RequestOptions
     } else if g.get_show_request_detail() && !g.get_is_playing() {
         AppMode::RequestDetail
     }
-    // Calendar (2026-07-18, Watchlist + Release Calendar) — same tier and
-    // !is_playing guard as RequestOptions/RequestDetail above, for the
-    // identical reason (see that fix's own comment). DayPopup checked
-    // first so it captures all input while open, same nesting shape as
-    // RequestOptions-over-RequestDetail.
+    // Calendar: same tier and !is_playing guard as RequestOptions/RequestDetail; the day popup
+    // first so it takes all input while open.
     else if g.get_show_calendar_day_popup() && !g.get_is_playing() {
         AppMode::CalendarDayPopup
     } else if g.get_show_calendar() && !g.get_is_playing() {
