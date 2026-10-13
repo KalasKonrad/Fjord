@@ -10,41 +10,17 @@
 //   BonfireGroupStatus      GET /plugins/profiles/bonfire/status response
 //   BonfireGroupInfo        POST /plugins/profiles/bonfire/generate response
 //   BonfireJoinResult       POST /plugins/profiles/bonfire/join response
-//   BonfirePreferences      GET/POST /plugins/profiles/preferences body+response (switcherMode: "gate"|"native")
+//   BonfirePreferences      GET/POST /plugins/profiles/preferences body+response (switcherMode:
+//                           "gate"|"native")
 //   AdminMasterUser/AdminSubProfile/AdminMappings  GET /plugins/profiles/admin/mappings response
 //   AuditLogEntry           GET /plugins/profiles/admin/audit-logs entry
 //
-// Field NAMES below are quoted from the plugin's own real developer-api.md
-// (github.com/AHouseOfBards/Bonfire-JellyProfiles, fetched 2026-08-09), but
-// the CASING was wrong from the start — this whole module originally
-// assumed camelCase ("a third-party plugin, its own convention," reasoning
-// by analogy with Seerr, a genuinely different Node.js/TypeScript service)
-// with a caveat that it was "not yet live-verified against a real
-// Bonfire-enabled server." That caveat turned out to matter: live-tested
-// 2026-08-12 against a real server (4 real profiles, one master + three
-// sub-profiles) via a one-off diagnostic query (raw HTTP + the already-
-// decrypted token from this dev machine's own saved config.json, same
-// technique this project has used before for Seerr endpoints — see
-// CLAUDE.md), and the real response is **PascalCase** throughout
-// (`ProfileUserId`, not `profileUserId`) — the same convention every OTHER
-// Jellyfin-core-facing struct in this crate already correctly uses
-// (`models/system.rs`, `models/plugins.rs`). This makes sense in hindsight:
-// Bonfire is a Jellyfin plugin running on Jellyfin's own ASP.NET Core
-// pipeline, not a standalone service with its own serialization choice —
-// there was never a real reason to expect it to diverge from Jellyfin's own
-// convention, the developer-api.md's camelCase-looking examples
-// notwithstanding. This was the actual root cause of "Bonfire doesn't
-// work" — `bonfire_list_profiles()` failed to deserialize on every call
-// with "missing field `profileUserId`" (silently swallowed by
-// `sync_bonfire_subprofiles`'s own `Err => debug!(...); return;` — visible
-// only once that function's logging was added, see its own doc comment in
-// profile.rs), so `Config.profiles` could never grow past 1 and the picker
-// could never trigger, regardless of the auto-login wiring fix from the
-// day before. The rest of this module (17 endpoints total) has NOT been
-// individually live-verified beyond this one — the casing fix applies
-// uniformly since it's a property of the whole plugin, not a per-endpoint
-// quirk, but per-field required/optional mismatches on the other 16
-// remain unconfirmed until each is actually exercised live.
+// Field names follow the plugin's developer-api.md
+// (github.com/AHouseOfBards/Bonfire-JellyProfiles), but the wire format is **PascalCase** like the
+// rest of Jellyfin (the plugin runs in Jellyfin's ASP.NET pipeline) — the docs' camelCase examples
+// are wrong; camelCase made every list call fail to deserialize. Verified live against a real
+// server; fields the docs mark required are not always present — those seen missing are
+// #[serde(default)]. Not every endpoint has been exercised live.
 // ─────────────────────────────────────────────────────────────────────────────
 use serde::{Deserialize, Serialize};
 
@@ -207,15 +183,8 @@ pub struct BonfireGroupStatus {
     pub joined_owner_id: Option<String>,
     pub hide_my_sub_profiles_from_others: bool,
     pub hide_others_sub_profiles_from_me: bool,
-    // Live-verified 2026-08-29 against a real server (an is_owner:true,
-    // is_member:false response): the plugin's real `/bonfire/status` body
-    // omitted exactly these three fields entirely — `#[serde(default)]`
-    // (false) is the conservative reading for all three, and matches this
-    // whole module's own already-established "the docs' non-optional
-    // fields aren't reliably present" lesson (see e.g.
-    // BonfireProfile.max_sub_profiles above). Fjord had never actually
-    // called this endpoint before Phase 5 shipped, so this was the first
-    // real exercise of it.
+    // Live-verified: the real /bonfire/status body can omit these three fields entirely
+    // (seen on an is_owner:true, is_member:false response) — default false.
     #[serde(default)]
     pub allow_household_lan_bypass: bool,
     #[serde(default)]
