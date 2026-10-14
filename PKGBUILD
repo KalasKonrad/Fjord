@@ -18,9 +18,7 @@ provides=('fjord')
 conflicts=('fjord')
 install=fjord.install
 options=('!debug')
-# TEMPORARY: builds the release-0.5 branch (0.5.0 release work) for HTPC testing.
-# Remove the #branch= fragment (on main) once it's merged.
-source=("fjord::git+https://github.com/KalasKonrad/Fjord.git#branch=release-0.5")
+source=("fjord::git+https://github.com/KalasKonrad/Fjord.git")
 sha256sums=('SKIP')
 
 pkgver() {
