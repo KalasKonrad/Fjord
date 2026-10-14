@@ -15,7 +15,7 @@ resolver = "3"
 # (build.rs) which identifies the exact commit a binary was built from and
 # changes on every commit — that one exists for HTPC log triage, this one
 # is for humans.
-version = "0.4.2"
+version = "0.5.0"
 edition = "2024"
 authors = ["KalasKonrad"]
 

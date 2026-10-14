@@ -1,4 +1,4 @@
-name: Build nightly release
+name: Build release
 
 # Real, from-scratch CI, added 2026-08-17 per direct request — "cant we
 # expose it so i can install it via the pkgbuild instead of needing to
@@ -28,9 +28,14 @@ name: Build nightly release
 # survives as long as the dev machine has an active login session; full
 # reboot-survival needs `loginctl enable-linger` run once, by hand, since
 # that itself needs root.
+#
+# Tags `v*` (added for 0.5.0) build the same tarball and publish a normal,
+# non-pre release named after the tag, with that version's CHANGELOG.md
+# section as its text. Path filters don't apply to tag pushes.
 on:
   push:
     branches: [main]
+    tags: ['v*']
     # Path filter added 2026-08-28, direct request — "culd we fix so we
     # dont do a new build on every push only when we do a code change?"
     # Before this, a doc-only push (PLAN.md/CLAUDE.md updates, which this
@@ -55,7 +60,7 @@ on:
   workflow_dispatch: {}
 
 permissions:
-  contents: write   # needed to create/update the "nightly" release
+  contents: write   # needed to create/update the "nightly" and tag releases
 
 jobs:
   build:
@@ -85,6 +90,7 @@ jobs:
           tar -C dist -czf fjord-x86_64.tar.gz fjord-bin
 
       - name: Publish "nightly" release (moving tag, overwritten every push)
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2 — pinned to a commit (self-hosted runner)
         with:
           tag_name: nightly
@@ -92,4 +98,26 @@ jobs:
           body: "Automated build of `main` at `${{ steps.ver.outputs.version }}`. Install with `fjord-bin/PKGBUILD` at the repo root — no compile step needed."
           prerelease: true
           make_latest: false
+          files: fjord-x86_64.tar.gz
+
+      - name: Release notes from CHANGELOG.md
+        if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+        run: |
+          set -e
+          ver="${GITHUB_REF_NAME#v}"
+          awk -v h="## [$ver]" 'index($0, h) == 1 { f = 1; next } /^## \[/ { if (f) exit } f' \
+            CHANGELOG.md > release-notes.md
+          if ! grep -q '[^[:space:]]' release-notes.md; then
+            echo "CHANGELOG.md has no '## [$ver]' section" >&2
+            exit 1
+          fi
+
+      - name: Publish tag release
+        if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2 — pinned to a commit (self-hosted runner)
+        with:
+          name: "Fjord ${{ github.ref_name }}"
+          body_path: release-notes.md
+          prerelease: false
+          make_latest: true
           files: fjord-x86_64.tar.gz
