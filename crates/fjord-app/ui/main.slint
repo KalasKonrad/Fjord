@@ -568,7 +568,7 @@ export component MainWindow inherits Window {
     // artificial opacity ramp on top of it.
     if AppState.is-playing:                          PlayerScreen { }
     gate15 := FadeGate {
-        show: AppState.show-series;
+        show: AppState.show-series && !AppState.is-playing;
     }
 
     if gate15.mounted: SeriesScreen {
@@ -582,7 +582,7 @@ export component MainWindow inherits Window {
         }
     }
     gate16 := FadeGate {
-        show: AppState.show-season;
+        show: AppState.show-season && !AppState.is-playing;
     }
 
     if gate16.mounted: SeasonScreen {
@@ -715,7 +715,7 @@ export component MainWindow inherits Window {
     // RequestDetail) don't clear their own show-X flags — Person covers them by z-order. Keep
     // any new sibling overlay above this one.
     gate21 := FadeGate {
-        show: AppState.show-person;
+        show: AppState.show-person && !AppState.is-playing;
     }
 
     if gate21.mounted: PersonScreen {
