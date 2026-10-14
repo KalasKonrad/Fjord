@@ -23,6 +23,12 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Changed: three packages to choose from.** `PKGBUILD` (now `fjord`, was
+  `fjord-git`) builds the latest release from source, `fjord-bin` installs
+  the same release pre-built (checked against its checksum), and the new
+  `fjord-bin-nightly` installs the current development build (what
+  `fjord-bin` did before). Each replaces the others when installed.
+
 ## [0.5.0] — 2026-10-14
 
 Household profiles, real HDR, display sync and a remote-friendly keyboard,

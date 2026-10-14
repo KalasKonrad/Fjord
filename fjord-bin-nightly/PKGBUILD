@@ -1,0 +1,58 @@
+# Maintainer: KalasKonrad <25062046+KalasKonrad@users.noreply.github.com>
+# shellcheck shell=bash
+# shellcheck disable=SC2034,SC2154,SC2164
+#
+# Pre-built nightly: the latest build of the current development branch
+# (release-X.Y.Z), published as the moving "nightly" pre-release by
+# .github/workflows/build-release.yml on every push to that branch.
+# `makepkg -si` in this directory — no Rust toolchain needed. Released
+# versions: ../fjord-bin/ (pre-built) or ../PKGBUILD (from source).
+#
+# The tarball keeps the same name on every build, so pkgver() downloads it
+# fresh each time instead of a source=() entry (makepkg would reuse a cached
+# file with that name forever).
+pkgname=fjord-bin-nightly
+pkgver=r1162.31c8a80
+pkgrel=1
+pkgdesc="Jellyfin media frontend with smooth mpv playback on NVIDIA legacy hardware (pre-built development build)"
+arch=('x86_64')
+url="https://github.com/KalasKonrad/Fjord"
+license=('GPL-3.0-only')
+depends=('mpv' 'fontconfig' 'freetype2' 'libxkbcommon')
+makedepends=('curl')
+optdepends=('yt-dlp: play YouTube trailers')
+provides=('fjord')
+conflicts=('fjord' 'fjord-git' 'fjord-bin')
+install=../fjord.install
+options=('!debug' '!strip') # already stripped by CI
+
+pkgver() {
+    curl -fsSL -o "$srcdir/fjord-x86_64.tar.gz" \
+        "$url/releases/download/nightly/fjord-x86_64.tar.gz"
+    rm -rf "$srcdir/fjord-bin"
+    tar -C "$srcdir" -xzf "$srcdir/fjord-x86_64.tar.gz"
+    cat "$srcdir/fjord-bin/VERSION"
+}
+
+package() {
+    cd "$srcdir/fjord-bin"
+    install -Dm755 "fjord" "$pkgdir/usr/bin/fjord"
+    install -Dm644 "LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+    local icons=(01 02 04 05 09 10)
+    local n=${icons[$((RANDOM % ${#icons[@]}))]}
+    printf 'fjord: installing icon fjord_%s.svg\n' "$n"
+    install -Dm644 "assets/fjord_${n}.svg" "$pkgdir/usr/share/icons/hicolor/scalable/apps/fjord.svg"
+
+    install -dm755 "$pkgdir/usr/share/applications"
+    cat > "$pkgdir/usr/share/applications/fjord.desktop" << 'EOF'
+[Desktop Entry]
+Name=Fjord
+GenericName=Media Player
+Comment=Jellyfin media frontend
+Exec=fjord
+Icon=fjord
+Type=Application
+Categories=AudioVideo;Video;Player;
+Keywords=Jellyfin;mpv;media;
+EOF
+}

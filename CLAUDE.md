@@ -234,7 +234,17 @@ Needs `mpv`/libmpv (`pacman -S mpv`). Optional at runtime: `yt-dlp` (trailers), 
    - `DEVLOG.md` — the technical narrative (root cause, what was tried, why), dated, under the relevant topic.
    - `CLAUDE.md` — **only** when a durable rule, command, convention, or module boundary changes. Keep it
      short; no dated narratives here.
-5. Commit, then push right away (the HTPC builds from GitHub). Use a feature branch for large/risky work.
+5. Commit, then push right away — to the current `release-X.Y.Z` branch, never to `main` (each push builds the
+   nightly that `fjord-bin-nightly` installs). Large/risky work: a feature branch off the release branch.
+
+## Releasing
+`main` only receives releases; work happens on `release-X.Y.Z` (the next version), branched from `main`.
+1. On the branch: `workspace.package.version` = X.Y.Z (+ Cargo.lock); CHANGELOG `[Unreleased]` → a short
+   `[X.Y.Z] — <date>` section (New / Improved / Fixed) + a fresh empty `[Unreleased]`.
+2. Merge into `main`, tag `vX.Y.Z` (annotated) on main, push both (ask first). CI publishes the release
+   "Fjord vX.Y.Z" with the tarball and that CHANGELOG section (the run fails without it).
+3. After CI: `pkgver=X.Y.Z` in `PKGBUILD` (fjord, builds the tag) and `fjord-bin/PKGBUILD` (+ the tarball's
+   sha256), commit on `main`, then branch the next `release-*` from `main`.
 
 ## Testing
 - Dev machine: AMD, KDE Wayland. HTPC: NVIDIA legacy (Pascal), KDE Wayland — the primary target, tested less often.
@@ -244,8 +254,9 @@ Needs `mpv`/libmpv (`pacman -S mpv`). Optional at runtime: `yt-dlp` (trailers), 
 - Debug output needs Settings → General → Log level = Debug (or `RUST_LOG`). Log generously at `debug!` on
   async/debounced/multi-step paths — silent paths have made live bugs undiagnosable before.
 - The UI can't be driven from here: say "not live-tested" plainly and add the checklist item.
-- Install on the HTPC: `makepkg -si` in the repo root (`PKGBUILD`, builds from source) or in `fjord-bin/`
-  (downloads the `nightly` release built by `.github/workflows/build-release.yml` on a self-hosted runner).
+- Install on the HTPC: `makepkg -si` in the repo root (`PKGBUILD` = fjord: the latest release, from source),
+  in `fjord-bin/` (the same release, pre-built) or in `fjord-bin-nightly/` (the current `release-*` branch,
+  pre-built by `.github/workflows/build-release.yml` on the dev machine's self-hosted runner).
 
 ## Style
 - Layout comes from the formatters (above), never by hand. `anyhow::Result` at the top level, `thiserror` for library errors, no `unwrap()` in library code.
