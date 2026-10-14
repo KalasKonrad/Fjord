@@ -21,6 +21,8 @@
 //     playback      direct_play_url, report_playback_start/progress/stopped
 //     trailers      get_local_trailers (GET /Items/{id}/LocalTrailers?userId=); RemoteTrailers +
 //                   LocalTrailerCount come with get_item_detail / get_items_by_ids_detailed
+//     trickplay     get_trickplay_info (Items?Ids=&Fields=Trickplay), get_trickplay_tile
+//                   (GET /Videos/{id}/Trickplay/{width}/{index}.jpg?mediaSourceId=)
 //     user actions  mark_played, mark_unplayed, set_favorite, unset_favorite
 //     plugins       get_episode_timestamps (Intro Skipper v2+: intro + credits),
 //                   get_next_up_for_series
@@ -41,7 +43,9 @@ use serde_json::json;
 use tracing::{debug, warn};
 use url::Url;
 
-use crate::models::{EpisodeTimestamps, ItemsResponse, MediaItem, PluginInfo, SystemInfo, UserDto};
+use crate::models::{
+    EpisodeTimestamps, ItemsResponse, MediaItem, PluginInfo, SystemInfo, TrickplayInfo, UserDto,
+};
 
 #[derive(Clone)]
 pub struct JellyfinClient {
@@ -414,6 +418,64 @@ impl JellyfinClient {
             );
         }
         Ok(resp.json::<Vec<MediaItem>>().await?)
+    }
+
+    /// An item's trickplay renditions (`GET /Users/{id}/Items?Ids=&Fields=Trickplay` — a slim
+    /// item, verified on 10.11.11). Empty when the server has none for it.
+    pub async fn get_trickplay_info(
+        &self,
+        item_id: &str,
+    ) -> Result<std::collections::HashMap<String, std::collections::HashMap<String, TrickplayInfo>>>
+    {
+        let mut url = self.api_url(&format!("/Users/{}/Items", self.user_id))?;
+        url.query_pairs_mut()
+            .append_pair("Ids", item_id)
+            .append_pair("Fields", "Trickplay");
+        let resp = self
+            .http
+            .get(url)
+            .header("Authorization", self.auth_header())
+            .send()
+            .await?;
+        let status = resp.status();
+        if !status.is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            anyhow::bail!(
+                "HTTP {status}: {}",
+                body.chars().take(200).collect::<String>()
+            );
+        }
+        let items = resp.json::<ItemsResponse>().await?.items;
+        Ok(items
+            .into_iter()
+            .find(|i| i.id == item_id)
+            .map(|i| i.trickplay)
+            .unwrap_or_default())
+    }
+
+    /// One trickplay tile (JPEG): `GET /Videos/{id}/Trickplay/{width}/{index}.jpg?mediaSourceId=`
+    /// (verified on 10.11.11; 404 past the last tile).
+    pub async fn get_trickplay_tile(
+        &self,
+        item_id: &str,
+        width: u32,
+        index: u32,
+        media_source_id: &str,
+    ) -> Result<Vec<u8>> {
+        let mut url = self.api_url(&format!("/Videos/{item_id}/Trickplay/{width}/{index}.jpg"))?;
+        url.query_pairs_mut()
+            .append_pair("mediaSourceId", media_source_id);
+        let resp = self
+            .http
+            .get(url)
+            .header("Authorization", self.auth_header())
+            .send()
+            .await?;
+        let status = resp.status();
+        if !status.is_success() {
+            anyhow::bail!("HTTP {status}");
+        }
+        Ok(resp.bytes().await?.to_vec())
     }
 
     pub fn direct_play_url(&self, item_id: &str) -> String {

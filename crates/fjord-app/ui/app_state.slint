@@ -44,7 +44,8 @@
 //   Music bar             is-audio-playing, music-bar-title/artist/album-id/art/has-art/pos/elapsed/total/paused,
 //                         music-bar-play-pause/-stop/-open-album, play-album-all
 //   Now Playing / player  show-now-playing, now-playing-in-strip/-ctrl-focused/-strip-focused, open-now-playing;
-//                         seek-hover-time, seek-dragging, buffering-active/pct, playback-stalled, buffered-pos,
+//                         seek-hover-time, trickplay-thumb/-has-thumb/-aspect, seek-dragging,
+//                         buffering-active/pct, playback-stalled, buffered-pos,
 //                         playback-total-secs, track panels; chapter-marks/-osd/-entries, current-chapter,
 //                         chapter-prev/next/-jump; delay-osd-*, sub/audio-delay-ms + inc/dec
 //   Detail page           detail-id/-item-type/-resume-secs/-title/-tagline/-studio/-is-favorite/-has-played,
@@ -717,6 +718,12 @@ export global AppState {
     in-out property <float> playback-total-secs:    0.0;   // total duration in seconds; used by seek-hover time calc
     in-out property <string> playback-ends-at:       "";
     in-out property <string> seek-hover-time:        "";    // formatted time at hover position on the seek bar
+    // Trickplay thumbnail (trickplay.rs) for the last requested seek position (hover / D-pad seek
+    // target). has-thumb stays false for an item without trickplay images — nothing is shown;
+    // aspect = thumbnail height / width.
+    in-out property <image> trickplay-thumb;
+    in-out property <bool> trickplay-has-thumb: false;
+    in-out property <float> trickplay-aspect: 0.5625;
     in-out property <bool> buffering-active:       false; // true when mpv is stalled waiting for cache
     in-out property <int> buffering-pct:          0;     // cache-buffering-state 0-100
     // True when the stall-recovery watchdog has detected position not

@@ -26,6 +26,8 @@
 //                         Seek row: left-time (seek-bar-time during accumulation), buffered/played
 //                         layers, chapter tick marks (2px), hover-expand bar/thumb, tooltip;
 //                         display-pos = drag-ratio | seek-bar-pos (accumulation) | playback-pos.
+//                         Trickplay thumbnail (trickplay-has-thumb): above the hover tooltip, or
+//                         above the bar at the D-pad seek target while seek-osd-visible.
 //                         transport left | Ch ▾ (panel-id=4, conditional) | Sync ▾ (panel-id=5) |
 //                         Sub ▾ (1) | Audio ▾ (2) | Video ▾ (3) | Stats right (full only).
 //   pause/play flash      84 px circle with ▶/⏸ icon; fades out 600 ms after pause toggle
@@ -692,6 +694,29 @@ export component PlayerScreen inherits Rectangle {
                         height: seek-track.thumb-s;
                         border-radius: seek-track.thumb-s / 2;
                         background: #ffffff;
+                    }
+
+                    // Trickplay thumbnail: above the hover time bubble, or above the bar at the D-pad
+                    // seek target while seek-osd-visible. Only once the playing item's first
+                    // thumbnail has arrived (no trickplay images → nothing).
+                    property <length> thumb-w: 240px;
+                    if AppState.trickplay-has-thumb && (seek-ta.has-hover || AppState.seek-osd-visible): Rectangle {
+                        property <bool> hovering: seek-ta.has-hover;
+                        property <length> anchor: self.hovering ? seek-ta.mouse-x : seek-track.display-pos * seek-track.width;
+                        width: seek-track.thumb-w + 4px;
+                        height: seek-track.thumb-w * AppState.trickplay-aspect + 4px;
+                        x: clamp(self.anchor - self.width / 2, 0px, seek-track.width - self.width);
+                        y: (self.hovering ? -30px : 0px) - self.height - 6px;
+                        background: #0d0d0ddd;
+                        border-radius: 4px;
+                        Image {
+                            x: 2px;
+                            y: 2px;
+                            width: seek-track.thumb-w;
+                            height: seek-track.thumb-w * AppState.trickplay-aspect;
+                            source: AppState.trickplay-thumb;
+                            image-fit: fill;
+                        }
                     }
 
                     // Hover time tooltip

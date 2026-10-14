@@ -31,7 +31,8 @@
 //                           display sync on (video), holds back pending_load_url/play_start while a task
 //                           switches the display first (display_sync::sync_before_load, 20 s cap;
 //                           skipped when replacing a live player for the same item; a stop mid-switch
-//                           reverts the display)
+//                           reverts the display); a video starts trickplay::spawn_fetch
+//                           (VideoState.trickplay, cleared by every reset/teardown)
 //   prestart_still_current  that task's staleness check — generation unchanged AND a player still set
 //   TrailerSource           YouTube (a server-provided link) | Server (a stream URL Fjord builds)
 //   play_trailer            Watch Trailer (a YouTube source must pass trailer_url_allowed); no
@@ -292,6 +293,8 @@ pub(crate) struct VideoState {
     // wire_mpv_timer restarts it once if it hasn't opened after TRAILER_OPEN_RETRY_SECS.
     // None on the retry (and for every other kind of playback).
     pub trailer_retry: Option<(String, PlayerConfig)>,
+    // The playing item's trickplay thumbnails (trickplay::spawn_fetch); None without any.
+    pub trickplay: Option<Arc<crate::trickplay::Session>>,
     // HDR Stage 5 (2026-10-05): this player's render context lives on the
     // video subsurface's GL context (decided once, at render-context
     // creation — see wire_rendering_notifier); and the spot last logged.
@@ -398,6 +401,7 @@ impl Default for VideoState {
             is_trailer: false,
             trailer_url: None,
             trailer_retry: None,
+            trickplay: None,
             video_on_subsurface: false,
             video_spot_logged: None,
             video_spot_waits: 0,
@@ -465,6 +469,7 @@ pub(crate) fn tear_down_player(
     vs.player = None;
     vs.pending_load_url = None;
     vs.trailer_retry = None;
+    vs.trickplay = None;
     // display-mode-prefetch: a stop during the pre-decode wait must also
     // drop the "Loading…" spinner signal — the deferred task bails without
     // clearing it once it sees vs.player is gone (see start_playback).
@@ -731,6 +736,7 @@ fn reset_video_state_for_playback(
     vs.is_trailer = false; // play_trailer sets these after this reset
     vs.trailer_url = None;
     vs.trailer_retry = None;
+    vs.trickplay = None;
     vs.stall_last_progress_pos = config.start_position_secs.unwrap_or(0.0);
     vs.stall_last_progress_at = None; // re-armed on the first tick after this player starts
     // A fresh player means the very first tick has nothing meaningful to
@@ -1116,6 +1122,16 @@ pub(crate) fn start_playback(
                 }
                 eligible
             };
+            if !is_audio {
+                crate::trickplay::spawn_fetch(
+                    Arc::clone(&client_art),
+                    item_id_art.clone(),
+                    my_gen,
+                    video,
+                    window_weak,
+                    rt_handle,
+                );
+            }
             if eligible {
                 let state_ds = Arc::clone(state);
                 let video_ds = Arc::clone(video);
@@ -1224,6 +1240,7 @@ pub(crate) fn start_playback(
             if let Some(w) = window_weak.upgrade() {
                 let g = AppState::get(&w);
                 g.set_playing_title(ss(&title));
+                g.set_trickplay_has_thumb(false);
                 if is_audio {
                     // Audio-only: show music bar, not the fullscreen player.
                     let (artist, album_art_id) = audio_meta

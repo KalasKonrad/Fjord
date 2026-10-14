@@ -23,6 +23,11 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **New: preview thumbnails on the seek bar.** When your server has made
+  trickplay images for a movie or episode (a Jellyfin library option), moving
+  the mouse over the seek bar shows a small picture of that moment above the
+  time, and so does skipping forward or back with the remote. Titles without
+  trickplay images look as before.
 - **Improved: library posters appear as they load.** The Movies, TV,
   Collections and Music grids used to stay blank until every poster had been
   fetched; now they fill in from the top while the rest arrive. The Shuffle

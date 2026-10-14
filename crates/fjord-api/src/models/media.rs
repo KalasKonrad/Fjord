@@ -4,12 +4,13 @@
 //                   (series; only with Fields=RecursiveItemCount)
 //   StudioInfo      studio name (from Studios array in item detail)
 //   RemoteTrailer   one RemoteTrailers entry (Url, optional Name)
+//   TrickplayInfo   one trickplay rendition (thumbnail size, tile grid, count, interval ms)
 //   MediaItem       full item: id, name, type, series info, user data, runtime, image_tags, status/end_date,
 //                   date_created (WS delta-sync Recently Added ordering), season_id (episode → season routing),
 //                   provider_ids ("Tmdb"/"Imdb"/"Tvdb" -> value, movies/series only — Discover TMDB-match);
 //                   helpers: primary_image_tag(), card_title(), card_subtitle() (Jellyfin-style card rows);
 //                   detail fields: genres, rating, backdrop, people, taglines, studios, recursive_item_count,
-//                   remote_trailers, local_trailer_count
+//                   remote_trailers, local_trailer_count, trickplay (media source → width → info)
 //                   music fields: album_artist, album (track → parent album name, index_number = track #)
 //                   playlist fields: media_type, playlist_item_id (entry id for removal), child_count
 //                   media_streams: Vec<MediaStream> (Fields=MediaStreams only); video_stream_info() ->
@@ -93,6 +94,28 @@ where
 
 /// One `RemoteTrailers` entry: a trailer link (YouTube watch URLs on the verified server) and,
 /// for movies, its title ("Official Trailer", "Teaser", "TV Spot"…); series entries have no name.
+/// One trickplay rendition (`Trickplay[mediaSourceId][width]`, verified live on 10.11.11):
+/// thumbnails of `width`×`height` px, one every `interval` ms, `thumbnail_count` in all, packed
+/// `tile_width` × `tile_height` per JPEG tile (`GET /Videos/{id}/Trickplay/{width}/{n}.jpg`) — a
+/// tile image is the full grid size even when its last cells are unused.
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, Default, PartialEq)]
+pub struct TrickplayInfo {
+    #[serde(rename = "Width", default)]
+    pub width: u32,
+    #[serde(rename = "Height", default)]
+    pub height: u32,
+    #[serde(rename = "TileWidth", default)]
+    pub tile_width: u32,
+    #[serde(rename = "TileHeight", default)]
+    pub tile_height: u32,
+    #[serde(rename = "ThumbnailCount", default)]
+    pub thumbnail_count: u32,
+    #[serde(rename = "Interval", default)]
+    pub interval: u32,
+    #[serde(rename = "Bandwidth", default)]
+    pub bandwidth: u32,
+}
+
 fn is_zero(n: &u32) -> bool {
     *n == 0
 }
@@ -165,6 +188,16 @@ pub struct MediaItem {
     /// single-item detail sends it anyway); get_local_trailers lists them.
     #[serde(rename = "LocalTrailerCount", default, skip_serializing_if = "is_zero")]
     pub local_trailer_count: u32,
+    /// Trickplay renditions: media source id → width (as a string key) → info. With
+    /// Fields=Trickplay on list queries; the single-item detail sends it anyway. Empty when the
+    /// server has generated none for this item.
+    #[serde(
+        rename = "Trickplay",
+        default,
+        skip_serializing_if = "std::collections::HashMap::is_empty"
+    )]
+    pub trickplay:
+        std::collections::HashMap<String, std::collections::HashMap<String, TrickplayInfo>>,
     // Detail fields — only populated via get_item_detail()
     #[serde(rename = "Genres", default)]
     pub genres: Vec<String>,

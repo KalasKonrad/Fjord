@@ -65,7 +65,8 @@ Needs `mpv`/libmpv (`pacman -S mpv`). Optional at runtime: `yt-dlp` (trailers), 
   `wire_rendering_notifier` (GL/FBO); `timer.rs`: `wire_mpv_timer` (16 ms tick: position, skip segments, Up Next,
   stall recovery, gapless, HDR/display-sync); `stall.rs`, `queue.rs` (playlist/queue/repeat), `tracks.rs`,
   `inhibit.rs`. Submodules are re-exported, so callers use `crate::playback::*`.
-- `controls.rs` (player callbacks), `stats.rs` (stats overlay), `music.rs` (music bar, queue controls/panel, lyrics).
+- `controls.rs` (player callbacks), `stats.rs` (stats overlay), `music.rs` (music bar, queue controls/panel, lyrics),
+  `trickplay.rs` (seek-bar thumbnails from Jellyfin's trickplay images).
 - Screens: `detail`, `series`, `season`, `collection`, `album` (albums + playlists), `artist`, `person`,
   `browse`, `home`/`movies`/`poster` (dashboards, library grid, poster loading), `discover/` (Discover,
   RequestDetail, Calendar, Watchlist — one file per area, list in `discover/mod.rs`), `blocklist`, `settings`, `context_menu`.
