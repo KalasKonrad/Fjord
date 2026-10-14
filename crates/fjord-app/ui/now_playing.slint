@@ -177,7 +177,6 @@ export component NowPlayingScreen inherits Rectangle {
 
                     IconCircleButton {
                         icon: AppState.music-bar-paused ? "▶" : "⏸";
-                        active: true;
                         kbd-focused: !AppState.now-playing-back-focused && !AppState.now-playing-in-strip && AppState.now-playing-ctrl-focused == 2;
                         clicked => { AppState.music-bar-play-pause(); }
                     }

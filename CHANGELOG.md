@@ -23,6 +23,9 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Changed: the play/pause button on the Now Playing screen is grey** like
+  the other controls (and the music bar's); blue there now only means "on"
+  (shuffle, repeat) or the keyboard focus.
 - **New: preview thumbnails on the seek bar.** When your server has made
   trickplay images for a movie or episode (a Jellyfin library option), moving
   the mouse over the seek bar shows a small picture of that moment above the
