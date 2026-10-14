@@ -38,7 +38,8 @@
 //                   BoundedCaches (persisted together) + person caches, Seerr state
 //                   (client, regions, languages, permissions, watchlist/calendar/known requests,
 //                   jellyfin_watchlist_ids + its resync generation), screen_revalidate_last_run,
-//                   pending_keybind_rebind, trailer_playable/trailer_candidates/local_trailers,
+//                   pending_keybind_rebind, trailer_playable/trailer_checks/trailer_candidates/
+//                   local_trailers,
 //                   display_sync_current_mode.
 //                   Idle tracking lives in activity::ActivityClock, not here. Every transient field
 //                   is reset in reset_session_state (session.rs)
@@ -2043,12 +2044,16 @@ pub(crate) struct FjordState {
     // local-machine fact, not tied to Seerr connection state, not reset on
     // sign-out/disconnect.
     pub yt_dlp_available: bool,
-    // Trailer check (discover::start_trailer_check): YouTube URL → plays or not.
-    // Session-only, cleared in reset_session_state. trailer_candidates = per screen, the
+    // Trailer check (discover::start_trailer_check): YouTube URL → plays or not, for this run
+    // (seeded from trailer_checks at startup; kept across sign-out — not per-user).
+    // trailer_candidates = per screen, the
     // (key, candidates) of the title showing, so a failed play can re-check the rest;
     // local_trailers = per library screen, (item id, trailer file's item id) when the server
     // has a trailer file (played as a server stream).
     pub trailer_playable: std::collections::HashMap<String, bool>,
+    // The lasting answers among them (plays / video gone), saved to trailer_checks.json for 30
+    // days (discover/trailers.rs). Not per-user — kept across sign-out and profile switch.
+    pub trailer_checks: std::collections::HashMap<String, crate::discover::TrailerCheck>,
     pub trailer_candidates:
         std::collections::HashMap<crate::discover::TrailerScreen, (String, Vec<String>)>,
     pub local_trailers: std::collections::HashMap<crate::discover::TrailerScreen, (String, String)>,
@@ -2158,6 +2163,7 @@ impl FjordState {
             seerr_admin_last_refresh: None,
             yt_dlp_available: false,
             trailer_playable: std::collections::HashMap::new(),
+            trailer_checks: std::collections::HashMap::new(),
             trailer_candidates: std::collections::HashMap::new(),
             local_trailers: std::collections::HashMap::new(),
             display_sync_current_mode: None,
