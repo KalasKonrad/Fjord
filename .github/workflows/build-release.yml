@@ -76,7 +76,9 @@ jobs:
           echo "version=r$(git rev-list --count HEAD).$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Build (release, locked)
-        run: cargo build --release --locked
+        # Rust embeds source paths (panic locations); keep the runner's home
+        # folder (and its user name) out of the published binary.
+        run: RUSTFLAGS="--remap-path-prefix=$HOME=/build" cargo build --release --locked
 
       - name: Package artifact
         run: |
