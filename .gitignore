@@ -18,10 +18,13 @@ fjord.log.[0-9]*
 /src/
 /pkg/
 *.pkg.tar.*
-# same, for `makepkg -si` run inside fjord-bin/ (2026-08-17)
+# same, for `makepkg -si` run inside fjord-bin/ and fjord-bin-nightly/
 /fjord-bin/src/
 /fjord-bin/pkg/
-/fjord-bin/fjord-x86_64.tar.gz
+/fjord-bin/*.tar.gz
+/fjord-bin-nightly/src/
+/fjord-bin-nightly/pkg/
+/fjord-bin-nightly/*.tar.gz
 
 # editor-specific, not something every clone/contributor needs
 /Fjord.code-workspace

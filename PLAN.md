@@ -43,6 +43,11 @@ Version history: [CHANGELOG.md](CHANGELOG.md) (git tags `v0.1.0`–`v0.5.0`). Im
 ### 0.5.0 release (step 7)
 - [ ] **Tag release (2026-10-14).** Confirmed 2026-10-14 except the HTPC: tag run green (9m51s), "Fjord v0.5.0" is Latest with the tarball (binary logs `fjord version: 0.5.0 (r1159.667db95)`) and the CHANGELOG text, nightly updated to r1159. After pushing `v0.5.0`: the Actions run for the tag is green; Releases shows "Fjord v0.5.0" as Latest (not pre-release) with `fjord-x86_64.tar.gz` and the CHANGELOG 0.5.0 text; the main push still updates "nightly". HTPC: `makepkg -si` (from `main`) → the log's first lines and Settings show 0.5.0.
 
+### Packages and branch model (2026-10-14)
+- [ ] **fjord-bin (release).** `makepkg -si` in `fjord-bin/` downloads the v0.5.0 tarball, the checksum passes, and pacman replaces the installed Fjord package; Settings shows 0.5.0.
+- [ ] **fjord-bin-nightly.** The first push to `release-0.5.1` that touches code starts an Actions run for that branch and updates "nightly"; `makepkg -si` in `fjord-bin-nightly/` installs it (pkgver `r<count>.<hash>` of the branch).
+- [ ] **fjord (source).** `makepkg -si` in the repo root builds the `v0.5.0` tag and replaces the installed `fjord-git`; pacman shows `fjord 0.5.0-1`, Settings 0.5.0 (r1162…).
+
 ### Security fixes (0.5.0 step 0)
 - [x] **S7 — pinned actions (2026-10-10).** The next push to `main` still produces the "nightly" release (Actions tab green, new `fjord-x86_64.tar.gz`). Confirmed 2026-10-10: the nightly run for `bf05038` (pinned actions) succeeded.
 - [ ] **S6 — owner-only files (2026-10-10).** Dev confirmed 2026-10-10 (600/700/600); HTPC still to check. After a start: `stat -c '%a %n' ~/.config/fjord/config.json ~/.cache/fjord/logs ~/.cache/fjord/logs/fjord.log*` → 600 / 700 / 600 on both machines; on the HTPC the share files stay readable from the dev machine; no `log permissions not tightened` line (or, on the HTPC, it explains why).
@@ -56,7 +61,7 @@ Version history: [CHANGELOG.md](CHANGELOG.md) (git tags `v0.1.0`–`v0.5.0`). Im
 
 ## Pending
 
-- [ ] **Remove the temporary `--cfg slint_debug_property` line from `PKGBUILD`'s `build()`** once the Settings crash (Issues) is understood or hasn't come back for a while — it's there so a repeat names the property in the `PANIC` line.
+- [ ] **Remove the temporary `--cfg slint_debug_property` from `PKGBUILD`'s `build()` and from the nightly build in `build-release.yml`** once the Settings crash (Issues) is understood or hasn't come back for a while — it's there so a repeat names the property in the `PANIC` line.
 
 ## Issues
 

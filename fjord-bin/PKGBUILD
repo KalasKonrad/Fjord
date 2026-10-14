@@ -2,65 +2,27 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2034,SC2154,SC2164
 #
-# Pre-built companion to the repo-root fjord-git PKGBUILD, added
-# 2026-08-17 per direct request — installs a binary built by
-# .github/workflows/build-release.yml on every push to main, instead of
-# compiling fjord-app + its dependency tree from source on whatever
-# machine you're testing on. `makepkg -si` in this directory downloads
-# and installs — no Rust toolchain needed on the target machine at all.
-# Built on a self-hosted runner on the maintainer's own Arch dev machine
-# (same day, after the original archlinux:latest cloud-container setup
-# proved too slow for a real test loop) — runtime ABI matches this
-# package's own depends() automatically, since the build machine already
-# IS the same distro.
-#
-# Trade-off, stated plainly: the CI-built binary is only as fresh as the
-# last push to main, and (being a moving "nightly" tag, not a real
-# versioned release) there's no source=()/sha256sums here for the same
-# reason the -git package's own git source is SKIP — see pkgver()'s own
-# comment for exactly why — this is a personal, self-trusted build
-# pipeline, not something going through AUR review. Use fjord-git instead
-# if you specifically need to build from a particular commit/branch (e.g.
-# the hdr branch) rather than whatever's newest on main.
+# Pre-built release: the fjord-x86_64.tar.gz attached to the GitHub release
+# v$pkgver, built by .github/workflows/build-release.yml from that tag — the
+# same code ../PKGBUILD builds from source. `makepkg -si` in this directory,
+# no Rust toolchain needed. Development builds: ../fjord-bin-nightly/.
+# Bumped as the last step of every release: pkgver, then sha256sums
+# (`updpkgsums`, or `sha256sum` of the downloaded tarball).
 pkgname=fjord-bin
-pkgver=r1024.6e0347a
+pkgver=0.5.0
 pkgrel=1
-pkgdesc="Jellyfin media frontend with smooth mpv playback on NVIDIA legacy hardware (pre-built binary)"
+pkgdesc="Jellyfin media frontend with smooth mpv playback on NVIDIA legacy hardware (pre-built release)"
 arch=('x86_64')
 url="https://github.com/KalasKonrad/Fjord"
 license=('GPL-3.0-only')
 depends=('mpv' 'fontconfig' 'freetype2' 'libxkbcommon')
-makedepends=('curl')
-optdepends=('yt-dlp: play trailers on the Discover screen')
-provides=('fjord')
-conflicts=('fjord' 'fjord-git')
+optdepends=('yt-dlp: play YouTube trailers')
+provides=("fjord=$pkgver")
+conflicts=('fjord' 'fjord-git' 'fjord-bin-nightly')
 install=../fjord.install
-options=('!debug' '!strip')   # already stripped by CI
-
-pkgver() {
-    # Real gap, live-hit 2026-08-17 ("but then i wuld need to do that
-    # everytime i want to update the app") — the "nightly" GitHub Release
-    # is a moving target under a FIXED asset filename (fjord-x86_64.tar.gz),
-    # but a plain source=() entry only checks whether a file with that
-    # local name already exists — it does NOT re-check whether the REMOTE
-    # content has changed, unlike a VCS source (fjord-git's own
-    # `git+https://...` source, which makepkg re-fetches/updates every
-    # run automatically). A stale local fjord-x86_64.tar.gz from an
-    # earlier install meant every later `makepkg -si` silently reused
-    # whatever was cached the FIRST time forever, with no way to get a
-    # newer nightly short of manually deleting it before every single
-    # update. Fixed by pulling the download out of source=() entirely and
-    # doing it here instead, unconditionally, on every invocation — the
-    # same "always check fresh" property fjord-git's own pkgver() already
-    # gets for free from git's VCS-source handling in makepkg, just done
-    # by hand since a plain HTTP source has no equivalent built-in
-    # freshness check.
-    curl -fsSL -o "$srcdir/fjord-x86_64.tar.gz" \
-        "https://github.com/KalasKonrad/Fjord/releases/download/nightly/fjord-x86_64.tar.gz"
-    rm -rf "$srcdir/fjord-bin"
-    tar -C "$srcdir" -xzf "$srcdir/fjord-x86_64.tar.gz"
-    cat "$srcdir/fjord-bin/VERSION"
-}
+options=('!debug' '!strip') # already stripped by CI
+source=("fjord-$pkgver-x86_64.tar.gz::$url/releases/download/v$pkgver/fjord-x86_64.tar.gz")
+sha256sums=('e411157f988e42e3692fad3c7538dafa00ab501e32d9ca9b0b0923dae06fe274')
 
 package() {
     cd "$srcdir/fjord-bin"

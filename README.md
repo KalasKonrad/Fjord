@@ -55,9 +55,12 @@ cargo build --release
 
 The binary is `target/release/fjord-app`. On Arch Linux the included PKGBUILD installs it to `/usr/bin/fjord`.
 
+Three Arch packages, pick one (they replace each other):
+
 ```bash
-# Install via PKGBUILD (builds natively from source)
-makepkg -si
+makepkg -si                              # fjord: the latest release, built from source
+cd fjord-bin && makepkg -si              # fjord-bin: the same release, pre-built
+cd fjord-bin-nightly && makepkg -si      # fjord-bin-nightly: the current development build, pre-built
 ```
 
 ## NVIDIA legacy hardware
