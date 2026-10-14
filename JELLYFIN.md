@@ -122,6 +122,20 @@ Returns full item including `UserData`, `People[]`, `Chapters[]`, `MediaStreams[
   10.9+ route); the old `GET /Users/{userId}/Items/{itemId}/LocalTrailers` answers too. Both
   return `200 []` for an item without trailer files — the non-empty case is not verified live.
 
+### Trickplay thumbnails **[used]** (verified live 2026-10-14, server 10.11.11)
+- `Trickplay` on an item: `{ "<mediaSourceId>": { "<width>": { "Width", "Height", "TileWidth",
+  "TileHeight", "ThumbnailCount", "Interval", "Bandwidth" } } }` — list queries return it with
+  `Fields=Trickplay` (an item without generated images gets an empty object `{}`); the single-item detail
+  (`/Users/{uid}/Items/{id}` or `/Items/{id}?userId=`) sends it anyway. Verified example:
+  key = the item's own id (its only media source), width "320": 320×180 thumbnails, one every
+  `Interval` = 10000 ms, `TileWidth` × `TileHeight` = 10 × 10 per tile, `ThumbnailCount` 2.
+- Tiles: `GET /Videos/{itemId}/Trickplay/{width}/{index}.jpg?mediaSourceId=` → `image/jpeg`;
+  answers without `mediaSourceId` too; 404 past the last tile. **A tile image is the full grid
+  size** (3200×1800 for 10 × 10 × 320×180) even when only its first cells are used. Thumbnail
+  n (time n × Interval) is in tile n / (TileWidth × TileHeight), cell row-major.
+- Generation is a server option (per library) plus the "Generate Trickplay Images" task; until it
+  has run for an item the object is empty.
+
 ### Continue watching **[used]**
 ```
 GET /Users/{userId}/Items

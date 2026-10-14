@@ -5,7 +5,8 @@
 //                  directly), seek_committed (seek + resume + optimistic playback-pos),
 //                  skip_segment (ask mode — delayed seek + fade like the automatic paths),
 //                  dismiss_skip_timed (ask-timed mode), update-seek-hover; keyboard seeks
-//                  accumulate (logged) and run in wire_mpv_timer
+//                  accumulate (logged) and run in wire_mpv_timer; hover and the D-pad seek target
+//                  ask trickplay::request_thumb for a thumbnail
 //     track panels select_sub/audio/video, commit_panel_selection (panels 1-4; 4 = chapter jump);
 //                  panels 1/2 also remember the picked language per series
 //                  (state.remembered_tracks), read back by the track auto-select
@@ -185,6 +186,7 @@ pub(crate) fn wire_controls(
         // The 16ms timer in wire_mpv_timer executes the seek after ~480ms of inactivity.
         let video = Arc::clone(&video);
         let ww = window.as_weak();
+        let rt = rt_handle.clone();
         AppState::get(window).on_seek_acc(move |delta| {
             let delta = delta as f64;
             let mut vs = video.lock().unwrap();
@@ -210,6 +212,7 @@ pub(crate) fn wire_controls(
             g.set_seek_bar_time(target_time);
             g.set_seek_delta_text(delta_text);
             g.set_seek_osd_visible(true);
+            crate::trickplay::request_thumb(&video, &ww, &rt, target_secs);
         });
     }
     {
@@ -312,12 +315,15 @@ pub(crate) fn wire_controls(
     // ── seek hover tooltip ────────────────────────────────────────────────────
     {
         let ww = window.as_weak();
+        let video = Arc::clone(&video);
+        let rt = rt_handle.clone();
         AppState::get(window).on_update_seek_hover(move |fraction| {
             let Some(w) = ww.upgrade() else { return };
             let g = AppState::get(&w);
             let total = g.get_playback_total_secs() as f64;
             let secs = (fraction as f64 * total).max(0.0);
             g.set_seek_hover_time(fmt_secs(secs));
+            crate::trickplay::request_thumb(&video, &ww, &rt, secs);
         });
     }
     // ── seek / skip segment ───────────────────────────────────────────────────

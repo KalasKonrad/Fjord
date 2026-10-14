@@ -63,6 +63,7 @@ mod settings;
 mod startup;
 mod stats;
 mod text_field;
+mod trickplay;
 mod video_surface;
 mod ws;
 
