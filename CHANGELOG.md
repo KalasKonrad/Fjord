@@ -143,7 +143,7 @@ instead of only living behind the Discover tab.
   U+FE0E variation selectors across the UI as a likely source of tofu
   glyphs on the HTPC's font stack.
 
-*Range: [`759f3b0`](../../commit/759f3b0)..[`2b53bba`](../../commit/2b53bba) (20 commits)*
+*Range: [`f2f11f7`](../../commit/f2f11f7)..[`41676d2`](../../commit/41676d2) (20 commits)*
 
 ## [0.4.1] — 2026-07-16 – 2026-07-18
 
@@ -163,7 +163,7 @@ Quality profiles, filters, and the full request lifecycle.
 - Full request-lifecycle context menu: View Details, Request, Edit
   Request, Cancel Request, Approve, Decline.
 
-*Range: [`4c2aea6`](../../commit/4c2aea6)..[`759f3b0`](../../commit/759f3b0) (35 commits)*
+*Range: [`42ba2bc`](../../commit/42ba2bc)..[`f2f11f7`](../../commit/f2f11f7) (35 commits)*
 
 ## [0.4.0] — 2026-07-15 – 2026-07-16
 
@@ -179,7 +179,7 @@ Discover screen + request flow — the pivot from "Jellyfin viewer" toward
   against Seerr's real TypeScript source rather than the OpenAPI spec,
   which this integration repeatedly found to be incomplete or wrong.
 
-*Range: [`1e9d424`](../../commit/1e9d424)..[`4c2aea6`](../../commit/4c2aea6) (8 commits)*
+*Range: [`cdef936`](../../commit/cdef936)..[`42ba2bc`](../../commit/42ba2bc) (8 commits)*
 
 ## [0.3.4] — 2026-07-09 – 2026-07-15
 
@@ -195,7 +195,7 @@ Feel and consistency polish.
 - Fjord's own client version shown in Settings, configurable seek step,
   subtitle appearance settings, per-series remembered audio/subtitle track.
 
-*Range: [`9be9c24`](../../commit/9be9c24)..[`1e9d424`](../../commit/1e9d424) (29 commits)*
+*Range: [`896c452`](../../commit/896c452)..[`cdef936`](../../commit/cdef936) (29 commits)*
 
 ## [0.3.3] — 2026-06-28 – 2026-07-09
 
@@ -224,7 +224,7 @@ Sync hardening, playlists, and a caching/performance pass.
   keyboard-focus re-grab, and a gapless edge case that could report a
   track as playing when it never produced audio.
 
-*Range: [`7e1ee12`](../../commit/7e1ee12)..[`9be9c24`](../../commit/9be9c24) (130 commits)*
+*Range: [`53f1c59`](../../commit/53f1c59)..[`896c452`](../../commit/896c452) (130 commits)*
 
 ## [0.3.2] — 2026-06-28
 
@@ -237,7 +237,7 @@ Playback queue, MusicPlayerBar, gapless, Now Playing, Lyrics.
 - Gapless music playback (same mpv instance, no gap between tracks).
 - A fullscreen Now Playing screen with synced lyrics.
 
-*Range: [`95c3829`](../../commit/95c3829)..[`7e1ee12`](../../commit/7e1ee12) (3 commits)*
+*Range: [`561a190`](../../commit/561a190)..[`53f1c59`](../../commit/53f1c59) (3 commits)*
 
 ## [0.3.1] — 2026-06-25 – 2026-06-27
 
@@ -254,7 +254,7 @@ Music library core.
   poster-loading races that could overwrite the wrong library grid if the
   user switched tabs mid-fetch.
 
-*Range: [`a1eee6c`](../../commit/a1eee6c)..[`95c3829`](../../commit/95c3829) (60 commits)*
+*Range: [`17f91e7`](../../commit/17f91e7)..[`561a190`](../../commit/561a190) (60 commits)*
 
 ## [0.3.0] — 2026-06-25
 
@@ -268,7 +268,7 @@ WebSocket real-time events, chapter navigation, Collections screen.
 - A new Collections library screen, with its own dashboard rows and disk
   cache.
 
-*Range: [`d12a9d4`](../../commit/d12a9d4)..[`a1eee6c`](../../commit/a1eee6c) (9 commits)*
+*Range: [`1c2691f`](../../commit/1c2691f)..[`17f91e7`](../../commit/17f91e7) (9 commits)*
 
 ## [0.2.3] — 2026-06-21 – 2026-06-25
 
@@ -288,7 +288,7 @@ Mini-player redesign, library grid sort/filter, error toasts.
   hardcoded false, and several dead/backwards keyboard-nav guards on the
   season/series header buttons.
 
-*Range: [`7efff5f`](../../commit/7efff5f)..[`d12a9d4`](../../commit/d12a9d4) (61 commits)*
+*Range: [`c977864`](../../commit/c977864)..[`1c2691f`](../../commit/1c2691f) (61 commits)*
 
 ## [0.2.2] — 2026-06-21 – 2026-06-23
 
@@ -304,7 +304,7 @@ Detail/Series/Season content enrichment + Person screen.
   a CastRow focus-ring visibility bug, and stale collection/similar-items
   models surviving a Back navigation.
 
-*Range: [`913c90c`](../../commit/913c90c)..[`7efff5f`](../../commit/7efff5f) (99 commits)*
+*Range: [`e067f6c`](../../commit/e067f6c)..[`c977864`](../../commit/c977864) (99 commits)*
 
 ## [0.2.1] — 2026-06-14 – 2026-06-21
 
@@ -328,7 +328,7 @@ Settings matures, player UX polish, Intro Skipper complete.
   their `JoinSet`, an Up Next countdown off-by-one, and a mid-session 401
   not redirecting to the login screen.
 
-*Range: [`cb48e1d`](../../commit/cb48e1d)..[`913c90c`](../../commit/913c90c) (202 commits)*
+*Range: [`a2419c9`](../../commit/a2419c9)..[`e067f6c`](../../commit/e067f6c) (202 commits)*
 
 ## [0.2.0] — 2026-06-12 – 2026-06-14
 
@@ -340,7 +340,7 @@ Context menu + canonical state store.
   across every card model after a played/favorite toggle, instead of each
   call site patching its own copy.
 
-*Range: [`38cd536`](../../commit/38cd536)..[`cb48e1d`](../../commit/cb48e1d) (104 commits)*
+*Range: [`e5d397e`](../../commit/e5d397e)..[`a2419c9`](../../commit/a2419c9) (104 commits)*
 
 ## [0.1.0] — 2026-06-11 – 2026-06-12
 
@@ -355,4 +355,4 @@ Proof of concept.
   posters, item detail pages, series → season → episode drill-down, and a
   keyboard-driven player with subtitle/audio track panels.
 
-*Range: [`2cf755a`](../../commit/2cf755a)..[`38cd536`](../../commit/38cd536) (45 commits)*
+*Range: [`b285c38`](../../commit/b285c38)..[`e5d397e`](../../commit/e5d397e) (45 commits)*

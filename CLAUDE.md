@@ -209,7 +209,8 @@ Needs `mpv`/libmpv (`pacman -S mpv`). Optional at runtime: `yt-dlp` (trailers), 
   500s. Seerr user-settings POSTs replace the whole object: GET, mutate, POST.
 - On a non-2xx, read the response body into the error so logs/toasts show the server's message.
 - One-off live diagnostics: a temporary `#[tokio::test]` using the saved config/token — run once, then delete.
-  Never commit machine paths or real ids.
+  Never commit machine paths, real ids, server addresses or people's/profile names — use placeholders
+  (`<server>`, `UserA`).
 - Jellyfin auth uses the `Authorization: MediaBrowser … Token="…"` header (not legacy `X-Emby-*`).
   `DeviceId` comes from `ensure_device_id()`; two machines must never share one.
 
