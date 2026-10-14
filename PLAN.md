@@ -56,8 +56,6 @@ Version history: [CHANGELOG.md](CHANGELOG.md) (git tags `v0.1.0`–`v0.5.0`). Im
 
 ## Pending
 
-- [x] **`cargo audit` again after the Slint 1.18 upgrade and before tagging 0.5.0** — done 2026-10-14: 4 new rustls advisories (RUSTSEC-2026-0346…0349, rustls only in the lockfile, not in Fjord's linux build) fixed by updating to 0.23.46; left: the 2 known quick-xml advisories (via Slint's accessibility stack, not reachable) and 2 "unmaintained" warnings (bincode, ttf-parser — Slint's dependencies).
-- [ ] **0.5.0 release work happens on branch `release-0.5`** (plan: `~/.claude/plans/velvety-mixing-flute.md`); `PKGBUILD` on `main` builds it (`#branch=release-0.5`) — remove the fragment when it's merged.
 - [ ] **Remove the temporary `--cfg slint_debug_property` line from `PKGBUILD`'s `build()`** once the Settings crash (Issues) is understood or hasn't come back for a while — it's there so a repeat names the property in the `PANIC` line.
 
 ## Issues
