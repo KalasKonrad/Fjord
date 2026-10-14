@@ -102,7 +102,7 @@ pub(crate) fn reset_session_state(
     // across sign-out.
     s.pending_keybind_rebind = None;
     s.available_plugins.clear();
-    s.trailer_playable.clear();
+    // trailer_playable/trailer_checks stay: whether a YouTube link plays isn't per-user.
     s.trailer_candidates.clear();
     s.local_trailers.clear();
     // ManageProfilesScreen/ProfileEditScreen (Bonfire Phase 2, 2026-08-09) —

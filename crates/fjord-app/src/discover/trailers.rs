@@ -10,9 +10,14 @@
 //                            (get_local_trailers), else start_trailer_check on the YouTube links
 //   start_trailer_check      yt-dlp --simulate over the candidates → the screen's trailer state
 //                            "checking"/"ok"/"none" + url (session cache); stale results dropped
-//   trailer_plays            one yt-dlp check (URL after `--`)
-//   mark_trailer_unplayable  a trailer that failed to play → remembered; re-check the rest on every
-//                            screen still showing a title that listed it
+//   trailer_plays            one yt-dlp check (URL after `--`) → CheckResult Plays / Gone (unavailable,
+//                            private, removed — classify_failure, unit-tested) / Failed (temporary)
+//   TrailerCheck / load_trailer_checks / save_trailer_checks  Plays and Gone saved to
+//                            ~/.cache/fjord/trailer_checks.json for 30 days (fresh_checks,
+//                            unit-tested), loaded at startup; shared by all profiles
+//   mark_trailer_unplayable  a trailer that failed to play → unplayable this session, its saved
+//                            "plays" dropped; re-check the rest on every screen still showing a
+//                            title that listed it
 //   detect_yt_dlp / trailer_ytdl_format  is yt-dlp installed; the format string trailers use
 //   wire_trailers            callbacks moved from main() (0.5.0 step 3): yt-dlp detection (once),
 //                            Watch Trailer; play-detail-/play-series-trailer → play_library_trailer
@@ -273,8 +278,10 @@ pub(crate) fn start_trailer_check(
     screen.set(&g, "checking", "");
     let state = Arc::clone(state);
     let ww = ww.clone();
+    let rt_save = rt.clone();
     rt.spawn(async move {
         let mut found: Option<String> = None;
+        let mut save = false;
         for url in &candidates {
             match state.lock().unwrap().trailer_playable.get(url) {
                 Some(true) => {
@@ -284,16 +291,24 @@ pub(crate) fn start_trailer_check(
                 Some(false) => continue,
                 None => {}
             }
-            let ok = trailer_plays(url, ytdl_format.as_deref()).await;
-            state
-                .lock()
-                .unwrap()
-                .trailer_playable
-                .insert(url.clone(), ok);
+            let result = trailer_plays(url, ytdl_format.as_deref()).await;
+            let ok = result == CheckResult::Plays;
+            {
+                let mut s = state.lock().unwrap();
+                s.trailer_playable.insert(url.clone(), ok);
+                if result != CheckResult::Failed {
+                    s.trailer_checks
+                        .insert(url.clone(), TrailerCheck { ok, at: unix_now() });
+                    save = true;
+                }
+            }
             if ok {
                 found = Some(url.clone());
                 break;
             }
+        }
+        if save {
+            save_trailer_checks(&state, &rt_save);
         }
         let _ = slint::invoke_from_event_loop(move || {
             let Some(w) = ww.upgrade() else { return };
@@ -313,9 +328,9 @@ pub(crate) fn start_trailer_check(
 /// ask for, without downloading. 20 s cap; the process is killed on timeout.
 /// It can't catch a 403 that only happens once the download starts — those
 /// land in mark_trailer_unplayable after a failed play.
-async fn trailer_plays(url: &str, ytdl_format: Option<&str>) -> bool {
+async fn trailer_plays(url: &str, ytdl_format: Option<&str>) -> CheckResult {
     if !trailer_url_allowed(url) {
-        return false;
+        return CheckResult::Failed;
     }
     let mut cmd = tokio::process::Command::new("yt-dlp");
     cmd.args(["--simulate", "--quiet", "--no-warnings", "--no-playlist"]);
@@ -335,25 +350,124 @@ async fn trailer_plays(url: &str, ytdl_format: Option<&str>) -> bool {
                 "trailer check: {url} plays ({:.1}s)",
                 started.elapsed().as_secs_f64()
             );
-            true
+            CheckResult::Plays
         }
         Ok(Ok(out)) => {
             let err = String::from_utf8_lossy(&out.stderr);
+            let result = classify_failure(&err);
             info!(
-                "trailer check: {url} won't play: {}",
+                "trailer check: {url} won't play ({result:?}): {}",
                 err.trim().lines().last().unwrap_or("")
             );
-            false
+            result
         }
         Ok(Err(e)) => {
             warn!("trailer check: couldn't run yt-dlp: {e}");
-            false
+            CheckResult::Failed
         }
         Err(_) => {
             info!("trailer check: {url} timed out after 20s");
-            false
+            CheckResult::Failed
         }
     }
+}
+
+// ── Saved check results (trailer_checks.json) ─────────────────────────────────
+
+/// How long a saved check result counts.
+const TRAILER_CHECK_TTL_SECS: u64 = 30 * 24 * 3600;
+
+/// One saved answer: the link plays (`ok`) or YouTube says the video is gone; `at` = unix secs.
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct TrailerCheck {
+    pub ok: bool,
+    pub at: u64,
+}
+
+/// What one yt-dlp check found. Only Plays and Gone are saved across restarts.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum CheckResult {
+    Plays,
+    /// The video is unavailable, private or removed — a lasting answer.
+    Gone,
+    /// Anything else (a bot check, a format error, the network, a timeout) — often temporary.
+    Failed,
+}
+
+/// yt-dlp's error output → Gone or Failed.
+pub(crate) fn classify_failure(stderr: &str) -> CheckResult {
+    let e = stderr.to_lowercase();
+    // "Sign in to confirm you're not a bot" also mentions the video — check it first.
+    if e.contains("not a bot") {
+        return CheckResult::Failed;
+    }
+    if [
+        "video unavailable",
+        "private video",
+        "has been removed",
+        "no longer available",
+    ]
+    .iter()
+    .any(|m| e.contains(m))
+    {
+        CheckResult::Gone
+    } else {
+        CheckResult::Failed
+    }
+}
+
+fn unix_now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+fn trailer_checks_path() -> std::path::PathBuf {
+    crate::config::xdg_cache_base()
+        .join("fjord")
+        .join("trailer_checks.json")
+}
+
+/// The saved results still younger than TRAILER_CHECK_TTL_SECS at `now`.
+pub(crate) fn fresh_checks(
+    all: std::collections::HashMap<String, TrailerCheck>,
+    now: u64,
+) -> std::collections::HashMap<String, TrailerCheck> {
+    all.into_iter()
+        .filter(|(_, c)| c.at <= now && now - c.at < TRAILER_CHECK_TTL_SECS)
+        .collect()
+}
+
+/// Startup: the saved results (still fresh) into FjordState.trailer_checks and, where this
+/// session hasn't answered yet, trailer_playable.
+fn load_trailer_checks(state: &Arc<Mutex<FjordState>>) {
+    let all: std::collections::HashMap<String, TrailerCheck> =
+        crate::home::load_cache(Some(trailer_checks_path())).unwrap_or_default();
+    let total = all.len();
+    let fresh = fresh_checks(all, unix_now());
+    debug!(
+        "trailer checks: {} saved result(s) loaded ({} expired)",
+        fresh.len(),
+        total - fresh.len()
+    );
+    let mut s = state.lock().unwrap();
+    for (url, c) in fresh {
+        s.trailer_playable.entry(url.clone()).or_insert(c.ok);
+        s.trailer_checks.insert(url, c);
+    }
+}
+
+/// Only one write of trailer_checks.json at a time (checks for two screens can finish together).
+static TRAILER_CHECKS_SAVE: Mutex<()> = Mutex::new(());
+
+/// Writes FjordState.trailer_checks: cloned under the lock, written off the async workers.
+fn save_trailer_checks(state: &Arc<Mutex<FjordState>>, rt: &tokio::runtime::Handle) {
+    let snapshot = state.lock().unwrap().trailer_checks.clone();
+    rt.spawn_blocking(move || {
+        let _guard = TRAILER_CHECKS_SAVE.lock().unwrap();
+        crate::home::save_cache(Some(trailer_checks_path()), &snapshot);
+    });
 }
 
 /// A trailer failed to play even though the check passed (e.g. YouTube
@@ -371,11 +485,17 @@ pub(crate) fn mark_trailer_unplayable(
     if url.is_empty() {
         return;
     }
-    let checks = {
+    // Not a lasting answer (often a passing YouTube 403): unplayable for this session only, and
+    // a saved "plays" is dropped so the next session checks it again.
+    let (checks, had_saved) = {
         let mut s = state.lock().unwrap();
         s.trailer_playable.insert(url.clone(), false);
-        s.trailer_candidates.clone()
+        let had_saved = s.trailer_checks.remove(&url).is_some();
+        (s.trailer_candidates.clone(), had_saved)
     };
+    if had_saved {
+        save_trailer_checks(state, rt);
+    }
     info!("trailer {url} failed to play — marked unplayable for this session");
     let Some(w) = ww.upgrade() else { return };
     let g = AppState::get(&w);
@@ -411,6 +531,8 @@ pub(crate) fn wire_trailers(
     {
         let state_yt = Arc::clone(&state);
         let ww_yt = window.as_weak();
+        let state_checks = Arc::clone(&state);
+        rt.spawn_blocking(move || load_trailer_checks(&state_checks));
         rt.spawn(async move {
             let available = tokio::task::spawn_blocking(detect_yt_dlp)
                 .await
@@ -627,5 +749,67 @@ mod tests {
         let series = vec![t(&yt("a"), None), t(&yt("b"), None)];
         assert_eq!(library_trailer_candidates(&series), vec![yt("a"), yt("b")]);
         assert!(library_trailer_candidates(&[]).is_empty());
+    }
+
+    #[test]
+    fn yt_dlp_errors_classified() {
+        use super::{CheckResult::*, classify_failure};
+        for gone in [
+            "ERROR: [youtube] 2KJz0JRcNE8: Video unavailable",
+            "ERROR: [youtube] x: Video unavailable. This video is no longer available because the \
+             YouTube account associated with this video has been terminated.",
+            "ERROR: [youtube] x: Private video. Sign in if you've been granted access to this video",
+            "ERROR: [youtube] x: This video has been removed by the uploader",
+        ] {
+            assert_eq!(classify_failure(gone), Gone, "{gone}");
+        }
+        for failed in [
+            "ERROR: [youtube] x: Sign in to confirm you\u{2019}re not a bot. Use --cookies-from-browser",
+            "ERROR: [youtube] x: Requested format is not available",
+            "ERROR: unable to download video data: HTTP Error 403: Forbidden",
+            "",
+        ] {
+            assert_eq!(classify_failure(failed), Failed, "{failed}");
+        }
+    }
+
+    #[test]
+    fn saved_checks_expire_after_30_days() {
+        use super::{TrailerCheck, fresh_checks};
+        let day = 24 * 3600;
+        let now = 100 * day;
+        let all = std::collections::HashMap::from([
+            (
+                "new".to_string(),
+                TrailerCheck {
+                    ok: true,
+                    at: now - day,
+                },
+            ),
+            (
+                "old".to_string(),
+                TrailerCheck {
+                    ok: false,
+                    at: now - 31 * day,
+                },
+            ),
+            (
+                "edge".to_string(),
+                TrailerCheck {
+                    ok: true,
+                    at: now - 30 * day,
+                },
+            ),
+            (
+                "future".to_string(),
+                TrailerCheck {
+                    ok: true,
+                    at: now + day,
+                },
+            ), // clock moved back
+        ]);
+        let mut kept: Vec<String> = fresh_checks(all, now).into_keys().collect();
+        kept.sort();
+        assert_eq!(kept, vec!["new"]);
     }
 }

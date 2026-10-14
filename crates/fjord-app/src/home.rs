@@ -134,12 +134,12 @@ fn cache_path(user_id: &str, filename: &str) -> Option<PathBuf> {
     Some(profile_cache_dir(user_id)?.join(filename))
 }
 
-fn load_cache<T: serde::de::DeserializeOwned>(path: Option<PathBuf>) -> Option<T> {
+pub(crate) fn load_cache<T: serde::de::DeserializeOwned>(path: Option<PathBuf>) -> Option<T> {
     let data = std::fs::read_to_string(path?).ok()?;
     serde_json::from_str(&data).ok()
 }
 
-fn save_cache<T: serde::Serialize + ?Sized>(path: Option<PathBuf>, data: &T) {
+pub(crate) fn save_cache<T: serde::Serialize + ?Sized>(path: Option<PathBuf>, data: &T) {
     let Some(path) = path else {
         warn!("cache: not a valid user id for a cache folder — not saved");
         return;

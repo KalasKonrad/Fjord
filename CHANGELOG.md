@@ -23,6 +23,11 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Improved: trailer checks are remembered for 30 days.** Opening a page again
+  after restarting Fjord no longer re-checks its trailers ("Checking…" can take
+  a few seconds when the first links are dead). Temporary problems aren't
+  remembered, and a remembered trailer that then fails to play is checked
+  again.
 - **Changed: the play/pause button on the Now Playing screen is grey** like
   the other controls (and the music bar's); blue there now only means "on"
   (shuffle, repeat) or the keyboard focus.

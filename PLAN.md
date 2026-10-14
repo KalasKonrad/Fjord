@@ -36,6 +36,8 @@ Version history: [CHANGELOG.md](CHANGELOG.md) (git tags `v0.1.0`–`v0.4.2`). Im
 
 - [ ] **Now Playing play/pause button grey (2026-10-14).** Now Playing screen: ▶/⏸ is grey like ⏮ ⏭ (blue only with keyboard focus); shuffle/repeat still turn blue when on.
 
+- [ ] **Trailer checks remembered for 30 days (2026-10-14).** Open a movie/series page with a trailer (e.g. the series whose first three links are dead), quit Fjord, start it and open the page again: "▶ Trailer" at once, no "Checking…"; log `trailer checks: N saved result(s) loaded` at startup and no new `trailer check: … plays` line for it. `~/.cache/fjord/trailer_checks.json` holds the URLs with `ok`/`at`. Sign out and back in: still remembered.
+
 ### Security fixes (0.5.0 step 0)
 - [x] **S7 — pinned actions (2026-10-10).** The next push to `main` still produces the "nightly" release (Actions tab green, new `fjord-x86_64.tar.gz`). Confirmed 2026-10-10: the nightly run for `d1a54da` (pinned actions) succeeded.
 - [ ] **S6 — owner-only files (2026-10-10).** Dev confirmed 2026-10-10 (600/700/600); HTPC still to check. After a start: `stat -c '%a %n' ~/.config/fjord/config.json ~/.cache/fjord/logs ~/.cache/fjord/logs/fjord.log*` → 600 / 700 / 600 on both machines; on the HTPC the share files stay readable from the dev machine; no `log permissions not tightened` line (or, on the HTPC, it explains why).
