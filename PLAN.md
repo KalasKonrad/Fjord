@@ -41,7 +41,7 @@ Version history: [CHANGELOG.md](CHANGELOG.md) (git tags `v0.1.0`–`v0.5.0`). Im
 - [x] **Context menus: View Details always last (2026-10-14).** Confirmed by the user 2026-10-14. Right-click / C on a movie, an episode, a music album, a season tab, a Discover card (not requested, requested, as admin): View Details is the bottom row everywhere (Discover: View Request just above it); the menu opens with the first row focused (Resume/Play, Request…); Up from the top wraps to View Details; Enter on it opens the page.
 
 ### 0.5.0 release (step 7)
-- [ ] **Tag release (2026-10-14).** After pushing `v0.5.0`: the Actions run for the tag is green; Releases shows "Fjord v0.5.0" as Latest (not pre-release) with `fjord-x86_64.tar.gz` and the CHANGELOG 0.5.0 text; the main push still updates "nightly". HTPC: `makepkg -si` (from `main`) → the log's first lines and Settings show 0.5.0.
+- [ ] **Tag release (2026-10-14).** Confirmed 2026-10-14 except the HTPC: tag run green (9m51s), "Fjord v0.5.0" is Latest with the tarball (binary logs `fjord version: 0.5.0 (r1159.657f1db)`) and the CHANGELOG text, nightly updated to r1159. After pushing `v0.5.0`: the Actions run for the tag is green; Releases shows "Fjord v0.5.0" as Latest (not pre-release) with `fjord-x86_64.tar.gz` and the CHANGELOG 0.5.0 text; the main push still updates "nightly". HTPC: `makepkg -si` (from `main`) → the log's first lines and Settings show 0.5.0.
 
 ### Security fixes (0.5.0 step 0)
 - [x] **S7 — pinned actions (2026-10-10).** The next push to `main` still produces the "nightly" release (Actions tab green, new `fjord-x86_64.tar.gz`). Confirmed 2026-10-10: the nightly run for `d1a54da` (pinned actions) succeeded.
