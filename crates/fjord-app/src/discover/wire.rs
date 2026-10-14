@@ -553,7 +553,9 @@ pub(crate) fn wire_discover(
                 "seerr: discover context menu opened for {} ({}) request_id={:?} pending={} mine={} seerr-is-admin={}",
                 item.id, item.item_type, item.request_id, item.request_pending, item.request_mine, g.get_seerr_is_admin(),
             );
-            g.set_context_menu_focused(0);
+            // Focus the first row (the actions; View Details is last).
+            let first = crate::context_menu::existing_discover_menu_rows(&g)[0];
+            g.set_context_menu_focused(first);
             g.set_show_context_menu(true);
         }
     });
@@ -581,7 +583,9 @@ pub(crate) fn wire_discover(
                 g.get_request_detail_tmdb_id(), item_type, g.get_request_detail_request_id(),
                 g.get_request_detail_request_pending(), g.get_request_detail_request_mine(),
             );
-            g.set_context_menu_focused(0);
+            // Focus the first row (the actions; View Details is last).
+            let first = crate::context_menu::existing_discover_menu_rows(&g)[0];
+            g.set_context_menu_focused(first);
             g.set_show_context_menu(true);
         }
     });

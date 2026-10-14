@@ -1126,12 +1126,13 @@ pub(crate) fn wire_queue_callbacks(
 
 // ── Keyboard dispatch ─────────────────────────────────────────────────────────
 
-/// Which row indices exist for the current Discover card (gaps allowed, like the Jellyfin
-/// menu's Resume): 0 View Details (always), 5 View Request (requested), 1 Request (not yet
-/// requested) or Edit Request (requested, mine or admin), 2 Cancel Request (requested, and
-/// admin or mine+pending), 3 Approve / 4 Decline (requested, admin). Row 5 comes second in the
-/// Vec (Up/Down order) though its index is highest — indices are focus ids matched against
-/// context_menu.slint's `row-index`, not an order.
+/// Which row indices exist for the current Discover card, in on-screen (Up/Down) order — gaps
+/// allowed, like the Jellyfin menu's Resume: 1 Request (not yet requested) or Edit Request
+/// (requested, mine or admin), 2 Cancel Request (requested, and admin or mine+pending),
+/// 3 Approve / 4 Decline (requested, admin), 6 Watchlist (always), 7 Blocklist, 5 View Request
+/// (requested), 0 View Details (always, last — as in every menu). Indices are focus ids matched
+/// against context_menu.slint's `row-index`, not an order. The first row gets the focus when the
+/// menu opens (discover/wire.rs).
 ///
 /// Gating follows Seerr's server/routes/request.ts: edit needs ownership or MANAGE_REQUESTS,
 /// approve/decline MANAGE_REQUESTS — neither checks status; only cancel limits a non-admin
@@ -1139,15 +1140,12 @@ pub(crate) fn wire_queue_callbacks(
 ///
 /// View Request always opens Seerr's Request Detail, even when the item is (partly) in the
 /// library and the other rows redirect to the Jellyfin item (see open_discover_item_ex).
-fn existing_discover_menu_rows(g: &AppState) -> Vec<i32> {
+pub(crate) fn existing_discover_menu_rows(g: &AppState) -> Vec<i32> {
     let requested = !g.get_context_menu_request_id().as_str().is_empty();
     let pending = g.get_context_menu_request_pending();
     let mine = g.get_context_menu_request_mine();
     let admin = g.get_seerr_is_admin();
-    let mut rows = vec![0];
-    if requested {
-        rows.push(5); // View Request
-    }
+    let mut rows = Vec::with_capacity(8);
     if !requested || mine || admin {
         rows.push(1); // Request (not yet requested) or Edit Request
     }
@@ -1168,6 +1166,10 @@ fn existing_discover_menu_rows(g: &AppState) -> Vec<i32> {
     if can_blocklist {
         rows.push(7);
     }
+    if requested {
+        rows.push(5); // View Request
+    }
+    rows.push(0); // View Details — last in every menu
     debug!(
         "seerr: discover menu rows requested={requested} pending={pending} mine={mine} admin={admin} can_blocklist={can_blocklist} -> {rows:?}"
     );
@@ -1226,10 +1228,11 @@ fn handle_key_discover_menu(action: &crate::keys::Action, g: &AppState) -> bool 
     }
 }
 
-/// Fixed row indices with gaps (like existing_discover_menu_rows): 0 Resume (resume-pct > 0
-/// && !played), 1 Play from Start, 2 Play Next, 3 Add to Queue, 4 Mark Played, 5 Favourite,
-/// 6 View Details, 7 Add to Playlist (music only), 8 Watchlist (a resolvable TMDB id + Seerr
-/// connected). A list, not a min/max range: 7 can be absent while 8 is present.
+/// Fixed row indices with gaps, in on-screen (Up/Down) order (like existing_discover_menu_rows):
+/// 0 Resume (resume-pct > 0 && !played), 1 Play from Start, 2 Play Next, 3 Add to Queue, 4 Mark
+/// Played, 5 Favourite, 7 Add to Playlist (music only), 8 Watchlist (a resolvable TMDB id + Seerr
+/// connected), 6 View Details (always, last — as in every menu). A list, not a min/max range:
+/// 7 can be absent while 8 is present.
 fn existing_jellyfin_menu_rows(g: &AppState) -> Vec<i32> {
     let item_type = g.get_context_menu_item_type();
     // A Season gets Mark Watched/Unwatched, Favourite and View Details only: it isn't playable
@@ -1242,13 +1245,14 @@ fn existing_jellyfin_menu_rows(g: &AppState) -> Vec<i32> {
     if g.get_context_menu_resume_pct() > 0.0 && !g.get_context_menu_has_played() {
         rows.push(0);
     }
-    rows.extend([1, 2, 3, 4, 5, 6]);
+    rows.extend([1, 2, 3, 4, 5]);
     if is_music_type(item_type.as_str()) {
         rows.push(7);
     }
     if !g.get_context_menu_jf_tmdb_id().is_empty() && g.get_seerr_connected() {
         rows.push(8);
     }
+    rows.push(6); // View Details — last in every menu
     rows
 }
 

@@ -23,6 +23,9 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Changed: "View Details" is the last entry in every context menu.** It was
+  in the middle of the library menus and first on Discover; the actions now
+  come first everywhere, and the menu opens on the top one.
 - **Improved: trailer checks are remembered for 30 days.** Opening a page again
   after restarting Fjord no longer re-checks its trailers ("Checking…" can take
   a few seconds when the first links are dead). Temporary problems aren't

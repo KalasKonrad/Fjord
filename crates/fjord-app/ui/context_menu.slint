@@ -3,17 +3,19 @@
 //                    pulse); row-index = the context-menu-focused value that activates it
 //   ContextMenu      overlay (C key or right-click on a card); the row family depends on
 //                    context-menu-item-type (is-discover-item). Row indices are fixed with gaps;
-//                    the Rust lists of existing rows must match these `if` conditions by hand.
-//                    Jellyfin: 0 Resume (resume-pct > 0), 1 Play from Start, 2 Play Next, 3 Add
-//                    to Queue, 4 Mark Played/Unplayed, 5 Favourite, 6 View Details, 7 Add to
-//                    Playlist (Audio/MusicAlbum), 8 Watchlist (resolvable TMDB id + Seerr); a
-//                    Season shows 4/5/6 only (existing_jellyfin_menu_rows).
-//                    Discover: 0 View Details, 5 View Request (a request exists — second in
-//                    traversal), 1 Request / Edit Request (mine or admin), 2 Cancel (admin, or
-//                    mine + pending), 3 Approve / 4 Decline (admin), 6 Watchlist (always),
-//                    7 Blocklist (manage-blocklist permission; untouched or blocklisted) —
-//                    Seerr's real per-endpoint permissions (existing_discover_menu_rows).
-//                    Keyboard: Up/Down loop, Enter confirms, Esc closes.
+//                    the Rust lists of existing rows (in on-screen order) must match these `if`
+//                    conditions by hand. View Details is the last row in every menu.
+//                    Jellyfin, top to bottom: 0 Resume (resume-pct > 0), 1 Play from Start, 2 Play
+//                    Next, 3 Add to Queue, 4 Mark Played/Unplayed, 5 Favourite, 7 Add to Playlist
+//                    (Audio/MusicAlbum), 8 Watchlist (resolvable TMDB id + Seerr), 6 View Details;
+//                    a Season shows 4/5/6 only (existing_jellyfin_menu_rows).
+//                    Discover, top to bottom: 1 Request / Edit Request (mine or admin), 2 Cancel
+//                    (admin, or mine + pending), 3 Approve / 4 Decline (admin), 6 Watchlist
+//                    (always), 7 Blocklist (manage-blocklist permission; untouched or
+//                    blocklisted), 5 View Request (a request exists), 0 View Details — Seerr's
+//                    real per-endpoint permissions (existing_discover_menu_rows).
+//                    Keyboard: Up/Down loop, Enter confirms, Esc closes; focus starts on the
+//                    first row.
 //   PlaylistPicker   add-to-playlist modal: row 0 "+ New playlist…" (turns into a name input),
 //                    then the audio playlists (cursor 1..N = items[cursor-1]); keyboard in
 //                    keys.rs's handle_playlist_picker; on-screen keyboard docked below it
@@ -416,60 +418,6 @@ export component ContextMenu inherits Rectangle {
                     }
                 }
 
-                // Row 6 — View Details
-            Rectangle {
-                    height: 44px;
-                    border-radius: Theme.radius;
-                    background: AppState.context-menu-focused == 6 ? Theme.accent-muted : transparent;
-                    border-width: (ta6.pressed || pulse6.pulsing) ? 3px : 0px;
-                    border-color: Theme.focus-border;
-                    animate border-width {
-                        duration: 90ms * AppState.settings-animation-speed;
-                        easing: ease-out-expo;
-                    }
-                    pulse6 := PressPulse {
-                        trigger: AppState.kb-activate-pulse;
-                        active: AppState.context-menu-focused == 6;
-                    }
-
-                    HorizontalLayout {
-                        padding-left: 12px;
-                        padding-right: 12px;
-                        spacing: 10px;
-                        alignment: start;
-                        Text {
-                            text: "ℹ";
-                            color: AppState.context-menu-focused == 6 ? Theme.accent : Theme.text-muted;
-                            font-size: 14px;
-                            vertical-alignment: center;
-                            width: 18px;
-                        }
-
-                        Text {
-                            text: "View Details";
-                            color: AppState.context-menu-focused == 6 ? Theme.text : Theme.text-muted;
-                            font-size: 14px;
-                            vertical-alignment: center;
-                        }
-                    }
-
-                    ta6 := TouchArea {
-                        clicked => {
-                        // A Season opens its own screen (season.rs::open_season_screen, by season-id + series-id) —
-                        // DetailPage has no concept of a season.
-                        if AppState.context-menu-item-type == "Season" {
-                                AppState.open-season-detail(AppState.context-menu-item-id, AppState.context-menu-series-id);
-                            } else {
-                                AppState.open-detail(AppState.context-menu-item-id, AppState.context-menu-item-type);
-                            }
-                            AppState.show-context-menu = false;
-                        }
-                        pointer-event(e) => {
-                            if e.kind == PointerEventKind.move { AppState.context-menu-focused = 6; }
-                        }
-                    }
-                }
-
                 // Row 7 — Add to Playlist (music items only)
             if AppState.context-menu-item-type == "Audio" || AppState.context-menu-item-type == "MusicAlbum": Rectangle {
                     height: 44px;
@@ -570,6 +518,60 @@ export component ContextMenu inherits Rectangle {
                         }
                     }
                 }
+
+                // Row 6 — View Details (always the last row)
+            Rectangle {
+                    height: 44px;
+                    border-radius: Theme.radius;
+                    background: AppState.context-menu-focused == 6 ? Theme.accent-muted : transparent;
+                    border-width: (ta6.pressed || pulse6.pulsing) ? 3px : 0px;
+                    border-color: Theme.focus-border;
+                    animate border-width {
+                        duration: 90ms * AppState.settings-animation-speed;
+                        easing: ease-out-expo;
+                    }
+                    pulse6 := PressPulse {
+                        trigger: AppState.kb-activate-pulse;
+                        active: AppState.context-menu-focused == 6;
+                    }
+
+                    HorizontalLayout {
+                        padding-left: 12px;
+                        padding-right: 12px;
+                        spacing: 10px;
+                        alignment: start;
+                        Text {
+                            text: "ℹ";
+                            color: AppState.context-menu-focused == 6 ? Theme.accent : Theme.text-muted;
+                            font-size: 14px;
+                            vertical-alignment: center;
+                            width: 18px;
+                        }
+
+                        Text {
+                            text: "View Details";
+                            color: AppState.context-menu-focused == 6 ? Theme.text : Theme.text-muted;
+                            font-size: 14px;
+                            vertical-alignment: center;
+                        }
+                    }
+
+                    ta6 := TouchArea {
+                        clicked => {
+                        // A Season opens its own screen (season.rs::open_season_screen, by season-id + series-id) —
+                        // DetailPage has no concept of a season.
+                        if AppState.context-menu-item-type == "Season" {
+                                AppState.open-season-detail(AppState.context-menu-item-id, AppState.context-menu-series-id);
+                            } else {
+                                AppState.open-detail(AppState.context-menu-item-id, AppState.context-menu-item-type);
+                            }
+                            AppState.show-context-menu = false;
+                        }
+                        pointer-event(e) => {
+                            if e.kind == PointerEventKind.move { AppState.context-menu-focused = 6; }
+                        }
+                    }
+                }
             } // end !is-discover-item
 
             // ── Discover row family (2026-07-18) — see this file's own
@@ -577,20 +579,6 @@ export component ContextMenu inherits Rectangle {
             if root.is-discover-item: VerticalLayout {
                 spacing: 2px;
 
-                DiscoverMenuRow {
-                    row-index: 0;
-                    icon-text: "ℹ"; // matches the Jellyfin "View Details" row's own icon/font choice above
-                    label: "View Details";
-                    activated => { AppState.context-discover-view-details(); }
-                }
-                // View Request (row-index 5 — see the header for why it's highest but second): only once a
-                // request exists. Reuses View Details' "ℹ" glyph.
-                if AppState.context-menu-request-id != "": DiscoverMenuRow {
-                    row-index: 5;
-                    icon-text: "ℹ";
-                    label: "View Request";
-                    activated => { AppState.context-discover-view-request(); }
-                }
                 if AppState.context-menu-request-id == "": DiscoverMenuRow {
                     row-index: 1;
                     icon-text: "+";
@@ -645,6 +633,21 @@ export component ContextMenu inherits Rectangle {
                     icon-font-family: "Noto Sans Symbols 2";
                     label: AppState.context-menu-availability == "blocklisted" ? "Remove from Blocklist" : "Add to Blocklist";
                     activated => { AppState.context-discover-toggle-blocklist(); }
+                }
+                // View Request (row-index 5): only once a request exists; just above View Details, which is
+                // always last. Reuses View Details' "ℹ" glyph.
+                if AppState.context-menu-request-id != "": DiscoverMenuRow {
+                    row-index: 5;
+                    icon-text: "ℹ";
+                    label: "View Request";
+                    activated => { AppState.context-discover-view-request(); }
+                }
+                // View Details — always last, like in every menu.
+                DiscoverMenuRow {
+                    row-index: 0;
+                    icon-text: "ℹ"; // matches the Jellyfin "View Details" row's own icon/font choice above
+                    label: "View Details";
+                    activated => { AppState.context-discover-view-details(); }
                 }
             }
         }
