@@ -18,7 +18,8 @@ A small release: bug fixes, polish, minor features. Released per CLAUDE.md → R
 - [x] **Discover marks some titles that are already in the library as not in the library (reported 2026-10-05).** Cause found 2026-10-15 (user: "it doesn't recognise 4K"): cards read only Seerr's regular-tier `status`, never `status4k` — fixed, live check in the checklist below. Original note: Needs a few example titles to trace. If no examples turn up: a one-off diagnostic that runs Discover's in-library match over the landing rows and lists titles found by name/year in the library but not matched.
 
 **Polish**
-- [ ] **Long titles shrink the poster on the smallest card size (115 px)** (was in Deferred). Options: a larger-poster setting (multiplier or an extra breakpoint tier on `dash-card-w`/`dash-card-h` in `main.slint`), or the title over a full-bleed poster with a dark scrim — pick one before starting.
+- [x] **Long titles shrink the poster on the smallest card size (115 px)** (was in Deferred). User's choice 2026-10-15: the title over the poster on a dark fade, always the whole title — done (`MediaCard`), live check in the checklist.
+- [ ] **Card size setting (user, 2026-10-15):** Normal / Large (~+25%) / Extra large (~+50%), **per profile**, for every poster card — dashboards, library grids, Discover, artist/collection pages; grids drop columns to fit.
 - [x] **Trim the dated story comments in `build-release.yml`'s header** to what the workflow needs (0.5.0 step 4 left the workflow out); the history is in DEVLOG.
 
 **Minor features**
@@ -35,6 +36,7 @@ A small release: bug fixes, polish, minor features. Released per CLAUDE.md → R
 **Check an item off only once it has been clicked through on real hardware** — a clean build/clippy/test says nothing about whether it works. Add a line here the moment something ships "not live-tested". Ticked items are removed at the next cleanup; their story lives in `DEVLOG.md`.
 
 ### 0.5.1
+- [ ] **Title over the poster (2026-10-15).** Every poster card (dashboards, library grids, Discover, search, artist/collection/person pages): the poster fills the card; title and year sit over its bottom on a dark fade, readable on light and dark posters; the whole title shows (a long one covers more of the poster); posters in a row are all the same size. Cards still loading their poster: the title at the bottom of the grey card. Badges: ♥ top-left, ★ under it (or top-left alone), ✓ / unwatched count / Seerr pill top-right, the "Available in 4K" pill under the Seerr pill (Discover "Requested" row), progress strip at the bottom edge. Hover, focus ring and click as before.
 - [ ] **Discover: titles owned only in 4K (2026-10-15).** A title you have only in 4K shows "4K In Library" on its Discover/search card and on Home/TV/Movies watchlist cards (before: no badge); a title you have in the regular version still shows "In Library"; a title requested only in 4K shows "4K Requested". Its context menu and request page no longer offer "Add to Blocklist" (same as for any owned title). Opening it still goes to the Jellyfin page as before.
 
 ### Packages and branch model (2026-10-14)

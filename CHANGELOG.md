@@ -23,6 +23,11 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Changed: posters fill the whole card, with the title over them.** The
+  title and year now sit on a dark fade over the bottom of the poster instead
+  of below it, so every poster in a row is the same size however long its
+  title is (before, a long title shrank its poster). The ★ watchlist badge
+  moved to the top-left corner, under ♥.
 - **Fixed: Discover showed titles you have only in 4K as not in your
   library.** Seerr tracks the regular and the 4K version separately, and
   Discover only looked at the regular one. Cards (Discover, search,
