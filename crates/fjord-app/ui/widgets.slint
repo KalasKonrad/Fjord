@@ -881,7 +881,7 @@ export component MediaCard inherits Rectangle {
             }
 
             // Seerr availability pill (Discover cards only — "" on Jellyfin cards). Tier-prefixed
-            // ("4K Requested") only for requested-4k; "blocklisted" never is (blocklisting sets
+            // ("4K Requested", "4K In Library") only for requested-4k; "blocklisted" never is (blocklisting sets
             // both tiers together server-side).
             if item.availability != "": Rectangle {
                 y: 4px;

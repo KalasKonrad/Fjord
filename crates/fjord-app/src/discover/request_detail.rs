@@ -286,7 +286,7 @@ struct DetailFields {
     // onUserWatchlist verbatim.
     on_watchlist: bool,
     /// `CardItem.availability`'s vocabulary (""/requested/processing/partial/available/
-    /// blocklisted, via `availability_tag`) for the base/2K tier — what the Blocklist
+    /// blocklisted, via `media_availability`: the further-along tier) — what the Blocklist
     /// button/row gates on (not `status_label`, which mixes in workflow labels like
     /// "Needs Approval"/"Declined").
     availability: &'static str,
@@ -413,7 +413,7 @@ fn movie_fields(d: MovieDetails, region: &str, my_user_id: Option<i64>) -> Detai
         tier_status_label(d.media_info.as_ref().and_then(|mi| mi.status4k()), req_4k);
     let (request_id, request_pending, request_mine) =
         pick_primary_request(req_2k, req_4k, my_user_id);
-    let availability = availability_tag(d.media_info.as_ref().and_then(|mi| mi.status()));
+    let (availability, _) = media_availability(d.media_info.as_ref());
     DetailFields {
         title: d.title,
         meta: if genres.is_empty() {
@@ -503,7 +503,7 @@ fn tv_fields(d: TvDetails, region: &str, my_user_id: Option<i64>) -> DetailField
         tier_status_label(d.media_info.as_ref().and_then(|mi| mi.status4k()), req_4k);
     let (request_id, request_pending, request_mine) =
         pick_primary_request(req_2k, req_4k, my_user_id);
-    let availability = availability_tag(d.media_info.as_ref().and_then(|mi| mi.status()));
+    let (availability, _) = media_availability(d.media_info.as_ref());
     DetailFields {
         title: d.name,
         meta: if genres.is_empty() {

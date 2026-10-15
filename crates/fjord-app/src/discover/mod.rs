@@ -12,6 +12,8 @@
 //     keys           keyboard: Discover grid/landing/filter bar/popups, request detail + options
 //   TMDB_*_BASE / fetch_tmdb_image  TMDB image URLs + cached fetch (also used by series.rs)
 //   availability_tag    MediaStatus → CardItem.availability ("blocklisted" included)
+//   media_availability  both Seerr tiers → (availability, 4K-tier flag): owned/requested only in 4K
+//                       still counts ("4K In Library")
 //   DiscoverCardMeta    Send-safe card data built off-thread; KnownRequest; CalendarEntry/-Kind
 //   known_requests_from_row / patch_known_request_state / patch_watchlist_state  request and
 //                       watchlist state for cards outside the Requested row, from FjordState caches
@@ -34,7 +36,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use fjord_seerr::{MediaStatus, MovieDetails, SearchResult, SeasonsSelector, TvDetails};
+use fjord_seerr::{MediaInfo, MediaStatus, MovieDetails, SearchResult, SeasonsSelector, TvDetails};
 use slint::{ComponentHandle, Global, Model, ModelRc, VecModel, Weak};
 
 use tracing::{debug, info, warn};
@@ -93,6 +95,37 @@ fn availability_tag(status: Option<MediaStatus>) -> &'static str {
         // (tier_status_label). It's the only per-card signal Blocklist needs.
         Some(MediaStatus::Blocklisted) => "blocklisted",
         Some(MediaStatus::Unknown) | Some(MediaStatus::Deleted) | None => "",
+    }
+}
+
+/// A card's availability over both Seerr tiers. `status` and `status4k` are independent
+/// (SEERR.md: `{"status": 1, "status4k": 5}` is common where most requests are 4K), so a title
+/// owned only in 4K must still read "In Library". The further-along tier wins (available >
+/// partial > processing > requested); the flag is `true` when that is the 4K tier alone, which
+/// prefixes the pill with "4K" (`CardItem.requested-4k`). Blocklisted comes from `status` only —
+/// blocklisting sets both tiers server-side.
+fn media_availability(mi: Option<&MediaInfo>) -> (&'static str, bool) {
+    fn rank(tag: &str) -> u8 {
+        match tag {
+            "available" => 4,
+            "partial" => 3,
+            "processing" => 2,
+            "requested" => 1,
+            _ => 0,
+        }
+    }
+    let Some(mi) = mi else {
+        return ("", false);
+    };
+    let regular = availability_tag(mi.status());
+    if regular == "blocklisted" {
+        return (regular, false);
+    }
+    let uhd = availability_tag(mi.status4k());
+    if rank(uhd) > rank(regular) {
+        (uhd, true)
+    } else {
+        (regular, false)
     }
 }
 
@@ -247,7 +280,7 @@ fn search_result_to_meta(r: &SearchResult) -> Option<DiscoverCardMeta> {
     if r.media_type != "movie" && r.media_type != "tv" {
         return None; // person results filtered out — v1 shows movies/TV only
     }
-    let availability = availability_tag(r.media_info.as_ref().and_then(|mi| mi.status()));
+    let (availability, requested_4k) = media_availability(r.media_info.as_ref());
     if availability == "blocklisted" {
         // Blocklisted items never show in Discover: every landing row, search and
         // filtered-browse fetch goes through this function (directly or via
@@ -267,7 +300,7 @@ fn search_result_to_meta(r: &SearchResult) -> Option<DiscoverCardMeta> {
         subtitle: r.year().unwrap_or("").to_string(),
         year: r.year().and_then(|y| y.parse().ok()).unwrap_or(0),
         availability,
-        requested_4k: false,
+        requested_4k,
         other_tier_available: false,
         other_tier_requested: false,
         request_id: String::new(),
@@ -806,4 +839,59 @@ fn remove_card_from_all_models(g: &AppState, item_type: &str, tmdb_id: i64) {
     debug!(
         "seerr: remove_card_from_all_models tmdb={tmdb_id} item_type={item_type} -> removed {removed} card(s)"
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn info(status: u8, status4k: Option<u8>) -> MediaInfo {
+        MediaInfo {
+            tmdb_id: None,
+            status,
+            status4k,
+            requests: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn availability_uses_the_further_along_tier() {
+        assert_eq!(media_availability(None), ("", false));
+        // Owned only in 4K (status 1 Unknown, status4k 5 Available) — the reported bug.
+        assert_eq!(
+            media_availability(Some(&info(1, Some(5)))),
+            ("available", true)
+        );
+        assert_eq!(
+            media_availability(Some(&info(2, Some(5)))),
+            ("available", true)
+        );
+        assert_eq!(
+            media_availability(Some(&info(1, Some(2)))),
+            ("requested", true)
+        );
+        // The regular tier wins ties and when it's further along.
+        assert_eq!(
+            media_availability(Some(&info(5, Some(5)))),
+            ("available", false)
+        );
+        assert_eq!(
+            media_availability(Some(&info(5, Some(1)))),
+            ("available", false)
+        );
+        assert_eq!(
+            media_availability(Some(&info(5, None))),
+            ("available", false)
+        );
+        assert_eq!(
+            media_availability(Some(&info(4, Some(2)))),
+            ("partial", false)
+        );
+        assert_eq!(media_availability(Some(&info(1, None))), ("", false));
+        // Blocklisting is a regular-tier value.
+        assert_eq!(
+            media_availability(Some(&info(6, Some(5)))),
+            ("blocklisted", false)
+        );
+    }
 }
