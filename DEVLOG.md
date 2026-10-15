@@ -2920,7 +2920,7 @@ What the 0.5.0 checklist confirmed before it was cleaned out of PLAN.md (dev = A
 - **Security S1, S2, S3, S5, S7**: dev 2026-10-10 (2,014 posters + 298 backdrops all 32-hex; trailer check 1.2 s; server sessions ended for the account and its sub-profiles; both "not encrypted" toasts + the Settings line; pinned-action nightly run green).
 - **Release**: tag run green, "Fjord v0.5.0" Latest with tarball and notes; HTPC ran 0.5.0 on 2026-10-15 (r1160, two videos, display sync, 0 drops).
 
-Still open at the cleanup (kept in PLAN.md): 5c trailer retry, 5d trickplay on a long film/HTPC, S6 on the HTPC, S4 against an https:// server, the three packages.
+Still open at the cleanup (kept in PLAN.md): 5c trailer retry, 5d trickplay on a long film/HTPC, S6 on the HTPC, S4 against an https:// server, the three packages. Later on 2026-10-15 the user ticked 5c, 5d, S6 and S4, and the `fjord` (source) and `fjord-bin` packages were confirmed on dev (pacman swaps, Fjord started with `0.5.0 (r1162.31c8a80)`, no warnings) — the source build is ~9 MiB bigger only because of the temporary `--cfg slint_debug_property` (measured: frame pointers alone 58.6 MiB vs CI 59.4 MiB). Left open: the first nightly from `release-0.5.1`.
 
 ### 0.5.0 step 7 — release (2026-10-14, branch `release-0.5`)
 
