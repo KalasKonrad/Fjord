@@ -717,7 +717,7 @@ pub(crate) fn wire_context_menu(
                 };
                 if let Err(e) = result {
                     warn!("toggle favourite failed: {e}");
-                    crate::show_toast(ww2, "Couldn't update favourite".to_string());
+                    crate::show_toast(ww2, "Couldn't update favorite".to_string());
                     return;
                 }
                 let new_fav = !currently_fav;

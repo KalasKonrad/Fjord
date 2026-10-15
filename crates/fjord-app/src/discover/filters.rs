@@ -658,7 +658,7 @@ pub(crate) fn spawn_discover_filtered_browse(
                     &state,
                     &ww,
                     is_session_auth,
-                    "Discover filter (movies) failed",
+                    "Couldn't load filtered movies",
                     &e,
                 );
                 None
@@ -672,7 +672,7 @@ pub(crate) fn spawn_discover_filtered_browse(
                     &state,
                     &ww,
                     is_session_auth,
-                    "Discover filter (TV) failed",
+                    "Couldn't load filtered TV shows",
                     &e,
                 );
                 None
@@ -820,7 +820,7 @@ pub(crate) fn spawn_discover_filtered_browse_more(
             Some(Ok(r)) => Some(r),
             Some(Err(e)) => {
                 state2.lock().unwrap().discover_filtered_loading_more = false;
-                handle_seerr_error(&state2, &ww, is_session_auth, "Discover filter (movies) failed", &e);
+                handle_seerr_error(&state2, &ww, is_session_auth, "Couldn't load filtered movies", &e);
                 None
             }
             None => None,
@@ -829,7 +829,7 @@ pub(crate) fn spawn_discover_filtered_browse_more(
             Some(Ok(r)) => Some(r),
             Some(Err(e)) => {
                 state2.lock().unwrap().discover_filtered_loading_more = false;
-                handle_seerr_error(&state2, &ww, is_session_auth, "Discover filter (TV) failed", &e);
+                handle_seerr_error(&state2, &ww, is_session_auth, "Couldn't load filtered TV shows", &e);
                 None
             }
             None => None,

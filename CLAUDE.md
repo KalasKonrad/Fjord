@@ -120,7 +120,9 @@ Needs `mpv`/libmpv (`pacman -S mpv`). Optional at runtime: `yt-dlp` (trailers), 
 - Async results can land after a profile switch or sign-out: guard writes with `session_current(&state, &client)`
   (`Arc::ptr_eq`) or `seerr_session_current`. Per-screen `*-open-gen` counters only guard against the same
   screen reopening for another item.
-- Surface errors with `show_toast(ww, msg)` (safe from any thread).
+- Surface errors with `show_toast(ww, msg)` (safe from any thread): "Couldn't <do X> — {short_error(&e)}", the full
+  error in the log (a toast never shows request URLs). UI text: sentence case for setting names, options and form
+  labels; Title Case for buttons, dialog titles and row/section titles; American spelling (Favorite, color).
 - **Server data never becomes a file name or program argument unchecked:** ids go through
   `config::safe_cache_name` (32 hex) before any cache path; only bytes passing `poster::is_image` are
   written as images. External programs get server-provided strings only after `--` and an allow-list

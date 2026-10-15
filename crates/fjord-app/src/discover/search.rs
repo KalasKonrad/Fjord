@@ -170,7 +170,7 @@ pub(crate) fn spawn_discover_search(
                         AppState::get(&w).set_discover_searching(false);
                     }
                 });
-                handle_seerr_error(&state, &ww, is_session_auth, "Seerr search failed", &e);
+                handle_seerr_error(&state, &ww, is_session_auth, "Couldn't search Seerr", &e);
                 return;
             }
         };
@@ -330,7 +330,7 @@ pub(crate) fn spawn_discover_search_more(
             Ok(r) => r,
             Err(e) => {
                 state2.lock().unwrap().discover_search_loading_more = false;
-                handle_seerr_error(&state2, &ww, is_session_auth, "Seerr search failed", &e);
+                handle_seerr_error(&state2, &ww, is_session_auth, "Couldn't search Seerr", &e);
                 return;
             }
         };

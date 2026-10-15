@@ -541,7 +541,7 @@ pub(crate) fn handle_seerr_error(
         );
     } else {
         warn!("seerr: {context}: {e:#}");
-        show_toast(ww.clone(), format!("{context}: {e}"));
+        show_toast(ww.clone(), format!("{context} — {}", crate::short_error(e)));
     }
 }
 

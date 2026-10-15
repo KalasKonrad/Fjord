@@ -335,7 +335,13 @@ pub(crate) fn submit_request(
                         AppState::get(&w).set_request_detail_requesting(false);
                     }
                 });
-                handle_seerr_error(&state, &ww, is_session_auth, "Request failed", &e);
+                handle_seerr_error(
+                    &state,
+                    &ww,
+                    is_session_auth,
+                    "Couldn't send the request",
+                    &e,
+                );
             }
         }
     });
@@ -439,7 +445,13 @@ pub(crate) fn submit_edit_request(
                         AppState::get(&w).set_request_detail_requesting(false);
                     }
                 });
-                handle_seerr_error(&state, &ww, is_session_auth, "Edit request failed", &e);
+                handle_seerr_error(
+                    &state,
+                    &ww,
+                    is_session_auth,
+                    "Couldn't change the request",
+                    &e,
+                );
             }
         }
     });

@@ -231,6 +231,36 @@ pub(crate) fn purge_deleted_item(
 
 /// Show a bottom-center error toast.  Safe to call from any thread or the Slint event loop.
 /// The Slint Timer in main.slint auto-dismisses it after 4 s.
+/// The short reason after "Couldn't …" in a toast: the server's answer ("404 Not Found") or
+/// "the server isn't reachable" for request errors, otherwise the error's own message (which
+/// carries the server's text where the client read the response body) with any URL cut off.
+/// The whole error chain goes to the log; a toast never shows request URLs.
+pub(crate) fn short_error(e: &anyhow::Error) -> String {
+    if let Some(re) = e.downcast_ref::<reqwest::Error>() {
+        return if let Some(status) = re.status() {
+            format!("the server answered {status}")
+        } else if re.is_timeout() {
+            "the server didn't answer in time".into()
+        } else if re.is_connect() {
+            "the server isn't reachable".into()
+        } else {
+            "a network error".into()
+        };
+    }
+    let msg = e.to_string();
+    let end = ["http://", "https://"]
+        .iter()
+        .filter_map(|p| msg.find(p))
+        .min()
+        .unwrap_or(msg.len());
+    let reason = msg[..end].trim_end_matches(|c: char| " (:".contains(c));
+    let mut out: String = reason.chars().take(100).collect();
+    if reason.chars().count() > 100 {
+        out.push('…');
+    }
+    out
+}
+
 pub(crate) fn show_toast(ww: slint::Weak<MainWindow>, msg: String) {
     let _ = slint::invoke_from_event_loop(move || {
         if let Some(w) = ww.upgrade() {
@@ -1280,5 +1310,21 @@ mod text_cursor_tests {
         assert_eq!(with_caret("hello", 2, "▌"), "he▌llo");
         assert_eq!(with_caret("", 0, "▌"), "▌");
         assert_eq!(with_caret("ab", 9, "▌"), "ab▌");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn short_error_keeps_the_message_and_drops_urls() {
+        let e = anyhow::anyhow!("Request quota exceeded");
+        assert_eq!(short_error(&e), "Request quota exceeded");
+        let e =
+            anyhow::anyhow!("HTTP 500 Internal Server Error for url (http://host/Items?api_key=x)");
+        assert_eq!(short_error(&e), "HTTP 500 Internal Server Error for url");
+        let long = "x".repeat(150);
+        assert_eq!(short_error(&anyhow::anyhow!(long)).chars().count(), 101);
     }
 }

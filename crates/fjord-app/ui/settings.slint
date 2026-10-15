@@ -92,7 +92,7 @@ export component SettingsScreen inherits Rectangle {
         "Interface",
         "Profiles",
         "Integrations",
-        "Key Bindings",
+        "Key bindings",
         "Advanced"
     ];
 
@@ -1440,12 +1440,12 @@ export component SettingsScreen inherits Rectangle {
                             title: "Launch behavior";
                             subtitle: "What to do at startup when more than one profile is known on this device";
                             SettingsDropdown {
-                                model: ["Always Ask", "Remember Last", "Default Profile"];
-                                current-value: AppState.settings-launch-policy == "remember_last" ? "Remember Last"
-                                    : AppState.settings-launch-policy == "default" ? "Default Profile" : "Always Ask";
+                                model: ["Always ask", "Remember last", "Default profile"];
+                                current-value: AppState.settings-launch-policy == "remember_last" ? "Remember last"
+                                    : AppState.settings-launch-policy == "default" ? "Default profile" : "Always ask";
                                 selected(v) => {
-                                    AppState.settings-launch-policy = v == "Remember Last" ? "remember_last"
-                                        : v == "Default Profile" ? "default" : "always_ask";
+                                    AppState.settings-launch-policy = v == "Remember last" ? "remember_last"
+                                        : v == "Default profile" ? "default" : "always_ask";
                                     AppState.settings-changed();
                                     AppState.refocus();
                                 }
@@ -1458,7 +1458,7 @@ export component SettingsScreen inherits Rectangle {
                     if AppState.settings-launch-policy == "default": SettingsRow {
                             key: "profiles.default_profile";
                             indent: true;
-                            title: "Default Profile";
+                            title: "Default profile";
                             subtitle: "Which known profile to sign in as automatically";
                             SettingsDropdown {
                                 model <=> AppState.settings-default-profile-display;
@@ -1529,12 +1529,12 @@ export component SettingsScreen inherits Rectangle {
                             title: "Account launch behavior";
                             subtitle: "What to do at startup when more than one ACCOUNT is known on this device (a plain login, or a whole Bonfire household)";
                             SettingsDropdown {
-                                model: ["Always Ask", "Remember Last", "Default Account"];
-                                current-value: AppState.settings-account-launch-policy == "remember_last" ? "Remember Last"
-                                    : AppState.settings-account-launch-policy == "default" ? "Default Account" : "Always Ask";
+                                model: ["Always ask", "Remember last", "Default account"];
+                                current-value: AppState.settings-account-launch-policy == "remember_last" ? "Remember last"
+                                    : AppState.settings-account-launch-policy == "default" ? "Default account" : "Always ask";
                                 selected(v) => {
-                                    AppState.settings-account-launch-policy = v == "Remember Last" ? "remember_last"
-                                        : v == "Default Account" ? "default" : "always_ask";
+                                    AppState.settings-account-launch-policy = v == "Remember last" ? "remember_last"
+                                        : v == "Default account" ? "default" : "always_ask";
                                     AppState.settings-changed();
                                     AppState.refocus();
                                 }
@@ -1544,7 +1544,7 @@ export component SettingsScreen inherits Rectangle {
                         if AppState.settings-account-launch-policy == "default": SettingsRow {
                             key: "profiles.default_account";
                             indent: true;
-                            title: "Default Account";
+                            title: "Default account";
                             subtitle: "Which known account to sign in as automatically";
                             SettingsDropdown {
                                 model <=> AppState.settings-default-account-display;
@@ -1939,7 +1939,7 @@ export component SettingsScreen inherits Rectangle {
                     // reachable/rendered while connected)
                     if AppState.seerr-connected: SettingsRow {
                             key: "integrations.streaming_region";
-                            title: "Streaming Region";
+                            title: "Streaming region";
                             subtitle: "Which region's providers show in \"Currently Streaming On\" on Discover";
                             SettingsDropdown {
                                 model <=> AppState.settings-streaming-region-display;
@@ -1952,7 +1952,7 @@ export component SettingsScreen inherits Rectangle {
                         // titles/overviews); Jellyfin library metadata follows Jellyfin's own library settings.
                     if AppState.seerr-connected: SettingsRow {
                             key: "integrations.display_language";
-                            title: "Display Language";
+                            title: "Display language";
                             subtitle: "Language for Discover titles/overviews (independent of Jellyfin's own library language)";
                             SettingsDropdown {
                                 model <=> AppState.settings-display-language-display;
@@ -1966,7 +1966,7 @@ export component SettingsScreen inherits Rectangle {
                     // original language.
                     if AppState.seerr-connected: SettingsRow {
                             key: "integrations.discover_language";
-                            title: "Discover Language";
+                            title: "Discover language";
                             subtitle: "Filter Discover results by original language";
                             SettingsDropdown {
                                 model <=> AppState.settings-discover-language-display;
@@ -1982,7 +1982,7 @@ export component SettingsScreen inherits Rectangle {
                     // different desc value.
                     if AppState.seerr-connected: SettingsRow {
                             key: "integrations.discover_region";
-                            title: "Discover Region";
+                            title: "Discover region";
                             subtitle: "Which region's theatrical/digital/physical release dates show on Discover items";
                             SettingsDropdown {
                                 model <=> AppState.settings-streaming-region-display;
@@ -2437,7 +2437,7 @@ export component SettingsScreen inherits Rectangle {
     // "Copy settings from…" confirm (see show-copy-settings-confirm in app_state.slint); keyboard in
     // settings.rs's dispatch_settings, like Disconnect Seerr below.
     if AppState.show-copy-settings-confirm: ConfirmDialog {
-        title: "Copy settings from " + AppState.copy-settings-source-label + "?";
+        title: "Copy Settings from " + AppState.copy-settings-source-label + "?";
         message: "Replaces this profile's subtitle, audio language, skip, trailer, Now Playing and card size settings (the ones tagged Profile). Sign-in, Seerr and this device's settings stay as they are.";
         confirm-label: "Copy";
         focused: AppState.copy-settings-confirm-focused;
