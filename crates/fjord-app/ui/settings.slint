@@ -546,7 +546,7 @@ export component SettingsScreen inherits Rectangle {
                         SettingsRow {
                             key: "player.skip_fade_ms";
                             title: "Skip fade duration";
-                            subtitle: "Fade to black around an intro/recap/preview/commercial skip, instead of cutting instantly. Audio fades with it (mutes for the window on SPDIF passthrough, since a raw bitstream can't be volume-ramped). \"Off (instant)\" is today's original hard cut.";
+                            subtitle: "Fade to black around intro/recap/preview/commercial skips instead of cutting; audio fades with it";
                             SettingsDropdown {
                                 model: ["Off (instant)", "100", "150", "200", "300", "400", "500", "750", "1000"];
                                 current-value: AppState.settings-skip-fade-ms == 0 ? "Off (instant)"
@@ -902,7 +902,7 @@ export component SettingsScreen inherits Rectangle {
                         SettingsRow {
                             key: "video.target_colorspace";
                             title: "HDR passthrough";
-                            subtitle: "Pass HDR metadata to the compositor for native HDR output — if it isn't accepted, mpv automatically falls back to the Tone Mapping curve below";
+                            subtitle: "Send HDR metadata to the TV for real HDR; if it isn't accepted, the Tone mapping curve below is used";
                             ToggleSwitch {
                                 checked <=> AppState.settings-target-colorspace-hint;
                                 toggled => { AppState.settings-changed(); AppState.refocus(); }
@@ -913,7 +913,7 @@ export component SettingsScreen inherits Rectangle {
                     if AppState.is-wayland: SettingsRow {
                             key: "video.separate_video_surface";
                             title: "Separate video surface";
-                            subtitle: "Keeps menus and the OSD in correct colours with HDR passthrough. Turn off if video playback stutters — menus then look wrong while HDR passthrough is on. Applies from the next video";
+                            subtitle: "Keeps menus in the right colors during HDR. Turn off if video stutters. Applies from the next video";
                             ToggleSwitch {
                                 checked <=> AppState.settings-separate-video-surface;
                                 toggled => { AppState.settings-changed(); AppState.refocus(); }
@@ -955,7 +955,7 @@ export component SettingsScreen inherits Rectangle {
                     SettingsRow {
                             key: "video.display_sync_enabled";
                             title: "Sync display to source";
-                            subtitle: "Switch the physical display's resolution/refresh-rate/HDR to match whatever's playing, then revert on stop — KDE Plasma Wayland only, silently does nothing elsewhere";
+                            subtitle: "Switch the TV's resolution, refresh rate and HDR to match the video, and back on stop (KDE Wayland only)";
                             ToggleSwitch {
                                 checked <=> AppState.settings-display-sync-enabled;
                                 toggled => { AppState.settings-changed(); AppState.refocus(); }
@@ -965,7 +965,7 @@ export component SettingsScreen inherits Rectangle {
                         if AppState.settings-display-sync-enabled: SettingsRow {
                             key: "video.display_sync_screen";
                             title: "Output";
-                            subtitle: "The kscreen-doctor connector to switch — never auto-detected at runtime, only pre-filled once at startup if exactly one output was connected. Whichever one KDE reports as its primary display is marked (Primary)";
+                            subtitle: "The output to switch (kscreen-doctor name), pre-filled when only one is connected; KDE's primary is marked";
                             indent: true;
                             SettingsDropdown {
                                 model <=> AppState.settings-display-sync-screen-options;
@@ -999,7 +999,7 @@ export component SettingsScreen inherits Rectangle {
                         if AppState.settings-display-sync-enabled: SettingsRow {
                             key: "video.display_sync_default_resolution";
                             title: "Default resolution";
-                            subtitle: "Used for non-4K content, and as the fallback whenever a computed target mode isn't supported — real modes for the Output above, not a fixed list";
+                            subtitle: "Used for non-4K video and when a target mode isn't supported — the modes this output really has";
                             indent: true;
                             SettingsDropdown {
                                 model <=> AppState.settings-display-sync-resolution-options;
@@ -1011,7 +1011,7 @@ export component SettingsScreen inherits Rectangle {
                         if AppState.settings-display-sync-enabled: SettingsRow {
                             key: "video.display_sync_default_hz";
                             title: "Default refresh rate";
-                            subtitle: "Used whenever the source's own framerate doesn't match a known cadence — real rates for the Output above, not a fixed list";
+                            subtitle: "Used when the video's frame rate isn't a known cadence — the rates this output really has";
                             indent: true;
                             SettingsDropdown {
                                 model <=> AppState.settings-display-sync-hz-options;
@@ -1047,7 +1047,7 @@ export component SettingsScreen inherits Rectangle {
                         if AppState.settings-display-sync-enabled && AppState.settings-display-sync-sync-resolution: SettingsRow {
                             key: "video.display_sync_4k_odd_fps_mode";
                             title: "4K at an unusual framerate";
-                            subtitle: "4K content whose framerate doesn't match a known cadence (23.98/25/29.97) either falls back to the default resolution, or stays at 4K using the closest supported Hz";
+                            subtitle: "4K video at an unusual frame rate (not 23.98/25/29.97): use the default resolution, or stay at 4K with the closest rate";
                             indent: true;
                             SettingsDropdown {
                                 model: ["Fallback to default resolution", "Stay at 4K"];
@@ -1218,7 +1218,7 @@ export component SettingsScreen inherits Rectangle {
                                 key: "audio.skip_fade_mute";
                                 indent: true;
                                 title: "Mute during skip fade";
-                                subtitle: "Silence audio for the whole intro/recap/preview/commercial skip transition — passthrough can't be volume-faded like PCM, so this is the closest analog. Off leaves passthrough audio untouched (the video still fades).";
+                                subtitle: "Mute during the skip fade — passthrough audio can't be faded. Off leaves it playing (the picture still fades)";
                                 ToggleSwitch {
                                     checked <=> AppState.settings-skip-fade-mute-passthrough;
                                     toggled => { AppState.settings-changed(); AppState.refocus(); }
@@ -1333,7 +1333,7 @@ export component SettingsScreen inherits Rectangle {
                     SettingsRow {
                             key: "ui.onscreen_keyboard";
                             title: "On-screen keyboard";
-                            subtitle: "Shows a D-pad-navigable keyboard for search/login/naming fields — turn off only if you always have a physical keyboard attached";
+                            subtitle: "A remote-friendly keyboard for search, sign-in and name fields — turn off if you always use a real keyboard";
                             ToggleSwitch {
                                 checked <=> AppState.settings-onscreen-keyboard-enabled;
                                 toggled => { AppState.settings-changed(); AppState.refocus(); }
@@ -2078,7 +2078,7 @@ export component SettingsScreen inherits Rectangle {
                     if AppState.settings-hwdec == "nvdec" || AppState.settings-hwdec == "nvdec-copy": SettingsRow {
                             key: "video.vf";
                             title: "Video filter (vf)";
-                            subtitle: "auto: nv12/p010 = native decoder output, no fix · auto: yuv420p = NVIDIA stride fix matching source bit depth · format=... forces that exact output regardless of source";
+                            subtitle: "auto: nv12/p010 = no fix · auto: yuv420p = NVIDIA stride fix for the source's bit depth · format=… forces that output";
                             SettingsDropdown {
                                 model: [
                                     "auto: nv12/p010",
@@ -2172,7 +2172,7 @@ export component SettingsScreen inherits Rectangle {
                         SettingsRow {
                             key: "video.opengl_early_flush";
                             title: "OpenGL early flush";
-                            subtitle: "Flush GL after each frame — may reduce jitter on NVIDIA Wayland; mpv defaults this off since it can cause issues on some other platforms";
+                            subtitle: "Flush after every frame — can reduce jitter on NVIDIA Wayland; off by default in mpv as it hurts some other setups";
                             ToggleSwitch {
                                 checked <=> AppState.settings-opengl-early-flush;
                                 toggled => { AppState.settings-changed(); AppState.refocus(); }
@@ -2182,7 +2182,7 @@ export component SettingsScreen inherits Rectangle {
                         if AppState.settings-video-sync == "display-resample": SettingsRow {
                             key: "video.video_latency_hacks";
                             title: "Video latency hacks";
-                            subtitle: "Compensate for imprecise Wayland vsync timestamps (NVIDIA 5xx legacy) — mpv's own manual: known to break other options such as interpolation, not recommended unless you need it";
+                            subtitle: "Works around imprecise vsync timestamps (NVIDIA legacy on Wayland); breaks interpolation — only if you need it";
                             indent: true;
                             ToggleSwitch {
                                 checked <=> AppState.settings-video-latency-hacks;
@@ -2198,7 +2198,7 @@ export component SettingsScreen inherits Rectangle {
                     if AppState.is-wayland && AppState.settings-separate-video-surface: SettingsRow {
                             key: "video.video_own_buffers";
                             title: "Use Fjord's own 10-bit buffers";
-                            subtitle: "Video in 10-bit even where the graphics driver only gives 8-bit windows (e.g. NVIDIA). Only helps if the driver sends 10-bit to the screen — on Linux, NVIDIA GTX 10-series and older can't over HDMI. Applies after restarting Fjord";
+                            subtitle: "10-bit video where the driver only offers 8-bit windows (e.g. NVIDIA); only helps if it then sends 10-bit. Applies after a restart";
                             indent: false;
                             ToggleSwitch {
                                 checked <=> AppState.settings-video-own-buffers;
@@ -2210,7 +2210,7 @@ export component SettingsScreen inherits Rectangle {
                     SettingsRow {
                             key: "video.video_dither_off";
                             title: "Turn off dithering (test)";
-                            subtitle: "For comparing 8-bit and 10-bit video: with dithering off, an 8-bit picture shows visible steps in smooth gradients. Leave this off for normal viewing. Applies from the next video";
+                            subtitle: "Test for comparing 8-bit and 10-bit: without dithering, 8-bit shows steps in gradients. Leave off normally";
                             ToggleSwitch {
                                 checked <=> AppState.settings-video-dither-off;
                                 toggled => { AppState.settings-changed(); AppState.refocus(); }
@@ -2224,7 +2224,7 @@ export component SettingsScreen inherits Rectangle {
                         SettingsRow {
                             key: "player.cache_secs";
                             title: "Cache duration (seconds)";
-                            subtitle: "How many seconds of video to buffer ahead — absorbs brief network drops without a visible stall. \"Unlimited\" buffers as much as the size limit below allows.";
+                            subtitle: "Seconds of video to buffer ahead, to ride out short network drops. Unlimited = as much as the size limit below allows";
                             SettingsDropdown {
                                 model: ["Unlimited", "10", "30", "60", "120", "300"];
                                 current-value: AppState.settings-cache-secs == 0 ? "Unlimited"
@@ -2247,7 +2247,7 @@ export component SettingsScreen inherits Rectangle {
                         SettingsRow {
                             key: "player.cache_max_mb";
                             title: "Max cache size (MiB)";
-                            subtitle: "Memory ceiling for the buffer above — raise if you increase the duration for high-bitrate 4K content. \"Unlimited\" removes the ceiling so the duration above is always what you set, regardless of bitrate.";
+                            subtitle: "Memory limit for that buffer — raise it for long buffers on high-bitrate 4K. Unlimited = no limit";
                             SettingsDropdown {
                                 model: ["Unlimited", "150", "300", "500", "1000", "2000"];
                                 current-value: AppState.settings-cache-max-mb == 0 ? "Unlimited"
