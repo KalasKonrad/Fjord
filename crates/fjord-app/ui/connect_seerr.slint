@@ -75,7 +75,7 @@ component MethodTab inherits Rectangle {
 }
 
 export component ConnectSeerrScreen inherits Rectangle {
-    background: #000000aa;
+    background: Theme.scrim-strong;
 
     function close-screen() {
         AppState.show-connect-seerr = false;
@@ -146,7 +146,7 @@ export component ConnectSeerrScreen inherits Rectangle {
         background: Theme.surface;
         border-radius: Theme.radius-lg;
         drop-shadow-blur: 28px;
-        drop-shadow-color: #00000070;
+        drop-shadow-color: Theme.shadow;
 
         // Swallow clicks so the backdrop TouchArea above doesn't close the
         // card when interacting with it.

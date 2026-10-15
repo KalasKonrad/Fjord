@@ -105,7 +105,7 @@ component FieldLabel inherits Text {
 }
 
 export component ProfileEditScreen inherits Rectangle {
-    background: #000000aa;
+    background: Theme.scrim-strong;
 
     // Two parallel arrays: Slint can't parse a string into a color, but the swatch needs a
     // `color` and Bonfire needs the hex string. Same 8 colors as profile.rs's
@@ -179,7 +179,7 @@ export component ProfileEditScreen inherits Rectangle {
         background: Theme.surface;
         border-radius: Theme.radius-lg;
         drop-shadow-blur: 28px;
-        drop-shadow-color: #00000070;
+        drop-shadow-color: Theme.shadow;
         clip: true;
 
         card-ta := TouchArea { }
@@ -882,7 +882,7 @@ export component ProfileEditScreen inherits Rectangle {
         border-width: 1px;
         border-color: Theme.border;
         drop-shadow-blur: 12px;
-        drop-shadow-color: #00000080;
+        drop-shadow-color: Theme.shadow;
         clip: true;
 
         ddfl := Flickable {

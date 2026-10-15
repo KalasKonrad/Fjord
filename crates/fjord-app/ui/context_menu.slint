@@ -76,7 +76,7 @@ component DiscoverMenuRow inherits Rectangle {
 }
 
 export component ContextMenu inherits Rectangle {
-    background: #00000088;
+    background: Theme.scrim;
     property <bool> is-discover-item:
         AppState.context-menu-item-type == "DiscoverMovie" || AppState.context-menu-item-type == "DiscoverTv";
 
@@ -98,7 +98,7 @@ export component ContextMenu inherits Rectangle {
         border-width: 1px;
         border-color: Theme.border-strong;
         drop-shadow-blur: 20px;
-        drop-shadow-color: #000000aa;
+        drop-shadow-color: Theme.shadow-strong;
         drop-shadow-offset-y: 6px;
 
         // Stop backdrop click from propagating through the box
@@ -660,7 +660,7 @@ export component ContextMenu inherits Rectangle {
 // 1..N = playlist-picker-items[cursor-1]. Keyboard handled in keys.rs
 // (handle_playlist_picker); mouse clicks rows directly.
 export component PlaylistPicker inherits Rectangle {
-    background: #00000088;
+    background: Theme.scrim;
 
     // Close on backdrop click — and close the on-screen keyboard if it's this picker's (a stray
     // show-onscreen-keyboard swallows all input); another screen's keyboard is left alone.
@@ -685,7 +685,7 @@ export component PlaylistPicker inherits Rectangle {
         border-width: 1px;
         border-color: Theme.border-strong;
         drop-shadow-blur: 20px;
-        drop-shadow-color: #000000aa;
+        drop-shadow-color: Theme.shadow-strong;
         drop-shadow-offset-y: 6px;
 
         property <length> head-h: 30px;

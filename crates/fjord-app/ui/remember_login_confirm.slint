@@ -12,7 +12,7 @@ import { FjordButton, LoadingSpinner } from "widgets.slint";
 import { LineEdit } from "std-widgets.slint";
 
 export component RememberLoginConfirmOverlay inherits Rectangle {
-    background: #00000088;
+    background: Theme.scrim;
 
     init => { pass-input.focus(); }
 
@@ -34,7 +34,7 @@ export component RememberLoginConfirmOverlay inherits Rectangle {
         border-width: 1px;
         border-color: Theme.border-strong;
         drop-shadow-blur: 20px;
-        drop-shadow-color: #000000aa;
+        drop-shadow-color: Theme.shadow-strong;
         drop-shadow-offset-y: 6px;
 
         TouchArea {

@@ -194,7 +194,7 @@ export component QwertyKeyboard inherits Rectangle {
     background: Theme.surface;
     border-radius: Theme.radius-lg;
     drop-shadow-blur: 24px;
-    drop-shadow-color: #00000070;
+    drop-shadow-color: Theme.shadow;
 
     property <bool> shift-active: false;
     property <int> page: 0; // 0=letters, 1=symbols
@@ -357,7 +357,7 @@ export component FjordButton inherits Rectangle {
     }
 }
 
-// Generic confirm/cancel modal: dim backdrop (#00000088) + Theme.surface-raised box +
+// Generic confirm/cancel modal: dim backdrop (Theme.scrim) + Theme.surface-raised box +
 // drop shadow, the same chrome as PlaylistPicker and RequestOptionsOverlay. Cancel is
 // an outlined (ghost) button, not a FjordButton, so it reads as the secondary, safe
 // choice next to Confirm's solid fill.
@@ -372,7 +372,7 @@ export component ConfirmDialog inherits Rectangle {
     callback confirmed();
     callback cancelled();
 
-    background: #00000088;
+    background: Theme.scrim;
 
     // Close on backdrop click
     TouchArea {
@@ -391,7 +391,7 @@ export component ConfirmDialog inherits Rectangle {
         border-width: 1px;
         border-color: Theme.border-strong;
         drop-shadow-blur: 20px;
-        drop-shadow-color: #000000aa;
+        drop-shadow-color: Theme.shadow-strong;
         drop-shadow-offset-y: 6px;
 
         // Stop backdrop click from propagating through the box
@@ -500,7 +500,7 @@ export component IconCircleButton inherits Rectangle {
         width: parent.width;
         height: parent.height;
         text: root.icon;
-        color: #ffffff;
+        color: Theme.text-bright;
         font-size: 20px;
         font-weight: 600;
         // Hard-pinned regardless of Settings → Interface → Text font: ♥/✓ always
@@ -826,7 +826,7 @@ export component MediaCard inherits Rectangle {
                 Text {
                     text: "❤";
                     font-family: "Adwaita Sans";
-                    color: #ffffff;
+                    color: Theme.text-bright;
                     font-size: 14px;
                     font-weight: 900;
                     horizontal-alignment: center;
@@ -846,7 +846,7 @@ export component MediaCard inherits Rectangle {
                 background: Theme.accent;
                 Text {
                     text: "★";
-                    color: #ffffff;
+                    color: Theme.text-bright;
                     font-size: 14px;
                     font-weight: 900;
                     horizontal-alignment: center;
@@ -865,7 +865,7 @@ export component MediaCard inherits Rectangle {
                 Text {
                     text: "✓";
                     font-family: "Adwaita Sans";
-                    color: #ffffff;
+                    color: Theme.text-bright;
                     font-size: 18px;
                     font-weight: 900;
                     horizontal-alignment: center;
@@ -883,7 +883,7 @@ export component MediaCard inherits Rectangle {
                 background: Theme.accent;
                 Text {
                     text: "\{item.unplayed-count}";
-                    color: #ffffff;
+                    color: Theme.text-bright;
                     font-size: 11px;
                     font-weight: 900;
                     horizontal-alignment: center;
@@ -910,7 +910,7 @@ export component MediaCard inherits Rectangle {
                         : item.availability == "partial" ? "Partial"
                         : item.availability == "available" ? "In Library"
                         : "");
-                    color: #ffffff;
+                    color: Theme.text-bright;
                     font-size: 10px;
                     font-weight: 700;
                     horizontal-alignment: center;
@@ -936,7 +936,7 @@ export component MediaCard inherits Rectangle {
                     text: item.other-tier-available
                         ? (item.requested-4k ? "Available in 2K" : "Available in 4K")
                         : (item.requested-4k ? "Also requested in 2K" : "Also requested in 4K");
-                    color: #ffffff;
+                    color: Theme.text-bright;
                     font-size: 10px;
                     font-weight: 700;
                     horizontal-alignment: center;
@@ -1389,7 +1389,7 @@ export component PosterBlock inherits Rectangle {
             : Theme.surface-overlay;
         request-status-text := Text {
             text: root.request-status;
-            color: #ffffff;
+            color: Theme.text-bright;
             font-size: 10px;
             font-weight: 700;
             horizontal-alignment: center;
@@ -1590,7 +1590,7 @@ export component StorylineSection inherits VerticalLayout {
                 x: 0;
                 y: 0;
                 text: root.text;
-                color: #cccccc;
+                color: Theme.text-soft;
                 font-size: 15px;
                 wrap: word-wrap;
                 width: min(root.width - 96px, 640px);
@@ -1618,7 +1618,7 @@ export component StatRow inherits Rectangle {
 
         Text {
             text: value;
-            color: #cccccc;
+            color: Theme.text-soft;
             font-size: 11px;
             wrap: word-wrap;
             horizontal-stretch: 1;
@@ -2100,7 +2100,7 @@ export component MusicPlayerBar inherits Rectangle {
 // keys::handle_key_queue_panel.
 export component QueuePanel inherits Rectangle {
     // Dim overlay behind the panel
-    background: #00000088;
+    background: Theme.scrim;
 
     TouchArea {
         // Click outside the panel closes it
@@ -2362,7 +2362,7 @@ export component QueuePanel inherits Rectangle {
 // Active line (lyrics-active-idx) is highlighted in accent; the view auto-scrolls
 // to keep it centred via the kb-y binding pattern.
 export component LyricsView inherits Rectangle {
-    background: #000000cc;
+    background: Theme.scrim-solid;
 
     // Click backdrop to dismiss
     TouchArea {
@@ -2466,9 +2466,9 @@ export component VolumeOverlay inherits Rectangle {
     width: 220px;
     height: 44px;
     border-radius: Theme.radius;
-    background: #0d0d0dcc;
+    background: Theme.osd-panel;
     drop-shadow-blur: 10px;
-    drop-shadow-color: #00000055;
+    drop-shadow-color: Theme.shadow-soft;
 
     HorizontalLayout {
         padding-left: 14px;
@@ -2563,7 +2563,7 @@ export component ToastNotification inherits Rectangle {
 // (AppState.sidebar-profile-menu-rows ← profile::sidebar_profile_menu_rows), since
 // which rows apply is dynamic.
 export component SidebarProfileMenu inherits Rectangle {
-    background: #00000088;
+    background: Theme.scrim;
 
     TouchArea {
         width: parent.width;
@@ -2581,7 +2581,7 @@ export component SidebarProfileMenu inherits Rectangle {
         border-width: 1px;
         border-color: Theme.border-strong;
         drop-shadow-blur: 20px;
-        drop-shadow-color: #000000aa;
+        drop-shadow-color: Theme.shadow-strong;
         drop-shadow-offset-y: 6px;
 
         // Stop backdrop click from propagating through the box.
