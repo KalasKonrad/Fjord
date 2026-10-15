@@ -2906,6 +2906,22 @@ A scan of every file version, commit and tag message, and author field in all 1,
 
 The published binaries had no removed values in them, but Rust embeds source paths for panic messages, so they carried the build machine's home folder (`/home/<user>/.cargo/registry/…`, the runner's work dir). `build-release.yml` now builds with `RUSTFLAGS="--remap-path-prefix=$HOME=/build"` (the runner's checkout has no `.cargo/config.toml`, so nothing else in `RUSTFLAGS` is overridden).
 
+### 0.5.0 live tests (2026-10-10 – 2026-10-15)
+
+What the 0.5.0 checklist confirmed before it was cleaned out of PLAN.md (dev = AMD machine, HTPC = NVIDIA Pascal):
+
+- **Slint 1.18.1 + Rust 2024** (steps 1–2): dev r1094–r1096 (both video paths, HDR, profile switch, sign-in, every dashboard with keyboard and wheel, Settings, on-screen keyboard); HTPC r1156 (4K HDR film on the separate surface, display sync + HDR negotiated, 0 drops, Settings walked through, no Recursion panic). Up Next and gapless music confirmed on dev.
+- **File splits + comment trimming** (steps 3–4): full keyboard/remote pass over every screen by the user on dev and HTPC (r1156).
+- **5a "Not watched" TV**: local pick `0.000s` (dev r1150, HTPC), content = only unstarted series.
+- **5b library trailers**: movie and series trailers on dev (r1154–r1155) after the FadeGate `!is-playing` fix for Series/Season/Person.
+- **5e posters as they arrive**: HTPC first batch 313 of 617 after 0.152 s.
+- **Movies grid after Discover**, **on-screen keyboard off** (all fields), **trailer checks for 30 days** (`1 saved result(s) loaded`, no re-check), **View Details last** — confirmed on dev 2026-10-10/14.
+- **Now Playing play/pause grey**: `now_playing.slint`'s ▶/⏸ button no longer sets `active: true`, so it is grey like ⏮ ⏭ and only blue with keyboard focus (shuffle/repeat still turn blue when on) — confirmed 2026-10-14.
+- **Security S1, S2, S3, S5, S7**: dev 2026-10-10 (2,014 posters + 298 backdrops all 32-hex; trailer check 1.2 s; server sessions ended for the account and its sub-profiles; both "not encrypted" toasts + the Settings line; pinned-action nightly run green).
+- **Release**: tag run green, "Fjord v0.5.0" Latest with tarball and notes; HTPC ran 0.5.0 on 2026-10-15 (r1160, two videos, display sync, 0 drops).
+
+Still open at the cleanup (kept in PLAN.md): 5c trailer retry, 5d trickplay on a long film/HTPC, S6 on the HTPC, S4 against an https:// server, the three packages.
+
 ### 0.5.0 step 7 — release (2026-10-14, branch `release-0.5`)
 
 Version 0.5.0 in `Cargo.toml` (`workspace.package.version`, shown in Settings and the startup log). The 193 `[Unreleased]` CHANGELOG entries (~1,600 lines) were replaced by a short `[0.5.0]` section grouped New / Improved / Fixed, as decided in the release plan; the per-change detail stays in the sections of this file (and in git history of `CHANGELOG.md`). Each "Fixed" line was checked against `v0.4.2`: fixes for bugs that only existed during this cycle (in features that are new in 0.5.0 — profiles, display sync, the separate video surface, Reset to Defaults, the Discover trailer check and person links, the Browse All build-once guard, the blocklist filter) are not listed, since no released version had them. That includes the yt-dlp option injection (S2): `trailer_plays` arrived 2026-10-05; 0.4.2 only ran `yt-dlp --version`.
