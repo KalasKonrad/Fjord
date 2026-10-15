@@ -177,8 +177,8 @@ fn default_cache_max_mb() -> u32 {
 // Config.sub_color/SUB_COLOR_MODEL ("White"/"Yellow" are both the stored
 // value and the display string) — translated to an mpv ytdl-format string
 // only at point of use (main.rs::trailer_ytdl_format), not here. Caps
-// yt-dlp's resolution selection for Watch Trailer playback
-// (Settings → Integrations → Trailer Quality).
+// yt-dlp's resolution selection for every YouTube trailer
+// (Settings → Player → Trailer quality).
 fn default_trailer_quality() -> String {
     "1080p".into()
 }
@@ -690,7 +690,7 @@ pub(crate) struct ProfileSettings {
     #[serde(default)]
     pub seerr_session_cookie: String,
 
-    // ── Watch Trailer (Discover request-detail screen) ───────────────────────
+    // ── Trailer quality (Settings → Player): every YouTube trailer ───────────
     // "Best"|"1080p"|"720p"|"480p" — display-ready, mapped to an mpv
     // ytdl-format string by main.rs::trailer_ytdl_format.
     #[serde(default = "default_trailer_quality")]

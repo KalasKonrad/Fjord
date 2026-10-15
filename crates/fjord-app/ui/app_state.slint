@@ -67,7 +67,7 @@
 //   Seerr integration     settings-seerr-enabled, seerr-connected/-label (connected implies enabled),
 //                         seerr-unencrypted, open-connect-seerr, seerr-disconnect; streaming/discover region,
 //                         display/discover language dropdowns (dynamic, Settings → Integrations, shown while
-//                         connected); settings-trailer-quality (static); yt-dlp-available; seerr-is-admin
+//                         connected); settings-trailer-quality (static, Settings → Player); yt-dlp-available; seerr-is-admin
 //                         (MANAGE_REQUESTS), seerr-can-manage-blocklist; ConnectSeerrScreen: show-connect-seerr,
 //                         connect-seerr-zone/-method (0-3)/-error/-busy/-qc-code/-qc-secret/-qc-polling +
 //                         connect-seerr-api-key/-jellyfin/-local/-quickconnect-start/-poll
@@ -1594,7 +1594,7 @@ export global AppState {
     // CollectionScreen's bulk blocklist and Settings → Integrations → Manage Blocklist.
     in-out property <bool> seerr-can-manage-blocklist: false;
 
-    // Trailer Quality (Settings → Integrations, shown when seerr-connected): a static
+    // Trailer quality (Settings → Player, always shown — every YouTube trailer uses it): a static
     // dropdown ("Best"/"1080p"/"720p"/"480p") through settings.rs's generic dropdown
     // path. Caps mpv's ytdl-format for trailers (trailer_ytdl_format); default "1080p"
     // (Config.trailer_quality), display values stored directly.

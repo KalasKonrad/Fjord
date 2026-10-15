@@ -23,6 +23,10 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Changed: Settings → Player → Trailer quality** (was under Integrations,
+  only with Seerr connected). It sets the resolution for every YouTube
+  trailer, including the movie and series Trailer buttons that work without
+  Seerr, so it's now always there.
 - **New: Settings → UI → Card size** — Normal, Large or Extra large poster
   cards on every screen: dashboards, library grids, Discover and the rows on
   detail pages. Saved per profile; library grids show fewer columns to fit.

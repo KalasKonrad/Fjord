@@ -526,8 +526,8 @@ pub(crate) fn wire_trailers(
     // Gates the Watch Trailer button's visibility (request-detail-trailer-url
     // alone isn't enough to guarantee playback will actually work — see
     // CLAUDE.md's Seerr integration section). A pure local-machine fact, not
-    // tied to Seerr connection state like Streaming Region/Trailer Quality
-    // above, so no gating on seerr_enabled/seerr_connected here.
+    // tied to Seerr connection state like Streaming Region, so no gating on
+    // seerr_enabled/seerr_connected here.
     {
         let state_yt = Arc::clone(&state);
         let ww_yt = window.as_weak();
@@ -673,7 +673,7 @@ pub(crate) fn detect_yt_dlp() -> bool {
         .unwrap_or(false)
 }
 
-/// Settings → Integrations → Trailer Quality -> mpv `ytdl-format` string.
+/// Settings → Player → Trailer quality -> mpv `ytdl-format` string.
 /// `quality` is the display-ready value stored directly in
 /// `Config.trailer_quality` (same idiom as `Config.sub_color`/
 /// `SUB_COLOR_MODEL`) — "Best" (and anything unrecognized) leaves it

@@ -1766,6 +1766,20 @@ export component SettingsScreen inherits Rectangle {
                                 }
                             }
                         }
+
+                        // Trailer quality: caps the resolution of every YouTube trailer (Discover and the
+                        // movie/series Trailer buttons) — no Seerr needed, so always visible (0.5.1; it
+                        // used to sit in Integrations behind "Seerr connected").
+                    SettingsRow {
+                            key: "player.trailer_quality";
+                            title: "Trailer quality";
+                            subtitle: "Caps the resolution of YouTube trailers (Discover and the movie/series Trailer buttons) — lower starts faster";
+                            SettingsDropdown {
+                                model: ["Best", "1080p", "720p", "480p"];
+                                current-value: AppState.settings-trailer-quality;
+                                selected(v) => { AppState.settings-trailer-quality = v; AppState.settings-changed(); AppState.refocus(); }
+                            }
+                        }
                     }
 
                     // ── Key Bindings section ──────────────────────────────────────
@@ -2138,22 +2152,6 @@ export component SettingsScreen inherits Rectangle {
                                 model <=> AppState.settings-streaming-region-display;
                                 current-value: AppState.settings-streaming-region-desc != "" ? AppState.settings-streaming-region-desc : "United States (US)";
                                 selected(v) => { AppState.streaming-region-selected(v); AppState.refocus(); }
-                            }
-                        }
-
-                        // Trailer Quality (plain static dropdown, unlike Streaming
-                    // Region above — the option list is fixed, no async
-                    // fetch, same shape as e.g. hwdec; same visibility gate
-                    // as Streaming Region since watching a trailer at all
-                    // needs a live connection)
-                    if AppState.seerr-connected: SettingsRow {
-                            key: "integrations.trailer_quality";
-                            title: "Trailer Quality";
-                            subtitle: "Caps resolution for Watch Trailer playback on Discover — lower is faster to start";
-                            SettingsDropdown {
-                                model: ["Best", "1080p", "720p", "480p"];
-                                current-value: AppState.settings-trailer-quality;
-                                selected(v) => { AppState.settings-trailer-quality = v; AppState.settings-changed(); AppState.refocus(); }
                             }
                         }
 
