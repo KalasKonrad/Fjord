@@ -308,7 +308,7 @@ export component LoginScreen inherits Rectangle {
 
     FjordButton {
         text: "Quit";
-        width: 90px;
+        width: 90px * AppState.text-scale;
         x: parent.width - self.width - 16px;
         y: parent.height - self.height - 16px;
         // Zone 6, 2026-08-21 — see this file's own header doc comment.
@@ -323,7 +323,7 @@ export component LoginScreen inherits Rectangle {
         // Just "Back": it always undoes this Add Account attempt and returns to wherever it was
         // opened from, so naming a destination could only drift out of date.
         text: "← Back";
-        width: 110px;
+        width: 110px * AppState.text-scale;
         x: 16px;
         y: 16px;
         // Zone 5, 2026-08-21 — see this file's own header doc comment.

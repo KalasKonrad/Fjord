@@ -210,7 +210,7 @@ export component AccountPickerScreen inherits Rectangle {
 
     FjordButton {
         text: "Quit";
-        width: 90px;
+        width: 90px * AppState.text-scale;
         x: parent.width - self.width - 16px;
         y: parent.height - self.height - 16px;
         // 2026-08-16, same keyboard-reachability fix as
@@ -229,7 +229,7 @@ export component AccountPickerScreen inherits Rectangle {
     // same).
     if AppState.account-picker-cancelable: FjordButton {
         text: "← Back";
-        width: 110px;
+        width: 110px * AppState.text-scale;
         x: 16px;
         y: 16px;
         kbd-focused: AppState.account-picker-back-focused;

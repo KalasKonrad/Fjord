@@ -99,7 +99,7 @@ component GroupMemberRow inherits Rectangle {
         FjordButton {
             text: "Kick";
             danger: true;
-            width: 70px;
+            width: 70px * AppState.text-scale;
             height: 32px;
             clicked => { root.kick(); }
         }
@@ -150,7 +150,7 @@ export component BonfireGroupScreen inherits Rectangle {
 
                     FjordButton {
                         text: "✕";
-                        width: 32px;
+                        width: 32px * AppState.text-scale;
                         height: 32px;
                         kbd-focused: AppState.bonfire-group-zone == -1;
                         clicked => {

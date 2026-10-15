@@ -83,7 +83,7 @@ export component AlbumScreen inherits Rectangle {
                     alignment: start;
                     FjordButton {
                         text: "← Back";
-                        width: 80px;
+                        width: 80px * AppState.text-scale;
                         kbd-focused: AppState.album-back-focused;
                         clicked => { AppState.close-album(); }
                     }
@@ -180,7 +180,7 @@ export component AlbumScreen inherits Rectangle {
                                 icon-left: "▶";
                                 text: "Play All";
                                 height: 34px;
-                                width: 110px;
+                                width: 110px * AppState.text-scale;
                                 kbd-focused: AppState.album-btn-focused == 0;
                                 clicked => { AppState.play-album-all(); }
                             }
@@ -302,7 +302,7 @@ export component AlbumScreen inherits Rectangle {
                                 text: trk.track-number > 0 ? trk.track-number : i + 1;
                                 color: trk.has-played ? Theme.accent : Theme.text-muted;
                                 font-size: 13px * AppState.text-scale;
-                                width: 24px;
+                                width: 24px * AppState.text-scale;
                                 vertical-alignment: center;
                                 horizontal-alignment: right;
                             }
@@ -333,7 +333,7 @@ export component AlbumScreen inherits Rectangle {
                                 color: Theme.text-muted;
                                 font-size: 13px * AppState.text-scale;
                                 vertical-alignment: center;
-                                width: 44px;
+                                width: 44px * AppState.text-scale;
                                 horizontal-alignment: right;
                             }
 
@@ -344,7 +344,7 @@ export component AlbumScreen inherits Rectangle {
                                 color: Theme.accent;
                                 font-size: 12px * AppState.text-scale;
                                 vertical-alignment: center;
-                                width: 16px;
+                                width: 16px * AppState.text-scale;
                             }
 
                             // ✕ remove entry — playlists only

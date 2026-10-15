@@ -52,7 +52,7 @@ component MetaRow inherits HorizontalLayout {
         color: Theme.text-muted;
         font-size: 14px * AppState.text-scale;
         font-weight: 600;
-        width: 160px;
+        width: 160px * AppState.text-scale;
         wrap: word-wrap;
         vertical-alignment: top;
     }
@@ -204,7 +204,7 @@ export component RequestDetailScreen inherits Rectangle {
                             if AppState.request-detail-status == "" || AppState.request-detail-status-4k == "": FjordButton {
                                         text: AppState.request-detail-requesting ? "Requesting…" : "Request";
                                         enabled: !AppState.request-detail-requesting;
-                                        width: 130px;
+                                        width: 130px * AppState.text-scale;
                                         kbd-focused: !AppState.request-detail-back-focused && AppState.request-detail-zone == 0 && AppState.request-detail-btn-focused == 0;
                                 // Mouse clicks sync the keyboard focus state too (else Left/Right/Enter act on stale
                                 // focus).
@@ -262,7 +262,7 @@ export component RequestDetailScreen inherits Rectangle {
                                         text: AppState.request-detail-trailer-state == "ok" ? "Trailer"
                                             : AppState.request-detail-trailer-state == "checking" ? "Checking…"
                                             : "No trailer";
-                                        width: 130px;
+                                        width: 130px * AppState.text-scale;
                                         kbd-focused: !AppState.request-detail-back-focused && AppState.request-detail-zone == 0 && AppState.request-detail-btn-focused == 1;
                                         clicked => {
                                             AppState.request-detail-zone = 0;
@@ -277,7 +277,7 @@ export component RequestDetailScreen inherits Rectangle {
                             if AppState.request-detail-request-id != "": FjordButton {
                                         icon-left: "☰";
                                         text: "";
-                                        width: 44px;
+                                        width: 44px * AppState.text-scale;
                                         kbd-focused: !AppState.request-detail-back-focused && AppState.request-detail-zone == 0 && AppState.request-detail-btn-focused == 2;
                                         clicked => {
                                             AppState.request-detail-zone = 0;
@@ -291,7 +291,7 @@ export component RequestDetailScreen inherits Rectangle {
                             FjordButton {
                                         icon-left: AppState.request-detail-on-watchlist ? "★" : "☆";
                                         text: "";
-                                        width: 44px;
+                                        width: 44px * AppState.text-scale;
                                         kbd-focused: !AppState.request-detail-back-focused && AppState.request-detail-zone == 0 && AppState.request-detail-btn-focused == 3;
                                         clicked => {
                                             AppState.request-detail-zone = 0;
@@ -308,7 +308,7 @@ export component RequestDetailScreen inherits Rectangle {
                                 FjordButton {
                                         icon-left: AppState.request-detail-availability == "blocklisted" ? "✕" : "⛔";
                                         text: "";
-                                        width: 44px;
+                                        width: 44px * AppState.text-scale;
                                         kbd-focused: !AppState.request-detail-back-focused && AppState.request-detail-zone == 0 && AppState.request-detail-btn-focused == 4;
                                         clicked => {
                                             AppState.request-detail-zone = 0;
@@ -467,7 +467,7 @@ export component RequestDetailScreen inherits Rectangle {
         x: 16px;
         y: 16px;
         text: "← Back";
-        width: 88px;
+        width: 88px * AppState.text-scale;
         kbd-focused: AppState.request-detail-back-focused;
         clicked => { AppState.show-request-detail = false; }
     }
@@ -956,7 +956,7 @@ export component RequestOptionsOverlay inherits Rectangle {
                 FjordButton {
                     text: AppState.request-detail-requesting ? "Requesting…" : "Request";
                     enabled: !AppState.request-detail-requesting;
-                    width: 100px;
+                    width: 100px * AppState.text-scale;
                     kbd-focused: AppState.request-options-zone == 4 && AppState.request-options-confirm-focused == 1;
                     clicked => {
                         AppState.request-options-zone = 4;

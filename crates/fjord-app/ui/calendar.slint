@@ -95,7 +95,7 @@ export component CalendarScreen inherits Rectangle {
             x: 16px;
             y: 16px;
             text: "← Back";
-            width: 88px;
+            width: 88px * AppState.text-scale;
             kbd-focused: AppState.calendar-cursor-row < 0 && AppState.calendar-cursor-col == 0;
             clicked => { AppState.show-calendar = false; }
         }
@@ -111,7 +111,7 @@ export component CalendarScreen inherits Rectangle {
             spacing: 12px;
             FjordButton {
                 text: "◀";
-                width: 44px;
+                width: 44px * AppState.text-scale;
                 kbd-focused: AppState.calendar-cursor-row < 0 && AppState.calendar-cursor-col == 1;
                 clicked => {
                     AppState.calendar-cursor-row = -1;
@@ -132,7 +132,7 @@ export component CalendarScreen inherits Rectangle {
 
             FjordButton {
                 text: "▶";
-                width: 44px;
+                width: 44px * AppState.text-scale;
                 kbd-focused: AppState.calendar-cursor-row < 0 && AppState.calendar-cursor-col == 2;
                 clicked => {
                     AppState.calendar-cursor-row = -1;

@@ -254,7 +254,7 @@ export component DiscoverScreen inherits Rectangle {
                         color: AppState.discover-header-focused ? Theme.accent : Theme.text-muted;
                         font-size: 17px * AppState.text-scale;
                         vertical-alignment: center;
-                        width: 22px;
+                        width: 22px * AppState.text-scale;
                     }
 
                     Text {
@@ -691,7 +691,7 @@ export component DiscoverScreen inherits Rectangle {
 
         Rectangle {
             property <bool> is-chip-popup: AppState.discover-popup-open == "genre" || AppState.discover-popup-open == "provider";
-            width: self.is-chip-popup ? 340px : 220px;
+            width: (self.is-chip-popup ? 340px : 220px) * AppState.text-scale;
             height: self.is-chip-popup ? 76px : 190px;
             x: (parent.width - self.width) / 2;
             y: (parent.height - self.height) / 2;

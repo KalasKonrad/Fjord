@@ -223,7 +223,7 @@ export component ProfileEditScreen inherits Rectangle {
 
                     FjordButton {
                         text: "✕";
-                        width: 32px;
+                        width: 32px * AppState.text-scale;
                         height: 32px;
                         clicked => { AppState.profile-edit-cancel(); }
                     }
@@ -712,7 +712,7 @@ export component ProfileEditScreen inherits Rectangle {
                     if !AppState.profile-edit-is-create && !AppState.profile-edit-is-self: FjordButton {
                         text: "Delete";
                         danger: true;
-                        width: 90px;
+                        width: 90px * AppState.text-scale;
                         kbd-focused: AppState.profile-edit-zone == 11 && !AppState.profile-edit-dropdown-open && AppState.profile-edit-button-focused == 0;
                         clicked => {
                             AppState.profile-edit-zone = 11;
@@ -726,7 +726,7 @@ export component ProfileEditScreen inherits Rectangle {
                     }
                     FjordButton {
                         text: "Cancel";
-                        width: 90px;
+                        width: 90px * AppState.text-scale;
                         kbd-focused: AppState.profile-edit-zone == 11 && !AppState.profile-edit-dropdown-open
                             && AppState.profile-edit-button-focused == (delete-shown ? 1 : 0);
                         clicked => {
@@ -738,7 +738,7 @@ export component ProfileEditScreen inherits Rectangle {
 
                     FjordButton {
                         text: AppState.profile-edit-saving ? "Saving…" : "Save";
-                        width: 90px;
+                        width: 90px * AppState.text-scale;
                         enabled: !AppState.profile-edit-saving;
                         kbd-focused: AppState.profile-edit-zone == 11 && !AppState.profile-edit-dropdown-open
                             && AppState.profile-edit-button-focused == (delete-shown ? 2 : 1);

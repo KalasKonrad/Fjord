@@ -155,7 +155,7 @@ export component DetailPage inherits Rectangle {
                                     FjordButton {
                                         icon-left: "▶";
                                         text: "Play";
-                                        width: 110px;
+                                        width: 110px * AppState.text-scale;
                                         kbd-focused: AppState.detail-focused-btn == 0 && AppState.detail-cast-focused < 0;
                                         clicked => { AppState.play-detail(); }
                                     }
@@ -167,7 +167,7 @@ export component DetailPage inherits Rectangle {
                                     }
                                     if AppState.detail-series-id != "": FjordButton {
                                         text: "Series →";
-                                        width: 100px;
+                                        width: 100px * AppState.text-scale;
                                         kbd-focused: AppState.detail-focused-btn == 2 && AppState.detail-cast-focused < 0;
                                         clicked => {
                                             AppState.detail-scroll = 0px;
@@ -184,7 +184,7 @@ export component DetailPage inherits Rectangle {
                                         text: AppState.detail-trailer-state == "ok" ? "Trailer"
                                             : AppState.detail-trailer-state == "checking" ? "Checking…"
                                             : "No trailer";
-                                        width: 130px;
+                                        width: 130px * AppState.text-scale;
                                         kbd-focused: AppState.detail-focused-btn == 6 && AppState.detail-cast-focused < 0;
                                         clicked => { AppState.play-detail-trailer(); }
                                     }
@@ -210,7 +210,7 @@ export component DetailPage inherits Rectangle {
                                 text: "Ends " + AppState.detail-ends-at;
                                 color: AppState.detail-has-backdrop ? #eeeeee : Theme.text-muted;
                                 font-size: 13px * AppState.text-scale;
-                                width: 110px;
+                                width: 110px * AppState.text-scale;
                                 horizontal-alignment: center;
                             }
                         }
@@ -317,7 +317,7 @@ export component DetailPage inherits Rectangle {
         x: 16px;
         y: 16px;
         text: "← Back";
-        width: 88px;
+        width: 88px * AppState.text-scale;
         kbd-focused: AppState.detail-focused-btn == -1 && AppState.detail-cast-focused < 0;
         clicked => {
             AppState.detail-scroll = 0px;

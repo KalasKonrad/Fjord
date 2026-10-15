@@ -33,7 +33,7 @@ export component NowPlayingScreen inherits Rectangle {
                 alignment: start;
                 FjordButton {
                     text: "← Back";
-                    width: 80px;
+                    width: 80px * AppState.text-scale;
                     kbd-focused: AppState.now-playing-back-focused;
                     clicked => { AppState.show-now-playing = false; }
                 }
@@ -161,7 +161,7 @@ export component NowPlayingScreen inherits Rectangle {
                     alignment: center;
                     FjordButton {
                         text: "Open Album";
-                        width: 130px;
+                        width: 130px * AppState.text-scale;
                         kbd-focused: !AppState.now-playing-back-focused && !AppState.now-playing-in-strip && AppState.now-playing-ctrl-focused == 0;
                         clicked => {
                             AppState.music-bar-open-album();

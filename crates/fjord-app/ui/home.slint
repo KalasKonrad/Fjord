@@ -126,7 +126,7 @@ export component LibraryGrid inherits Rectangle {
                 alignment: start;
                 FjordButton {
                     text: "← Back";
-                    width: 80px;
+                    width: 80px * AppState.text-scale;
                     kbd-focused: AppState.library-back-focused;
                     clicked => {
                         AppState.show-library = false;
@@ -220,7 +220,7 @@ export component LibraryGrid inherits Rectangle {
                     color: Theme.text-muted;
                     font-size: 11px * AppState.text-scale;
                     vertical-alignment: center;
-                    width: 30px;
+                    width: 30px * AppState.text-scale;
                 }
 
                 // Sort pills — for Music (nav=4) these are at cursor offset 3 (so cursor = si + 3)
@@ -435,7 +435,7 @@ export component LibraryGrid inherits Rectangle {
                         color: AppState.library-header-focused ? Theme.accent : Theme.text-muted;
                         font-size: 17px * AppState.text-scale;
                         vertical-alignment: center;
-                        width: 22px;
+                        width: 22px * AppState.text-scale;
                     }
 
                     Text {
