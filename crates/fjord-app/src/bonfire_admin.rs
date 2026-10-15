@@ -153,7 +153,7 @@ pub(crate) fn open_bonfire_admin_screen(
             }
             Err(e) => {
                 warn!("bonfire_admin_mappings: {e:#}");
-                let msg = format!("{e:#}");
+                let msg = crate::short_error(&e);
                 let _ = slint::invoke_from_event_loop(move || {
                     if let Some(w) = ww.upgrade() {
                         let g = AppState::get(&w);
@@ -202,7 +202,7 @@ fn ensure_audit_logs(
             }
             Err(e) => {
                 warn!("bonfire_admin_audit_logs: {e:#}");
-                let msg = format!("{e:#}");
+                let msg = crate::short_error(&e);
                 let _ = slint::invoke_from_event_loop(move || {
                     if let Some(w) = ww.upgrade() {
                         let g = AppState::get(&w);
@@ -261,7 +261,7 @@ pub(crate) fn on_bonfire_admin_reset_pin(
             }
             Err(e) => {
                 warn!("bonfire_admin_reset_pin: {e:#}");
-                let msg = format!("Couldn't reset that PIN: {e:#}");
+                let msg = format!("Couldn't reset that PIN — {}", crate::short_error(&e));
                 show_toast(ww, msg);
             }
         }
@@ -309,7 +309,7 @@ pub(crate) fn on_bonfire_admin_set_limit(
             }
             Err(e) => {
                 warn!("bonfire_admin_set_profile_limit: {e:#}");
-                let msg = format!("Couldn't update the profile limit: {e:#}");
+                let msg = format!("Couldn't update the profile limit — {}", crate::short_error(&e));
                 show_toast(ww, msg);
             }
         }

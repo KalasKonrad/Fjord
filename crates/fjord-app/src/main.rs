@@ -248,6 +248,12 @@ pub(crate) fn short_error(e: &anyhow::Error) -> String {
         };
     }
     let msg = e.to_string();
+    // Clients that read the response body put the server's own text after " — " (bonfire.rs:
+    // "Bonfire request failed: 400 Bad Request — This account has no PIN set…"): that's the reason.
+    let msg = match msg.rsplit_once(" — ") {
+        Some((_, body)) if !body.trim().is_empty() => body.trim().to_string(),
+        _ => msg,
+    };
     let end = ["http://", "https://"]
         .iter()
         .filter_map(|p| msg.find(p))
@@ -1324,6 +1330,8 @@ mod tests {
         let e =
             anyhow::anyhow!("HTTP 500 Internal Server Error for url (http://host/Items?api_key=x)");
         assert_eq!(short_error(&e), "HTTP 500 Internal Server Error for url");
+        let e = anyhow::anyhow!("Bonfire request failed: 400 Bad Request — This account has no PIN set");
+        assert_eq!(short_error(&e), "This account has no PIN set");
         let long = "x".repeat(150);
         assert_eq!(short_error(&anyhow::anyhow!(long)).chars().count(), 101);
     }
