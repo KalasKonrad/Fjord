@@ -2189,6 +2189,8 @@ Requires `mpv` and `libmpv` to be installed (`pacman -S mpv`).
 
 ## Distribution
 
+**Superseded 2026-10-14** — nightly now builds from `release-*` branches, `fjord-bin` installs releases, `fjord-bin-nightly` the nightly, `PKGBUILD` (`fjord`) builds the release tag: see "Branch model and three packages after 0.5.0". The history below still explains the self-hosted runner and the path filter.
+
 Two install paths, both via `makepkg -si`, choose based on what you need:
 
 - **`PKGBUILD`** (repo root) → `fjord-git` — builds from source on the target machine (`cargo build --release --locked`). Always reflects an exact commit (whatever's checked out, including a non-`main` branch like `hdr`), but pays the full Rust compile cost on every install/update — real time on slower/older hardware.

@@ -1,60 +1,22 @@
 name: Build release
 
-# Real, from-scratch CI, added 2026-08-17 per direct request — "cant we
-# expose it so i can install it via the pkgbuild instead of needing to
-# build it from git on the system i want to test on."
+# Builds Fjord on a self-hosted runner on the dev machine (Arch, like the
+# install targets; toolchain, ~/.cargo and target/ stay warm between runs, so
+# no container, cache actions or pacman). The runner is a `systemctl --user`
+# service: it needs a login session (or `loginctl enable-linger`). Actions are
+# pinned to commit SHAs. History: DEVLOG.md → Distribution.
 #
-# Switched from GitHub-hosted (ubuntu-latest + an archlinux:latest
-# container) to a self-hosted runner on the actual dev machine, same day,
-# after a real 17-minute cold-build wait prompted "is that a long time to
-# wait until i can test changes?" — GitHub's own cloud runners add a full
-# network round trip (push → queued → cold container → download the
-# result) on top of the build itself, and no amount of caching removes
-# that trip; a runner on hardware that already has the toolchain warm
-# does not need to pay it at all. The dev machine already IS Arch Linux,
-# so the container's whole reason for existing (matching fjord-bin's own
-# runtime ABI) is free here — no container, no per-run `pacman -Syu`
-# (which would be genuinely risky to run unattended against a real,
-# actively-used desktop's system packages, unlike a disposable cloud
-# container), no `actions/cache` (the real `~/.cargo` and `target/` dirs
-# already persist naturally between runs on real, persistent disk — a
-# cache save/restore round trip would only add latency here, not save
-# any), and no git "dubious ownership" workaround (that was specifically
-# a container-vs-host UID mismatch; everything here runs as the one real
-# user the whole way through). Registered via
-# `POST /repos/{owner}/{repo}/actions/runners/registration-token` +
-# `config.sh --unattended`, running as a `systemctl --user` service
-# (not `svc.sh`'s own system-wide service, which hard-requires sudo) —
-# survives as long as the dev machine has an active login session; full
-# reboot-survival needs `loginctl enable-linger` run once, by hand, since
-# that itself needs root.
-#
-# Branch model (since 0.5.0): development happens on `release-X.Y.Z`
-# branches; each push there builds the moving "nightly" pre-release
-# (fjord-bin-nightly installs it). `main` only receives releases and its
-# pushes build nothing: a `vX.Y.Z` tag on main builds the same tarball and
-# publishes a normal release named after the tag (fjord-bin installs it),
-# with that version's CHANGELOG.md section as its text. Path filters don't
-# apply to tag pushes.
+# Pushes to `release-X.Y.Z` build the moving "nightly" pre-release
+# (fjord-bin-nightly). A `vX.Y.Z` tag on main publishes the release
+# "Fjord vX.Y.Z" (fjord-bin) with that version's CHANGELOG.md section.
+# Pushes to main build nothing.
 on:
   push:
     branches: ['release-*']
     tags: ['v*']
-    # Path filter added 2026-08-28, direct request — "culd we fix so we
-    # dont do a new build on every push only when we do a code change?"
-    # Before this, a doc-only push (PLAN.md/CLAUDE.md updates, which this
-    # project makes constantly, often several times per code change) still
-    # burned a full ~4-5 minute build on the self-hosted runner for
-    # nothing to actually compile differently. An inclusion list (paths:),
-    # not an exclusion list (paths-ignore:), deliberately — safer against
-    # a future new doc/non-code file type silently starting to trigger
-    # builds again; anything not explicitly listed here is skipped by
-    # default instead. The root PKGBUILD/fjord-bin/PKGBUILD are
-    # deliberately NOT included — neither affects what this workflow
-    # actually builds (the fjord package compiles from source locally on the
-    # target machine, entirely separate from this CI artifact; fjord-bin's
-    # own PKGBUILD only controls how the ALREADY-built artifact gets
-    # downloaded, not what's in it).
+    # Only pushes that change what gets built: an allow-list, so a new kind of
+    # doc file never starts a build. PKGBUILDs don't affect the tarball. Not
+    # applied to tag pushes.
     paths:
       - 'crates/**'
       - 'Cargo.toml'
