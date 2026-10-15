@@ -20,8 +20,8 @@ import {
 } from "widgets.slint";
 
 export component ArtistScreen inherits Rectangle {
-    property <length> card-w: 145px;
-    property <length> card-h: 224px;
+    property <length> card-w: 145px * AppState.card-scale;
+    property <length> card-h: 224px * AppState.card-scale;
     property <length> gap:    14px;
     property <length> grid-content-height:
         ((AppState.artist-albums.length + AppState.library-cols - 1) / AppState.library-cols)

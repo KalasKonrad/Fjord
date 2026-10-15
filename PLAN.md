@@ -19,7 +19,7 @@ A small release: bug fixes, polish, minor features. Released per CLAUDE.md → R
 
 **Polish**
 - [x] **Long titles shrink the poster on the smallest card size (115 px)** (was in Deferred). User's choice 2026-10-15: the title over the poster on a dark fade, always the whole title — done (`MediaCard`), live check in the checklist.
-- [ ] **Card size setting (user, 2026-10-15):** Normal / Large (~+25%) / Extra large (~+50%), **per profile**, for every poster card — dashboards, library grids, Discover, artist/collection pages; grids drop columns to fit.
+- [x] **Card size setting (user, 2026-10-15):** Normal / Large (~+25%) / Extra large (~+50%), **per profile**, for every poster card — dashboards, library grids, Discover, artist/collection pages; grids drop columns to fit. Done, live check in the checklist.
 - [x] **Trim the dated story comments in `build-release.yml`'s header** to what the workflow needs (0.5.0 step 4 left the workflow out); the history is in DEVLOG.
 
 **Minor features**
@@ -38,6 +38,8 @@ A small release: bug fixes, polish, minor features. Released per CLAUDE.md → R
 ### 0.5.1
 - [ ] **Title over the poster (2026-10-15).** Every poster card (dashboards, library grids, Discover, search, artist/collection/person pages): the poster fills the card; title and year sit over its bottom on a dark fade, readable on light and dark posters; the whole title shows (a long one covers more of the poster); posters in a row are all the same size. Cards still loading their poster: the title at the bottom of the grey card. Badges: ♥ top-left, ★ under it (or top-left alone), ✓ / unwatched count / Seerr pill top-right, the "Available in 4K" pill under the Seerr pill (Discover "Requested" row), progress strip at the bottom edge. Hover, focus ring and click as before.
 - [ ] **Discover: titles owned only in 4K (2026-10-15).** A title you have only in 4K shows "4K In Library" on its Discover/search card and on Home/TV/Movies watchlist cards (before: no badge); a title you have in the regular version still shows "In Library"; a title requested only in 4K shows "4K Requested". Its context menu and request page no longer offer "Add to Blocklist" (same as for any owned title). Opening it still goes to the Jellyfin page as before.
+
+- [ ] **Card size setting (2026-10-15).** Settings → UI → first row "Card size" (Normal / Large / Extra large), with keyboard (Enter opens the list, Right cycles) and mouse. Large/Extra large: bigger cards at once on Home/TV/Movies/Collections/Music, the Discover rows, the library grids (fewer columns, still left to right without gaps cut off), the Discover search grid, artist and collection grids, and the rows on movie/series/person/season/collection pages. Keyboard focus still scrolls the focused card into view everywhere (dashboard rows, grid rows, detail-page rows). Switching profile switches the size; restarting keeps it. Normal looks exactly as before. Log (Debug): the `settings changed` line names `card_size`.
 
 ### Packages and branch model (2026-10-14)
 - [ ] **fjord-bin-nightly.** Install confirmed on dev 2026-10-15: replaced `fjord-git`, pacman shows `fjord-bin-nightly r1162.31c8a80-1`, the log `0.5.0 (r1162.31c8a80)`. Still open: the first push to `release-0.5.1` that touches code starts an Actions run for that branch and updates "nightly"; `makepkg -si` in `fjord-bin-nightly/` then installs it (pkgver `r<count>.<hash>` of the branch).

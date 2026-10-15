@@ -132,6 +132,9 @@ fn default_vf() -> String {
 fn default_skip_mode() -> String {
     "ask".into()
 }
+fn default_card_size() -> String {
+    "normal".into()
+}
 fn default_log_level() -> String {
     "info".into()
 }
@@ -664,6 +667,12 @@ pub(crate) struct ProfileSettings {
     #[serde(default)]
     pub library_music_view: u8,
 
+    // ── Poster card size (Settings → UI): "normal" | "large" | "extra-large" —
+    // AppState.card-scale turns it into 1.0 / 1.25 / 1.5 for every poster card.
+    // Per profile (the user's choice), unlike the device-wide UI rows.
+    #[serde(default = "default_card_size")]
+    pub card_size: String,
+
     // ── Seerr integration (Settings → Integrations) — cleared on sign-out
     // alongside server_url/user_id/token. seerr_auth_method is purely
     // informational (drives the "Connected via X" Settings subtitle);
@@ -783,6 +792,7 @@ impl Default for ProfileSettings {
             library_albums_sort: 0,
             library_playlists_sort: 0,
             library_music_view: 0,
+            card_size: default_card_size(),
             seerr_enabled: false,
             seerr_url: String::new(),
             seerr_auth_method: String::new(),
@@ -1168,6 +1178,7 @@ fn migrate_legacy_config(l: LegacyConfig) -> Config {
         // passthrough above on the DeviceConfig side.
         request_pref_movie: RequestPreference::default(),
         request_pref_tv: RequestPreference::default(),
+        card_size: default_card_size(),
     };
     let active_profile_id = profile.user_id.clone();
     Config {

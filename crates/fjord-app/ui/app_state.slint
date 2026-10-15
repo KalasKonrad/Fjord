@@ -94,7 +94,8 @@
 //                         open-context-menu-discover(CardItem); Jellyfin Watchlist row:
 //                         context-menu-jf-tmdb-id/-jf-media-type + context-jf-toggle-watchlist
 //   Calendar / blocklist  show-calendar + calendar-days/-leading-blanks/-total-days/…; show-blocklist + rows
-//   Settings state        hwdec, interpolation, audio-spdif, sub-lang, skip-*-mode/secs, display-sync-*, …
+//   Settings state        hwdec, interpolation, audio-spdif, sub-lang, skip-*-mode/secs, display-sync-*, …;
+//                         settings-card-size → card-scale (1.0/1.25/1.5) for every poster card
 //   Key binding editor    keybinding-normal/-player rows, keybinding-focused, keybinding-rebinding;
 //                         reset-to-defaults and rebind-collision ConfirmDialogs + keybinding-collision-
 //                         confirmed/-cancelled; settings-row-focused(string) (mouse click on a SettingsRow)
@@ -1486,6 +1487,12 @@ export global AppState {
     // Credits mode: "always-skip"|"ask"|"never-skip" (no ask-timed — banner has its own countdown)
     in-out property <string> settings-skip-credits-mode:    "ask";
     in-out property <int> settings-skip-credits-secs:    30;
+    // Poster card size (Settings → UI, per profile): "normal" | "large" | "extra-large".
+    // card-scale multiplies every poster card's size — the dashboard/Discover rows (main.slint's
+    // dash-card-w/-h), the library/artist/collection/Discover grids (+ fewer columns) and
+    // SectionRow's default (detail/series/person/season/collection rows).
+    in-out property <string> settings-card-size:    "normal";
+    out property <float> card-scale: settings-card-size == "large" ? 1.25 : settings-card-size == "extra-large" ? 1.5 : 1.0;
 
     // ── Player seek step (Settings → Player → Seeking) ───────────────────────
     in-out property <int> settings-seek-step-secs:       10;

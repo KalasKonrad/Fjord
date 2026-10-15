@@ -21,8 +21,8 @@ import {
 import { SectionRow } from "home.slint";
 
 export component CollectionScreen inherits Rectangle {
-    property <length> card-w: 145px;
-    property <length> card-h: 224px;
+    property <length> card-w: 145px * AppState.card-scale;
+    property <length> card-h: 224px * AppState.card-scale;
     property <length> gap:    14px;
     property <length> grid-content-height:
         ((AppState.collection-items.length + AppState.library-cols - 1) / AppState.library-cols)

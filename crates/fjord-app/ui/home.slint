@@ -4,6 +4,8 @@
 //                         Discover menu; clicked index syncs keyboard focus)
 //   LibraryGrid           2-D poster grid for full library browse (Back button ring when
 //                         library-back-focused; search caret at library-query-cursor)
+//   Card sizes            SectionRow's default and the grid's cards scale with AppState.card-scale
+//                         (Settings → UI → Card size); the dashboards pass dash-cw/-ch (scaled too)
 //   HomeScreen            Home tab: Continue Watching, Next Up, recently added shows/movies/albums,
 //                         then Watchlist and Coming Up (Seerr, mixed movies + series) when non-empty —
 //                         those two don't hold up the LoadingSpinner (their fetches are independent)
@@ -29,8 +31,9 @@ export component SectionRow inherits Rectangle {
     in property <[CardItem]> items;
     in property <bool> section-focused: false;
     in property <int> focused-card: 0;
-    in property <length> card-w: 140px;
-    in property <length> card-h: 224px;
+    // Default for the rows that don't pass dash-cw/-ch (detail/series/person/season/collection).
+    in property <length> card-w: 140px * AppState.card-scale;
+    in property <length> card-h: 224px * AppState.card-scale;
     callback item-play(/* id */ string, /* item_type */ string);
     callback item-context(string, bool, bool, float, string, string); // id, played, fav, resume-pct, item-type, series-id
     // Fires alongside item-context on every right-click, with the whole card — for Discover's
@@ -100,8 +103,8 @@ export component SectionRow inherits Rectangle {
 export component LibraryGrid inherits Rectangle {
     in property <string> grid-title;
 
-    property <length> card-w: 145px;
-    property <length> card-h: 224px;
+    property <length> card-w: 145px * AppState.card-scale;
+    property <length> card-h: 224px * AppState.card-scale;
     property <length> gap:    14px;
     // Total height of the poster content; kept outside the Flickable to avoid
     // the self-reference binding gotcha (see Slint gotchas in CLAUDE.md).

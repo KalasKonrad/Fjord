@@ -143,8 +143,8 @@ component FilterChip inherits Rectangle {
 }
 
 export component DiscoverScreen inherits Rectangle {
-    property <length> card-w: 145px;
-    property <length> card-h: 224px;
+    property <length> card-w: 145px * AppState.card-scale;
+    property <length> card-h: 224px * AppState.card-scale;
     property <length> gap:    14px;
     property <length> grid-content-height: ((AppState.discover-results.length + AppState.library-cols - 1) / AppState.library-cols) * (card-h + gap) + gap;
     // root.height, not self.height: the grid and landing containers are conditionally mounted
