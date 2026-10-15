@@ -178,7 +178,7 @@ fn default_cache_max_mb() -> u32 {
 // value and the display string) — translated to an mpv ytdl-format string
 // only at point of use (main.rs::trailer_ytdl_format), not here. Caps
 // yt-dlp's resolution selection for every YouTube trailer
-// (Settings → Player → Trailer quality).
+// (Settings → Playback → Trailer quality).
 fn default_trailer_quality() -> String {
     "1080p".into()
 }
@@ -278,7 +278,7 @@ pub(crate) struct DeviceConfig {
         deserialize_with = "deser_deinterlace"
     )]
     pub deinterlace: String,
-    // ── Network cache (Settings → Player → Buffering) ───────────────────────────
+    // ── Network cache (Settings → Advanced → Buffering) ───────────────────────────
     // cache_secs → mpv `cache-secs` (0 = mpv's default, ~3.6M s, so cache_max_mb is what
     // binds in practice). cache_max_mb → `demuxer-max-bytes`, the byte ceiling mpv
     // enforces (stock 150 MiB) regardless of cache_secs; its 0 means "Unlimited"
@@ -320,19 +320,19 @@ pub(crate) struct DeviceConfig {
     #[serde(default = "default_log_level")]
     pub log_level: String,
 
-    // ── Player seek step (Settings → Player → Seeking) ──────────────────────
+    // ── Player seek step (Settings → Playback → Skipping) ──────────────────────
     #[serde(default = "default_seek_step")]
     pub seek_step_secs: u32,
     #[serde(default = "default_seek_step_long")]
     pub seek_step_long_secs: u32,
 
-    // ── Skip-segment fade-to-black duration (Settings → Player → Seeking) ──────────
+    // ── Skip-segment fade-to-black duration (Settings → Playback → Skipping) ──────────
     // Base ms before the settings-animation-speed multiplier; 0 = an instant cut.
     // Device-scoped like seek_step_secs (about the setup, not personal taste).
     #[serde(default = "default_skip_fade_ms")]
     pub skip_fade_ms: u32,
 
-    // ── UI animation speed (Settings → UI) — multiplier percentages, 100 = mpv/
+    // ── UI animation speed (Settings → Interface) — multiplier percentages, 100 = mpv/
     // widgets.slint's original hand-tuned durations unchanged. Scroll is kept
     // separate from general Animation since it's a throughput property (how
     // fast you can move through content), not decoration.
@@ -341,12 +341,12 @@ pub(crate) struct DeviceConfig {
     #[serde(default = "default_speed_pct")]
     pub animation_speed_pct: u32,
 
-    // ── Text font (Settings → UI) — "Inter" (bundled default), "" (system
+    // ── Text font (Settings → Interface) — "Inter" (bundled default), "" (system
     // default, no override), or any other font family installed on the host.
     #[serde(default = "default_ui_font_family")]
     pub ui_font_family: String,
 
-    // ── On-screen alphanumeric keyboard (Settings → UI) ─────────────────────────
+    // ── On-screen alphanumeric keyboard (Settings → Interface) ─────────────────────────
     // Default ON: Fjord must be fully usable with no physical keyboard (remote/D-pad).
     // Device-scoped — whether a keyboard is attached is a hardware fact. Checked by the
     // openers (AppState.open-onscreen-keyboard / keys::open_onscreen_keyboard — nothing
@@ -667,7 +667,7 @@ pub(crate) struct ProfileSettings {
     #[serde(default)]
     pub library_music_view: u8,
 
-    // ── Poster card size (Settings → UI): "normal" | "large" | "extra-large" —
+    // ── Poster card size (Settings → Interface): "normal" | "large" | "extra-large" —
     // AppState.card-scale turns it into 1.0 / 1.25 / 1.5 for every poster card.
     // Per profile (the user's choice), unlike the device-wide UI rows.
     #[serde(default = "default_card_size")]
@@ -690,7 +690,7 @@ pub(crate) struct ProfileSettings {
     #[serde(default)]
     pub seerr_session_cookie: String,
 
-    // ── Trailer quality (Settings → Player): every YouTube trailer ───────────
+    // ── Trailer quality (Settings → Playback): every YouTube trailer ───────────
     // "Best"|"1080p"|"720p"|"480p" — display-ready, mapped to an mpv
     // ytdl-format string by main.rs::trailer_ytdl_format.
     #[serde(default = "default_trailer_quality")]

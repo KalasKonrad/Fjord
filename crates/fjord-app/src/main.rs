@@ -663,7 +663,7 @@ fn main() -> Result<()> {
     let file_appender = tracing_appender::rolling::never(&log_dir, "fjord.log");
     let (file_writer, _guard) = tracing_appender::non_blocking(file_appender);
     use tracing_subscriber::{EnvFilter, Layer, layer::SubscriberExt, util::SubscriberInitExt};
-    // Settings → General log level (default "info"), read straight from disk before the
+    // Settings → Advanced log level (default "info"), read straight from disk before the
     // subscriber exists (the full config load comes later). Applies on the next launch;
     // RUST_LOG overrides it.
     let user_level = load_config()

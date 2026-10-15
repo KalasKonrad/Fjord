@@ -103,7 +103,7 @@ export component MainWindow inherits Window {
     // window (HDR Stage 5, 2026-10-05) — Slint's UI composites on top of it;
     // the subsurface fills everything outside the video with Theme.bg.
     background: AppState.video-surface-active ? transparent : Theme.bg;
-    // Settings → UI → Text font. `default-font-family` (not `font-family` —
+    // Settings → Interface → Text font. `default-font-family` (not `font-family` —
     // Window doesn't expose that one) is Slint's purpose-built window-wide
     // default: every Text element without its own explicit font-family uses
     // this, while the icon Text elements throughout the app (hard-pinned to

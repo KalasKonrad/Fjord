@@ -310,7 +310,7 @@ pub(crate) fn wire_mpv_timer(
                 };
                 let (display_sync_enabled, hdr_toggle_enabled) = {
                     let s = state_timer.lock().unwrap();
-                    // Trailers switch the display only when Settings → Video
+                    // Trailers switch the display only when Settings → Display
                     // → Sync display for trailers is on (default off,
                     // 2026-10-04) — otherwise they take Branch A like any
                     // video with display sync off.

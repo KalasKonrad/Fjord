@@ -137,6 +137,7 @@ Needs `mpv`/libmpv (`pacman -S mpv`). Optional at runtime: `yt-dlp` (trailers), 
   cache, overlay, or input-dispatch state must be reset there** — Seerr-scoped caches also in
   `seerr_auth::clear_connection` / `commit_connection`.
 - `token` and the Seerr key/cookie are AES-GCM encrypted by `load_config`/`save_config` only.
+- A Settings row backed by a `ProfileSettings` field gets `per-profile: true` in settings.slint (the "Profile" tag).
 
 ### UI models
 - Rebuild card rows through `apply_cards_preserving_identity` (mutates rows in place when ids/order match).
@@ -215,7 +216,7 @@ Needs `mpv`/libmpv (`pacman -S mpv`). Optional at runtime: `yt-dlp` (trailers), 
   `DeviceId` comes from `ensure_device_id()`; two machines must never share one.
 
 ## Platform notes (HTPC: NVIDIA Pascal legacy driver, KDE Wayland)
-- NVDEC stride corruption → Settings → Video filter `auto: yuv420p/yuv420p10le`.
+- NVDEC stride corruption → Settings → Advanced → Video filter `auto: yuv420p/yuv420p10le`.
 - HDR passthrough (opt-in) on the in-window video path (Settings "Separate video surface" off, X11, or a
   subsurface setup failure) tags the whole window as PQ/BT.2020, so UI chrome shows wrong colours while it's on.
   With the separate video surface (default on Wayland) only the video is tagged.
@@ -252,7 +253,7 @@ Needs `mpv`/libmpv (`pacman -S mpv`). Optional at runtime: `yt-dlp` (trailers), 
 - Logs: `~/.cache/fjord/logs/fjord.log` (rotated `.1`–`.10`). HTPC logs: the `HTPC logs/` symlink in the
   repo root (no SSH).
 - Each log starts with `fjord version: r<count>.<hash>` — compare with `HEAD` before treating it as a live repro.
-- Debug output needs Settings → General → Log level = Debug (or `RUST_LOG`). Log generously at `debug!` on
+- Debug output needs Settings → Advanced → Log level = Debug (or `RUST_LOG`). Log generously at `debug!` on
   async/debounced/multi-step paths — silent paths have made live bugs undiagnosable before.
 - The UI can't be driven from here: say "not live-tested" plainly and add the checklist item.
 - Install on the HTPC: `makepkg -si` in the repo root (`PKGBUILD` = fjord: the latest release, from source),

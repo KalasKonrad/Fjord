@@ -67,7 +67,7 @@ cd fjord-bin-nightly && makepkg -si      # fjord-bin-nightly: the current develo
 
 NVIDIA legacy drivers on Wayland/EGL silently ignore `GL_UNPACK_ROW_LENGTH`. NVDEC outputs frames with a 256-byte-aligned stride (e.g. 2048 bytes for a 1920-pixel-wide video), and without the stride hint the GL upload corrupts every row.
 
-**Fix:** In Settings → Video, set **Video filter** to `auto`. Fjord will detect the active decoder and bit depth after playback starts and apply the right tight-packed format filter:
+**Fix:** In Settings → Advanced, set **Video filter** to `auto` (shown when Hardware decode is `nvdec`). Fjord will detect the active decoder and bit depth after playback starts and apply the right tight-packed format filter:
 
 | Decoder | 8-bit | 10-bit |
 |---|---|---|

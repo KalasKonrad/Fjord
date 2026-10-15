@@ -503,7 +503,7 @@ export component IconCircleButton inherits Rectangle {
         color: #ffffff;
         font-size: 20px;
         font-weight: 600;
-        // Hard-pinned regardless of Settings → UI → Text font: ♥/✓ always
+        // Hard-pinned regardless of Settings → Interface → Text font: ♥/✓ always
         // render via Adwaita Sans specifically (the deliberately-chosen
         // style for those two), every other icon this component shows
         // (the now_playing.slint transport row: ⏮▶⏸⏭⇌↺🔉🔊) always
@@ -1206,6 +1206,9 @@ export component SettingsRow inherits Rectangle {
     in property <string> title;
     in property <string> subtitle;
     in property <bool> indent:   false;
+    // Saved per profile (not for the whole device): shows a small "Profile" tag after the title.
+    // These are exactly the settings "Copy settings from…" copies.
+    in property <bool> per-profile: false;
 
     border-radius: Theme.radius;
     background: {
@@ -1241,10 +1244,32 @@ export component SettingsRow inherits Rectangle {
         VerticalLayout {
             spacing: 3px;
             horizontal-stretch: 1;
-            Text {
-                text: root.title;
-                color: Theme.text;
-                font-size: 14px;
+            HorizontalLayout {
+                spacing: 8px;
+                alignment: start;
+                Text {
+                    text: root.title;
+                    color: Theme.text;
+                    font-size: 14px;
+                }
+
+                if root.per-profile: VerticalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: profile-tag.preferred-width + 12px;
+                        height: 16px;
+                        border-radius: 8px;
+                        background: Theme.surface-overlay;
+                        profile-tag := Text {
+                            text: "Profile";
+                            color: Theme.text-muted;
+                            font-size: 10px;
+                            font-weight: 600;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
             }
 
             Text {
