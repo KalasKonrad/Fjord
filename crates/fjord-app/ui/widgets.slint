@@ -384,7 +384,7 @@ export component ConfirmDialog inherits Rectangle {
     Rectangle {
         x: (parent.width - self.width) / 2;
         y: (parent.height - self.height) / 2;
-        width: 360px;
+        width: 360px * AppState.text-scale;
         height: content.preferred-height + 32px;
         border-radius: Theme.radius-lg;
         background: Theme.surface-raised;
@@ -461,7 +461,7 @@ export component ConfirmDialog inherits Rectangle {
 
                 FjordButton {
                     text: root.confirm-label;
-                    width: 100px;
+                    width: 100px * AppState.text-scale;
                     kbd-focused: root.focused == 1;
                     clicked => { root.confirmed(); }
                 }
@@ -1612,7 +1612,7 @@ export component StatRow inherits Rectangle {
             color: #555555;
             font-size: 11px * AppState.text-scale;
             font-weight: 700;
-            width: 60px;
+            width: 60px * AppState.text-scale;
             vertical-alignment: top;
         }
 
@@ -1733,7 +1733,7 @@ export component MiniPlayerBar inherits Rectangle {
                     icon-left: "▶";
                     text: "Resume";
                     height: 28px;
-                    width: 120px;
+                    width: 120px * AppState.text-scale;
                     kbd-focused: AppState.float-card-focused == 0;
                     clicked => { AppState.float-card-focused = -1; AppState.resume-player(); }
                 }
@@ -1742,7 +1742,7 @@ export component MiniPlayerBar inherits Rectangle {
                     icon-left: "■";
                     text: "Stop";
                     height: 28px;
-                    width: 80px;
+                    width: 80px * AppState.text-scale;
                     danger: true;
                     kbd-focused: AppState.float-card-focused == 1;
                     clicked => { AppState.float-card-focused = -1; AppState.stop-playback(); }
@@ -1781,7 +1781,7 @@ export component MiniPlayerBar inherits Rectangle {
                 icon-left: "▶";
                 text: "Resume";
                 height: 28px;
-                width: 120px;
+                width: 120px * AppState.text-scale;
                 kbd-focused: AppState.float-card-focused == 0;
                 clicked => { AppState.float-card-focused = -1; AppState.resume-player(); }
             }
@@ -1790,7 +1790,7 @@ export component MiniPlayerBar inherits Rectangle {
                 icon-left: "■";
                 text: "Stop";
                 height: 28px;
-                width: 80px;
+                width: 80px * AppState.text-scale;
                 danger: true;
                 kbd-focused: AppState.float-card-focused == 1;
                 clicked => { AppState.float-card-focused = -1; AppState.stop-playback(); }
@@ -1984,7 +1984,7 @@ export component MusicPlayerBar inherits Rectangle {
                     text: AppState.music-bar-elapsed;
                     color: Theme.text-muted;
                     font-size: 11px * AppState.text-scale;
-                    width: 36px;
+                    width: 36px * AppState.text-scale;
                     horizontal-alignment: right;
                     vertical-alignment: center;
                 }
@@ -2022,7 +2022,7 @@ export component MusicPlayerBar inherits Rectangle {
                     text: AppState.music-bar-total;
                     color: Theme.text-muted;
                     font-size: 11px * AppState.text-scale;
-                    width: 36px;
+                    width: 36px * AppState.text-scale;
                     horizontal-alignment: left;
                     vertical-alignment: center;
                 }
@@ -2104,7 +2104,7 @@ export component QueuePanel inherits Rectangle {
 
     TouchArea {
         // Click outside the panel closes it
-        width: parent.width - 400px;
+        width: parent.width - 400px * AppState.text-scale;
         height: parent.height;
         x: 0;
         y: 0;
@@ -2115,7 +2115,7 @@ export component QueuePanel inherits Rectangle {
     panel := Rectangle {
         x: parent.width - 400px;
         y: 0;
-        width: 400px;
+        width: 400px * AppState.text-scale;
         height: parent.height;
         background: Theme.surface;
         border-width: 1px;
@@ -2152,7 +2152,7 @@ export component QueuePanel inherits Rectangle {
                     }
 
                     ta-clear := TouchArea {
-                        width: 72px;
+                        width: 72px * AppState.text-scale;
                         height: parent.height;
                         mouse-cursor: MouseCursor.pointer;
                         // Confirmation dialog, 2026-08-22 — see show-queue-
@@ -2289,7 +2289,7 @@ export component QueuePanel inherits Rectangle {
                                         font-size: 12px * AppState.text-scale;
                                         horizontal-alignment: right;
                                         vertical-alignment: center;
-                                        width: 22px;
+                                        width: 22px * AppState.text-scale;
                                     }
 
                                     // Title + artist column
@@ -2484,7 +2484,7 @@ export component VolumeOverlay inherits Rectangle {
             font-size: 11px * AppState.text-scale;
             font-weight: 700;
             vertical-alignment: center;
-            width: 24px;
+            width: 24px * AppState.text-scale;
         }
 
         if !AppState.audio-passthrough-active: Rectangle {
@@ -2515,7 +2515,7 @@ export component VolumeOverlay inherits Rectangle {
             color: #bbbbbb;
             font-size: 11px * AppState.text-scale;
             vertical-alignment: center;
-            width: 38px;
+            width: 38px * AppState.text-scale;
         }
     }
 }
@@ -2574,7 +2574,7 @@ export component SidebarProfileMenu inherits Rectangle {
     Rectangle {
         x: (parent.width - self.width) / 2;
         y: (parent.height - self.height) / 2;
-        width: 260px;
+        width: 260px * AppState.text-scale;
         height: menu-layout.preferred-height + 16px;
         border-radius: Theme.radius-lg;
         background: Theme.surface-raised;

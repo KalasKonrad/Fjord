@@ -197,7 +197,7 @@ export component MainWindow inherits Window {
                 alignment: end;
                 FjordButton {
                     text: "Cancel";
-                    width: 70px;
+                    width: 70px * AppState.text-scale;
                     clicked => { AppState.cancel-auto-advance(); }
                 }
             }

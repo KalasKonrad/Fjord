@@ -226,7 +226,7 @@ export component ProfilePickerScreen inherits Rectangle {
 
     FjordButton {
         text: "Quit";
-        width: 90px;
+        width: 90px * AppState.text-scale;
         x: parent.width - self.width - 16px;
         y: parent.height - self.height - 16px;
         // Keyboard-reachable: Down from the tile row, Up returns, Enter quits.
@@ -243,7 +243,7 @@ export component ProfilePickerScreen inherits Rectangle {
     // Down, like every other Back button.
     if AppState.profile-picker-back-mode == "accounts": FjordButton {
         text: "← Back to Accounts";
-        width: 170px;
+        width: 170px * AppState.text-scale;
         x: 16px;
         y: 16px;
         kbd-focused: AppState.profile-picker-back-focused;
@@ -256,7 +256,7 @@ export component ProfilePickerScreen inherits Rectangle {
         // No destination named: it closes the picker and keeps the current session (same as
         // login.slint's "← Back").
         text: "← Back";
-        width: 110px;
+        width: 110px * AppState.text-scale;
         x: 16px;
         y: 16px;
         kbd-focused: AppState.profile-picker-back-focused;
@@ -355,7 +355,7 @@ export component ProfilePickerScreen inherits Rectangle {
                 // A real Cancel button: Down past the keypad's bottom row (keys.rs), or click.
                 cancel-btn := FjordButton {
                     text: "← Cancel";
-                    width: 120px;
+                    width: 120px * AppState.text-scale;
                     x: (parent.width - self.width) / 2;
                     kbd-focused: AppState.profile-pin-cancel-focused;
                     clicked => {

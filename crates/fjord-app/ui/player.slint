@@ -286,7 +286,7 @@ export component PlayerScreen inherits Rectangle {
                 font-size: 11px * AppState.text-scale;
                 font-weight: 700;
                 vertical-alignment: center;
-                width: 12px;
+                width: 12px * AppState.text-scale;
             }
 
             ch-osd-label := Text {
@@ -321,7 +321,7 @@ export component PlayerScreen inherits Rectangle {
                 font-size: 11px * AppState.text-scale;
                 font-weight: 700;
                 vertical-alignment: center;
-                width: 12px;
+                width: 12px * AppState.text-scale;
             }
 
             delay-osd-label := Text {
@@ -620,7 +620,7 @@ export component PlayerScreen inherits Rectangle {
                     text: AppState.seek-osd-visible ? AppState.seek-bar-time : AppState.playback-time;
                     color: Theme.text-soft;
                     font-size: 12px * AppState.text-scale;
-                    width: 54px;
+                    width: 54px * AppState.text-scale;
                     vertical-alignment: center;
                 }
 
@@ -773,7 +773,7 @@ export component PlayerScreen inherits Rectangle {
                     text: AppState.playback-total;
                     color: #888888;
                     font-size: 12px * AppState.text-scale;
-                    width: 54px;
+                    width: 54px * AppState.text-scale;
                     horizontal-alignment: right;
                     vertical-alignment: center;
                 }
@@ -797,35 +797,35 @@ export component PlayerScreen inherits Rectangle {
                     spacing: 8px;
                     FjordButton {
                         text: "← Back";
-                        width: 76px;
+                        width: 76px * AppState.text-scale;
                         clicked => { AppState.minimize-player(); }
                     }
 
                     FjordButton {
                         icon-left: "◀◀";
                         text: "30s";
-                        width: 80px;
+                        width: 80px * AppState.text-scale;
                         clicked => { AppState.seek-backward-long(); }
                     }
 
                     FjordButton {
                         icon-left: AppState.is-paused ? "▶" : "⏸";
                         text: AppState.is-paused ? "Play" : "Pause";
-                        width: 80px;
+                        width: 80px * AppState.text-scale;
                         clicked => { AppState.pause-play-toggle(); }
                     }
 
                     FjordButton {
                         text: "30s";
                         icon-right: "▶▶";
-                        width: 80px;
+                        width: 80px * AppState.text-scale;
                         clicked => { AppState.seek-forward-long(); }
                     }
 
                     FjordButton {
                         icon-left: "■";
                         text: "Stop";
-                        width: 72px;
+                        width: 72px * AppState.text-scale;
                         danger: true;
                         clicked => { AppState.stop-playback(); }
                     }
@@ -838,7 +838,7 @@ export component PlayerScreen inherits Rectangle {
                     if AppState.chapter-entries.length > 0: FjordButton {
                         text: "Ch";
                         icon-right: "▾";
-                        width: 60px;
+                        width: 60px * AppState.text-scale;
                         clicked => {
                             AppState.player-open-panel = AppState.player-open-panel == 4 ? 0 : 4;
                             AppState.player-panel-cursor = AppState.current-chapter.max(0);
@@ -847,7 +847,7 @@ export component PlayerScreen inherits Rectangle {
                     FjordButton {
                         text: "Sync";
                         icon-right: "▾";
-                        width: 70px;
+                        width: 70px * AppState.text-scale;
                         clicked => {
                             AppState.player-open-panel = AppState.player-open-panel == 5 ? 0 : 5;
                         }
@@ -856,7 +856,7 @@ export component PlayerScreen inherits Rectangle {
                     FjordButton {
                         text: "Sub";
                         icon-right: "▾";
-                        width: 68px;
+                        width: 68px * AppState.text-scale;
                         clicked => {
                             AppState.player-open-panel = AppState.player-open-panel == 1 ? 0 : 1;
                             AppState.player-panel-cursor = 0;
@@ -866,7 +866,7 @@ export component PlayerScreen inherits Rectangle {
                     FjordButton {
                         text: "Audio";
                         icon-right: "▾";
-                        width: 76px;
+                        width: 76px * AppState.text-scale;
                         clicked => {
                             AppState.player-open-panel = AppState.player-open-panel == 2 ? 0 : 2;
                             AppState.player-panel-cursor = 0;
@@ -876,7 +876,7 @@ export component PlayerScreen inherits Rectangle {
                     FjordButton {
                         text: "Video";
                         icon-right: "▾";
-                        width: 76px;
+                        width: 76px * AppState.text-scale;
                         clicked => {
                             AppState.player-open-panel = AppState.player-open-panel == 3 ? 0 : 3;
                             AppState.player-panel-cursor = 0;
@@ -885,7 +885,7 @@ export component PlayerScreen inherits Rectangle {
 
                     FjordButton {
                         text: AppState.stats-visible ? "Hide Stats" : "Stats";
-                        width: 82px;
+                        width: 82px * AppState.text-scale;
                         clicked => { AppState.toggle-stats(); }
                     }
                 }
@@ -1143,12 +1143,12 @@ export component PlayerScreen inherits Rectangle {
                     color: Theme.text-subtle;
                     font-size: 12px * AppState.text-scale;
                     vertical-alignment: center;
-                    width: 34px;
+                    width: 34px * AppState.text-scale;
                 }
 
                 FjordButton {
                     text: "−100ms";
-                    width: 72px;
+                    width: 72px * AppState.text-scale;
                     clicked => { AppState.sub-delay-dec(); }
                 }
 
@@ -1159,12 +1159,12 @@ export component PlayerScreen inherits Rectangle {
                     font-weight: 700;
                     vertical-alignment: center;
                     horizontal-alignment: center;
-                    width: 72px;
+                    width: 72px * AppState.text-scale;
                 }
 
                 FjordButton {
                     text: "+100ms";
-                    width: 72px;
+                    width: 72px * AppState.text-scale;
                     clicked => { AppState.sub-delay-inc(); }
                 }
             }
@@ -1179,12 +1179,12 @@ export component PlayerScreen inherits Rectangle {
                     color: Theme.text-subtle;
                     font-size: 12px * AppState.text-scale;
                     vertical-alignment: center;
-                    width: 34px;
+                    width: 34px * AppState.text-scale;
                 }
 
                 FjordButton {
                     text: "−100ms";
-                    width: 72px;
+                    width: 72px * AppState.text-scale;
                     clicked => { AppState.audio-delay-dec(); }
                 }
 
@@ -1195,12 +1195,12 @@ export component PlayerScreen inherits Rectangle {
                     font-weight: 700;
                     vertical-alignment: center;
                     horizontal-alignment: center;
-                    width: 72px;
+                    width: 72px * AppState.text-scale;
                 }
 
                 FjordButton {
                     text: "+100ms";
-                    width: 72px;
+                    width: 72px * AppState.text-scale;
                     clicked => { AppState.audio-delay-inc(); }
                 }
             }

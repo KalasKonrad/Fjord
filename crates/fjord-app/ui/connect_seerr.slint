@@ -167,7 +167,7 @@ export component ConnectSeerrScreen inherits Rectangle {
 
                 FjordButton {
                     text: "✕";
-                    width: 32px;
+                    width: 32px * AppState.text-scale;
                     height: 32px;
                     kbd-focused: AppState.connect-seerr-zone == -1;
                     clicked => {

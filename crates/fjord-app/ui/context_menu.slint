@@ -56,7 +56,7 @@ component DiscoverMenuRow inherits Rectangle {
             color: AppState.context-menu-focused == row-index ? Theme.accent : Theme.text-muted;
             font-size: 14px * AppState.text-scale;
             vertical-alignment: center;
-            width: 18px;
+            width: 18px * AppState.text-scale;
         }
 
         Text {
@@ -91,7 +91,7 @@ export component ContextMenu inherits Rectangle {
     Rectangle {
         x: (parent.width - self.width) / 2;
         y: (parent.height - self.height) / 2;
-        width: 240px;
+        width: 240px * AppState.text-scale;
         height: menu-layout.preferred-height + 16px;
         border-radius: Theme.radius-lg;
         background: Theme.surface-raised;
@@ -144,7 +144,7 @@ export component ContextMenu inherits Rectangle {
                             color: AppState.context-menu-focused == 0 ? Theme.accent : Theme.text-muted;
                             font-size: 14px * AppState.text-scale;
                             vertical-alignment: center;
-                            width: 18px;
+                            width: 18px * AppState.text-scale;
                         }
 
                         Text {
@@ -194,7 +194,7 @@ export component ContextMenu inherits Rectangle {
                             color: AppState.context-menu-focused == 1 ? Theme.accent : Theme.text-muted;
                             font-size: 12px * AppState.text-scale;
                             vertical-alignment: center;
-                            width: 18px;
+                            width: 18px * AppState.text-scale;
                         }
 
                         Text {
@@ -244,7 +244,7 @@ export component ContextMenu inherits Rectangle {
                             color: AppState.context-menu-focused == 2 ? Theme.accent : Theme.text-muted;
                             font-size: 14px * AppState.text-scale;
                             vertical-alignment: center;
-                            width: 18px;
+                            width: 18px * AppState.text-scale;
                         }
 
                         Text {
@@ -293,7 +293,7 @@ export component ContextMenu inherits Rectangle {
                             color: AppState.context-menu-focused == 3 ? Theme.accent : Theme.text-muted;
                             font-size: 14px * AppState.text-scale;
                             vertical-alignment: center;
-                            width: 18px;
+                            width: 18px * AppState.text-scale;
                         }
 
                         Text {
@@ -345,7 +345,7 @@ export component ContextMenu inherits Rectangle {
                             color: AppState.context-menu-focused == 4 ? Theme.accent : Theme.text-muted;
                             font-size: 14px * AppState.text-scale;
                             vertical-alignment: center;
-                            width: 18px;
+                            width: 18px * AppState.text-scale;
                         }
 
                         Text {
@@ -396,7 +396,7 @@ export component ContextMenu inherits Rectangle {
                             color: AppState.context-menu-focused == 5 ? Theme.accent : Theme.text-muted;
                             font-size: 14px * AppState.text-scale;
                             vertical-alignment: center;
-                            width: 18px;
+                            width: 18px * AppState.text-scale;
                         }
 
                         Text {
@@ -445,7 +445,7 @@ export component ContextMenu inherits Rectangle {
                             color: AppState.context-menu-focused == 7 ? Theme.accent : Theme.text-muted;
                             font-size: 14px * AppState.text-scale;
                             vertical-alignment: center;
-                            width: 18px;
+                            width: 18px * AppState.text-scale;
                         }
 
                         Text {
@@ -496,7 +496,7 @@ export component ContextMenu inherits Rectangle {
                             color: AppState.context-menu-focused == 8 ? Theme.accent : Theme.text-muted;
                             font-size: 14px * AppState.text-scale;
                             vertical-alignment: center;
-                            width: 18px;
+                            width: 18px * AppState.text-scale;
                         }
 
                         Text {
@@ -545,7 +545,7 @@ export component ContextMenu inherits Rectangle {
                             color: AppState.context-menu-focused == 6 ? Theme.accent : Theme.text-muted;
                             font-size: 14px * AppState.text-scale;
                             vertical-alignment: center;
-                            width: 18px;
+                            width: 18px * AppState.text-scale;
                         }
 
                         Text {
@@ -747,7 +747,7 @@ export component PlaylistPicker inherits Rectangle {
                         color: AppState.playlist-picker-cursor == 0 ? Theme.accent : Theme.text-muted;
                         font-size: 14px * AppState.text-scale;
                         vertical-alignment: center;
-                        width: 18px;
+                        width: 18px * AppState.text-scale;
                     }
 
                     Text {

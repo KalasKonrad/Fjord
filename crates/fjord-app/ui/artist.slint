@@ -125,7 +125,7 @@ export component ArtistScreen inherits Rectangle {
                                     icon-left: "▶";
                                     text: "Play All";
                                     height: 34px;
-                                    width: 110px;
+                                    width: 110px * AppState.text-scale;
                                     kbd-focused: AppState.artist-btn-focused == 0;
                                     clicked => { AppState.play-artist-all(); }
                                 }
@@ -213,7 +213,7 @@ export component ArtistScreen inherits Rectangle {
         x: 16px;
         y: 16px;
         text: "← Back";
-        width: 88px;
+        width: 88px * AppState.text-scale;
         kbd-focused: AppState.artist-back-focused;
         clicked => { AppState.close-artist(); }
     }

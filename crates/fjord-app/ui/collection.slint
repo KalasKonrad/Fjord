@@ -262,7 +262,7 @@ export component CollectionScreen inherits Rectangle {
         x: 16px;
         y: 16px;
         text: "← Back";
-        width: 88px;
+        width: 88px * AppState.text-scale;
         kbd-focused: AppState.collection-back-focused;
         clicked => { AppState.show-collection = false; }
     }

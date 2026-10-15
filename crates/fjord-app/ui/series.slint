@@ -155,7 +155,7 @@ export component SeriesScreen inherits Rectangle {
                                     text: AppState.series-trailer-state == "ok" ? "Trailer"
                                         : AppState.series-trailer-state == "checking" ? "Checking…"
                                         : "No trailer";
-                                    width: 130px;
+                                    width: 130px * AppState.text-scale;
                                     kbd-focused: AppState.series-focused-btn == 4;
                                     clicked => { AppState.play-series-trailer(); }
                                 }
@@ -474,7 +474,7 @@ export component SeriesScreen inherits Rectangle {
         x: 16px;
         y: 16px;
         text: "← Back";
-        width: 88px;
+        width: 88px * AppState.text-scale;
         kbd-focused: AppState.series-focused-btn == 0;
         clicked => { AppState.close-series(); }
     }

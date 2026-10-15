@@ -154,7 +154,7 @@ export component PersonScreen inherits Rectangle {
         x: 16px;
         y: 16px;
         text: "← Back";
-        width: 88px;
+        width: 88px * AppState.text-scale;
         kbd-focused: !AppState.person-in-film-row && !AppState.person-in-other-work-row;
         clicked => { AppState.close-person(); }
     }
