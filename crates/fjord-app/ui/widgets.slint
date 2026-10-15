@@ -511,7 +511,8 @@ export component IconCircleButton inherits Rectangle {
         // candidate text fonts turned out to have their own competing
         // glyphs for common icons like these — pinning explicitly means
         // icon appearance never depends on which text font is active.
-        font-family: (root.icon == "❤" || root.icon == "✓") ? "Adwaita Sans" : "Noto Sans Symbols 2";
+        font-family: (root.icon == "❤" || root.icon == "✓") ? "Adwaita Sans"
+            : (root.icon == "⇌" || root.icon == "⋮" || root.icon == "≡") ? "Noto Sans Math" : "Noto Sans Symbols 2";
         horizontal-alignment: center;
         vertical-alignment: center;
     }

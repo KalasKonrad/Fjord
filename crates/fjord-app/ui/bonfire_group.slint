@@ -149,7 +149,8 @@ export component BonfireGroupScreen inherits Rectangle {
                     }
 
                     FjordButton {
-                        text: "✕";
+                        text: "";
+                        icon-left: "✕";
                         width: 32px * AppState.text-scale;
                         height: 32px;
                         kbd-focused: AppState.bonfire-group-zone == -1;
@@ -287,7 +288,7 @@ export component BonfireGroupScreen inherits Rectangle {
                                 border-color: Theme.focus-border;
                                 Text {
                                     text: AppState.bonfire-group-join-code == "" ? "Enter join code…"
-                                        : AppState.bonfire-group-zone == join-base ? AppState.caret-text(AppState.bonfire-group-join-code, AppState.bonfire-group-join-code-cursor, "▌")
+                                        : AppState.bonfire-group-zone == join-base ? AppState.caret-text(AppState.bonfire-group-join-code, AppState.bonfire-group-join-code-cursor, "|")
                                         : AppState.bonfire-group-join-code;
                                     color: AppState.bonfire-group-join-code == "" ? Theme.text-subtle : Theme.text;
                                     font-size: 15px * AppState.text-scale;

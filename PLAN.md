@@ -63,6 +63,8 @@ A small release: bug fixes, polish, minor features. Released per CLAUDE.md → R
 
 - [ ] **Text size (2026-10-15).** Settings → Interface → "Text size" (second row, Profile tag): Large/Extra large make all small and normal text bigger at once — sidebar, dashboards (row titles, card titles over posters), Discover, detail pages, Settings (names + descriptions), context menu, dialogs, toasts, player OSD/stats, Now Playing, lyrics stay as they were; headings and big numbers unchanged. Nothing clipped: buttons, pills/badges (card badges, "Profile" tag, 4K pills), Settings rows, mini-player bar, queue rows, OSD panels. Keyboard focus still scrolls into view on the dashboards (rows are a bit taller) and in long Settings sections. Switching profile switches the size; "Copy settings from…" copies it.
 
+- [ ] **Icons (2026-10-15).** On the HTPC (fewest system fonts): 🔒 on PIN-protected profile/account tiles, Manage Profiles and Bonfire Admin ("🔒 PIN set") is a grey outline, not a colour emoji or a box; the ✕ close buttons (Manage Profiles, Connect Seerr, Bonfire Group, profile editing), "⏩ Resume" on a movie page, "× Clear" in Discover's filter bar, shuffle ⇌ and ⋮ on the music bar / Now Playing, ≡ in the context menu all show their symbol. Text-field carets (Browse/Discover/Library search, join code) are a thin "|".
+
 ### Packages and branch model (2026-10-14)
 - [ ] **fjord-bin-nightly.** Install confirmed on dev 2026-10-15: replaced `fjord-git`, pacman shows `fjord-bin-nightly r1162.31c8a80-1`, the log `0.5.0 (r1162.31c8a80)`. Still open: the first push to `release-0.5.1` that touches code starts an Actions run for that branch and updates "nightly"; `makepkg -si` in `fjord-bin-nightly/` then installs it (pkgver `r<count>.<hash>` of the branch).
 

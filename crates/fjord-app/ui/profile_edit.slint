@@ -222,7 +222,8 @@ export component ProfileEditScreen inherits Rectangle {
                     }
 
                     FjordButton {
-                        text: "✕";
+                        text: "";
+                        icon-left: "✕";
                         width: 32px * AppState.text-scale;
                         height: 32px;
                         clicked => { AppState.profile-edit-cancel(); }

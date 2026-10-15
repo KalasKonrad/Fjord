@@ -249,10 +249,21 @@ export component BonfireAdminScreen inherits Rectangle {
                                             font-size: 11px * AppState.text-scale;
                                         }
 
-                                        if row.requires-pin: Text {
-                                            text: "🔒 PIN set";
-                                            color: Theme.text-muted;
-                                            font-size: 11px * AppState.text-scale;
+                                        // The lock in the symbol font (no colour emoji), the words in the UI font.
+                                        if row.requires-pin: HorizontalLayout {
+                                            spacing: 4px;
+                                            Text {
+                                                text: "🔒";
+                                                font-family: "Noto Sans Symbols 2";
+                                                color: Theme.text-muted;
+                                                font-size: 11px * AppState.text-scale;
+                                            }
+
+                                            Text {
+                                                text: "PIN set";
+                                                color: Theme.text-muted;
+                                                font-size: 11px * AppState.text-scale;
+                                            }
                                         }
                                     }
                                 }

@@ -259,7 +259,7 @@ export component DiscoverScreen inherits Rectangle {
 
                     Text {
                         text: AppState.discover-header-focused
-                            ? AppState.caret-text(AppState.discover-query, AppState.discover-query-cursor, "▌")
+                            ? AppState.caret-text(AppState.discover-query, AppState.discover-query-cursor, "|")
                             : AppState.discover-query != "" ? AppState.discover-query
                             : "Search for movies and TV shows not in your library…";
                         color: AppState.discover-query != "" ? Theme.text
@@ -345,7 +345,7 @@ export component DiscoverScreen inherits Rectangle {
 
                 FilterPill {
                     idx: 6;
-                    text: "✕ Clear";
+                    text: "× Clear";
                     active: AppState.discover-filter-bar-active && AppState.discover-filter-bar-focused == 6;
                 }
             }
