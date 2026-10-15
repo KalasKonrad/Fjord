@@ -1330,7 +1330,9 @@ mod tests {
         let e =
             anyhow::anyhow!("HTTP 500 Internal Server Error for url (http://host/Items?api_key=x)");
         assert_eq!(short_error(&e), "HTTP 500 Internal Server Error for url");
-        let e = anyhow::anyhow!("Bonfire request failed: 400 Bad Request — This account has no PIN set");
+        let e = anyhow::anyhow!(
+            "Bonfire request failed: 400 Bad Request — This account has no PIN set"
+        );
         assert_eq!(short_error(&e), "This account has no PIN set");
         let long = "x".repeat(150);
         assert_eq!(short_error(&anyhow::anyhow!(long)).chars().count(), 101);

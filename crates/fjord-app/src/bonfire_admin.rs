@@ -309,7 +309,10 @@ pub(crate) fn on_bonfire_admin_set_limit(
             }
             Err(e) => {
                 warn!("bonfire_admin_set_profile_limit: {e:#}");
-                let msg = format!("Couldn't update the profile limit — {}", crate::short_error(&e));
+                let msg = format!(
+                    "Couldn't update the profile limit — {}",
+                    crate::short_error(&e)
+                );
                 show_toast(ww, msg);
             }
         }
