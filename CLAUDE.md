@@ -243,8 +243,9 @@ Needs `mpv`/libmpv (`pacman -S mpv`). Optional at runtime: `yt-dlp` (trailers), 
    `[X.Y.Z] — <date>` section (New / Improved / Fixed) + a fresh empty `[Unreleased]`.
 2. Merge into `main`, tag `vX.Y.Z` (annotated) on main, push both (ask first). CI publishes the release
    "Fjord vX.Y.Z" with the tarball and that CHANGELOG section (the run fails without it).
-3. After CI: `pkgver=X.Y.Z` in `PKGBUILD` (fjord, builds the tag) and `fjord-bin/PKGBUILD` (+ the tarball's
-   sha256), commit on `main`, then branch the next `release-*` from `main`.
+3. After CI, on `main`: `scripts/bump-packages.sh` (sets `pkgver` in `PKGBUILD` and `fjord-bin/PKGBUILD` and
+   fjord-bin's sha256 from the published tarball, after checking it was built from the tag), commit, push;
+   then branch the next `release-*` from `main`.
 
 ## Testing
 - Dev machine: AMD, KDE Wayland. HTPC: NVIDIA legacy (Pascal), KDE Wayland — the primary target, tested less often.
