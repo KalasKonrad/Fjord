@@ -67,7 +67,7 @@
 //   Seerr integration     settings-seerr-enabled, seerr-connected/-label (connected implies enabled),
 //                         seerr-unencrypted, open-connect-seerr, seerr-disconnect; streaming/discover region,
 //                         display/discover language dropdowns (dynamic, Settings → Integrations, shown while
-//                         connected); settings-trailer-quality (static, Settings → Player); yt-dlp-available; seerr-is-admin
+//                         connected); settings-trailer-quality (static, Settings → Playback); yt-dlp-available; seerr-is-admin
 //                         (MANAGE_REQUESTS), seerr-can-manage-blocklist; ConnectSeerrScreen: show-connect-seerr,
 //                         connect-seerr-zone/-method (0-3)/-error/-busy/-qc-code/-qc-secret/-qc-polling +
 //                         connect-seerr-api-key/-jellyfin/-local/-quickconnect-start/-poll
@@ -512,7 +512,7 @@ export global AppState {
     // with onscreen-keyboard-row-lens by hand (10+9+9+5-1 = 32).
     out property <int> onscreen-keyboard-done-cursor: 32;
     // The one way Slint opens the on-screen keyboard. With it turned off in
-    // Settings → UI nothing changes and false comes back, so the caller keeps
+    // Settings → Interface nothing changes and false comes back, so the caller keeps
     // its field's focus and does its own Enter action instead (opening it anyway
     // left an undrawn keyboard holding focus — no key did anything, 2026-10-10).
     // Rust's twin: keys::open_onscreen_keyboard.
@@ -1385,7 +1385,7 @@ export global AppState {
     in-out property <string> settings-tscale:               "oversample";
     in-out property <string> settings-tone-mapping:         "auto";
     in-out property <bool> settings-target-colorspace-hint: false;
-    // Settings → Video → HDR → "Separate video surface" (HDR Stage 5,
+    // Settings → Display → HDR → "Separate video surface" (HDR Stage 5,
     // 2026-10-05, default on) — row only shown on Wayland (is-wayland, set
     // by Rust once the window's Wayland handles are known).
     in-out property <bool> settings-separate-video-surface: true;
@@ -1487,14 +1487,14 @@ export global AppState {
     // Credits mode: "always-skip"|"ask"|"never-skip" (no ask-timed — banner has its own countdown)
     in-out property <string> settings-skip-credits-mode:    "ask";
     in-out property <int> settings-skip-credits-secs:    30;
-    // Poster card size (Settings → UI, per profile): "normal" | "large" | "extra-large".
+    // Poster card size (Settings → Interface, per profile): "normal" | "large" | "extra-large".
     // card-scale multiplies every poster card's size — the dashboard/Discover rows (main.slint's
     // dash-card-w/-h), the library/artist/collection/Discover grids (+ fewer columns) and
     // SectionRow's default (detail/series/person/season/collection rows).
     in-out property <string> settings-card-size:    "normal";
     out property <float> card-scale: settings-card-size == "large" ? 1.25 : settings-card-size == "extra-large" ? 1.5 : 1.0;
 
-    // ── Player seek step (Settings → Player → Seeking) ───────────────────────
+    // ── Player seek step (Settings → Playback → Skipping) ───────────────────────
     in-out property <int> settings-seek-step-secs:       10;
     in-out property <int> settings-seek-step-long-secs:  30;
     // Base ms of the skip-segment fade-to-black + audio ramp/mute, before the
@@ -1502,7 +1502,7 @@ export global AppState {
     // wire_mpv_timer's wait/ramp, so the two always agree. 0 = an instant cut.
     in-out property <int> settings-skip-fade-ms:        200;
 
-    // ── UI animation speed (Settings → UI) — ratios (1.0 = 100%, hand-tuned
+    // ── UI animation speed (Settings → Interface) — ratios (1.0 = 100%, hand-tuned
     // durations unchanged), not raw percentages, so every animate block can
     // multiply its duration directly without a /100 at each of ~119 sites.
     in-out property <int> settings-scroll-speed-pct:     100;
@@ -1510,7 +1510,7 @@ export global AppState {
     in property <float> settings-scroll-speed:         1.0;
     in property <float> settings-animation-speed:      1.0;
 
-    // ── Text font (Settings → UI) — same dynamic-dropdown shape as the audio
+    // ── Text font (Settings → Interface) — same dynamic-dropdown shape as the audio
     // device rows above, fetched via fc-list instead of mpv. settings-font-family
     // is the actual value MainWindow.font-family binds to ("Inter" | "" | any
     // other installed family name); settings-font-family-desc is its human-
@@ -1520,7 +1520,7 @@ export global AppState {
     in-out property <[string]> settings-font-family-display:  [];
     callback font-family-selected(string);
 
-    // ── On-screen alphanumeric keyboard (Settings → UI) ─────────────────────────
+    // ── On-screen alphanumeric keyboard (Settings → Interface) ─────────────────────────
     // Config.device.onscreen_keyboard_enabled, default true (Fjord must work without a
     // physical keyboard). Checked by open-onscreen-keyboard (nothing opens when off),
     // every QwertyKeyboard mount, and keys.rs's keyboard gate.
@@ -1594,7 +1594,7 @@ export global AppState {
     // CollectionScreen's bulk blocklist and Settings → Integrations → Manage Blocklist.
     in-out property <bool> seerr-can-manage-blocklist: false;
 
-    // Trailer quality (Settings → Player, always shown — every YouTube trailer uses it): a static
+    // Trailer quality (Settings → Playback, always shown — every YouTube trailer uses it): a static
     // dropdown ("Best"/"1080p"/"720p"/"480p") through settings.rs's generic dropdown
     // path. Caps mpv's ytdl-format for trailers (trailer_ytdl_format); default "1080p"
     // (Config.trailer_quality), display values stored directly.

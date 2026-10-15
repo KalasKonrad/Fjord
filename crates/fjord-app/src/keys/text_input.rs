@@ -1,6 +1,6 @@
 // ── fjord-app · keys/text_input.rs ───────────────────────────────────────────
 //   open_onscreen_keyboard  the one Rust way to open the on-screen keyboard; false (nothing
-//                      changed) when Settings → UI has it off — the caller then does its own Enter
+//                      changed) when Settings → Interface has it off — the caller then does its own Enter
 //                      action. Slint twin: AppState.open-onscreen-keyboard
 //   onscreen_keyboard_move_row  Up/Down across QwertyKeyboard's centered rows of different
 //                      lengths: nearest key by on-screen position
@@ -15,7 +15,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 use super::*;
 
-/// Opens the on-screen keyboard for `target` — unless Settings → UI has it turned
+/// Opens the on-screen keyboard for `target` — unless Settings → Interface has it turned
 /// off: then nothing changes and `false` comes back, so the caller keeps its own
 /// Enter behaviour (an opened-but-undrawn keyboard used to swallow focus, 2026-10-10).
 /// Slint's twin: `AppState.open-onscreen-keyboard`.

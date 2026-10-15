@@ -3,28 +3,32 @@
 //     Left pane      sections from the parallel sect-keys/sect-labels arrays, keyed on
 //                    AppState.settings-section (a string); a SERVER/CLIENT/SEERR info block
 //                    pinned to the bottom ("Not encrypted (http://)" for plain-HTTP connections)
-//     Right pane     Flickable; one `if` block per section (virtual rows are `if`-gated):
-//       General      launch fullscreen, video behind UI, log level, prewarm metadata/images
+//     Right pane     Flickable; one `if` block per section (virtual rows are `if`-gated), grouped
+//                    by task since 0.5.1 (row keys keep their old prefixes); rows saved per profile
+//                    carry `per-profile: true` (the "Profile" tag):
+//       Playback     intro/recap/preview/commercial modes (+ secs for ask-timed), credits mode
+//                    (+ secs), skip-fade ms; seek steps; trailer quality
+//       Subtitles &  audio language; subtitles (+ languages, type, scale, position, ASS styling,
+//        language    color, background)
+//       Display      launch fullscreen; HDR passthrough, separate video surface (Wayland), tone
+//                    mapping (+ per-curve description); display sync (+ screen, resolution/refresh
+//                    sync, default resolution/Hz, 4K/1080p scaling, 4K odd-fps mode, HDR/WCG
+//                    modes, trailers)
+//       Audio        device, channels, SPDIF (+ AC3/EAC3/DTS/DTS-HD/TrueHD, passthrough device,
+//                    ALSA IRQ scheduling on PipeWire, skip-fade mute); gapless, Now Playing
+//                    auto-open
+//       Interface    ("ui") card size, video behind UI, text font, on-screen keyboard, scroll and
+//                    animation speed
 //       Profiles     launch policy (+ default profile), Manage Profiles (master account),
 //                    account launch policy (+ default account), Add Account, remember login,
 //                    Sign Out, Bonfire Group (master account), Bonfire Admin (server admin)
-//       Video        hwdec, vf (NVDEC only), deinterlace, video-sync, interpolation (+ tscale),
-//                    target colorspace, separate video surface (+ own 10-bit buffers; Wayland),
-//                    dithering off, tone mapping (+ per-curve description), early flush,
-//                    latency hacks (display-resample), display sync (+ screen, resolution/
-//                    refresh sync, default resolution/Hz, 4K/1080p scaling, 4K odd-fps mode,
-//                    HDR/WCG modes, trailers)
-//       Audio        device, channels, SPDIF (+ AC3/EAC3/DTS/DTS-HD/TrueHD, passthrough device,
-//                    ALSA IRQ scheduling on PipeWire, skip-fade mute), audio language,
-//                    gapless, Now Playing auto-open
-//       Player       subtitles (+ languages, type, scale, position, ASS styling, color,
-//                    background), cache secs/MB, intro/recap/preview/commercial modes (+ secs
-//                    for ask-timed), credits mode (+ secs), seek steps, skip-fade ms
-//       Key Bindings rebind rows (keybinding-focused 0..N, positional) + Reset to Defaults
-//       UI           scroll speed, animation speed, text font, on-screen keyboard
 //       Integrations Seerr enabled, Connect/Disconnect, then (connected) streaming region,
-//                    trailer quality, display/discover language, discover region, Manage
-//                    Blocklist (seerr-can-manage-blocklist)
+//                    display/discover language, discover region, Manage Blocklist
+//                    (seerr-can-manage-blocklist)
+//       Key Bindings rebind rows (keybinding-focused 0..N, positional) + Reset to Defaults
+//       Advanced     hwdec, vf (NVDEC only), deinterlace; video-sync, interpolation (+ tscale);
+//                    early flush, latency hacks (display-resample); own 10-bit buffers (separate
+//                    surface), dithering off; cache secs/MB; prewarm metadata/images; log level
 //     Dialogs        Key Bindings reset + rebind-collision confirms, Disconnect Seerr confirm
 //   Row identity     every row has a stable string `key` = the constant in settings.rs (keep the
 //                    two lists in sync); a mouse click goes through AppState.settings-row-focused
@@ -67,25 +71,28 @@ export component SettingsScreen inherits Rectangle {
         + 22px                          // target the row's vertical center
     }
 
+    // Sidebar order — must match settings.rs's ALL_SECTIONS.
     property <[string]> sect-keys:   [
-        "general",
-        "profiles",
-        "video",
+        "playback",
+        "language",
+        "display",
         "audio",
-        "player",
-        "keybindings",
         "ui",
-        "integrations"
+        "profiles",
+        "integrations",
+        "keybindings",
+        "advanced"
     ];
     property <[string]> sect-labels: [
-        "General",
-        "Profiles",
-        "Video",
+        "Playback",
+        "Subtitles & language",
+        "Display",
         "Audio",
-        "Player",
+        "Interface",
+        "Profiles",
+        "Integrations",
         "Key Bindings",
-        "UI",
-        "Integrations"
+        "Advanced"
     ];
 
     HorizontalLayout {
@@ -315,12 +322,566 @@ export component SettingsScreen inherits Rectangle {
                     width: parent.width - Theme.sp-xl * 2;
                     x: Theme.sp-xl;
 
-                    // ── General section ───────────────────────────────────────────
-                if AppState.settings-section == "general": VerticalLayout {
+                    // ── Playback section ────────────────────────────────────────────────────
+                if AppState.settings-section == "playback": VerticalLayout {
                         spacing: Theme.sp-sm;
 
                         SectionHeader {
-                            text: "GENERAL";
+                            text: "SKIPPING";
+                        }
+
+                        SettingsRow {
+                            key: "player.intro_mode";
+                            per-profile: true;
+                            title: "Intro";
+                            subtitle: "What to do when an intro segment is detected";
+                            SettingsDropdown {
+                                model: ["Always skip", "Ask", "Ask (timed)", "Never skip"];
+                                current-value: AppState.settings-skip-intro-mode == "always-skip" ? "Always skip"
+                                    : AppState.settings-skip-intro-mode == "ask-timed" ? "Ask (timed)"
+                                    : AppState.settings-skip-intro-mode == "never-skip" ? "Never skip" : "Ask";
+                                selected(v) => {
+                                    AppState.settings-skip-intro-mode = v == "Always skip" ? "always-skip"
+                                        : v == "Ask (timed)" ? "ask-timed"
+                                        : v == "Never skip" ? "never-skip" : "ask";
+                                    AppState.settings-changed();
+                                    AppState.refocus();
+                                }
+                            }
+                        }
+
+                        if AppState.settings-skip-intro-mode == "ask-timed": SettingsRow {
+                            key: "player.intro_secs";
+                            per-profile: true;
+                            indent: true;
+                            title: "Auto-skip after";
+                            subtitle: "Seconds before the intro is skipped automatically";
+                            SettingsDropdown {
+                                model: ["3", "5", "8", "10", "15", "20", "30"];
+                                current-value: AppState.settings-skip-intro-secs == 3 ? "3"
+                                    : AppState.settings-skip-intro-secs == 5 ? "5"
+                                    : AppState.settings-skip-intro-secs == 10 ? "10"
+                                    : AppState.settings-skip-intro-secs == 15 ? "15"
+                                    : AppState.settings-skip-intro-secs == 20 ? "20"
+                                    : AppState.settings-skip-intro-secs == 30 ? "30" : "8";
+                                selected(v) => {
+                                    AppState.settings-skip-intro-secs = v == "3" ? 3 : v == "5" ? 5
+                                        : v == "10" ? 10 : v == "15" ? 15 : v == "20" ? 20 : v == "30" ? 30 : 8;
+                                    AppState.settings-changed();
+                                    AppState.refocus();
+                                }
+                            }
+                        }
+
+                        SettingsRow {
+                            key: "player.recap_mode";
+                            per-profile: true;
+                            title: "Recap";
+                            subtitle: "What to do when a recap segment is detected";
+                            SettingsDropdown {
+                                model: ["Always skip", "Ask", "Ask (timed)", "Never skip"];
+                                current-value: AppState.settings-skip-recap-mode == "always-skip" ? "Always skip"
+                                    : AppState.settings-skip-recap-mode == "ask-timed" ? "Ask (timed)"
+                                    : AppState.settings-skip-recap-mode == "never-skip" ? "Never skip" : "Ask";
+                                selected(v) => {
+                                    AppState.settings-skip-recap-mode = v == "Always skip" ? "always-skip"
+                                        : v == "Ask (timed)" ? "ask-timed"
+                                        : v == "Never skip" ? "never-skip" : "ask";
+                                    AppState.settings-changed();
+                                    AppState.refocus();
+                                }
+                            }
+                        }
+
+                        if AppState.settings-skip-recap-mode == "ask-timed": SettingsRow {
+                            key: "player.recap_secs";
+                            per-profile: true;
+                            indent: true;
+                            title: "Auto-skip after";
+                            subtitle: "Seconds before the recap is skipped automatically";
+                            SettingsDropdown {
+                                model: ["3", "5", "8", "10", "15", "20", "30"];
+                                current-value: AppState.settings-skip-recap-secs == 3 ? "3"
+                                    : AppState.settings-skip-recap-secs == 5 ? "5"
+                                    : AppState.settings-skip-recap-secs == 10 ? "10"
+                                    : AppState.settings-skip-recap-secs == 15 ? "15"
+                                    : AppState.settings-skip-recap-secs == 20 ? "20"
+                                    : AppState.settings-skip-recap-secs == 30 ? "30" : "8";
+                                selected(v) => {
+                                    AppState.settings-skip-recap-secs = v == "3" ? 3 : v == "5" ? 5
+                                        : v == "10" ? 10 : v == "15" ? 15 : v == "20" ? 20 : v == "30" ? 30 : 8;
+                                    AppState.settings-changed();
+                                    AppState.refocus();
+                                }
+                            }
+                        }
+
+                        SettingsRow {
+                            key: "player.preview_mode";
+                            per-profile: true;
+                            title: "Preview";
+                            subtitle: "What to do when a preview segment is detected";
+                            SettingsDropdown {
+                                model: ["Always skip", "Ask", "Ask (timed)", "Never skip"];
+                                current-value: AppState.settings-skip-preview-mode == "always-skip" ? "Always skip"
+                                    : AppState.settings-skip-preview-mode == "ask-timed" ? "Ask (timed)"
+                                    : AppState.settings-skip-preview-mode == "never-skip" ? "Never skip" : "Ask";
+                                selected(v) => {
+                                    AppState.settings-skip-preview-mode = v == "Always skip" ? "always-skip"
+                                        : v == "Ask (timed)" ? "ask-timed"
+                                        : v == "Never skip" ? "never-skip" : "ask";
+                                    AppState.settings-changed();
+                                    AppState.refocus();
+                                }
+                            }
+                        }
+
+                        if AppState.settings-skip-preview-mode == "ask-timed": SettingsRow {
+                            key: "player.preview_secs";
+                            per-profile: true;
+                            indent: true;
+                            title: "Auto-skip after";
+                            subtitle: "Seconds before the preview is skipped automatically";
+                            SettingsDropdown {
+                                model: ["3", "5", "8", "10", "15", "20", "30"];
+                                current-value: AppState.settings-skip-preview-secs == 3 ? "3"
+                                    : AppState.settings-skip-preview-secs == 5 ? "5"
+                                    : AppState.settings-skip-preview-secs == 10 ? "10"
+                                    : AppState.settings-skip-preview-secs == 15 ? "15"
+                                    : AppState.settings-skip-preview-secs == 20 ? "20"
+                                    : AppState.settings-skip-preview-secs == 30 ? "30" : "8";
+                                selected(v) => {
+                                    AppState.settings-skip-preview-secs = v == "3" ? 3 : v == "5" ? 5
+                                        : v == "10" ? 10 : v == "15" ? 15 : v == "20" ? 20 : v == "30" ? 30 : 8;
+                                    AppState.settings-changed();
+                                    AppState.refocus();
+                                }
+                            }
+                        }
+
+                        SettingsRow {
+                            key: "player.commercial_mode";
+                            per-profile: true;
+                            title: "Commercial";
+                            subtitle: "What to do when a commercial segment is detected";
+                            SettingsDropdown {
+                                model: ["Always skip", "Ask", "Ask (timed)", "Never skip"];
+                                current-value: AppState.settings-skip-commercial-mode == "always-skip" ? "Always skip"
+                                    : AppState.settings-skip-commercial-mode == "ask-timed" ? "Ask (timed)"
+                                    : AppState.settings-skip-commercial-mode == "never-skip" ? "Never skip" : "Ask";
+                                selected(v) => {
+                                    AppState.settings-skip-commercial-mode = v == "Always skip" ? "always-skip"
+                                        : v == "Ask (timed)" ? "ask-timed"
+                                        : v == "Never skip" ? "never-skip" : "ask";
+                                    AppState.settings-changed();
+                                    AppState.refocus();
+                                }
+                            }
+                        }
+
+                        if AppState.settings-skip-commercial-mode == "ask-timed": SettingsRow {
+                            key: "player.commercial_secs";
+                            per-profile: true;
+                            indent: true;
+                            title: "Auto-skip after";
+                            subtitle: "Seconds before the commercial is skipped automatically";
+                            SettingsDropdown {
+                                model: ["3", "5", "8", "10", "15", "20", "30"];
+                                current-value: AppState.settings-skip-commercial-secs == 3 ? "3"
+                                    : AppState.settings-skip-commercial-secs == 5 ? "5"
+                                    : AppState.settings-skip-commercial-secs == 10 ? "10"
+                                    : AppState.settings-skip-commercial-secs == 15 ? "15"
+                                    : AppState.settings-skip-commercial-secs == 20 ? "20"
+                                    : AppState.settings-skip-commercial-secs == 30 ? "30" : "8";
+                                selected(v) => {
+                                    AppState.settings-skip-commercial-secs = v == "3" ? 3 : v == "5" ? 5
+                                        : v == "10" ? 10 : v == "15" ? 15 : v == "20" ? 20 : v == "30" ? 30 : 8;
+                                    AppState.settings-changed();
+                                    AppState.refocus();
+                                }
+                            }
+                        }
+
+                        SettingsRow {
+                            key: "player.credits_mode";
+                            per-profile: true;
+                            title: "Credits / Up Next";
+                            subtitle: "What to do when credits start; controls the Up Next auto-advance banner";
+                            SettingsDropdown {
+                                model: ["Always skip", "Ask", "Never skip"];
+                                current-value: AppState.settings-skip-credits-mode == "always-skip" ? "Always skip"
+                                    : AppState.settings-skip-credits-mode == "never-skip" ? "Never skip" : "Ask";
+                                selected(v) => {
+                                    AppState.settings-skip-credits-mode = v == "Always skip" ? "always-skip"
+                                        : v == "Never skip" ? "never-skip" : "ask";
+                                    AppState.settings-changed();
+                                    AppState.refocus();
+                                }
+                            }
+                        }
+
+                        if AppState.settings-skip-credits-mode == "ask": SettingsRow {
+                            key: "player.credits_secs";
+                            per-profile: true;
+                            indent: true;
+                            title: "Countdown";
+                            subtitle: "Seconds shown on the Up Next banner before auto-advancing";
+                            SettingsDropdown {
+                                model: ["10", "15", "20", "30", "45", "60"];
+                                current-value: AppState.settings-skip-credits-secs == 10 ? "10"
+                                    : AppState.settings-skip-credits-secs == 15 ? "15"
+                                    : AppState.settings-skip-credits-secs == 20 ? "20"
+                                    : AppState.settings-skip-credits-secs == 45 ? "45"
+                                    : AppState.settings-skip-credits-secs == 60 ? "60" : "30";
+                                selected(v) => {
+                                    AppState.settings-skip-credits-secs = v == "10" ? 10 : v == "15" ? 15
+                                        : v == "20" ? 20 : v == "45" ? 45 : v == "60" ? 60 : 30;
+                                    AppState.settings-changed();
+                                    AppState.refocus();
+                                }
+                            }
+                        }
+
+                        SettingsRow {
+                            key: "player.skip_fade_ms";
+                            title: "Skip fade duration";
+                            subtitle: "Fade to black around an intro/recap/preview/commercial skip, instead of cutting instantly. Audio fades with it (mutes for the window on SPDIF passthrough, since a raw bitstream can't be volume-ramped). \"Off (instant)\" is today's original hard cut.";
+                            SettingsDropdown {
+                                model: ["Off (instant)", "100", "150", "200", "300", "400", "500", "750", "1000"];
+                                current-value: AppState.settings-skip-fade-ms == 0 ? "Off (instant)"
+                                    : AppState.settings-skip-fade-ms == 100 ? "100"
+                                    : AppState.settings-skip-fade-ms == 150 ? "150"
+                                    : AppState.settings-skip-fade-ms == 300 ? "300"
+                                    : AppState.settings-skip-fade-ms == 400 ? "400"
+                                    : AppState.settings-skip-fade-ms == 500 ? "500"
+                                    : AppState.settings-skip-fade-ms == 750 ? "750"
+                                    : AppState.settings-skip-fade-ms == 1000 ? "1000" : "200";
+                                selected(v) => {
+                                    AppState.settings-skip-fade-ms = v == "Off (instant)" ? 0
+                                        : v == "100" ? 100
+                                        : v == "150" ? 150
+                                        : v == "300" ? 300
+                                        : v == "400" ? 400
+                                        : v == "500" ? 500
+                                        : v == "750" ? 750
+                                        : v == "1000" ? 1000 : 200;
+                                    AppState.settings-changed();
+                                    AppState.refocus();
+                                }
+                            }
+                        }
+
+                        SectionHeader {
+                            text: "SEEKING";
+                        }
+
+                        SettingsRow {
+                            key: "player.seek_step";
+                            title: "Seek step";
+                            subtitle: "Left/Right arrow seek amount during playback";
+                            SettingsDropdown {
+                                model: ["5", "10", "15", "20", "30"];
+                                current-value: AppState.settings-seek-step-secs == 5 ? "5"
+                                    : AppState.settings-seek-step-secs == 15 ? "15"
+                                    : AppState.settings-seek-step-secs == 20 ? "20"
+                                    : AppState.settings-seek-step-secs == 30 ? "30" : "10";
+                                selected(v) => {
+                                    AppState.settings-seek-step-secs = v == "5" ? 5
+                                        : v == "15" ? 15
+                                        : v == "20" ? 20
+                                        : v == "30" ? 30 : 10;
+                                    AppState.settings-changed();
+                                    AppState.refocus();
+                                }
+                            }
+                        }
+
+                        SettingsRow {
+                            key: "player.seek_step_long";
+                            title: "Long seek step";
+                            subtitle: "Shift+Left/Right arrow seek amount during playback";
+                            SettingsDropdown {
+                                model: ["15", "30", "45", "60", "120"];
+                                current-value: AppState.settings-seek-step-long-secs == 15 ? "15"
+                                    : AppState.settings-seek-step-long-secs == 45 ? "45"
+                                    : AppState.settings-seek-step-long-secs == 60 ? "60"
+                                    : AppState.settings-seek-step-long-secs == 120 ? "120" : "30";
+                                selected(v) => {
+                                    AppState.settings-seek-step-long-secs = v == "15" ? 15
+                                        : v == "45" ? 45
+                                        : v == "60" ? 60
+                                        : v == "120" ? 120 : 30;
+                                    AppState.settings-changed();
+                                    AppState.refocus();
+                                }
+                            }
+                        }
+
+                        SectionHeader {
+                            text: "TRAILERS";
+                        }
+
+                        // Trailer quality: caps the resolution of every YouTube trailer (Discover and the
+                        // movie/series Trailer buttons) — no Seerr needed, so always visible (0.5.1; it
+                        // used to sit in Integrations behind "Seerr connected").
+                    SettingsRow {
+                            key: "player.trailer_quality";
+                            per-profile: true;
+                            title: "Trailer quality";
+                            subtitle: "Caps the resolution of YouTube trailers (Discover and the movie/series Trailer buttons) — lower starts faster";
+                            SettingsDropdown {
+                                model: ["Best", "1080p", "720p", "480p"];
+                                current-value: AppState.settings-trailer-quality;
+                                selected(v) => { AppState.settings-trailer-quality = v; AppState.settings-changed(); AppState.refocus(); }
+                            }
+                        }
+                    }
+
+                    // ── Subtitles & language section ────────────────────────────────────────
+                if AppState.settings-section == "language": VerticalLayout {
+                        spacing: Theme.sp-sm;
+
+                        SectionHeader {
+                            text: "AUDIO";
+                        }
+
+                        SettingsRow {
+                            key: "audio.lang";
+                            per-profile: true;
+                            title: "Preferred audio language";
+                            subtitle: "Auto-select matching audio track when found; no preference = use video default";
+                            SettingsDropdown {
+                                model: [
+                                    "Default",
+                                    "English",
+                                    "German",
+                                    "French",
+                                    "Japanese",
+                                    "Spanish",
+                                    "Italian",
+                                    "Portuguese",
+                                    "Russian",
+                                    "Korean",
+                                    "Chinese",
+                                    "Dutch",
+                                    "Swedish",
+                                    "Polish",
+                                    "Czech",
+                                    "Arabic",
+                                    "Turkish",
+                                    "Finnish",
+                                    "Danish",
+                                    "Norwegian"
+                                ];
+                                current-value: AppState.settings-audio-lang == "" ? "Default" : AppState.settings-audio-lang;
+                                selected(v) => { AppState.settings-audio-lang = v == "Default" ? "" : v; AppState.settings-changed(); AppState.refocus(); }
+                            }
+                        }
+
+                        SectionHeader {
+                            text: "SUBTITLES";
+                        }
+
+                        SettingsRow {
+                            key: "player.sub_enabled";
+                            per-profile: true;
+                            title: "Enable subtitles";
+                            subtitle: "Off always disables subtitles regardless of language settings";
+                            ToggleSwitch {
+                                checked <=> AppState.settings-sub-enabled;
+                                toggled => { AppState.settings-changed(); AppState.refocus(); }
+                            }
+                        }
+
+                        if AppState.settings-sub-enabled: SettingsRow {
+                            key: "player.sub_lang";
+                            per-profile: true;
+                            indent: true;
+                            title: "Primary language";
+                            subtitle: "Auto-select first matching track; no preference = use video default";
+                            SettingsDropdown {
+                                model: [
+                                    "Default",
+                                    "English",
+                                    "German",
+                                    "French",
+                                    "Japanese",
+                                    "Spanish",
+                                    "Italian",
+                                    "Portuguese",
+                                    "Russian",
+                                    "Korean",
+                                    "Chinese",
+                                    "Dutch",
+                                    "Swedish",
+                                    "Polish",
+                                    "Czech",
+                                    "Arabic",
+                                    "Turkish",
+                                    "Finnish",
+                                    "Danish",
+                                    "Norwegian"
+                                ];
+                                current-value: AppState.settings-sub-lang == "" ? "Default" : AppState.settings-sub-lang;
+                                selected(v) => { AppState.settings-sub-lang = v == "Default" ? "" : v; AppState.settings-changed(); AppState.refocus(); }
+                            }
+                        }
+
+                        if AppState.settings-sub-enabled: SettingsRow {
+                            key: "player.sub_lang2";
+                            per-profile: true;
+                            indent: true;
+                            title: "Fallback language";
+                            subtitle: "Tried if the primary language isn't found; if this isn't found either, falls back to video default";
+                            SettingsDropdown {
+                                model: [
+                                    "Default",
+                                    "English",
+                                    "German",
+                                    "French",
+                                    "Japanese",
+                                    "Spanish",
+                                    "Italian",
+                                    "Portuguese",
+                                    "Russian",
+                                    "Korean",
+                                    "Chinese",
+                                    "Dutch",
+                                    "Swedish",
+                                    "Polish",
+                                    "Czech",
+                                    "Arabic",
+                                    "Turkish",
+                                    "Finnish",
+                                    "Danish",
+                                    "Norwegian"
+                                ];
+                                current-value: AppState.settings-sub-lang2 == "" ? "Default" : AppState.settings-sub-lang2;
+                                selected(v) => { AppState.settings-sub-lang2 = v == "Default" ? "" : v; AppState.settings-changed(); AppState.refocus(); }
+                            }
+                        }
+
+                        if AppState.settings-sub-enabled: SettingsRow {
+                            key: "player.sub_type";
+                            per-profile: true;
+                            indent: true;
+                            title: "Subtitle type";
+                            subtitle: "Prefer Normal (no tags), Forced (foreign lines only), or Hearing Impaired (SDH)";
+                            SettingsDropdown {
+                                model: ["Any", "Normal", "Forced", "Hearing Impaired"];
+                                current-value: AppState.settings-sub-type == "" ? "Any" : AppState.settings-sub-type;
+                                selected(v) => { AppState.settings-sub-type = v == "Any" ? "" : v; AppState.settings-changed(); AppState.refocus(); }
+                            }
+                        }
+
+                        if AppState.settings-sub-enabled: SettingsRow {
+                            key: "player.sub_scale";
+                            per-profile: true;
+                            indent: true;
+                            title: "Subtitle size";
+                            subtitle: "Applies to both plain and styled (ASS) subtitles";
+                            SettingsDropdown {
+                                model: ["50", "75", "100", "125", "150", "175", "200"];
+                                current-value: AppState.settings-sub-scale-pct == 50 ? "50"
+                                    : AppState.settings-sub-scale-pct == 75 ? "75"
+                                    : AppState.settings-sub-scale-pct == 125 ? "125"
+                                    : AppState.settings-sub-scale-pct == 150 ? "150"
+                                    : AppState.settings-sub-scale-pct == 175 ? "175"
+                                    : AppState.settings-sub-scale-pct == 200 ? "200" : "100";
+                                selected(v) => {
+                                    AppState.settings-sub-scale-pct = v == "50" ? 50
+                                        : v == "75" ? 75
+                                        : v == "125" ? 125
+                                        : v == "150" ? 150
+                                        : v == "175" ? 175
+                                        : v == "200" ? 200 : 100;
+                                    AppState.settings-changed();
+                                    AppState.refocus();
+                                }
+                            }
+                        }
+
+                        if AppState.settings-sub-enabled: SettingsRow {
+                            key: "player.sub_pos";
+                            per-profile: true;
+                            indent: true;
+                            title: "Subtitle position";
+                            subtitle: "100 = mpv's default bottom position; higher pushes it lower still (may clip text/ASS subs)";
+                            SettingsDropdown {
+                                model: ["50", "60", "70", "80", "90", "95", "100", "110", "120", "130", "140", "150"];
+                                current-value: AppState.settings-sub-pos-pct == 50 ? "50"
+                                    : AppState.settings-sub-pos-pct == 60 ? "60"
+                                    : AppState.settings-sub-pos-pct == 70 ? "70"
+                                    : AppState.settings-sub-pos-pct == 80 ? "80"
+                                    : AppState.settings-sub-pos-pct == 90 ? "90"
+                                    : AppState.settings-sub-pos-pct == 95 ? "95"
+                                    : AppState.settings-sub-pos-pct == 110 ? "110"
+                                    : AppState.settings-sub-pos-pct == 120 ? "120"
+                                    : AppState.settings-sub-pos-pct == 130 ? "130"
+                                    : AppState.settings-sub-pos-pct == 140 ? "140"
+                                    : AppState.settings-sub-pos-pct == 150 ? "150" : "100";
+                                selected(v) => {
+                                    AppState.settings-sub-pos-pct = v == "50" ? 50
+                                        : v == "60" ? 60
+                                        : v == "70" ? 70
+                                        : v == "80" ? 80
+                                        : v == "90" ? 90
+                                        : v == "95" ? 95
+                                        : v == "110" ? 110
+                                        : v == "120" ? 120
+                                        : v == "130" ? 130
+                                        : v == "140" ? 140
+                                        : v == "150" ? 150 : 100;
+                                    AppState.settings-changed();
+                                    AppState.refocus();
+                                }
+                            }
+                        }
+
+                        if AppState.settings-sub-enabled: SettingsRow {
+                            key: "player.sub_respect_ass";
+                            per-profile: true;
+                            indent: true;
+                            title: "Respect subtitle's own styling (ASS)";
+                            subtitle: "Off lets Color/Background below also apply to styled subtitles — may render some files incorrectly";
+                            ToggleSwitch {
+                                checked <=> AppState.settings-sub-respect-ass-styling;
+                                toggled => { AppState.settings-changed(); AppState.refocus(); }
+                            }
+                        }
+
+                        if AppState.settings-sub-enabled && !AppState.settings-sub-respect-ass-styling: SettingsRow {
+                            key: "player.sub_color";
+                            per-profile: true;
+                            indent: true;
+                            title: "Subtitle color";
+                            subtitle: "Only affects plain subtitles unless styling above is not respected";
+                            SettingsDropdown {
+                                model: ["Default", "White", "Yellow", "Cyan", "Green"];
+                                current-value: AppState.settings-sub-color == "" ? "Default" : AppState.settings-sub-color;
+                                selected(v) => { AppState.settings-sub-color = v == "Default" ? "" : v; AppState.settings-changed(); AppState.refocus(); }
+                            }
+                        }
+
+                        if AppState.settings-sub-enabled && !AppState.settings-sub-respect-ass-styling: SettingsRow {
+                            key: "player.sub_background";
+                            per-profile: true;
+                            indent: true;
+                            title: "Subtitle background box";
+                            subtitle: "Draw a solid box behind subtitle text";
+                            ToggleSwitch {
+                                checked <=> AppState.settings-sub-background;
+                                toggled => { AppState.settings-changed(); AppState.refocus(); }
+                            }
+                        }
+                    }
+
+                    // ── Display section ─────────────────────────────────────────────────────
+                if AppState.settings-section == "display": VerticalLayout {
+                        spacing: Theme.sp-sm;
+
+                        SectionHeader {
+                            text: "WINDOW";
                         }
 
                         SettingsRow {
@@ -330,6 +891,415 @@ export component SettingsScreen inherits Rectangle {
                             ToggleSwitch {
                                 checked <=> AppState.settings-launch-fullscreen;
                                 toggled => { AppState.settings-changed(); AppState.refocus(); }
+                            }
+                        }
+
+                        SectionHeader {
+                            text: "HDR";
+                        }
+
+                        SettingsRow {
+                            key: "video.target_colorspace";
+                            title: "HDR passthrough";
+                            subtitle: "Pass HDR metadata to the compositor for native HDR output — if it isn't accepted, mpv automatically falls back to the Tone Mapping curve below";
+                            ToggleSwitch {
+                                checked <=> AppState.settings-target-colorspace-hint;
+                                toggled => { AppState.settings-changed(); AppState.refocus(); }
+                            }
+                        }
+
+                        // HDR Stage 5 (2026-10-05) — Wayland only (settings::section_row_keys mirrors this).
+                    if AppState.is-wayland: SettingsRow {
+                            key: "video.separate_video_surface";
+                            title: "Separate video surface";
+                            subtitle: "Keeps menus and the OSD in correct colours with HDR passthrough. Turn off if video playback stutters — menus then look wrong while HDR passthrough is on. Applies from the next video";
+                            ToggleSwitch {
+                                checked <=> AppState.settings-separate-video-surface;
+                                toggled => { AppState.settings-changed(); AppState.refocus(); }
+                            }
+                        }
+
+                        // Per-curve description, a ternary over settings-tone-mapping (one source of truth with
+                        // the dropdown). Some curves fail to compile on NVIDIA's GLSL compiler, so "auto" isn't
+                        // always safe (DEVLOG → HDR tone-mapping shader compile failure).
+                        //
+                        // Not gated on the colorspace hint: mpv's target-colorspace-hint-strict falls back to this
+                        // curve when the compositor refuses HDR passthrough, so the curve must stay choosable.
+                    SettingsRow {
+                            key: "video.tone_mapping";
+                            title: "Tone mapping";
+                            subtitle: AppState.settings-tone-mapping == "auto" ? "Lets mpv pick a curve automatically — usually fine, but if HDR playback hangs or shows a black screen, try a specific mode below instead" :
+                                AppState.settings-tone-mapping == "bt.2390" ? "The ITU-R BT.2390 standard curve — mpv's own modern reference algorithm; a solid, neutral pick if 'auto' misbehaves" :
+                                AppState.settings-tone-mapping == "hable" ? "Filmic curve (the one popularized by Uncharted 2) — favors punchy contrast; a common 'cinematic' look" :
+                                AppState.settings-tone-mapping == "mobius" ? "Smoothly compresses only the out-of-range highlights, leaving darker tones mostly untouched" :
+                                AppState.settings-tone-mapping == "reinhard" ? "Simple, gentle compression curve — safe and predictable, but can look slightly flat/desaturated in bright scenes" :
+                                AppState.settings-tone-mapping == "clip" ? "No real tone mapping — anything brighter than the display's range is just crushed to solid white, losing highlight detail" :
+                                AppState.settings-tone-mapping == "gamma" ? "Rescales brightness with a gamma curve, similar to simulating a lower-dynamic-range display" :
+                                AppState.settings-tone-mapping == "linear" ? "Linearly stretches the whole brightness range to fit the display — simple, but can look washed out on very bright content" :
+                                "HDR → SDR algorithm";
+                            indent: true;
+                            SettingsDropdown {
+                                model: ["auto", "hable", "bt.2390", "reinhard", "mobius", "clip", "gamma", "linear"];
+                                current-value: AppState.settings-tone-mapping;
+                                selected(v) => { AppState.settings-tone-mapping = v; AppState.settings-changed(); AppState.refocus(); }
+                            }
+                        }
+
+                        SectionHeader {
+                            text: "DISPLAY SYNC";
+                        }
+
+                        // Display sync — resolution/refresh-rate/HDR matching to the source via kscreen-doctor
+                        // (KDE Plasma Wayland only); see display_sync.rs.
+                    SettingsRow {
+                            key: "video.display_sync_enabled";
+                            title: "Sync display to source";
+                            subtitle: "Switch the physical display's resolution/refresh-rate/HDR to match whatever's playing, then revert on stop — KDE Plasma Wayland only, silently does nothing elsewhere";
+                            ToggleSwitch {
+                                checked <=> AppState.settings-display-sync-enabled;
+                                toggled => { AppState.settings-changed(); AppState.refocus(); }
+                            }
+                        }
+
+                        if AppState.settings-display-sync-enabled: SettingsRow {
+                            key: "video.display_sync_screen";
+                            title: "Output";
+                            subtitle: "The kscreen-doctor connector to switch — never auto-detected at runtime, only pre-filled once at startup if exactly one output was connected. Whichever one KDE reports as its primary display is marked (Primary)";
+                            indent: true;
+                            SettingsDropdown {
+                                model <=> AppState.settings-display-sync-screen-options;
+                                current-value: AppState.settings-display-sync-screen-desc != "" ? AppState.settings-display-sync-screen-desc : "(not detected)";
+                                selected(v) => { AppState.display-sync-screen-selected(v); AppState.refocus(); }
+                            }
+                        }
+
+                        if AppState.settings-display-sync-enabled: SettingsRow {
+                            key: "video.display_sync_sync_resolution";
+                            title: "Sync resolution";
+                            subtitle: "Off = resolution always stays pinned to the default below, only refresh rate varies by source";
+                            indent: true;
+                            ToggleSwitch {
+                                checked <=> AppState.settings-display-sync-sync-resolution;
+                                toggled => { AppState.settings-changed(); AppState.refocus(); }
+                            }
+                        }
+
+                        if AppState.settings-display-sync-enabled: SettingsRow {
+                            key: "video.display_sync_sync_refresh_rate";
+                            title: "Sync refresh rate";
+                            subtitle: "Off = refresh rate always stays pinned to the default Hz below, only resolution varies by source";
+                            indent: true;
+                            ToggleSwitch {
+                                checked <=> AppState.settings-display-sync-sync-refresh-rate;
+                                toggled => { AppState.settings-changed(); AppState.refocus(); }
+                            }
+                        }
+
+                        if AppState.settings-display-sync-enabled: SettingsRow {
+                            key: "video.display_sync_default_resolution";
+                            title: "Default resolution";
+                            subtitle: "Used for non-4K content, and as the fallback whenever a computed target mode isn't supported — real modes for the Output above, not a fixed list";
+                            indent: true;
+                            SettingsDropdown {
+                                model <=> AppState.settings-display-sync-resolution-options;
+                                current-value: AppState.settings-display-sync-default-resolution;
+                                selected(v) => { AppState.display-sync-resolution-selected(v); AppState.refocus(); }
+                            }
+                        }
+
+                        if AppState.settings-display-sync-enabled: SettingsRow {
+                            key: "video.display_sync_default_hz";
+                            title: "Default refresh rate";
+                            subtitle: "Used whenever the source's own framerate doesn't match a known cadence — real rates for the Output above, not a fixed list";
+                            indent: true;
+                            SettingsDropdown {
+                                model <=> AppState.settings-display-sync-hz-options;
+                                current-value: AppState.settings-display-sync-default-hz;
+                                selected(v) => { AppState.display-sync-hz-selected(v); AppState.refocus(); }
+                            }
+                        }
+
+                        if AppState.settings-display-sync-enabled: SettingsRow {
+                            key: "video.display_sync_scale_4k";
+                            title: "Desktop scale at 4K";
+                            subtitle: "Applied alongside every switch to a 4K mode, matching what the proven external script this ports always did";
+                            indent: true;
+                            SettingsDropdown {
+                                model: ["1.0", "1.25", "1.5", "1.75", "2.0"];
+                                current-value: AppState.settings-display-sync-scale-4k;
+                                selected(v) => { AppState.settings-display-sync-scale-4k = v; AppState.settings-changed(); AppState.refocus(); }
+                            }
+                        }
+
+                        if AppState.settings-display-sync-enabled: SettingsRow {
+                            key: "video.display_sync_scale_1080p";
+                            title: "Desktop scale at 1080p";
+                            subtitle: "Applied alongside every switch to a non-4K mode";
+                            indent: true;
+                            SettingsDropdown {
+                                model: ["1.0", "1.25", "1.5", "1.75", "2.0"];
+                                current-value: AppState.settings-display-sync-scale-1080p;
+                                selected(v) => { AppState.settings-display-sync-scale-1080p = v; AppState.settings-changed(); AppState.refocus(); }
+                            }
+                        }
+
+                        if AppState.settings-display-sync-enabled && AppState.settings-display-sync-sync-resolution: SettingsRow {
+                            key: "video.display_sync_4k_odd_fps_mode";
+                            title: "4K at an unusual framerate";
+                            subtitle: "4K content whose framerate doesn't match a known cadence (23.98/25/29.97) either falls back to the default resolution, or stays at 4K using the closest supported Hz";
+                            indent: true;
+                            SettingsDropdown {
+                                model: ["Fallback to default resolution", "Stay at 4K"];
+                                current-value: AppState.settings-display-sync-4k-odd-fps-mode == "stay_4k" ? "Stay at 4K" : "Fallback to default resolution";
+                                selected(v) => { AppState.settings-display-sync-4k-odd-fps-mode = v == "Stay at 4K" ? "stay_4k" : "fallback"; AppState.settings-changed(); AppState.refocus(); }
+                            }
+                        }
+
+                        if AppState.settings-display-sync-enabled: SettingsRow {
+                            key: "video.display_sync_hdr_mode";
+                            title: "HDR";
+                            subtitle: "Match source = enable HDR only for genuinely HDR/HLG content; Always/Never override that per-item decision entirely";
+                            indent: true;
+                            SettingsDropdown {
+                                model: ["Match source", "Never", "Always"];
+                                current-value: AppState.settings-display-sync-hdr-mode == "no" ? "Never" : AppState.settings-display-sync-hdr-mode == "always" ? "Always" : "Match source";
+                                selected(v) => { AppState.settings-display-sync-hdr-mode = v == "Never" ? "no" : v == "Always" ? "always" : "yes"; AppState.settings-changed(); AppState.refocus(); }
+                            }
+                        }
+
+                        if AppState.settings-display-sync-enabled: SettingsRow {
+                            key: "video.display_sync_wcg_mode";
+                            title: "Wide color gamut";
+                            subtitle: "Follow HDR (default) turns WCG on exactly when HDR is on for this item; Always/Never override that";
+                            indent: true;
+                            SettingsDropdown {
+                                model: ["Follow HDR", "Always", "Never"];
+                                current-value: AppState.settings-display-sync-wcg-mode == "yes" ? "Always" : AppState.settings-display-sync-wcg-mode == "no" ? "Never" : "Follow HDR";
+                                selected(v) => { AppState.settings-display-sync-wcg-mode = v == "Always" ? "yes" : v == "Never" ? "no" : "auto"; AppState.settings-changed(); AppState.refocus(); }
+                            }
+                        }
+
+                        if AppState.settings-display-sync-enabled: SettingsRow {
+                            key: "video.display_sync_trailers";
+                            title: "Sync display for trailers";
+                            subtitle: "Off = Watch Trailer plays in whatever mode the display is already in, no resolution/refresh-rate switch";
+                            indent: true;
+                            ToggleSwitch {
+                                checked <=> AppState.settings-display-sync-trailers;
+                                toggled => { AppState.settings-changed(); AppState.refocus(); }
+                            }
+                        }
+                    }
+
+                    // ── Audio section ───────────────────────────────────────────────────────
+                if AppState.settings-section == "audio": VerticalLayout {
+                        spacing: Theme.sp-sm;
+
+                        SectionHeader {
+                            text: "OUTPUT";
+                        }
+
+                        SettingsRow {
+                            key: "audio.device";
+                            title: "Audio output";
+                            subtitle: "mpv audio device — auto lets the system choose";
+                            SettingsDropdown {
+                                model <=> AppState.settings-audio-device-display;
+                                current-value: AppState.settings-audio-device-desc != "" ? AppState.settings-audio-device-desc : "Autoselect device";
+                                selected(v) => { AppState.audio-device-selected(v); AppState.refocus(); }
+                            }
+                        }
+
+                        SettingsRow {
+                            key: "audio.channels";
+                            title: "Audio channels";
+                            subtitle: "'auto-safe' may downmix 5.1 PCM to stereo on direct ALSA devices — '7.1,5.1,stereo' negotiates the best layout";
+                            SettingsDropdown {
+                                model: ["auto-safe", "auto", "stereo", "5.1", "7.1", "7.1,5.1,stereo"];
+                                current-value: AppState.settings-audio-channels;
+                                selected(v) => { AppState.settings-audio-channels = v; AppState.settings-changed(); AppState.refocus(); }
+                            }
+                        }
+
+                        SectionHeader {
+                            text: "PASSTHROUGH";
+                        }
+
+                        SettingsRow {
+                            key: "audio.spdif";
+                            title: "Audio passthrough (SPDIF)";
+                            subtitle: "Bitstream audio to AV receiver — select formats below";
+                            ToggleSwitch {
+                                checked <=> AppState.settings-audio-spdif;
+                                toggled => { AppState.settings-changed(); AppState.refocus(); }
+                            }
+                        }
+
+                        if AppState.settings-audio-spdif: VerticalLayout {
+                            SettingsRow {
+                                key: "audio.spdif_ac3";
+                                title: "AC3 (Dolby Digital)";
+                                subtitle: "Standard Dolby 5.1";
+                                indent: true;
+                                ToggleSwitch {
+                                    checked <=> AppState.settings-spdif-ac3;
+                                    toggled => { AppState.settings-changed(); AppState.refocus(); }
+                                }
+                            }
+
+                            SettingsRow {
+                                key: "audio.spdif_eac3";
+                                title: "EAC3 (Dolby Digital Plus)";
+                                subtitle: "DD+ used on streaming and Blu-ray";
+                                indent: true;
+                                ToggleSwitch {
+                                    checked <=> AppState.settings-spdif-eac3;
+                                    toggled => { AppState.settings-changed(); AppState.refocus(); }
+                                }
+                            }
+
+                            SettingsRow {
+                                key: "audio.spdif_dts";
+                                title: "DTS";
+                                subtitle: "DTS core";
+                                indent: true;
+                                ToggleSwitch {
+                                    checked <=> AppState.settings-spdif-dts;
+                                    toggled => { AppState.settings-changed(); AppState.refocus(); }
+                                }
+                            }
+
+                            SettingsRow {
+                                key: "audio.spdif_dts_hd";
+                                title: "DTS-HD MA";
+                                subtitle: "DTS lossless / DTS:X";
+                                indent: true;
+                                ToggleSwitch {
+                                    checked <=> AppState.settings-spdif-dts-hd;
+                                    toggled => { AppState.settings-changed(); AppState.refocus(); }
+                                }
+                            }
+
+                            SettingsRow {
+                                key: "audio.spdif_truehd";
+                                title: "TrueHD / Atmos";
+                                subtitle: "Dolby lossless / Atmos object audio";
+                                indent: true;
+                                ToggleSwitch {
+                                    checked <=> AppState.settings-spdif-truehd;
+                                    toggled => { AppState.settings-changed(); AppState.refocus(); }
+                                }
+                            }
+
+                            SettingsRow {
+                                key: "audio.passthrough_device";
+                                indent: true;
+                                title: "Passthrough output";
+                                subtitle: "Device used for video while SPDIF is on — music always keeps the normal output";
+                                SettingsDropdown {
+                                    model <=> AppState.settings-audio-device-display;
+                                    current-value: AppState.settings-passthrough-device-desc != "" ? AppState.settings-passthrough-device-desc : "Same as audio output";
+                                    selected(v) => { AppState.passthrough-device-selected(v); AppState.refocus(); }
+                                }
+                            }
+
+                            if AppState.settings-device-is-pipewire: SettingsRow {
+                                key: "audio.alsa_irq";
+                                indent: true;
+                                title: "PipeWire IRQ scheduling";
+                                subtitle: "Use hardware IRQ wakeups instead of software timers — fixes passthrough dropout under GPU load";
+                                ToggleSwitch {
+                                    checked <=> AppState.settings-alsa-irq-scheduling;
+                                    toggled => { AppState.settings-changed(); AppState.refocus(); }
+                                }
+                            }
+                            SettingsRow {
+                                key: "audio.skip_fade_mute";
+                                indent: true;
+                                title: "Mute during skip fade";
+                                subtitle: "Silence audio for the whole intro/recap/preview/commercial skip transition — passthrough can't be volume-faded like PCM, so this is the closest analog. Off leaves passthrough audio untouched (the video still fades).";
+                                ToggleSwitch {
+                                    checked <=> AppState.settings-skip-fade-mute-passthrough;
+                                    toggled => { AppState.settings-changed(); AppState.refocus(); }
+                                }
+                            }
+                        }
+
+                        if AppState.settings-audio-spdif && AppState.settings-video-sync == "display-resample" && (AppState.settings-spdif-ac3 || AppState.settings-spdif-eac3 || AppState.settings-spdif-dts || AppState.settings-spdif-dts-hd || AppState.settings-spdif-truehd): Rectangle {
+                            height: 24px;
+                            HorizontalLayout {
+                                x: 12px;
+                                y: 0px;
+                                height: parent.height;
+                                spacing: 4px;
+                                alignment: start;
+                                Text {
+                                    text: "⚠";
+                                    font-family: "Noto Sans Symbols 2";
+                                    color: Theme.error;
+                                    font-size: 12px;
+                                    vertical-alignment: center;
+                                }
+
+                                Text {
+                                    text: "passthrough active — display-resample falls back to 'audio' sync (no display sync correction)";
+                                    color: Theme.error;
+                                    font-size: 12px;
+                                    vertical-alignment: center;
+                                }
+                            }
+                        }
+
+                        SectionHeader {
+                            text: "MUSIC";
+                        }
+
+                        SettingsRow {
+                            key: "audio.gapless";
+                            title: "Gapless music playback";
+                            subtitle: "Preload the next track into the running player — album transitions without a gap";
+                            ToggleSwitch {
+                                checked <=> AppState.settings-gapless-audio;
+                                toggled => { AppState.settings-changed(); AppState.refocus(); }
+                            }
+                        }
+
+                        SettingsRow {
+                            key: "audio.now_playing_auto_open";
+                            per-profile: true;
+                            title: "Auto-open Now Playing";
+                            subtitle: "Show the fullscreen music screen after ~30s idle while music plays";
+                            ToggleSwitch {
+                                checked <=> AppState.settings-now-playing-auto-open;
+                                toggled => { AppState.settings-changed(); AppState.refocus(); }
+                            }
+                        }
+                    }
+
+                    // ── Interface section ───────────────────────────────────────────────────
+                if AppState.settings-section == "ui": VerticalLayout {
+                        spacing: Theme.sp-sm;
+
+                        SectionHeader {
+                            text: "INTERFACE";
+                        }
+
+                        // Poster card size — per profile, unlike the rows below.
+                    SettingsRow {
+                            key: "ui.card_size";
+                            per-profile: true;
+                            title: "Card size";
+                            subtitle: "Size of the poster cards on every screen (dashboards, libraries, Discover) — saved for this profile";
+                            SettingsDropdown {
+                                model: ["Normal", "Large", "Extra large"];
+                                current-value: AppState.settings-card-size == "large" ? "Large"
+                                    : AppState.settings-card-size == "extra-large" ? "Extra large" : "Normal";
+                                selected(v) => {
+                                    AppState.settings-card-size = v == "Large" ? "large"
+                                        : v == "Extra large" ? "extra-large" : "normal";
+                                    AppState.settings-changed();
+                                    AppState.refocus();
+                                }
                             }
                         }
 
@@ -343,44 +1313,114 @@ export component SettingsScreen inherits Rectangle {
                             }
                         }
 
-                        SettingsRow {
-                            key: "general.log_level";
-                            title: "Log level";
-                            subtitle: "Verbosity of ~/.cache/fjord/fjord.log — applies on next launch";
+                        // Text font (dynamic dropdown, same shape as Audio output
+                    // above — fetched at startup via fc-list, main.rs)
+                    SettingsRow {
+                            key: "ui.font_family";
+                            title: "Text font";
+                            subtitle: "Inter is Fjord's own designed-around default — pick any font installed on this system to override it";
                             SettingsDropdown {
-                                model: ["error", "warn", "info", "debug"];
-                                current-value: AppState.settings-log-level;
-                                selected(v) => { AppState.settings-log-level = v; AppState.settings-changed(); AppState.refocus(); }
+                                model <=> AppState.settings-font-family-display;
+                                current-value: AppState.settings-font-family-desc != "" ? AppState.settings-font-family-desc : "Inter (Fjord default)";
+                                selected(v) => { AppState.font-family-selected(v); AppState.refocus(); }
                             }
                         }
 
-                        SettingsRow {
-                            key: "general.prewarm_metadata";
-                            title: "Prewarm library metadata";
-                            subtitle: AppState.prewarm-metadata-running
-                                ? "Running… \{AppState.prewarm-metadata-done} of \{AppState.prewarm-metadata-total}"
-                                : (AppState.prewarm-metadata-summary != "" ? AppState.prewarm-metadata-summary
-                                : "Fetch detail/cast/related-items for your whole library once, so opening anything is instant");
-                            FjordButton {
-                                width: 100px;
-                                text: AppState.prewarm-metadata-running ? "Running…" : "Prewarm";
-                                enabled: !AppState.prewarm-metadata-running;
-                                clicked => { AppState.prewarm-metadata(); }
+                        // On-screen alphanumeric keyboard (2026-08-27) — default
+                    // on, since Fjord needs to stay fully usable with no
+                    // physical keyboard attached (remote/D-pad only).
+                    SettingsRow {
+                            key: "ui.onscreen_keyboard";
+                            title: "On-screen keyboard";
+                            subtitle: "Shows a D-pad-navigable keyboard for search/login/naming fields — turn off only if you always have a physical keyboard attached";
+                            ToggleSwitch {
+                                checked <=> AppState.settings-onscreen-keyboard-enabled;
+                                toggled => { AppState.settings-changed(); AppState.refocus(); }
                             }
                         }
 
-                        SettingsRow {
-                            key: "general.prewarm_images";
-                            title: "Prewarm library images";
-                            subtitle: AppState.prewarm-image-running
-                                ? "Running… \{AppState.prewarm-image-done} of \{AppState.prewarm-image-total}"
-                                : (AppState.prewarm-image-summary != "" ? AppState.prewarm-image-summary
-                                : "Fetch backdrops + cast portraits for whatever's already in the metadata cache");
-                            FjordButton {
-                                width: 100px;
-                                text: AppState.prewarm-image-running ? "Running…" : "Prewarm";
-                                enabled: !AppState.prewarm-image-running;
-                                clicked => { AppState.prewarm-images(); }
+                        // Scroll speed. The value is a DURATION multiplier, not a
+                    // rate — bigger % = longer transition = slower, smaller % = faster.
+                    // Opposite of what "speed" suggests at a glance, so the subtitle
+                    // spells it out.
+                    SettingsRow {
+                            key: "ui.scroll_speed";
+                            title: "Scroll speed";
+                            subtitle: "Speed of list/page scrolling with the keyboard — lower % is faster, higher % is slower";
+                            SettingsDropdown {
+                                model: ["0", "25", "50", "75", "100", "150", "200", "300", "400", "500"];
+                                current-value: AppState.settings-scroll-speed-pct == 0 ? "0"
+                                    : AppState.settings-scroll-speed-pct == 25 ? "25"
+                                    : AppState.settings-scroll-speed-pct == 50 ? "50"
+                                    : AppState.settings-scroll-speed-pct == 75 ? "75"
+                                    : AppState.settings-scroll-speed-pct == 150 ? "150"
+                                    : AppState.settings-scroll-speed-pct == 200 ? "200"
+                                    : AppState.settings-scroll-speed-pct == 300 ? "300"
+                                    : AppState.settings-scroll-speed-pct == 400 ? "400"
+                                    : AppState.settings-scroll-speed-pct == 500 ? "500" : "100";
+                                selected(v) => {
+                                    AppState.settings-scroll-speed-pct = v == "0" ? 0
+                                        : v == "25" ? 25
+                                        : v == "50" ? 50
+                                        : v == "75" ? 75
+                                        : v == "150" ? 150
+                                        : v == "200" ? 200
+                                        : v == "300" ? 300
+                                        : v == "400" ? 400
+                                        : v == "500" ? 500 : 100;
+                                    AppState.settings-scroll-speed = (v == "0" ? 0.0
+                                        : v == "25" ? 0.25
+                                        : v == "50" ? 0.5
+                                        : v == "75" ? 0.75
+                                        : v == "150" ? 1.5
+                                        : v == "200" ? 2.0
+                                        : v == "300" ? 3.0
+                                        : v == "400" ? 4.0
+                                        : v == "500" ? 5.0 : 1.0);
+                                    AppState.settings-changed();
+                                    AppState.refocus();
+                                }
+                            }
+                        }
+
+                        // Animation speed (same duration-multiplier caveat as above)
+                    SettingsRow {
+                            key: "ui.animation_speed";
+                            title: "Animation speed";
+                            subtitle: "Speed of press feedback, fades, and other UI transitions — lower % is faster, higher % is slower, 0% = instant";
+                            SettingsDropdown {
+                                model: ["0", "25", "50", "75", "100", "150", "200", "300", "400", "500"];
+                                current-value: AppState.settings-animation-speed-pct == 0 ? "0"
+                                    : AppState.settings-animation-speed-pct == 25 ? "25"
+                                    : AppState.settings-animation-speed-pct == 50 ? "50"
+                                    : AppState.settings-animation-speed-pct == 75 ? "75"
+                                    : AppState.settings-animation-speed-pct == 150 ? "150"
+                                    : AppState.settings-animation-speed-pct == 200 ? "200"
+                                    : AppState.settings-animation-speed-pct == 300 ? "300"
+                                    : AppState.settings-animation-speed-pct == 400 ? "400"
+                                    : AppState.settings-animation-speed-pct == 500 ? "500" : "100";
+                                selected(v) => {
+                                    AppState.settings-animation-speed-pct = v == "0" ? 0
+                                        : v == "25" ? 25
+                                        : v == "50" ? 50
+                                        : v == "75" ? 75
+                                        : v == "150" ? 150
+                                        : v == "200" ? 200
+                                        : v == "300" ? 300
+                                        : v == "400" ? 400
+                                        : v == "500" ? 500 : 100;
+                                    AppState.settings-animation-speed = (v == "0" ? 0.0
+                                        : v == "25" ? 0.25
+                                        : v == "50" ? 0.5
+                                        : v == "75" ? 0.75
+                                        : v == "150" ? 1.5
+                                        : v == "200" ? 2.0
+                                        : v == "300" ? 3.0
+                                        : v == "400" ? 4.0
+                                        : v == "500" ? 5.0 : 1.0);
+                                    AppState.settings-changed();
+                                    AppState.refocus();
+                                }
                             }
                         }
                     }
@@ -655,1133 +1695,6 @@ export component SettingsScreen inherits Rectangle {
                         }
                     }
 
-                    // ── Video section ─────────────────────────────────────────────
-                if AppState.settings-section == "video": VerticalLayout {
-                        spacing: Theme.sp-sm;
-
-                        SectionHeader {
-                            text: "DECODE";
-                        }
-
-                        SettingsRow {
-                            key: "video.hwdec";
-                            title: "Hardware decode (hwdec)";
-                            subtitle: "AMD: vulkan (native) or vulkan-copy · NVIDIA legacy: nvdec-copy + set vf below";
-                            SettingsDropdown {
-                                model: [
-                                    "auto",
-                                    "vulkan",
-                                    "vulkan-copy",
-                                    "nvdec",
-                                    "nvdec-copy",
-                                    "vaapi",
-                                    "vaapi-copy",
-                                    "vdpau",
-                                    "vdpau-copy",
-                                    "none"
-                                ];
-                                current-value: AppState.settings-hwdec;
-                                selected(v) => { AppState.settings-hwdec = v; AppState.settings-changed(); AppState.refocus(); }
-                            }
-                        }
-
-                        // Only with NVDEC selected explicitly (works around NVDEC's stride corruption, see
-                        // CLAUDE.md) — hidden for every other hwdec, including "auto".
-                    if AppState.settings-hwdec == "nvdec" || AppState.settings-hwdec == "nvdec-copy": SettingsRow {
-                            key: "video.vf";
-                            title: "Video filter (vf)";
-                            subtitle: "auto: nv12/p010 = native decoder output, no fix · auto: yuv420p = NVIDIA stride fix matching source bit depth · format=... forces that exact output regardless of source";
-                            SettingsDropdown {
-                                model: [
-                                    "auto: nv12/p010",
-                                    "auto: yuv420p/yuv420p10le",
-                                    "format=yuv420p",
-                                    "format=yuv420p10le",
-                                    "format=nv12",
-                                    "format=p010"
-                                ];
-                                current-value: AppState.settings-vf;
-                                selected(v) => { AppState.settings-vf = v; AppState.settings-changed(); AppState.refocus(); }
-                            }
-                        }
-
-                        SettingsRow {
-                            key: "video.deinterlace";
-                            title: "Deinterlace";
-                            subtitle: "auto: only deinterlaces content flagged as interlaced · yes: always on (DVD / broadcast)";
-                            SettingsDropdown {
-                                model: ["no", "auto", "yes"];
-                                current-value: AppState.settings-deinterlace;
-                                selected(v) => { AppState.settings-deinterlace = v; AppState.settings-changed(); AppState.refocus(); }
-                            }
-                        }
-
-                        SectionHeader {
-                            text: "SYNCHRONISATION";
-                        }
-
-                        SettingsRow {
-                            key: "video.video_sync";
-                            title: "Video sync";
-                            subtitle: "display-resample: smooth sync · desync: no A/V correction (debug)";
-                            SettingsDropdown {
-                                model: ["audio", "display-resample", "display-vdrop", "display-adrop", "desync"];
-                                current-value: AppState.settings-video-sync;
-                                selected(v) => { AppState.settings-video-sync = v; AppState.settings-changed(); AppState.refocus(); }
-                            }
-                        }
-
-                        if AppState.settings-audio-spdif && AppState.settings-video-sync == "display-resample" && (AppState.settings-spdif-ac3 || AppState.settings-spdif-eac3 || AppState.settings-spdif-dts || AppState.settings-spdif-dts-hd || AppState.settings-spdif-truehd): Rectangle {
-                            height: 24px;
-                            HorizontalLayout {
-                                x: 12px;
-                                y: 0px;
-                                height: parent.height;
-                                spacing: 4px;
-                                alignment: start;
-                                Text {
-                                    text: "⚠";
-                                    font-family: "Noto Sans Symbols 2";
-                                    color: Theme.error;
-                                    font-size: 12px;
-                                    vertical-alignment: center;
-                                }
-
-                                Text {
-                                    text: "passthrough active — display-resample falls back to 'audio' sync (no display sync correction)";
-                                    color: Theme.error;
-                                    font-size: 12px;
-                                    vertical-alignment: center;
-                                }
-                            }
-                        }
-
-                        SettingsRow {
-                            key: "video.interpolation";
-                            title: "Motion interpolation";
-                            subtitle: "Temporal interpolation between frames (best with display-resample)";
-                            ToggleSwitch {
-                                checked <=> AppState.settings-interpolation;
-                                toggled => { AppState.settings-changed(); AppState.refocus(); }
-                            }
-                        }
-
-                        if AppState.settings-interpolation: SettingsRow {
-                            key: "video.tscale";
-                            title: "Temporal scaler (tscale)";
-                            subtitle: "Algorithm used for motion interpolation";
-                            SettingsDropdown {
-                                model: ["oversample", "catmull_rom", "mitchell", "gaussian", "bicubic"];
-                                current-value: AppState.settings-tscale;
-                                selected(v) => { AppState.settings-tscale = v; AppState.settings-changed(); AppState.refocus(); }
-                            }
-                        }
-
-                        SectionHeader {
-                            text: "HDR";
-                        }
-
-                        SettingsRow {
-                            key: "video.target_colorspace";
-                            title: "HDR passthrough";
-                            subtitle: "Pass HDR metadata to the compositor for native HDR output — if it isn't accepted, mpv automatically falls back to the Tone Mapping curve below";
-                            ToggleSwitch {
-                                checked <=> AppState.settings-target-colorspace-hint;
-                                toggled => { AppState.settings-changed(); AppState.refocus(); }
-                            }
-                        }
-
-                        // HDR Stage 5 (2026-10-05) — Wayland only (settings::section_row_keys mirrors this).
-                    if AppState.is-wayland: SettingsRow {
-                            key: "video.separate_video_surface";
-                            title: "Separate video surface";
-                            subtitle: "Keeps menus and the OSD in correct colours with HDR passthrough. Turn off if video playback stutters — menus then look wrong while HDR passthrough is on. Applies from the next video";
-                            ToggleSwitch {
-                                checked <=> AppState.settings-separate-video-surface;
-                                toggled => { AppState.settings-changed(); AppState.refocus(); }
-                            }
-                        }
-                    // 10-bit video plane (2026-10-08) — same gate in settings::section_row_keys.
-                    if AppState.is-wayland && AppState.settings-separate-video-surface: SettingsRow {
-                            key: "video.video_own_buffers";
-                            title: "Use Fjord's own 10-bit buffers";
-                            subtitle: "Video in 10-bit even where the graphics driver only gives 8-bit windows (e.g. NVIDIA). Only helps if the driver sends 10-bit to the screen — on Linux, NVIDIA GTX 10-series and older can't over HDMI. Applies after restarting Fjord";
-                            indent: true;
-                            ToggleSwitch {
-                                checked <=> AppState.settings-video-own-buffers;
-                                toggled => { AppState.settings-changed(); AppState.refocus(); }
-                            }
-                        }
-                    // Test aid (2026-10-08) — always listed (settings::section_row_keys mirrors this).
-                    SettingsRow {
-                            key: "video.video_dither_off";
-                            title: "Turn off dithering (test)";
-                            subtitle: "For comparing 8-bit and 10-bit video: with dithering off, an 8-bit picture shows visible steps in smooth gradients. Leave this off for normal viewing. Applies from the next video";
-                            ToggleSwitch {
-                                checked <=> AppState.settings-video-dither-off;
-                                toggled => { AppState.settings-changed(); AppState.refocus(); }
-                            }
-                        }
-
-                        // Per-curve description, a ternary over settings-tone-mapping (one source of truth with
-                        // the dropdown). Some curves fail to compile on NVIDIA's GLSL compiler, so "auto" isn't
-                        // always safe (DEVLOG → HDR tone-mapping shader compile failure).
-                        //
-                        // Not gated on the colorspace hint: mpv's target-colorspace-hint-strict falls back to this
-                        // curve when the compositor refuses HDR passthrough, so the curve must stay choosable.
-                    SettingsRow {
-                            key: "video.tone_mapping";
-                            title: "Tone mapping";
-                            subtitle: AppState.settings-tone-mapping == "auto" ? "Lets mpv pick a curve automatically — usually fine, but if HDR playback hangs or shows a black screen, try a specific mode below instead" :
-                                AppState.settings-tone-mapping == "bt.2390" ? "The ITU-R BT.2390 standard curve — mpv's own modern reference algorithm; a solid, neutral pick if 'auto' misbehaves" :
-                                AppState.settings-tone-mapping == "hable" ? "Filmic curve (the one popularized by Uncharted 2) — favors punchy contrast; a common 'cinematic' look" :
-                                AppState.settings-tone-mapping == "mobius" ? "Smoothly compresses only the out-of-range highlights, leaving darker tones mostly untouched" :
-                                AppState.settings-tone-mapping == "reinhard" ? "Simple, gentle compression curve — safe and predictable, but can look slightly flat/desaturated in bright scenes" :
-                                AppState.settings-tone-mapping == "clip" ? "No real tone mapping — anything brighter than the display's range is just crushed to solid white, losing highlight detail" :
-                                AppState.settings-tone-mapping == "gamma" ? "Rescales brightness with a gamma curve, similar to simulating a lower-dynamic-range display" :
-                                AppState.settings-tone-mapping == "linear" ? "Linearly stretches the whole brightness range to fit the display — simple, but can look washed out on very bright content" :
-                                "HDR → SDR algorithm";
-                            indent: true;
-                            SettingsDropdown {
-                                model: ["auto", "hable", "bt.2390", "reinhard", "mobius", "clip", "gamma", "linear"];
-                                current-value: AppState.settings-tone-mapping;
-                                selected(v) => { AppState.settings-tone-mapping = v; AppState.settings-changed(); AppState.refocus(); }
-                            }
-                        }
-
-                        SectionHeader {
-                            text: "NVIDIA WAYLAND";
-                        }
-
-                        SettingsRow {
-                            key: "video.opengl_early_flush";
-                            title: "OpenGL early flush";
-                            subtitle: "Flush GL after each frame — may reduce jitter on NVIDIA Wayland; mpv defaults this off since it can cause issues on some other platforms";
-                            ToggleSwitch {
-                                checked <=> AppState.settings-opengl-early-flush;
-                                toggled => { AppState.settings-changed(); AppState.refocus(); }
-                            }
-                        }
-
-                        if AppState.settings-video-sync == "display-resample": SettingsRow {
-                            key: "video.video_latency_hacks";
-                            title: "Video latency hacks";
-                            subtitle: "Compensate for imprecise Wayland vsync timestamps (NVIDIA 5xx legacy) — mpv's own manual: known to break other options such as interpolation, not recommended unless you need it";
-                            indent: true;
-                            ToggleSwitch {
-                                checked <=> AppState.settings-video-latency-hacks;
-                                toggled => { AppState.settings-changed(); AppState.refocus(); }
-                            }
-                        }
-
-                        SectionHeader {
-                            text: "DISPLAY SYNC";
-                        }
-
-                        // Display sync — resolution/refresh-rate/HDR matching to the source via kscreen-doctor
-                        // (KDE Plasma Wayland only); see display_sync.rs.
-                    SettingsRow {
-                            key: "video.display_sync_enabled";
-                            title: "Sync display to source";
-                            subtitle: "Switch the physical display's resolution/refresh-rate/HDR to match whatever's playing, then revert on stop — KDE Plasma Wayland only, silently does nothing elsewhere";
-                            ToggleSwitch {
-                                checked <=> AppState.settings-display-sync-enabled;
-                                toggled => { AppState.settings-changed(); AppState.refocus(); }
-                            }
-                        }
-
-                        if AppState.settings-display-sync-enabled: SettingsRow {
-                            key: "video.display_sync_screen";
-                            title: "Output";
-                            subtitle: "The kscreen-doctor connector to switch — never auto-detected at runtime, only pre-filled once at startup if exactly one output was connected. Whichever one KDE reports as its primary display is marked (Primary)";
-                            indent: true;
-                            SettingsDropdown {
-                                model <=> AppState.settings-display-sync-screen-options;
-                                current-value: AppState.settings-display-sync-screen-desc != "" ? AppState.settings-display-sync-screen-desc : "(not detected)";
-                                selected(v) => { AppState.display-sync-screen-selected(v); AppState.refocus(); }
-                            }
-                        }
-
-                        if AppState.settings-display-sync-enabled: SettingsRow {
-                            key: "video.display_sync_sync_resolution";
-                            title: "Sync resolution";
-                            subtitle: "Off = resolution always stays pinned to the default below, only refresh rate varies by source";
-                            indent: true;
-                            ToggleSwitch {
-                                checked <=> AppState.settings-display-sync-sync-resolution;
-                                toggled => { AppState.settings-changed(); AppState.refocus(); }
-                            }
-                        }
-
-                        if AppState.settings-display-sync-enabled: SettingsRow {
-                            key: "video.display_sync_sync_refresh_rate";
-                            title: "Sync refresh rate";
-                            subtitle: "Off = refresh rate always stays pinned to the default Hz below, only resolution varies by source";
-                            indent: true;
-                            ToggleSwitch {
-                                checked <=> AppState.settings-display-sync-sync-refresh-rate;
-                                toggled => { AppState.settings-changed(); AppState.refocus(); }
-                            }
-                        }
-
-                        if AppState.settings-display-sync-enabled: SettingsRow {
-                            key: "video.display_sync_default_resolution";
-                            title: "Default resolution";
-                            subtitle: "Used for non-4K content, and as the fallback whenever a computed target mode isn't supported — real modes for the Output above, not a fixed list";
-                            indent: true;
-                            SettingsDropdown {
-                                model <=> AppState.settings-display-sync-resolution-options;
-                                current-value: AppState.settings-display-sync-default-resolution;
-                                selected(v) => { AppState.display-sync-resolution-selected(v); AppState.refocus(); }
-                            }
-                        }
-
-                        if AppState.settings-display-sync-enabled: SettingsRow {
-                            key: "video.display_sync_default_hz";
-                            title: "Default refresh rate";
-                            subtitle: "Used whenever the source's own framerate doesn't match a known cadence — real rates for the Output above, not a fixed list";
-                            indent: true;
-                            SettingsDropdown {
-                                model <=> AppState.settings-display-sync-hz-options;
-                                current-value: AppState.settings-display-sync-default-hz;
-                                selected(v) => { AppState.display-sync-hz-selected(v); AppState.refocus(); }
-                            }
-                        }
-
-                        if AppState.settings-display-sync-enabled: SettingsRow {
-                            key: "video.display_sync_scale_4k";
-                            title: "Desktop scale at 4K";
-                            subtitle: "Applied alongside every switch to a 4K mode, matching what the proven external script this ports always did";
-                            indent: true;
-                            SettingsDropdown {
-                                model: ["1.0", "1.25", "1.5", "1.75", "2.0"];
-                                current-value: AppState.settings-display-sync-scale-4k;
-                                selected(v) => { AppState.settings-display-sync-scale-4k = v; AppState.settings-changed(); AppState.refocus(); }
-                            }
-                        }
-
-                        if AppState.settings-display-sync-enabled: SettingsRow {
-                            key: "video.display_sync_scale_1080p";
-                            title: "Desktop scale at 1080p";
-                            subtitle: "Applied alongside every switch to a non-4K mode";
-                            indent: true;
-                            SettingsDropdown {
-                                model: ["1.0", "1.25", "1.5", "1.75", "2.0"];
-                                current-value: AppState.settings-display-sync-scale-1080p;
-                                selected(v) => { AppState.settings-display-sync-scale-1080p = v; AppState.settings-changed(); AppState.refocus(); }
-                            }
-                        }
-
-                        if AppState.settings-display-sync-enabled && AppState.settings-display-sync-sync-resolution: SettingsRow {
-                            key: "video.display_sync_4k_odd_fps_mode";
-                            title: "4K at an unusual framerate";
-                            subtitle: "4K content whose framerate doesn't match a known cadence (23.98/25/29.97) either falls back to the default resolution, or stays at 4K using the closest supported Hz";
-                            indent: true;
-                            SettingsDropdown {
-                                model: ["Fallback to default resolution", "Stay at 4K"];
-                                current-value: AppState.settings-display-sync-4k-odd-fps-mode == "stay_4k" ? "Stay at 4K" : "Fallback to default resolution";
-                                selected(v) => { AppState.settings-display-sync-4k-odd-fps-mode = v == "Stay at 4K" ? "stay_4k" : "fallback"; AppState.settings-changed(); AppState.refocus(); }
-                            }
-                        }
-
-                        if AppState.settings-display-sync-enabled: SettingsRow {
-                            key: "video.display_sync_hdr_mode";
-                            title: "HDR";
-                            subtitle: "Match source = enable HDR only for genuinely HDR/HLG content; Always/Never override that per-item decision entirely";
-                            indent: true;
-                            SettingsDropdown {
-                                model: ["Match source", "Never", "Always"];
-                                current-value: AppState.settings-display-sync-hdr-mode == "no" ? "Never" : AppState.settings-display-sync-hdr-mode == "always" ? "Always" : "Match source";
-                                selected(v) => { AppState.settings-display-sync-hdr-mode = v == "Never" ? "no" : v == "Always" ? "always" : "yes"; AppState.settings-changed(); AppState.refocus(); }
-                            }
-                        }
-
-                        if AppState.settings-display-sync-enabled: SettingsRow {
-                            key: "video.display_sync_wcg_mode";
-                            title: "Wide color gamut";
-                            subtitle: "Follow HDR (default) turns WCG on exactly when HDR is on for this item; Always/Never override that";
-                            indent: true;
-                            SettingsDropdown {
-                                model: ["Follow HDR", "Always", "Never"];
-                                current-value: AppState.settings-display-sync-wcg-mode == "yes" ? "Always" : AppState.settings-display-sync-wcg-mode == "no" ? "Never" : "Follow HDR";
-                                selected(v) => { AppState.settings-display-sync-wcg-mode = v == "Always" ? "yes" : v == "Never" ? "no" : "auto"; AppState.settings-changed(); AppState.refocus(); }
-                            }
-                        }
-
-                        if AppState.settings-display-sync-enabled: SettingsRow {
-                            key: "video.display_sync_trailers";
-                            title: "Sync display for trailers";
-                            subtitle: "Off = Watch Trailer plays in whatever mode the display is already in, no resolution/refresh-rate switch";
-                            indent: true;
-                            ToggleSwitch {
-                                checked <=> AppState.settings-display-sync-trailers;
-                                toggled => { AppState.settings-changed(); AppState.refocus(); }
-                            }
-                        }
-                    }
-
-                    // ── Audio section ─────────────────────────────────────────────
-                if AppState.settings-section == "audio": VerticalLayout {
-                        spacing: Theme.sp-sm;
-
-                        SectionHeader {
-                            text: "OUTPUT";
-                        }
-
-                        SettingsRow {
-                            key: "audio.device";
-                            title: "Audio output";
-                            subtitle: "mpv audio device — auto lets the system choose";
-                            SettingsDropdown {
-                                model <=> AppState.settings-audio-device-display;
-                                current-value: AppState.settings-audio-device-desc != "" ? AppState.settings-audio-device-desc : "Autoselect device";
-                                selected(v) => { AppState.audio-device-selected(v); AppState.refocus(); }
-                            }
-                        }
-
-                        SettingsRow {
-                            key: "audio.channels";
-                            title: "Audio channels";
-                            subtitle: "'auto-safe' may downmix 5.1 PCM to stereo on direct ALSA devices — '7.1,5.1,stereo' negotiates the best layout";
-                            SettingsDropdown {
-                                model: ["auto-safe", "auto", "stereo", "5.1", "7.1", "7.1,5.1,stereo"];
-                                current-value: AppState.settings-audio-channels;
-                                selected(v) => { AppState.settings-audio-channels = v; AppState.settings-changed(); AppState.refocus(); }
-                            }
-                        }
-
-                        SectionHeader {
-                            text: "PASSTHROUGH";
-                        }
-
-                        SettingsRow {
-                            key: "audio.spdif";
-                            title: "Audio passthrough (SPDIF)";
-                            subtitle: "Bitstream audio to AV receiver — select formats below";
-                            ToggleSwitch {
-                                checked <=> AppState.settings-audio-spdif;
-                                toggled => { AppState.settings-changed(); AppState.refocus(); }
-                            }
-                        }
-
-                        if AppState.settings-audio-spdif: VerticalLayout {
-                            SettingsRow {
-                                key: "audio.spdif_ac3";
-                                title: "AC3 (Dolby Digital)";
-                                subtitle: "Standard Dolby 5.1";
-                                indent: true;
-                                ToggleSwitch {
-                                    checked <=> AppState.settings-spdif-ac3;
-                                    toggled => { AppState.settings-changed(); AppState.refocus(); }
-                                }
-                            }
-
-                            SettingsRow {
-                                key: "audio.spdif_eac3";
-                                title: "EAC3 (Dolby Digital Plus)";
-                                subtitle: "DD+ used on streaming and Blu-ray";
-                                indent: true;
-                                ToggleSwitch {
-                                    checked <=> AppState.settings-spdif-eac3;
-                                    toggled => { AppState.settings-changed(); AppState.refocus(); }
-                                }
-                            }
-
-                            SettingsRow {
-                                key: "audio.spdif_dts";
-                                title: "DTS";
-                                subtitle: "DTS core";
-                                indent: true;
-                                ToggleSwitch {
-                                    checked <=> AppState.settings-spdif-dts;
-                                    toggled => { AppState.settings-changed(); AppState.refocus(); }
-                                }
-                            }
-
-                            SettingsRow {
-                                key: "audio.spdif_dts_hd";
-                                title: "DTS-HD MA";
-                                subtitle: "DTS lossless / DTS:X";
-                                indent: true;
-                                ToggleSwitch {
-                                    checked <=> AppState.settings-spdif-dts-hd;
-                                    toggled => { AppState.settings-changed(); AppState.refocus(); }
-                                }
-                            }
-
-                            SettingsRow {
-                                key: "audio.spdif_truehd";
-                                title: "TrueHD / Atmos";
-                                subtitle: "Dolby lossless / Atmos object audio";
-                                indent: true;
-                                ToggleSwitch {
-                                    checked <=> AppState.settings-spdif-truehd;
-                                    toggled => { AppState.settings-changed(); AppState.refocus(); }
-                                }
-                            }
-
-                            SettingsRow {
-                                key: "audio.passthrough_device";
-                                indent: true;
-                                title: "Passthrough output";
-                                subtitle: "Device used for video while SPDIF is on — music always keeps the normal output";
-                                SettingsDropdown {
-                                    model <=> AppState.settings-audio-device-display;
-                                    current-value: AppState.settings-passthrough-device-desc != "" ? AppState.settings-passthrough-device-desc : "Same as audio output";
-                                    selected(v) => { AppState.passthrough-device-selected(v); AppState.refocus(); }
-                                }
-                            }
-
-                            if AppState.settings-device-is-pipewire: SettingsRow {
-                                key: "audio.alsa_irq";
-                                indent: true;
-                                title: "PipeWire IRQ scheduling";
-                                subtitle: "Use hardware IRQ wakeups instead of software timers — fixes passthrough dropout under GPU load";
-                                ToggleSwitch {
-                                    checked <=> AppState.settings-alsa-irq-scheduling;
-                                    toggled => { AppState.settings-changed(); AppState.refocus(); }
-                                }
-                            }
-                            SettingsRow {
-                                key: "audio.skip_fade_mute";
-                                indent: true;
-                                title: "Mute during skip fade";
-                                subtitle: "Silence audio for the whole intro/recap/preview/commercial skip transition — passthrough can't be volume-faded like PCM, so this is the closest analog. Off leaves passthrough audio untouched (the video still fades).";
-                                ToggleSwitch {
-                                    checked <=> AppState.settings-skip-fade-mute-passthrough;
-                                    toggled => { AppState.settings-changed(); AppState.refocus(); }
-                                }
-                            }
-                        }
-
-                        if AppState.settings-audio-spdif && AppState.settings-video-sync == "display-resample" && (AppState.settings-spdif-ac3 || AppState.settings-spdif-eac3 || AppState.settings-spdif-dts || AppState.settings-spdif-dts-hd || AppState.settings-spdif-truehd): Rectangle {
-                            height: 24px;
-                            HorizontalLayout {
-                                x: 12px;
-                                y: 0px;
-                                height: parent.height;
-                                spacing: 4px;
-                                alignment: start;
-                                Text {
-                                    text: "⚠";
-                                    font-family: "Noto Sans Symbols 2";
-                                    color: Theme.error;
-                                    font-size: 12px;
-                                    vertical-alignment: center;
-                                }
-
-                                Text {
-                                    text: "passthrough active — display-resample falls back to 'audio' sync (no display sync correction)";
-                                    color: Theme.error;
-                                    font-size: 12px;
-                                    vertical-alignment: center;
-                                }
-                            }
-                        }
-
-                        SectionHeader {
-                            text: "LANGUAGE";
-                        }
-
-                        SettingsRow {
-                            key: "audio.lang";
-                            title: "Preferred audio language";
-                            subtitle: "Auto-select matching audio track when found; no preference = use video default";
-                            SettingsDropdown {
-                                model: [
-                                    "Default",
-                                    "English",
-                                    "German",
-                                    "French",
-                                    "Japanese",
-                                    "Spanish",
-                                    "Italian",
-                                    "Portuguese",
-                                    "Russian",
-                                    "Korean",
-                                    "Chinese",
-                                    "Dutch",
-                                    "Swedish",
-                                    "Polish",
-                                    "Czech",
-                                    "Arabic",
-                                    "Turkish",
-                                    "Finnish",
-                                    "Danish",
-                                    "Norwegian"
-                                ];
-                                current-value: AppState.settings-audio-lang == "" ? "Default" : AppState.settings-audio-lang;
-                                selected(v) => { AppState.settings-audio-lang = v == "Default" ? "" : v; AppState.settings-changed(); AppState.refocus(); }
-                            }
-                        }
-
-                        SectionHeader {
-                            text: "MUSIC";
-                        }
-
-                        SettingsRow {
-                            key: "audio.gapless";
-                            title: "Gapless music playback";
-                            subtitle: "Preload the next track into the running player — album transitions without a gap";
-                            ToggleSwitch {
-                                checked <=> AppState.settings-gapless-audio;
-                                toggled => { AppState.settings-changed(); AppState.refocus(); }
-                            }
-                        }
-
-                        SettingsRow {
-                            key: "audio.now_playing_auto_open";
-                            title: "Auto-open Now Playing";
-                            subtitle: "Show the fullscreen music screen after ~30s idle while music plays";
-                            ToggleSwitch {
-                                checked <=> AppState.settings-now-playing-auto-open;
-                                toggled => { AppState.settings-changed(); AppState.refocus(); }
-                            }
-                        }
-                    }
-
-                    // ── Player section ────────────────────────────────────────────
-                if AppState.settings-section == "player": VerticalLayout {
-                        spacing: Theme.sp-sm;
-
-                        SectionHeader {
-                            text: "SUBTITLES";
-                        }
-
-                        SettingsRow {
-                            key: "player.sub_enabled";
-                            title: "Enable subtitles";
-                            subtitle: "Off always disables subtitles regardless of language settings";
-                            ToggleSwitch {
-                                checked <=> AppState.settings-sub-enabled;
-                                toggled => { AppState.settings-changed(); AppState.refocus(); }
-                            }
-                        }
-
-                        if AppState.settings-sub-enabled: SettingsRow {
-                            key: "player.sub_lang";
-                            indent: true;
-                            title: "Primary language";
-                            subtitle: "Auto-select first matching track; no preference = use video default";
-                            SettingsDropdown {
-                                model: [
-                                    "Default",
-                                    "English",
-                                    "German",
-                                    "French",
-                                    "Japanese",
-                                    "Spanish",
-                                    "Italian",
-                                    "Portuguese",
-                                    "Russian",
-                                    "Korean",
-                                    "Chinese",
-                                    "Dutch",
-                                    "Swedish",
-                                    "Polish",
-                                    "Czech",
-                                    "Arabic",
-                                    "Turkish",
-                                    "Finnish",
-                                    "Danish",
-                                    "Norwegian"
-                                ];
-                                current-value: AppState.settings-sub-lang == "" ? "Default" : AppState.settings-sub-lang;
-                                selected(v) => { AppState.settings-sub-lang = v == "Default" ? "" : v; AppState.settings-changed(); AppState.refocus(); }
-                            }
-                        }
-
-                        if AppState.settings-sub-enabled: SettingsRow {
-                            key: "player.sub_lang2";
-                            indent: true;
-                            title: "Fallback language";
-                            subtitle: "Tried if the primary language isn't found; if this isn't found either, falls back to video default";
-                            SettingsDropdown {
-                                model: [
-                                    "Default",
-                                    "English",
-                                    "German",
-                                    "French",
-                                    "Japanese",
-                                    "Spanish",
-                                    "Italian",
-                                    "Portuguese",
-                                    "Russian",
-                                    "Korean",
-                                    "Chinese",
-                                    "Dutch",
-                                    "Swedish",
-                                    "Polish",
-                                    "Czech",
-                                    "Arabic",
-                                    "Turkish",
-                                    "Finnish",
-                                    "Danish",
-                                    "Norwegian"
-                                ];
-                                current-value: AppState.settings-sub-lang2 == "" ? "Default" : AppState.settings-sub-lang2;
-                                selected(v) => { AppState.settings-sub-lang2 = v == "Default" ? "" : v; AppState.settings-changed(); AppState.refocus(); }
-                            }
-                        }
-
-                        if AppState.settings-sub-enabled: SettingsRow {
-                            key: "player.sub_type";
-                            indent: true;
-                            title: "Subtitle type";
-                            subtitle: "Prefer Normal (no tags), Forced (foreign lines only), or Hearing Impaired (SDH)";
-                            SettingsDropdown {
-                                model: ["Any", "Normal", "Forced", "Hearing Impaired"];
-                                current-value: AppState.settings-sub-type == "" ? "Any" : AppState.settings-sub-type;
-                                selected(v) => { AppState.settings-sub-type = v == "Any" ? "" : v; AppState.settings-changed(); AppState.refocus(); }
-                            }
-                        }
-
-                        if AppState.settings-sub-enabled: SettingsRow {
-                            key: "player.sub_scale";
-                            indent: true;
-                            title: "Subtitle size";
-                            subtitle: "Applies to both plain and styled (ASS) subtitles";
-                            SettingsDropdown {
-                                model: ["50", "75", "100", "125", "150", "175", "200"];
-                                current-value: AppState.settings-sub-scale-pct == 50 ? "50"
-                                    : AppState.settings-sub-scale-pct == 75 ? "75"
-                                    : AppState.settings-sub-scale-pct == 125 ? "125"
-                                    : AppState.settings-sub-scale-pct == 150 ? "150"
-                                    : AppState.settings-sub-scale-pct == 175 ? "175"
-                                    : AppState.settings-sub-scale-pct == 200 ? "200" : "100";
-                                selected(v) => {
-                                    AppState.settings-sub-scale-pct = v == "50" ? 50
-                                        : v == "75" ? 75
-                                        : v == "125" ? 125
-                                        : v == "150" ? 150
-                                        : v == "175" ? 175
-                                        : v == "200" ? 200 : 100;
-                                    AppState.settings-changed();
-                                    AppState.refocus();
-                                }
-                            }
-                        }
-
-                        if AppState.settings-sub-enabled: SettingsRow {
-                            key: "player.sub_pos";
-                            indent: true;
-                            title: "Subtitle position";
-                            subtitle: "100 = mpv's default bottom position; higher pushes it lower still (may clip text/ASS subs)";
-                            SettingsDropdown {
-                                model: ["50", "60", "70", "80", "90", "95", "100", "110", "120", "130", "140", "150"];
-                                current-value: AppState.settings-sub-pos-pct == 50 ? "50"
-                                    : AppState.settings-sub-pos-pct == 60 ? "60"
-                                    : AppState.settings-sub-pos-pct == 70 ? "70"
-                                    : AppState.settings-sub-pos-pct == 80 ? "80"
-                                    : AppState.settings-sub-pos-pct == 90 ? "90"
-                                    : AppState.settings-sub-pos-pct == 95 ? "95"
-                                    : AppState.settings-sub-pos-pct == 110 ? "110"
-                                    : AppState.settings-sub-pos-pct == 120 ? "120"
-                                    : AppState.settings-sub-pos-pct == 130 ? "130"
-                                    : AppState.settings-sub-pos-pct == 140 ? "140"
-                                    : AppState.settings-sub-pos-pct == 150 ? "150" : "100";
-                                selected(v) => {
-                                    AppState.settings-sub-pos-pct = v == "50" ? 50
-                                        : v == "60" ? 60
-                                        : v == "70" ? 70
-                                        : v == "80" ? 80
-                                        : v == "90" ? 90
-                                        : v == "95" ? 95
-                                        : v == "110" ? 110
-                                        : v == "120" ? 120
-                                        : v == "130" ? 130
-                                        : v == "140" ? 140
-                                        : v == "150" ? 150 : 100;
-                                    AppState.settings-changed();
-                                    AppState.refocus();
-                                }
-                            }
-                        }
-
-                        if AppState.settings-sub-enabled: SettingsRow {
-                            key: "player.sub_respect_ass";
-                            indent: true;
-                            title: "Respect subtitle's own styling (ASS)";
-                            subtitle: "Off lets Color/Background below also apply to styled subtitles — may render some files incorrectly";
-                            ToggleSwitch {
-                                checked <=> AppState.settings-sub-respect-ass-styling;
-                                toggled => { AppState.settings-changed(); AppState.refocus(); }
-                            }
-                        }
-
-                        if AppState.settings-sub-enabled && !AppState.settings-sub-respect-ass-styling: SettingsRow {
-                            key: "player.sub_color";
-                            indent: true;
-                            title: "Subtitle color";
-                            subtitle: "Only affects plain subtitles unless styling above is not respected";
-                            SettingsDropdown {
-                                model: ["Default", "White", "Yellow", "Cyan", "Green"];
-                                current-value: AppState.settings-sub-color == "" ? "Default" : AppState.settings-sub-color;
-                                selected(v) => { AppState.settings-sub-color = v == "Default" ? "" : v; AppState.settings-changed(); AppState.refocus(); }
-                            }
-                        }
-
-                        if AppState.settings-sub-enabled && !AppState.settings-sub-respect-ass-styling: SettingsRow {
-                            key: "player.sub_background";
-                            indent: true;
-                            title: "Subtitle background box";
-                            subtitle: "Draw a solid box behind subtitle text";
-                            ToggleSwitch {
-                                checked <=> AppState.settings-sub-background;
-                                toggled => { AppState.settings-changed(); AppState.refocus(); }
-                            }
-                        }
-
-                        SectionHeader {
-                            text: "BUFFERING";
-                        }
-
-                        SettingsRow {
-                            key: "player.cache_secs";
-                            title: "Cache duration (seconds)";
-                            subtitle: "How many seconds of video to buffer ahead — absorbs brief network drops without a visible stall. \"Unlimited\" buffers as much as the size limit below allows.";
-                            SettingsDropdown {
-                                model: ["Unlimited", "10", "30", "60", "120", "300"];
-                                current-value: AppState.settings-cache-secs == 0 ? "Unlimited"
-                                    : AppState.settings-cache-secs == 10 ? "10"
-                                    : AppState.settings-cache-secs == 30 ? "30"
-                                    : AppState.settings-cache-secs == 60 ? "60"
-                                    : AppState.settings-cache-secs == 120 ? "120" : "300";
-                                selected(v) => {
-                                    AppState.settings-cache-secs = v == "Unlimited" ? 0
-                                        : v == "10" ? 10
-                                        : v == "30" ? 30
-                                        : v == "60" ? 60
-                                        : v == "120" ? 120 : 300;
-                                    AppState.settings-changed();
-                                    AppState.refocus();
-                                }
-                            }
-                        }
-
-                        SettingsRow {
-                            key: "player.cache_max_mb";
-                            title: "Max cache size (MiB)";
-                            subtitle: "Memory ceiling for the buffer above — raise if you increase the duration for high-bitrate 4K content. \"Unlimited\" removes the ceiling so the duration above is always what you set, regardless of bitrate.";
-                            SettingsDropdown {
-                                model: ["Unlimited", "150", "300", "500", "1000", "2000"];
-                                current-value: AppState.settings-cache-max-mb == 0 ? "Unlimited"
-                                    : AppState.settings-cache-max-mb == 150 ? "150"
-                                    : AppState.settings-cache-max-mb == 300 ? "300"
-                                    : AppState.settings-cache-max-mb == 500 ? "500"
-                                    : AppState.settings-cache-max-mb == 1000 ? "1000" : "2000";
-                                selected(v) => {
-                                    AppState.settings-cache-max-mb = v == "Unlimited" ? 0
-                                        : v == "150" ? 150
-                                        : v == "300" ? 300
-                                        : v == "500" ? 500
-                                        : v == "1000" ? 1000 : 2000;
-                                    AppState.settings-changed();
-                                    AppState.refocus();
-                                }
-                            }
-                        }
-
-                        SectionHeader {
-                            text: "INTRO SKIPPER";
-                        }
-
-                        SettingsRow {
-                            key: "player.intro_mode";
-                            title: "Intro";
-                            subtitle: "What to do when an intro segment is detected";
-                            SettingsDropdown {
-                                model: ["Always skip", "Ask", "Ask (timed)", "Never skip"];
-                                current-value: AppState.settings-skip-intro-mode == "always-skip" ? "Always skip"
-                                    : AppState.settings-skip-intro-mode == "ask-timed" ? "Ask (timed)"
-                                    : AppState.settings-skip-intro-mode == "never-skip" ? "Never skip" : "Ask";
-                                selected(v) => {
-                                    AppState.settings-skip-intro-mode = v == "Always skip" ? "always-skip"
-                                        : v == "Ask (timed)" ? "ask-timed"
-                                        : v == "Never skip" ? "never-skip" : "ask";
-                                    AppState.settings-changed();
-                                    AppState.refocus();
-                                }
-                            }
-                        }
-
-                        if AppState.settings-skip-intro-mode == "ask-timed": SettingsRow {
-                            key: "player.intro_secs";
-                            indent: true;
-                            title: "Auto-skip after";
-                            subtitle: "Seconds before the intro is skipped automatically";
-                            SettingsDropdown {
-                                model: ["3", "5", "8", "10", "15", "20", "30"];
-                                current-value: AppState.settings-skip-intro-secs == 3 ? "3"
-                                    : AppState.settings-skip-intro-secs == 5 ? "5"
-                                    : AppState.settings-skip-intro-secs == 10 ? "10"
-                                    : AppState.settings-skip-intro-secs == 15 ? "15"
-                                    : AppState.settings-skip-intro-secs == 20 ? "20"
-                                    : AppState.settings-skip-intro-secs == 30 ? "30" : "8";
-                                selected(v) => {
-                                    AppState.settings-skip-intro-secs = v == "3" ? 3 : v == "5" ? 5
-                                        : v == "10" ? 10 : v == "15" ? 15 : v == "20" ? 20 : v == "30" ? 30 : 8;
-                                    AppState.settings-changed();
-                                    AppState.refocus();
-                                }
-                            }
-                        }
-
-                        SettingsRow {
-                            key: "player.recap_mode";
-                            title: "Recap";
-                            subtitle: "What to do when a recap segment is detected";
-                            SettingsDropdown {
-                                model: ["Always skip", "Ask", "Ask (timed)", "Never skip"];
-                                current-value: AppState.settings-skip-recap-mode == "always-skip" ? "Always skip"
-                                    : AppState.settings-skip-recap-mode == "ask-timed" ? "Ask (timed)"
-                                    : AppState.settings-skip-recap-mode == "never-skip" ? "Never skip" : "Ask";
-                                selected(v) => {
-                                    AppState.settings-skip-recap-mode = v == "Always skip" ? "always-skip"
-                                        : v == "Ask (timed)" ? "ask-timed"
-                                        : v == "Never skip" ? "never-skip" : "ask";
-                                    AppState.settings-changed();
-                                    AppState.refocus();
-                                }
-                            }
-                        }
-
-                        if AppState.settings-skip-recap-mode == "ask-timed": SettingsRow {
-                            key: "player.recap_secs";
-                            indent: true;
-                            title: "Auto-skip after";
-                            subtitle: "Seconds before the recap is skipped automatically";
-                            SettingsDropdown {
-                                model: ["3", "5", "8", "10", "15", "20", "30"];
-                                current-value: AppState.settings-skip-recap-secs == 3 ? "3"
-                                    : AppState.settings-skip-recap-secs == 5 ? "5"
-                                    : AppState.settings-skip-recap-secs == 10 ? "10"
-                                    : AppState.settings-skip-recap-secs == 15 ? "15"
-                                    : AppState.settings-skip-recap-secs == 20 ? "20"
-                                    : AppState.settings-skip-recap-secs == 30 ? "30" : "8";
-                                selected(v) => {
-                                    AppState.settings-skip-recap-secs = v == "3" ? 3 : v == "5" ? 5
-                                        : v == "10" ? 10 : v == "15" ? 15 : v == "20" ? 20 : v == "30" ? 30 : 8;
-                                    AppState.settings-changed();
-                                    AppState.refocus();
-                                }
-                            }
-                        }
-
-                        SettingsRow {
-                            key: "player.preview_mode";
-                            title: "Preview";
-                            subtitle: "What to do when a preview segment is detected";
-                            SettingsDropdown {
-                                model: ["Always skip", "Ask", "Ask (timed)", "Never skip"];
-                                current-value: AppState.settings-skip-preview-mode == "always-skip" ? "Always skip"
-                                    : AppState.settings-skip-preview-mode == "ask-timed" ? "Ask (timed)"
-                                    : AppState.settings-skip-preview-mode == "never-skip" ? "Never skip" : "Ask";
-                                selected(v) => {
-                                    AppState.settings-skip-preview-mode = v == "Always skip" ? "always-skip"
-                                        : v == "Ask (timed)" ? "ask-timed"
-                                        : v == "Never skip" ? "never-skip" : "ask";
-                                    AppState.settings-changed();
-                                    AppState.refocus();
-                                }
-                            }
-                        }
-
-                        if AppState.settings-skip-preview-mode == "ask-timed": SettingsRow {
-                            key: "player.preview_secs";
-                            indent: true;
-                            title: "Auto-skip after";
-                            subtitle: "Seconds before the preview is skipped automatically";
-                            SettingsDropdown {
-                                model: ["3", "5", "8", "10", "15", "20", "30"];
-                                current-value: AppState.settings-skip-preview-secs == 3 ? "3"
-                                    : AppState.settings-skip-preview-secs == 5 ? "5"
-                                    : AppState.settings-skip-preview-secs == 10 ? "10"
-                                    : AppState.settings-skip-preview-secs == 15 ? "15"
-                                    : AppState.settings-skip-preview-secs == 20 ? "20"
-                                    : AppState.settings-skip-preview-secs == 30 ? "30" : "8";
-                                selected(v) => {
-                                    AppState.settings-skip-preview-secs = v == "3" ? 3 : v == "5" ? 5
-                                        : v == "10" ? 10 : v == "15" ? 15 : v == "20" ? 20 : v == "30" ? 30 : 8;
-                                    AppState.settings-changed();
-                                    AppState.refocus();
-                                }
-                            }
-                        }
-
-                        SettingsRow {
-                            key: "player.commercial_mode";
-                            title: "Commercial";
-                            subtitle: "What to do when a commercial segment is detected";
-                            SettingsDropdown {
-                                model: ["Always skip", "Ask", "Ask (timed)", "Never skip"];
-                                current-value: AppState.settings-skip-commercial-mode == "always-skip" ? "Always skip"
-                                    : AppState.settings-skip-commercial-mode == "ask-timed" ? "Ask (timed)"
-                                    : AppState.settings-skip-commercial-mode == "never-skip" ? "Never skip" : "Ask";
-                                selected(v) => {
-                                    AppState.settings-skip-commercial-mode = v == "Always skip" ? "always-skip"
-                                        : v == "Ask (timed)" ? "ask-timed"
-                                        : v == "Never skip" ? "never-skip" : "ask";
-                                    AppState.settings-changed();
-                                    AppState.refocus();
-                                }
-                            }
-                        }
-
-                        if AppState.settings-skip-commercial-mode == "ask-timed": SettingsRow {
-                            key: "player.commercial_secs";
-                            indent: true;
-                            title: "Auto-skip after";
-                            subtitle: "Seconds before the commercial is skipped automatically";
-                            SettingsDropdown {
-                                model: ["3", "5", "8", "10", "15", "20", "30"];
-                                current-value: AppState.settings-skip-commercial-secs == 3 ? "3"
-                                    : AppState.settings-skip-commercial-secs == 5 ? "5"
-                                    : AppState.settings-skip-commercial-secs == 10 ? "10"
-                                    : AppState.settings-skip-commercial-secs == 15 ? "15"
-                                    : AppState.settings-skip-commercial-secs == 20 ? "20"
-                                    : AppState.settings-skip-commercial-secs == 30 ? "30" : "8";
-                                selected(v) => {
-                                    AppState.settings-skip-commercial-secs = v == "3" ? 3 : v == "5" ? 5
-                                        : v == "10" ? 10 : v == "15" ? 15 : v == "20" ? 20 : v == "30" ? 30 : 8;
-                                    AppState.settings-changed();
-                                    AppState.refocus();
-                                }
-                            }
-                        }
-
-                        SectionHeader {
-                            text: "CREDITS / UP NEXT";
-                        }
-
-                        SettingsRow {
-                            key: "player.credits_mode";
-                            title: "Credits / Up Next";
-                            subtitle: "What to do when credits start; controls the Up Next auto-advance banner";
-                            SettingsDropdown {
-                                model: ["Always skip", "Ask", "Never skip"];
-                                current-value: AppState.settings-skip-credits-mode == "always-skip" ? "Always skip"
-                                    : AppState.settings-skip-credits-mode == "never-skip" ? "Never skip" : "Ask";
-                                selected(v) => {
-                                    AppState.settings-skip-credits-mode = v == "Always skip" ? "always-skip"
-                                        : v == "Never skip" ? "never-skip" : "ask";
-                                    AppState.settings-changed();
-                                    AppState.refocus();
-                                }
-                            }
-                        }
-
-                        if AppState.settings-skip-credits-mode == "ask": SettingsRow {
-                            key: "player.credits_secs";
-                            indent: true;
-                            title: "Countdown";
-                            subtitle: "Seconds shown on the Up Next banner before auto-advancing";
-                            SettingsDropdown {
-                                model: ["10", "15", "20", "30", "45", "60"];
-                                current-value: AppState.settings-skip-credits-secs == 10 ? "10"
-                                    : AppState.settings-skip-credits-secs == 15 ? "15"
-                                    : AppState.settings-skip-credits-secs == 20 ? "20"
-                                    : AppState.settings-skip-credits-secs == 45 ? "45"
-                                    : AppState.settings-skip-credits-secs == 60 ? "60" : "30";
-                                selected(v) => {
-                                    AppState.settings-skip-credits-secs = v == "10" ? 10 : v == "15" ? 15
-                                        : v == "20" ? 20 : v == "45" ? 45 : v == "60" ? 60 : 30;
-                                    AppState.settings-changed();
-                                    AppState.refocus();
-                                }
-                            }
-                        }
-
-                        SectionHeader {
-                            text: "SEEKING";
-                        }
-
-                        SettingsRow {
-                            key: "player.seek_step";
-                            title: "Seek step";
-                            subtitle: "Left/Right arrow seek amount during playback";
-                            SettingsDropdown {
-                                model: ["5", "10", "15", "20", "30"];
-                                current-value: AppState.settings-seek-step-secs == 5 ? "5"
-                                    : AppState.settings-seek-step-secs == 15 ? "15"
-                                    : AppState.settings-seek-step-secs == 20 ? "20"
-                                    : AppState.settings-seek-step-secs == 30 ? "30" : "10";
-                                selected(v) => {
-                                    AppState.settings-seek-step-secs = v == "5" ? 5
-                                        : v == "15" ? 15
-                                        : v == "20" ? 20
-                                        : v == "30" ? 30 : 10;
-                                    AppState.settings-changed();
-                                    AppState.refocus();
-                                }
-                            }
-                        }
-
-                        SettingsRow {
-                            key: "player.seek_step_long";
-                            title: "Long seek step";
-                            subtitle: "Shift+Left/Right arrow seek amount during playback";
-                            SettingsDropdown {
-                                model: ["15", "30", "45", "60", "120"];
-                                current-value: AppState.settings-seek-step-long-secs == 15 ? "15"
-                                    : AppState.settings-seek-step-long-secs == 45 ? "45"
-                                    : AppState.settings-seek-step-long-secs == 60 ? "60"
-                                    : AppState.settings-seek-step-long-secs == 120 ? "120" : "30";
-                                selected(v) => {
-                                    AppState.settings-seek-step-long-secs = v == "15" ? 15
-                                        : v == "45" ? 45
-                                        : v == "60" ? 60
-                                        : v == "120" ? 120 : 30;
-                                    AppState.settings-changed();
-                                    AppState.refocus();
-                                }
-                            }
-                        }
-
-                        SettingsRow {
-                            key: "player.skip_fade_ms";
-                            title: "Skip fade duration";
-                            subtitle: "Fade to black around an intro/recap/preview/commercial skip, instead of cutting instantly. Audio fades with it (mutes for the window on SPDIF passthrough, since a raw bitstream can't be volume-ramped). \"Off (instant)\" is today's original hard cut.";
-                            SettingsDropdown {
-                                model: ["Off (instant)", "100", "150", "200", "300", "400", "500", "750", "1000"];
-                                current-value: AppState.settings-skip-fade-ms == 0 ? "Off (instant)"
-                                    : AppState.settings-skip-fade-ms == 100 ? "100"
-                                    : AppState.settings-skip-fade-ms == 150 ? "150"
-                                    : AppState.settings-skip-fade-ms == 300 ? "300"
-                                    : AppState.settings-skip-fade-ms == 400 ? "400"
-                                    : AppState.settings-skip-fade-ms == 500 ? "500"
-                                    : AppState.settings-skip-fade-ms == 750 ? "750"
-                                    : AppState.settings-skip-fade-ms == 1000 ? "1000" : "200";
-                                selected(v) => {
-                                    AppState.settings-skip-fade-ms = v == "Off (instant)" ? 0
-                                        : v == "100" ? 100
-                                        : v == "150" ? 150
-                                        : v == "300" ? 300
-                                        : v == "400" ? 400
-                                        : v == "500" ? 500
-                                        : v == "750" ? 750
-                                        : v == "1000" ? 1000 : 200;
-                                    AppState.settings-changed();
-                                    AppState.refocus();
-                                }
-                            }
-                        }
-
-                        // Trailer quality: caps the resolution of every YouTube trailer (Discover and the
-                        // movie/series Trailer buttons) — no Seerr needed, so always visible (0.5.1; it
-                        // used to sit in Integrations behind "Seerr connected").
-                    SettingsRow {
-                            key: "player.trailer_quality";
-                            title: "Trailer quality";
-                            subtitle: "Caps the resolution of YouTube trailers (Discover and the movie/series Trailer buttons) — lower starts faster";
-                            SettingsDropdown {
-                                model: ["Best", "1080p", "720p", "480p"];
-                                current-value: AppState.settings-trailer-quality;
-                                selected(v) => { AppState.settings-trailer-quality = v; AppState.settings-changed(); AppState.refocus(); }
-                            }
-                        }
-                    }
-
                     // ── Key Bindings section ──────────────────────────────────────
                 if AppState.settings-section == "keybindings": VerticalLayout {
                         spacing: 0;
@@ -1915,144 +1828,6 @@ export component SettingsScreen inherits Rectangle {
                             if AppState.keybinding-focused >= AppState.keybinding-normal.length + AppState.keybinding-player.length {
                                 right-fl.content-y = min(0px,
                                 right-pane.height - (Theme.sp-xl * 2 + reset-btn.y + reset-btn.height));
-                            }
-                        }
-                    }
-
-                    // ── UI section ──────────────────────────────────────────────────
-                if AppState.settings-section == "ui": VerticalLayout {
-                        spacing: Theme.sp-sm;
-
-                        SectionHeader {
-                            text: "UI";
-                        }
-
-                        // Poster card size — per profile, unlike the rows below.
-                    SettingsRow {
-                            key: "ui.card_size";
-                            title: "Card size";
-                            subtitle: "Size of the poster cards on every screen (dashboards, libraries, Discover) — saved for this profile";
-                            SettingsDropdown {
-                                model: ["Normal", "Large", "Extra large"];
-                                current-value: AppState.settings-card-size == "large" ? "Large"
-                                    : AppState.settings-card-size == "extra-large" ? "Extra large" : "Normal";
-                                selected(v) => {
-                                    AppState.settings-card-size = v == "Large" ? "large"
-                                        : v == "Extra large" ? "extra-large" : "normal";
-                                    AppState.settings-changed();
-                                    AppState.refocus();
-                                }
-                            }
-                        }
-
-                        // Scroll speed. The value is a DURATION multiplier, not a
-                    // rate — bigger % = longer transition = slower, smaller % = faster.
-                    // Opposite of what "speed" suggests at a glance, so the subtitle
-                    // spells it out.
-                    SettingsRow {
-                            key: "ui.scroll_speed";
-                            title: "Scroll speed";
-                            subtitle: "Speed of list/page scrolling with the keyboard — lower % is faster, higher % is slower";
-                            SettingsDropdown {
-                                model: ["0", "25", "50", "75", "100", "150", "200", "300", "400", "500"];
-                                current-value: AppState.settings-scroll-speed-pct == 0 ? "0"
-                                    : AppState.settings-scroll-speed-pct == 25 ? "25"
-                                    : AppState.settings-scroll-speed-pct == 50 ? "50"
-                                    : AppState.settings-scroll-speed-pct == 75 ? "75"
-                                    : AppState.settings-scroll-speed-pct == 150 ? "150"
-                                    : AppState.settings-scroll-speed-pct == 200 ? "200"
-                                    : AppState.settings-scroll-speed-pct == 300 ? "300"
-                                    : AppState.settings-scroll-speed-pct == 400 ? "400"
-                                    : AppState.settings-scroll-speed-pct == 500 ? "500" : "100";
-                                selected(v) => {
-                                    AppState.settings-scroll-speed-pct = v == "0" ? 0
-                                        : v == "25" ? 25
-                                        : v == "50" ? 50
-                                        : v == "75" ? 75
-                                        : v == "150" ? 150
-                                        : v == "200" ? 200
-                                        : v == "300" ? 300
-                                        : v == "400" ? 400
-                                        : v == "500" ? 500 : 100;
-                                    AppState.settings-scroll-speed = (v == "0" ? 0.0
-                                        : v == "25" ? 0.25
-                                        : v == "50" ? 0.5
-                                        : v == "75" ? 0.75
-                                        : v == "150" ? 1.5
-                                        : v == "200" ? 2.0
-                                        : v == "300" ? 3.0
-                                        : v == "400" ? 4.0
-                                        : v == "500" ? 5.0 : 1.0);
-                                    AppState.settings-changed();
-                                    AppState.refocus();
-                                }
-                            }
-                        }
-
-                        // Animation speed (same duration-multiplier caveat as above)
-                    SettingsRow {
-                            key: "ui.animation_speed";
-                            title: "Animation speed";
-                            subtitle: "Speed of press feedback, fades, and other UI transitions — lower % is faster, higher % is slower, 0% = instant";
-                            SettingsDropdown {
-                                model: ["0", "25", "50", "75", "100", "150", "200", "300", "400", "500"];
-                                current-value: AppState.settings-animation-speed-pct == 0 ? "0"
-                                    : AppState.settings-animation-speed-pct == 25 ? "25"
-                                    : AppState.settings-animation-speed-pct == 50 ? "50"
-                                    : AppState.settings-animation-speed-pct == 75 ? "75"
-                                    : AppState.settings-animation-speed-pct == 150 ? "150"
-                                    : AppState.settings-animation-speed-pct == 200 ? "200"
-                                    : AppState.settings-animation-speed-pct == 300 ? "300"
-                                    : AppState.settings-animation-speed-pct == 400 ? "400"
-                                    : AppState.settings-animation-speed-pct == 500 ? "500" : "100";
-                                selected(v) => {
-                                    AppState.settings-animation-speed-pct = v == "0" ? 0
-                                        : v == "25" ? 25
-                                        : v == "50" ? 50
-                                        : v == "75" ? 75
-                                        : v == "150" ? 150
-                                        : v == "200" ? 200
-                                        : v == "300" ? 300
-                                        : v == "400" ? 400
-                                        : v == "500" ? 500 : 100;
-                                    AppState.settings-animation-speed = (v == "0" ? 0.0
-                                        : v == "25" ? 0.25
-                                        : v == "50" ? 0.5
-                                        : v == "75" ? 0.75
-                                        : v == "150" ? 1.5
-                                        : v == "200" ? 2.0
-                                        : v == "300" ? 3.0
-                                        : v == "400" ? 4.0
-                                        : v == "500" ? 5.0 : 1.0);
-                                    AppState.settings-changed();
-                                    AppState.refocus();
-                                }
-                            }
-                        }
-
-                        // Text font (dynamic dropdown, same shape as Audio output
-                    // above — fetched at startup via fc-list, main.rs)
-                    SettingsRow {
-                            key: "ui.font_family";
-                            title: "Text font";
-                            subtitle: "Inter is Fjord's own designed-around default — pick any font installed on this system to override it";
-                            SettingsDropdown {
-                                model <=> AppState.settings-font-family-display;
-                                current-value: AppState.settings-font-family-desc != "" ? AppState.settings-font-family-desc : "Inter (Fjord default)";
-                                selected(v) => { AppState.font-family-selected(v); AppState.refocus(); }
-                            }
-                        }
-
-                        // On-screen alphanumeric keyboard (2026-08-27) — default
-                    // on, since Fjord needs to stay fully usable with no
-                    // physical keyboard attached (remote/D-pad only).
-                    SettingsRow {
-                            key: "ui.onscreen_keyboard";
-                            title: "On-screen keyboard";
-                            subtitle: "Shows a D-pad-navigable keyboard for search/login/naming fields — turn off only if you always have a physical keyboard attached";
-                            ToggleSwitch {
-                                checked <=> AppState.settings-onscreen-keyboard-enabled;
-                                toggled => { AppState.settings-changed(); AppState.refocus(); }
                             }
                         }
                     }
@@ -2246,6 +2021,276 @@ export component SettingsScreen inherits Rectangle {
                                         font-size: 12px;
                                     }
                                 }
+                            }
+                        }
+                    }
+
+                    // ── Advanced section ────────────────────────────────────────────────────
+                if AppState.settings-section == "advanced": VerticalLayout {
+                        spacing: Theme.sp-sm;
+
+                        SectionHeader {
+                            text: "DECODE";
+                        }
+
+                        SettingsRow {
+                            key: "video.hwdec";
+                            title: "Hardware decode (hwdec)";
+                            subtitle: "AMD: vulkan (native) or vulkan-copy · NVIDIA legacy: nvdec-copy + set vf below";
+                            SettingsDropdown {
+                                model: [
+                                    "auto",
+                                    "vulkan",
+                                    "vulkan-copy",
+                                    "nvdec",
+                                    "nvdec-copy",
+                                    "vaapi",
+                                    "vaapi-copy",
+                                    "vdpau",
+                                    "vdpau-copy",
+                                    "none"
+                                ];
+                                current-value: AppState.settings-hwdec;
+                                selected(v) => { AppState.settings-hwdec = v; AppState.settings-changed(); AppState.refocus(); }
+                            }
+                        }
+
+                        // Only with NVDEC selected explicitly (works around NVDEC's stride corruption, see
+                        // CLAUDE.md) — hidden for every other hwdec, including "auto".
+                    if AppState.settings-hwdec == "nvdec" || AppState.settings-hwdec == "nvdec-copy": SettingsRow {
+                            key: "video.vf";
+                            title: "Video filter (vf)";
+                            subtitle: "auto: nv12/p010 = native decoder output, no fix · auto: yuv420p = NVIDIA stride fix matching source bit depth · format=... forces that exact output regardless of source";
+                            SettingsDropdown {
+                                model: [
+                                    "auto: nv12/p010",
+                                    "auto: yuv420p/yuv420p10le",
+                                    "format=yuv420p",
+                                    "format=yuv420p10le",
+                                    "format=nv12",
+                                    "format=p010"
+                                ];
+                                current-value: AppState.settings-vf;
+                                selected(v) => { AppState.settings-vf = v; AppState.settings-changed(); AppState.refocus(); }
+                            }
+                        }
+
+                        SettingsRow {
+                            key: "video.deinterlace";
+                            title: "Deinterlace";
+                            subtitle: "auto: only deinterlaces content flagged as interlaced · yes: always on (DVD / broadcast)";
+                            SettingsDropdown {
+                                model: ["no", "auto", "yes"];
+                                current-value: AppState.settings-deinterlace;
+                                selected(v) => { AppState.settings-deinterlace = v; AppState.settings-changed(); AppState.refocus(); }
+                            }
+                        }
+
+                        SectionHeader {
+                            text: "SYNCHRONISATION";
+                        }
+
+                        SettingsRow {
+                            key: "video.video_sync";
+                            title: "Video sync";
+                            subtitle: "display-resample: smooth sync · desync: no A/V correction (debug)";
+                            SettingsDropdown {
+                                model: ["audio", "display-resample", "display-vdrop", "display-adrop", "desync"];
+                                current-value: AppState.settings-video-sync;
+                                selected(v) => { AppState.settings-video-sync = v; AppState.settings-changed(); AppState.refocus(); }
+                            }
+                        }
+
+                        if AppState.settings-audio-spdif && AppState.settings-video-sync == "display-resample" && (AppState.settings-spdif-ac3 || AppState.settings-spdif-eac3 || AppState.settings-spdif-dts || AppState.settings-spdif-dts-hd || AppState.settings-spdif-truehd): Rectangle {
+                            height: 24px;
+                            HorizontalLayout {
+                                x: 12px;
+                                y: 0px;
+                                height: parent.height;
+                                spacing: 4px;
+                                alignment: start;
+                                Text {
+                                    text: "⚠";
+                                    font-family: "Noto Sans Symbols 2";
+                                    color: Theme.error;
+                                    font-size: 12px;
+                                    vertical-alignment: center;
+                                }
+
+                                Text {
+                                    text: "passthrough active — display-resample falls back to 'audio' sync (no display sync correction)";
+                                    color: Theme.error;
+                                    font-size: 12px;
+                                    vertical-alignment: center;
+                                }
+                            }
+                        }
+
+                        SettingsRow {
+                            key: "video.interpolation";
+                            title: "Motion interpolation";
+                            subtitle: "Temporal interpolation between frames (best with display-resample)";
+                            ToggleSwitch {
+                                checked <=> AppState.settings-interpolation;
+                                toggled => { AppState.settings-changed(); AppState.refocus(); }
+                            }
+                        }
+
+                        if AppState.settings-interpolation: SettingsRow {
+                            key: "video.tscale";
+                            title: "Temporal scaler (tscale)";
+                            subtitle: "Algorithm used for motion interpolation";
+                            SettingsDropdown {
+                                model: ["oversample", "catmull_rom", "mitchell", "gaussian", "bicubic"];
+                                current-value: AppState.settings-tscale;
+                                selected(v) => { AppState.settings-tscale = v; AppState.settings-changed(); AppState.refocus(); }
+                            }
+                        }
+
+                        SectionHeader {
+                            text: "NVIDIA WAYLAND";
+                        }
+
+                        SettingsRow {
+                            key: "video.opengl_early_flush";
+                            title: "OpenGL early flush";
+                            subtitle: "Flush GL after each frame — may reduce jitter on NVIDIA Wayland; mpv defaults this off since it can cause issues on some other platforms";
+                            ToggleSwitch {
+                                checked <=> AppState.settings-opengl-early-flush;
+                                toggled => { AppState.settings-changed(); AppState.refocus(); }
+                            }
+                        }
+
+                        if AppState.settings-video-sync == "display-resample": SettingsRow {
+                            key: "video.video_latency_hacks";
+                            title: "Video latency hacks";
+                            subtitle: "Compensate for imprecise Wayland vsync timestamps (NVIDIA 5xx legacy) — mpv's own manual: known to break other options such as interpolation, not recommended unless you need it";
+                            indent: true;
+                            ToggleSwitch {
+                                checked <=> AppState.settings-video-latency-hacks;
+                                toggled => { AppState.settings-changed(); AppState.refocus(); }
+                            }
+                        }
+
+                        SectionHeader {
+                            text: "10-BIT VIDEO (TESTS)";
+                        }
+
+                        // 10-bit video plane (2026-10-08) — same gate in settings::section_row_keys.
+                    if AppState.is-wayland && AppState.settings-separate-video-surface: SettingsRow {
+                            key: "video.video_own_buffers";
+                            title: "Use Fjord's own 10-bit buffers";
+                            subtitle: "Video in 10-bit even where the graphics driver only gives 8-bit windows (e.g. NVIDIA). Only helps if the driver sends 10-bit to the screen — on Linux, NVIDIA GTX 10-series and older can't over HDMI. Applies after restarting Fjord";
+                            indent: false;
+                            ToggleSwitch {
+                                checked <=> AppState.settings-video-own-buffers;
+                                toggled => { AppState.settings-changed(); AppState.refocus(); }
+                            }
+                        }
+
+                        // Test aid (2026-10-08) — always listed (settings::section_row_keys mirrors this).
+                    SettingsRow {
+                            key: "video.video_dither_off";
+                            title: "Turn off dithering (test)";
+                            subtitle: "For comparing 8-bit and 10-bit video: with dithering off, an 8-bit picture shows visible steps in smooth gradients. Leave this off for normal viewing. Applies from the next video";
+                            ToggleSwitch {
+                                checked <=> AppState.settings-video-dither-off;
+                                toggled => { AppState.settings-changed(); AppState.refocus(); }
+                            }
+                        }
+
+                        SectionHeader {
+                            text: "BUFFERING";
+                        }
+
+                        SettingsRow {
+                            key: "player.cache_secs";
+                            title: "Cache duration (seconds)";
+                            subtitle: "How many seconds of video to buffer ahead — absorbs brief network drops without a visible stall. \"Unlimited\" buffers as much as the size limit below allows.";
+                            SettingsDropdown {
+                                model: ["Unlimited", "10", "30", "60", "120", "300"];
+                                current-value: AppState.settings-cache-secs == 0 ? "Unlimited"
+                                    : AppState.settings-cache-secs == 10 ? "10"
+                                    : AppState.settings-cache-secs == 30 ? "30"
+                                    : AppState.settings-cache-secs == 60 ? "60"
+                                    : AppState.settings-cache-secs == 120 ? "120" : "300";
+                                selected(v) => {
+                                    AppState.settings-cache-secs = v == "Unlimited" ? 0
+                                        : v == "10" ? 10
+                                        : v == "30" ? 30
+                                        : v == "60" ? 60
+                                        : v == "120" ? 120 : 300;
+                                    AppState.settings-changed();
+                                    AppState.refocus();
+                                }
+                            }
+                        }
+
+                        SettingsRow {
+                            key: "player.cache_max_mb";
+                            title: "Max cache size (MiB)";
+                            subtitle: "Memory ceiling for the buffer above — raise if you increase the duration for high-bitrate 4K content. \"Unlimited\" removes the ceiling so the duration above is always what you set, regardless of bitrate.";
+                            SettingsDropdown {
+                                model: ["Unlimited", "150", "300", "500", "1000", "2000"];
+                                current-value: AppState.settings-cache-max-mb == 0 ? "Unlimited"
+                                    : AppState.settings-cache-max-mb == 150 ? "150"
+                                    : AppState.settings-cache-max-mb == 300 ? "300"
+                                    : AppState.settings-cache-max-mb == 500 ? "500"
+                                    : AppState.settings-cache-max-mb == 1000 ? "1000" : "2000";
+                                selected(v) => {
+                                    AppState.settings-cache-max-mb = v == "Unlimited" ? 0
+                                        : v == "150" ? 150
+                                        : v == "300" ? 300
+                                        : v == "500" ? 500
+                                        : v == "1000" ? 1000 : 2000;
+                                    AppState.settings-changed();
+                                    AppState.refocus();
+                                }
+                            }
+                        }
+
+                        SectionHeader {
+                            text: "STARTUP & LOGS";
+                        }
+
+                        SettingsRow {
+                            key: "general.prewarm_metadata";
+                            title: "Prewarm library metadata";
+                            subtitle: AppState.prewarm-metadata-running
+                                ? "Running… \{AppState.prewarm-metadata-done} of \{AppState.prewarm-metadata-total}"
+                                : (AppState.prewarm-metadata-summary != "" ? AppState.prewarm-metadata-summary
+                                : "Fetch detail/cast/related-items for your whole library once, so opening anything is instant");
+                            FjordButton {
+                                width: 100px;
+                                text: AppState.prewarm-metadata-running ? "Running…" : "Prewarm";
+                                enabled: !AppState.prewarm-metadata-running;
+                                clicked => { AppState.prewarm-metadata(); }
+                            }
+                        }
+
+                        SettingsRow {
+                            key: "general.prewarm_images";
+                            title: "Prewarm library images";
+                            subtitle: AppState.prewarm-image-running
+                                ? "Running… \{AppState.prewarm-image-done} of \{AppState.prewarm-image-total}"
+                                : (AppState.prewarm-image-summary != "" ? AppState.prewarm-image-summary
+                                : "Fetch backdrops + cast portraits for whatever's already in the metadata cache");
+                            FjordButton {
+                                width: 100px;
+                                text: AppState.prewarm-image-running ? "Running…" : "Prewarm";
+                                enabled: !AppState.prewarm-image-running;
+                                clicked => { AppState.prewarm-images(); }
+                            }
+                        }
+
+                        SettingsRow {
+                            key: "general.log_level";
+                            title: "Log level";
+                            subtitle: "Verbosity of ~/.cache/fjord/fjord.log — applies on next launch";
+                            SettingsDropdown {
+                                model: ["error", "warn", "info", "debug"];
+                                current-value: AppState.settings-log-level;
+                                selected(v) => { AppState.settings-log-level = v; AppState.settings-changed(); AppState.refocus(); }
                             }
                         }
                     }

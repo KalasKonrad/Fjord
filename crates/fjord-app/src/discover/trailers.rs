@@ -673,7 +673,7 @@ pub(crate) fn detect_yt_dlp() -> bool {
         .unwrap_or(false)
 }
 
-/// Settings → Player → Trailer quality -> mpv `ytdl-format` string.
+/// Settings → Playback → Trailer quality -> mpv `ytdl-format` string.
 /// `quality` is the display-ready value stored directly in
 /// `Config.trailer_quality` (same idiom as `Config.sub_color`/
 /// `SUB_COLOR_MODEL`) — "Best" (and anything unrecognized) leaves it

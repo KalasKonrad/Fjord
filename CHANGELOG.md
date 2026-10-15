@@ -23,11 +23,17 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
-- **Changed: Settings → Player → Trailer quality** (was under Integrations,
+- **Changed: Settings is organised by what you want to change.** The sections
+  are now Playback (skipping, seeking, trailers), Subtitles & language,
+  Display (HDR, display sync), Audio, Interface, Profiles, Integrations, Key
+  Bindings and Advanced (decoder and sync switches, buffering, log level).
+  Settings saved for your profile carry a small "Profile" tag. Every setting
+  keeps its value.
+- **Changed: Settings → Playback → Trailer quality** (was under Integrations,
   only with Seerr connected). It sets the resolution for every YouTube
   trailer, including the movie and series Trailer buttons that work without
   Seerr, so it's now always there.
-- **New: Settings → UI → Card size** — Normal, Large or Extra large poster
+- **New: Settings → Interface → Card size** — Normal, Large or Extra large poster
   cards on every screen: dashboards, library grids, Discover and the rows on
   detail pages. Saved per profile; library grids show fewer columns to fit.
 - **Changed: posters fill the whole card, with the title over them.** The
