@@ -29,7 +29,7 @@ A small release: bug fixes, polish, minor features. Released per CLAUDE.md → R
 - [ ] **UI review (user, 2026-10-15)** — chosen from a code review of every visible text, colour and font size:
   - [x] **Readable setting descriptions:** done, live check in the checklist — 30 of 82 were cut off ("…", one line); the focused row shows its whole description, the longest ones get shorter.
   - [x] **Consistent wording:** done, live check in the checklist — setting names in sentence case, buttons/dialogs/rows in Title Case ("Key bindings" in the sidebar, "Copy Settings from…?"), American spelling (Favorite, color), "Couldn't …" errors without raw technical text (that goes to the log).
-  - [ ] **Theme colours + press flash:** 2–3 overlay/scrim tokens instead of 8 hand-picked darkness values (+ a token for white text on images); press flash on the clickables that lack it (Discover filter pills/popup options, calendar days/popup entries, Now Playing queue rows).
+  - [ ] **Theme colours + press flash:** colours done (theme tokens by role; only the two odd shadows changed) — 2–3 overlay/scrim tokens instead of 8 hand-picked darkness values (+ a token for white text on images); press flash on the clickables that lack it (Discover filter pills/popup options, calendar days/popup entries, Now Playing queue rows).
   - [ ] **Text size setting:** Settings → Interface → "Text size" Normal / Large (~+15%) / Extra large (~+30%), per profile (Profile tag, copied by "Copy settings from…"); every font size scales, small pills/badges grow with it.
 - [x] **Release helper:** `scripts/bump-packages.sh` (done 2026-10-15) — a script for CLAUDE.md → Releasing step 3 — sets `pkgver` in `PKGBUILD` and `fjord-bin/PKGBUILD` and fjord-bin's `sha256sums` from the published tarball.
 

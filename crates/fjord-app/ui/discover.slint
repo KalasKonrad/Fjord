@@ -670,7 +670,7 @@ export component DiscoverScreen inherits Rectangle {
         y: 0;
         width: root.width;
         height: root.height;
-        background: #00000088;
+        background: Theme.scrim;
         TouchArea {
             clicked => { AppState.discover-popup-open = ""; }
         }
@@ -686,7 +686,7 @@ export component DiscoverScreen inherits Rectangle {
             border-width: 1px;
             border-color: Theme.border-strong;
             drop-shadow-blur: 20px;
-            drop-shadow-color: #000000aa;
+            drop-shadow-color: Theme.shadow-strong;
             clip: true;
 
             // Swallows clicks so they don't fall through to the backdrop's close-on-click.

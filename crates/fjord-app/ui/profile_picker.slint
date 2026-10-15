@@ -269,7 +269,7 @@ export component ProfilePickerScreen inherits Rectangle {
     // ── PIN entry — layered sub-state, same dim-backdrop-plus-box shape as
     // RequestOptionsOverlay/PlaylistPicker ─────────────────────────────────
     if AppState.show-profile-pin-entry: Rectangle {
-        background: #00000088;
+        background: Theme.scrim;
 
         TouchArea {
             width: parent.width;
@@ -291,7 +291,7 @@ export component ProfilePickerScreen inherits Rectangle {
             border-width: 1px;
             border-color: Theme.border-strong;
             drop-shadow-blur: 20px;
-            drop-shadow-color: #000000aa;
+            drop-shadow-color: Theme.shadow-strong;
             drop-shadow-offset-y: 6px;
 
             TouchArea {

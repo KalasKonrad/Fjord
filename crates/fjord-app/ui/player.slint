@@ -270,9 +270,9 @@ export component PlayerScreen inherits Rectangle {
         width: clamp(80px, ch-osd-label.preferred-width + 44px, 360px);
         height: 36px;
         border-radius: Theme.radius;
-        background: #0d0d0dcc;
+        background: Theme.osd-panel;
         drop-shadow-blur: 10px;
-        drop-shadow-color: #00000055;
+        drop-shadow-color: Theme.shadow-soft;
 
         HorizontalLayout {
             padding-left: 12px;
@@ -291,7 +291,7 @@ export component PlayerScreen inherits Rectangle {
 
             ch-osd-label := Text {
                 text: AppState.chapter-osd-text;
-                color: #ffffff;
+                color: Theme.text-bright;
                 font-size: 12px;
                 vertical-alignment: center;
             }
@@ -305,9 +305,9 @@ export component PlayerScreen inherits Rectangle {
         width: clamp(80px, delay-osd-label.preferred-width + 44px, 360px);
         height: 36px;
         border-radius: Theme.radius;
-        background: #0d0d0dcc;
+        background: Theme.osd-panel;
         drop-shadow-blur: 10px;
-        drop-shadow-color: #00000055;
+        drop-shadow-color: Theme.shadow-soft;
 
         HorizontalLayout {
             padding-left: 12px;
@@ -326,7 +326,7 @@ export component PlayerScreen inherits Rectangle {
 
             delay-osd-label := Text {
                 text: AppState.delay-osd-text;
-                color: #ffffff;
+                color: Theme.text-bright;
                 font-size: 12px;
                 vertical-alignment: center;
             }
@@ -344,7 +344,7 @@ export component PlayerScreen inherits Rectangle {
         border-color: #ffffff55;
         background: Theme.accent;
         drop-shadow-blur: 10px;
-        drop-shadow-color: #00000055;
+        drop-shadow-color: Theme.shadow-soft;
         opacity: skip-fade.fade-opacity;
         animate opacity {
             duration: 200ms * AppState.settings-animation-speed;
@@ -367,7 +367,7 @@ export component PlayerScreen inherits Rectangle {
 
         Text {
             text: AppState.skip-segment-label;
-            color: #ffffff;
+            color: Theme.text-bright;
             font-size: 14px;
             font-weight: 700;
             horizontal-alignment: center;
@@ -382,9 +382,9 @@ export component PlayerScreen inherits Rectangle {
         width: timed-inner.preferred-width;
         height: timed-inner.preferred-height;
         border-radius: Theme.radius-lg;
-        background: #0d0d0ddd;
+        background: Theme.osd-panel-solid;
         drop-shadow-blur: 10px;
-        drop-shadow-color: #00000055;
+        drop-shadow-color: Theme.shadow-soft;
         opacity: timed-fade.fade-opacity;
         animate opacity {
             duration: 200ms * AppState.settings-animation-speed;
@@ -427,7 +427,7 @@ export component PlayerScreen inherits Rectangle {
         width: 300px;
         height: banner-inner.preferred-height;
         border-radius: Theme.radius-lg;
-        background: #0d0d0ddd;
+        background: Theme.osd-panel-solid;
         drop-shadow-blur: 12px;
         drop-shadow-color: #00000066;
         opacity: banner-fade.fade-opacity;
@@ -453,7 +453,7 @@ export component PlayerScreen inherits Rectangle {
 
                 if AppState.next-ep-ends-at != "": Text {
                     text: "Ends " + AppState.next-ep-ends-at;
-                    color: #cccccc;
+                    color: Theme.text-soft;
                     font-size: 11px;
                     vertical-alignment: center;
                 }
@@ -461,7 +461,7 @@ export component PlayerScreen inherits Rectangle {
 
             Text {
                 text: AppState.next-ep-title;
-                color: #ffffff;
+                color: Theme.text-bright;
                 font-size: 13px;
                 overflow: elide;
             }
@@ -493,9 +493,9 @@ export component PlayerScreen inherits Rectangle {
         width: 180px;
         height: buf-inner.preferred-height;
         border-radius: Theme.radius-lg;
-        background: #0d0d0dcc;
+        background: Theme.osd-panel;
         drop-shadow-blur: 10px;
-        drop-shadow-color: #00000055;
+        drop-shadow-color: Theme.shadow-soft;
 
         property <float> buf-opacity: AppState.buffering-active ? 1.0 : 0.0;
         animate buf-opacity {
@@ -547,9 +547,9 @@ export component PlayerScreen inherits Rectangle {
         width: 220px;
         height: stall-inner.preferred-height;
         border-radius: Theme.radius-lg;
-        background: #0d0d0dcc;
+        background: Theme.osd-panel;
         drop-shadow-blur: 10px;
-        drop-shadow-color: #00000055;
+        drop-shadow-color: Theme.shadow-soft;
 
         property <float> stall-opacity: AppState.playback-stalled ? 1.0 : 0.0;
         animate stall-opacity {
@@ -596,7 +596,7 @@ export component PlayerScreen inherits Rectangle {
                 spacing: 12px;
                 Text {
                     text: AppState.playing-title;
-                    color: #ffffff;
+                    color: Theme.text-bright;
                     font-size: 13px;
                     overflow: elide;
                     horizontal-stretch: 1;
@@ -605,7 +605,7 @@ export component PlayerScreen inherits Rectangle {
 
                 if AppState.playback-ends-at != "": Text {
                     text: "Ends " + AppState.playback-ends-at;
-                    color: #cccccc;
+                    color: Theme.text-soft;
                     font-size: 12px;
                     vertical-alignment: center;
                 }
@@ -618,7 +618,7 @@ export component PlayerScreen inherits Rectangle {
                 Text {
                     // During seek accumulation show the target time; otherwise current position.
                     text: AppState.seek-osd-visible ? AppState.seek-bar-time : AppState.playback-time;
-                    color: #cccccc;
+                    color: Theme.text-soft;
                     font-size: 12px;
                     width: 54px;
                     vertical-alignment: center;
@@ -707,7 +707,7 @@ export component PlayerScreen inherits Rectangle {
                         height: seek-track.thumb-w * AppState.trickplay-aspect + 4px;
                         x: clamp(self.anchor - self.width / 2, 0px, seek-track.width - self.width);
                         y: (self.hovering ? -30px : 0px) - self.height - 6px;
-                        background: #0d0d0ddd;
+                        background: Theme.osd-panel-solid;
                         border-radius: 4px;
                         Image {
                             x: 2px;
@@ -725,11 +725,11 @@ export component PlayerScreen inherits Rectangle {
                         y: -30px;
                         width: 52px;
                         height: 22px;
-                        background: #0d0d0ddd;
+                        background: Theme.osd-panel-solid;
                         border-radius: 4px;
                         Text {
                             text: AppState.seek-hover-time;
-                            color: #ffffff;
+                            color: Theme.text-bright;
                             font-size: 11px;
                             horizontal-alignment: center;
                             vertical-alignment: center;
@@ -902,7 +902,7 @@ export component PlayerScreen inherits Rectangle {
         width: max(delta-txt.preferred-width, target-txt.preferred-width) + 48px;
         height: seek-pill-inner.preferred-height;
         border-radius: Theme.radius-lg;
-        background: #0d0d0dcc;
+        background: Theme.osd-panel;
         drop-shadow-blur: 12px;
         drop-shadow-color: #00000066;
 
@@ -913,7 +913,7 @@ export component PlayerScreen inherits Rectangle {
 
             delta-txt := Text {
                 text: AppState.seek-delta-text;
-                color: #ffffff;
+                color: Theme.text-bright;
                 font-size: 22px;
                 font-weight: 700;
                 horizontal-alignment: center;
@@ -934,7 +934,7 @@ export component PlayerScreen inherits Rectangle {
         y: 16px;
         width: 420px;
         height: stats-inner.preferred-height;
-        background: #0d0d0dcc;
+        background: Theme.osd-panel;
         border-radius: Theme.radius;
 
         stats-inner := VerticalLayout {
@@ -1214,13 +1214,13 @@ export component PlayerScreen inherits Rectangle {
         width: 84px;
         height: 84px;
         border-radius: 42px;
-        background: #00000088;
+        background: Theme.scrim;
         opacity: root.flash-opacity;
         Text {
             text: root.flash-icon;
             font-family: "Noto Sans Symbols 2";
             font-size: 34px;
-            color: #ffffff;
+            color: Theme.text-bright;
             horizontal-alignment: center;
             vertical-alignment: center;
         }

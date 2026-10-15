@@ -86,7 +86,7 @@ component ManageProfileTile inherits VerticalLayout {
 }
 
 export component ManageProfilesScreen inherits Rectangle {
-    background: #000000aa;
+    background: Theme.scrim-strong;
 
     close-ta := TouchArea {
         clicked => { AppState.show-manage-profiles = false; AppState.refocus(); }
@@ -102,7 +102,7 @@ export component ManageProfilesScreen inherits Rectangle {
         background: Theme.surface;
         border-radius: Theme.radius-lg;
         drop-shadow-blur: 28px;
-        drop-shadow-color: #00000070;
+        drop-shadow-color: Theme.shadow;
 
         card-ta := TouchArea { }
 

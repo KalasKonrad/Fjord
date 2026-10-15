@@ -174,6 +174,8 @@ Needs `mpv`/libmpv (`pacman -S mpv`). Optional at runtime: `yt-dlp` (trailers), 
   `AppState.open-onscreen-keyboard(target)` / `keys::open_onscreen_keyboard` — they honour Settings' off
   switch; on `false` the caller does its own Enter action (next field / submit).
 - Clickable elements get the `PressPulse` border flash (`kb-activate-pulse`); focus rings use `Theme.focus-border`.
+- Backdrops, OSD panels, shadows and text over images use their `Theme` tokens (`scrim*`, `osd-panel*`, `shadow*`,
+  `hero-fade-*`, `text-bright`/`text-soft`) — no hand-picked colours or alphas in screens.
 
 ### Screens, animation, glyphs
 - Free-floating overlays mount via `FadeGate` (fades in and out). Screens sharing AppShell's

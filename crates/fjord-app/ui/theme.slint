@@ -53,6 +53,22 @@ export global Theme {
     out property <color> text-muted:      #8e8e93;
     out property <color> text-subtle:     #48484a;
 
+    // Pure white / soft grey for text over images, video and accent-filled pills and badges.
+    out property <color> text-bright:     #ffffff;
+    out property <color> text-soft:       #cccccc;
+
+    // ── Overlays, panels, shadows (by role — use these, not hand-picked alphas) ──
+    out property <color> scrim:           #00000088; // dim backdrop behind dialogs and popups
+    out property <color> scrim-strong:    #000000aa; // behind full-screen overlay screens
+    out property <color> scrim-solid:     #000000cc; // overlays that hide what's behind (lyrics)
+    out property <color> osd-panel:       #0d0d0dcc; // player OSD pills and panels
+    out property <color> osd-panel-solid: #0d0d0ddd; // larger OSD panels (track lists)
+    out property <color> hero-fade-top:   #00000080; // detail-page backdrop gradient
+    out property <color> hero-fade-bottom: #000000cc;
+    out property <color> shadow-soft:     #00000055; // OSD pills
+    out property <color> shadow:          #00000070; // panels and boxes
+    out property <color> shadow-strong:   #000000aa; // dialogs, popups, menus
+
     // ── Borders / separators ─────────────────────────────────────────────────
     out property <color> border:          #2c2c2e;
     out property <color> border-strong:   #3a3a3c;

@@ -117,7 +117,7 @@ export component RequestDetailScreen inherits Rectangle {
                     y: 0;
                     width: parent.width;
                     height: parent.height;
-                    background: @linear-gradient(180deg, #00000080 0%, #000000cc 100%);
+                    background: @linear-gradient(180deg, Theme.hero-fade-top 0%, Theme.hero-fade-bottom 100%);
                 }
 
                 VerticalLayout {
@@ -224,7 +224,7 @@ export component RequestDetailScreen inherits Rectangle {
                                             : Theme.surface-overlay;
                                         status2k-txt := Text {
                                             text: "2K " + AppState.request-detail-status;
-                                            color: #ffffff;
+                                            color: Theme.text-bright;
                                             font-size: 13px;
                                             font-weight: 700;
                                             horizontal-alignment: center;
@@ -240,7 +240,7 @@ export component RequestDetailScreen inherits Rectangle {
                                             : Theme.surface-overlay;
                                         status4k-txt := Text {
                                             text: "4K " + AppState.request-detail-status-4k;
-                                            color: #ffffff;
+                                            color: Theme.text-bright;
                                             font-size: 13px;
                                             font-weight: 700;
                                             horizontal-alignment: center;
@@ -481,7 +481,7 @@ export component RequestDetailScreen inherits Rectangle {
 // every chip has a fixed width, so preferred-width doesn't depend on the Flickable (no
 // binding loop).
 export component RequestOptionsOverlay inherits Rectangle {
-    background: #00000088;
+    background: Theme.scrim;
 
     property <bool> has-profiles: AppState.request-detail-profiles.length > 0;
     property <bool> has-tags:     AppState.request-detail-tags.length > 0;
@@ -507,7 +507,7 @@ export component RequestOptionsOverlay inherits Rectangle {
         border-width: 1px;
         border-color: Theme.border-strong;
         drop-shadow-blur: 20px;
-        drop-shadow-color: #000000aa;
+        drop-shadow-color: Theme.shadow-strong;
         drop-shadow-offset-y: 6px;
 
         // Stop backdrop click from propagating through the box
@@ -769,7 +769,7 @@ export component RequestOptionsOverlay inherits Rectangle {
                                 if t.selected: Text {
                                     text: "✓";
                                     font-family: "Adwaita Sans";
-                                    color: #ffffff;
+                                    color: Theme.text-bright;
                                     font-size: 12px;
                                     vertical-alignment: center;
                                 }
