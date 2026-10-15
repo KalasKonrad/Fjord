@@ -131,7 +131,7 @@ component VirtualKeyboardKey inherits Rectangle {
     Text {
         text: root.label;
         color: root.active ? #ffffff : (root.kb-focused ? Theme.accent : Theme.text);
-        font-size: 22px;
+        font-size: 22px * AppState.text-scale;
         font-weight: 600;
         horizontal-alignment: center;
         vertical-alignment: center;
@@ -334,7 +334,7 @@ export component FjordButton inherits Rectangle {
         if root.icon-left != "": Text {
             text: root.icon-left;
             color: root.enabled ? #ffffff : Theme.text-subtle;
-            font-size: 14px;
+            font-size: 14px * AppState.text-scale;
             font-weight: 600;
             font-family: "Noto Sans Symbols 2";
             vertical-alignment: center;
@@ -342,14 +342,14 @@ export component FjordButton inherits Rectangle {
         if root.text != "": Text {
             text: root.text;
             color: root.enabled ? #ffffff : Theme.text-subtle;
-            font-size: 14px;
+            font-size: 14px * AppState.text-scale;
             font-weight: 600;
             vertical-alignment: center;
         }
         if root.icon-right != "": Text {
             text: root.icon-right;
             color: root.enabled ? #ffffff : Theme.text-subtle;
-            font-size: 14px;
+            font-size: 14px * AppState.text-scale;
             font-weight: 600;
             font-family: "Noto Sans Symbols 2";
             vertical-alignment: center;
@@ -413,7 +413,7 @@ export component ConfirmDialog inherits Rectangle {
             Text {
                 text: root.title;
                 color: Theme.text;
-                font-size: 16px;
+                font-size: 16px * AppState.text-scale;
                 font-weight: 700;
                 horizontal-alignment: center;
             }
@@ -421,7 +421,7 @@ export component ConfirmDialog inherits Rectangle {
             Text {
                 text: root.message;
                 color: Theme.text-muted;
-                font-size: 13px;
+                font-size: 13px * AppState.text-scale;
                 horizontal-alignment: center;
                 wrap: word-wrap;
             }
@@ -452,7 +452,7 @@ export component ConfirmDialog inherits Rectangle {
                     Text {
                         text: "Cancel";
                         color: Theme.text;
-                        font-size: 14px;
+                        font-size: 14px * AppState.text-scale;
                         font-weight: 600;
                         horizontal-alignment: center;
                         vertical-alignment: center;
@@ -501,7 +501,7 @@ export component IconCircleButton inherits Rectangle {
         height: parent.height;
         text: root.icon;
         color: Theme.text-bright;
-        font-size: 20px;
+        font-size: 20px * AppState.text-scale;
         font-weight: 600;
         // Hard-pinned regardless of Settings → Interface → Text font: ♥/✓ always
         // render via Adwaita Sans specifically (the deliberately-chosen
@@ -575,7 +575,7 @@ export component NavItem inherits Rectangle {
         Text {
             text: label;
             color: active ? Theme.text : Theme.text-muted;
-            font-size: 14px;
+            font-size: 14px * AppState.text-scale;
             font-weight: active ? 600 : 400;
             vertical-alignment: center;
         }
@@ -631,7 +631,7 @@ export component BrowseItem inherits Rectangle {
         Text {
             text: root.text;
             color: selected ? Theme.text : Theme.text-muted;
-            font-size: 14px;
+            font-size: 14px * AppState.text-scale;
             overflow: elide;
             vertical-alignment: center;
             horizontal-stretch: 1;
@@ -785,7 +785,7 @@ export component MediaCard inherits Rectangle {
                 y: subtitle-text.y - (item.subtitle != "" ? 2px : 0px) - self.height;
                 text: item.title;
                 color: Theme.text;
-                font-size: 12px;
+                font-size: 12px * AppState.text-scale;
                 font-weight: 600;
                 wrap: word-wrap;
             }
@@ -798,7 +798,7 @@ export component MediaCard inherits Rectangle {
                 visible: item.subtitle != "";
                 text: item.subtitle;
                 color: Theme.text-muted;
-                font-size: 10px;
+                font-size: 10px * AppState.text-scale;
                 wrap: word-wrap;
             }
 
@@ -827,7 +827,7 @@ export component MediaCard inherits Rectangle {
                     text: "❤";
                     font-family: "Adwaita Sans";
                     color: Theme.text-bright;
-                    font-size: 14px;
+                    font-size: 14px * AppState.text-scale;
                     font-weight: 900;
                     horizontal-alignment: center;
                     vertical-alignment: center;
@@ -847,7 +847,7 @@ export component MediaCard inherits Rectangle {
                 Text {
                     text: "★";
                     color: Theme.text-bright;
-                    font-size: 14px;
+                    font-size: 14px * AppState.text-scale;
                     font-weight: 900;
                     horizontal-alignment: center;
                     vertical-alignment: center;
@@ -866,7 +866,7 @@ export component MediaCard inherits Rectangle {
                     text: "✓";
                     font-family: "Adwaita Sans";
                     color: Theme.text-bright;
-                    font-size: 18px;
+                    font-size: 18px * AppState.text-scale;
                     font-weight: 900;
                     horizontal-alignment: center;
                     vertical-alignment: center;
@@ -884,7 +884,7 @@ export component MediaCard inherits Rectangle {
                 Text {
                     text: "\{item.unplayed-count}";
                     color: Theme.text-bright;
-                    font-size: 11px;
+                    font-size: 11px * AppState.text-scale;
                     font-weight: 900;
                     horizontal-alignment: center;
                     vertical-alignment: center;
@@ -911,7 +911,7 @@ export component MediaCard inherits Rectangle {
                         : item.availability == "available" ? "In Library"
                         : "");
                     color: Theme.text-bright;
-                    font-size: 10px;
+                    font-size: 10px * AppState.text-scale;
                     font-weight: 700;
                     horizontal-alignment: center;
                     vertical-alignment: center;
@@ -937,7 +937,7 @@ export component MediaCard inherits Rectangle {
                         ? (item.requested-4k ? "Available in 2K" : "Available in 4K")
                         : (item.requested-4k ? "Also requested in 2K" : "Also requested in 4K");
                     color: Theme.text-bright;
-                    font-size: 10px;
+                    font-size: 10px * AppState.text-scale;
                     font-weight: 700;
                     horizontal-alignment: center;
                     vertical-alignment: center;
@@ -1079,7 +1079,7 @@ export component SectionHeader inherits Rectangle {
         Text {
             text: root.text;
             color: Theme.accent;
-            font-size: 11px;
+            font-size: 11px * AppState.text-scale;
             font-weight: 700;
             vertical-alignment: center;
         }
@@ -1127,7 +1127,7 @@ export component SettingsDropdown inherits Rectangle {
         val := Text {
             text: root.display-value;
             color: Theme.text;
-            font-size: 13px;
+            font-size: 13px * AppState.text-scale;
             vertical-alignment: center;
             overflow: elide;
         }
@@ -1136,7 +1136,7 @@ export component SettingsDropdown inherits Rectangle {
             text: "▾";
             font-family: "Noto Sans Symbols 2";
             color: Theme.text-muted;
-            font-size: 10px;
+            font-size: 10px * AppState.text-scale;
             vertical-alignment: center;
         }
     }
@@ -1174,7 +1174,7 @@ export component SettingsDropdown inherits Rectangle {
                             x: 10px;
                             text: opt != "" ? opt : "(none)";
                             color: opt == root.current-value ? Theme.accent : Theme.text;
-                            font-size: 13px;
+                            font-size: 13px * AppState.text-scale;
                             font-weight: opt == root.current-value ? 600 : 400;
                             vertical-alignment: center;
                             overflow: elide;
@@ -1250,7 +1250,7 @@ export component SettingsRow inherits Rectangle {
                 Text {
                     text: root.title;
                     color: Theme.text;
-                    font-size: 14px;
+                    font-size: 14px * AppState.text-scale;
                 }
 
                 if root.per-profile: VerticalLayout {
@@ -1263,7 +1263,7 @@ export component SettingsRow inherits Rectangle {
                         profile-tag := Text {
                             text: "Profile";
                             color: Theme.text-muted;
-                            font-size: 10px;
+                            font-size: 10px * AppState.text-scale;
                             font-weight: 600;
                             horizontal-alignment: center;
                             vertical-alignment: center;
@@ -1277,7 +1277,7 @@ export component SettingsRow inherits Rectangle {
             Text {
                 text: root.subtitle;
                 color: Theme.text-muted;
-                font-size: 12px;
+                font-size: 12px * AppState.text-scale;
                 wrap: AppState.settings-focused == root.key ? TextWrap.word-wrap : TextWrap.no-wrap;
                 overflow: elide;
             }
@@ -1348,7 +1348,7 @@ export component PosterBlock inherits Rectangle {
             text: "✓";
             font-family: "Adwaita Sans";
             color: white;
-            font-size: 11px;
+            font-size: 11px * AppState.text-scale;
             font-weight: 700;
             horizontal-alignment: center;
             vertical-alignment: center;
@@ -1367,7 +1367,7 @@ export component PosterBlock inherits Rectangle {
         Text {
             text: root.unplayed-count;
             color: white;
-            font-size: 11px;
+            font-size: 11px * AppState.text-scale;
             font-weight: 700;
             horizontal-alignment: center;
             vertical-alignment: center;
@@ -1390,7 +1390,7 @@ export component PosterBlock inherits Rectangle {
         request-status-text := Text {
             text: root.request-status;
             color: Theme.text-bright;
-            font-size: 10px;
+            font-size: 10px * AppState.text-scale;
             font-weight: 700;
             horizontal-alignment: center;
             vertical-alignment: center;
@@ -1406,13 +1406,13 @@ export component MetaLine inherits HorizontalLayout {
     Text {
         text: root.meta;
         color: Theme.text-muted;
-        font-size: 14px;
+        font-size: 14px * AppState.text-scale;
     }
 
     if root.rating-label != "": Text {
         text: root.rating-label;
         color: #f5c518;
-        font-size: 14px;
+        font-size: 14px * AppState.text-scale;
     }
 }
 
@@ -1436,7 +1436,7 @@ export component CastRow inherits VerticalLayout {
     Text {
         text: "Cast & Crew";
         color: Theme.text;
-        font-size: 16px;
+        font-size: 16px * AppState.text-scale;
         font-weight: 700;
     }
 
@@ -1497,7 +1497,7 @@ export component CastRow inherits VerticalLayout {
                 Text {
                     text: c.name;
                     color: Theme.text;
-                    font-size: 12px;
+                    font-size: 12px * AppState.text-scale;
                     font-weight: 600;
                     overflow: elide;
                 }
@@ -1505,7 +1505,7 @@ export component CastRow inherits VerticalLayout {
                 Text {
                     text: c.role;
                     color: Theme.text-muted;
-                    font-size: 11px;
+                    font-size: 11px * AppState.text-scale;
                     overflow: elide;
                 }
             }
@@ -1550,7 +1550,7 @@ export component StorylineSection inherits VerticalLayout {
             Text {
                 text: "Overview";
                 color: Theme.text;
-                font-size: 15px;
+                font-size: 15px * AppState.text-scale;
                 font-weight: 600;
                 vertical-alignment: center;
             }
@@ -1559,7 +1559,7 @@ export component StorylineSection inherits VerticalLayout {
                 text: expanded ? "▼" : "▶";
                 font-family: "Noto Sans Symbols 2";
                 color: Theme.text-muted;
-                font-size: 13px;
+                font-size: 13px * AppState.text-scale;
                 vertical-alignment: center;
             }
         }
@@ -1591,7 +1591,7 @@ export component StorylineSection inherits VerticalLayout {
                 y: 0;
                 text: root.text;
                 color: Theme.text-soft;
-                font-size: 15px;
+                font-size: 15px * AppState.text-scale;
                 wrap: word-wrap;
                 width: min(root.width - 96px, 640px);
             }
@@ -1610,7 +1610,7 @@ export component StatRow inherits Rectangle {
         Text {
             text: label;
             color: #555555;
-            font-size: 11px;
+            font-size: 11px * AppState.text-scale;
             font-weight: 700;
             width: 60px;
             vertical-alignment: top;
@@ -1619,7 +1619,7 @@ export component StatRow inherits Rectangle {
         Text {
             text: value;
             color: Theme.text-soft;
-            font-size: 11px;
+            font-size: 11px * AppState.text-scale;
             wrap: word-wrap;
             horizontal-stretch: 1;
         }
@@ -1715,14 +1715,14 @@ export component MiniPlayerBar inherits Rectangle {
             Text {
                 text: "NOW PLAYING";
                 color: Theme.accent;
-                font-size: 9px;
+                font-size: 9px * AppState.text-scale;
                 font-weight: 700;
             }
 
             Text {
                 text: AppState.playing-title;
                 color: Theme.text;
-                font-size: 13px;
+                font-size: 13px * AppState.text-scale;
                 overflow: elide;
             }
 
@@ -1762,14 +1762,14 @@ export component MiniPlayerBar inherits Rectangle {
             Text {
                 text: "NOW PLAYING";
                 color: Theme.accent;
-                font-size: 9px;
+                font-size: 9px * AppState.text-scale;
                 font-weight: 700;
             }
 
             Text {
                 text: AppState.playing-title;
                 color: Theme.text;
-                font-size: 13px;
+                font-size: 13px * AppState.text-scale;
                 overflow: elide;
             }
         }
@@ -1876,7 +1876,7 @@ export component MusicPlayerBar inherits Rectangle {
                         Text {
                             text: AppState.music-bar-title;
                             color: Theme.text;
-                            font-size: 13px;
+                            font-size: 13px * AppState.text-scale;
                             font-weight: 600;
                             overflow: elide;
                         }
@@ -1884,7 +1884,7 @@ export component MusicPlayerBar inherits Rectangle {
                         Text {
                             text: AppState.music-bar-artist;
                             color: Theme.text-muted;
-                            font-size: 12px;
+                            font-size: 12px * AppState.text-scale;
                             overflow: elide;
                         }
                     }
@@ -1931,7 +1931,7 @@ export component MusicPlayerBar inherits Rectangle {
                             text: AppState.music-bar-paused ? "▶" : "⏸";
                             font-family: "Noto Sans Symbols 2";
                             color: Theme.text;
-                            font-size: 16px;
+                            font-size: 16px * AppState.text-scale;
                             vertical-alignment: center;
                             horizontal-alignment: center;
                             width: parent.width;
@@ -1966,7 +1966,7 @@ export component MusicPlayerBar inherits Rectangle {
                             text: "⏹";
                             font-family: "Noto Sans Symbols 2";
                             color: Theme.text-muted;
-                            font-size: 14px;
+                            font-size: 14px * AppState.text-scale;
                             vertical-alignment: center;
                             horizontal-alignment: center;
                             width: parent.width;
@@ -1983,7 +1983,7 @@ export component MusicPlayerBar inherits Rectangle {
                 Text {
                     text: AppState.music-bar-elapsed;
                     color: Theme.text-muted;
-                    font-size: 11px;
+                    font-size: 11px * AppState.text-scale;
                     width: 36px;
                     horizontal-alignment: right;
                     vertical-alignment: center;
@@ -2021,7 +2021,7 @@ export component MusicPlayerBar inherits Rectangle {
                 Text {
                     text: AppState.music-bar-total;
                     color: Theme.text-muted;
-                    font-size: 11px;
+                    font-size: 11px * AppState.text-scale;
                     width: 36px;
                     horizontal-alignment: left;
                     vertical-alignment: center;
@@ -2145,7 +2145,7 @@ export component QueuePanel inherits Rectangle {
                             "Queue — " + (max(c, 0) + 1) + " of " + n
                         }
                         color: Theme.text;
-                        font-size: 15px;
+                        font-size: 15px * AppState.text-scale;
                         font-weight: 600;
                         vertical-alignment: center;
                         height: parent.height;
@@ -2170,7 +2170,7 @@ export component QueuePanel inherits Rectangle {
                                 AppState.queue-panel-cursor == -1 ? Theme.accent
                                     : hov ? Theme.accent : Theme.text-muted
                             };
-                            font-size: 13px;
+                            font-size: 13px * AppState.text-scale;
                             font-weight: AppState.queue-panel-cursor == -1 ? 700 : 400;
                             vertical-alignment: center;
                             horizontal-alignment: right;
@@ -2274,7 +2274,7 @@ export component QueuePanel inherits Rectangle {
                                             text: "♫";
                                             font-family: "Noto Sans Symbols 2";
                                             color: Theme.text-subtle;
-                                            font-size: 18px;
+                                            font-size: 18px * AppState.text-scale;
                                             vertical-alignment: center;
                                             horizontal-alignment: center;
                                             width: parent.width;
@@ -2286,7 +2286,7 @@ export component QueuePanel inherits Rectangle {
                                     Text {
                                         text: i + 1;
                                         color: entry.is-current ? Theme.accent : Theme.text-muted;
-                                        font-size: 12px;
+                                        font-size: 12px * AppState.text-scale;
                                         horizontal-alignment: right;
                                         vertical-alignment: center;
                                         width: 22px;
@@ -2301,7 +2301,7 @@ export component QueuePanel inherits Rectangle {
                                         Text {
                                             text: entry.title;
                                             color: entry.is-current ? Theme.accent : Theme.text;
-                                            font-size: 14px;
+                                            font-size: 14px * AppState.text-scale;
                                             font-weight: entry.is-current ? 700 : 400;
                                             overflow: elide;
                                         }
@@ -2311,7 +2311,7 @@ export component QueuePanel inherits Rectangle {
                                                 ? (entry.artist == "" ? "Queued" : entry.artist + "  ·  Queued")
                                                 : entry.artist;
                                             color: entry.is-queued ? Theme.text-subtle : Theme.text-muted;
-                                            font-size: 12px;
+                                            font-size: 12px * AppState.text-scale;
                                             overflow: elide;
                                         }
                                     }
@@ -2481,7 +2481,7 @@ export component VolumeOverlay inherits Rectangle {
         Text {
             text: "Vol";
             color: Theme.accent;
-            font-size: 11px;
+            font-size: 11px * AppState.text-scale;
             font-weight: 700;
             vertical-alignment: center;
             width: 24px;
@@ -2505,7 +2505,7 @@ export component VolumeOverlay inherits Rectangle {
         if AppState.audio-passthrough-active: Text {
             text: "passthrough";
             color: Theme.text-subtle;
-            font-size: 11px;
+            font-size: 11px * AppState.text-scale;
             vertical-alignment: center;
             horizontal-stretch: 1;
         }
@@ -2513,7 +2513,7 @@ export component VolumeOverlay inherits Rectangle {
         if !AppState.audio-passthrough-active: Text {
             text: AppState.volume-level + "%";
             color: #bbbbbb;
-            font-size: 11px;
+            font-size: 11px * AppState.text-scale;
             vertical-alignment: center;
             width: 38px;
         }
@@ -2551,7 +2551,7 @@ export component ToastNotification inherits Rectangle {
         height: parent.height;
         text: root.message;
         color: Theme.text;
-        font-size: 13px;
+        font-size: 13px * AppState.text-scale;
         wrap: word-wrap;
         vertical-alignment: center;
     }
@@ -2616,7 +2616,7 @@ export component SidebarProfileMenu inherits Rectangle {
                 Text {
                     text: label;
                     color: AppState.sidebar-profile-menu-focused == i ? Theme.text : Theme.text-muted;
-                    font-size: 14px;
+                    font-size: 14px * AppState.text-scale;
                     vertical-alignment: center;
                     x: 12px;
                 }

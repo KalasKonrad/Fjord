@@ -182,13 +182,13 @@ export component MainWindow inherits Window {
             Text {
                 text: "Up Next in \{AppState.next-ep-secs}s";
                 color: Theme.text-muted;
-                font-size: 11px;
+                font-size: 11px * AppState.text-scale;
             }
 
             Text {
                 text: AppState.next-ep-title;
                 color: Theme.text;
-                font-size: 13px;
+                font-size: 13px * AppState.text-scale;
                 font-weight: 600;
                 overflow: elide;
             }

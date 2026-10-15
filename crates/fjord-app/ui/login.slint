@@ -91,7 +91,7 @@ export component LoginScreen inherits Rectangle {
                 Text {
                     text: "Jellyfin media player";
                     color: Theme.text-muted;
-                    font-size: 13px;
+                    font-size: 13px * AppState.text-scale;
                     horizontal-alignment: center;
                 }
             }
@@ -272,7 +272,7 @@ export component LoginScreen inherits Rectangle {
                     y: (parent.height - self.height) / 2;
                     text: "Remember this login";
                     color: Theme.text-muted;
-                    font-size: 13px;
+                    font-size: 13px * AppState.text-scale;
                     vertical-alignment: center;
                 }
 
@@ -299,7 +299,7 @@ export component LoginScreen inherits Rectangle {
             if AppState.status != "": Text {
                 text: AppState.status;
                 color: Theme.text-muted;
-                font-size: 13px;
+                font-size: 13px * AppState.text-scale;
                 horizontal-alignment: center;
                 wrap: word-wrap;
             }

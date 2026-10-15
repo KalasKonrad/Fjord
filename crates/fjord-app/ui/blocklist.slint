@@ -42,7 +42,7 @@ export component BlocklistScreen inherits Rectangle {
             height: parent.height;
             text: "Manage Blocklist";
             color: Theme.text;
-            font-size: 18px;
+            font-size: 18px * AppState.text-scale;
             font-weight: 700;
             vertical-alignment: center;
         }
@@ -60,7 +60,7 @@ export component BlocklistScreen inherits Rectangle {
         y: 120px;
         text: "Nothing blocklisted";
         color: Theme.text-muted;
-        font-size: 14px;
+        font-size: 14px * AppState.text-scale;
     }
     if AppState.blocklist-items.length == 0 && AppState.blocklist-loading-more: LoadingSpinner {
         y: 120px;
@@ -127,7 +127,7 @@ export component BlocklistScreen inherits Rectangle {
                                 Text {
                                     text: row.title;
                                     color: Theme.text;
-                                    font-size: 14px;
+                                    font-size: 14px * AppState.text-scale;
                                     font-weight: 600;
                                     overflow: elide;
                                 }
@@ -137,7 +137,7 @@ export component BlocklistScreen inherits Rectangle {
                                     Text {
                                         text: row.media-type == "movie" ? "Movie" : "TV";
                                         color: Theme.text-subtle;
-                                        font-size: 11px;
+                                        font-size: 11px * AppState.text-scale;
                                     }
 
                                     if row.blocklisted-by != "" || row.blocklisted-at != "": Text {
@@ -151,7 +151,7 @@ export component BlocklistScreen inherits Rectangle {
                                             }
                                         }
                                         color: Theme.text-muted;
-                                        font-size: 11px;
+                                        font-size: 11px * AppState.text-scale;
                                         overflow: elide;
                                     }
                                 }
@@ -169,7 +169,7 @@ export component BlocklistScreen inherits Rectangle {
                                 Text {
                                     text: "✕";
                                     color: remove-ta.has-hover ? Theme.error : Theme.text-muted;
-                                    font-size: 16px;
+                                    font-size: 16px * AppState.text-scale;
                                     horizontal-alignment: center;
                                     vertical-alignment: center;
                                     width: parent.width;

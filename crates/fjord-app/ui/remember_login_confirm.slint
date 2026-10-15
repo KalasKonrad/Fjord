@@ -55,7 +55,7 @@ export component RememberLoginConfirmOverlay inherits Rectangle {
             Text {
                 text: "Confirm password for " + AppState.remember-login-confirm-username;
                 color: Theme.text;
-                font-size: 15px;
+                font-size: 15px * AppState.text-scale;
                 font-weight: 700;
                 horizontal-alignment: center;
                 wrap: word-wrap;
@@ -64,7 +64,7 @@ export component RememberLoginConfirmOverlay inherits Rectangle {
             Text {
                 text: "Re-entering your password lets this account resume automatically again at startup.";
                 color: Theme.text-muted;
-                font-size: 12px;
+                font-size: 12px * AppState.text-scale;
                 horizontal-alignment: center;
                 wrap: word-wrap;
             }
@@ -93,7 +93,7 @@ export component RememberLoginConfirmOverlay inherits Rectangle {
             if AppState.remember-login-confirm-error != "": Text {
                 text: AppState.remember-login-confirm-error;
                 color: Theme.error;
-                font-size: 12px;
+                font-size: 12px * AppState.text-scale;
                 horizontal-alignment: center;
                 wrap: word-wrap;
             }

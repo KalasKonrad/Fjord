@@ -41,7 +41,7 @@ export component NowPlayingScreen inherits Rectangle {
                 Text {
                     text: "Now Playing";
                     color: Theme.text;
-                    font-size: 17px;
+                    font-size: 17px * AppState.text-scale;
                     font-weight: 700;
                     vertical-alignment: center;
                 }
@@ -98,7 +98,7 @@ export component NowPlayingScreen inherits Rectangle {
                     Text {
                         text: AppState.music-bar-title;
                         color: Theme.text;
-                        font-size: 22px;
+                        font-size: 22px * AppState.text-scale;
                         font-weight: 700;
                         horizontal-alignment: center;
                         overflow: elide;
@@ -107,7 +107,7 @@ export component NowPlayingScreen inherits Rectangle {
                     Text {
                         text: AppState.music-bar-artist;
                         color: Theme.text-muted;
-                        font-size: 15px;
+                        font-size: 15px * AppState.text-scale;
                         horizontal-alignment: center;
                         overflow: elide;
                     }
@@ -140,7 +140,7 @@ export component NowPlayingScreen inherits Rectangle {
                         Text {
                             text: AppState.music-bar-elapsed;
                             color: Theme.text-muted;
-                            font-size: 12px;
+                            font-size: 12px * AppState.text-scale;
                         }
 
                         Rectangle {
@@ -150,7 +150,7 @@ export component NowPlayingScreen inherits Rectangle {
                         Text {
                             text: AppState.music-bar-total;
                             color: Theme.text-muted;
-                            font-size: 12px;
+                            font-size: 12px * AppState.text-scale;
                         }
                     }
                 }
@@ -223,7 +223,7 @@ export component NowPlayingScreen inherits Rectangle {
                 if !AppState.lyrics-available: Text {
                     text: "No lyrics available";
                     color: Theme.text-subtle;
-                    font-size: 14px;
+                    font-size: 14px * AppState.text-scale;
                     horizontal-alignment: center;
                     vertical-alignment: center;
                     width: parent.width;
@@ -323,7 +323,7 @@ export component NowPlayingScreen inherits Rectangle {
                 Text {
                     text: "Up Next";
                     color: Theme.text-muted;
-                    font-size: 12px;
+                    font-size: 12px * AppState.text-scale;
                     font-weight: 600;
                 }
 
@@ -381,7 +381,7 @@ export component NowPlayingScreen inherits Rectangle {
                                         text: "♫";
                                         font-family: "Noto Sans Symbols 2";
                                         color: Theme.text-subtle;
-                                        font-size: 22px;
+                                        font-size: 22px * AppState.text-scale;
                                         horizontal-alignment: center;
                                         vertical-alignment: center;
                                         width: parent.width;
@@ -392,7 +392,7 @@ export component NowPlayingScreen inherits Rectangle {
                                 Text {
                                     text: entry.title;
                                     color: entry.is-current ? Theme.accent : Theme.text;
-                                    font-size: 11px;
+                                    font-size: 11px * AppState.text-scale;
                                     font-weight: entry.is-current ? 700 : 400;
                                     horizontal-alignment: center;
                                     vertical-alignment: center;

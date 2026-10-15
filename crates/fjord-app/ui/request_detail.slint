@@ -50,7 +50,7 @@ component MetaRow inherits HorizontalLayout {
     Text {
         text: root.label;
         color: Theme.text-muted;
-        font-size: 14px;
+        font-size: 14px * AppState.text-scale;
         font-weight: 600;
         width: 160px;
         wrap: word-wrap;
@@ -60,7 +60,7 @@ component MetaRow inherits HorizontalLayout {
     Text {
         text: root.value;
         color: Theme.text;
-        font-size: 14px;
+        font-size: 14px * AppState.text-scale;
         wrap: word-wrap;
         horizontal-stretch: 1;
     }
@@ -225,7 +225,7 @@ export component RequestDetailScreen inherits Rectangle {
                                         status2k-txt := Text {
                                             text: "2K " + AppState.request-detail-status;
                                             color: Theme.text-bright;
-                                            font-size: 13px;
+                                            font-size: 13px * AppState.text-scale;
                                             font-weight: 700;
                                             horizontal-alignment: center;
                                             vertical-alignment: center;
@@ -241,7 +241,7 @@ export component RequestDetailScreen inherits Rectangle {
                                         status4k-txt := Text {
                                             text: "4K " + AppState.request-detail-status-4k;
                                             color: Theme.text-bright;
-                                            font-size: 13px;
+                                            font-size: 13px * AppState.text-scale;
                                             font-weight: 700;
                                             horizontal-alignment: center;
                                             vertical-alignment: center;
@@ -367,7 +367,7 @@ export component RequestDetailScreen inherits Rectangle {
                                 Text {
                                     text: "Currently Streaming On";
                                     color: Theme.text-muted;
-                                    font-size: 14px;
+                                    font-size: 14px * AppState.text-scale;
                                     font-weight: 600;
                                 }
 
@@ -404,7 +404,7 @@ export component RequestDetailScreen inherits Rectangle {
                                             if !p.has-logo: Text {
                                                 text: p.name;
                                                 color: Theme.text-muted;
-                                                font-size: 9px;
+                                                font-size: 9px * AppState.text-scale;
                                                 wrap: word-wrap;
                                                 horizontal-alignment: center;
                                                 vertical-alignment: center;
@@ -530,7 +530,7 @@ export component RequestOptionsOverlay inherits Rectangle {
             Text {
                 text: "Request Options";
                 color: Theme.text;
-                font-size: 17px;
+                font-size: 17px * AppState.text-scale;
                 font-weight: 700;
                 horizontal-alignment: center;
             }
@@ -545,7 +545,7 @@ export component RequestOptionsOverlay inherits Rectangle {
                 Text {
                     text: "Quality";
                     color: Theme.text;
-                    font-size: 14px;
+                    font-size: 14px * AppState.text-scale;
                     font-weight: 700;
                     horizontal-alignment: center;
                 }
@@ -580,7 +580,7 @@ export component RequestOptionsOverlay inherits Rectangle {
                         Text {
                             text: "2K";
                             color: !AppState.request-detail-want-4k ? #ffffff : Theme.text-muted;
-                            font-size: 14px;
+                            font-size: 14px * AppState.text-scale;
                             font-weight: 700;
                             horizontal-alignment: center;
                             vertical-alignment: center;
@@ -614,7 +614,7 @@ export component RequestOptionsOverlay inherits Rectangle {
                         Text {
                             text: "4K";
                             color: AppState.request-detail-want-4k ? #ffffff : Theme.text-muted;
-                            font-size: 14px;
+                            font-size: 14px * AppState.text-scale;
                             font-weight: 700;
                             horizontal-alignment: center;
                             vertical-alignment: center;
@@ -632,7 +632,7 @@ export component RequestOptionsOverlay inherits Rectangle {
                 Text {
                     text: "Profile";
                     color: Theme.text;
-                    font-size: 14px;
+                    font-size: 14px * AppState.text-scale;
                     font-weight: 700;
                 }
 
@@ -686,7 +686,7 @@ export component RequestOptionsOverlay inherits Rectangle {
                             Text {
                                 text: p.name;
                                 color: p.id == AppState.request-detail-selected-profile-id ? #ffffff : Theme.text-muted;
-                                font-size: 13px;
+                                font-size: 13px * AppState.text-scale;
                                 font-weight: 600;
                                 overflow: elide;
                                 horizontal-alignment: center;
@@ -711,7 +711,7 @@ export component RequestOptionsOverlay inherits Rectangle {
                 Text {
                     text: "Tags";
                     color: Theme.text;
-                    font-size: 14px;
+                    font-size: 14px * AppState.text-scale;
                     font-weight: 700;
                 }
 
@@ -770,13 +770,13 @@ export component RequestOptionsOverlay inherits Rectangle {
                                     text: "✓";
                                     font-family: "Adwaita Sans";
                                     color: Theme.text-bright;
-                                    font-size: 12px;
+                                    font-size: 12px * AppState.text-scale;
                                     vertical-alignment: center;
                                 }
                                 Text {
                                     text: t.label;
                                     color: t.selected ? #ffffff : Theme.text-muted;
-                                    font-size: 13px;
+                                    font-size: 13px * AppState.text-scale;
                                     font-weight: 600;
                                     overflow: elide;
                                     vertical-alignment: center;
@@ -799,7 +799,7 @@ export component RequestOptionsOverlay inherits Rectangle {
                 Text {
                     text: "Seasons";
                     color: Theme.text;
-                    font-size: 14px;
+                    font-size: 14px * AppState.text-scale;
                     font-weight: 700;
                 }
 
@@ -871,7 +871,7 @@ export component RequestOptionsOverlay inherits Rectangle {
                                         text: "✓";
                                         font-family: "Adwaita Sans";
                                         color: white;
-                                        font-size: 10px;
+                                        font-size: 10px * AppState.text-scale;
                                         font-weight: 700;
                                         horizontal-alignment: center;
                                         vertical-alignment: center;
@@ -892,7 +892,7 @@ export component RequestOptionsOverlay inherits Rectangle {
                             Text {
                                 text: s.name;
                                 color: Theme.text;
-                                font-size: 12px;
+                                font-size: 12px * AppState.text-scale;
                                 font-weight: 600;
                                 overflow: elide;
                             }
@@ -900,7 +900,7 @@ export component RequestOptionsOverlay inherits Rectangle {
                             Text {
                                 text: "\{s.episode-count} episodes";
                                 color: Theme.text-muted;
-                                font-size: 11px;
+                                font-size: 11px * AppState.text-scale;
                             }
                         }
                     }
@@ -946,7 +946,7 @@ export component RequestOptionsOverlay inherits Rectangle {
                     Text {
                         text: "Cancel";
                         color: Theme.text;
-                        font-size: 14px;
+                        font-size: 14px * AppState.text-scale;
                         font-weight: 600;
                         horizontal-alignment: center;
                         vertical-alignment: center;

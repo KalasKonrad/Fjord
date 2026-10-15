@@ -25,7 +25,7 @@ export component ConnectingScreen inherits Rectangle {
         Text {
             text: "Connecting to server…";
             color: Theme.text-muted;
-            font-size: 14px;
+            font-size: 14px * AppState.text-scale;
             horizontal-alignment: center;
         }
     }
@@ -51,7 +51,7 @@ export component OfflineScreen inherits Rectangle {
             Text {
                 text: "Can't reach server";
                 color: Theme.text;
-                font-size: 22px;
+                font-size: 22px * AppState.text-scale;
                 font-weight: 700;
                 horizontal-alignment: center;
             }
@@ -59,7 +59,7 @@ export component OfflineScreen inherits Rectangle {
             if AppState.status != "": Text {
                 text: AppState.status;
                 color: Theme.text-muted;
-                font-size: 13px;
+                font-size: 13px * AppState.text-scale;
                 horizontal-alignment: center;
                 wrap: word-wrap;
             }

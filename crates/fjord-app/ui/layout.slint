@@ -42,14 +42,14 @@ export component AppShell inherits HorizontalLayout {
                         Text {
                             text: "FJORD";
                             color: Theme.accent;
-                            font-size: 20px;
+                            font-size: 20px * AppState.text-scale;
                             font-weight: 700;
                         }
 
                         Text {
                             text: "Jellyfin";
                             color: Theme.text-subtle;
-                            font-size: 11px;
+                            font-size: 11px * AppState.text-scale;
                         }
                     }
                 }
@@ -238,7 +238,7 @@ export component AppShell inherits HorizontalLayout {
                         Text {
                             text: AppState.current-profile-tile.avatar-initial;
                             color: Theme.text;
-                            font-size: 13px;
+                            font-size: 13px * AppState.text-scale;
                             font-weight: 700;
                             horizontal-alignment: center;
                             vertical-alignment: center;
@@ -250,7 +250,7 @@ export component AppShell inherits HorizontalLayout {
                     Text {
                         text: AppState.current-profile-tile.display-name;
                         color: Theme.text;
-                        font-size: 13px;
+                        font-size: 13px * AppState.text-scale;
                         vertical-alignment: center;
                         overflow: elide;
                         horizontal-stretch: 1;
@@ -316,7 +316,7 @@ export component AppShell inherits HorizontalLayout {
                     Text {
                         text: "Quit";
                         color: Theme.error;
-                        font-size: 14px;
+                        font-size: 14px * AppState.text-scale;
                         vertical-alignment: center;
                     }
                 }

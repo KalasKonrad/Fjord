@@ -68,7 +68,7 @@ export component BrowseScreen inherits Rectangle {
                             text: "🔍";
                             font-family: "Noto Sans Symbols 2";
                             color: AppState.browse-header-focused ? Theme.accent : Theme.text-muted;
-                            font-size: 17px;
+                            font-size: 17px * AppState.text-scale;
                             vertical-alignment: center;
                             width: 22px;
                         }
@@ -81,7 +81,7 @@ export component BrowseScreen inherits Rectangle {
                             color: AppState.browse-query != "" ? Theme.text
                                 : AppState.browse-header-focused ? Theme.text-muted
                                 : Theme.text-subtle;
-                            font-size: 14px;
+                            font-size: 14px * AppState.text-scale;
                             vertical-alignment: center;
                             horizontal-stretch: 1;
                         }
@@ -89,7 +89,7 @@ export component BrowseScreen inherits Rectangle {
                         if AppState.browse-query != "" && !AppState.browse-header-focused: Text {
                             text: "Esc to clear";
                             color: Theme.text-subtle;
-                            font-size: 12px;
+                            font-size: 12px * AppState.text-scale;
                             vertical-alignment: center;
                         }
                     }
@@ -154,7 +154,7 @@ export component BrowseScreen inherits Rectangle {
                 Text {
                     text: AppState.status;
                     color: Theme.text-muted;
-                    font-size: 13px;
+                    font-size: 13px * AppState.text-scale;
                     vertical-alignment: center;
                     horizontal-stretch: 1;
                 }

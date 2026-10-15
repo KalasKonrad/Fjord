@@ -183,6 +183,8 @@ Needs `mpv`/libmpv (`pacman -S mpv`). Optional at runtime: `yt-dlp` (trailers), 
   `shown-nav`/`nav-fade` mechanism in `main.slint`.
 - `BrowseScreen`, `LibraryGrid`, `DiscoverScreen` stay mounted and toggle `visible:` (big lists built once).
 - Multiply every `animate` duration by `AppState.settings-animation-speed` (`settings-scroll-speed` for scrolling).
+- Font sizes under 24px are `Npx * AppState.text-scale` (Text size setting); a dashboard row's title + padding is
+  `AppState.row-chrome-h`, not a literal 56px. Fixed-height boxes around text need room for +30%.
 - Icons: only glyphs covered by the bundled fonts in `assets/fonts` (Noto Sans Symbols 2/Math; Adwaita Sans
   for ♥ ✓). Pin `font-family` on icon `Text`; verify coverage with `fc-query --format='%{charset}'`.
   No U+FE0E variation selectors, no color emoji.

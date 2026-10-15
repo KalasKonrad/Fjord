@@ -23,6 +23,9 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **New: Settings → Interface → Text size** — Normal, Large or Extra large
+  text everywhere (menus, cards, settings, the player), saved per profile.
+  Headings stay as they are.
 - **Improved: clearer error messages.** They now read "Couldn't … — reason"
   (for example "the server isn't reachable") instead of showing raw error
   text with web addresses; the details are in the log. Wording and spelling

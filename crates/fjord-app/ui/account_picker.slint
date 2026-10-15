@@ -72,7 +72,7 @@ component AccountTileCard inherits VerticalLayout {
             border-color: Theme.border-strong;
             Text {
                 text: "🔒";
-                font-size: 14px;
+                font-size: 14px * AppState.text-scale;
                 horizontal-alignment: center;
                 vertical-alignment: center;
                 width: parent.width;
@@ -84,7 +84,7 @@ component AccountTileCard inherits VerticalLayout {
     Text {
         text: root.is-add-tile ? "Add Account" : root.tile.display-name;
         color: root.kbd-focused ? Theme.accent : Theme.text;
-        font-size: 14px;
+        font-size: 14px * AppState.text-scale;
         font-weight: root.kbd-focused ? 700 : 400;
         horizontal-alignment: center;
         overflow: elide;
@@ -97,7 +97,7 @@ component AccountTileCard inherits VerticalLayout {
     if !root.is-add-tile && root.tile.profile-count > 1: Text {
         text: root.tile.profile-count + " profiles";
         color: Theme.text-subtle;
-        font-size: 11px;
+        font-size: 11px * AppState.text-scale;
         horizontal-alignment: center;
     }
 
@@ -119,7 +119,7 @@ component AccountTileCard inherits VerticalLayout {
             Text {
                 text: "LINKED";
                 color: Theme.accent;
-                font-size: 9px;
+                font-size: 9px * AppState.text-scale;
                 font-weight: 700;
                 letter-spacing: 1px;
                 vertical-alignment: center;
@@ -203,7 +203,7 @@ export component AccountPickerScreen inherits Rectangle {
         if AppState.account-picker-error != "": Text {
             text: AppState.account-picker-error;
             color: Theme.error;
-            font-size: 13px;
+            font-size: 13px * AppState.text-scale;
             horizontal-alignment: center;
         }
     }
@@ -255,7 +255,7 @@ export component AccountPickerScreen inherits Rectangle {
             Text {
                 text: "Signing in…";
                 color: Theme.text;
-                font-size: 15px;
+                font-size: 15px * AppState.text-scale;
                 horizontal-alignment: center;
             }
         }

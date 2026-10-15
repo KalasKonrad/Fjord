@@ -111,7 +111,7 @@ export component ArtistScreen inherits Rectangle {
                                 if AppState.artist-meta != "": Text {
                                     text: AppState.artist-meta;
                                     color: Theme.text-muted;
-                                    font-size: 14px;
+                                    font-size: 14px * AppState.text-scale;
                                 }
                             }
 
