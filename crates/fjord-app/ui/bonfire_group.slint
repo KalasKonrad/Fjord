@@ -51,7 +51,7 @@ component GroupToggleRow inherits Rectangle {
         y: (parent.height - self.height) / 2;
         text: root.label;
         color: Theme.text;
-        font-size: 13px;
+        font-size: 13px * AppState.text-scale;
         vertical-alignment: center;
     }
 
@@ -92,7 +92,7 @@ component GroupMemberRow inherits Rectangle {
         Text {
             text: root.member.username;
             color: Theme.text;
-            font-size: 13px;
+            font-size: 13px * AppState.text-scale;
             vertical-alignment: center;
         }
 
@@ -144,7 +144,7 @@ export component BonfireGroupScreen inherits Rectangle {
                     Text {
                         text: "Bonfire Group";
                         color: Theme.text;
-                        font-size: 20px;
+                        font-size: 20px * AppState.text-scale;
                         font-weight: 700;
                     }
 
@@ -164,7 +164,7 @@ export component BonfireGroupScreen inherits Rectangle {
                 if AppState.bonfire-group-loading: Text {
                     text: "Loading…";
                     color: Theme.text-muted;
-                    font-size: 13px;
+                    font-size: 13px * AppState.text-scale;
                 }
 
                 // Two independent sections, always shown — hosting and joining — since an account can host
@@ -184,7 +184,7 @@ export component BonfireGroupScreen inherits Rectangle {
                         Text {
                             text: "HOST A BONFIRE";
                             color: Theme.accent;
-                            font-size: 11px;
+                            font-size: 11px * AppState.text-scale;
                             font-weight: 700;
                             letter-spacing: 1px;
                         }
@@ -194,7 +194,7 @@ export component BonfireGroupScreen inherits Rectangle {
                             Text {
                                 text: "Generate a code to invite another household's master account into your account.";
                                 color: Theme.text-muted;
-                                font-size: 12px;
+                                font-size: 12px * AppState.text-scale;
                                 wrap: word-wrap;
                             }
 
@@ -212,7 +212,7 @@ export component BonfireGroupScreen inherits Rectangle {
                             Text {
                                 text: "Your join code:";
                                 color: Theme.text-muted;
-                                font-size: 12px;
+                                font-size: 12px * AppState.text-scale;
                             }
 
                             Text {
@@ -227,7 +227,7 @@ export component BonfireGroupScreen inherits Rectangle {
                             Text {
                                 text: "Share this 6-character code with someone else's Jellyfin master account.";
                                 color: Theme.text-subtle;
-                                font-size: 11px;
+                                font-size: 11px * AppState.text-scale;
                                 wrap: word-wrap;
                             }
 
@@ -245,7 +245,7 @@ export component BonfireGroupScreen inherits Rectangle {
                             if AppState.bonfire-group-owned-members.length == 0: Text {
                                 text: "No one has joined yet.";
                                 color: Theme.text-subtle;
-                                font-size: 12px;
+                                font-size: 12px * AppState.text-scale;
                                 horizontal-alignment: center;
                             }
                             FjordButton {
@@ -272,7 +272,7 @@ export component BonfireGroupScreen inherits Rectangle {
                         Text {
                             text: "JOIN A BONFIRE";
                             color: Theme.accent;
-                            font-size: 11px;
+                            font-size: 11px * AppState.text-scale;
                             font-weight: 700;
                             letter-spacing: 1px;
                         }
@@ -290,7 +290,7 @@ export component BonfireGroupScreen inherits Rectangle {
                                         : AppState.bonfire-group-zone == join-base ? AppState.caret-text(AppState.bonfire-group-join-code, AppState.bonfire-group-join-code-cursor, "▌")
                                         : AppState.bonfire-group-join-code;
                                     color: AppState.bonfire-group-join-code == "" ? Theme.text-subtle : Theme.text;
-                                    font-size: 15px;
+                                    font-size: 15px * AppState.text-scale;
                                     horizontal-alignment: center;
                                     vertical-alignment: center;
                                     width: parent.width;
@@ -323,7 +323,7 @@ export component BonfireGroupScreen inherits Rectangle {
                             Text {
                                 text: "Joined " + AppState.bonfire-group-joined-owner-name + "'s Bonfire group.";
                                 color: Theme.text;
-                                font-size: 14px;
+                                font-size: 14px * AppState.text-scale;
                                 wrap: word-wrap;
                             }
 
@@ -390,7 +390,7 @@ export component BonfireGroupScreen inherits Rectangle {
                             text: "Bonfire group members can switch into this account from your local network without entering a PIN when this is on."
                                 + (AppState.bonfire-group-is-administrator ? " This account is a Jellyfin administrator — anyone who does this gets full server and user management access." : "");
                             color: Theme.text-subtle;
-                            font-size: 11px;
+                            font-size: 11px * AppState.text-scale;
                             wrap: word-wrap;
                         }
                     }
@@ -399,7 +399,7 @@ export component BonfireGroupScreen inherits Rectangle {
                 if AppState.bonfire-group-error != "": Text {
                     text: AppState.bonfire-group-error;
                     color: Theme.error;
-                    font-size: 12px;
+                    font-size: 12px * AppState.text-scale;
                     wrap: word-wrap;
                     horizontal-alignment: center;
                 }

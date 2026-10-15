@@ -95,7 +95,7 @@ component ProfileTileCard inherits VerticalLayout {
             border-color: Theme.border-strong;
             Text {
                 text: "🔒";
-                font-size: 14px;
+                font-size: 14px * AppState.text-scale;
                 horizontal-alignment: center;
                 vertical-alignment: center;
                 width: parent.width;
@@ -111,7 +111,7 @@ component ProfileTileCard inherits VerticalLayout {
     Text {
         text: root.is-add-tile ? "Add Account" : root.tile.display-name;
         color: root.kbd-focused ? Theme.accent : Theme.text;
-        font-size: 14px;
+        font-size: 14px * AppState.text-scale;
         font-weight: root.kbd-focused ? 700 : 400;
         horizontal-alignment: center;
         overflow: elide;
@@ -131,7 +131,7 @@ component ProfileSectionRow inherits VerticalLayout {
     if section.header != "": Text {
         text: section.header;
         color: Theme.accent;
-        font-size: 13px;
+        font-size: 13px * AppState.text-scale;
         font-weight: 700;
         letter-spacing: 1px;
         horizontal-alignment: center;
@@ -219,7 +219,7 @@ export component ProfilePickerScreen inherits Rectangle {
         if AppState.profile-picker-error != "": Text {
             text: AppState.profile-picker-error;
             color: Theme.error;
-            font-size: 13px;
+            font-size: 13px * AppState.text-scale;
             horizontal-alignment: center;
         }
     }
@@ -309,7 +309,7 @@ export component ProfilePickerScreen inherits Rectangle {
                 Text {
                     text: "Enter PIN for " + AppState.profile-pin-target-name;
                     color: Theme.text;
-                    font-size: 15px;
+                    font-size: 15px * AppState.text-scale;
                     font-weight: 700;
                     horizontal-alignment: center;
                     wrap: word-wrap;
@@ -334,7 +334,7 @@ export component ProfilePickerScreen inherits Rectangle {
                 if AppState.profile-pin-error != "": Text {
                     text: AppState.profile-pin-error;
                     color: Theme.error;
-                    font-size: 12px;
+                    font-size: 12px * AppState.text-scale;
                     horizontal-alignment: center;
                     wrap: word-wrap;
                 }
@@ -383,7 +383,7 @@ export component ProfilePickerScreen inherits Rectangle {
             Text {
                 text: "Signing in…";
                 color: Theme.text;
-                font-size: 15px;
+                font-size: 15px * AppState.text-scale;
                 horizontal-alignment: center;
             }
         }

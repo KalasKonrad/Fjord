@@ -67,7 +67,7 @@ component MethodTab inherits Rectangle {
         text: label;
         // White on the accent fill, like every other accent-filled control.
         color: active ? #ffffff : Theme.text;
-        font-size: 12px;
+        font-size: 12px * AppState.text-scale;
         font-weight: 600;
         horizontal-alignment: center;
         vertical-alignment: center;
@@ -161,7 +161,7 @@ export component ConnectSeerrScreen inherits Rectangle {
                 Text {
                     text: "Connect Seerr";
                     color: Theme.text;
-                    font-size: 20px;
+                    font-size: 20px * AppState.text-scale;
                     font-weight: 700;
                 }
 
@@ -276,7 +276,7 @@ export component ConnectSeerrScreen inherits Rectangle {
                 Text {
                     text: "Paste an API key generated in Seerr's own admin Settings.";
                     color: Theme.text-muted;
-                    font-size: 12px;
+                    font-size: 12px * AppState.text-scale;
                     wrap: word-wrap;
                 }
 
@@ -524,7 +524,7 @@ export component ConnectSeerrScreen inherits Rectangle {
                     Text {
                         text: "Passwordless — approve a code from inside your Jellyfin app or web UI.";
                         color: Theme.text-muted;
-                        font-size: 12px;
+                        font-size: 12px * AppState.text-scale;
                         wrap: word-wrap;
                     }
 
@@ -553,7 +553,7 @@ export component ConnectSeerrScreen inherits Rectangle {
                     Text {
                         text: "Enter this code in Jellyfin's Quick Connect settings — waiting for approval…";
                         color: Theme.text-muted;
-                        font-size: 12px;
+                        font-size: 12px * AppState.text-scale;
                         horizontal-alignment: center;
                         wrap: word-wrap;
                     }
@@ -719,7 +719,7 @@ export component ConnectSeerrScreen inherits Rectangle {
             if AppState.connect-seerr-error != "": Text {
                 text: AppState.connect-seerr-error;
                 color: Theme.error;
-                font-size: 12px;
+                font-size: 12px * AppState.text-scale;
                 horizontal-alignment: center;
                 wrap: word-wrap;
             }

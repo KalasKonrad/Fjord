@@ -55,7 +55,7 @@ component FilterPill inherits Rectangle {
     txt := Text {
         text: root.text;
         color: root.active ? Theme.text : Theme.text-muted;
-        font-size: 12px;
+        font-size: 12px * AppState.text-scale;
         horizontal-alignment: center;
         vertical-alignment: center;
         width: parent.width;
@@ -100,7 +100,7 @@ component PopupOption inherits Rectangle {
         text: root.text;
         color: root.option-focused ? Theme.accent : Theme.text;
         font-weight: root.option-focused ? 600 : 400;
-        font-size: 13px;
+        font-size: 13px * AppState.text-scale;
         vertical-alignment: center;
     }
 
@@ -141,7 +141,7 @@ component FilterChip inherits Rectangle {
         x: 6px;
         text: root.text;
         color: root.selected ? Theme.text-bright : Theme.text-muted;
-        font-size: 12px;
+        font-size: 12px * AppState.text-scale;
         horizontal-alignment: center;
         vertical-alignment: center;
         width: parent.width - 12px;
@@ -193,7 +193,7 @@ export component DiscoverScreen inherits Rectangle {
                 Text {
                     text: "Discover";
                     color: Theme.text;
-                    font-size: 18px;
+                    font-size: 18px * AppState.text-scale;
                     font-weight: 700;
                     vertical-alignment: center;
                 }
@@ -201,7 +201,7 @@ export component DiscoverScreen inherits Rectangle {
                 if AppState.discover-query != "": Text {
                     text: "\{AppState.discover-results.length} results";
                     color: Theme.accent;
-                    font-size: 13px;
+                    font-size: 13px * AppState.text-scale;
                     vertical-alignment: center;
                 }
                 if AppState.discover-searching: LoadingSpinner {
@@ -252,7 +252,7 @@ export component DiscoverScreen inherits Rectangle {
                         text: "🔍";
                         font-family: "Noto Sans Symbols 2";
                         color: AppState.discover-header-focused ? Theme.accent : Theme.text-muted;
-                        font-size: 17px;
+                        font-size: 17px * AppState.text-scale;
                         vertical-alignment: center;
                         width: 22px;
                     }
@@ -265,7 +265,7 @@ export component DiscoverScreen inherits Rectangle {
                         color: AppState.discover-query != "" ? Theme.text
                             : AppState.discover-header-focused ? Theme.text-muted
                             : Theme.text-subtle;
-                        font-size: 14px;
+                        font-size: 14px * AppState.text-scale;
                         vertical-alignment: center;
                         horizontal-stretch: 1;
                     }
@@ -273,7 +273,7 @@ export component DiscoverScreen inherits Rectangle {
                     if AppState.discover-query != "" && !AppState.discover-header-focused: Text {
                         text: "Esc to clear";
                         color: Theme.text-subtle;
-                        font-size: 12px;
+                        font-size: 12px * AppState.text-scale;
                         vertical-alignment: center;
                     }
                 }
@@ -374,7 +374,7 @@ export component DiscoverScreen inherits Rectangle {
                         ? "Loading Seerr's trending picks…"
                         : "Type to search, or connect Seerr in Settings to see Trending, Popular, and Upcoming rows here.";
                     color: Theme.text-muted;
-                    font-size: 14px;
+                    font-size: 14px * AppState.text-scale;
                     horizontal-alignment: center;
                     width: parent.width;
                     wrap: word-wrap;
@@ -393,15 +393,15 @@ export component DiscoverScreen inherits Rectangle {
             // target, so keyboard focus scrolls off-screen.
             pure function row-y(s: int) -> length {
                 Theme.sp-lg
-                    + (AppState.discover-trending.length > 0 && s > 0 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
-                    + (AppState.discover-popular-movies.length > 0 && s > 1 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
-                    + (AppState.discover-popular-tv.length > 0 && s > 2 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
-                    + (AppState.discover-upcoming-movies.length > 0 && s > 3 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
-                    + (AppState.discover-upcoming-tv.length > 0 && s > 4 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
-                    + (AppState.discover-requested.length > 0 && s > 5 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
-                    + (AppState.discover-new-in-theaters.length > 0 && s > 6 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
+                    + (AppState.discover-trending.length > 0 && s > 0 ? (AppState.dash-ch + AppState.row-chrome-h + Theme.sp-lg) : 0px)
+                    + (AppState.discover-popular-movies.length > 0 && s > 1 ? (AppState.dash-ch + AppState.row-chrome-h + Theme.sp-lg) : 0px)
+                    + (AppState.discover-popular-tv.length > 0 && s > 2 ? (AppState.dash-ch + AppState.row-chrome-h + Theme.sp-lg) : 0px)
+                    + (AppState.discover-upcoming-movies.length > 0 && s > 3 ? (AppState.dash-ch + AppState.row-chrome-h + Theme.sp-lg) : 0px)
+                    + (AppState.discover-upcoming-tv.length > 0 && s > 4 ? (AppState.dash-ch + AppState.row-chrome-h + Theme.sp-lg) : 0px)
+                    + (AppState.discover-requested.length > 0 && s > 5 ? (AppState.dash-ch + AppState.row-chrome-h + Theme.sp-lg) : 0px)
+                    + (AppState.discover-new-in-theaters.length > 0 && s > 6 ? (AppState.dash-ch + AppState.row-chrome-h + Theme.sp-lg) : 0px)
                 // Row 8 (Watchlist) needs row 7's (Coming Up) height.
-                + (AppState.discover-coming-up.length > 0 && s > 7 ? (AppState.dash-ch + 56px + Theme.sp-lg) : 0px)
+                + (AppState.discover-coming-up.length > 0 && s > 7 ? (AppState.dash-ch + AppState.row-chrome-h + Theme.sp-lg) : 0px)
             }
 
             // root.content-h, not self/own height — see the doc comment on
@@ -409,7 +409,7 @@ export component DiscoverScreen inherits Rectangle {
             // mounted makes that unsafe here specifically.
             property <length> kb-y: AppState.focused-section < 0 ? 0px
                 : clamp(
-                      root.content-h / 2 - row-y(AppState.focused-section) - (AppState.dash-ch + 56px) / 2,
+                      root.content-h / 2 - row-y(AppState.focused-section) - (AppState.dash-ch + AppState.row-chrome-h) / 2,
                       min(0px, root.content-h - landing-content.preferred-height),
                       0px);
             changed kb-y => { landing-fl.content-y = kb-y; }
@@ -608,7 +608,7 @@ export component DiscoverScreen inherits Rectangle {
                     ? "No results for \"\{AppState.discover-query}\"."
                     : "No results match the current filters.";
                 color: Theme.text-muted;
-                font-size: 14px;
+                font-size: 14px * AppState.text-scale;
                 horizontal-alignment: center;
                 y: parent.height / 3;
                 width: parent.width;

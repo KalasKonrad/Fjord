@@ -189,6 +189,7 @@ const PLY_TRAILER_QUALITY: &str = "player.trailer_quality"; // every YouTube tra
 
 // ── UI section rows ───────────────────────────────────────────────────────────
 const UI_CARD_SIZE: &str = "ui.card_size"; // per profile, unlike the other UI rows
+const UI_TEXT_SIZE: &str = "ui.text_size"; // per profile, like card size
 const UI_SCROLL_SPEED: &str = "ui.scroll_speed";
 const UI_ANIMATION_SPEED: &str = "ui.animation_speed";
 const UI_FONT_FAMILY: &str = "ui.font_family";
@@ -302,6 +303,7 @@ fn section_row_keys(section: &str, g: &crate::AppState<'_>) -> Vec<&'static str>
         }
         SECTION_UI => vec![
             UI_CARD_SIZE,
+            UI_TEXT_SIZE,
             GEN_VIDEO_BEHIND,
             UI_FONT_FAMILY,
             UI_ONSCREEN_KEYBOARD,
@@ -792,7 +794,7 @@ fn display_val<'a>(val: &'a str, key: &str) -> &'a str {
             _ => val,
         };
     }
-    if key == UI_CARD_SIZE {
+    if key == UI_CARD_SIZE || key == UI_TEXT_SIZE {
         return match val {
             "normal" => "Normal",
             "large" => "Large",
@@ -850,7 +852,7 @@ fn dropdown_model(key: &str) -> Option<&'static [&'static str]> {
             Some(SKIP_MODE_4_MODEL)
         }
         PLY_CREDITS_MODE => Some(SKIP_MODE_3_MODEL),
-        UI_CARD_SIZE => Some(CARD_SIZE_MODEL),
+        UI_CARD_SIZE | UI_TEXT_SIZE => Some(CARD_SIZE_MODEL),
         PLY_INTRO_SECS | PLY_RECAP_SECS | PLY_PREVIEW_SECS | PLY_COMMERCIAL_SECS => {
             Some(SKIP_SECS_MODEL)
         }
@@ -931,6 +933,7 @@ fn current_value_str(key: &str, g: &crate::AppState<'_>) -> String {
         PLY_COMMERCIAL_SECS => g.get_settings_skip_commercial_secs().to_string(),
         PLY_CREDITS_MODE => g.get_settings_skip_credits_mode().to_string(),
         UI_CARD_SIZE => g.get_settings_card_size().to_string(),
+        UI_TEXT_SIZE => g.get_settings_text_size().to_string(),
         PLY_CREDITS_SECS => g.get_settings_skip_credits_secs().to_string(),
         PLY_SEEK_STEP => g.get_settings_seek_step_secs().to_string(),
         PLY_SEEK_STEP_LONG => g.get_settings_seek_step_long_secs().to_string(),
@@ -1189,6 +1192,7 @@ pub(crate) fn apply_dropdown_selection(key: &str, cursor: i32, g: &crate::AppSta
         PLY_COMMERCIAL_SECS => g.set_settings_skip_commercial_secs(val.parse().unwrap_or(8)),
         PLY_CREDITS_MODE => g.set_settings_skip_credits_mode(val.into()),
         UI_CARD_SIZE => g.set_settings_card_size(val.into()),
+        UI_TEXT_SIZE => g.set_settings_text_size(val.into()),
         PLY_CREDITS_SECS => g.set_settings_skip_credits_secs(val.parse().unwrap_or(30)),
         PLY_SEEK_STEP => g.set_settings_seek_step_secs(val.parse().unwrap_or(10)),
         PLY_SEEK_STEP_LONG => g.set_settings_seek_step_long_secs(val.parse().unwrap_or(30)),
@@ -1638,6 +1642,11 @@ fn settings_row_action(key: &str, g: &crate::AppState<'_>) {
         UI_CARD_SIZE => {
             let v = cycle(g.get_settings_card_size().as_str(), CARD_SIZE_MODEL);
             g.set_settings_card_size(v.into());
+            g.invoke_settings_changed();
+        }
+        UI_TEXT_SIZE => {
+            let v = cycle(g.get_settings_text_size().as_str(), CARD_SIZE_MODEL);
+            g.set_settings_text_size(v.into());
             g.invoke_settings_changed();
         }
         PLY_CREDITS_SECS => {
@@ -2508,6 +2517,7 @@ pub(crate) fn apply_profile_settings_to_window(
     g.set_settings_skip_credits_mode(ss(&cp.skip_credits_mode));
     g.set_settings_skip_credits_secs(cp.skip_credits_secs as i32);
     g.set_settings_card_size(ss(&cp.card_size));
+    g.set_settings_text_size(ss(&cp.text_size));
     g.set_settings_trailer_quality(ss(&cp.trailer_quality));
 }
 
@@ -2766,6 +2776,7 @@ pub(crate) fn read_settings_from_window(w: &MainWindow, s: &mut FjordState) {
     cp.skip_commercial_secs = g.get_settings_skip_commercial_secs().max(0) as u32;
     cp.skip_credits_mode = g.get_settings_skip_credits_mode().to_string();
     cp.card_size = g.get_settings_card_size().to_string();
+    cp.text_size = g.get_settings_text_size().to_string();
     cp.skip_credits_secs = g.get_settings_skip_credits_secs().max(0) as u32;
     cp.seerr_enabled = g.get_settings_seerr_enabled();
     cp.trailer_quality = g.get_settings_trailer_quality().to_string();

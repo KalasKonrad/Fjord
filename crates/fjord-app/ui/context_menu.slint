@@ -54,7 +54,7 @@ component DiscoverMenuRow inherits Rectangle {
             text: root.icon-text;
             font-family: root.icon-font-family;
             color: AppState.context-menu-focused == row-index ? Theme.accent : Theme.text-muted;
-            font-size: 14px;
+            font-size: 14px * AppState.text-scale;
             vertical-alignment: center;
             width: 18px;
         }
@@ -62,7 +62,7 @@ component DiscoverMenuRow inherits Rectangle {
         Text {
             text: root.label;
             color: AppState.context-menu-focused == row-index ? Theme.text : Theme.text-muted;
-            font-size: 14px;
+            font-size: 14px * AppState.text-scale;
             vertical-alignment: center;
         }
     }
@@ -142,7 +142,7 @@ export component ContextMenu inherits Rectangle {
                             text: "⏵";
                             font-family: "Noto Sans Symbols 2";
                             color: AppState.context-menu-focused == 0 ? Theme.accent : Theme.text-muted;
-                            font-size: 14px;
+                            font-size: 14px * AppState.text-scale;
                             vertical-alignment: center;
                             width: 18px;
                         }
@@ -150,7 +150,7 @@ export component ContextMenu inherits Rectangle {
                         Text {
                             text: "Resume";
                             color: AppState.context-menu-focused == 0 ? Theme.text : Theme.text-muted;
-                            font-size: 14px;
+                            font-size: 14px * AppState.text-scale;
                             vertical-alignment: center;
                         }
                     }
@@ -192,7 +192,7 @@ export component ContextMenu inherits Rectangle {
                             text: "▶";
                             font-family: "Noto Sans Symbols 2";
                             color: AppState.context-menu-focused == 1 ? Theme.accent : Theme.text-muted;
-                            font-size: 12px;
+                            font-size: 12px * AppState.text-scale;
                             vertical-alignment: center;
                             width: 18px;
                         }
@@ -200,7 +200,7 @@ export component ContextMenu inherits Rectangle {
                         Text {
                             text: "Play from Start";
                             color: AppState.context-menu-focused == 1 ? Theme.text : Theme.text-muted;
-                            font-size: 14px;
+                            font-size: 14px * AppState.text-scale;
                             vertical-alignment: center;
                         }
                     }
@@ -242,7 +242,7 @@ export component ContextMenu inherits Rectangle {
                             text: "⏭";
                             font-family: "Noto Sans Symbols 2";
                             color: AppState.context-menu-focused == 2 ? Theme.accent : Theme.text-muted;
-                            font-size: 14px;
+                            font-size: 14px * AppState.text-scale;
                             vertical-alignment: center;
                             width: 18px;
                         }
@@ -250,7 +250,7 @@ export component ContextMenu inherits Rectangle {
                         Text {
                             text: "Play Next";
                             color: AppState.context-menu-focused == 2 ? Theme.text : Theme.text-muted;
-                            font-size: 14px;
+                            font-size: 14px * AppState.text-scale;
                             vertical-alignment: center;
                         }
                     }
@@ -291,7 +291,7 @@ export component ContextMenu inherits Rectangle {
                         Text {
                             text: "+";
                             color: AppState.context-menu-focused == 3 ? Theme.accent : Theme.text-muted;
-                            font-size: 14px;
+                            font-size: 14px * AppState.text-scale;
                             vertical-alignment: center;
                             width: 18px;
                         }
@@ -299,7 +299,7 @@ export component ContextMenu inherits Rectangle {
                         Text {
                             text: "Add to Queue";
                             color: AppState.context-menu-focused == 3 ? Theme.text : Theme.text-muted;
-                            font-size: 14px;
+                            font-size: 14px * AppState.text-scale;
                             vertical-alignment: center;
                         }
                     }
@@ -343,7 +343,7 @@ export component ContextMenu inherits Rectangle {
                         // Noto Sans Symbols2 fallback.
                         font-family: AppState.context-menu-has-played ? "Adwaita Sans" : "Noto Sans Symbols 2";
                             color: AppState.context-menu-focused == 4 ? Theme.accent : Theme.text-muted;
-                            font-size: 14px;
+                            font-size: 14px * AppState.text-scale;
                             vertical-alignment: center;
                             width: 18px;
                         }
@@ -351,7 +351,7 @@ export component ContextMenu inherits Rectangle {
                         Text {
                             text: AppState.context-menu-has-played ? "Mark as Unplayed" : "Mark as Played";
                             color: AppState.context-menu-focused == 4 ? Theme.text : Theme.text-muted;
-                            font-size: 14px;
+                            font-size: 14px * AppState.text-scale;
                             vertical-alignment: center;
                         }
                     }
@@ -394,7 +394,7 @@ export component ContextMenu inherits Rectangle {
                         // glyphs, so it uses the ordinary Noto Sans Symbols2 fallback.
                         font-family: AppState.context-menu-is-favorite ? "Adwaita Sans" : "Noto Sans Symbols 2";
                             color: AppState.context-menu-focused == 5 ? Theme.accent : Theme.text-muted;
-                            font-size: 14px;
+                            font-size: 14px * AppState.text-scale;
                             vertical-alignment: center;
                             width: 18px;
                         }
@@ -402,7 +402,7 @@ export component ContextMenu inherits Rectangle {
                         Text {
                             text: AppState.context-menu-is-favorite ? "Remove from Favorites" : "Add to Favorites";
                             color: AppState.context-menu-focused == 5 ? Theme.text : Theme.text-muted;
-                            font-size: 14px;
+                            font-size: 14px * AppState.text-scale;
                             vertical-alignment: center;
                         }
                     }
@@ -443,7 +443,7 @@ export component ContextMenu inherits Rectangle {
                             text: "≡";
                             font-family: "Noto Sans Symbols 2";
                             color: AppState.context-menu-focused == 7 ? Theme.accent : Theme.text-muted;
-                            font-size: 14px;
+                            font-size: 14px * AppState.text-scale;
                             vertical-alignment: center;
                             width: 18px;
                         }
@@ -451,7 +451,7 @@ export component ContextMenu inherits Rectangle {
                         Text {
                             text: "Add to Playlist";
                             color: AppState.context-menu-focused == 7 ? Theme.text : Theme.text-muted;
-                            font-size: 14px;
+                            font-size: 14px * AppState.text-scale;
                             vertical-alignment: center;
                         }
                     }
@@ -494,7 +494,7 @@ export component ContextMenu inherits Rectangle {
                         Text {
                             text: AppState.context-menu-on-watchlist ? "★" : "☆";
                             color: AppState.context-menu-focused == 8 ? Theme.accent : Theme.text-muted;
-                            font-size: 14px;
+                            font-size: 14px * AppState.text-scale;
                             vertical-alignment: center;
                             width: 18px;
                         }
@@ -502,7 +502,7 @@ export component ContextMenu inherits Rectangle {
                         Text {
                             text: AppState.context-menu-on-watchlist ? "Remove from Watchlist" : "Add to Watchlist";
                             color: AppState.context-menu-focused == 8 ? Theme.text : Theme.text-muted;
-                            font-size: 14px;
+                            font-size: 14px * AppState.text-scale;
                             vertical-alignment: center;
                         }
                     }
@@ -543,7 +543,7 @@ export component ContextMenu inherits Rectangle {
                         Text {
                             text: "ℹ";
                             color: AppState.context-menu-focused == 6 ? Theme.accent : Theme.text-muted;
-                            font-size: 14px;
+                            font-size: 14px * AppState.text-scale;
                             vertical-alignment: center;
                             width: 18px;
                         }
@@ -551,7 +551,7 @@ export component ContextMenu inherits Rectangle {
                         Text {
                             text: "View Details";
                             color: AppState.context-menu-focused == 6 ? Theme.text : Theme.text-muted;
-                            font-size: 14px;
+                            font-size: 14px * AppState.text-scale;
                             vertical-alignment: center;
                         }
                     }
@@ -715,7 +715,7 @@ export component PlaylistPicker inherits Rectangle {
             Text {
                 text: "ADD TO PLAYLIST";
                 color: Theme.text-muted;
-                font-size: 11px;
+                font-size: 11px * AppState.text-scale;
                 height: head-h;
                 vertical-alignment: center;
                 horizontal-alignment: center;
@@ -745,7 +745,7 @@ export component PlaylistPicker inherits Rectangle {
                     Text {
                         text: "+";
                         color: AppState.playlist-picker-cursor == 0 ? Theme.accent : Theme.text-muted;
-                        font-size: 14px;
+                        font-size: 14px * AppState.text-scale;
                         vertical-alignment: center;
                         width: 18px;
                     }
@@ -753,7 +753,7 @@ export component PlaylistPicker inherits Rectangle {
                     Text {
                         text: "New playlist…";
                         color: AppState.playlist-picker-cursor == 0 ? Theme.text : Theme.text-muted;
-                        font-size: 14px;
+                        font-size: 14px * AppState.text-scale;
                         vertical-alignment: center;
                     }
                 }
@@ -765,14 +765,14 @@ export component PlaylistPicker inherits Rectangle {
                     Text {
                         text: "Name:";
                         color: Theme.text-muted;
-                        font-size: 13px;
+                        font-size: 13px * AppState.text-scale;
                         vertical-alignment: center;
                     }
 
                     Text {
                         text: AppState.caret-text(AppState.playlist-picker-name, AppState.playlist-picker-name-cursor, "|");
                         color: Theme.text;
-                        font-size: 14px;
+                        font-size: 14px * AppState.text-scale;
                         vertical-alignment: center;
                         overflow: elide;
                     }
@@ -826,14 +826,14 @@ export component PlaylistPicker inherits Rectangle {
                                 Text {
                                     text: p.title;
                                     color: AppState.playlist-picker-cursor == i + 1 ? Theme.text : Theme.text-muted;
-                                    font-size: 14px;
+                                    font-size: 14px * AppState.text-scale;
                                     overflow: elide;
                                 }
 
                                 if p.subtitle != "": Text {
                                     text: p.subtitle;
                                     color: Theme.text-subtle;
-                                    font-size: 11px;
+                                    font-size: 11px * AppState.text-scale;
                                     overflow: elide;
                                 }
                             }

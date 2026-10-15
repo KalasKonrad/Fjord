@@ -673,6 +673,10 @@ pub(crate) struct ProfileSettings {
     // Per profile (the user's choice), unlike the device-wide UI rows.
     #[serde(default = "default_card_size")]
     pub card_size: String,
+    // ── Text size (Settings → Interface): "normal" | "large" | "extra-large" —
+    // AppState.text-scale turns it into 1.0 / 1.15 / 1.3 for every font under 24px.
+    #[serde(default = "default_card_size")]
+    pub text_size: String,
 
     // ── Seerr integration (Settings → Integrations) — cleared on sign-out
     // alongside server_url/user_id/token. seerr_auth_method is purely
@@ -776,6 +780,7 @@ impl ProfileSettings {
         self.skip_credits_mode = src.skip_credits_mode.clone();
         self.skip_credits_secs = src.skip_credits_secs;
         self.card_size = src.card_size.clone();
+        self.text_size = src.text_size.clone();
         self.trailer_quality = src.trailer_quality.clone();
     }
 }
@@ -826,6 +831,7 @@ impl Default for ProfileSettings {
             library_playlists_sort: 0,
             library_music_view: 0,
             card_size: default_card_size(),
+            text_size: default_card_size(),
             seerr_enabled: false,
             seerr_url: String::new(),
             seerr_auth_method: String::new(),
@@ -1212,6 +1218,7 @@ fn migrate_legacy_config(l: LegacyConfig) -> Config {
         request_pref_movie: RequestPreference::default(),
         request_pref_tv: RequestPreference::default(),
         card_size: default_card_size(),
+        text_size: default_card_size(),
     };
     let active_profile_id = profile.user_id.clone();
     Config {
@@ -2336,6 +2343,7 @@ mod tests {
         src.skip_intro_mode = "always-skip".into();
         src.skip_credits_secs = 15;
         src.card_size = "large".into();
+        src.text_size = "extra-large".into();
         src.trailer_quality = "720p".into();
         src.now_playing_auto_open = !ProfileSettings::default().now_playing_auto_open;
 
@@ -2353,6 +2361,7 @@ mod tests {
         assert_eq!(dst.skip_intro_mode, "always-skip");
         assert_eq!(dst.skip_credits_secs, 15);
         assert_eq!(dst.card_size, "large");
+        assert_eq!(dst.text_size, "extra-large");
         assert_eq!(dst.trailer_quality, "720p");
         assert_eq!(dst.now_playing_auto_open, src.now_playing_auto_open);
         // Sign-in, identity, Integrations and remembered browsing state stay.

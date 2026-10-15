@@ -87,7 +87,7 @@ component TrackPanel inherits Rectangle {
             Text {
                 text: root.title;
                 color: Theme.accent;
-                font-size: 11px;
+                font-size: 11px * AppState.text-scale;
                 font-weight: 700;
                 height: 24px;
             }
@@ -120,7 +120,7 @@ component TrackPanel inherits Rectangle {
                     Text {
                         text: "Off";
                         color: root.current-id == 0 ? Theme.accent : Theme.text;
-                        font-size: 12px;
+                        font-size: 12px * AppState.text-scale;
                         vertical-alignment: center;
                     }
                 }
@@ -162,7 +162,7 @@ component TrackPanel inherits Rectangle {
                     Text {
                         text: t.label;
                         color: root.current-id == t.id ? Theme.accent : Theme.text;
-                        font-size: 12px;
+                        font-size: 12px * AppState.text-scale;
                         wrap: word-wrap;
                         vertical-alignment: center;
                     }
@@ -283,7 +283,7 @@ export component PlayerScreen inherits Rectangle {
                 text: "▸";
                 font-family: "Noto Sans Symbols 2";
                 color: Theme.accent;
-                font-size: 11px;
+                font-size: 11px * AppState.text-scale;
                 font-weight: 700;
                 vertical-alignment: center;
                 width: 12px;
@@ -292,7 +292,7 @@ export component PlayerScreen inherits Rectangle {
             ch-osd-label := Text {
                 text: AppState.chapter-osd-text;
                 color: Theme.text-bright;
-                font-size: 12px;
+                font-size: 12px * AppState.text-scale;
                 vertical-alignment: center;
             }
         }
@@ -318,7 +318,7 @@ export component PlayerScreen inherits Rectangle {
                 text: "⏱";
                 font-family: "Noto Sans Symbols 2";
                 color: Theme.accent;
-                font-size: 11px;
+                font-size: 11px * AppState.text-scale;
                 font-weight: 700;
                 vertical-alignment: center;
                 width: 12px;
@@ -327,7 +327,7 @@ export component PlayerScreen inherits Rectangle {
             delay-osd-label := Text {
                 text: AppState.delay-osd-text;
                 color: Theme.text-bright;
-                font-size: 12px;
+                font-size: 12px * AppState.text-scale;
                 vertical-alignment: center;
             }
         }
@@ -368,7 +368,7 @@ export component PlayerScreen inherits Rectangle {
         Text {
             text: AppState.skip-segment-label;
             color: Theme.text-bright;
-            font-size: 14px;
+            font-size: 14px * AppState.text-scale;
             font-weight: 700;
             horizontal-alignment: center;
             vertical-alignment: center;
@@ -399,7 +399,7 @@ export component PlayerScreen inherits Rectangle {
             Text {
                 text: AppState.skip-timed-label + "  ·  " + AppState.skip-timed-secs + "s";
                 color: Theme.accent;
-                font-size: 13px;
+                font-size: 13px * AppState.text-scale;
                 font-weight: 700;
             }
 
@@ -445,7 +445,7 @@ export component PlayerScreen inherits Rectangle {
                 Text {
                     text: "Up Next  ·  " + AppState.next-ep-secs + "s";
                     color: Theme.accent;
-                    font-size: 11px;
+                    font-size: 11px * AppState.text-scale;
                     font-weight: 700;
                     vertical-alignment: center;
                     horizontal-stretch: 1;
@@ -454,7 +454,7 @@ export component PlayerScreen inherits Rectangle {
                 if AppState.next-ep-ends-at != "": Text {
                     text: "Ends " + AppState.next-ep-ends-at;
                     color: Theme.text-soft;
-                    font-size: 11px;
+                    font-size: 11px * AppState.text-scale;
                     vertical-alignment: center;
                 }
             }
@@ -462,7 +462,7 @@ export component PlayerScreen inherits Rectangle {
             Text {
                 text: AppState.next-ep-title;
                 color: Theme.text-bright;
-                font-size: 13px;
+                font-size: 13px * AppState.text-scale;
                 overflow: elide;
             }
 
@@ -514,7 +514,7 @@ export component PlayerScreen inherits Rectangle {
             if AppState.buffering-pct > 0: Text {
                 text: "Buffering  " + AppState.buffering-pct + "%";
                 color: Theme.text;
-                font-size: 13px;
+                font-size: 13px * AppState.text-scale;
                 horizontal-alignment: center;
             }
 
@@ -568,7 +568,7 @@ export component PlayerScreen inherits Rectangle {
             Text {
                 text: "Reconnecting…";
                 color: Theme.text;
-                font-size: 13px;
+                font-size: 13px * AppState.text-scale;
                 horizontal-alignment: center;
             }
         }
@@ -597,7 +597,7 @@ export component PlayerScreen inherits Rectangle {
                 Text {
                     text: AppState.playing-title;
                     color: Theme.text-bright;
-                    font-size: 13px;
+                    font-size: 13px * AppState.text-scale;
                     overflow: elide;
                     horizontal-stretch: 1;
                     vertical-alignment: center;
@@ -606,7 +606,7 @@ export component PlayerScreen inherits Rectangle {
                 if AppState.playback-ends-at != "": Text {
                     text: "Ends " + AppState.playback-ends-at;
                     color: Theme.text-soft;
-                    font-size: 12px;
+                    font-size: 12px * AppState.text-scale;
                     vertical-alignment: center;
                 }
             }
@@ -619,7 +619,7 @@ export component PlayerScreen inherits Rectangle {
                     // During seek accumulation show the target time; otherwise current position.
                     text: AppState.seek-osd-visible ? AppState.seek-bar-time : AppState.playback-time;
                     color: Theme.text-soft;
-                    font-size: 12px;
+                    font-size: 12px * AppState.text-scale;
                     width: 54px;
                     vertical-alignment: center;
                 }
@@ -730,7 +730,7 @@ export component PlayerScreen inherits Rectangle {
                         Text {
                             text: AppState.seek-hover-time;
                             color: Theme.text-bright;
-                            font-size: 11px;
+                            font-size: 11px * AppState.text-scale;
                             horizontal-alignment: center;
                             vertical-alignment: center;
                         }
@@ -772,7 +772,7 @@ export component PlayerScreen inherits Rectangle {
                 Text {
                     text: AppState.playback-total;
                     color: #888888;
-                    font-size: 12px;
+                    font-size: 12px * AppState.text-scale;
                     width: 54px;
                     horizontal-alignment: right;
                     vertical-alignment: center;
@@ -781,7 +781,7 @@ export component PlayerScreen inherits Rectangle {
                 if !AppState.controls-visible && AppState.playback-ends-at != "": Text {
                     text: "Ends " + AppState.playback-ends-at;
                     color: #aaaaaa;
-                    font-size: 12px;
+                    font-size: 12px * AppState.text-scale;
                     vertical-alignment: center;
                 }
             }
@@ -914,7 +914,7 @@ export component PlayerScreen inherits Rectangle {
             delta-txt := Text {
                 text: AppState.seek-delta-text;
                 color: Theme.text-bright;
-                font-size: 22px;
+                font-size: 22px * AppState.text-scale;
                 font-weight: 700;
                 horizontal-alignment: center;
             }
@@ -922,7 +922,7 @@ export component PlayerScreen inherits Rectangle {
             target-txt := Text {
                 text: "→  " + AppState.seek-bar-time;
                 color: #aaaaaa;
-                font-size: 13px;
+                font-size: 13px * AppState.text-scale;
                 horizontal-alignment: center;
             }
         }
@@ -944,7 +944,7 @@ export component PlayerScreen inherits Rectangle {
             Text {
                 text: "VIDEO";
                 color: Theme.accent;
-                font-size: 10px;
+                font-size: 10px * AppState.text-scale;
                 font-weight: 700;
                 letter-spacing: 1.2px;
                 height: 20px;
@@ -990,7 +990,7 @@ export component PlayerScreen inherits Rectangle {
             Text {
                 text: "AUDIO";
                 color: Theme.accent;
-                font-size: 10px;
+                font-size: 10px * AppState.text-scale;
                 font-weight: 700;
                 letter-spacing: 1.2px;
                 height: 20px;
@@ -1013,7 +1013,7 @@ export component PlayerScreen inherits Rectangle {
             Text {
                 text: "SYNC";
                 color: Theme.accent;
-                font-size: 10px;
+                font-size: 10px * AppState.text-scale;
                 font-weight: 700;
                 letter-spacing: 1.2px;
                 height: 20px;
@@ -1127,7 +1127,7 @@ export component PlayerScreen inherits Rectangle {
             Text {
                 text: "SYNC";
                 color: Theme.accent;
-                font-size: 11px;
+                font-size: 11px * AppState.text-scale;
                 font-weight: 700;
                 letter-spacing: 1.2px;
                 height: 24px;
@@ -1141,7 +1141,7 @@ export component PlayerScreen inherits Rectangle {
                 Text {
                     text: "Sub";
                     color: Theme.text-subtle;
-                    font-size: 12px;
+                    font-size: 12px * AppState.text-scale;
                     vertical-alignment: center;
                     width: 34px;
                 }
@@ -1155,7 +1155,7 @@ export component PlayerScreen inherits Rectangle {
                 Text {
                     text: (AppState.sub-delay-ms >= 0 ? "+" : "") + AppState.sub-delay-ms + " ms";
                     color: AppState.sub-delay-ms == 0 ? Theme.text-subtle : Theme.accent;
-                    font-size: 12px;
+                    font-size: 12px * AppState.text-scale;
                     font-weight: 700;
                     vertical-alignment: center;
                     horizontal-alignment: center;
@@ -1177,7 +1177,7 @@ export component PlayerScreen inherits Rectangle {
                 Text {
                     text: "Audio";
                     color: Theme.text-subtle;
-                    font-size: 12px;
+                    font-size: 12px * AppState.text-scale;
                     vertical-alignment: center;
                     width: 34px;
                 }
@@ -1191,7 +1191,7 @@ export component PlayerScreen inherits Rectangle {
                 Text {
                     text: (AppState.audio-delay-ms >= 0 ? "+" : "") + AppState.audio-delay-ms + " ms";
                     color: AppState.audio-delay-ms == 0 ? Theme.text-subtle : Theme.accent;
-                    font-size: 12px;
+                    font-size: 12px * AppState.text-scale;
                     font-weight: 700;
                     vertical-alignment: center;
                     horizontal-alignment: center;

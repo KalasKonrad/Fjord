@@ -1495,6 +1495,12 @@ export global AppState {
     // SectionRow's default (detail/series/person/season/collection rows).
     in-out property <string> settings-card-size:    "normal";
     out property <float> card-scale: settings-card-size == "large" ? 1.25 : settings-card-size == "extra-large" ? 1.5 : 1.0;
+    // Text size (Settings → Interface, per profile): every font-size under 24px is written
+    // `Npx * AppState.text-scale` (headings and big numbers stay put). row-chrome-h is a dashboard
+    // row's title + padding (was a fixed 56px everywhere): it grows with the 16px row title.
+    in-out property <string> settings-text-size: "normal";
+    out property <float> text-scale: settings-text-size == "large" ? 1.15 : settings-text-size == "extra-large" ? 1.3 : 1.0;
+    out property <length> row-chrome-h: 56px + 20px * (text-scale - 1.0);
 
     // ── Player seek step (Settings → Playback → Skipping) ───────────────────────
     in-out property <int> settings-seek-step-secs:       10;

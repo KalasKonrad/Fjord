@@ -78,7 +78,7 @@ export component PersonScreen inherits Rectangle {
                     if AppState.person-bio != "": Text {
                         text: AppState.person-bio;
                         color: Theme.text-muted;
-                        font-size: 14px;
+                        font-size: 14px * AppState.text-scale;
                         wrap: word-wrap;
                     }
                 }

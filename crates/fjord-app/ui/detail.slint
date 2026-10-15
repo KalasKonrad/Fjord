@@ -118,7 +118,7 @@ export component DetailPage inherits Rectangle {
                                     if AppState.detail-tagline != "": Text {
                                         text: AppState.detail-tagline;
                                         color: AppState.detail-has-backdrop ? #ffffff : Theme.text-muted;
-                                        font-size: 15px;
+                                        font-size: 15px * AppState.text-scale;
                                         font-italic: true;
                                         wrap: word-wrap;
                                     }
@@ -126,7 +126,7 @@ export component DetailPage inherits Rectangle {
                                     if AppState.detail-series-label != "": Text {
                                         text: AppState.detail-series-label;
                                         color: Theme.accent;
-                                        font-size: 14px;
+                                        font-size: 14px * AppState.text-scale;
                                     }
 
                                     MetaLine {
@@ -137,13 +137,13 @@ export component DetailPage inherits Rectangle {
                                     if AppState.detail-genres != "": Text {
                                         text: AppState.detail-genres;
                                         color: AppState.detail-has-backdrop ? #ffffff : Theme.text-muted;
-                                        font-size: 13px;
+                                        font-size: 13px * AppState.text-scale;
                                     }
 
                                     if AppState.detail-studio != "": Text {
                                         text: AppState.detail-studio;
                                         color: AppState.detail-has-backdrop ? #ffffff : Theme.text-muted;
-                                        font-size: 13px;
+                                        font-size: 13px * AppState.text-scale;
                                     }
                                 }
 
@@ -209,7 +209,7 @@ export component DetailPage inherits Rectangle {
                         if AppState.detail-ends-at != "": Text {
                                 text: "Ends " + AppState.detail-ends-at;
                                 color: AppState.detail-has-backdrop ? #eeeeee : Theme.text-muted;
-                                font-size: 13px;
+                                font-size: 13px * AppState.text-scale;
                                 width: 110px;
                                 horizontal-alignment: center;
                             }

@@ -91,7 +91,7 @@ export component AlbumScreen inherits Rectangle {
                     Text {
                         text: AppState.album-title;
                         color: Theme.text;
-                        font-size: 17px;
+                        font-size: 17px * AppState.text-scale;
                         font-weight: 700;
                         vertical-alignment: center;
                         overflow: elide;
@@ -150,7 +150,7 @@ export component AlbumScreen inherits Rectangle {
                         Text {
                             text: AppState.album-title;
                             color: Theme.text;
-                            font-size: 22px;
+                            font-size: 22px * AppState.text-scale;
                             font-weight: 700;
                             overflow: elide;
                         }
@@ -158,14 +158,14 @@ export component AlbumScreen inherits Rectangle {
                         Text {
                             text: AppState.album-artist;
                             color: Theme.accent;
-                            font-size: 15px;
+                            font-size: 15px * AppState.text-scale;
                             overflow: elide;
                         }
 
                         Text {
                             text: AppState.album-meta;
                             color: Theme.text-muted;
-                            font-size: 13px;
+                            font-size: 13px * AppState.text-scale;
                         }
 
                         Rectangle {
@@ -268,7 +268,7 @@ export component AlbumScreen inherits Rectangle {
                                 x: 16px;
                                 text: trk.disc-header;
                                 color: Theme.accent;
-                                font-size: 11px;
+                                font-size: 11px * AppState.text-scale;
                                 font-weight: 700;
                                 vertical-alignment: center;
                                 height: parent.height;
@@ -301,7 +301,7 @@ export component AlbumScreen inherits Rectangle {
                                 Text {
                                 text: trk.track-number > 0 ? trk.track-number : i + 1;
                                 color: trk.has-played ? Theme.accent : Theme.text-muted;
-                                font-size: 13px;
+                                font-size: 13px * AppState.text-scale;
                                 width: 24px;
                                 vertical-alignment: center;
                                 horizontal-alignment: right;
@@ -315,14 +315,14 @@ export component AlbumScreen inherits Rectangle {
                                 Text {
                                     text: trk.title;
                                     color: trk.has-played ? Theme.text-muted : Theme.text;
-                                    font-size: 14px;
+                                    font-size: 14px * AppState.text-scale;
                                     overflow: elide;
                                 }
 
                                 if trk.artist != "" && trk.artist != AppState.album-artist: Text {
                                     text: trk.artist;
                                     color: Theme.text-subtle;
-                                    font-size: 11px;
+                                    font-size: 11px * AppState.text-scale;
                                     overflow: elide;
                                 }
                             }
@@ -331,7 +331,7 @@ export component AlbumScreen inherits Rectangle {
                                 Text {
                                 text: trk.duration;
                                 color: Theme.text-muted;
-                                font-size: 13px;
+                                font-size: 13px * AppState.text-scale;
                                 vertical-alignment: center;
                                 width: 44px;
                                 horizontal-alignment: right;
@@ -342,7 +342,7 @@ export component AlbumScreen inherits Rectangle {
                                 text: "♥";
                                 font-family: "Adwaita Sans";
                                 color: Theme.accent;
-                                font-size: 12px;
+                                font-size: 12px * AppState.text-scale;
                                 vertical-alignment: center;
                                 width: 16px;
                             }
@@ -365,7 +365,7 @@ export component AlbumScreen inherits Rectangle {
                                     text: "✕";
                                     font-family: "Noto Sans Symbols 2";
                                     color: x-ta.has-hover ? Theme.error : Theme.text-subtle;
-                                    font-size: 13px;
+                                    font-size: 13px * AppState.text-scale;
                                     vertical-alignment: center;
                                     horizontal-alignment: center;
                                     width: parent.width;

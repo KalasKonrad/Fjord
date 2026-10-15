@@ -70,7 +70,7 @@ component ToggleRow inherits Rectangle {
                 text: "✓";
                 font-family: "Adwaita Sans";
                 color: Theme.bg;
-                font-size: 13px;
+                font-size: 13px * AppState.text-scale;
                 font-weight: 700;
                 horizontal-alignment: center;
                 vertical-alignment: center;
@@ -84,14 +84,14 @@ component ToggleRow inherits Rectangle {
             Text {
                 text: root.item.name;
                 color: Theme.text;
-                font-size: 13px;
+                font-size: 13px * AppState.text-scale;
                 overflow: elide;
             }
 
             if root.item.subtitle != "": Text {
                 text: root.item.subtitle;
                 color: Theme.text-muted;
-                font-size: 11px;
+                font-size: 11px * AppState.text-scale;
                 overflow: elide;
             }
         }
@@ -100,7 +100,7 @@ component ToggleRow inherits Rectangle {
 
 component FieldLabel inherits Text {
     color: Theme.text-muted;
-    font-size: 12px;
+    font-size: 12px * AppState.text-scale;
     font-weight: 600;
 }
 
@@ -217,7 +217,7 @@ export component ProfileEditScreen inherits Rectangle {
                     Text {
                         text: AppState.profile-edit-is-create ? "Add Profile" : (AppState.profile-edit-is-self ? "Edit My Profile" : "Edit Profile");
                         color: Theme.text;
-                        font-size: 20px;
+                        font-size: 20px * AppState.text-scale;
                         font-weight: 700;
                     }
 
@@ -362,7 +362,7 @@ export component ProfileEditScreen inherits Rectangle {
                     if !AppState.profile-edit-is-create && AppState.profile-edit-has-pin: Text {
                         text: "(a PIN is currently set)";
                         color: Theme.text-subtle;
-                        font-size: 11px;
+                        font-size: 11px * AppState.text-scale;
                         vertical-alignment: center;
                     }
                 }
@@ -387,7 +387,7 @@ export component ProfileEditScreen inherits Rectangle {
                 Text {
                     text: "Bonfire doesn't report a profile's current rating — this starts unset until you pick one.";
                     color: Theme.text-subtle;
-                    font-size: 11px;
+                    font-size: 11px * AppState.text-scale;
                     wrap: word-wrap;
                 }
                 // A focus ring around the dropdown while D-pad navigation passes it (SettingsDropdown has
@@ -626,7 +626,7 @@ export component ProfileEditScreen inherits Rectangle {
                         y: (parent.height - self.height) / 2;
                         text: "Skip PIN on this network";
                         color: Theme.text;
-                        font-size: 13px;
+                        font-size: 13px * AppState.text-scale;
                         vertical-alignment: center;
                     }
 
@@ -695,7 +695,7 @@ export component ProfileEditScreen inherits Rectangle {
                 if AppState.profile-edit-error != "": Text {
                     text: AppState.profile-edit-error;
                     color: Theme.error;
-                    font-size: 12px;
+                    font-size: 12px * AppState.text-scale;
                     horizontal-alignment: center;
                     wrap: word-wrap;
                 }
@@ -931,7 +931,7 @@ export component ProfileEditScreen inherits Rectangle {
                         x: 12px;
                         text: opt;
                         color: opt == AppState.profile-edit-dropdown-display ? Theme.accent : Theme.text;
-                        font-size: 13px;
+                        font-size: 13px * AppState.text-scale;
                         font-weight: opt == AppState.profile-edit-dropdown-display ? 600 : 400;
                         vertical-alignment: center;
                         overflow: elide;
