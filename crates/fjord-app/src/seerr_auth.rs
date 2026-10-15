@@ -556,9 +556,7 @@ pub(crate) fn wire_connect_seerr(
                                 g.set_connect_seerr_qc_secret(qc.secret.into());
                                 g.set_connect_seerr_qc_polling(true);
                             }
-                            Err(e) => {
-                                set_error_from(&ww2, "Couldn't start Quick Connect", &e)
-                            }
+                            Err(e) => set_error_from(&ww2, "Couldn't start Quick Connect", &e),
                         }
                     }
                 });
