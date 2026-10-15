@@ -16,8 +16,10 @@
 //                      123 · ◀ · space · ▶ · Done; floating panel; key values live only here, row
 //                      lengths shared via AppState.onscreen-keyboard-row-lens
 //   FieldFocusWrap     focus ring around a LineEdit (which has no border of its own)
-//   MediaCard          poster card for rows and grids: badges ✓ / count / ♥ / ★ watchlist / Seerr
-//                      availability / cross-tier pill / progress; flush focus ring; no poster fade
+//   MediaCard          poster card for rows and grids: the poster fills the card, the full title +
+//                      subtitle sit over its bottom on a dark fade; badges ♥ / ★ (top-left), ✓ /
+//                      count / Seerr availability / cross-tier pill (top-right), progress strip;
+//                      flush focus ring; no poster fade
 //   LoadingSpinner     animated ring (speed-scaled dot rhythm)
 //   StatRow / ToggleSwitch / SectionHeader / SettingsDropdown / SettingsRow (key = settings.rs row key)
 //   PosterBlock        160×240 poster with badges (played, progress, unplayed count, request status)
@@ -746,24 +748,11 @@ export component MediaCard inherits Rectangle {
     // inside the layout cache. See SLINT.md.
     VerticalLayout {
         padding: 3px;
-        spacing: 6px;
 
+        // The poster fills the card; title and subtitle sit over its bottom on a dark fade, so
+        // every poster in a row has the same size however long its title is (0.5.1 — before,
+        // the text sat below and a long title shrank its poster).
         poster-rect := Rectangle {
-            // Reserve exactly what the title+subtitle block below actually
-            // needs (text-col.preferred-height, which grows with however
-            // many lines a long title/subtitle wraps to — no cap, the whole
-            // title is always shown) rather than a fixed budget that assumed
-            // 2 lines each. max(0px, ...) keeps this well-defined (never
-            // negative) even for a pathologically long title on a short
-            // card: the poster just shrinks, all the way to invisible in
-            // the extreme case, rather than the text overflowing past the
-            // card's own bounds into whatever is below it. Reads root.height
-            // (the month-stable pattern), NOT parent.height — parent is the
-            // padded VerticalLayout whose height participates in layout-info
-            // computation (see the recursion note above). text-col is a
-            // sibling, not an ancestor, so reading its preferred-height here
-            // does not create the same kind of cycle.
-            height: max(0px, root.height - 12px - text-col.preferred-height);
             border-radius: Theme.radius;
             background: Theme.surface-raised;
             clip: true;
@@ -778,15 +767,39 @@ export component MediaCard inherits Rectangle {
                 image-fit: cover;
             }
 
-            if !item.has-poster: Text {
-                text: item.title;
-                color: Theme.text-muted;
-                font-size: 11px;
-                wrap: word-wrap;
-                horizontal-alignment: center;
-                vertical-alignment: center;
+            // Title + subtitle over the bottom of the poster (also while it has none yet). Always
+            // the whole title, however many lines — a long one covers more of the poster. Plain
+            // Text items placed from their preferred heights, deliberately not a layout: a layout
+            // here would feed its size back into this component's own layout (the recursion note
+            // above). The scrim starts 18px above the title and darkens towards the bottom.
+            Rectangle {
+                y: title-text.y - 18px;
+                height: parent.height - self.y;
+                background: @linear-gradient(180deg, #00000000 0%, #000000b3 45%, #000000e0 100%);
+            }
+
+            title-text := Text {
                 x: 6px;
                 width: parent.width - 12px;
+                height: self.preferred-height;
+                y: subtitle-text.y - (item.subtitle != "" ? 2px : 0px) - self.height;
+                text: item.title;
+                color: Theme.text;
+                font-size: 12px;
+                font-weight: 600;
+                wrap: word-wrap;
+            }
+
+            subtitle-text := Text {
+                x: 6px;
+                width: parent.width - 12px;
+                height: item.subtitle != "" ? self.preferred-height : 0px;
+                y: parent.height - 7px - self.height;
+                visible: item.subtitle != "";
+                text: item.subtitle;
+                color: Theme.text-muted;
+                font-size: 10px;
+                wrap: word-wrap;
             }
 
             // In-progress bar at bottom of poster
@@ -821,14 +834,12 @@ export component MediaCard inherits Rectangle {
                 }
             }
 
-            // Watchlist star badge, bottom-left (the only free corner: ♥ top-left, ✓/count/
-            // availability top-right, the cross-tier pill bottom-right). On ANY card with
-            // on-watchlist — Discover or a library item. y = height − 30px leaves a gap above the
-            // 3px progress strip (a watchlisted, partly watched library item shows both).
+            // Watchlist star badge, top-left — under the ♥ when both show (the bottom belongs to
+            // the title). On ANY card with on-watchlist — Discover or a library item.
             // Unpinned font, like the ★/☆ glyphs in context_menu.slint/request_detail.slint.
             if item.on-watchlist: Rectangle {
                 x: 4px;
-                y: parent.height - 30px;
+                y: item.is-favorite ? 32px : 4px;
                 width: 24px;
                 height: 24px;
                 border-radius: 12px;
@@ -907,7 +918,7 @@ export component MediaCard inherits Rectangle {
                 }
             }
 
-            // Cross-tier pill, bottom-right — Discover "Requested" row only. Two states share it,
+            // Cross-tier pill, top-right under the availability pill — Discover "Requested" row only. Two states share it,
             // `other-tier-available` winning:
             //   - other-tier-available: the OTHER tier is already watchable — filled accent,
             //     "Available in 2K/4K".
@@ -915,7 +926,7 @@ export component MediaCard inherits Rectangle {
             //     "Also requested in 2K/4K".
             // See CardItem in theme.slint.
             if item.other-tier-available || item.other-tier-requested: Rectangle {
-                y: parent.height - self.height - 4px;
+                y: 28px;
                 height: 20px;
                 width: other-tier-text.preferred-width + 14px;
                 x: parent.width - self.width - 4px;
@@ -942,35 +953,6 @@ export component MediaCard inherits Rectangle {
                     duration: 120ms * AppState.settings-animation-speed;
                     easing: ease;
                 }
-            }
-        }
-
-        // No fixed/capped height on either Text below — both are left to
-        // their natural wrap:word-wrap size, so a long title or episode name
-        // is always shown in full rather than being elided after N lines.
-        // poster-rect above reads this layout's preferred-height to shrink
-        // and make room, so nothing here needs to know its own budget.
-        // (Earlier attempts capped the title at 2 lines via a fixed height +
-        // vertical-alignment:bottom to keep it flush with the subtitle; that
-        // hit a real Slint 1.16.1 bug where bottom-alignment mis-measures
-        // text height as soon as wrap:word-wrap produces 2+ lines, leaving a
-        // stray gap — confirmed via a standalone repro. Top-aligned,
-        // uncapped Text sidesteps it entirely instead of working around it.)
-        text-col := VerticalLayout {
-            spacing: 2px;
-
-            Text {
-                text: item.title;
-                color: Theme.text;
-                font-size: 12px;
-                wrap: word-wrap;
-            }
-
-            if item.subtitle != "": Text {
-                text: item.subtitle;
-                color: Theme.text-muted;
-                font-size: 10px;
-                wrap: word-wrap;
             }
         }
     }
