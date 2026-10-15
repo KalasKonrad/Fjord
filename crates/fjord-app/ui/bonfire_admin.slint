@@ -283,7 +283,12 @@ export component BonfireAdminScreen inherits Rectangle {
                                         height: parent.height;
                                         border-radius: Theme.radius;
                                         background: transparent;
-                                        border-width: (reset-ta.pressed) ? 3px
+                                        reset-pulse := PressPulse {
+                                            trigger: AppState.kb-activate-pulse;
+                                            active: AppState.bonfire-admin-cursor == i && AppState.bonfire-admin-col == 0;
+                                        }
+
+                                        border-width: (reset-ta.pressed || reset-pulse.pulsing) ? 3px
                                             : (AppState.bonfire-admin-cursor == i && AppState.bonfire-admin-col == 0) ? 2px
                                             : 1px;
                                         border-color: (AppState.bonfire-admin-cursor == i && AppState.bonfire-admin-col == 0) ? Theme.focus-border : Theme.border-strong;
@@ -324,7 +329,12 @@ export component BonfireAdminScreen inherits Rectangle {
                                             height: parent.height;
                                             border-radius: Theme.radius;
                                             background: Theme.surface-overlay;
-                                            border-width: (limit-ta.pressed) ? 3px
+                                            limit-pulse := PressPulse {
+                                                trigger: AppState.kb-activate-pulse;
+                                                active: AppState.bonfire-admin-cursor == i && AppState.bonfire-admin-col == 1;
+                                            }
+
+                                            border-width: (limit-ta.pressed || limit-pulse.pulsing) ? 3px
                                                 : (AppState.bonfire-admin-cursor == i && AppState.bonfire-admin-col == 1) ? 2px
                                                 : 0px;
                                             border-color: Theme.focus-border;

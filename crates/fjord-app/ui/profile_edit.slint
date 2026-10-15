@@ -316,9 +316,19 @@ export component ProfileEditScreen inherits Rectangle {
                         y: 4px;
                         border-radius: 16px;
                         background: c;
-                        border-width: (AppState.profile-edit-zone == 1 && AppState.profile-edit-avatar-cursor == i) ? 3px
+                        border-width: (swatch-ta.pressed || swatch-pulse.pulsing) ? 5px
+                            : (AppState.profile-edit-zone == 1 && AppState.profile-edit-avatar-cursor == i) ? 3px
                             : (AppState.profile-edit-avatar-color == avatar-palette-hex[i] ? 3px : 0px);
                         border-color: (AppState.profile-edit-zone == 1 && AppState.profile-edit-avatar-cursor == i) ? Theme.focus-border : Theme.text;
+                        animate border-width {
+                            duration: 90ms * AppState.settings-animation-speed;
+                            easing: ease-out-expo;
+                        }
+                        swatch-pulse := PressPulse {
+                            trigger: AppState.kb-activate-pulse;
+                            active: AppState.profile-edit-zone == 1 && AppState.profile-edit-avatar-cursor == i;
+                        }
+
                         swatch-ta := TouchArea {
                             clicked => {
                                 AppState.profile-edit-zone = 1;
