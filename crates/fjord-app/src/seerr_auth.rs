@@ -414,7 +414,7 @@ pub(crate) fn wire_connect_seerr(
                     Ok((u, status)) => (u, Some(status.version)),
                     Err(e) => {
                         let _ = slint::invoke_from_event_loop(move || {
-                            set_error(&ww2, &format!("Couldn't reach that server: {e}"));
+                            set_error_from(&ww2, "Couldn't reach that server", &e);
                         });
                         return;
                     }
@@ -442,7 +442,7 @@ pub(crate) fn wire_connect_seerr(
                                 &rt_inner,
                             )
                         }
-                        Err(e) => set_error(&ww2, &format!("Couldn't verify that key: {e}")),
+                        Err(e) => set_error_from(&ww2, "Couldn't verify that key", &e),
                     }
                 });
             });
@@ -464,7 +464,7 @@ pub(crate) fn wire_connect_seerr(
                     Ok((u, status)) => (u, Some(status.version)),
                     Err(e) => {
                         let _ = slint::invoke_from_event_loop(move || {
-                            set_error(&ww2, &format!("Couldn't reach that server: {e}"));
+                            set_error_from(&ww2, "Couldn't reach that server", &e);
                         });
                         return;
                     }
@@ -480,7 +480,7 @@ pub(crate) fn wire_connect_seerr(
                                 &state, &ww2, &base_url, "jellyfin", auth, version, &rt_inner,
                             )
                         }
-                        Err(e) => set_error(&ww2, &format!("Sign-in failed: {e}")),
+                        Err(e) => set_error_from(&ww2, "Couldn't sign in", &e),
                     }
                 });
             });
@@ -502,7 +502,7 @@ pub(crate) fn wire_connect_seerr(
                     Ok((u, status)) => (u, Some(status.version)),
                     Err(e) => {
                         let _ = slint::invoke_from_event_loop(move || {
-                            set_error(&ww2, &format!("Couldn't reach that server: {e}"));
+                            set_error_from(&ww2, "Couldn't reach that server", &e);
                         });
                         return;
                     }
@@ -518,7 +518,7 @@ pub(crate) fn wire_connect_seerr(
                                 &state, &ww2, &base_url, "local", auth, version, &rt_inner,
                             )
                         }
-                        Err(e) => set_error(&ww2, &format!("Sign-in failed: {e}")),
+                        Err(e) => set_error_from(&ww2, "Couldn't sign in", &e),
                     }
                 });
             });
@@ -540,7 +540,7 @@ pub(crate) fn wire_connect_seerr(
                     Ok((u, _status)) => u,
                     Err(e) => {
                         let _ = slint::invoke_from_event_loop(move || {
-                            set_error(&ww2, &format!("Couldn't reach that server: {e}"));
+                            set_error_from(&ww2, "Couldn't reach that server", &e);
                         });
                         return;
                     }
@@ -557,7 +557,7 @@ pub(crate) fn wire_connect_seerr(
                                 g.set_connect_seerr_qc_polling(true);
                             }
                             Err(e) => {
-                                set_error(&ww2, &format!("Couldn't start Quick Connect: {e}"))
+                                set_error_from(&ww2, "Couldn't start Quick Connect", &e)
                             }
                         }
                     }
@@ -610,9 +610,10 @@ pub(crate) fn wire_connect_seerr(
                                 if let Some(w) = ww2.upgrade() {
                                     AppState::get(&w).set_connect_seerr_qc_polling(false);
                                 }
-                                set_error(
+                                set_error_from(
                                     &ww2,
-                                    &format!("Lost the connection while waiting for approval: {e}"),
+                                    "Lost the connection while waiting for approval",
+                                    &e,
                                 );
                             });
                         }
@@ -644,7 +645,7 @@ pub(crate) fn wire_connect_seerr(
                                         &rt_inner,
                                     )
                                 }
-                                Err(e) => set_error(&ww2, &format!("Quick Connect failed: {e}")),
+                                Err(e) => set_error_from(&ww2, "Couldn't finish Quick Connect", &e),
                             }
                         });
                     }
@@ -654,7 +655,7 @@ pub(crate) fn wire_connect_seerr(
                             if let Some(w) = ww2.upgrade() {
                                 AppState::get(&w).set_connect_seerr_qc_polling(false);
                             }
-                            set_error(&ww2, &format!("{e} — try again"));
+                            set_error_from(&ww2, "Quick Connect stopped (try again)", &e);
                         });
                     }
                 }
@@ -672,6 +673,12 @@ fn set_busy(ww: &Weak<MainWindow>, busy: bool) {
 
 // Errors here are setup-time and stay on-screen (ConnectSeerrScreen's own
 // error text), not a toast — matches how LoginScreen surfaces auth failures.
+/// set_error for a failed step: the whole error to the log, "<what> — <short reason>" on screen.
+fn set_error_from(ww: &Weak<MainWindow>, what: &str, e: &anyhow::Error) {
+    tracing::warn!("connect seerr: {what}: {e:#}");
+    set_error(ww, &format!("{what} — {}", crate::short_error(e)));
+}
+
 fn set_error(ww: &Weak<MainWindow>, msg: &str) {
     if let Some(w) = ww.upgrade() {
         let g = AppState::get(&w);

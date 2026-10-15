@@ -206,7 +206,7 @@ pub(crate) fn open_manage_profiles_screen(
             }
             Err(e) => {
                 warn!("bonfire_list_profiles: {e:#}");
-                let msg = format!("Couldn't load profiles: {e:#}");
+                let msg = format!("Couldn't load profiles — {}", crate::short_error(&e));
                 let _ = slint::invoke_from_event_loop(move || {
                     if let Some(w) = ww.upgrade() {
                         AppState::get(&w).set_manage_profiles_error(ss(&msg));
@@ -295,7 +295,7 @@ pub(crate) fn open_my_profile_edit_screen(
             }
             Err(e) => {
                 warn!("open_my_profile_edit_screen: bonfire_list_profiles: {e:#}");
-                let msg = format!("{e:#}");
+                let msg = crate::short_error(&e);
                 let _ = slint::invoke_from_event_loop(move || {
                     if let Some(w) = ww.upgrade() {
                         crate::show_toast(w.as_weak(), msg);
@@ -753,7 +753,7 @@ pub(crate) fn on_profile_edit_save(
                     s.profile_edit_pin_buffer.clear();
                     s.profile_edit_master_pin_buffer.clear();
                 }
-                let msg = format!("{e:#}");
+                let msg = crate::short_error(&e);
                 let _ = slint::invoke_from_event_loop(move || {
                     if let Some(w) = ww.upgrade() {
                         let g = AppState::get(&w);
@@ -1192,7 +1192,7 @@ pub(crate) fn on_profile_edit_delete(
                     s.profile_edit_pin_buffer.clear();
                     s.profile_edit_master_pin_buffer.clear();
                 }
-                let msg = format!("{e:#}");
+                let msg = crate::short_error(&e);
                 let _ = slint::invoke_from_event_loop(move || {
                     if let Some(w) = ww.upgrade() {
                         let g = AppState::get(&w);
