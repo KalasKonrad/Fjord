@@ -21,7 +21,7 @@ Version history: [CHANGELOG.md](CHANGELOG.md) (git tags `v0.1.0`–`v0.5.0`). Im
 - [ ] **S4 — live sync over HTTPS (2026-10-10).** Proven against a public `wss://` echo server; with the own (http://) server nothing changes: `ws: connected` as before. Only testable for real against an https:// Jellyfin.
 
 ### Packages and branch model (2026-10-14)
-- [ ] **fjord-bin (release).** `makepkg -si` in `fjord-bin/` downloads the v0.5.0 tarball, the checksum passes, and pacman replaces the installed Fjord package; Settings shows 0.5.0.
+- [x] **fjord-bin (release).** Confirmed on dev 2026-10-15: pacman replaced `fjord` with `fjord-bin 0.5.0-1` (checksum passed), Fjord started with `0.5.0 (r1162.31c8a80)`, no warnings. `makepkg -si` in `fjord-bin/` downloads the v0.5.0 tarball, the checksum passes, and pacman replaces the installed Fjord package; Settings shows 0.5.0.
 - [ ] **fjord-bin-nightly.** Install confirmed on dev 2026-10-15: replaced `fjord-git`, pacman shows `fjord-bin-nightly r1162.31c8a80-1`, the log `0.5.0 (r1162.31c8a80)`. Still open: the first push to `release-0.5.1` that touches code starts an Actions run for that branch and updates "nightly"; `makepkg -si` in `fjord-bin-nightly/` then installs it (pkgver `r<count>.<hash>` of the branch).
 - [x] **fjord (source).** Confirmed on dev 2026-10-15: pacman replaced `fjord-bin-nightly` with `fjord 0.5.0-1`, Fjord started with `0.5.0 (r1162.31c8a80)`, no warnings. `makepkg -si` in the repo root builds the `v0.5.0` tag and replaces the installed `fjord-git`; pacman shows `fjord 0.5.0-1`, Settings 0.5.0 (r1162…).
 
