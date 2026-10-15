@@ -1272,10 +1272,13 @@ export component SettingsRow inherits Rectangle {
                 }
             }
 
+            // One line, cut with "…" — except on the focused row, which shows the whole description
+            // (a remote can't hover to read the rest).
             Text {
                 text: root.subtitle;
                 color: Theme.text-muted;
                 font-size: 12px;
+                wrap: AppState.settings-focused == root.key ? TextWrap.word-wrap : TextWrap.no-wrap;
                 overflow: elide;
             }
         }

@@ -23,6 +23,9 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Improved: setting descriptions are readable in full.** The selected row
+  shows its whole description instead of cutting it off with "…", and the
+  longest ones are shorter.
 - **New: Settings → Profiles → Copy settings from…** — take another
   profile's settings (the ones tagged Profile: subtitles, audio language,
   skipping, trailer quality, Now Playing, card size) into yours, after a
