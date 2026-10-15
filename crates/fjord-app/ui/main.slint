@@ -1,5 +1,6 @@
 // ── fjord-app · main.slint ───────────────────────────────────────────────────
-//   MainWindow    window root: sync-layout (grid/card sizes from the width), the Up Next banner
+//   MainWindow    window root: sync-layout (grid columns/card sizes from the width × AppState.card-scale,
+//                 re-run when the card size setting changes), the Up Next banner
 //                 (gate29, outside the fullscreen player), the one FocusScope `fs` →
 //                 AppState.handle-key() → keys.rs
 //   bar layout    MusicPlayerBar (72px, is-audio-playing) above MiniPlayerBar (108/56px,
@@ -120,27 +121,23 @@ export component MainWindow inherits Window {
     callback grab-keyboard-focus;
     grab-keyboard-focus => { fs.focus(); }
 
+    // Grid columns: as many 145px cards (× the card-size scale) + 14px gaps as fit next to the
+    // ~216px of sidebar and padding — at scale 1 the same steps as before (4 at 852px, one more
+    // every 159px, up to 10); at least 2.
     pure function grid-cols() -> int {
-        if self.width < 852px { return 3; }
-        if self.width < 1011px { return 4; }
-        if self.width < 1170px { return 5; }
-        if self.width < 1329px { return 6; }
-        if self.width < 1488px { return 7; }
-        if self.width < 1647px { return 8; }
-        if self.width < 1806px { return 9; }
-        return 10;
+        return clamp(floor((self.width - 216px) / (145px * AppState.card-scale + 14px)), 2, 10);
     }
     pure function dash-card-w() -> length {
-        if self.width < 900px { return 115px; }
-        if self.width < 1300px { return 140px; }
-        if self.width < 1700px { return 165px; }
-        return 190px;
+        if self.width < 900px { return 115px * AppState.card-scale; }
+        if self.width < 1300px { return 140px * AppState.card-scale; }
+        if self.width < 1700px { return 165px * AppState.card-scale; }
+        return 190px * AppState.card-scale;
     }
     pure function dash-card-h() -> length {
-        if self.width < 900px { return 184px; }
-        if self.width < 1300px { return 224px; }
-        if self.width < 1700px { return 264px; }
-        return 304px;
+        if self.width < 900px { return 184px * AppState.card-scale; }
+        if self.width < 1300px { return 224px * AppState.card-scale; }
+        if self.width < 1700px { return 264px * AppState.card-scale; }
+        return 304px * AppState.card-scale;
     }
 
     function sync-layout() {
@@ -150,6 +147,9 @@ export component MainWindow inherits Window {
     }
     init => { self.sync-layout(); }
     changed width => { self.sync-layout(); }
+    // Mirrored so `changed` can watch it (it only sees this component's own properties).
+    property <float> card-scale: AppState.card-scale;
+    changed card-scale => { self.sync-layout(); }
 
     // Auto-advance countdown banner — only shown outside the fullscreen player
     // (player.slint has its own banner with Play Now + Skip buttons).

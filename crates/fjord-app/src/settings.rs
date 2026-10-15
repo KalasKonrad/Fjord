@@ -177,6 +177,7 @@ const PLY_SEEK_STEP_LONG: &str = "player.seek_step_long";
 const PLY_SKIP_FADE_MS: &str = "player.skip_fade_ms";
 
 // ── UI section rows ───────────────────────────────────────────────────────────
+const UI_CARD_SIZE: &str = "ui.card_size"; // per profile, unlike the other UI rows
 const UI_SCROLL_SPEED: &str = "ui.scroll_speed";
 const UI_ANIMATION_SPEED: &str = "ui.animation_speed";
 const UI_FONT_FAMILY: &str = "ui.font_family";
@@ -335,6 +336,7 @@ fn section_row_keys(section: &str, g: &crate::AppState<'_>) -> Vec<&'static str>
             rows
         }
         SECTION_UI => vec![
+            UI_CARD_SIZE,
             UI_SCROLL_SPEED,
             UI_ANIMATION_SPEED,
             UI_FONT_FAMILY,
@@ -664,6 +666,7 @@ const CACHE_MAX_MB_MODEL: &[&str] = &["0", "150", "300", "500", "1000", "2000"];
 const CACHE_MAX_MB_VALUES: &[i32] = &[0, 150, 300, 500, 1000, 2000];
 const SKIP_MODE_4_MODEL: &[&str] = &["always-skip", "ask", "ask-timed", "never-skip"];
 const SKIP_MODE_3_MODEL: &[&str] = &["always-skip", "ask", "never-skip"];
+const CARD_SIZE_MODEL: &[&str] = &["normal", "large", "extra-large"];
 const SKIP_SECS_MODEL: &[&str] = &["3", "5", "8", "10", "15", "20", "30"];
 const CREDITS_SECS_MODEL: &[&str] = &["10", "15", "20", "30", "45", "60"];
 const LOG_LEVEL_MODEL: &[&str] = &["error", "warn", "info", "debug"];
@@ -752,6 +755,14 @@ fn display_val<'a>(val: &'a str, key: &str) -> &'a str {
             _ => val,
         };
     }
+    if key == UI_CARD_SIZE {
+        return match val {
+            "normal" => "Normal",
+            "large" => "Large",
+            "extra-large" => "Extra large",
+            _ => val,
+        };
+    }
     if key == VID_DISPLAY_SYNC_4K_ODD_FPS_MODE {
         return match val {
             "fallback" => "Fallback to default resolution",
@@ -802,6 +813,7 @@ fn dropdown_model(key: &str) -> Option<&'static [&'static str]> {
             Some(SKIP_MODE_4_MODEL)
         }
         PLY_CREDITS_MODE => Some(SKIP_MODE_3_MODEL),
+        UI_CARD_SIZE => Some(CARD_SIZE_MODEL),
         PLY_INTRO_SECS | PLY_RECAP_SECS | PLY_PREVIEW_SECS | PLY_COMMERCIAL_SECS => {
             Some(SKIP_SECS_MODEL)
         }
@@ -880,6 +892,7 @@ fn current_value_str(key: &str, g: &crate::AppState<'_>) -> String {
         PLY_COMMERCIAL_MODE => g.get_settings_skip_commercial_mode().to_string(),
         PLY_COMMERCIAL_SECS => g.get_settings_skip_commercial_secs().to_string(),
         PLY_CREDITS_MODE => g.get_settings_skip_credits_mode().to_string(),
+        UI_CARD_SIZE => g.get_settings_card_size().to_string(),
         PLY_CREDITS_SECS => g.get_settings_skip_credits_secs().to_string(),
         PLY_SEEK_STEP => g.get_settings_seek_step_secs().to_string(),
         PLY_SEEK_STEP_LONG => g.get_settings_seek_step_long_secs().to_string(),
@@ -1126,6 +1139,7 @@ pub(crate) fn apply_dropdown_selection(key: &str, cursor: i32, g: &crate::AppSta
         PLY_COMMERCIAL_MODE => g.set_settings_skip_commercial_mode(val.into()),
         PLY_COMMERCIAL_SECS => g.set_settings_skip_commercial_secs(val.parse().unwrap_or(8)),
         PLY_CREDITS_MODE => g.set_settings_skip_credits_mode(val.into()),
+        UI_CARD_SIZE => g.set_settings_card_size(val.into()),
         PLY_CREDITS_SECS => g.set_settings_skip_credits_secs(val.parse().unwrap_or(30)),
         PLY_SEEK_STEP => g.set_settings_seek_step_secs(val.parse().unwrap_or(10)),
         PLY_SEEK_STEP_LONG => g.set_settings_seek_step_long_secs(val.parse().unwrap_or(30)),
@@ -1568,6 +1582,11 @@ fn settings_row_action(key: &str, g: &crate::AppState<'_>) {
                 SKIP_MODE_3_MODEL,
             );
             g.set_settings_skip_credits_mode(v.into());
+            g.invoke_settings_changed();
+        }
+        UI_CARD_SIZE => {
+            let v = cycle(g.get_settings_card_size().as_str(), CARD_SIZE_MODEL);
+            g.set_settings_card_size(v.into());
             g.invoke_settings_changed();
         }
         PLY_CREDITS_SECS => {
@@ -2419,6 +2438,7 @@ pub(crate) fn apply_settings_to_window(w: &MainWindow, s: &FjordState) {
     g.set_settings_skip_commercial_mode(ss(&cp.skip_commercial_mode));
     g.set_settings_skip_commercial_secs(cp.skip_commercial_secs as i32);
     g.set_settings_skip_credits_mode(ss(&cp.skip_credits_mode));
+    g.set_settings_card_size(ss(&cp.card_size));
     g.set_settings_skip_credits_secs(cp.skip_credits_secs as i32);
     g.set_settings_seek_step_secs(c.seek_step_secs as i32);
     g.set_settings_seek_step_long_secs(c.seek_step_long_secs as i32);
@@ -2590,6 +2610,7 @@ pub(crate) fn read_settings_from_window(w: &MainWindow, s: &mut FjordState) {
     cp.skip_commercial_mode = g.get_settings_skip_commercial_mode().to_string();
     cp.skip_commercial_secs = g.get_settings_skip_commercial_secs().max(0) as u32;
     cp.skip_credits_mode = g.get_settings_skip_credits_mode().to_string();
+    cp.card_size = g.get_settings_card_size().to_string();
     cp.skip_credits_secs = g.get_settings_skip_credits_secs().max(0) as u32;
     cp.seerr_enabled = g.get_settings_seerr_enabled();
     cp.trailer_quality = g.get_settings_trailer_quality().to_string();

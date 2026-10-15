@@ -23,6 +23,9 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **New: Settings → UI → Card size** — Normal, Large or Extra large poster
+  cards on every screen: dashboards, library grids, Discover and the rows on
+  detail pages. Saved per profile; library grids show fewer columns to fit.
 - **Changed: posters fill the whole card, with the title over them.** The
   title and year now sit on a dark fade over the bottom of the poster instead
   of below it, so every poster in a row is the same size however long its

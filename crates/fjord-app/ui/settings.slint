@@ -1913,6 +1913,24 @@ export component SettingsScreen inherits Rectangle {
                             text: "UI";
                         }
 
+                        // Poster card size — per profile, unlike the rows below.
+                    SettingsRow {
+                            key: "ui.card_size";
+                            title: "Card size";
+                            subtitle: "Size of the poster cards on every screen (dashboards, libraries, Discover) — saved for this profile";
+                            SettingsDropdown {
+                                model: ["Normal", "Large", "Extra large"];
+                                current-value: AppState.settings-card-size == "large" ? "Large"
+                                    : AppState.settings-card-size == "extra-large" ? "Extra large" : "Normal";
+                                selected(v) => {
+                                    AppState.settings-card-size = v == "Large" ? "large"
+                                        : v == "Extra large" ? "extra-large" : "normal";
+                                    AppState.settings-changed();
+                                    AppState.refocus();
+                                }
+                            }
+                        }
+
                         // Scroll speed. The value is a DURATION multiplier, not a
                     // rate — bigger % = longer transition = slower, smaller % = faster.
                     // Opposite of what "speed" suggests at a glance, so the subtitle
