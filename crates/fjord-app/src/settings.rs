@@ -175,6 +175,7 @@ const PLY_CREDITS_SECS: &str = "player.credits_secs"; // virtual — only when c
 const PLY_SEEK_STEP: &str = "player.seek_step";
 const PLY_SEEK_STEP_LONG: &str = "player.seek_step_long";
 const PLY_SKIP_FADE_MS: &str = "player.skip_fade_ms";
+const PLY_TRAILER_QUALITY: &str = "player.trailer_quality"; // every YouTube trailer; was in Integrations
 
 // ── UI section rows ───────────────────────────────────────────────────────────
 const UI_CARD_SIZE: &str = "ui.card_size"; // per profile, unlike the other UI rows
@@ -187,7 +188,6 @@ const UI_ONSCREEN_KEYBOARD: &str = "ui.onscreen_keyboard"; // 2026-08-27, defaul
 const INT_SEERR_ENABLED: &str = "integrations.seerr_enabled";
 const INT_SEERR_CONNECT: &str = "integrations.seerr_connect"; // "Connect Seerr" / "Disconnect"
 const INT_STREAMING_REGION: &str = "integrations.streaming_region";
-const INT_TRAILER_QUALITY: &str = "integrations.trailer_quality";
 const INT_DISPLAY_LANGUAGE: &str = "integrations.display_language";
 const INT_DISCOVER_LANGUAGE: &str = "integrations.discover_language";
 const INT_DISCOVER_REGION: &str = "integrations.discover_region";
@@ -333,6 +333,7 @@ fn section_row_keys(section: &str, g: &crate::AppState<'_>) -> Vec<&'static str>
             rows.push(PLY_SEEK_STEP);
             rows.push(PLY_SEEK_STEP_LONG);
             rows.push(PLY_SKIP_FADE_MS);
+            rows.push(PLY_TRAILER_QUALITY);
             rows
         }
         SECTION_UI => vec![
@@ -349,7 +350,6 @@ fn section_row_keys(section: &str, g: &crate::AppState<'_>) -> Vec<&'static str>
                 if g.get_seerr_connected() {
                     rows.extend([
                         INT_STREAMING_REGION,
-                        INT_TRAILER_QUALITY,
                         INT_DISPLAY_LANGUAGE,
                         INT_DISCOVER_LANGUAGE,
                         INT_DISCOVER_REGION,
@@ -822,7 +822,7 @@ fn dropdown_model(key: &str) -> Option<&'static [&'static str]> {
         PLY_SEEK_STEP_LONG => Some(SEEK_STEP_LONG_MODEL),
         PLY_SKIP_FADE_MS => Some(SKIP_FADE_MS_MODEL),
         UI_SCROLL_SPEED | UI_ANIMATION_SPEED => Some(SPEED_PCT_MODEL),
-        INT_TRAILER_QUALITY => Some(TRAILER_QUALITY_MODEL),
+        PLY_TRAILER_QUALITY => Some(TRAILER_QUALITY_MODEL),
         VID_DISPLAY_SYNC_SCALE_4K | VID_DISPLAY_SYNC_SCALE_1080P => Some(DISPLAY_SYNC_SCALE_MODEL),
         VID_DISPLAY_SYNC_4K_ODD_FPS_MODE => Some(DISPLAY_SYNC_4K_ODD_FPS_MODEL),
         VID_DISPLAY_SYNC_HDR_MODE => Some(DISPLAY_SYNC_HDR_MODE_MODEL),
@@ -901,7 +901,7 @@ fn current_value_str(key: &str, g: &crate::AppState<'_>) -> String {
         UI_ANIMATION_SPEED => g.get_settings_animation_speed_pct().to_string(),
         UI_FONT_FAMILY => g.get_settings_font_family_desc().to_string(),
         INT_STREAMING_REGION => g.get_settings_streaming_region_desc().to_string(),
-        INT_TRAILER_QUALITY => g.get_settings_trailer_quality().to_string(),
+        PLY_TRAILER_QUALITY => g.get_settings_trailer_quality().to_string(),
         INT_DISCOVER_REGION => g.get_settings_discover_region_desc().to_string(),
         VID_DISPLAY_SYNC_SCALE_4K => g.get_settings_display_sync_scale_4k().to_string(),
         VID_DISPLAY_SYNC_SCALE_1080P => g.get_settings_display_sync_scale_1080p().to_string(),
@@ -1153,7 +1153,7 @@ pub(crate) fn apply_dropdown_selection(key: &str, cursor: i32, g: &crate::AppSta
             g.set_settings_animation_speed_pct(pct);
             g.set_settings_animation_speed(pct as f32 / 100.0);
         }
-        INT_TRAILER_QUALITY => g.set_settings_trailer_quality(val.into()),
+        PLY_TRAILER_QUALITY => g.set_settings_trailer_quality(val.into()),
         _ => return,
     }
     g.invoke_settings_changed();
@@ -1674,7 +1674,7 @@ fn settings_row_action(key: &str, g: &crate::AppState<'_>) {
                 g.invoke_streaming_region_selected(desc);
             }
         }
-        INT_TRAILER_QUALITY => {
+        PLY_TRAILER_QUALITY => {
             let v = cycle(
                 g.get_settings_trailer_quality().to_string().as_str(),
                 TRAILER_QUALITY_MODEL,
