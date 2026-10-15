@@ -51,7 +51,9 @@ export global Theme {
     // ── Text ─────────────────────────────────────────────────────────────────
     out property <color> text:            #f2f2f7;
     out property <color> text-muted:      #8e8e93;
-    out property <color> text-subtle:     #48484a;
+    // Dimmest readable text: ≥ 3:1 on every background (bg … surface-overlay; was #48484a at
+    // 1.5–2.1:1, used for real information — hints, empty states, help text, track artists).
+    out property <color> text-subtle:     #767679;
 
     // Pure white / soft grey for text over images, video and accent-filled pills and badges.
     out property <color> text-bright:     #ffffff;
