@@ -84,6 +84,16 @@ component PopupOption inherits Rectangle {
     height: 32px;
     border-radius: 4px;
     background: root.option-focused ? Theme.accent-muted : (ta.has-hover ? Theme.surface-overlay : transparent);
+    border-width: (ta.pressed || pulse.pulsing) ? 2px : 0px;
+    border-color: Theme.focus-border;
+    animate border-width {
+        duration: 90ms * AppState.settings-animation-speed;
+        easing: ease-out-expo;
+    }
+    pulse := PressPulse {
+        trigger: AppState.kb-activate-pulse;
+        active: root.option-focused;
+    }
 
     Text {
         x: 10px;
@@ -116,17 +126,21 @@ component FilterChip inherits Rectangle {
     height: 36px;
     border-radius: self.height / 2;
     background: root.selected ? Theme.accent : Theme.surface-overlay;
-    border-width: root.chip-focused ? 2px : 1px;
-    border-color: root.chip-focused ? Theme.focus-border : Theme.border;
+    border-width: (ta.pressed || pulse.pulsing) ? 3px : (root.chip-focused ? 2px : 1px);
+    border-color: (root.chip-focused || ta.pressed) ? Theme.focus-border : Theme.border;
     animate border-width {
         duration: 90ms * AppState.settings-animation-speed;
         easing: ease-out-expo;
+    }
+    pulse := PressPulse {
+        trigger: AppState.kb-activate-pulse;
+        active: root.chip-focused;
     }
 
     Text {
         x: 6px;
         text: root.text;
-        color: root.selected ? #ffffff : Theme.text-muted;
+        color: root.selected ? Theme.text-bright : Theme.text-muted;
         font-size: 12px;
         horizontal-alignment: center;
         vertical-alignment: center;
