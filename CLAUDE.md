@@ -137,7 +137,8 @@ Needs `mpv`/libmpv (`pacman -S mpv`). Optional at runtime: `yt-dlp` (trailers), 
   cache, overlay, or input-dispatch state must be reset there** — Seerr-scoped caches also in
   `seerr_auth::clear_connection` / `commit_connection`.
 - `token` and the Seerr key/cookie are AES-GCM encrypted by `load_config`/`save_config` only.
-- A Settings row backed by a `ProfileSettings` field gets `per-profile: true` in settings.slint (the "Profile" tag).
+- A Settings row backed by a `ProfileSettings` field gets `per-profile: true` in settings.slint (the "Profile" tag)
+  and goes into `ProfileSettings::copy_settings_from` + `settings::apply_profile_settings_to_window` ("Copy settings from…").
 
 ### UI models
 - Rebuild card rows through `apply_cards_preserving_identity` (mutates rows in place when ids/order match).

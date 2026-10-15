@@ -15,7 +15,8 @@
 //                   onscreen_keyboard_enabled, display_sync_* (opt-in; display_sync_trailers),
 //                   separate_video_surface (default on), video_own_buffers (opt-in, per run),
 //                   video_dither_off (test aid)
-//   ProfileSettings settings that follow the PERSON, keyed by user_id: auth (server_url/user_id/
+//   ProfileSettings settings that follow the PERSON, keyed by user_id (copy_settings_from: the
+//                   Settings rows tagged "Profile", for "Copy settings from…"): auth (server_url/user_id/
 //                   token), subtitle/audio language, library sort, skip_*_mode/_secs, trailer
 //                   quality, Seerr connection (seerr_enabled/_url/_auth_method/_api_key/
 //                   _session_cookie), Discover filters (genres by name, providers by id), Request
@@ -745,6 +746,38 @@ pub(crate) struct RequestPreference {
     pub tag_ids_2k: Vec<i64>,
     #[serde(default)]
     pub tag_ids_4k: Vec<i64>,
+}
+
+impl ProfileSettings {
+    /// Settings → Profiles → "Copy settings from…": this profile's own settings — the rows tagged
+    /// "Profile" in Settings (`per-profile: true`) — taken from `src`. Never sign-in, identity,
+    /// the Seerr connection (Integrations) or remembered browsing state (library sorts, Discover
+    /// filters, request choices). A new per-profile Settings row belongs here too.
+    pub(crate) fn copy_settings_from(&mut self, src: &ProfileSettings) {
+        self.sub_enabled = src.sub_enabled;
+        self.sub_lang = src.sub_lang.clone();
+        self.sub_lang2 = src.sub_lang2.clone();
+        self.sub_type = src.sub_type.clone();
+        self.sub_scale_pct = src.sub_scale_pct;
+        self.sub_pos_pct = src.sub_pos_pct;
+        self.sub_respect_ass_styling = src.sub_respect_ass_styling;
+        self.sub_color = src.sub_color.clone();
+        self.sub_background = src.sub_background;
+        self.audio_lang = src.audio_lang.clone();
+        self.now_playing_auto_open = src.now_playing_auto_open;
+        self.skip_intro_mode = src.skip_intro_mode.clone();
+        self.skip_intro_secs = src.skip_intro_secs;
+        self.skip_recap_mode = src.skip_recap_mode.clone();
+        self.skip_recap_secs = src.skip_recap_secs;
+        self.skip_preview_mode = src.skip_preview_mode.clone();
+        self.skip_preview_secs = src.skip_preview_secs;
+        self.skip_commercial_mode = src.skip_commercial_mode.clone();
+        self.skip_commercial_secs = src.skip_commercial_secs;
+        self.skip_credits_mode = src.skip_credits_mode.clone();
+        self.skip_credits_secs = src.skip_credits_secs;
+        self.card_size = src.card_size.clone();
+        self.trailer_quality = src.trailer_quality.clone();
+    }
 }
 
 impl Default for ProfileSettings {
@@ -2285,6 +2318,51 @@ pub(crate) fn upsert_media_item(list: &mut Vec<MediaItem>, item: MediaItem) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn copy_settings_from_copies_only_the_profile_settings() {
+        let mut src = ProfileSettings {
+            user_id: "aaaa0001000000000000000000000000".into(),
+            token: "source-token".into(),
+            display_name: "Source".into(),
+            seerr_api_key: "source-key".into(),
+            seerr_enabled: true,
+            library_movies_sort: 3,
+            ..Default::default()
+        };
+        src.sub_lang = "sv".into();
+        src.sub_scale_pct = 120;
+        src.audio_lang = "en".into();
+        src.skip_intro_mode = "always-skip".into();
+        src.skip_credits_secs = 15;
+        src.card_size = "large".into();
+        src.trailer_quality = "720p".into();
+        src.now_playing_auto_open = !ProfileSettings::default().now_playing_auto_open;
+
+        let mut dst = ProfileSettings {
+            user_id: "aaaa0002000000000000000000000000".into(),
+            token: "own-token".into(),
+            display_name: "Own".into(),
+            ..Default::default()
+        };
+        dst.copy_settings_from(&src);
+
+        assert_eq!(dst.sub_lang, "sv");
+        assert_eq!(dst.sub_scale_pct, 120);
+        assert_eq!(dst.audio_lang, "en");
+        assert_eq!(dst.skip_intro_mode, "always-skip");
+        assert_eq!(dst.skip_credits_secs, 15);
+        assert_eq!(dst.card_size, "large");
+        assert_eq!(dst.trailer_quality, "720p");
+        assert_eq!(dst.now_playing_auto_open, src.now_playing_auto_open);
+        // Sign-in, identity, Integrations and remembered browsing state stay.
+        assert_eq!(dst.user_id, "aaaa0002000000000000000000000000");
+        assert_eq!(dst.token, "own-token");
+        assert_eq!(dst.display_name, "Own");
+        assert_eq!(dst.seerr_api_key, "");
+        assert!(!dst.seerr_enabled);
+        assert_eq!(dst.library_movies_sort, 0);
+    }
 
     #[cfg(unix)]
     #[test]

@@ -1084,6 +1084,7 @@ fn main() -> Result<()> {
     display_sync::wire_display_sync(&window, &state, &rt);
 
     settings::wire_profile_defaults(&window, &state);
+    settings::wire_copy_settings(&window, &state);
 
     settings::wire_regions(&window, &state, &rt);
 

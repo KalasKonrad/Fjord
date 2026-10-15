@@ -19,8 +19,8 @@
 //                    auto-open
 //       Interface    ("ui") card size, video behind UI, text font, on-screen keyboard, scroll and
 //                    animation speed
-//       Profiles     launch policy (+ default profile), Manage Profiles (master account),
-//                    account launch policy (+ default account), Add Account, remember login,
+//       Profiles     launch policy (+ default profile), Manage Profiles (master account), Copy
+//                    settings from… (when other profiles exist), account launch policy (+ default account), Add Account, remember login,
 //                    Sign Out, Bonfire Group (master account), Bonfire Admin (server admin)
 //       Integrations Seerr enabled, Connect/Disconnect, then (connected) streaming region,
 //                    display/discover language, discover region, Manage Blocklist
@@ -29,7 +29,8 @@
 //       Advanced     hwdec, vf (NVDEC only), deinterlace; video-sync, interpolation (+ tscale);
 //                    early flush, latency hacks (display-resample); own 10-bit buffers (separate
 //                    surface), dithering off; cache secs/MB; prewarm metadata/images; log level
-//     Dialogs        Key Bindings reset + rebind-collision confirms, Disconnect Seerr confirm
+//     Dialogs        Key Bindings reset + rebind-collision confirms, Copy settings confirm,
+//                    Disconnect Seerr confirm
 //   Row identity     every row has a stable string `key` = the constant in settings.rs (keep the
 //                    two lists in sync); a mouse click goes through AppState.settings-row-focused
 //                    so settings-focused-visual-index (scroll) stays right. A SettingsDropdown's
@@ -1504,6 +1505,23 @@ export component SettingsScreen inherits Rectangle {
                             }
                         }
 
+                        // Copy settings from another profile on this device: only the rows tagged "Profile"
+                        // (ProfileSettings::copy_settings_from); no PIN — these are local preferences. Picking a
+                        // profile opens the confirm dialog at the bottom of this file.
+                    if AppState.settings-copy-sources-display.length > 0: SettingsRow {
+                            key: "profiles.copy_settings";
+                            title: "Copy settings from…";
+                            subtitle: "Replace this profile's settings tagged Profile with another profile's — sign-in and Seerr stay";
+                            SettingsDropdown {
+                                model <=> AppState.settings-copy-sources-display;
+                                current-value: "Choose a profile";
+                                selected(v) => {
+                                    AppState.copy-settings-source-selected(v);
+                                    AppState.refocus();
+                                }
+                            }
+                        }
+
                         // ── Account launch policy — the same shape one tier up; only differs from "always ask"
                         // once 2+ accounts exist (see should_show_picker_at_startup).
                     SettingsRow {
@@ -2416,6 +2434,22 @@ export component SettingsScreen inherits Rectangle {
     // Disconnect Seerr confirm (see show-seerr-disconnect-confirm in app_state.slint). Declared
     // last so it draws on top. Keyboard is handled in settings.rs's dispatch_settings —
     // ConfirmDialog has no key handling of its own.
+    // "Copy settings from…" confirm (see show-copy-settings-confirm in app_state.slint); keyboard in
+    // settings.rs's dispatch_settings, like Disconnect Seerr below.
+    if AppState.show-copy-settings-confirm: ConfirmDialog {
+        title: "Copy settings from " + AppState.copy-settings-source-label + "?";
+        message: "Replaces this profile's subtitle, audio language, skip, trailer, Now Playing and card size settings (the ones tagged Profile). Sign-in, Seerr and this device's settings stay as they are.";
+        confirm-label: "Copy";
+        focused: AppState.copy-settings-confirm-focused;
+        confirmed => {
+            AppState.copy-settings-confirmed();
+            AppState.show-copy-settings-confirm = false;
+        }
+        cancelled => {
+            AppState.show-copy-settings-confirm = false;
+        }
+    }
+
     if AppState.show-seerr-disconnect-confirm: ConfirmDialog {
         title: "Disconnect Seerr?";
         message: "Fjord will forget the saved connection — reconnecting means re-entering your credentials.";

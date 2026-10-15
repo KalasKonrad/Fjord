@@ -38,6 +38,9 @@
 //   refresh_profile_settings_dropdown / refresh_account_settings_dropdown  Settings → Profiles →
 //                       "Default Profile"/"Default Account" (dynamic dropdowns; called from
 //                       apply_settings_to_window and finish_session_setup)
+//   copy_settings_sources / refresh_copy_settings_sources  "Copy settings from…": every other
+//                       profile on this device, unique labels (account name, then a short id,
+//                       for a shared name); refreshed with the Default Profile list
 //   sidebar_profile_menu_rows / on_open_sidebar_profile_menu / on_sidebar_profile_menu_action
 //                       sidebar quick-menu: Switch Profile (current account has 2+ profiles or a
 //                       linked account) / Switch Account (always) / Manage Profiles + Edit My
@@ -321,6 +324,67 @@ pub(crate) fn refresh_profile_settings_dropdown(g: &AppState<'_>, cfg: &crate::c
         .unwrap_or_default();
     g.set_settings_default_profile_display(ModelRc::new(VecModel::from(labels)));
     g.set_settings_default_profile_desc(ss(&current));
+    // Same refresh points (settings applied, profile edited, default account changed).
+    refresh_copy_settings_sources(g, cfg);
+}
+
+/// Settings → Profiles → "Copy settings from…" sources: every other profile saved on this device
+/// (any account or server — the copied settings don't depend on either), as (label, user_id).
+/// Labels are unique so the picked label maps back to one profile: a name shared by several
+/// profiles gets its account's name, then a short id, appended.
+pub(crate) fn copy_settings_sources(cfg: &crate::config::Config) -> Vec<(String, String)> {
+    fn name(p: &ProfileSettings) -> String {
+        if p.display_name.is_empty() {
+            p.user_id.clone()
+        } else {
+            p.display_name.clone()
+        }
+    }
+    let active = cfg.active().user_id.clone();
+    let others: Vec<&ProfileSettings> = cfg
+        .profiles
+        .iter()
+        .filter(|p| !p.user_id.is_empty() && p.user_id != active)
+        .collect();
+    let count = |label: &str, labels: &[String]| labels.iter().filter(|l| *l == label).count();
+    let mut labels: Vec<String> = others.iter().map(|p| name(p)).collect();
+    let plain = labels.clone();
+    for (i, p) in others.iter().enumerate() {
+        if count(&plain[i], &plain) > 1 {
+            let root = account_root_id(p);
+            let account = cfg
+                .profiles
+                .iter()
+                .find(|r| r.user_id == root)
+                .map(name)
+                .unwrap_or_default();
+            if !account.is_empty() && account != plain[i] {
+                labels[i] = format!("{} ({account})", plain[i]);
+            }
+        }
+    }
+    let with_account = labels.clone();
+    for (i, p) in others.iter().enumerate() {
+        if count(&with_account[i], &with_account) > 1 {
+            labels[i] = format!(
+                "{} · {}",
+                with_account[i],
+                &p.user_id[..p.user_id.len().min(6)]
+            );
+        }
+    }
+    labels
+        .into_iter()
+        .zip(others.iter().map(|p| p.user_id.clone()))
+        .collect()
+}
+
+pub(crate) fn refresh_copy_settings_sources(g: &AppState<'_>, cfg: &crate::config::Config) {
+    let labels: Vec<SharedString> = copy_settings_sources(cfg)
+        .iter()
+        .map(|(label, _)| ss(label))
+        .collect();
+    g.set_settings_copy_sources_display(ModelRc::new(VecModel::from(labels)));
 }
 
 /// Account-tier mirror of `refresh_profile_settings_dropdown` (2026-08-14)
@@ -2491,6 +2555,39 @@ pub(crate) fn wire_bonfire_group(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// "Copy settings from…" labels: the active profile is left out, unique names stay plain, a
+    /// name shared across households gets the account's name, and every label maps back to one
+    /// profile.
+    #[test]
+    fn copy_settings_sources_are_unique_and_skip_the_active_profile() {
+        let profile = |id: &str, name: &str, master: &str| ProfileSettings {
+            user_id: id.into(),
+            display_name: name.into(),
+            is_bonfire: !master.is_empty(),
+            master_user_id: master.into(),
+            ..Default::default()
+        };
+        let cfg = crate::config::Config {
+            device: crate::config::DeviceConfig::default(),
+            profiles: vec![
+                profile("aaaa01", "UserA", ""),
+                profile("aaaa02", "Kid", "aaaa01"),
+                profile("aaaa03", "UserB", ""),
+                profile("aaaa04", "Kid", "aaaa03"),
+                profile("aaaa05", "Solo", ""),
+            ],
+            active_profile_id: "aaaa01".into(),
+        };
+        let sources = copy_settings_sources(&cfg);
+        let labels: Vec<&str> = sources.iter().map(|(l, _)| l.as_str()).collect();
+        assert_eq!(
+            labels,
+            ["Kid (UserA)", "UserB", "Kid (UserB)", "Solo"],
+            "active profile skipped, shared name disambiguated by account"
+        );
+        assert_eq!(sources[2].1, "aaaa04");
+    }
 
     /// A "pure" group account (its root never logged into independently, so its
     /// `is_bonfire` is true as well) must still sort root-first, whatever order the sync
