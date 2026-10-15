@@ -161,7 +161,8 @@ export component DetailPage inherits Rectangle {
                                     }
 
                                     if AppState.detail-can-resume: FjordButton {
-                                        text: "⏩  " + AppState.detail-resume-label;
+                                        icon-left: "⏩";
+                                        text: AppState.detail-resume-label;
                                         kbd-focused: AppState.detail-focused-btn == 1 && AppState.detail-cast-focused < 0;
                                         clicked => { AppState.resume-detail(); }
                                     }

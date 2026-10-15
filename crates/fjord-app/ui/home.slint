@@ -440,7 +440,7 @@ export component LibraryGrid inherits Rectangle {
 
                     Text {
                         text: AppState.library-header-focused
-                            ? AppState.caret-text(AppState.library-query, AppState.library-query-cursor, "▌")
+                            ? AppState.caret-text(AppState.library-query, AppState.library-query-cursor, "|")
                             : AppState.library-query != "" ? AppState.library-query
                             : "Search…";
                         color: AppState.library-query != "" ? Theme.text

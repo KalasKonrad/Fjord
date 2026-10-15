@@ -75,7 +75,7 @@ export component BrowseScreen inherits Rectangle {
 
                         Text {
                             text: AppState.browse-header-focused
-                                ? AppState.caret-text(AppState.browse-query, AppState.browse-query-cursor, "▌")
+                                ? AppState.caret-text(AppState.browse-query, AppState.browse-query-cursor, "|")
                                 : AppState.browse-query != "" ? AppState.browse-query
                                 : "Search…";
                             color: AppState.browse-query != "" ? Theme.text
