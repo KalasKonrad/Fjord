@@ -3,7 +3,7 @@
 //                              as an (item_type, tmdb_id) set (once per session; refreshed after every
 //                              toggle), then the calendar rebuild and the watchlist rows
 //   watchlist_movie_to_meta / watchlist_tv_to_meta  meta for a watchlist item (no request needed;
-//                              None for blocklisted items)
+//                              availability over both tiers; None for blocklisted items)
 //   WATCHLIST_ROW_CAP          20 detail-fetched items for the rows
 //   populate_watchlist_rows / push_watchlist_rows / fetch_watchlist_posters  detail-fetch (bounded),
 //                              split mixed/movies/tv for the Discover row and the Home/Movies/TV rows
@@ -20,8 +20,8 @@ use super::*;
 
 /// Watchlist row meta builders. `movie_details_to_meta`/`tv_details_to_meta` need a
 /// `&RequestEntry` (a real request), which a watchlist item may not have, so
-/// `availability` comes straight from `d.media_info` (single tier, like
-/// `search_result_to_meta`); `on_watchlist` is true by definition. Callers run
+/// `availability` comes straight from `d.media_info` (both tiers via `media_availability`,
+/// like `search_result_to_meta`); `on_watchlist` is true by definition. Callers run
 /// `patch_known_request_state` afterward so an item that's also requested gets its
 /// Edit/Cancel rows. Both return `None` for a Blocklisted item: blocklisting doesn't
 /// remove a title from the Seerr watchlist (independent entities), so it would keep
@@ -30,7 +30,7 @@ fn watchlist_movie_to_meta(
     tmdb_id: i64,
     d: &MovieDetails,
 ) -> Option<(DiscoverCardMeta, Option<String>)> {
-    let availability = availability_tag(d.media_info.as_ref().and_then(|mi| mi.status()));
+    let (availability, requested_4k) = media_availability(d.media_info.as_ref());
     if availability == "blocklisted" {
         return None;
     }
@@ -47,7 +47,7 @@ fn watchlist_movie_to_meta(
         subtitle: year.to_string(),
         year: year.parse().unwrap_or(0),
         availability,
-        requested_4k: false,
+        requested_4k,
         other_tier_available: false,
         other_tier_requested: false,
         request_id: String::new(),
@@ -62,7 +62,7 @@ fn watchlist_movie_to_meta(
 }
 
 fn watchlist_tv_to_meta(tmdb_id: i64, d: &TvDetails) -> Option<(DiscoverCardMeta, Option<String>)> {
-    let availability = availability_tag(d.media_info.as_ref().and_then(|mi| mi.status()));
+    let (availability, requested_4k) = media_availability(d.media_info.as_ref());
     if availability == "blocklisted" {
         return None;
     }
@@ -79,7 +79,7 @@ fn watchlist_tv_to_meta(tmdb_id: i64, d: &TvDetails) -> Option<(DiscoverCardMeta
         subtitle: year.to_string(),
         year: year.parse().unwrap_or(0),
         availability,
-        requested_4k: false,
+        requested_4k,
         other_tier_available: false,
         other_tier_requested: false,
         request_id: String::new(),

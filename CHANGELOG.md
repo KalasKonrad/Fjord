@@ -23,6 +23,11 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Fixed: Discover showed titles you have only in 4K as not in your
+  library.** Seerr tracks the regular and the 4K version separately, and
+  Discover only looked at the regular one. Cards (Discover, search,
+  watchlist) now read "4K In Library" — or "4K Requested" — when only the 4K
+  version is there.
 - **Changed: three packages to choose from.** `PKGBUILD` (now `fjord`, was
   `fjord-git`) builds the latest release from source, `fjord-bin` installs
   the same release pre-built (checked against its checksum), and the new

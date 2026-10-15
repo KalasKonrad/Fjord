@@ -156,8 +156,9 @@ export struct CardItem {
     // Discover (Seerr) cards only, "" elsewhere: "requested" | "processing" | "partial" |
     // "available" | "blocklisted" | "" (requestable, no badge) — one more MediaCard badge pill.
     availability: string,
-    // Discover "Requested" row only. Seerr tracks 2K and 4K independently
-    // (fjord_seerr::MediaInfo): `requested-4k` labels the pill ("4K Requested");
+    // Seerr tracks 2K and 4K independently (fjord_seerr::MediaInfo): `requested-4k` labels the
+    // pill with the 4K tier ("4K Requested", "4K In Library") — on any Discover card whose
+    // further-along tier is 4K only. The rest is the "Requested" row only:
     // `other-tier-available` adds "Available in 2K/4K" when the other tier is available;
     // `other-tier-requested` adds "Also requested in 2K/4K" when both are requested and neither
     // is available. Available wins when both apply.
