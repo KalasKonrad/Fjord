@@ -19,7 +19,7 @@ A small release: bug fixes, polish, minor features. Released per CLAUDE.md → R
 
 **Polish**
 - [ ] **Long titles shrink the poster on the smallest card size (115 px)** (was in Deferred). Options: a larger-poster setting (multiplier or an extra breakpoint tier on `dash-card-w`/`dash-card-h` in `main.slint`), or the title over a full-bleed poster with a dark scrim — pick one before starting.
-- [ ] **Trim the dated story comments in `build-release.yml`'s header** to what the workflow needs (0.5.0 step 4 left the workflow out); the history is in DEVLOG.
+- [x] **Trim the dated story comments in `build-release.yml`'s header** to what the workflow needs (0.5.0 step 4 left the workflow out); the history is in DEVLOG.
 
 **Minor features**
 - [ ] **Release helper:** a script for CLAUDE.md → Releasing step 3 — sets `pkgver` in `PKGBUILD` and `fjord-bin/PKGBUILD` and fjord-bin's `sha256sums` from the published tarball.
