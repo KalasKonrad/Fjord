@@ -28,9 +28,12 @@
 //                forward, or run a button
 //   wire_device_lists      audio/passthrough device and font lists (fetched once) + their dropdowns
 //   wire_profile_defaults  default profile / account dropdowns (local, no network)
+//   wire_copy_settings     "Copy settings from…": source picked → confirm → copy_settings_from +
+//                          apply_profile_settings_to_window + settings-changed (save, live-apply, log)
 //   wire_regions           Seerr streaming/discover region + display/discover language
 //                          (GET-mutate-POST of the user's general settings)
 //   wire_settings_changed  settings-changed (persist + live-apply), dropdown mouse pick, row focus
+//   apply_profile_settings_to_window  the "Profile"-tagged settings → window (shared by both)
 //   apply_settings_to_window ↔ read_settings_from_window; settings_snapshot/settings_diff (the
 //                settings-changed handler logs which settings changed; text values by name only)
 //   fetch_audio_devices / fetch_system_fonts  startup fetches for the device and font dropdowns
@@ -83,6 +86,8 @@ const PROF_DEFAULT_PROFILE: &str = "profiles.default_profile"; // virtual — on
 // Bonfire sub-profile can't manage siblings (bonfire_list_profiles' own
 // "all profiles under THIS master account" semantics — see profile_edit.rs).
 const PROF_MANAGE_PROFILES: &str = "profiles.manage_profiles";
+// Copy another local profile's settings (the "Profile"-tagged rows) — 0.5.1. Only when there is one.
+const PROF_COPY_SETTINGS: &str = "profiles.copy_settings";
 // Account-tier launch policy: the profile-level shape one tier up, appended after the
 // profile rows.
 const PROF_ACCOUNT_LAUNCH_POLICY: &str = "profiles.account_launch_policy";
@@ -311,6 +316,9 @@ fn section_row_keys(section: &str, g: &crate::AppState<'_>) -> Vec<&'static str>
             if g.get_settings_is_master_profile() {
                 rows.push(PROF_MANAGE_PROFILES);
             }
+            if g.get_settings_copy_sources_display().row_count() > 0 {
+                rows.push(PROF_COPY_SETTINGS);
+            }
             rows.push(PROF_ACCOUNT_LAUNCH_POLICY);
             if g.get_settings_account_launch_policy().as_str() == "default" {
                 rows.push(PROF_DEFAULT_ACCOUNT);
@@ -415,6 +423,23 @@ pub(crate) fn row_focused(g: &crate::AppState<'_>, key: &str) {
 }
 
 pub(crate) fn dispatch_settings(action: &Action, g: &crate::AppState<'_>) -> Option<bool> {
+    // "Copy settings from…" confirmation: like Disconnect Seerr below — only reachable from
+    // Settings, swallows all Settings input while open.
+    if g.get_show_copy_settings_confirm() {
+        match action {
+            Action::Left => g.set_copy_settings_confirm_focused(0),
+            Action::Right => g.set_copy_settings_confirm_focused(1),
+            Action::Confirm => {
+                if g.get_copy_settings_confirm_focused() == 1 {
+                    g.invoke_copy_settings_confirmed();
+                }
+                g.set_show_copy_settings_confirm(false);
+            }
+            Action::Back => g.set_show_copy_settings_confirm(false),
+            _ => {}
+        }
+        return Some(true);
+    }
     // Disconnect Seerr confirmation (see show-seerr-disconnect-confirm in app_state.slint):
     // checked first, swallows all Settings input while open. Settings is its only trigger, so
     // it needs no global dialog or keys.rs tier (unlike Sign Out / Cancel Request).
@@ -852,6 +877,7 @@ fn is_dynamic_dropdown(key: &str) -> bool {
         key,
         PROF_DEFAULT_PROFILE
             | PROF_DEFAULT_ACCOUNT
+            | PROF_COPY_SETTINGS
             | AUD_AUDIO_DEVICE
             | AUD_PASSTHROUGH_DEVICE
             | UI_FONT_FAMILY
@@ -937,6 +963,8 @@ pub(crate) fn open_dropdown_popup(key: &str, g: &crate::AppState<'_>) {
             g.get_settings_default_profile_display(),
             g.get_settings_default_profile_desc(),
         )),
+        // No "current" source: the list always opens on its first entry.
+        PROF_COPY_SETTINGS => Some((g.get_settings_copy_sources_display(), SharedString::new())),
         PROF_DEFAULT_ACCOUNT => Some((
             g.get_settings_default_account_display(),
             g.get_settings_default_account_desc(),
@@ -1033,6 +1061,15 @@ pub(crate) fn open_dropdown_popup(key: &str, g: &crate::AppState<'_>) {
 pub(crate) fn apply_dropdown_selection(key: &str, cursor: i32, g: &crate::AppState<'_>) {
     debug!("settings: apply_dropdown_selection {key} cursor={cursor}");
     match key {
+        PROF_COPY_SETTINGS => {
+            if let Some(label) = g
+                .get_settings_copy_sources_display()
+                .row_data(cursor as usize)
+            {
+                g.invoke_copy_settings_source_selected(label);
+            }
+            return;
+        }
         PROF_DEFAULT_PROFILE => {
             let display = g.get_settings_default_profile_display();
             if let Some(desc) = display.row_data(cursor as usize) {
@@ -1225,6 +1262,8 @@ fn settings_row_action(key: &str, g: &crate::AppState<'_>) {
             }
         }
         PROF_MANAGE_PROFILES => g.invoke_open_manage_profiles(),
+        // Right opens the list (cycling would ask to copy from each profile in turn).
+        PROF_COPY_SETTINGS => open_dropdown_popup(key, g),
         PROF_ACCOUNT_LAUNCH_POLICY => {
             let v = cycle(
                 g.get_settings_account_launch_policy().as_str(),
@@ -2007,6 +2046,74 @@ pub(crate) fn wire_profile_defaults(
     }
 }
 
+// ── wire_copy_settings (0.5.1) ───────────────────────────────────────────
+/// Settings → Profiles → "Copy settings from…": picking a source opens the confirm dialog; Copy
+/// copies the source's "Profile"-tagged settings into the active profile — local only (no PIN,
+/// no server call: they're preferences in this device's config) — by pushing them to the window
+/// and invoking settings-changed, so saving, live-applying (subtitle style) and the change log
+/// go the usual way.
+pub(crate) fn wire_copy_settings(
+    window: &crate::MainWindow,
+    state: &std::sync::Arc<std::sync::Mutex<crate::config::FjordState>>,
+) {
+    use crate::*;
+    {
+        let state_sel = Arc::clone(state);
+        let ww = window.as_weak();
+        AppState::get(window).on_copy_settings_source_selected(move |label| {
+            let Some(w) = ww.upgrade() else { return };
+            let g = AppState::get(&w);
+            let user_id = {
+                let s = state_sel.lock().unwrap();
+                profile::copy_settings_sources(&s.config)
+                    .into_iter()
+                    .find(|(l, _)| l.as_str() == label.as_str())
+                    .map(|(_, id)| id)
+            };
+            let Some(user_id) = user_id else {
+                warn!("copy settings: no profile for {label:?} (list changed?)");
+                return;
+            };
+            debug!("copy settings: source picked — {label} ({user_id}), asking to confirm");
+            g.set_copy_settings_source_id(ss(&user_id));
+            g.set_copy_settings_source_label(label);
+            g.set_copy_settings_confirm_focused(0);
+            g.set_show_copy_settings_confirm(true);
+        });
+    }
+    {
+        let state_ok = Arc::clone(state);
+        let ww = window.as_weak();
+        AppState::get(window).on_copy_settings_confirmed(move || {
+            let Some(w) = ww.upgrade() else { return };
+            let g = AppState::get(&w);
+            let source_id = g.get_copy_settings_source_id().to_string();
+            let label = g.get_copy_settings_source_label().to_string();
+            let merged = {
+                let s = state_ok.lock().unwrap();
+                let Some(src) = s.config.profiles.iter().find(|p| p.user_id == source_id) else {
+                    drop(s);
+                    warn!("copy settings: source profile {source_id} is gone");
+                    show_toast(
+                        ww.clone(),
+                        format!("Couldn't copy: {label} is no longer on this device"),
+                    );
+                    return;
+                };
+                let mut merged = s.config.active().clone();
+                merged.copy_settings_from(src);
+                merged
+            };
+            apply_profile_settings_to_window(&g, &merged);
+            g.invoke_settings_changed();
+            info!(
+                "copy settings: copied the profile settings of {source_id} into the active profile"
+            );
+            show_toast(ww.clone(), format!("Settings copied from {label}"));
+        });
+    }
+}
+
 // ── wire_regions (moved from main(), 0.5.0 step 3) ───────────────────────
 /// Wires streaming/discover region + display/discover language dropdowns:
 /// streaming_region_selected, discover_region_selected, display_language_selected,
@@ -2347,6 +2454,39 @@ pub(crate) fn wire_settings_changed(
     }
 }
 
+/// Pushes a profile's own settings — the rows tagged "Profile", exactly the fields
+/// `ProfileSettings::copy_settings_from` copies — to the window. Used by apply_settings_to_window
+/// and by "Copy settings from…" (which then invokes settings-changed to save and live-apply).
+pub(crate) fn apply_profile_settings_to_window(
+    g: &crate::AppState<'_>,
+    cp: &config::ProfileSettings,
+) {
+    use crate::ss;
+    g.set_settings_now_playing_auto_open(cp.now_playing_auto_open);
+    g.set_settings_sub_enabled(cp.sub_enabled);
+    g.set_settings_sub_lang(ss(&cp.sub_lang));
+    g.set_settings_sub_lang2(ss(&cp.sub_lang2));
+    g.set_settings_sub_type(ss(&cp.sub_type));
+    g.set_settings_sub_scale_pct(cp.sub_scale_pct as i32);
+    g.set_settings_sub_pos_pct(cp.sub_pos_pct as i32);
+    g.set_settings_sub_respect_ass_styling(cp.sub_respect_ass_styling);
+    g.set_settings_sub_color(ss(&cp.sub_color));
+    g.set_settings_sub_background(cp.sub_background);
+    g.set_settings_audio_lang(ss(&cp.audio_lang));
+    g.set_settings_skip_intro_mode(ss(&cp.skip_intro_mode));
+    g.set_settings_skip_intro_secs(cp.skip_intro_secs as i32);
+    g.set_settings_skip_recap_mode(ss(&cp.skip_recap_mode));
+    g.set_settings_skip_recap_secs(cp.skip_recap_secs as i32);
+    g.set_settings_skip_preview_mode(ss(&cp.skip_preview_mode));
+    g.set_settings_skip_preview_secs(cp.skip_preview_secs as i32);
+    g.set_settings_skip_commercial_mode(ss(&cp.skip_commercial_mode));
+    g.set_settings_skip_commercial_secs(cp.skip_commercial_secs as i32);
+    g.set_settings_skip_credits_mode(ss(&cp.skip_credits_mode));
+    g.set_settings_skip_credits_secs(cp.skip_credits_secs as i32);
+    g.set_settings_card_size(ss(&cp.card_size));
+    g.set_settings_trailer_quality(ss(&cp.trailer_quality));
+}
+
 pub(crate) fn apply_settings_to_window(w: &MainWindow, s: &FjordState) {
     // Moved from main.rs: names resolve as they did there.
     use crate::*;
@@ -2392,7 +2532,8 @@ pub(crate) fn apply_settings_to_window(w: &MainWindow, s: &FjordState) {
         &c.audio_channels
     }));
     g.set_settings_gapless_audio(c.gapless_audio);
-    g.set_settings_now_playing_auto_open(cp.now_playing_auto_open);
+    // The settings tagged "Profile" (also what "Copy settings from…" pushes).
+    apply_profile_settings_to_window(&g, cp);
     g.set_settings_audio_spdif(c.audio_spdif);
     g.set_settings_spdif_ac3(c.spdif_ac3);
     g.set_settings_spdif_eac3(c.spdif_eac3);
@@ -2429,29 +2570,8 @@ pub(crate) fn apply_settings_to_window(w: &MainWindow, s: &FjordState) {
     g.set_settings_display_sync_4k_odd_fps_mode(ss(&c.display_sync_4k_odd_fps_mode));
     g.set_settings_display_sync_hdr_mode(ss(&c.display_sync_hdr_mode));
     g.set_settings_display_sync_wcg_mode(ss(&c.display_sync_wcg_mode));
-    g.set_settings_sub_enabled(cp.sub_enabled);
-    g.set_settings_sub_lang(ss(&cp.sub_lang));
-    g.set_settings_sub_lang2(ss(&cp.sub_lang2));
-    g.set_settings_sub_type(ss(&cp.sub_type));
-    g.set_settings_sub_scale_pct(cp.sub_scale_pct as i32);
-    g.set_settings_sub_pos_pct(cp.sub_pos_pct as i32);
-    g.set_settings_sub_respect_ass_styling(cp.sub_respect_ass_styling);
-    g.set_settings_sub_color(ss(&cp.sub_color));
-    g.set_settings_sub_background(cp.sub_background);
-    g.set_settings_audio_lang(ss(&cp.audio_lang));
     g.set_settings_alsa_irq_scheduling(c.alsa_irq_scheduling);
     g.set_settings_skip_fade_mute_passthrough(c.skip_fade_mute_passthrough);
-    g.set_settings_skip_intro_mode(ss(&cp.skip_intro_mode));
-    g.set_settings_skip_intro_secs(cp.skip_intro_secs as i32);
-    g.set_settings_skip_recap_mode(ss(&cp.skip_recap_mode));
-    g.set_settings_skip_recap_secs(cp.skip_recap_secs as i32);
-    g.set_settings_skip_preview_mode(ss(&cp.skip_preview_mode));
-    g.set_settings_skip_preview_secs(cp.skip_preview_secs as i32);
-    g.set_settings_skip_commercial_mode(ss(&cp.skip_commercial_mode));
-    g.set_settings_skip_commercial_secs(cp.skip_commercial_secs as i32);
-    g.set_settings_skip_credits_mode(ss(&cp.skip_credits_mode));
-    g.set_settings_card_size(ss(&cp.card_size));
-    g.set_settings_skip_credits_secs(cp.skip_credits_secs as i32);
     g.set_settings_seek_step_secs(c.seek_step_secs as i32);
     g.set_settings_seek_step_long_secs(c.seek_step_long_secs as i32);
     g.set_settings_skip_fade_ms(c.skip_fade_ms as i32);
@@ -2499,7 +2619,6 @@ pub(crate) fn apply_settings_to_window(w: &MainWindow, s: &FjordState) {
         g.set_settings_remember_login(remember);
     }
     g.set_settings_seerr_enabled(cp.seerr_enabled);
-    g.set_settings_trailer_quality(ss(&cp.trailer_quality));
     seerr_auth::push_seerr_status(&g, cp);
 }
 

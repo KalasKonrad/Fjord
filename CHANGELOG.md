@@ -23,6 +23,11 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **New: Settings → Profiles → Copy settings from…** — take another
+  profile's settings (the ones tagged Profile: subtitles, audio language,
+  skipping, trailer quality, Now Playing, card size) into yours, after a
+  confirmation. No PIN needed: sign-in, Seerr and this device's settings
+  are never copied.
 - **Changed: Settings is organised by what you want to change.** The sections
   are now Playback (skipping, seeking, trailers), Subtitles & language,
   Display (HDR, display sync), Audio, Interface, Profiles, Integrations, Key

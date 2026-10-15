@@ -95,7 +95,9 @@
 //                         context-menu-jf-tmdb-id/-jf-media-type + context-jf-toggle-watchlist
 //   Calendar / blocklist  show-calendar + calendar-days/-leading-blanks/-total-days/…; show-blocklist + rows
 //   Settings state        hwdec, interpolation, audio-spdif, sub-lang, skip-*-mode/secs, display-sync-*, …;
-//                         settings-card-size → card-scale (1.0/1.25/1.5) for every poster card
+//                         settings-card-size → card-scale (1.0/1.25/1.5) for every poster card;
+//                         settings-copy-sources-display + the Copy settings confirm (show-/-focused,
+//                         source id/label, copy-settings-source-selected/-confirmed)
 //   Key binding editor    keybinding-normal/-player rows, keybinding-focused, keybinding-rebinding;
 //                         reset-to-defaults and rebind-collision ConfirmDialogs + keybinding-collision-
 //                         confirmed/-cancelled; settings-row-focused(string) (mouse click on a SettingsRow)
@@ -1547,6 +1549,17 @@ export global AppState {
     // (no global tier needed). ConfirmDialog, declared last in settings.slint so it's on top.
     in-out property <bool> show-seerr-disconnect-confirm: false;
     in-out property <int> seerr-disconnect-confirm-focused: 0; // 0=Cancel, 1=Disconnect
+
+    // Settings → Profiles → "Copy settings from…" (0.5.1): the other profiles on this device
+    // (profile::copy_settings_sources — unique labels), the confirm dialog (handled in
+    // settings.rs's dispatch_settings like Disconnect Seerr) and the picked source.
+    in-out property <[string]> settings-copy-sources-display: [];
+    in-out property <bool> show-copy-settings-confirm: false;
+    in-out property <int> copy-settings-confirm-focused: 0; // 0=Cancel, 1=Copy
+    in-out property <string> copy-settings-source-id: "";
+    in-out property <string> copy-settings-source-label: "";
+    callback copy-settings-source-selected(string);
+    callback copy-settings-confirmed();
 
     // Streaming Region (Settings → Integrations, only shown when
     // seerr-connected) — same dynamic-dropdown shape as settings-font-

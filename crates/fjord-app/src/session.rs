@@ -298,6 +298,7 @@ pub(crate) fn reset_session_state(
         // Request are main.slint-level) or leave a key tier swallowing input.
         g.set_show_sign_out_confirm(false);
         g.set_show_seerr_disconnect_confirm(false);
+        g.set_show_copy_settings_confirm(false);
         g.set_show_queue_clear_confirm(false);
         g.set_show_cancel_request_confirm(false);
     });
