@@ -374,7 +374,12 @@ pub(crate) fn wire_connect_seerr(
                 // logout shouldn't leave the user stuck "connected" in the UI
                 // to a session they've already asked to drop.
                 let logout_err = if let Some(c) = client {
-                    c.logout().await.err().map(|e| e.to_string())
+                    c.logout().await.err().map(|e| {
+                        tracing::warn!(
+                            "seerr: server-side sign-out failed (disconnecting anyway): {e:#}"
+                        );
+                        crate::short_error(&e)
+                    })
                 } else {
                     None
                 };
@@ -382,7 +387,12 @@ pub(crate) fn wire_connect_seerr(
                 let _ = slint::invoke_from_event_loop(move || {
                     clear_connection(&state, &ww2);
                     if let Some(e) = logout_err {
-                        show_toast(ww2, format!("Seerr sign-out on the server failed ({e}), disconnected locally anyway"));
+                        show_toast(
+                            ww2,
+                            format!(
+                                "Disconnected — the Seerr server didn't confirm the sign-out ({e})"
+                            ),
+                        );
                     }
                 });
             });

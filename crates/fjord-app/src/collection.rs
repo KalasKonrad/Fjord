@@ -786,7 +786,10 @@ pub(crate) fn wire_collection_toggles(
                 };
                 if let Err(e) = result {
                     warn!("toggle-collection-fav: {e}");
-                    crate::show_toast(ww3.clone(), format!("Favourite error: {e}"));
+                    crate::show_toast(
+                        ww3.clone(),
+                        format!("Couldn't update favorite — {}", crate::short_error(&e)),
+                    );
                     return;
                 }
                 let new_fav = !cur_fav;

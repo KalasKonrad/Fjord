@@ -765,17 +765,17 @@ fn display_val<'a>(val: &'a str, key: &str) -> &'a str {
     }
     if key == PROF_LAUNCH_POLICY {
         return match val {
-            "always_ask" => "Always Ask",
-            "remember_last" => "Remember Last",
-            "default" => "Default Profile",
+            "always_ask" => "Always ask",
+            "remember_last" => "Remember last",
+            "default" => "Default profile",
             _ => val,
         };
     }
     if key == PROF_ACCOUNT_LAUNCH_POLICY {
         return match val {
-            "always_ask" => "Always Ask",
-            "remember_last" => "Remember Last",
-            "default" => "Default Account",
+            "always_ask" => "Always ask",
+            "remember_last" => "Remember last",
+            "default" => "Default account",
             _ => val,
         };
     }
@@ -2169,7 +2169,13 @@ pub(crate) fn wire_regions(
                             }
                         });
                     }
-                    Err(e) => show_toast(ww2, format!("Couldn't update streaming region: {e:#}")),
+                    Err(e) => {
+                        warn!("settings: couldn't update streaming region: {e:#}");
+                        show_toast(
+                            ww2,
+                            format!("Couldn't update streaming region — {}", short_error(&e)),
+                        );
+                    }
                 }
             });
         });
@@ -2215,7 +2221,13 @@ pub(crate) fn wire_regions(
                             }
                         });
                     }
-                    Err(e) => show_toast(ww2, format!("Couldn't update discover region: {e:#}")),
+                    Err(e) => {
+                        warn!("settings: couldn't update discover region: {e:#}");
+                        show_toast(
+                            ww2,
+                            format!("Couldn't update discover region — {}", short_error(&e)),
+                        );
+                    }
                 }
             });
         });
@@ -2268,7 +2280,13 @@ pub(crate) fn wire_regions(
                             }
                         });
                     }
-                    Err(e) => show_toast(ww2, format!("Couldn't update display language: {e:#}")),
+                    Err(e) => {
+                        warn!("settings: couldn't update display language: {e:#}");
+                        show_toast(
+                            ww2,
+                            format!("Couldn't update display language — {}", short_error(&e)),
+                        );
+                    }
                 }
             });
         });
@@ -2323,7 +2341,13 @@ pub(crate) fn wire_regions(
                             }
                         });
                     }
-                    Err(e) => show_toast(ww2, format!("Couldn't update discover language: {e:#}")),
+                    Err(e) => {
+                        warn!("settings: couldn't update discover language: {e:#}");
+                        show_toast(
+                            ww2,
+                            format!("Couldn't update discover language — {}", short_error(&e)),
+                        );
+                    }
                 }
             });
         });

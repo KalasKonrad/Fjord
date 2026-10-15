@@ -782,7 +782,10 @@ pub(crate) fn wire_album(
                 };
                 if let Err(e) = result {
                     warn!("toggle_album_fav: {e}");
-                    crate::show_toast(ww3, format!("Favourite error: {e}"));
+                    crate::show_toast(
+                        ww3,
+                        format!("Couldn't update favorite — {}", crate::short_error(&e)),
+                    );
                     return;
                 }
                 let ww4 = ww3.clone();
@@ -825,7 +828,10 @@ pub(crate) fn wire_album(
                 };
                 if let Err(e) = result {
                     warn!("toggle_album_played: {e}");
-                    crate::show_toast(ww3, format!("Played error: {e}"));
+                    crate::show_toast(
+                        ww3,
+                        format!("Couldn't update watched state — {}", crate::short_error(&e)),
+                    );
                 }
             });
         });
