@@ -1324,6 +1324,18 @@ export component SettingsScreen inherits Rectangle {
                         }
 
                         SettingsRow {
+                            key: "ui.dashboard_rows";
+                            per-profile: true;
+                            title: "Dashboard rows";
+                            subtitle: "Choose which rows each dashboard shows, and in what order — saved for this profile";
+                            FjordButton {
+                                width: 100px * AppState.text-scale;
+                                text: "Edit…";
+                                clicked => { AppState.dash-rows-open(); }
+                            }
+                        }
+
+                        SettingsRow {
                             key: "general.video_behind";
                             title: "Video in background";
                             subtitle: "Show video behind the UI when you press Back during playback";

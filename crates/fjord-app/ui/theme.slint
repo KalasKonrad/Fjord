@@ -2,6 +2,7 @@
 //   Theme           global design tokens: colors (incl. focus-border, master-ring), spacing,
 //                   radius, font sizes
 //   Structs shared between Rust and Slint (one line each; details on the struct):
+//   DashRowItem     one row in the Dashboard rows editor (title, shown)
 //   VideoRect       a video spot's logical position/size (HDR Stage 5)
 //   OskEdit         text/caret/byte result of one on-screen-keyboard key
 //   TrackEntry      audio / video / subtitle track row for the track panels
@@ -91,6 +92,12 @@ export global Theme {
 
 // Where a video spot is on screen (HDR Stage 5): absolute position + size in logical px,
 // reported by widgets.slint's VideoSpot for video_surface.rs to draw the video there.
+// One row in Settings → Interface → Dashboard rows (dashboard_rows.rs pushes the open tab's rows).
+export struct DashRowItem {
+    title: string,
+    shown: bool,
+}
+
 export struct VideoRect {
     x: length,
     y: length,

@@ -1,0 +1,142 @@
+// ── fjord-app · dashboard_rows.slint ─────────────────────────────────────────
+//   DashboardRowsScreen  Settings → Interface → Dashboard rows: a free-floating panel (main.slint
+//                        FadeGate) with a tab per dashboard (Home / TV Shows / Movies / Collections /
+//                        Music) and that dashboard's rows in order, each with ✓ (shown) ▲ ▼. Rows
+//                        come from AppState.dash-rows-items (dashboard_rows.rs); every press goes
+//                        through dash-rows-action and is saved at once. Keyboard: dash-rows-cursor
+//                        (-2 ✕, -1 tabs, ≥ 0 a row) + dash-rows-col (0 ✓, 1 ▲, 2 ▼), keys in
+//                        dashboard_rows.rs handle_keys; mouse clicks set the same cursor/col.
+// ─────────────────────────────────────────────────────────────────────────────
+import { Theme } from "theme.slint";
+import { AppState } from "app_state.slint";
+import { FjordButton, IconCircleButton, TabButton } from "widgets.slint";
+
+export component DashboardRowsScreen inherits Rectangle {
+    background: Theme.scrim-strong;
+
+    close-ta := TouchArea {
+        clicked => { AppState.show-dashboard-rows = false; AppState.refocus(); }
+    }
+
+    card := Rectangle {
+        width: min(560px * AppState.text-scale, parent.width - 48px);
+        height: inner.preferred-height;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        background: Theme.surface;
+        border-radius: Theme.radius-lg;
+        drop-shadow-blur: 28px;
+        drop-shadow-color: Theme.shadow;
+
+        card-ta := TouchArea { }
+
+        inner := VerticalLayout {
+            padding: Theme.sp-xl;
+            spacing: Theme.sp-lg;
+
+            HorizontalLayout {
+                alignment: space-between;
+                Text {
+                    text: "Dashboard Rows";
+                    color: Theme.text;
+                    font-size: 20px * AppState.text-scale;
+                    font-weight: 700;
+                    vertical-alignment: center;
+                }
+
+                FjordButton {
+                    text: "";
+                    icon-left: "✕";
+                    width: 32px * AppState.text-scale;
+                    height: 32px;
+                    kbd-focused: AppState.dash-rows-cursor == -2;
+                    clicked => {
+                        AppState.show-dashboard-rows = false;
+                        AppState.refocus();
+                    }
+                }
+            }
+
+            HorizontalLayout {
+                spacing: Theme.sp-xs;
+                for name[i] in ["Home", "TV Shows", "Movies", "Collections", "Music"]: TabButton {
+                    horizontal-stretch: 1;
+                    label: name;
+                    active: AppState.dash-rows-tab == i;
+                    kbd-focused: AppState.dash-rows-cursor == -1;
+                    clicked => {
+                        AppState.dash-rows-cursor = -1;
+                        AppState.dash-rows-select-tab(i);
+                    }
+                }
+            }
+
+            Text {
+                text: "Show or hide a row, or move it up or down. Changes are saved right away.";
+                color: Theme.text-muted;
+                font-size: 13px * AppState.text-scale;
+                wrap: word-wrap;
+            }
+
+            VerticalLayout {
+                spacing: Theme.sp-xs;
+                for item[i] in AppState.dash-rows-items: Rectangle {
+                    height: 50px;
+                    border-radius: Theme.radius;
+                    background: AppState.dash-rows-cursor == i ? Theme.surface-raised : transparent;
+
+                    HorizontalLayout {
+                        padding-left: Theme.sp-sm;
+                        padding-right: Theme.sp-sm;
+                        padding-top: 6px;
+                        padding-bottom: 6px;
+                        spacing: Theme.sp;
+
+                        IconCircleButton {
+                            icon: "✓";
+                            active: item.shown;
+                            kbd-focused: AppState.dash-rows-cursor == i && AppState.dash-rows-col == 0;
+                            clicked => {
+                                AppState.dash-rows-cursor = i;
+                                AppState.dash-rows-col = 0;
+                                AppState.dash-rows-action(i, 0);
+                            }
+                        }
+
+                        Text {
+                            horizontal-stretch: 1;
+                            text: item.title;
+                            color: item.shown ? Theme.text : Theme.text-subtle;
+                            font-size: 15px * AppState.text-scale;
+                            font-weight: AppState.dash-rows-cursor == i ? 600 : 400;
+                            vertical-alignment: center;
+                            overflow: elide;
+                        }
+
+                        IconCircleButton {
+                            icon: "▲";
+                            opacity: i == 0 ? 0.35 : 1;
+                            kbd-focused: AppState.dash-rows-cursor == i && AppState.dash-rows-col == 1;
+                            clicked => {
+                                AppState.dash-rows-cursor = i;
+                                AppState.dash-rows-col = 1;
+                                AppState.dash-rows-action(i, 1);
+                            }
+                        }
+
+                        IconCircleButton {
+                            icon: "▼";
+                            opacity: i == AppState.dash-rows-items.length - 1 ? 0.35 : 1;
+                            kbd-focused: AppState.dash-rows-cursor == i && AppState.dash-rows-col == 2;
+                            clicked => {
+                                AppState.dash-rows-cursor = i;
+                                AppState.dash-rows-col = 2;
+                                AppState.dash-rows-action(i, 2);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

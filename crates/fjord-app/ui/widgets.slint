@@ -3,6 +3,7 @@
 //                      (pinned to Noto Sans Symbols 2, so the label keeps the chosen text font)
 //   IconCircleButton   38px circle button, accent when active; per-icon pinned fonts (Adwaita Sans
 //                      for ♥/✓, Noto Sans Symbols 2 otherwise); also Now Playing's transport row
+//   TabButton          tab pill (Bonfire admin, Dashboard rows editor); ring only on the active tab
 //   NavItem            sidebar row (icon + label + one "selected" state)
 //   BrowseItem         one row in the browse / search list
 //   FadeInTrigger      fade-in-on-creation helper (Timer kick; the opacity animate is speed-scaled);
@@ -355,6 +356,44 @@ export component FjordButton inherits Rectangle {
             font-family: "Noto Sans Symbols 2";
             vertical-alignment: center;
         }
+    }
+}
+
+// Tab switcher pill (Bonfire admin, Dashboard rows editor): accent fill when active; the focus ring
+// shows only on the active tab while the caller's tab row has keyboard focus.
+export component TabButton inherits Rectangle {
+    in property <string> label;
+    in property <bool> active;
+    in property <bool> kbd-focused;
+    callback clicked;
+
+    height: 34px;
+    border-radius: Theme.radius;
+    background: active ? Theme.accent : (ta.has-hover ? Theme.surface : transparent);
+    border-width: (ta.pressed || pulse.pulsing) ? 3px : (kbd-focused && active ? 2px : 0px);
+    border-color: Theme.focus-border;
+    animate border-width, background {
+        duration: 90ms * AppState.settings-animation-speed;
+        easing: ease-out-expo;
+    }
+    pulse := PressPulse {
+        trigger: AppState.kb-activate-pulse;
+        active: root.active && root.kbd-focused;
+    }
+
+    ta := TouchArea {
+        clicked => { root.clicked(); }
+    }
+
+    Text {
+        text: root.label;
+        color: root.active ? Theme.text-bright : Theme.text;
+        font-size: 13px * AppState.text-scale;
+        font-weight: 600;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        width: parent.width;
+        height: parent.height;
     }
 }
 
@@ -1228,9 +1267,11 @@ export component SettingsRow inherits Rectangle {
         duration: 90ms * AppState.settings-animation-speed;
         easing: ease-out-expo;
     }
+    // !show-dashboard-rows: Enter inside that editor (opened from the focused row) bumps the shared
+    // kb-activate-pulse — the row behind the translucent backdrop must not flash with it.
     pulse := PressPulse {
         trigger: AppState.kb-activate-pulse;
-        active: AppState.settings-focused == root.key;
+        active: AppState.settings-focused == root.key && !AppState.show-dashboard-rows;
     }
 
     ta := TouchArea {

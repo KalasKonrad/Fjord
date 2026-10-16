@@ -1,14 +1,12 @@
 // ── fjord-app · bonfire_admin.slint ──────────────────────────────────────────
-//   AdminTab           tab pill (Mappings / Audit Logs) — MethodTab's shape (connect_seerr.slint):
-//                      the ring shows only on the active tab
 //   BonfireAdminScreen Settings → Profiles → "Bonfire Admin" (Jellyfin server admins only); a
 //                      FadeGate overlay from main.slint with the floating "← Back". Header: Back,
-//                      title, tab switcher. Mappings: a flat scrollable list (BlocklistScreen's
-//                      Flickable/kb-y) of BonfireAdminRow — each master (avatar, name, PIN badge,
-//                      Reset PIN when it has a PIN, profile-limit stepper) followed by its indented
-//                      sub-profiles (Reset PIN when they have one). Audit Logs: the same list,
-//                      read-only. Reset PIN asks via ConfirmDialog. All keys in bonfire_admin.rs's
-//                      handle_key (an AppMode — no text entry here).
+//                      title, tab switcher (widgets.slint TabButton). Mappings: a flat scrollable
+//                      list (BlocklistScreen's Flickable/kb-y) of BonfireAdminRow — each master
+//                      (avatar, name, PIN badge, Reset PIN when it has a PIN, profile-limit stepper)
+//                      followed by its indented sub-profiles (Reset PIN when they have one). Audit
+//                      Logs: the same list, read-only. Reset PIN asks via ConfirmDialog. All keys in
+//                      bonfire_admin.rs's handle_key (an AppMode — no text entry here).
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme, BonfireAdminRow, BonfireAuditRow } from "theme.slint";
 import { AppState } from "app_state.slint";
@@ -17,43 +15,8 @@ import {
     PressPulse,
     LoadingSpinner,
     ConfirmDialog,
+    TabButton,
 } from "widgets.slint";
-
-component AdminTab inherits Rectangle {
-    in property <string> label;
-    in property <bool> active;
-    in property <bool> kbd-focused;
-    callback clicked;
-
-    height: 34px;
-    border-radius: Theme.radius;
-    background: active ? Theme.accent : (ta.has-hover ? Theme.surface : transparent);
-    border-width: (ta.pressed || pulse.pulsing) ? 3px : (kbd-focused && active ? 2px : 0px);
-    border-color: Theme.focus-border;
-    animate border-width, background {
-        duration: 90ms * AppState.settings-animation-speed;
-        easing: ease-out-expo;
-    }
-    pulse := PressPulse {
-        trigger: AppState.kb-activate-pulse;
-        active: root.active && root.kbd-focused;
-    }
-
-    ta := TouchArea {
-        clicked => { root.clicked(); }
-    }
-
-    Text {
-        text: root.label;
-        color: root.active ? Theme.text-bright : Theme.text;
-        font-size: 13px * AppState.text-scale;
-        font-weight: 600;
-        horizontal-alignment: center;
-        vertical-alignment: center;
-        width: parent.width;
-        height: parent.height;
-    }
-}
 
 export component BonfireAdminScreen inherits Rectangle {
     background: Theme.bg;
@@ -94,7 +57,7 @@ export component BonfireAdminScreen inherits Rectangle {
             height: 34px;
             spacing: 8px;
 
-            AdminTab {
+            TabButton {
                 label: "Mappings";
                 active: AppState.bonfire-admin-tab == 0;
                 kbd-focused: AppState.bonfire-admin-cursor < 0 && !AppState.bonfire-admin-back-focused;
@@ -103,7 +66,7 @@ export component BonfireAdminScreen inherits Rectangle {
                 clicked => { AppState.bonfire-admin-cursor = -1; AppState.bonfire-admin-back-focused = false; AppState.bonfire-admin-tab-selected(0); }
             }
 
-            AdminTab {
+            TabButton {
                 label: "Audit Logs";
                 active: AppState.bonfire-admin-tab == 1;
                 kbd-focused: AppState.bonfire-admin-cursor < 0 && !AppState.bonfire-admin-back-focused;

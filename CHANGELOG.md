@@ -23,6 +23,10 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **New: choose your dashboard rows.** Settings → Interface → Dashboard
+  rows: for Home, TV Shows, Movies, Collections and Music, hide the rows you
+  don't use and move the others up or down. Saved per profile (and copied by
+  "Copy settings from…"); works with the remote and the mouse.
 - **Fixed: removing a track from a playlist needed a mouse or a keyboard.**
   The context menu on a playlist's track (C on the remote) now has "Remove
   from Playlist".
