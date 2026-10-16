@@ -1357,6 +1357,7 @@ dependencies = [
  "gl",
  "glutin_egl_sys",
  "hkdf",
+ "i-slint-backend-testing",
  "image",
  "libloading",
  "reqwest",

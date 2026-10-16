@@ -38,9 +38,12 @@
 //   wire_regions           Seerr streaming/discover region + display/discover language
 //                          (GET-mutate-POST of the user's general settings)
 //   wire_settings_changed  settings-changed (persist + live-apply), dropdown mouse pick, row focus
-//   apply_profile_settings_to_window  the "Profile"-tagged settings → window (shared by both),
-//                incl. the dashboards' row orders (dashboard_rows::push_row_orders)
-//   apply_settings_to_window ↔ read_settings_from_window; settings_snapshot/settings_diff (the
+//   DEVICE_BINDS / PROFILE_BINDS (bind!)  every setting mirrored config ↔ window, one line each
+//                (load / store, profile ones also copy — "Copy settings from…"); TOGGLES  the on/off
+//                rows (Enter/Right flips, only while shown)
+//   apply_profile_settings_to_window  PROFILE_BINDS → window + dashboard row orders
+//   apply_settings_to_window ↔ read_settings_from_window  the binds + the special cases
+//                (device descriptions, speed floats, audio channels, seerr_enabled);
 //                settings-changed handler logs which settings changed; text values by name only)
 //   fetch_audio_devices / fetch_system_fonts  startup fetches for the device and font dropdowns
 //                (duplicate device descriptions get a backend or name suffix)
@@ -1642,6 +1645,764 @@ pub(crate) fn apply_dropdown_selection(key: &str, cursor: i32, g: &crate::AppSta
     }
 }
 
+// ── Settings ↔ config mirroring ───────────────────────────────────────────────
+// Every setting kept both in the config and in a `settings-*` window property is one line below:
+// apply_settings_to_window / apply_profile_settings_to_window load them, read_settings_from_window
+// stores them, ProfileSettings::copy_settings_from copies PROFILE_BINDS (= the Settings rows
+// tagged "Profile"). What isn't a plain copy stays explicit in those functions (device
+// descriptions, the speed floats, audio channels' "auto-safe", seerr_enabled, dashboard rows).
+
+/// A device-wide setting: DeviceConfig field ↔ window property.
+pub(crate) struct DeviceBind {
+    load: fn(&config::DeviceConfig, &crate::AppState<'_>),
+    store: fn(&mut config::DeviceConfig, &crate::AppState<'_>),
+}
+
+/// A per-profile setting: ProfileSettings field ↔ window property, and how "Copy settings from…"
+/// copies it.
+pub(crate) struct ProfileBind {
+    load: fn(&config::ProfileSettings, &crate::AppState<'_>),
+    store: fn(&mut config::ProfileSettings, &crate::AppState<'_>),
+    pub(crate) copy: fn(&mut config::ProfileSettings, &config::ProfileSettings),
+}
+
+/// `bind!(Device|Profile, config field, window getter, window setter, bool|str|u32)`.
+macro_rules! bind {
+    (@load $f:ident, $set:ident, bool) => { |c, g| g.$set(c.$f) };
+    (@load $f:ident, $set:ident, str) => { |c, g| g.$set(c.$f.as_str().into()) };
+    (@load $f:ident, $set:ident, u32) => { |c, g| g.$set(c.$f as i32) };
+    (@store $f:ident, $get:ident, bool) => { |c, g| c.$f = g.$get() };
+    (@store $f:ident, $get:ident, str) => { |c, g| c.$f = g.$get().to_string() };
+    (@store $f:ident, $get:ident, u32) => { |c, g| c.$f = g.$get().max(0) as u32 };
+    (Device, $f:ident, $get:ident, $set:ident, $k:ident) => {
+        DeviceBind { load: bind!(@load $f, $set, $k), store: bind!(@store $f, $get, $k) }
+    };
+    (Profile, $f:ident, $get:ident, $set:ident, $k:ident) => {
+        ProfileBind {
+            load: bind!(@load $f, $set, $k),
+            store: bind!(@store $f, $get, $k),
+            copy: |d, s| d.$f = s.$f.clone(),
+        }
+    };
+}
+
+static DEVICE_BINDS: &[DeviceBind] = &[
+    bind!(
+        Device,
+        audio_spdif,
+        get_settings_audio_spdif,
+        set_settings_audio_spdif,
+        bool
+    ),
+    bind!(
+        Device,
+        spdif_ac3,
+        get_settings_spdif_ac3,
+        set_settings_spdif_ac3,
+        bool
+    ),
+    bind!(
+        Device,
+        spdif_eac3,
+        get_settings_spdif_eac3,
+        set_settings_spdif_eac3,
+        bool
+    ),
+    bind!(
+        Device,
+        spdif_dts,
+        get_settings_spdif_dts,
+        set_settings_spdif_dts,
+        bool
+    ),
+    bind!(
+        Device,
+        spdif_dts_hd,
+        get_settings_spdif_dts_hd,
+        set_settings_spdif_dts_hd,
+        bool
+    ),
+    bind!(
+        Device,
+        spdif_truehd,
+        get_settings_spdif_truehd,
+        set_settings_spdif_truehd,
+        bool
+    ),
+    bind!(Device, hwdec, get_settings_hwdec, set_settings_hwdec, str),
+    bind!(Device, vf, get_settings_vf, set_settings_vf, str),
+    bind!(
+        Device,
+        video_sync,
+        get_settings_video_sync,
+        set_settings_video_sync,
+        str
+    ),
+    bind!(
+        Device,
+        opengl_early_flush,
+        get_settings_opengl_early_flush,
+        set_settings_opengl_early_flush,
+        bool
+    ),
+    bind!(
+        Device,
+        video_latency_hacks,
+        get_settings_video_latency_hacks,
+        set_settings_video_latency_hacks,
+        bool
+    ),
+    bind!(
+        Device,
+        interpolation,
+        get_settings_interpolation,
+        set_settings_interpolation,
+        bool
+    ),
+    bind!(
+        Device,
+        tscale,
+        get_settings_tscale,
+        set_settings_tscale,
+        str
+    ),
+    bind!(
+        Device,
+        tone_mapping,
+        get_settings_tone_mapping,
+        set_settings_tone_mapping,
+        str
+    ),
+    bind!(
+        Device,
+        target_colorspace_hint,
+        get_settings_target_colorspace_hint,
+        set_settings_target_colorspace_hint,
+        bool
+    ),
+    bind!(
+        Device,
+        separate_video_surface,
+        get_settings_separate_video_surface,
+        set_settings_separate_video_surface,
+        bool
+    ),
+    bind!(
+        Device,
+        video_own_buffers,
+        get_settings_video_own_buffers,
+        set_settings_video_own_buffers,
+        bool
+    ),
+    bind!(
+        Device,
+        video_dither_off,
+        get_settings_video_dither_off,
+        set_settings_video_dither_off,
+        bool
+    ),
+    bind!(
+        Device,
+        deinterlace,
+        get_settings_deinterlace,
+        set_settings_deinterlace,
+        str
+    ),
+    bind!(
+        Device,
+        cache_secs,
+        get_settings_cache_secs,
+        set_settings_cache_secs,
+        u32
+    ),
+    bind!(
+        Device,
+        cache_max_mb,
+        get_settings_cache_max_mb,
+        set_settings_cache_max_mb,
+        u32
+    ),
+    bind!(
+        Device,
+        video_behind,
+        get_settings_video_behind,
+        set_settings_video_behind,
+        bool
+    ),
+    bind!(
+        Device,
+        launch_fullscreen,
+        get_settings_launch_fullscreen,
+        set_settings_launch_fullscreen,
+        bool
+    ),
+    bind!(
+        Device,
+        log_level,
+        get_settings_log_level,
+        set_settings_log_level,
+        str
+    ),
+    bind!(
+        Device,
+        audio_device,
+        get_settings_audio_device,
+        set_settings_audio_device,
+        str
+    ),
+    bind!(
+        Device,
+        audio_device_passthrough,
+        get_settings_passthrough_device,
+        set_settings_passthrough_device,
+        str
+    ),
+    bind!(
+        Device,
+        gapless_audio,
+        get_settings_gapless_audio,
+        set_settings_gapless_audio,
+        bool
+    ),
+    bind!(
+        Device,
+        alsa_irq_scheduling,
+        get_settings_alsa_irq_scheduling,
+        set_settings_alsa_irq_scheduling,
+        bool
+    ),
+    bind!(
+        Device,
+        skip_fade_mute_passthrough,
+        get_settings_skip_fade_mute_passthrough,
+        set_settings_skip_fade_mute_passthrough,
+        bool
+    ),
+    bind!(
+        Device,
+        seek_step_secs,
+        get_settings_seek_step_secs,
+        set_settings_seek_step_secs,
+        u32
+    ),
+    bind!(
+        Device,
+        seek_step_long_secs,
+        get_settings_seek_step_long_secs,
+        set_settings_seek_step_long_secs,
+        u32
+    ),
+    bind!(
+        Device,
+        skip_fade_ms,
+        get_settings_skip_fade_ms,
+        set_settings_skip_fade_ms,
+        u32
+    ),
+    bind!(
+        Device,
+        scroll_speed_pct,
+        get_settings_scroll_speed_pct,
+        set_settings_scroll_speed_pct,
+        u32
+    ),
+    bind!(
+        Device,
+        animation_speed_pct,
+        get_settings_animation_speed_pct,
+        set_settings_animation_speed_pct,
+        u32
+    ),
+    bind!(
+        Device,
+        ui_font_family,
+        get_settings_font_family,
+        set_settings_font_family,
+        str
+    ),
+    bind!(
+        Device,
+        onscreen_keyboard_enabled,
+        get_settings_onscreen_keyboard_enabled,
+        set_settings_onscreen_keyboard_enabled,
+        bool
+    ),
+    bind!(
+        Device,
+        launch_policy,
+        get_settings_launch_policy,
+        set_settings_launch_policy,
+        str
+    ),
+    bind!(
+        Device,
+        default_profile_id,
+        get_settings_default_profile_id,
+        set_settings_default_profile_id,
+        str
+    ),
+    bind!(
+        Device,
+        account_launch_policy,
+        get_settings_account_launch_policy,
+        set_settings_account_launch_policy,
+        str
+    ),
+    bind!(
+        Device,
+        default_account_id,
+        get_settings_default_account_id,
+        set_settings_default_account_id,
+        str
+    ),
+    bind!(
+        Device,
+        display_sync_enabled,
+        get_settings_display_sync_enabled,
+        set_settings_display_sync_enabled,
+        bool
+    ),
+    bind!(
+        Device,
+        display_sync_trailers,
+        get_settings_display_sync_trailers,
+        set_settings_display_sync_trailers,
+        bool
+    ),
+    bind!(
+        Device,
+        display_sync_screen_name,
+        get_settings_display_sync_screen_name,
+        set_settings_display_sync_screen_name,
+        str
+    ),
+    bind!(
+        Device,
+        display_sync_default_resolution,
+        get_settings_display_sync_default_resolution,
+        set_settings_display_sync_default_resolution,
+        str
+    ),
+    bind!(
+        Device,
+        display_sync_default_hz,
+        get_settings_display_sync_default_hz,
+        set_settings_display_sync_default_hz,
+        str
+    ),
+    bind!(
+        Device,
+        display_sync_scale_4k,
+        get_settings_display_sync_scale_4k,
+        set_settings_display_sync_scale_4k,
+        str
+    ),
+    bind!(
+        Device,
+        display_sync_scale_1080p,
+        get_settings_display_sync_scale_1080p,
+        set_settings_display_sync_scale_1080p,
+        str
+    ),
+    bind!(
+        Device,
+        display_sync_sync_resolution,
+        get_settings_display_sync_sync_resolution,
+        set_settings_display_sync_sync_resolution,
+        bool
+    ),
+    bind!(
+        Device,
+        display_sync_sync_refresh_rate,
+        get_settings_display_sync_sync_refresh_rate,
+        set_settings_display_sync_sync_refresh_rate,
+        bool
+    ),
+    bind!(
+        Device,
+        display_sync_4k_odd_fps_mode,
+        get_settings_display_sync_4k_odd_fps_mode,
+        set_settings_display_sync_4k_odd_fps_mode,
+        str
+    ),
+    bind!(
+        Device,
+        display_sync_hdr_mode,
+        get_settings_display_sync_hdr_mode,
+        set_settings_display_sync_hdr_mode,
+        str
+    ),
+    bind!(
+        Device,
+        display_sync_wcg_mode,
+        get_settings_display_sync_wcg_mode,
+        set_settings_display_sync_wcg_mode,
+        str
+    ),
+];
+
+pub(crate) static PROFILE_BINDS: &[ProfileBind] = &[
+    bind!(
+        Profile,
+        sub_enabled,
+        get_settings_sub_enabled,
+        set_settings_sub_enabled,
+        bool
+    ),
+    bind!(
+        Profile,
+        sub_lang,
+        get_settings_sub_lang,
+        set_settings_sub_lang,
+        str
+    ),
+    bind!(
+        Profile,
+        sub_lang2,
+        get_settings_sub_lang2,
+        set_settings_sub_lang2,
+        str
+    ),
+    bind!(
+        Profile,
+        sub_type,
+        get_settings_sub_type,
+        set_settings_sub_type,
+        str
+    ),
+    bind!(
+        Profile,
+        sub_scale_pct,
+        get_settings_sub_scale_pct,
+        set_settings_sub_scale_pct,
+        u32
+    ),
+    bind!(
+        Profile,
+        sub_pos_pct,
+        get_settings_sub_pos_pct,
+        set_settings_sub_pos_pct,
+        u32
+    ),
+    bind!(
+        Profile,
+        sub_respect_ass_styling,
+        get_settings_sub_respect_ass_styling,
+        set_settings_sub_respect_ass_styling,
+        bool
+    ),
+    bind!(
+        Profile,
+        sub_color,
+        get_settings_sub_color,
+        set_settings_sub_color,
+        str
+    ),
+    bind!(
+        Profile,
+        sub_background,
+        get_settings_sub_background,
+        set_settings_sub_background,
+        bool
+    ),
+    bind!(
+        Profile,
+        audio_lang,
+        get_settings_audio_lang,
+        set_settings_audio_lang,
+        str
+    ),
+    bind!(
+        Profile,
+        now_playing_auto_open,
+        get_settings_now_playing_auto_open,
+        set_settings_now_playing_auto_open,
+        bool
+    ),
+    bind!(
+        Profile,
+        skip_intro_mode,
+        get_settings_skip_intro_mode,
+        set_settings_skip_intro_mode,
+        str
+    ),
+    bind!(
+        Profile,
+        skip_intro_secs,
+        get_settings_skip_intro_secs,
+        set_settings_skip_intro_secs,
+        u32
+    ),
+    bind!(
+        Profile,
+        skip_recap_mode,
+        get_settings_skip_recap_mode,
+        set_settings_skip_recap_mode,
+        str
+    ),
+    bind!(
+        Profile,
+        skip_recap_secs,
+        get_settings_skip_recap_secs,
+        set_settings_skip_recap_secs,
+        u32
+    ),
+    bind!(
+        Profile,
+        skip_preview_mode,
+        get_settings_skip_preview_mode,
+        set_settings_skip_preview_mode,
+        str
+    ),
+    bind!(
+        Profile,
+        skip_preview_secs,
+        get_settings_skip_preview_secs,
+        set_settings_skip_preview_secs,
+        u32
+    ),
+    bind!(
+        Profile,
+        skip_commercial_mode,
+        get_settings_skip_commercial_mode,
+        set_settings_skip_commercial_mode,
+        str
+    ),
+    bind!(
+        Profile,
+        skip_commercial_secs,
+        get_settings_skip_commercial_secs,
+        set_settings_skip_commercial_secs,
+        u32
+    ),
+    bind!(
+        Profile,
+        skip_credits_mode,
+        get_settings_skip_credits_mode,
+        set_settings_skip_credits_mode,
+        str
+    ),
+    bind!(
+        Profile,
+        card_size,
+        get_settings_card_size,
+        set_settings_card_size,
+        str
+    ),
+    bind!(
+        Profile,
+        text_size,
+        get_settings_text_size,
+        set_settings_text_size,
+        str
+    ),
+    bind!(
+        Profile,
+        dashboard_hero,
+        get_settings_dashboard_hero,
+        set_settings_dashboard_hero,
+        str
+    ),
+    bind!(
+        Profile,
+        focus_color,
+        get_settings_focus_color,
+        set_settings_focus_color,
+        str
+    ),
+    bind!(
+        Profile,
+        focus_width,
+        get_settings_focus_width,
+        set_settings_focus_width,
+        str
+    ),
+    bind!(
+        Profile,
+        focus_style,
+        get_settings_focus_style,
+        set_settings_focus_style,
+        str
+    ),
+    bind!(
+        Profile,
+        focus_opacity,
+        get_settings_focus_opacity,
+        set_settings_focus_opacity,
+        str
+    ),
+    bind!(
+        Profile,
+        focus_zoom,
+        get_settings_focus_zoom,
+        set_settings_focus_zoom,
+        str
+    ),
+    bind!(
+        Profile,
+        skip_credits_secs,
+        get_settings_skip_credits_secs,
+        set_settings_skip_credits_secs,
+        u32
+    ),
+    bind!(
+        Profile,
+        trailer_quality,
+        get_settings_trailer_quality,
+        set_settings_trailer_quality,
+        str
+    ),
+];
+
+/// The on/off rows: Enter/Right flips the property and saves (settings_row_action).
+type Toggle = (
+    &'static str,
+    fn(&crate::AppState<'_>) -> bool,
+    fn(&crate::AppState<'_>, bool),
+);
+static TOGGLES: &[Toggle] = &[
+    (
+        GEN_LAUNCH_FULLSCREEN,
+        |g| g.get_settings_launch_fullscreen(),
+        |g, v| g.set_settings_launch_fullscreen(v),
+    ),
+    (
+        GEN_VIDEO_BEHIND,
+        |g| g.get_settings_video_behind(),
+        |g, v| g.set_settings_video_behind(v),
+    ),
+    (
+        VID_INTERPOLATION,
+        |g| g.get_settings_interpolation(),
+        |g, v| g.set_settings_interpolation(v),
+    ),
+    (
+        VID_TARGET_COLORSPACE,
+        |g| g.get_settings_target_colorspace_hint(),
+        |g, v| g.set_settings_target_colorspace_hint(v),
+    ),
+    (
+        VID_SEPARATE_VIDEO_SURFACE,
+        |g| g.get_settings_separate_video_surface(),
+        |g, v| g.set_settings_separate_video_surface(v),
+    ),
+    (
+        VID_OWN_BUFFERS,
+        |g| g.get_settings_video_own_buffers(),
+        |g, v| g.set_settings_video_own_buffers(v),
+    ),
+    (
+        VID_DITHER_OFF,
+        |g| g.get_settings_video_dither_off(),
+        |g, v| g.set_settings_video_dither_off(v),
+    ),
+    (
+        VID_OPENGL_EARLY_FLUSH,
+        |g| g.get_settings_opengl_early_flush(),
+        |g, v| g.set_settings_opengl_early_flush(v),
+    ),
+    (
+        VID_VIDEO_LATENCY_HACKS,
+        |g| g.get_settings_video_latency_hacks(),
+        |g, v| g.set_settings_video_latency_hacks(v),
+    ),
+    (
+        VID_DISPLAY_SYNC_ENABLED,
+        |g| g.get_settings_display_sync_enabled(),
+        |g, v| g.set_settings_display_sync_enabled(v),
+    ),
+    (
+        VID_DISPLAY_SYNC_TRAILERS,
+        |g| g.get_settings_display_sync_trailers(),
+        |g, v| g.set_settings_display_sync_trailers(v),
+    ),
+    (
+        AUD_SPDIF,
+        |g| g.get_settings_audio_spdif(),
+        |g, v| g.set_settings_audio_spdif(v),
+    ),
+    (
+        AUD_SPDIF_AC3,
+        |g| g.get_settings_spdif_ac3(),
+        |g, v| g.set_settings_spdif_ac3(v),
+    ),
+    (
+        AUD_SPDIF_EAC3,
+        |g| g.get_settings_spdif_eac3(),
+        |g, v| g.set_settings_spdif_eac3(v),
+    ),
+    (
+        AUD_SPDIF_DTS,
+        |g| g.get_settings_spdif_dts(),
+        |g, v| g.set_settings_spdif_dts(v),
+    ),
+    (
+        AUD_SPDIF_DTS_HD,
+        |g| g.get_settings_spdif_dts_hd(),
+        |g, v| g.set_settings_spdif_dts_hd(v),
+    ),
+    (
+        AUD_SPDIF_TRUEHD,
+        |g| g.get_settings_spdif_truehd(),
+        |g, v| g.set_settings_spdif_truehd(v),
+    ),
+    (
+        AUD_ALSA_IRQ,
+        |g| g.get_settings_alsa_irq_scheduling(),
+        |g, v| g.set_settings_alsa_irq_scheduling(v),
+    ),
+    (
+        AUD_SKIP_FADE_MUTE,
+        |g| g.get_settings_skip_fade_mute_passthrough(),
+        |g, v| g.set_settings_skip_fade_mute_passthrough(v),
+    ),
+    (
+        AUD_GAPLESS,
+        |g| g.get_settings_gapless_audio(),
+        |g, v| g.set_settings_gapless_audio(v),
+    ),
+    (
+        AUD_NOW_PLAYING_AUTO_OPEN,
+        |g| g.get_settings_now_playing_auto_open(),
+        |g, v| g.set_settings_now_playing_auto_open(v),
+    ),
+    (
+        UI_ONSCREEN_KEYBOARD,
+        |g| g.get_settings_onscreen_keyboard_enabled(),
+        |g, v| g.set_settings_onscreen_keyboard_enabled(v),
+    ),
+    (
+        PLY_SUB_ENABLED,
+        |g| g.get_settings_sub_enabled(),
+        |g, v| g.set_settings_sub_enabled(v),
+    ),
+    (
+        PLY_SUB_RESPECT_ASS,
+        |g| g.get_settings_sub_respect_ass_styling(),
+        |g, v| g.set_settings_sub_respect_ass_styling(v),
+    ),
+    (
+        PLY_SUB_BACKGROUND,
+        |g| g.get_settings_sub_background(),
+        |g, v| g.set_settings_sub_background(v),
+    ),
+    (
+        INT_SEERR_ENABLED,
+        |g| g.get_settings_seerr_enabled(),
+        |g, v| g.set_settings_seerr_enabled(v),
+    ),
+    (
+        VID_DISPLAY_SYNC_SYNC_RESOLUTION,
+        |g| g.get_settings_display_sync_sync_resolution(),
+        |g, v| g.set_settings_display_sync_sync_resolution(v),
+    ),
+    (
+        VID_DISPLAY_SYNC_SYNC_REFRESH_RATE,
+        |g| g.get_settings_display_sync_sync_refresh_rate(),
+        |g, v| g.set_settings_display_sync_sync_refresh_rate(v),
+    ),
+];
+
 // ── Per-row action (Confirm on a non-dropdown row, or Right on any row) ───────
 
 fn settings_row_action(key: &str, g: &crate::AppState<'_>) {
@@ -1665,15 +2426,15 @@ fn settings_row_action(key: &str, g: &crate::AppState<'_>) {
         c.set(g, next);
         return;
     }
+    // An on/off row (only while it's on screen — e.g. latency hacks needs display-resample).
+    if let Some((_, get, set)) = TOGGLES.iter().find(|(k, _, _)| *k == key) {
+        if row_shown(key, g) {
+            set(g, !get(g));
+            g.invoke_settings_changed();
+        }
+        return;
+    }
     match key {
-        GEN_LAUNCH_FULLSCREEN => {
-            g.set_settings_launch_fullscreen(!g.get_settings_launch_fullscreen());
-            g.invoke_settings_changed();
-        }
-        GEN_VIDEO_BEHIND => {
-            g.set_settings_video_behind(!g.get_settings_video_behind());
-            g.invoke_settings_changed();
-        }
         GEN_PREWARM_METADATA => g.invoke_prewarm_metadata(),
         UI_DASHBOARD_ROWS => g.invoke_dash_rows_open(),
         GEN_PREWARM_IMAGES => g.invoke_prewarm_images(),
@@ -1708,38 +2469,6 @@ fn settings_row_action(key: &str, g: &crate::AppState<'_>) {
         PROF_BONFIRE_GROUP => g.invoke_open_bonfire_group(),
         PROF_BONFIRE_ADMIN => g.invoke_open_bonfire_admin(),
 
-        VID_INTERPOLATION => {
-            g.set_settings_interpolation(!g.get_settings_interpolation());
-            g.invoke_settings_changed();
-        }
-        VID_TARGET_COLORSPACE => {
-            g.set_settings_target_colorspace_hint(!g.get_settings_target_colorspace_hint());
-            g.invoke_settings_changed();
-        }
-        VID_SEPARATE_VIDEO_SURFACE => {
-            g.set_settings_separate_video_surface(!g.get_settings_separate_video_surface());
-            g.invoke_settings_changed();
-        }
-        VID_OWN_BUFFERS => {
-            g.set_settings_video_own_buffers(!g.get_settings_video_own_buffers());
-            g.invoke_settings_changed();
-        }
-        VID_DITHER_OFF => {
-            g.set_settings_video_dither_off(!g.get_settings_video_dither_off());
-            g.invoke_settings_changed();
-        }
-        VID_OPENGL_EARLY_FLUSH => {
-            g.set_settings_opengl_early_flush(!g.get_settings_opengl_early_flush());
-            g.invoke_settings_changed();
-        }
-        VID_VIDEO_LATENCY_HACKS if g.get_settings_video_sync().as_str() == "display-resample" => {
-            g.set_settings_video_latency_hacks(!g.get_settings_video_latency_hacks());
-            g.invoke_settings_changed();
-        }
-        VID_DISPLAY_SYNC_ENABLED => {
-            g.set_settings_display_sync_enabled(!g.get_settings_display_sync_enabled());
-            g.invoke_settings_changed();
-        }
         VID_DISPLAY_SYNC_SCREEN => {
             if let Some(desc) = cycle_dynamic(
                 g.get_settings_display_sync_screen_options(),
@@ -1747,22 +2476,6 @@ fn settings_row_action(key: &str, g: &crate::AppState<'_>) {
             ) {
                 g.invoke_display_sync_screen_selected(desc);
             }
-        }
-        VID_DISPLAY_SYNC_SYNC_RESOLUTION => {
-            g.set_settings_display_sync_sync_resolution(
-                !g.get_settings_display_sync_sync_resolution(),
-            );
-            g.invoke_settings_changed();
-        }
-        VID_DISPLAY_SYNC_TRAILERS => {
-            g.set_settings_display_sync_trailers(!g.get_settings_display_sync_trailers());
-            g.invoke_settings_changed();
-        }
-        VID_DISPLAY_SYNC_SYNC_REFRESH_RATE => {
-            g.set_settings_display_sync_sync_refresh_rate(
-                !g.get_settings_display_sync_sync_refresh_rate(),
-            );
-            g.invoke_settings_changed();
         }
         VID_DISPLAY_SYNC_DEFAULT_RESOLUTION => {
             if let Some(desc) = cycle_dynamic(
@@ -1797,63 +2510,6 @@ fn settings_row_action(key: &str, g: &crate::AppState<'_>) {
                 g.invoke_passthrough_device_selected(desc);
             }
         }
-        AUD_SPDIF => {
-            g.set_settings_audio_spdif(!g.get_settings_audio_spdif());
-            g.invoke_settings_changed();
-        }
-        AUD_SPDIF_AC3 => {
-            g.set_settings_spdif_ac3(!g.get_settings_spdif_ac3());
-            g.invoke_settings_changed();
-        }
-        AUD_SPDIF_EAC3 => {
-            g.set_settings_spdif_eac3(!g.get_settings_spdif_eac3());
-            g.invoke_settings_changed();
-        }
-        AUD_SPDIF_DTS => {
-            g.set_settings_spdif_dts(!g.get_settings_spdif_dts());
-            g.invoke_settings_changed();
-        }
-        AUD_SPDIF_DTS_HD => {
-            g.set_settings_spdif_dts_hd(!g.get_settings_spdif_dts_hd());
-            g.invoke_settings_changed();
-        }
-        AUD_SPDIF_TRUEHD => {
-            g.set_settings_spdif_truehd(!g.get_settings_spdif_truehd());
-            g.invoke_settings_changed();
-        }
-        AUD_ALSA_IRQ => {
-            g.set_settings_alsa_irq_scheduling(!g.get_settings_alsa_irq_scheduling());
-            g.invoke_settings_changed();
-        }
-        AUD_SKIP_FADE_MUTE => {
-            g.set_settings_skip_fade_mute_passthrough(!g.get_settings_skip_fade_mute_passthrough());
-            g.invoke_settings_changed();
-        }
-        AUD_GAPLESS => {
-            g.set_settings_gapless_audio(!g.get_settings_gapless_audio());
-            g.invoke_settings_changed();
-        }
-        AUD_NOW_PLAYING_AUTO_OPEN => {
-            g.set_settings_now_playing_auto_open(!g.get_settings_now_playing_auto_open());
-            g.invoke_settings_changed();
-        }
-        UI_ONSCREEN_KEYBOARD => {
-            g.set_settings_onscreen_keyboard_enabled(!g.get_settings_onscreen_keyboard_enabled());
-            g.invoke_settings_changed();
-        }
-
-        PLY_SUB_ENABLED => {
-            g.set_settings_sub_enabled(!g.get_settings_sub_enabled());
-            g.invoke_settings_changed();
-        }
-        PLY_SUB_RESPECT_ASS => {
-            g.set_settings_sub_respect_ass_styling(!g.get_settings_sub_respect_ass_styling());
-            g.invoke_settings_changed();
-        }
-        PLY_SUB_BACKGROUND => {
-            g.set_settings_sub_background(!g.get_settings_sub_background());
-            g.invoke_settings_changed();
-        }
 
         UI_FONT_FAMILY => {
             if let Some(desc) = cycle_dynamic(
@@ -1864,10 +2520,6 @@ fn settings_row_action(key: &str, g: &crate::AppState<'_>) {
             }
         }
 
-        INT_SEERR_ENABLED => {
-            g.set_settings_seerr_enabled(!g.get_settings_seerr_enabled());
-            g.invoke_settings_changed();
-        }
         INT_SEERR_CONNECT => {
             // Confirmation dialog, 2026-08-22 — see show-seerr-disconnect-
             // confirm's own doc comment in app_state.slint. Only the
@@ -2642,38 +3294,10 @@ pub(crate) fn apply_profile_settings_to_window(
     g: &crate::AppState<'_>,
     cp: &config::ProfileSettings,
 ) {
-    use crate::ss;
-    g.set_settings_now_playing_auto_open(cp.now_playing_auto_open);
-    g.set_settings_sub_enabled(cp.sub_enabled);
-    g.set_settings_sub_lang(ss(&cp.sub_lang));
-    g.set_settings_sub_lang2(ss(&cp.sub_lang2));
-    g.set_settings_sub_type(ss(&cp.sub_type));
-    g.set_settings_sub_scale_pct(cp.sub_scale_pct as i32);
-    g.set_settings_sub_pos_pct(cp.sub_pos_pct as i32);
-    g.set_settings_sub_respect_ass_styling(cp.sub_respect_ass_styling);
-    g.set_settings_sub_color(ss(&cp.sub_color));
-    g.set_settings_sub_background(cp.sub_background);
-    g.set_settings_audio_lang(ss(&cp.audio_lang));
-    g.set_settings_skip_intro_mode(ss(&cp.skip_intro_mode));
-    g.set_settings_skip_intro_secs(cp.skip_intro_secs as i32);
-    g.set_settings_skip_recap_mode(ss(&cp.skip_recap_mode));
-    g.set_settings_skip_recap_secs(cp.skip_recap_secs as i32);
-    g.set_settings_skip_preview_mode(ss(&cp.skip_preview_mode));
-    g.set_settings_skip_preview_secs(cp.skip_preview_secs as i32);
-    g.set_settings_skip_commercial_mode(ss(&cp.skip_commercial_mode));
-    g.set_settings_skip_commercial_secs(cp.skip_commercial_secs as i32);
-    g.set_settings_skip_credits_mode(ss(&cp.skip_credits_mode));
-    g.set_settings_skip_credits_secs(cp.skip_credits_secs as i32);
-    g.set_settings_card_size(ss(&cp.card_size));
-    g.set_settings_text_size(ss(&cp.text_size));
+    for b in PROFILE_BINDS {
+        (b.load)(cp, g);
+    }
     crate::dashboard_rows::push_row_orders(g, cp);
-    g.set_settings_dashboard_hero(ss(&cp.dashboard_hero));
-    g.set_settings_focus_color(ss(&cp.focus_color));
-    g.set_settings_focus_width(ss(&cp.focus_width));
-    g.set_settings_focus_style(ss(&cp.focus_style));
-    g.set_settings_focus_opacity(ss(&cp.focus_opacity));
-    g.set_settings_focus_zoom(ss(&cp.focus_zoom));
-    g.set_settings_trailer_quality(ss(&cp.trailer_quality));
 }
 
 pub(crate) fn apply_settings_to_window(w: &MainWindow, s: &FjordState) {
@@ -2682,7 +3306,9 @@ pub(crate) fn apply_settings_to_window(w: &MainWindow, s: &FjordState) {
     let g = AppState::get(w);
     let c = &s.config.device;
     let cp = s.config.active();
-    g.set_settings_audio_device(ss(&c.audio_device));
+    for b in DEVICE_BINDS {
+        (b.load)(c, &g);
+    }
     let dev_desc = s
         .audio_devices
         .iter()
@@ -2695,7 +3321,6 @@ pub(crate) fn apply_settings_to_window(w: &MainWindow, s: &FjordState) {
         })
         .to_string();
     g.set_settings_audio_device_desc(ss(&dev_desc));
-    g.set_settings_passthrough_device(ss(&c.audio_device_passthrough));
     let pt_desc = s
         .audio_devices
         .iter()
@@ -2720,59 +3345,14 @@ pub(crate) fn apply_settings_to_window(w: &MainWindow, s: &FjordState) {
     } else {
         &c.audio_channels
     }));
-    g.set_settings_gapless_audio(c.gapless_audio);
     // The settings tagged "Profile" (also what "Copy settings from…" pushes).
     apply_profile_settings_to_window(&g, cp);
-    g.set_settings_audio_spdif(c.audio_spdif);
-    g.set_settings_spdif_ac3(c.spdif_ac3);
-    g.set_settings_spdif_eac3(c.spdif_eac3);
-    g.set_settings_spdif_dts(c.spdif_dts);
-    g.set_settings_spdif_dts_hd(c.spdif_dts_hd);
-    g.set_settings_spdif_truehd(c.spdif_truehd);
-    g.set_settings_hwdec(ss(&c.hwdec));
-    g.set_settings_vf(ss(&c.vf));
-    g.set_settings_video_sync(ss(&c.video_sync));
-    g.set_settings_opengl_early_flush(c.opengl_early_flush);
-    g.set_settings_video_latency_hacks(c.video_latency_hacks);
-    g.set_settings_interpolation(c.interpolation);
-    g.set_settings_tscale(ss(&c.tscale));
-    g.set_settings_tone_mapping(ss(&c.tone_mapping));
-    g.set_settings_target_colorspace_hint(c.target_colorspace_hint);
-    g.set_settings_separate_video_surface(c.separate_video_surface);
-    g.set_settings_video_own_buffers(c.video_own_buffers);
-    g.set_settings_video_dither_off(c.video_dither_off);
-    g.set_settings_deinterlace(ss(&c.deinterlace));
-    g.set_settings_cache_secs(c.cache_secs as i32);
-    g.set_settings_cache_max_mb(c.cache_max_mb as i32);
-    g.set_settings_video_behind(c.video_behind);
-    g.set_settings_launch_fullscreen(c.launch_fullscreen);
-    g.set_settings_log_level(ss(&c.log_level));
-    g.set_settings_display_sync_enabled(c.display_sync_enabled);
-    g.set_settings_display_sync_trailers(c.display_sync_trailers);
-    g.set_settings_display_sync_screen_name(ss(&c.display_sync_screen_name));
-    g.set_settings_display_sync_default_resolution(ss(&c.display_sync_default_resolution));
-    g.set_settings_display_sync_default_hz(ss(&c.display_sync_default_hz));
-    g.set_settings_display_sync_scale_4k(ss(&c.display_sync_scale_4k));
-    g.set_settings_display_sync_scale_1080p(ss(&c.display_sync_scale_1080p));
-    g.set_settings_display_sync_sync_resolution(c.display_sync_sync_resolution);
-    g.set_settings_display_sync_sync_refresh_rate(c.display_sync_sync_refresh_rate);
-    g.set_settings_display_sync_4k_odd_fps_mode(ss(&c.display_sync_4k_odd_fps_mode));
-    g.set_settings_display_sync_hdr_mode(ss(&c.display_sync_hdr_mode));
-    g.set_settings_display_sync_wcg_mode(ss(&c.display_sync_wcg_mode));
-    g.set_settings_alsa_irq_scheduling(c.alsa_irq_scheduling);
-    g.set_settings_skip_fade_mute_passthrough(c.skip_fade_mute_passthrough);
-    g.set_settings_seek_step_secs(c.seek_step_secs as i32);
-    g.set_settings_seek_step_long_secs(c.seek_step_long_secs as i32);
-    g.set_settings_skip_fade_ms(c.skip_fade_ms as i32);
-    g.set_settings_scroll_speed_pct(c.scroll_speed_pct as i32);
     g.set_settings_scroll_speed(c.scroll_speed_pct as f32 / 100.0);
-    g.set_settings_animation_speed_pct(c.animation_speed_pct as i32);
     g.set_settings_animation_speed(c.animation_speed_pct as f32 / 100.0);
     // Set synchronously from Config so MainWindow.font-family (bound to this)
     // renders correctly from the very first frame — system_fonts (used only
     // for the human-readable desc) is fetched asynchronously and may still be
     // empty here; fall back to a sensible label rather than waiting on it.
-    g.set_settings_font_family(ss(&c.ui_font_family));
     let font_desc = s
         .system_fonts
         .iter()
@@ -2787,11 +3367,6 @@ pub(crate) fn apply_settings_to_window(w: &MainWindow, s: &FjordState) {
         })
         .to_string();
     g.set_settings_font_family_desc(ss(&font_desc));
-    g.set_settings_onscreen_keyboard_enabled(c.onscreen_keyboard_enabled);
-    g.set_settings_launch_policy(ss(&c.launch_policy));
-    g.set_settings_default_profile_id(ss(&c.default_profile_id));
-    g.set_settings_account_launch_policy(ss(&c.account_launch_policy));
-    g.set_settings_default_account_id(ss(&c.default_account_id));
     profile::refresh_profile_settings_dropdown(&g, &s.config);
     profile::refresh_account_settings_dropdown(&g, &s.config);
     // is_true_master, not !is_bonfire: a session impersonating a foreign group account has
@@ -2854,93 +3429,16 @@ pub(crate) fn read_settings_from_window(w: &MainWindow, s: &mut FjordState) {
     use crate::*;
     let g = AppState::get(w);
     let c = &mut s.config.device;
-    c.audio_spdif = g.get_settings_audio_spdif();
-    c.spdif_ac3 = g.get_settings_spdif_ac3();
-    c.spdif_eac3 = g.get_settings_spdif_eac3();
-    c.spdif_dts = g.get_settings_spdif_dts();
-    c.spdif_dts_hd = g.get_settings_spdif_dts_hd();
-    c.spdif_truehd = g.get_settings_spdif_truehd();
-    c.hwdec = g.get_settings_hwdec().to_string();
-    c.vf = g.get_settings_vf().to_string();
-    c.video_sync = g.get_settings_video_sync().to_string();
-    c.opengl_early_flush = g.get_settings_opengl_early_flush();
-    c.video_latency_hacks = g.get_settings_video_latency_hacks();
-    c.interpolation = g.get_settings_interpolation();
-    c.tscale = g.get_settings_tscale().to_string();
-    c.tone_mapping = g.get_settings_tone_mapping().to_string();
-    c.target_colorspace_hint = g.get_settings_target_colorspace_hint();
-    c.separate_video_surface = g.get_settings_separate_video_surface();
-    c.video_own_buffers = g.get_settings_video_own_buffers();
-    c.video_dither_off = g.get_settings_video_dither_off();
-    c.deinterlace = g.get_settings_deinterlace().to_string();
-    c.cache_secs = g.get_settings_cache_secs().max(0) as u32;
-    c.cache_max_mb = g.get_settings_cache_max_mb().max(0) as u32;
-    c.video_behind = g.get_settings_video_behind();
-    c.launch_fullscreen = g.get_settings_launch_fullscreen();
-    c.log_level = g.get_settings_log_level().to_string();
-    c.audio_device = g.get_settings_audio_device().to_string();
-    c.audio_device_passthrough = g.get_settings_passthrough_device().to_string();
+    for b in DEVICE_BINDS {
+        (b.store)(c, &g);
+    }
     c.audio_channels = g.get_settings_audio_channels().to_string();
-    c.gapless_audio = g.get_settings_gapless_audio();
-    c.alsa_irq_scheduling = g.get_settings_alsa_irq_scheduling();
-    c.skip_fade_mute_passthrough = g.get_settings_skip_fade_mute_passthrough();
-    c.seek_step_secs = g.get_settings_seek_step_secs().max(0) as u32;
-    c.seek_step_long_secs = g.get_settings_seek_step_long_secs().max(0) as u32;
-    c.skip_fade_ms = g.get_settings_skip_fade_ms().max(0) as u32;
-    c.scroll_speed_pct = g.get_settings_scroll_speed_pct().max(0) as u32;
-    c.animation_speed_pct = g.get_settings_animation_speed_pct().max(0) as u32;
-    c.ui_font_family = g.get_settings_font_family().to_string();
-    c.onscreen_keyboard_enabled = g.get_settings_onscreen_keyboard_enabled();
-    c.launch_policy = g.get_settings_launch_policy().to_string();
-    c.default_profile_id = g.get_settings_default_profile_id().to_string();
-    c.account_launch_policy = g.get_settings_account_launch_policy().to_string();
-    c.default_account_id = g.get_settings_default_account_id().to_string();
-    c.display_sync_enabled = g.get_settings_display_sync_enabled();
-    c.display_sync_trailers = g.get_settings_display_sync_trailers();
-    c.display_sync_screen_name = g.get_settings_display_sync_screen_name().to_string();
-    c.display_sync_default_resolution =
-        g.get_settings_display_sync_default_resolution().to_string();
-    c.display_sync_default_hz = g.get_settings_display_sync_default_hz().to_string();
-    c.display_sync_scale_4k = g.get_settings_display_sync_scale_4k().to_string();
-    c.display_sync_scale_1080p = g.get_settings_display_sync_scale_1080p().to_string();
-    c.display_sync_sync_resolution = g.get_settings_display_sync_sync_resolution();
-    c.display_sync_sync_refresh_rate = g.get_settings_display_sync_sync_refresh_rate();
-    c.display_sync_4k_odd_fps_mode = g.get_settings_display_sync_4k_odd_fps_mode().to_string();
-    c.display_sync_hdr_mode = g.get_settings_display_sync_hdr_mode().to_string();
-    c.display_sync_wcg_mode = g.get_settings_display_sync_wcg_mode().to_string();
 
     let cp = s.config.active_mut();
-    cp.sub_enabled = g.get_settings_sub_enabled();
-    cp.sub_lang = g.get_settings_sub_lang().to_string();
-    cp.sub_lang2 = g.get_settings_sub_lang2().to_string();
-    cp.sub_type = g.get_settings_sub_type().to_string();
-    cp.sub_scale_pct = g.get_settings_sub_scale_pct().max(0) as u32;
-    cp.sub_pos_pct = g.get_settings_sub_pos_pct().max(0) as u32;
-    cp.sub_respect_ass_styling = g.get_settings_sub_respect_ass_styling();
-    cp.sub_color = g.get_settings_sub_color().to_string();
-    cp.sub_background = g.get_settings_sub_background();
-    cp.audio_lang = g.get_settings_audio_lang().to_string();
-    cp.now_playing_auto_open = g.get_settings_now_playing_auto_open();
-    cp.skip_intro_mode = g.get_settings_skip_intro_mode().to_string();
-    cp.skip_intro_secs = g.get_settings_skip_intro_secs().max(0) as u32;
-    cp.skip_recap_mode = g.get_settings_skip_recap_mode().to_string();
-    cp.skip_recap_secs = g.get_settings_skip_recap_secs().max(0) as u32;
-    cp.skip_preview_mode = g.get_settings_skip_preview_mode().to_string();
-    cp.skip_preview_secs = g.get_settings_skip_preview_secs().max(0) as u32;
-    cp.skip_commercial_mode = g.get_settings_skip_commercial_mode().to_string();
-    cp.skip_commercial_secs = g.get_settings_skip_commercial_secs().max(0) as u32;
-    cp.skip_credits_mode = g.get_settings_skip_credits_mode().to_string();
-    cp.card_size = g.get_settings_card_size().to_string();
-    cp.text_size = g.get_settings_text_size().to_string();
-    cp.dashboard_hero = g.get_settings_dashboard_hero().to_string();
-    cp.focus_color = g.get_settings_focus_color().to_string();
-    cp.focus_width = g.get_settings_focus_width().to_string();
-    cp.focus_style = g.get_settings_focus_style().to_string();
-    cp.focus_opacity = g.get_settings_focus_opacity().to_string();
-    cp.focus_zoom = g.get_settings_focus_zoom().to_string();
-    cp.skip_credits_secs = g.get_settings_skip_credits_secs().max(0) as u32;
+    for b in PROFILE_BINDS {
+        (b.store)(cp, &g);
+    }
     cp.seerr_enabled = g.get_settings_seerr_enabled();
-    cp.trailer_quality = g.get_settings_trailer_quality().to_string();
 }
 
 // ── audio device discovery ────────────────────────────────────────────────────
@@ -3045,6 +3543,108 @@ pub(crate) fn fetch_system_fonts() -> Vec<(String, String)> {
 mod tests {
     use super::*;
     use std::collections::HashSet;
+
+    /// Every field different from its default (bools flipped, text "t-<field>", numbers moved by a
+    /// small per-field step); other kinds left alone.
+    fn changed<T: serde::Serialize + serde::de::DeserializeOwned + Default>()
+    -> (T, serde_json::Value) {
+        let mut v = serde_json::to_value(T::default()).unwrap();
+        for (i, (k, x)) in v.as_object_mut().unwrap().iter_mut().enumerate() {
+            let new = match &*x {
+                serde_json::Value::Bool(b) => (!b).into(),
+                serde_json::Value::String(_) => format!("t-{k}").into(),
+                // Small steps: some fields are u8.
+                serde_json::Value::Number(n) if n.is_u64() => {
+                    let n = n.as_u64().unwrap();
+                    let step = 1 + i as u64 % 50;
+                    (if n < 200 { n + step } else { n - step }).into()
+                }
+                other => other.clone(),
+            };
+            *x = new;
+        }
+        (serde_json::from_value(v.clone()).unwrap(), v)
+    }
+
+    /// Fields of `out` that came back as in `sent`; panics on one that is neither sent nor default
+    /// (a bind writing the wrong field).
+    fn round_tripped(
+        out: serde_json::Value,
+        sent: &serde_json::Value,
+        default: serde_json::Value,
+    ) -> usize {
+        let mut n = 0;
+        for (k, v) in out.as_object().unwrap() {
+            if v == &sent[k] && v != &default[k] {
+                n += 1;
+            } else {
+                assert_eq!(v, &default[k], "{k} came back as something else");
+            }
+        }
+        n
+    }
+
+    #[test]
+    fn settings_round_trip_through_the_window() {
+        i_slint_backend_testing::init_no_event_loop();
+        let window = crate::MainWindow::new().unwrap();
+        let g = crate::AppState::get(&window);
+
+        let (dev, dev_json): (config::DeviceConfig, _) = changed();
+        for b in DEVICE_BINDS {
+            (b.load)(&dev, &g);
+        }
+        let mut dev_out = config::DeviceConfig::default();
+        for b in DEVICE_BINDS {
+            (b.store)(&mut dev_out, &g);
+        }
+        let dev_default = serde_json::to_value(config::DeviceConfig::default()).unwrap();
+        let n = round_tripped(
+            serde_json::to_value(dev_out).unwrap(),
+            &dev_json,
+            dev_default,
+        );
+        assert_eq!(
+            n,
+            DEVICE_BINDS.len(),
+            "every device bind round-trips its own field"
+        );
+
+        let (prof, prof_json): (config::ProfileSettings, _) = changed();
+        for b in PROFILE_BINDS {
+            (b.load)(&prof, &g);
+        }
+        let mut prof_out = config::ProfileSettings::default();
+        for b in PROFILE_BINDS {
+            (b.store)(&mut prof_out, &g);
+        }
+        let prof_default = serde_json::to_value(config::ProfileSettings::default()).unwrap();
+        let n = round_tripped(
+            serde_json::to_value(&prof_out).unwrap(),
+            &prof_json,
+            prof_default,
+        );
+        assert_eq!(
+            n,
+            PROFILE_BINDS.len(),
+            "every profile bind round-trips its own field"
+        );
+
+        // Copy settings from… copies exactly the same fields.
+        let mut copy = config::ProfileSettings::default();
+        copy.copy_settings_from(&prof);
+        let prof_default = serde_json::to_value(config::ProfileSettings::default()).unwrap();
+        let copied = round_tripped(
+            serde_json::to_value(&copy).unwrap(),
+            &prof_json,
+            prof_default,
+        );
+        assert_eq!(
+            copied,
+            PROFILE_BINDS.len(),
+            "copy_settings_from copies the profile binds"
+        );
+    }
 
     #[test]
     fn choices_are_well_formed() {

@@ -16,7 +16,7 @@
 //                   separate_video_surface (default on), video_own_buffers (opt-in, per run),
 //                   video_dither_off (test aid)
 //   ProfileSettings settings that follow the PERSON, keyed by user_id (copy_settings_from: the
-//                   Settings rows tagged "Profile", for "Copy settings from…"): auth (server_url/user_id/
+//                   Settings rows tagged "Profile" = settings::PROFILE_BINDS + dashboard_rows): auth (server_url/user_id/
 //                   token), subtitle/audio language, library sort, skip_*_mode/_secs, trailer
 //                   quality, dashboard_rows (per dashboard: row ids in order + shown; DashboardRow),
 //                   dashboard_hero ("off" | "band" (default) | "background"; reads the old bool),
@@ -829,37 +829,11 @@ impl ProfileSettings {
     /// the Seerr connection (Integrations) or remembered browsing state (library sorts, Discover
     /// filters, request choices). A new per-profile Settings row belongs here too.
     pub(crate) fn copy_settings_from(&mut self, src: &ProfileSettings) {
-        self.sub_enabled = src.sub_enabled;
-        self.sub_lang = src.sub_lang.clone();
-        self.sub_lang2 = src.sub_lang2.clone();
-        self.sub_type = src.sub_type.clone();
-        self.sub_scale_pct = src.sub_scale_pct;
-        self.sub_pos_pct = src.sub_pos_pct;
-        self.sub_respect_ass_styling = src.sub_respect_ass_styling;
-        self.sub_color = src.sub_color.clone();
-        self.sub_background = src.sub_background;
-        self.audio_lang = src.audio_lang.clone();
-        self.now_playing_auto_open = src.now_playing_auto_open;
-        self.skip_intro_mode = src.skip_intro_mode.clone();
-        self.skip_intro_secs = src.skip_intro_secs;
-        self.skip_recap_mode = src.skip_recap_mode.clone();
-        self.skip_recap_secs = src.skip_recap_secs;
-        self.skip_preview_mode = src.skip_preview_mode.clone();
-        self.skip_preview_secs = src.skip_preview_secs;
-        self.skip_commercial_mode = src.skip_commercial_mode.clone();
-        self.skip_commercial_secs = src.skip_commercial_secs;
-        self.skip_credits_mode = src.skip_credits_mode.clone();
-        self.skip_credits_secs = src.skip_credits_secs;
-        self.card_size = src.card_size.clone();
-        self.text_size = src.text_size.clone();
+        for b in crate::settings::PROFILE_BINDS {
+            (b.copy)(self, src);
+        }
+        // Not a window setting (dashboard_rows.rs pushes it), so not in PROFILE_BINDS.
         self.dashboard_rows = src.dashboard_rows.clone();
-        self.dashboard_hero = src.dashboard_hero.clone();
-        self.focus_color = src.focus_color.clone();
-        self.focus_width = src.focus_width.clone();
-        self.focus_style = src.focus_style.clone();
-        self.focus_opacity = src.focus_opacity.clone();
-        self.focus_zoom = src.focus_zoom.clone();
-        self.trailer_quality = src.trailer_quality.clone();
     }
 }
 
