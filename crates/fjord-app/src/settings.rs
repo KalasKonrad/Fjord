@@ -711,7 +711,7 @@ const CACHE_MAX_MB_MODEL: &[&str] = &["0", "150", "300", "500", "1000", "2000"];
 const CACHE_MAX_MB_VALUES: &[i32] = &[0, 150, 300, 500, 1000, 2000];
 const SKIP_MODE_4_MODEL: &[&str] = &["always-skip", "ask", "ask-timed", "never-skip"];
 const SKIP_MODE_3_MODEL: &[&str] = &["always-skip", "ask", "never-skip"];
-const CARD_SIZE_MODEL: &[&str] = &["normal", "large", "extra-large"];
+const CARD_SIZE_MODEL: &[&str] = &["small", "normal", "large", "extra-large", "huge"];
 const SKIP_SECS_MODEL: &[&str] = &["3", "5", "8", "10", "15", "20", "30"];
 const CREDITS_SECS_MODEL: &[&str] = &["10", "15", "20", "30", "45", "60"];
 const LOG_LEVEL_MODEL: &[&str] = &["error", "warn", "info", "debug"];
@@ -802,9 +802,11 @@ fn display_val<'a>(val: &'a str, key: &str) -> &'a str {
     }
     if key == UI_CARD_SIZE || key == UI_TEXT_SIZE {
         return match val {
+            "small" => "Small",
             "normal" => "Normal",
             "large" => "Large",
             "extra-large" => "Extra large",
+            "huge" => "Huge",
             _ => val,
         };
     }

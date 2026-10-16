@@ -42,7 +42,7 @@ export component BonfireAdminScreen inherits Rectangle {
         Text {
             x: (parent.width - self.width) / 2;
             y: 16px;
-            height: 32px;
+            height: 32px * AppState.text-scale;
             text: "Bonfire Admin";
             color: Theme.text;
             font-size: 18px * AppState.text-scale;

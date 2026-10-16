@@ -673,13 +673,13 @@ pub(crate) struct ProfileSettings {
     #[serde(default)]
     pub library_music_view: u8,
 
-    // ── Poster card size (Settings → Interface): "normal" | "large" | "extra-large" —
-    // AppState.card-scale turns it into 1.0 / 1.25 / 1.5 for every poster card.
+    // ── Poster card size (Settings → Interface): "small" | "normal" | "large" | "extra-large" | "huge" —
+    // AppState.card-scale turns it into 0.8 / 1.0 / 1.25 / 1.5 / 2.0 for every poster card.
     // Per profile (the user's choice), unlike the device-wide UI rows.
     #[serde(default = "default_card_size")]
     pub card_size: String,
-    // ── Text size (Settings → Interface): "normal" | "large" | "extra-large" —
-    // AppState.text-scale turns it into 1.0 / 1.15 / 1.3 for every font under 24px.
+    // ── Text size (Settings → Interface): "small" | "normal" | "large" | "extra-large" | "huge" —
+    // AppState.text-scale turns it into 0.9 / 1.0 / 1.15 / 1.3 / 1.5 for every font under 24px.
     #[serde(default = "default_card_size")]
     pub text_size: String,
     // ── Dashboard rows (Settings → Interface → Dashboard rows…): per dashboard ("home", "tv",

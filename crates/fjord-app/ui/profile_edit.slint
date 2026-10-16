@@ -59,8 +59,8 @@ component ToggleRow inherits Rectangle {
         spacing: 10px;
 
         Rectangle {
-            width: 20px;
-            height: 20px;
+            width: 20px * AppState.text-scale;
+            height: self.width;
             y: (parent.height - self.height) / 2;
             border-radius: 4px;
             background: root.item.selected ? Theme.accent : transparent;

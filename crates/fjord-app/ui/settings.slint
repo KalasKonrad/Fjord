@@ -1293,12 +1293,14 @@ export component SettingsScreen inherits Rectangle {
                             title: "Card size";
                             subtitle: "Size of the poster cards on every screen (dashboards, libraries, Discover) — saved for this profile";
                             SettingsDropdown {
-                                model: ["Normal", "Large", "Extra large"];
-                                current-value: AppState.settings-card-size == "large" ? "Large"
-                                    : AppState.settings-card-size == "extra-large" ? "Extra large" : "Normal";
+                                model: ["Small", "Normal", "Large", "Extra large", "Huge"];
+                                current-value: AppState.settings-card-size == "small" ? "Small"
+                                    : AppState.settings-card-size == "large" ? "Large"
+                                    : AppState.settings-card-size == "extra-large" ? "Extra large"
+                                    : AppState.settings-card-size == "huge" ? "Huge" : "Normal";
                                 selected(v) => {
-                                    AppState.settings-card-size = v == "Large" ? "large"
-                                        : v == "Extra large" ? "extra-large" : "normal";
+                                    AppState.settings-card-size = v == "Small" ? "small" : v == "Large" ? "large"
+                                        : v == "Extra large" ? "extra-large" : v == "Huge" ? "huge" : "normal";
                                     AppState.settings-changed();
                                     AppState.refocus();
                                 }
@@ -1311,12 +1313,14 @@ export component SettingsScreen inherits Rectangle {
                             title: "Text size";
                             subtitle: "Size of the text everywhere — menus, cards, settings, the player — saved for this profile";
                             SettingsDropdown {
-                                model: ["Normal", "Large", "Extra large"];
-                                current-value: AppState.settings-text-size == "large" ? "Large"
-                                    : AppState.settings-text-size == "extra-large" ? "Extra large" : "Normal";
+                                model: ["Small", "Normal", "Large", "Extra large", "Huge"];
+                                current-value: AppState.settings-text-size == "small" ? "Small"
+                                    : AppState.settings-text-size == "large" ? "Large"
+                                    : AppState.settings-text-size == "extra-large" ? "Extra large"
+                                    : AppState.settings-text-size == "huge" ? "Huge" : "Normal";
                                 selected(v) => {
-                                    AppState.settings-text-size = v == "Large" ? "large"
-                                        : v == "Extra large" ? "extra-large" : "normal";
+                                    AppState.settings-text-size = v == "Small" ? "small" : v == "Large" ? "large"
+                                        : v == "Extra large" ? "extra-large" : v == "Huge" ? "huge" : "normal";
                                     AppState.settings-changed();
                                     AppState.refocus();
                                 }

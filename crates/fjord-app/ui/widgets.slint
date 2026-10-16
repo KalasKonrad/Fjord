@@ -862,9 +862,9 @@ export component MediaCard inherits Rectangle {
             if item.is-favorite: Rectangle {
                 x: 4px;
                 y: 4px;
-                width: 24px;
-                height: 24px;
-                border-radius: Theme.radius-lg;
+                width: 24px * AppState.text-scale;
+                height: self.width;
+                border-radius: self.height / 2;
                 background: Theme.accent;
                 Text {
                     text: "❤";
@@ -882,10 +882,10 @@ export component MediaCard inherits Rectangle {
             // Unpinned font, like the ★/☆ glyphs in context_menu.slint/request_detail.slint.
             if item.on-watchlist: Rectangle {
                 x: 4px;
-                y: item.is-favorite ? 32px : 4px;
-                width: 24px;
-                height: 24px;
-                border-radius: Theme.radius-lg;
+                y: item.is-favorite ? 8px + 24px * AppState.text-scale : 4px;
+                width: 24px * AppState.text-scale;
+                height: self.width;
+                border-radius: self.height / 2;
                 background: Theme.accent;
                 Text {
                     text: "★";
@@ -899,11 +899,11 @@ export component MediaCard inherits Rectangle {
 
             // Watched checkmark badge
             if item.has-played: Rectangle {
-                x: parent.width - 28px;
+                x: parent.width - self.width - 4px;
                 y: 4px;
-                width: 24px;
-                height: 24px;
-                border-radius: Theme.radius-lg;
+                width: 24px * AppState.text-scale;
+                height: self.width;
+                border-radius: self.height / 2;
                 background: Theme.accent;
                 Text {
                     text: "✓";
@@ -918,11 +918,11 @@ export component MediaCard inherits Rectangle {
 
             // Unseen episode count badge (series)
             if item.unplayed-count > 0 && !item.has-played: Rectangle {
-                x: parent.width - 28px;
+                x: parent.width - self.width - 4px;
                 y: 4px;
-                width: 24px;
-                height: 24px;
-                border-radius: Theme.radius-lg;
+                width: 24px * AppState.text-scale;
+                height: self.width;
+                border-radius: self.height / 2;
                 background: Theme.accent;
                 Text {
                     text: "\{item.unplayed-count}";
@@ -939,10 +939,10 @@ export component MediaCard inherits Rectangle {
             // both tiers together server-side).
             if item.availability != "": Rectangle {
                 y: 4px;
-                height: 20px;
+                height: 20px * AppState.text-scale;
                 width: avail-text.preferred-width + 14px;
                 x: parent.width - self.width - 4px;
-                border-radius: 10px;
+                border-radius: self.height / 2;
                 background: item.availability == "available" ? Theme.accent
                     : item.availability == "blocklisted" ? Theme.error
                     : Theme.surface-overlay;
@@ -969,11 +969,11 @@ export component MediaCard inherits Rectangle {
             //     "Also requested in 2K/4K".
             // See CardItem in theme.slint.
             if item.other-tier-available || item.other-tier-requested: Rectangle {
-                y: 28px;
-                height: 20px;
+                y: 8px + 20px * AppState.text-scale;
+                height: 20px * AppState.text-scale;
                 width: other-tier-text.preferred-width + 14px;
                 x: parent.width - self.width - 4px;
-                border-radius: 10px;
+                border-radius: self.height / 2;
                 background: item.other-tier-available ? Theme.accent : Theme.surface-overlay;
                 other-tier-text := Text {
                     text: item.other-tier-available
@@ -1303,8 +1303,8 @@ export component SettingsRow inherits Rectangle {
                     alignment: center;
                     Rectangle {
                         width: profile-tag.preferred-width + 12px;
-                        height: 16px;
-                        border-radius: 8px;
+                        height: 16px * AppState.text-scale;
+                        border-radius: self.height / 2;
                         background: Theme.surface-overlay;
                         profile-tag := Text {
                             text: "Profile";
@@ -1384,11 +1384,11 @@ export component PosterBlock inherits Rectangle {
     }
     // ✓ played badge (top-right)
     if root.has-played: Rectangle {
-        x: parent.width - 28px;
+        x: parent.width - self.width - 6px;
         y: 6px;
-        width: 22px;
-        height: 22px;
-        border-radius: 11px;
+        width: 22px * AppState.text-scale;
+        height: self.width;
+        border-radius: self.height / 2;
         background: Theme.accent;
         Text {
             text: "✓";
@@ -1404,11 +1404,11 @@ export component PosterBlock inherits Rectangle {
     }
     // unplayed-count pill (top-right, when no played badge)
     if root.unplayed-count > 0 && !root.has-played: Rectangle {
-        x: parent.width - 28px;
+        x: parent.width - self.width - 6px;
         y: 6px;
-        width: 22px;
-        height: 22px;
-        border-radius: 11px;
+        width: 22px * AppState.text-scale;
+        height: self.width;
+        border-radius: self.height / 2;
         background: Theme.accent;
         Text {
             text: root.unplayed-count;
@@ -1426,10 +1426,10 @@ export component PosterBlock inherits Rectangle {
     // availability pill, in PosterBlock's corner.
     if root.request-status != "": Rectangle {
         y: 4px;
-        height: 20px;
+        height: 20px * AppState.text-scale;
         width: request-status-text.preferred-width + 14px;
         x: parent.width - self.width - 4px;
-        border-radius: 10px;
+        border-radius: self.height / 2;
         background: root.request-status == "Available" || root.request-status == "4K Available" ? Theme.accent
             : root.request-status == "Blocklisted" || root.request-status == "4K Blocklisted" ? Theme.error
             : Theme.surface-overlay;
