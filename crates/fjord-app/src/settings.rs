@@ -17,15 +17,17 @@
 //   set_focused / set_section / row_focused  focus helpers (row_focused = mouse click path)
 //   dispatch_settings  keyboard: section list → rows / key bindings; Enter opens a dropdown
 //                popup (Up/Down/Enter/Esc inside it); confirm dialogs checked first
-//   dropdown_model(key)  static option lists (None for toggles/buttons and dynamic dropdowns)
+//   Choice / CHOICES / choice(key)  every fixed-choice dropdown: (stored value, label) options +
+//                window get/set — drives row labels, the popup, Right-cycling; wire_choice_rows
+//                answers settings.slint's `choice: true` rows (setting-options/-label/-choose)
 //   is_dynamic_dropdown(key)  the 12 rows whose options come from AppState at runtime: default
 //                profile/account (from Config), audio/passthrough device, font, Seerr streaming
 //                region/display language/discover language/discover region, display-sync
 //                screen/default resolution/default Hz (kscreen-doctor, per selected screen)
-//   open_dropdown_popup / apply_dropdown_selection / current_value_str / display_val
-//                the dropdown popup, shared by keyboard Confirm and mouse
-//   settings_row_action(key, g)  Confirm/Right on a row: flip a toggle, cycle a dropdown
-//                forward, or run a button
+//   open_dropdown_popup / apply_dropdown_selection  the keyboard dropdown popup (dynamic lists, or
+//                a Choice)
+//   settings_row_action(key, g)  Confirm/Right on a row: cycle a Choice forward, flip a toggle,
+//                cycle a dynamic dropdown, or run a button
 //   wire_device_lists      audio/passthrough device and font lists (fetched once) + their dropdowns
 //   wire_profile_defaults  default profile / account dropdowns (local, no network)
 //   wire_copy_settings     "Copy settings from…": source picked → confirm → copy_settings_from +
@@ -45,7 +47,7 @@
 use crate::MainWindow;
 use crate::config::{self, FjordState};
 use crate::keys::Action;
-use slint::{Model, ModelRc, SharedString, VecModel};
+use slint::{ComponentHandle, Global, Model, ModelRc, SharedString, VecModel};
 use tracing::debug;
 
 // ── Sections (sidebar order) ────────────────────────────────────────────────
@@ -492,9 +494,7 @@ pub(crate) fn dispatch_settings(action: &Action, g: &crate::AppState<'_>) -> Opt
             g.set_settings_dropdown_open(false);
             return None;
         }
-        let model_len = dropdown_model(sf.as_str())
-            .map(|m| m.len() as i32)
-            .unwrap_or_else(|| g.get_settings_dropdown_model().row_count() as i32);
+        let model_len = g.get_settings_dropdown_model().row_count() as i32;
         let cursor = g.get_settings_dropdown_cursor();
         match action {
             Action::Down => {
@@ -632,327 +632,759 @@ pub(crate) fn dispatch_settings(action: &Action, g: &crate::AppState<'_>) -> Opt
     }
 }
 
-// ── Dropdown helpers ──────────────────────────────────────────────────────────
+// ── Fixed-choice settings (CHOICES) ───────────────────────────────────────────
+// Every Settings dropdown with a fixed option list is one Choice: its options as (stored value,
+// label) and how its window property is read and written. Everything else derives from it — the
+// label shown in the row (settings.slint `choice: true` → setting-label), the keyboard list
+// (open_dropdown_popup / apply_dropdown_selection), Right-cycling (settings_row_action). Adding
+// one: a key const, an entry here, a SettingsRow { choice: true; value: … } row, the config
+// field. Stored-value notes: "" = Default / Any (languages, subtitle type and color — sub_color
+// and trailer_quality store display names, translated at the point of use); cache "0" =
+// unlimited (mpv.rs raises the byte ceiling); skip fade "0" = an instant cut; speed % is a
+// duration multiplier (bigger = slower). Dynamic lists (devices, fonts, regions…) are separate:
+// is_dynamic_dropdown.
 
-const LANG_MODEL: &[&str] = &[
-    "",
-    "English",
-    "German",
-    "French",
-    "Japanese",
-    "Spanish",
-    "Italian",
-    "Portuguese",
-    "Russian",
-    "Korean",
-    "Chinese",
-    "Dutch",
-    "Swedish",
-    "Polish",
-    "Czech",
-    "Arabic",
-    "Turkish",
-    "Finnish",
-    "Danish",
-    "Norwegian",
-];
-
-const AUDIO_CHANNELS_MODEL: &[&str] = &[
-    "auto-safe",
-    "auto",
-    "stereo",
-    "5.1",
-    "7.1",
-    "7.1,5.1,stereo",
-];
-
-const HWDEC_MODEL: &[&str] = &[
-    "auto",
-    "vulkan",
-    "vulkan-copy",
-    "nvdec",
-    "nvdec-copy",
-    "vaapi",
-    "vaapi-copy",
-    "vdpau",
-    "vdpau-copy",
-    "none",
-];
-const VF_MODEL: &[&str] = &[
-    "auto: nv12/p010",
-    "auto: yuv420p/yuv420p10le",
-    "format=yuv420p",
-    "format=yuv420p10le",
-    "format=nv12",
-    "format=p010",
-];
-const DEINTERLACE_MODEL: &[&str] = &["no", "auto", "yes"];
-const VIDEO_SYNC_MODEL: &[&str] = &[
-    "audio",
-    "display-resample",
-    "display-vdrop",
-    "display-adrop",
-    "desync",
-];
-const TSCALE_MODEL: &[&str] = &[
-    "oversample",
-    "catmull_rom",
-    "mitchell",
-    "gaussian",
-    "bicubic",
-];
-const TONE_MAPPING_MODEL: &[&str] = &[
-    "auto", "hable", "bt.2390", "reinhard", "mobius", "clip", "gamma", "linear",
-];
-// Default resolution/refresh rate are dynamic dropdowns (VID_DISPLAY_SYNC_DEFAULT_
-// RESOLUTION/_HZ, from display_sync::supported_resolutions_and_hz for the selected screen).
-// Scale has no per-output list to query, so it stays static.
-const DISPLAY_SYNC_SCALE_MODEL: &[&str] = &["1.0", "1.25", "1.5", "1.75", "2.0"];
-const DISPLAY_SYNC_4K_ODD_FPS_MODEL: &[&str] = &["fallback", "stay_4k"];
-const DISPLAY_SYNC_HDR_MODE_MODEL: &[&str] = &["yes", "no", "always"];
-const DISPLAY_SYNC_WCG_MODE_MODEL: &[&str] = &["auto", "yes", "no"];
-const SUB_TYPE_MODEL: &[&str] = &["Any", "Normal", "Forced", "Hearing Impaired"];
-// "0" = mpv's own huge default (effectively unlimited, capped by
-// CACHE_MAX_MB_MODEL below) — displayed as "Unlimited" via display_val.
-const CACHE_SECS_MODEL: &[&str] = &["0", "10", "30", "60", "120", "300"];
-const CACHE_SECS_VALUES: &[i32] = &[0, 10, 30, 60, 120, 300];
-// "0" = a raised byte ceiling (mpv.rs sets demuxer-max-bytes high, not mpv's 150 MiB
-// default), so Cache Duration alone governs; shown as "Unlimited" via display_val.
-const CACHE_MAX_MB_MODEL: &[&str] = &["0", "150", "300", "500", "1000", "2000"];
-const CACHE_MAX_MB_VALUES: &[i32] = &[0, 150, 300, 500, 1000, 2000];
-const SKIP_MODE_4_MODEL: &[&str] = &["always-skip", "ask", "ask-timed", "never-skip"];
-const SKIP_MODE_3_MODEL: &[&str] = &["always-skip", "ask", "never-skip"];
-const CARD_SIZE_MODEL: &[&str] = &["small", "normal", "large", "extra-large", "huge"];
-const HERO_STYLE_MODEL: &[&str] = &["off", "band", "background"];
-const FOCUS_COLOR_MODEL: &[&str] = &["white", "blue", "gold", "green", "red"];
-const FOCUS_WIDTH_MODEL: &[&str] = &["2", "3", "4", "6"];
-const FOCUS_STYLE_MODEL: &[&str] = &["line", "glow", "both"];
-const FOCUS_OPACITY_MODEL: &[&str] = &["solid", "see-through"];
-const FOCUS_ZOOM_MODEL: &[&str] = &["0", "5", "10", "15", "20", "25", "30"];
-const SKIP_SECS_MODEL: &[&str] = &["3", "5", "8", "10", "15", "20", "30"];
-const CREDITS_SECS_MODEL: &[&str] = &["10", "15", "20", "30", "45", "60"];
-const LOG_LEVEL_MODEL: &[&str] = &["error", "warn", "info", "debug"];
-const LAUNCH_POLICY_MODEL: &[&str] = &["always_ask", "remember_last", "default"];
-const SUB_SCALE_MODEL: &[&str] = &["50", "75", "100", "125", "150", "175", "200"];
-// mpv's range is 0–150: 100 is mpv's default bottom position, above that pushes subtitles
-// further down, and text/ASS subs may clip (libass) — the row's subtitle says so.
-const SUB_POS_MODEL: &[&str] = &[
-    "50", "60", "70", "80", "90", "95", "100", "110", "120", "130", "140", "150",
-];
-// Display names stored directly in Config.sub_color (like LANG_MODEL stores
-// display language names) — translated to an actual mpv hex color at point
-// of use, not here.
-const SUB_COLOR_MODEL: &[&str] = &["", "White", "Yellow", "Cyan", "Green"];
-const SEEK_STEP_MODEL: &[&str] = &["5", "10", "15", "20", "30"];
-const SEEK_STEP_LONG_MODEL: &[&str] = &["15", "30", "45", "60", "120"];
-// "0" = instant (today's pre-feature hard cut, display_val below reads it
-// as "Off"); 200 is the shipped default. Both halves of the fade (out and
-// in) use this same duration — see wire_mpv_timer's own doc comment.
-const SKIP_FADE_MS_MODEL: &[&str] = &["0", "100", "150", "200", "300", "400", "500", "750", "1000"];
-// Percentage is a DURATION multiplier, not a rate — bigger % means the
-// transition takes longer, i.e. slower, which is the opposite of what
-// "speed" suggests at a glance (see the row subtitle text in settings.slint).
-const SPEED_PCT_MODEL: &[&str] = &[
-    "0", "25", "50", "75", "100", "150", "200", "300", "400", "500",
-];
-// Display-ready values stored directly in Config.trailer_quality, same
-// idiom as SUB_COLOR_MODEL above — translated to an mpv ytdl-format string
-// only at point of use (main.rs::trailer_ytdl_format), not here.
-const TRAILER_QUALITY_MODEL: &[&str] = &["Best", "1080p", "720p", "480p"];
-
-fn display_val<'a>(val: &'a str, key: &str) -> &'a str {
-    if val.is_empty() {
-        return match key {
-            // An empty language preference means "the container's default track" (playback only
-            // overrides mpv's choice on a match), so "Default", not "Any" (PLY_SUB_TYPE's "Any" is
-            // a real filter).
-            AUD_AUDIO_LANG | PLY_SUB_LANG | PLY_SUB_LANG2 => "Default",
-            PLY_SUB_TYPE => "Any",
-            PLY_SUB_COLOR => "Default",
-            _ => "(none)",
-        };
-    }
-    // "0" means "no cache-secs override" (mpv's own default is effectively
-    // unlimited, bounded only by the max-size row) — "Unlimited" is honest
-    // about that, unlike the raw "0" which reads as "no cache at all."
-    if key == PLY_CACHE_SECS && val == "0" {
-        return "Unlimited";
-    }
-    // "0" here means the byte ceiling itself is raised out of the way (see
-    // mpv.rs) so Cache Duration alone decides — "Unlimited", not "no cache."
-    if key == PLY_CACHE_MAX_MB && val == "0" {
-        return "Unlimited";
-    }
-    // "0" here means no delay at all — today's pre-feature instant hard cut,
-    // both for the video fade and the audio ramp/mute alongside it.
-    if key == PLY_SKIP_FADE_MS && val == "0" {
-        return "Off (instant)";
-    }
-    if key == PROF_LAUNCH_POLICY {
-        return match val {
-            "always_ask" => "Always ask",
-            "remember_last" => "Remember last",
-            "default" => "Default profile",
-            _ => val,
-        };
-    }
-    if key == PROF_ACCOUNT_LAUNCH_POLICY {
-        return match val {
-            "always_ask" => "Always ask",
-            "remember_last" => "Remember last",
-            "default" => "Default account",
-            _ => val,
-        };
-    }
-    // Skip mode display names (only for skip mode rows)
-    if matches!(
-        key,
-        PLY_INTRO_MODE | PLY_RECAP_MODE | PLY_PREVIEW_MODE | PLY_COMMERCIAL_MODE | PLY_CREDITS_MODE
-    ) {
-        return match val {
-            "always-skip" => "Always skip",
-            "ask" => "Ask",
-            "ask-timed" => "Ask (timed)",
-            "never-skip" => "Never skip",
-            _ => val,
-        };
-    }
-    if key == UI_FOCUS_COLOR {
-        return match val {
-            "white" => "White",
-            "blue" => "Accent blue",
-            "gold" => "Gold",
-            "green" => "Green",
-            "red" => "Red",
-            _ => val,
-        };
-    }
-    if key == UI_FOCUS_WIDTH {
-        return match val {
-            "2" => "Thin (2px)",
-            "3" => "Medium (3px)",
-            "4" => "Thick (4px)",
-            "6" => "Extra thick (6px)",
-            _ => val,
-        };
-    }
-    if key == UI_FOCUS_STYLE {
-        return match val {
-            "line" => "Line",
-            "glow" => "Glow",
-            "both" => "Line and glow",
-            _ => val,
-        };
-    }
-    if key == UI_FOCUS_OPACITY {
-        return match val {
-            "solid" => "Solid",
-            "see-through" => "See-through",
-            _ => val,
-        };
-    }
-    if key == UI_FOCUS_ZOOM {
-        return match val {
-            "0" => "Off",
-            "5" => "5%",
-            "10" => "10%",
-            "15" => "15%",
-            "20" => "20%",
-            "25" => "25%",
-            "30" => "30%",
-            _ => val,
-        };
-    }
-    if key == UI_DASHBOARD_HERO {
-        return match val {
-            "off" => "Off",
-            "band" => "Band at the top",
-            "background" => "Background",
-            _ => val,
-        };
-    }
-    if key == UI_CARD_SIZE || key == UI_TEXT_SIZE {
-        return match val {
-            "small" => "Small",
-            "normal" => "Normal",
-            "large" => "Large",
-            "extra-large" => "Extra large",
-            "huge" => "Huge",
-            _ => val,
-        };
-    }
-    if key == VID_DISPLAY_SYNC_4K_ODD_FPS_MODE {
-        return match val {
-            "fallback" => "Fallback to default resolution",
-            "stay_4k" => "Stay at 4K",
-            _ => val,
-        };
-    }
-    if key == VID_DISPLAY_SYNC_HDR_MODE {
-        return match val {
-            "yes" => "Match source",
-            "no" => "Never",
-            "always" => "Always",
-            _ => val,
-        };
-    }
-    if key == VID_DISPLAY_SYNC_WCG_MODE {
-        return match val {
-            "auto" => "Follow HDR",
-            "yes" => "Always",
-            "no" => "Never",
-            _ => val,
-        };
-    }
-    val
+/// How a fixed-choice setting is held in the window: a string or an int property.
+enum Field {
+    Str(
+        fn(&crate::AppState<'_>) -> SharedString,
+        fn(&crate::AppState<'_>, SharedString),
+    ),
+    Int(
+        fn(&crate::AppState<'_>) -> i32,
+        fn(&crate::AppState<'_>, i32),
+    ),
 }
 
-// Static, compile-time-fixed option lists. Returns None for toggle/button/
-// action rows AND for the 7 dynamic-dropdown rows (see is_dynamic_dropdown).
-fn dropdown_model(key: &str) -> Option<&'static [&'static str]> {
-    match key {
-        GEN_LOG_LEVEL => Some(LOG_LEVEL_MODEL),
-        PROF_LAUNCH_POLICY | PROF_ACCOUNT_LAUNCH_POLICY => Some(LAUNCH_POLICY_MODEL),
-        VID_HWDEC => Some(HWDEC_MODEL),
-        VID_VF => Some(VF_MODEL),
-        VID_DEINTERLACE => Some(DEINTERLACE_MODEL),
-        VID_VIDEO_SYNC => Some(VIDEO_SYNC_MODEL),
-        VID_TSCALE => Some(TSCALE_MODEL),
-        VID_TONE_MAPPING => Some(TONE_MAPPING_MODEL),
-        AUD_CHANNELS => Some(AUDIO_CHANNELS_MODEL),
-        AUD_AUDIO_LANG | PLY_SUB_LANG | PLY_SUB_LANG2 => Some(LANG_MODEL),
-        PLY_SUB_TYPE => Some(SUB_TYPE_MODEL),
-        PLY_SUB_SCALE => Some(SUB_SCALE_MODEL),
-        PLY_SUB_POS => Some(SUB_POS_MODEL),
-        PLY_SUB_COLOR => Some(SUB_COLOR_MODEL),
-        PLY_CACHE_SECS => Some(CACHE_SECS_MODEL),
-        PLY_CACHE_MAX_MB => Some(CACHE_MAX_MB_MODEL),
-        PLY_INTRO_MODE | PLY_RECAP_MODE | PLY_PREVIEW_MODE | PLY_COMMERCIAL_MODE => {
-            Some(SKIP_MODE_4_MODEL)
+struct Choice {
+    key: &'static str,
+    options: &'static [(&'static str, &'static str)],
+    field: Field,
+}
+
+impl Choice {
+    fn value(&self, g: &crate::AppState<'_>) -> String {
+        match self.field {
+            Field::Str(get, _) => get(g).to_string(),
+            Field::Int(get, _) => get(g).to_string(),
         }
-        PLY_CREDITS_MODE => Some(SKIP_MODE_3_MODEL),
-        UI_CARD_SIZE | UI_TEXT_SIZE => Some(CARD_SIZE_MODEL),
-        UI_DASHBOARD_HERO => Some(HERO_STYLE_MODEL),
-        UI_FOCUS_COLOR => Some(FOCUS_COLOR_MODEL),
-        UI_FOCUS_WIDTH => Some(FOCUS_WIDTH_MODEL),
-        UI_FOCUS_STYLE => Some(FOCUS_STYLE_MODEL),
-        UI_FOCUS_OPACITY => Some(FOCUS_OPACITY_MODEL),
-        UI_FOCUS_ZOOM => Some(FOCUS_ZOOM_MODEL),
-        PLY_INTRO_SECS | PLY_RECAP_SECS | PLY_PREVIEW_SECS | PLY_COMMERCIAL_SECS => {
-            Some(SKIP_SECS_MODEL)
-        }
-        PLY_CREDITS_SECS => Some(CREDITS_SECS_MODEL),
-        PLY_SEEK_STEP => Some(SEEK_STEP_MODEL),
-        PLY_SEEK_STEP_LONG => Some(SEEK_STEP_LONG_MODEL),
-        PLY_SKIP_FADE_MS => Some(SKIP_FADE_MS_MODEL),
-        UI_SCROLL_SPEED | UI_ANIMATION_SPEED => Some(SPEED_PCT_MODEL),
-        PLY_TRAILER_QUALITY => Some(TRAILER_QUALITY_MODEL),
-        VID_DISPLAY_SYNC_SCALE_4K | VID_DISPLAY_SYNC_SCALE_1080P => Some(DISPLAY_SYNC_SCALE_MODEL),
-        VID_DISPLAY_SYNC_4K_ODD_FPS_MODE => Some(DISPLAY_SYNC_4K_ODD_FPS_MODEL),
-        VID_DISPLAY_SYNC_HDR_MODE => Some(DISPLAY_SYNC_HDR_MODE_MODEL),
-        VID_DISPLAY_SYNC_WCG_MODE => Some(DISPLAY_SYNC_WCG_MODE_MODEL),
-        _ => None,
     }
+    fn index_of(&self, value: &str) -> Option<usize> {
+        self.options.iter().position(|(v, _)| *v == value)
+    }
+    /// The label for a stored value (the value itself when it isn't one of the options).
+    fn label(&self, value: &str) -> String {
+        self.index_of(value)
+            .map(|i| self.options[i].1.to_string())
+            .unwrap_or_else(|| value.to_string())
+    }
+    /// Store option `i` and save (settings-changed).
+    fn set(&self, g: &crate::AppState<'_>, i: usize) {
+        let Some((value, _)) = self.options.get(i) else {
+            return;
+        };
+        match self.field {
+            Field::Str(_, set) => set(g, (*value).into()),
+            Field::Int(_, set) => match value.parse() {
+                Ok(n) => set(g, n),
+                Err(_) => return,
+            },
+        }
+        g.invoke_settings_changed();
+    }
+}
+
+fn choice(key: &str) -> Option<&'static Choice> {
+    CHOICES.iter().find(|c| c.key == key)
+}
+
+const SKIP_MODE_4_OPTIONS: &[(&str, &str)] = &[
+    ("always-skip", "Always skip"),
+    ("ask", "Ask"),
+    ("ask-timed", "Ask (timed)"),
+    ("never-skip", "Never skip"),
+];
+const SKIP_SECS_OPTIONS: &[(&str, &str)] = &[
+    ("3", "3"),
+    ("5", "5"),
+    ("8", "8"),
+    ("10", "10"),
+    ("15", "15"),
+    ("20", "20"),
+    ("30", "30"),
+];
+const SKIP_MODE_3_OPTIONS: &[(&str, &str)] = &[
+    ("always-skip", "Always skip"),
+    ("ask", "Ask"),
+    ("never-skip", "Never skip"),
+];
+const CREDITS_SECS_OPTIONS: &[(&str, &str)] = &[
+    ("10", "10"),
+    ("15", "15"),
+    ("20", "20"),
+    ("30", "30"),
+    ("45", "45"),
+    ("60", "60"),
+];
+const SKIP_FADE_MS_OPTIONS: &[(&str, &str)] = &[
+    ("0", "Off (instant)"),
+    ("100", "100"),
+    ("150", "150"),
+    ("200", "200"),
+    ("300", "300"),
+    ("400", "400"),
+    ("500", "500"),
+    ("750", "750"),
+    ("1000", "1000"),
+];
+const SEEK_STEP_OPTIONS: &[(&str, &str)] = &[
+    ("5", "5"),
+    ("10", "10"),
+    ("15", "15"),
+    ("20", "20"),
+    ("30", "30"),
+];
+const SEEK_STEP_LONG_OPTIONS: &[(&str, &str)] = &[
+    ("15", "15"),
+    ("30", "30"),
+    ("45", "45"),
+    ("60", "60"),
+    ("120", "120"),
+];
+const TRAILER_QUALITY_OPTIONS: &[(&str, &str)] = &[
+    ("Best", "Best"),
+    ("1080p", "1080p"),
+    ("720p", "720p"),
+    ("480p", "480p"),
+];
+const LANG_OPTIONS: &[(&str, &str)] = &[
+    ("", "Default"),
+    ("English", "English"),
+    ("German", "German"),
+    ("French", "French"),
+    ("Japanese", "Japanese"),
+    ("Spanish", "Spanish"),
+    ("Italian", "Italian"),
+    ("Portuguese", "Portuguese"),
+    ("Russian", "Russian"),
+    ("Korean", "Korean"),
+    ("Chinese", "Chinese"),
+    ("Dutch", "Dutch"),
+    ("Swedish", "Swedish"),
+    ("Polish", "Polish"),
+    ("Czech", "Czech"),
+    ("Arabic", "Arabic"),
+    ("Turkish", "Turkish"),
+    ("Finnish", "Finnish"),
+    ("Danish", "Danish"),
+    ("Norwegian", "Norwegian"),
+];
+const SUB_TYPE_OPTIONS: &[(&str, &str)] = &[
+    ("", "Any"),
+    ("Normal", "Normal"),
+    ("Forced", "Forced"),
+    ("Hearing Impaired", "Hearing Impaired"),
+];
+const SUB_SCALE_OPTIONS: &[(&str, &str)] = &[
+    ("50", "50"),
+    ("75", "75"),
+    ("100", "100"),
+    ("125", "125"),
+    ("150", "150"),
+    ("175", "175"),
+    ("200", "200"),
+];
+const SUB_POS_OPTIONS: &[(&str, &str)] = &[
+    ("50", "50"),
+    ("60", "60"),
+    ("70", "70"),
+    ("80", "80"),
+    ("90", "90"),
+    ("95", "95"),
+    ("100", "100"),
+    ("110", "110"),
+    ("120", "120"),
+    ("130", "130"),
+    ("140", "140"),
+    ("150", "150"),
+];
+const SUB_COLOR_OPTIONS: &[(&str, &str)] = &[
+    ("", "Default"),
+    ("White", "White"),
+    ("Yellow", "Yellow"),
+    ("Cyan", "Cyan"),
+    ("Green", "Green"),
+];
+const TONE_MAPPING_OPTIONS: &[(&str, &str)] = &[
+    ("auto", "auto"),
+    ("hable", "hable"),
+    ("bt.2390", "bt.2390"),
+    ("reinhard", "reinhard"),
+    ("mobius", "mobius"),
+    ("clip", "clip"),
+    ("gamma", "gamma"),
+    ("linear", "linear"),
+];
+const DISPLAY_SYNC_SCALE_OPTIONS: &[(&str, &str)] = &[
+    ("1.0", "1.0"),
+    ("1.25", "1.25"),
+    ("1.5", "1.5"),
+    ("1.75", "1.75"),
+    ("2.0", "2.0"),
+];
+const DISPLAY_SYNC_4K_ODD_FPS_OPTIONS: &[(&str, &str)] = &[
+    ("fallback", "Fallback to default resolution"),
+    ("stay_4k", "Stay at 4K"),
+];
+const DISPLAY_SYNC_HDR_MODE_OPTIONS: &[(&str, &str)] = &[
+    ("yes", "Match source"),
+    ("no", "Never"),
+    ("always", "Always"),
+];
+const DISPLAY_SYNC_WCG_MODE_OPTIONS: &[(&str, &str)] =
+    &[("auto", "Follow HDR"), ("yes", "Always"), ("no", "Never")];
+const AUDIO_CHANNELS_OPTIONS: &[(&str, &str)] = &[
+    ("auto-safe", "auto-safe"),
+    ("auto", "auto"),
+    ("stereo", "stereo"),
+    ("5.1", "5.1"),
+    ("7.1", "7.1"),
+    ("7.1,5.1,stereo", "7.1,5.1,stereo"),
+];
+const CARD_SIZE_OPTIONS: &[(&str, &str)] = &[
+    ("small", "Small"),
+    ("normal", "Normal"),
+    ("large", "Large"),
+    ("extra-large", "Extra large"),
+    ("huge", "Huge"),
+];
+const HERO_STYLE_OPTIONS: &[(&str, &str)] = &[
+    ("off", "Off"),
+    ("band", "Band at the top"),
+    ("background", "Background"),
+];
+const FOCUS_COLOR_OPTIONS: &[(&str, &str)] = &[
+    ("white", "White"),
+    ("blue", "Accent blue"),
+    ("gold", "Gold"),
+    ("green", "Green"),
+    ("red", "Red"),
+];
+const FOCUS_WIDTH_OPTIONS: &[(&str, &str)] = &[
+    ("2", "Thin (2px)"),
+    ("3", "Medium (3px)"),
+    ("4", "Thick (4px)"),
+    ("6", "Extra thick (6px)"),
+];
+const FOCUS_STYLE_OPTIONS: &[(&str, &str)] = &[
+    ("line", "Line"),
+    ("glow", "Glow"),
+    ("both", "Line and glow"),
+];
+const FOCUS_OPACITY_OPTIONS: &[(&str, &str)] =
+    &[("solid", "Solid"), ("see-through", "See-through")];
+const FOCUS_ZOOM_OPTIONS: &[(&str, &str)] = &[
+    ("0", "Off"),
+    ("5", "5%"),
+    ("10", "10%"),
+    ("15", "15%"),
+    ("20", "20%"),
+    ("25", "25%"),
+    ("30", "30%"),
+];
+const SPEED_PCT_OPTIONS: &[(&str, &str)] = &[
+    ("0", "0"),
+    ("25", "25"),
+    ("50", "50"),
+    ("75", "75"),
+    ("100", "100"),
+    ("150", "150"),
+    ("200", "200"),
+    ("300", "300"),
+    ("400", "400"),
+    ("500", "500"),
+];
+const LAUNCH_POLICY_OPTIONS: &[(&str, &str)] = &[
+    ("always_ask", "Always ask"),
+    ("remember_last", "Remember last"),
+    ("default", "Default profile"),
+];
+const ACCOUNT_LAUNCH_POLICY_OPTIONS: &[(&str, &str)] = &[
+    ("always_ask", "Always ask"),
+    ("remember_last", "Remember last"),
+    ("default", "Default account"),
+];
+const HWDEC_OPTIONS: &[(&str, &str)] = &[
+    ("auto", "auto"),
+    ("vulkan", "vulkan"),
+    ("vulkan-copy", "vulkan-copy"),
+    ("nvdec", "nvdec"),
+    ("nvdec-copy", "nvdec-copy"),
+    ("vaapi", "vaapi"),
+    ("vaapi-copy", "vaapi-copy"),
+    ("vdpau", "vdpau"),
+    ("vdpau-copy", "vdpau-copy"),
+    ("none", "none"),
+];
+const VF_OPTIONS: &[(&str, &str)] = &[
+    ("auto: nv12/p010", "auto: nv12/p010"),
+    ("auto: yuv420p/yuv420p10le", "auto: yuv420p/yuv420p10le"),
+    ("format=yuv420p", "format=yuv420p"),
+    ("format=yuv420p10le", "format=yuv420p10le"),
+    ("format=nv12", "format=nv12"),
+    ("format=p010", "format=p010"),
+];
+const DEINTERLACE_OPTIONS: &[(&str, &str)] = &[("no", "no"), ("auto", "auto"), ("yes", "yes")];
+const VIDEO_SYNC_OPTIONS: &[(&str, &str)] = &[
+    ("audio", "audio"),
+    ("display-resample", "display-resample"),
+    ("display-vdrop", "display-vdrop"),
+    ("display-adrop", "display-adrop"),
+    ("desync", "desync"),
+];
+const TSCALE_OPTIONS: &[(&str, &str)] = &[
+    ("oversample", "oversample"),
+    ("catmull_rom", "catmull_rom"),
+    ("mitchell", "mitchell"),
+    ("gaussian", "gaussian"),
+    ("bicubic", "bicubic"),
+];
+const CACHE_SECS_OPTIONS: &[(&str, &str)] = &[
+    ("0", "Unlimited"),
+    ("10", "10"),
+    ("30", "30"),
+    ("60", "60"),
+    ("120", "120"),
+    ("300", "300"),
+];
+const CACHE_MAX_MB_OPTIONS: &[(&str, &str)] = &[
+    ("0", "Unlimited"),
+    ("150", "150"),
+    ("300", "300"),
+    ("500", "500"),
+    ("1000", "1000"),
+    ("2000", "2000"),
+];
+const LOG_LEVEL_OPTIONS: &[(&str, &str)] = &[
+    ("error", "error"),
+    ("warn", "warn"),
+    ("info", "info"),
+    ("debug", "debug"),
+];
+
+static CHOICES: &[Choice] = &[
+    Choice {
+        key: PLY_INTRO_MODE,
+        options: SKIP_MODE_4_OPTIONS,
+        field: Field::Str(
+            |g| g.get_settings_skip_intro_mode(),
+            |g, v| g.set_settings_skip_intro_mode(v),
+        ),
+    },
+    Choice {
+        key: PLY_INTRO_SECS,
+        options: SKIP_SECS_OPTIONS,
+        field: Field::Int(
+            |g| g.get_settings_skip_intro_secs(),
+            |g, v| g.set_settings_skip_intro_secs(v),
+        ),
+    },
+    Choice {
+        key: PLY_RECAP_MODE,
+        options: SKIP_MODE_4_OPTIONS,
+        field: Field::Str(
+            |g| g.get_settings_skip_recap_mode(),
+            |g, v| g.set_settings_skip_recap_mode(v),
+        ),
+    },
+    Choice {
+        key: PLY_RECAP_SECS,
+        options: SKIP_SECS_OPTIONS,
+        field: Field::Int(
+            |g| g.get_settings_skip_recap_secs(),
+            |g, v| g.set_settings_skip_recap_secs(v),
+        ),
+    },
+    Choice {
+        key: PLY_PREVIEW_MODE,
+        options: SKIP_MODE_4_OPTIONS,
+        field: Field::Str(
+            |g| g.get_settings_skip_preview_mode(),
+            |g, v| g.set_settings_skip_preview_mode(v),
+        ),
+    },
+    Choice {
+        key: PLY_PREVIEW_SECS,
+        options: SKIP_SECS_OPTIONS,
+        field: Field::Int(
+            |g| g.get_settings_skip_preview_secs(),
+            |g, v| g.set_settings_skip_preview_secs(v),
+        ),
+    },
+    Choice {
+        key: PLY_COMMERCIAL_MODE,
+        options: SKIP_MODE_4_OPTIONS,
+        field: Field::Str(
+            |g| g.get_settings_skip_commercial_mode(),
+            |g, v| g.set_settings_skip_commercial_mode(v),
+        ),
+    },
+    Choice {
+        key: PLY_COMMERCIAL_SECS,
+        options: SKIP_SECS_OPTIONS,
+        field: Field::Int(
+            |g| g.get_settings_skip_commercial_secs(),
+            |g, v| g.set_settings_skip_commercial_secs(v),
+        ),
+    },
+    Choice {
+        key: PLY_CREDITS_MODE,
+        options: SKIP_MODE_3_OPTIONS,
+        field: Field::Str(
+            |g| g.get_settings_skip_credits_mode(),
+            |g, v| g.set_settings_skip_credits_mode(v),
+        ),
+    },
+    Choice {
+        key: PLY_CREDITS_SECS,
+        options: CREDITS_SECS_OPTIONS,
+        field: Field::Int(
+            |g| g.get_settings_skip_credits_secs(),
+            |g, v| g.set_settings_skip_credits_secs(v),
+        ),
+    },
+    Choice {
+        key: PLY_SKIP_FADE_MS,
+        options: SKIP_FADE_MS_OPTIONS,
+        field: Field::Int(
+            |g| g.get_settings_skip_fade_ms(),
+            |g, v| g.set_settings_skip_fade_ms(v),
+        ),
+    },
+    Choice {
+        key: PLY_SEEK_STEP,
+        options: SEEK_STEP_OPTIONS,
+        field: Field::Int(
+            |g| g.get_settings_seek_step_secs(),
+            |g, v| g.set_settings_seek_step_secs(v),
+        ),
+    },
+    Choice {
+        key: PLY_SEEK_STEP_LONG,
+        options: SEEK_STEP_LONG_OPTIONS,
+        field: Field::Int(
+            |g| g.get_settings_seek_step_long_secs(),
+            |g, v| g.set_settings_seek_step_long_secs(v),
+        ),
+    },
+    Choice {
+        key: PLY_TRAILER_QUALITY,
+        options: TRAILER_QUALITY_OPTIONS,
+        field: Field::Str(
+            |g| g.get_settings_trailer_quality(),
+            |g, v| g.set_settings_trailer_quality(v),
+        ),
+    },
+    Choice {
+        key: AUD_AUDIO_LANG,
+        options: LANG_OPTIONS,
+        field: Field::Str(
+            |g| g.get_settings_audio_lang(),
+            |g, v| g.set_settings_audio_lang(v),
+        ),
+    },
+    Choice {
+        key: PLY_SUB_LANG,
+        options: LANG_OPTIONS,
+        field: Field::Str(
+            |g| g.get_settings_sub_lang(),
+            |g, v| g.set_settings_sub_lang(v),
+        ),
+    },
+    Choice {
+        key: PLY_SUB_LANG2,
+        options: LANG_OPTIONS,
+        field: Field::Str(
+            |g| g.get_settings_sub_lang2(),
+            |g, v| g.set_settings_sub_lang2(v),
+        ),
+    },
+    Choice {
+        key: PLY_SUB_TYPE,
+        options: SUB_TYPE_OPTIONS,
+        field: Field::Str(
+            |g| g.get_settings_sub_type(),
+            |g, v| g.set_settings_sub_type(v),
+        ),
+    },
+    Choice {
+        key: PLY_SUB_SCALE,
+        options: SUB_SCALE_OPTIONS,
+        field: Field::Int(
+            |g| g.get_settings_sub_scale_pct(),
+            |g, v| g.set_settings_sub_scale_pct(v),
+        ),
+    },
+    Choice {
+        key: PLY_SUB_POS,
+        options: SUB_POS_OPTIONS,
+        field: Field::Int(
+            |g| g.get_settings_sub_pos_pct(),
+            |g, v| g.set_settings_sub_pos_pct(v),
+        ),
+    },
+    Choice {
+        key: PLY_SUB_COLOR,
+        options: SUB_COLOR_OPTIONS,
+        field: Field::Str(
+            |g| g.get_settings_sub_color(),
+            |g, v| g.set_settings_sub_color(v),
+        ),
+    },
+    Choice {
+        key: VID_TONE_MAPPING,
+        options: TONE_MAPPING_OPTIONS,
+        field: Field::Str(
+            |g| g.get_settings_tone_mapping(),
+            |g, v| g.set_settings_tone_mapping(v),
+        ),
+    },
+    Choice {
+        key: VID_DISPLAY_SYNC_SCALE_4K,
+        options: DISPLAY_SYNC_SCALE_OPTIONS,
+        field: Field::Str(
+            |g| g.get_settings_display_sync_scale_4k(),
+            |g, v| g.set_settings_display_sync_scale_4k(v),
+        ),
+    },
+    Choice {
+        key: VID_DISPLAY_SYNC_SCALE_1080P,
+        options: DISPLAY_SYNC_SCALE_OPTIONS,
+        field: Field::Str(
+            |g| g.get_settings_display_sync_scale_1080p(),
+            |g, v| g.set_settings_display_sync_scale_1080p(v),
+        ),
+    },
+    Choice {
+        key: VID_DISPLAY_SYNC_4K_ODD_FPS_MODE,
+        options: DISPLAY_SYNC_4K_ODD_FPS_OPTIONS,
+        field: Field::Str(
+            |g| g.get_settings_display_sync_4k_odd_fps_mode(),
+            |g, v| g.set_settings_display_sync_4k_odd_fps_mode(v),
+        ),
+    },
+    Choice {
+        key: VID_DISPLAY_SYNC_HDR_MODE,
+        options: DISPLAY_SYNC_HDR_MODE_OPTIONS,
+        field: Field::Str(
+            |g| g.get_settings_display_sync_hdr_mode(),
+            |g, v| g.set_settings_display_sync_hdr_mode(v),
+        ),
+    },
+    Choice {
+        key: VID_DISPLAY_SYNC_WCG_MODE,
+        options: DISPLAY_SYNC_WCG_MODE_OPTIONS,
+        field: Field::Str(
+            |g| g.get_settings_display_sync_wcg_mode(),
+            |g, v| g.set_settings_display_sync_wcg_mode(v),
+        ),
+    },
+    Choice {
+        key: AUD_CHANNELS,
+        options: AUDIO_CHANNELS_OPTIONS,
+        field: Field::Str(
+            |g| g.get_settings_audio_channels(),
+            |g, v| g.set_settings_audio_channels(v),
+        ),
+    },
+    Choice {
+        key: UI_CARD_SIZE,
+        options: CARD_SIZE_OPTIONS,
+        field: Field::Str(
+            |g| g.get_settings_card_size(),
+            |g, v| g.set_settings_card_size(v),
+        ),
+    },
+    Choice {
+        key: UI_TEXT_SIZE,
+        options: CARD_SIZE_OPTIONS,
+        field: Field::Str(
+            |g| g.get_settings_text_size(),
+            |g, v| g.set_settings_text_size(v),
+        ),
+    },
+    Choice {
+        key: UI_DASHBOARD_HERO,
+        options: HERO_STYLE_OPTIONS,
+        field: Field::Str(
+            |g| g.get_settings_dashboard_hero(),
+            |g, v| g.set_settings_dashboard_hero(v),
+        ),
+    },
+    Choice {
+        key: UI_FOCUS_COLOR,
+        options: FOCUS_COLOR_OPTIONS,
+        field: Field::Str(
+            |g| g.get_settings_focus_color(),
+            |g, v| g.set_settings_focus_color(v),
+        ),
+    },
+    Choice {
+        key: UI_FOCUS_WIDTH,
+        options: FOCUS_WIDTH_OPTIONS,
+        field: Field::Str(
+            |g| g.get_settings_focus_width(),
+            |g, v| g.set_settings_focus_width(v),
+        ),
+    },
+    Choice {
+        key: UI_FOCUS_STYLE,
+        options: FOCUS_STYLE_OPTIONS,
+        field: Field::Str(
+            |g| g.get_settings_focus_style(),
+            |g, v| g.set_settings_focus_style(v),
+        ),
+    },
+    Choice {
+        key: UI_FOCUS_OPACITY,
+        options: FOCUS_OPACITY_OPTIONS,
+        field: Field::Str(
+            |g| g.get_settings_focus_opacity(),
+            |g, v| g.set_settings_focus_opacity(v),
+        ),
+    },
+    Choice {
+        key: UI_FOCUS_ZOOM,
+        options: FOCUS_ZOOM_OPTIONS,
+        field: Field::Str(
+            |g| g.get_settings_focus_zoom(),
+            |g, v| g.set_settings_focus_zoom(v),
+        ),
+    },
+    Choice {
+        key: UI_SCROLL_SPEED,
+        options: SPEED_PCT_OPTIONS,
+        field: Field::Int(
+            |g| g.get_settings_scroll_speed_pct(),
+            |g, v| {
+                g.set_settings_scroll_speed_pct(v);
+                g.set_settings_scroll_speed(v as f32 / 100.0);
+            },
+        ),
+    },
+    Choice {
+        key: UI_ANIMATION_SPEED,
+        options: SPEED_PCT_OPTIONS,
+        field: Field::Int(
+            |g| g.get_settings_animation_speed_pct(),
+            |g, v| {
+                g.set_settings_animation_speed_pct(v);
+                g.set_settings_animation_speed(v as f32 / 100.0);
+            },
+        ),
+    },
+    Choice {
+        key: PROF_LAUNCH_POLICY,
+        options: LAUNCH_POLICY_OPTIONS,
+        field: Field::Str(
+            |g| g.get_settings_launch_policy(),
+            |g, v| g.set_settings_launch_policy(v),
+        ),
+    },
+    Choice {
+        key: PROF_ACCOUNT_LAUNCH_POLICY,
+        options: ACCOUNT_LAUNCH_POLICY_OPTIONS,
+        field: Field::Str(
+            |g| g.get_settings_account_launch_policy(),
+            |g, v| g.set_settings_account_launch_policy(v),
+        ),
+    },
+    Choice {
+        key: VID_HWDEC,
+        options: HWDEC_OPTIONS,
+        field: Field::Str(|g| g.get_settings_hwdec(), |g, v| g.set_settings_hwdec(v)),
+    },
+    Choice {
+        key: VID_VF,
+        options: VF_OPTIONS,
+        field: Field::Str(|g| g.get_settings_vf(), |g, v| g.set_settings_vf(v)),
+    },
+    Choice {
+        key: VID_DEINTERLACE,
+        options: DEINTERLACE_OPTIONS,
+        field: Field::Str(
+            |g| g.get_settings_deinterlace(),
+            |g, v| g.set_settings_deinterlace(v),
+        ),
+    },
+    Choice {
+        key: VID_VIDEO_SYNC,
+        options: VIDEO_SYNC_OPTIONS,
+        field: Field::Str(
+            |g| g.get_settings_video_sync(),
+            |g, v| g.set_settings_video_sync(v),
+        ),
+    },
+    Choice {
+        key: VID_TSCALE,
+        options: TSCALE_OPTIONS,
+        field: Field::Str(|g| g.get_settings_tscale(), |g, v| g.set_settings_tscale(v)),
+    },
+    Choice {
+        key: PLY_CACHE_SECS,
+        options: CACHE_SECS_OPTIONS,
+        field: Field::Int(
+            |g| g.get_settings_cache_secs(),
+            |g, v| g.set_settings_cache_secs(v),
+        ),
+    },
+    Choice {
+        key: PLY_CACHE_MAX_MB,
+        options: CACHE_MAX_MB_OPTIONS,
+        field: Field::Int(
+            |g| g.get_settings_cache_max_mb(),
+            |g, v| g.set_settings_cache_max_mb(v),
+        ),
+    },
+    Choice {
+        key: GEN_LOG_LEVEL,
+        options: LOG_LEVEL_OPTIONS,
+        field: Field::Str(
+            |g| g.get_settings_log_level(),
+            |g, v| g.set_settings_log_level(v),
+        ),
+    },
+];
+
+// ── Fixed-choice rows in Slint: options, current label, pick by label ──────────
+/// settings.slint's `SettingsRow { choice: true; value: … }` draws its dropdown from CHOICES.
+pub(crate) fn wire_choice_rows(window: &MainWindow) {
+    let g = crate::AppState::get(window);
+    g.on_setting_options(|key| {
+        let labels: Vec<SharedString> = choice(&key)
+            .map(|c| {
+                c.options
+                    .iter()
+                    .map(|(_, l)| SharedString::from(*l))
+                    .collect()
+            })
+            .unwrap_or_default();
+        ModelRc::new(VecModel::from(labels))
+    });
+    g.on_setting_label(|key, value| match choice(&key) {
+        Some(c) => c.label(&value).into(),
+        None => value,
+    });
+    let ww = window.as_weak();
+    g.on_setting_choose(move |key, label| {
+        let Some(w) = ww.upgrade() else { return };
+        if let Some(c) = choice(&key)
+            && let Some(i) = c.options.iter().position(|(_, l)| *l == label.as_str())
+        {
+            debug!("settings: {key} → {} (mouse)", c.options[i].0);
+            c.set(&crate::AppState::get(&w), i);
+        }
+    });
 }
 
 // Rows whose option list + current display value come from an AppState
@@ -979,71 +1411,7 @@ fn is_dynamic_dropdown(key: &str) -> bool {
 }
 
 fn is_dropdown_row(key: &str) -> bool {
-    is_dynamic_dropdown(key) || dropdown_model(key).is_some()
-}
-
-fn current_value_str(key: &str, g: &crate::AppState<'_>) -> String {
-    match key {
-        GEN_LOG_LEVEL => g.get_settings_log_level().to_string(),
-        PROF_LAUNCH_POLICY => g.get_settings_launch_policy().to_string(),
-        PROF_ACCOUNT_LAUNCH_POLICY => g.get_settings_account_launch_policy().to_string(),
-        VID_HWDEC => g.get_settings_hwdec().to_string(),
-        VID_VF => g.get_settings_vf().to_string(),
-        VID_DEINTERLACE => g.get_settings_deinterlace().to_string(),
-        VID_VIDEO_SYNC => g.get_settings_video_sync().to_string(),
-        VID_TSCALE => g.get_settings_tscale().to_string(),
-        VID_TONE_MAPPING => g.get_settings_tone_mapping().to_string(),
-        AUD_AUDIO_DEVICE => g.get_settings_audio_device_desc().to_string(),
-        AUD_CHANNELS => g.get_settings_audio_channels().to_string(),
-        AUD_PASSTHROUGH_DEVICE => g.get_settings_passthrough_device_desc().to_string(),
-        AUD_AUDIO_LANG => g.get_settings_audio_lang().to_string(),
-        PLY_SUB_LANG => g.get_settings_sub_lang().to_string(),
-        PLY_SUB_LANG2 => g.get_settings_sub_lang2().to_string(),
-        PLY_SUB_TYPE => {
-            let v = g.get_settings_sub_type().to_string();
-            if v.is_empty() { "Any".to_string() } else { v }
-        }
-        PLY_SUB_SCALE => g.get_settings_sub_scale_pct().to_string(),
-        PLY_SUB_POS => g.get_settings_sub_pos_pct().to_string(),
-        PLY_SUB_COLOR => g.get_settings_sub_color().to_string(),
-        PLY_CACHE_SECS => g.get_settings_cache_secs().to_string(),
-        PLY_CACHE_MAX_MB => g.get_settings_cache_max_mb().to_string(),
-        PLY_INTRO_MODE => g.get_settings_skip_intro_mode().to_string(),
-        PLY_INTRO_SECS => g.get_settings_skip_intro_secs().to_string(),
-        PLY_RECAP_MODE => g.get_settings_skip_recap_mode().to_string(),
-        PLY_RECAP_SECS => g.get_settings_skip_recap_secs().to_string(),
-        PLY_PREVIEW_MODE => g.get_settings_skip_preview_mode().to_string(),
-        PLY_PREVIEW_SECS => g.get_settings_skip_preview_secs().to_string(),
-        PLY_COMMERCIAL_MODE => g.get_settings_skip_commercial_mode().to_string(),
-        PLY_COMMERCIAL_SECS => g.get_settings_skip_commercial_secs().to_string(),
-        PLY_CREDITS_MODE => g.get_settings_skip_credits_mode().to_string(),
-        UI_CARD_SIZE => g.get_settings_card_size().to_string(),
-        UI_TEXT_SIZE => g.get_settings_text_size().to_string(),
-        UI_DASHBOARD_HERO => g.get_settings_dashboard_hero().to_string(),
-        UI_FOCUS_COLOR => g.get_settings_focus_color().to_string(),
-        UI_FOCUS_WIDTH => g.get_settings_focus_width().to_string(),
-        UI_FOCUS_STYLE => g.get_settings_focus_style().to_string(),
-        UI_FOCUS_OPACITY => g.get_settings_focus_opacity().to_string(),
-        UI_FOCUS_ZOOM => g.get_settings_focus_zoom().to_string(),
-        PLY_CREDITS_SECS => g.get_settings_skip_credits_secs().to_string(),
-        PLY_SEEK_STEP => g.get_settings_seek_step_secs().to_string(),
-        PLY_SEEK_STEP_LONG => g.get_settings_seek_step_long_secs().to_string(),
-        PLY_SKIP_FADE_MS => g.get_settings_skip_fade_ms().to_string(),
-        UI_SCROLL_SPEED => g.get_settings_scroll_speed_pct().to_string(),
-        UI_ANIMATION_SPEED => g.get_settings_animation_speed_pct().to_string(),
-        UI_FONT_FAMILY => g.get_settings_font_family_desc().to_string(),
-        INT_STREAMING_REGION => g.get_settings_streaming_region_desc().to_string(),
-        PLY_TRAILER_QUALITY => g.get_settings_trailer_quality().to_string(),
-        INT_DISCOVER_REGION => g.get_settings_discover_region_desc().to_string(),
-        VID_DISPLAY_SYNC_SCALE_4K => g.get_settings_display_sync_scale_4k().to_string(),
-        VID_DISPLAY_SYNC_SCALE_1080P => g.get_settings_display_sync_scale_1080p().to_string(),
-        VID_DISPLAY_SYNC_4K_ODD_FPS_MODE => {
-            g.get_settings_display_sync_4k_odd_fps_mode().to_string()
-        }
-        VID_DISPLAY_SYNC_HDR_MODE => g.get_settings_display_sync_hdr_mode().to_string(),
-        VID_DISPLAY_SYNC_WCG_MODE => g.get_settings_display_sync_wcg_mode().to_string(),
-        _ => String::new(),
-    }
+    is_dynamic_dropdown(key) || choice(key).is_some()
 }
 
 // Populates settings-dropdown-model/-cursor/-display and opens the popup.
@@ -1128,26 +1496,21 @@ pub(crate) fn open_dropdown_popup(key: &str, g: &crate::AppState<'_>) {
         g.set_settings_dropdown_open(true);
         return;
     }
-    let Some(model) = dropdown_model(key) else {
+    let Some(c) = choice(key) else {
         debug!(
             "settings: open_dropdown_popup({key}) — no model, not a dropdown row (bug if this fires)"
         );
         return;
     };
-    let current = current_value_str(key, g);
-    let cursor = model
-        .iter()
-        .position(|&v| v == current.as_str())
-        .unwrap_or(0) as i32;
-    let display_items: Vec<SharedString> =
-        model.iter().map(|&v| display_val(v, key).into()).collect();
-    let current_display: SharedString = display_val(current.as_str(), key).into();
+    let current = c.value(g);
+    let cursor = c.index_of(&current).unwrap_or(0) as i32;
+    let display_items: Vec<SharedString> = c.options.iter().map(|(_, l)| (*l).into()).collect();
     debug!(
         "settings: open static dropdown {key} ({} options, cursor={cursor}, current={current})",
-        model.len()
+        c.options.len()
     );
     g.set_settings_dropdown_model(ModelRc::new(VecModel::from(display_items)));
-    g.set_settings_dropdown_display(current_display);
+    g.set_settings_dropdown_display(c.label(&current).into());
     g.set_settings_dropdown_cursor(cursor);
     g.set_settings_dropdown_open(true);
 }
@@ -1247,80 +1610,15 @@ pub(crate) fn apply_dropdown_selection(key: &str, cursor: i32, g: &crate::AppSta
         }
         _ => {}
     }
-    let Some(model) = dropdown_model(key) else {
-        return;
-    };
-    let Some(&val) = model.get(cursor as usize) else {
-        return;
-    };
-    match key {
-        GEN_LOG_LEVEL => g.set_settings_log_level(val.into()),
-        PROF_LAUNCH_POLICY => g.set_settings_launch_policy(val.into()),
-        PROF_ACCOUNT_LAUNCH_POLICY => g.set_settings_account_launch_policy(val.into()),
-        VID_HWDEC => g.set_settings_hwdec(val.into()),
-        VID_VF => g.set_settings_vf(val.into()),
-        VID_DEINTERLACE => g.set_settings_deinterlace(val.into()),
-        VID_VIDEO_SYNC => g.set_settings_video_sync(val.into()),
-        VID_TSCALE => g.set_settings_tscale(val.into()),
-        VID_TONE_MAPPING => g.set_settings_tone_mapping(val.into()),
-        AUD_CHANNELS => g.set_settings_audio_channels(val.into()),
-        AUD_AUDIO_LANG => g.set_settings_audio_lang(val.into()),
-        PLY_SUB_LANG => g.set_settings_sub_lang(val.into()),
-        PLY_SUB_LANG2 => g.set_settings_sub_lang2(val.into()),
-        PLY_SUB_TYPE => g.set_settings_sub_type(if val == "Any" { "".into() } else { val.into() }),
-        PLY_SUB_SCALE => g.set_settings_sub_scale_pct(val.parse().unwrap_or(100)),
-        PLY_SUB_POS => g.set_settings_sub_pos_pct(val.parse().unwrap_or(100)),
-        PLY_SUB_COLOR => g.set_settings_sub_color(val.into()),
-        PLY_CACHE_SECS => g.set_settings_cache_secs(val.parse().unwrap_or(60)),
-        PLY_CACHE_MAX_MB => g.set_settings_cache_max_mb(val.parse().unwrap_or(500)),
-        PLY_INTRO_MODE => g.set_settings_skip_intro_mode(val.into()),
-        PLY_INTRO_SECS => g.set_settings_skip_intro_secs(val.parse().unwrap_or(8)),
-        PLY_RECAP_MODE => g.set_settings_skip_recap_mode(val.into()),
-        PLY_RECAP_SECS => g.set_settings_skip_recap_secs(val.parse().unwrap_or(8)),
-        PLY_PREVIEW_MODE => g.set_settings_skip_preview_mode(val.into()),
-        PLY_PREVIEW_SECS => g.set_settings_skip_preview_secs(val.parse().unwrap_or(8)),
-        PLY_COMMERCIAL_MODE => g.set_settings_skip_commercial_mode(val.into()),
-        PLY_COMMERCIAL_SECS => g.set_settings_skip_commercial_secs(val.parse().unwrap_or(8)),
-        PLY_CREDITS_MODE => g.set_settings_skip_credits_mode(val.into()),
-        UI_CARD_SIZE => g.set_settings_card_size(val.into()),
-        UI_TEXT_SIZE => g.set_settings_text_size(val.into()),
-        UI_DASHBOARD_HERO => g.set_settings_dashboard_hero(val.into()),
-        UI_FOCUS_COLOR => g.set_settings_focus_color(val.into()),
-        UI_FOCUS_WIDTH => g.set_settings_focus_width(val.into()),
-        UI_FOCUS_STYLE => g.set_settings_focus_style(val.into()),
-        UI_FOCUS_OPACITY => g.set_settings_focus_opacity(val.into()),
-        UI_FOCUS_ZOOM => g.set_settings_focus_zoom(val.into()),
-        PLY_CREDITS_SECS => g.set_settings_skip_credits_secs(val.parse().unwrap_or(30)),
-        PLY_SEEK_STEP => g.set_settings_seek_step_secs(val.parse().unwrap_or(10)),
-        PLY_SEEK_STEP_LONG => g.set_settings_seek_step_long_secs(val.parse().unwrap_or(30)),
-        UI_SCROLL_SPEED => {
-            let pct: i32 = val.parse().unwrap_or(100);
-            g.set_settings_scroll_speed_pct(pct);
-            g.set_settings_scroll_speed(pct as f32 / 100.0);
-        }
-        UI_ANIMATION_SPEED => {
-            let pct: i32 = val.parse().unwrap_or(100);
-            g.set_settings_animation_speed_pct(pct);
-            g.set_settings_animation_speed(pct as f32 / 100.0);
-        }
-        PLY_TRAILER_QUALITY => g.set_settings_trailer_quality(val.into()),
-        _ => return,
+    if let Some(c) = choice(key) {
+        c.set(g, cursor.max(0) as usize);
     }
-    g.invoke_settings_changed();
 }
 
 // ── Per-row action (Confirm on a non-dropdown row, or Right on any row) ───────
 
 fn settings_row_action(key: &str, g: &crate::AppState<'_>) {
     debug!("settings: row_action {key}");
-    fn cycle<'a>(current: &str, vals: &[&'a str]) -> &'a str {
-        let idx = vals.iter().position(|v| *v == current).unwrap_or(0);
-        vals[(idx + 1) % vals.len()]
-    }
-    fn cycle_i32(current: i32, vals: &[i32]) -> i32 {
-        let idx = vals.iter().position(|v| *v == current).unwrap_or(0);
-        vals[(idx + 1) % vals.len()]
-    }
     fn cycle_dynamic(display: ModelRc<SharedString>, current_desc: &str) -> Option<SharedString> {
         let n = display.row_count();
         if n == 0 {
@@ -1332,6 +1630,14 @@ fn settings_row_action(key: &str, g: &crate::AppState<'_>) {
         display.row_data((idx + 1) % n)
     }
 
+    // A fixed-choice row: the next option (after the last, the first).
+    if let Some(c) = choice(key) {
+        let next = c
+            .index_of(&c.value(g))
+            .map_or(0, |i| (i + 1) % c.options.len());
+        c.set(g, next);
+        return;
+    }
     match key {
         GEN_LAUNCH_FULLSCREEN => {
             g.set_settings_launch_fullscreen(!g.get_settings_launch_fullscreen());
@@ -1341,50 +1647,10 @@ fn settings_row_action(key: &str, g: &crate::AppState<'_>) {
             g.set_settings_video_behind(!g.get_settings_video_behind());
             g.invoke_settings_changed();
         }
-        GEN_LOG_LEVEL => {
-            let v = cycle(g.get_settings_log_level().as_str(), LOG_LEVEL_MODEL);
-            g.set_settings_log_level(v.into());
-            g.invoke_settings_changed();
-        }
         GEN_PREWARM_METADATA => g.invoke_prewarm_metadata(),
         UI_DASHBOARD_ROWS => g.invoke_dash_rows_open(),
-        UI_DASHBOARD_HERO => {
-            let v = cycle(g.get_settings_dashboard_hero().as_str(), HERO_STYLE_MODEL);
-            g.set_settings_dashboard_hero(v.into());
-            g.invoke_settings_changed();
-        }
-        UI_FOCUS_COLOR => {
-            let v = cycle(g.get_settings_focus_color().as_str(), FOCUS_COLOR_MODEL);
-            g.set_settings_focus_color(v.into());
-            g.invoke_settings_changed();
-        }
-        UI_FOCUS_WIDTH => {
-            let v = cycle(g.get_settings_focus_width().as_str(), FOCUS_WIDTH_MODEL);
-            g.set_settings_focus_width(v.into());
-            g.invoke_settings_changed();
-        }
-        UI_FOCUS_STYLE => {
-            let v = cycle(g.get_settings_focus_style().as_str(), FOCUS_STYLE_MODEL);
-            g.set_settings_focus_style(v.into());
-            g.invoke_settings_changed();
-        }
-        UI_FOCUS_OPACITY => {
-            let v = cycle(g.get_settings_focus_opacity().as_str(), FOCUS_OPACITY_MODEL);
-            g.set_settings_focus_opacity(v.into());
-            g.invoke_settings_changed();
-        }
-        UI_FOCUS_ZOOM => {
-            let v = cycle(g.get_settings_focus_zoom().as_str(), FOCUS_ZOOM_MODEL);
-            g.set_settings_focus_zoom(v.into());
-            g.invoke_settings_changed();
-        }
         GEN_PREWARM_IMAGES => g.invoke_prewarm_images(),
 
-        PROF_LAUNCH_POLICY => {
-            let v = cycle(g.get_settings_launch_policy().as_str(), LAUNCH_POLICY_MODEL);
-            g.set_settings_launch_policy(v.into());
-            g.invoke_settings_changed();
-        }
         PROF_DEFAULT_PROFILE => {
             if let Some(desc) = cycle_dynamic(
                 g.get_settings_default_profile_display(),
@@ -1396,14 +1662,6 @@ fn settings_row_action(key: &str, g: &crate::AppState<'_>) {
         PROF_MANAGE_PROFILES => g.invoke_open_manage_profiles(),
         // Right opens the list (cycling would ask to copy from each profile in turn).
         PROF_COPY_SETTINGS => open_dropdown_popup(key, g),
-        PROF_ACCOUNT_LAUNCH_POLICY => {
-            let v = cycle(
-                g.get_settings_account_launch_policy().as_str(),
-                LAUNCH_POLICY_MODEL,
-            );
-            g.set_settings_account_launch_policy(v.into());
-            g.invoke_settings_changed();
-        }
         PROF_DEFAULT_ACCOUNT => {
             if let Some(desc) = cycle_dynamic(
                 g.get_settings_default_account_display(),
@@ -1423,38 +1681,8 @@ fn settings_row_action(key: &str, g: &crate::AppState<'_>) {
         PROF_BONFIRE_GROUP => g.invoke_open_bonfire_group(),
         PROF_BONFIRE_ADMIN => g.invoke_open_bonfire_admin(),
 
-        VID_HWDEC => {
-            let v = cycle(g.get_settings_hwdec().as_str(), HWDEC_MODEL);
-            g.set_settings_hwdec(v.into());
-            g.invoke_settings_changed();
-        }
-        VID_VF => {
-            let v = cycle(g.get_settings_vf().as_str(), VF_MODEL);
-            g.set_settings_vf(v.into());
-            g.invoke_settings_changed();
-        }
-        VID_DEINTERLACE => {
-            let v = cycle(g.get_settings_deinterlace().as_str(), DEINTERLACE_MODEL);
-            g.set_settings_deinterlace(v.into());
-            g.invoke_settings_changed();
-        }
-        VID_VIDEO_SYNC => {
-            let v = cycle(g.get_settings_video_sync().as_str(), VIDEO_SYNC_MODEL);
-            g.set_settings_video_sync(v.into());
-            g.invoke_settings_changed();
-        }
         VID_INTERPOLATION => {
             g.set_settings_interpolation(!g.get_settings_interpolation());
-            g.invoke_settings_changed();
-        }
-        VID_TSCALE => {
-            let v = cycle(g.get_settings_tscale().as_str(), TSCALE_MODEL);
-            g.set_settings_tscale(v.into());
-            g.invoke_settings_changed();
-        }
-        VID_TONE_MAPPING => {
-            let v = cycle(g.get_settings_tone_mapping().as_str(), TONE_MAPPING_MODEL);
-            g.set_settings_tone_mapping(v.into());
             g.invoke_settings_changed();
         }
         VID_TARGET_COLORSPACE => {
@@ -1525,46 +1753,6 @@ fn settings_row_action(key: &str, g: &crate::AppState<'_>) {
                 g.invoke_display_sync_hz_selected(desc);
             }
         }
-        VID_DISPLAY_SYNC_SCALE_4K => {
-            let v = cycle(
-                g.get_settings_display_sync_scale_4k().as_str(),
-                DISPLAY_SYNC_SCALE_MODEL,
-            );
-            g.set_settings_display_sync_scale_4k(v.into());
-            g.invoke_settings_changed();
-        }
-        VID_DISPLAY_SYNC_SCALE_1080P => {
-            let v = cycle(
-                g.get_settings_display_sync_scale_1080p().as_str(),
-                DISPLAY_SYNC_SCALE_MODEL,
-            );
-            g.set_settings_display_sync_scale_1080p(v.into());
-            g.invoke_settings_changed();
-        }
-        VID_DISPLAY_SYNC_4K_ODD_FPS_MODE => {
-            let v = cycle(
-                g.get_settings_display_sync_4k_odd_fps_mode().as_str(),
-                DISPLAY_SYNC_4K_ODD_FPS_MODEL,
-            );
-            g.set_settings_display_sync_4k_odd_fps_mode(v.into());
-            g.invoke_settings_changed();
-        }
-        VID_DISPLAY_SYNC_HDR_MODE => {
-            let v = cycle(
-                g.get_settings_display_sync_hdr_mode().as_str(),
-                DISPLAY_SYNC_HDR_MODE_MODEL,
-            );
-            g.set_settings_display_sync_hdr_mode(v.into());
-            g.invoke_settings_changed();
-        }
-        VID_DISPLAY_SYNC_WCG_MODE => {
-            let v = cycle(
-                g.get_settings_display_sync_wcg_mode().as_str(),
-                DISPLAY_SYNC_WCG_MODE_MODEL,
-            );
-            g.set_settings_display_sync_wcg_mode(v.into());
-            g.invoke_settings_changed();
-        }
 
         AUD_AUDIO_DEVICE => {
             if let Some(desc) = cycle_dynamic(
@@ -1614,19 +1802,6 @@ fn settings_row_action(key: &str, g: &crate::AppState<'_>) {
             g.set_settings_skip_fade_mute_passthrough(!g.get_settings_skip_fade_mute_passthrough());
             g.invoke_settings_changed();
         }
-        AUD_CHANNELS => {
-            let v = cycle(
-                g.get_settings_audio_channels().as_str(),
-                AUDIO_CHANNELS_MODEL,
-            );
-            g.set_settings_audio_channels(v.into());
-            g.invoke_settings_changed();
-        }
-        AUD_AUDIO_LANG => {
-            let v = cycle(g.get_settings_audio_lang().as_str(), LANG_MODEL);
-            g.set_settings_audio_lang(v.into());
-            g.invoke_settings_changed();
-        }
         AUD_GAPLESS => {
             g.set_settings_gapless_audio(!g.get_settings_gapless_audio());
             g.invoke_settings_changed();
@@ -1644,192 +1819,15 @@ fn settings_row_action(key: &str, g: &crate::AppState<'_>) {
             g.set_settings_sub_enabled(!g.get_settings_sub_enabled());
             g.invoke_settings_changed();
         }
-        PLY_SUB_LANG => {
-            let v = cycle(g.get_settings_sub_lang().as_str(), LANG_MODEL);
-            g.set_settings_sub_lang(v.into());
-            g.invoke_settings_changed();
-        }
-        PLY_SUB_LANG2 => {
-            let v = cycle(g.get_settings_sub_lang2().as_str(), LANG_MODEL);
-            g.set_settings_sub_lang2(v.into());
-            g.invoke_settings_changed();
-        }
-        PLY_SUB_TYPE => {
-            let current = g.get_settings_sub_type().to_string();
-            let current = if current.is_empty() { "Any" } else { &current };
-            let v = cycle(current, SUB_TYPE_MODEL);
-            g.set_settings_sub_type(if v == "Any" { "".into() } else { v.into() });
-            g.invoke_settings_changed();
-        }
-        PLY_SUB_SCALE => {
-            let v = cycle(
-                g.get_settings_sub_scale_pct().to_string().as_str(),
-                SUB_SCALE_MODEL,
-            );
-            g.set_settings_sub_scale_pct(v.parse().unwrap_or(100));
-            g.invoke_settings_changed();
-        }
-        PLY_SUB_POS => {
-            let v = cycle(
-                g.get_settings_sub_pos_pct().to_string().as_str(),
-                SUB_POS_MODEL,
-            );
-            g.set_settings_sub_pos_pct(v.parse().unwrap_or(100));
-            g.invoke_settings_changed();
-        }
         PLY_SUB_RESPECT_ASS => {
             g.set_settings_sub_respect_ass_styling(!g.get_settings_sub_respect_ass_styling());
-            g.invoke_settings_changed();
-        }
-        PLY_SUB_COLOR => {
-            let current = g.get_settings_sub_color().to_string();
-            let v = cycle(current.as_str(), SUB_COLOR_MODEL);
-            g.set_settings_sub_color(v.into());
             g.invoke_settings_changed();
         }
         PLY_SUB_BACKGROUND => {
             g.set_settings_sub_background(!g.get_settings_sub_background());
             g.invoke_settings_changed();
         }
-        PLY_CACHE_SECS => {
-            let next = cycle_i32(g.get_settings_cache_secs(), CACHE_SECS_VALUES);
-            g.set_settings_cache_secs(next);
-            g.invoke_settings_changed();
-        }
-        PLY_CACHE_MAX_MB => {
-            let next = cycle_i32(g.get_settings_cache_max_mb(), CACHE_MAX_MB_VALUES);
-            g.set_settings_cache_max_mb(next);
-            g.invoke_settings_changed();
-        }
-        PLY_INTRO_MODE => {
-            let v = cycle(g.get_settings_skip_intro_mode().as_str(), SKIP_MODE_4_MODEL);
-            g.set_settings_skip_intro_mode(v.into());
-            g.invoke_settings_changed();
-        }
-        PLY_INTRO_SECS => {
-            let v = cycle(
-                g.get_settings_skip_intro_secs().to_string().as_str(),
-                SKIP_SECS_MODEL,
-            );
-            g.set_settings_skip_intro_secs(v.parse().unwrap_or(8));
-            g.invoke_settings_changed();
-        }
-        PLY_RECAP_MODE => {
-            let v = cycle(g.get_settings_skip_recap_mode().as_str(), SKIP_MODE_4_MODEL);
-            g.set_settings_skip_recap_mode(v.into());
-            g.invoke_settings_changed();
-        }
-        PLY_RECAP_SECS => {
-            let v = cycle(
-                g.get_settings_skip_recap_secs().to_string().as_str(),
-                SKIP_SECS_MODEL,
-            );
-            g.set_settings_skip_recap_secs(v.parse().unwrap_or(8));
-            g.invoke_settings_changed();
-        }
-        PLY_PREVIEW_MODE => {
-            let v = cycle(
-                g.get_settings_skip_preview_mode().as_str(),
-                SKIP_MODE_4_MODEL,
-            );
-            g.set_settings_skip_preview_mode(v.into());
-            g.invoke_settings_changed();
-        }
-        PLY_PREVIEW_SECS => {
-            let v = cycle(
-                g.get_settings_skip_preview_secs().to_string().as_str(),
-                SKIP_SECS_MODEL,
-            );
-            g.set_settings_skip_preview_secs(v.parse().unwrap_or(8));
-            g.invoke_settings_changed();
-        }
-        PLY_COMMERCIAL_MODE => {
-            let v = cycle(
-                g.get_settings_skip_commercial_mode().as_str(),
-                SKIP_MODE_4_MODEL,
-            );
-            g.set_settings_skip_commercial_mode(v.into());
-            g.invoke_settings_changed();
-        }
-        PLY_COMMERCIAL_SECS => {
-            let v = cycle(
-                g.get_settings_skip_commercial_secs().to_string().as_str(),
-                SKIP_SECS_MODEL,
-            );
-            g.set_settings_skip_commercial_secs(v.parse().unwrap_or(8));
-            g.invoke_settings_changed();
-        }
-        PLY_CREDITS_MODE => {
-            let v = cycle(
-                g.get_settings_skip_credits_mode().as_str(),
-                SKIP_MODE_3_MODEL,
-            );
-            g.set_settings_skip_credits_mode(v.into());
-            g.invoke_settings_changed();
-        }
-        UI_CARD_SIZE => {
-            let v = cycle(g.get_settings_card_size().as_str(), CARD_SIZE_MODEL);
-            g.set_settings_card_size(v.into());
-            g.invoke_settings_changed();
-        }
-        UI_TEXT_SIZE => {
-            let v = cycle(g.get_settings_text_size().as_str(), CARD_SIZE_MODEL);
-            g.set_settings_text_size(v.into());
-            g.invoke_settings_changed();
-        }
-        PLY_CREDITS_SECS => {
-            let v = cycle(
-                g.get_settings_skip_credits_secs().to_string().as_str(),
-                CREDITS_SECS_MODEL,
-            );
-            g.set_settings_skip_credits_secs(v.parse().unwrap_or(30));
-            g.invoke_settings_changed();
-        }
-        PLY_SEEK_STEP => {
-            let v = cycle(
-                g.get_settings_seek_step_secs().to_string().as_str(),
-                SEEK_STEP_MODEL,
-            );
-            g.set_settings_seek_step_secs(v.parse().unwrap_or(10));
-            g.invoke_settings_changed();
-        }
-        PLY_SEEK_STEP_LONG => {
-            let v = cycle(
-                g.get_settings_seek_step_long_secs().to_string().as_str(),
-                SEEK_STEP_LONG_MODEL,
-            );
-            g.set_settings_seek_step_long_secs(v.parse().unwrap_or(30));
-            g.invoke_settings_changed();
-        }
-        PLY_SKIP_FADE_MS => {
-            let v = cycle(
-                g.get_settings_skip_fade_ms().to_string().as_str(),
-                SKIP_FADE_MS_MODEL,
-            );
-            g.set_settings_skip_fade_ms(v.parse().unwrap_or(200));
-            g.invoke_settings_changed();
-        }
 
-        UI_SCROLL_SPEED => {
-            let v = cycle(
-                g.get_settings_scroll_speed_pct().to_string().as_str(),
-                SPEED_PCT_MODEL,
-            );
-            let pct: i32 = v.parse().unwrap_or(100);
-            g.set_settings_scroll_speed_pct(pct);
-            g.set_settings_scroll_speed(pct as f32 / 100.0);
-            g.invoke_settings_changed();
-        }
-        UI_ANIMATION_SPEED => {
-            let v = cycle(
-                g.get_settings_animation_speed_pct().to_string().as_str(),
-                SPEED_PCT_MODEL,
-            );
-            let pct: i32 = v.parse().unwrap_or(100);
-            g.set_settings_animation_speed_pct(pct);
-            g.set_settings_animation_speed(pct as f32 / 100.0);
-            g.invoke_settings_changed();
-        }
         UI_FONT_FAMILY => {
             if let Some(desc) = cycle_dynamic(
                 g.get_settings_font_family_display(),
@@ -1861,14 +1859,6 @@ fn settings_row_action(key: &str, g: &crate::AppState<'_>) {
             ) {
                 g.invoke_streaming_region_selected(desc);
             }
-        }
-        PLY_TRAILER_QUALITY => {
-            let v = cycle(
-                g.get_settings_trailer_quality().to_string().as_str(),
-                TRAILER_QUALITY_MODEL,
-            );
-            g.set_settings_trailer_quality(v.into());
-            g.invoke_settings_changed();
         }
         INT_DISPLAY_LANGUAGE => {
             if let Some(desc) = cycle_dynamic(
@@ -3022,4 +3012,52 @@ pub(crate) fn fetch_system_fonts() -> Vec<(String, String)> {
     ];
     fonts.extend(names.into_iter().map(|n| (n.clone(), n)));
     fonts
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashSet;
+
+    #[test]
+    fn choices_are_well_formed() {
+        let mut keys = HashSet::new();
+        for c in CHOICES {
+            assert!(keys.insert(c.key), "{} is in CHOICES twice", c.key);
+            assert!(!c.options.is_empty(), "{} has no options", c.key);
+            let values: HashSet<_> = c.options.iter().map(|(v, _)| v).collect();
+            let labels: HashSet<_> = c.options.iter().map(|(_, l)| l).collect();
+            assert_eq!(values.len(), c.options.len(), "{}: duplicate value", c.key);
+            // A mouse pick is matched by its label.
+            assert_eq!(labels.len(), c.options.len(), "{}: duplicate label", c.key);
+            if let Field::Int(..) = c.field {
+                for (v, _) in c.options {
+                    assert!(v.parse::<i32>().is_ok(), "{}: {v:?} isn't a number", c.key);
+                }
+            }
+            assert!(
+                !is_dynamic_dropdown(c.key),
+                "{} is also a dynamic dropdown",
+                c.key
+            );
+        }
+    }
+
+    #[test]
+    fn every_choice_has_its_settings_row() {
+        // The Slint row must say `choice: true` right after its key, or it draws no dropdown.
+        let slint = include_str!("../ui/settings.slint");
+        for c in CHOICES {
+            let row = format!("key: \"{}\";", c.key);
+            let at = slint
+                .find(&row)
+                .unwrap_or_else(|| panic!("no Settings row for {}", c.key));
+            let after = slint[at + row.len()..].trim_start();
+            assert!(
+                after.starts_with("choice: true;"),
+                "{}'s row isn't a choice row",
+                c.key
+            );
+        }
+    }
 }

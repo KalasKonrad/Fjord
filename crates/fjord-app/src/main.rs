@@ -1132,6 +1132,7 @@ fn main() -> Result<()> {
 
     settings::wire_profile_defaults(&window, &state);
     settings::wire_copy_settings(&window, &state);
+    settings::wire_choice_rows(&window);
     dashboard_rows::wire(&window, &state);
     hero::wire(&window, &state, &rt);
 
