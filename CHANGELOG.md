@@ -23,6 +23,10 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Fixed: display-sync choices picked from the list did nothing.** Settings →
+  Display: choosing the 4K or 1080p scale, the odd-frame-rate 4K mode or the
+  HDR / wide-color mode from the opened list (Enter on the remote) now takes
+  effect; only Right and the mouse worked before.
 - **Improved: Discover's rows match the dashboards** — the same spacing
   between rows, and the keyboard keeps the selected row properly in view.
   Clicking a card on a dashboard now leaves it selected when you come back.

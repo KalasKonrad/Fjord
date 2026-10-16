@@ -23,7 +23,9 @@
 //                      flush focus ring (glow from the poster); focus zoom via AppState.zoom from
 //                      zoom-anchor-x/-y (edge cards grow inward), raised with z; no poster fade
 //   LoadingSpinner     animated ring (speed-scaled dot rhythm)
-//   StatRow / ToggleSwitch / SectionHeader / SettingsDropdown / SettingsRow (key = settings.rs row key)
+//   StatRow / ToggleSwitch / SectionHeader / SettingsDropdown / SettingsRow (key = settings.rs row key;
+//                      `choice: true` + `value` = a fixed-choice row: its dropdown comes from
+//                      settings.rs CHOICES via AppState.setting-options/-label/-choose)
 //   PosterBlock        160×240 poster with badges (played, progress, unplayed count, request status)
 //   MetaLine           year · runtime · rating + optional ★ community rating
 //   CastRow            scrollable cast row (portrait, name, role); content-x follows focused-idx;
@@ -1281,6 +1283,10 @@ export component SettingsRow inherits Rectangle {
     // Saved per profile (not for the whole device): shows a small "Profile" tag after the title.
     // These are exactly the settings "Copy settings from…" copies.
     in property <bool> per-profile: false;
+    // A fixed-choice setting (settings.rs CHOICES): the row draws its own dropdown from that table —
+    // `value` is the stored value (an AppState.settings-… property); a pick saves through Rust.
+    in property <bool> choice: false;
+    in property <string> value;
 
     border-radius: Theme.radius;
     background: {
@@ -1358,6 +1364,14 @@ export component SettingsRow inherits Rectangle {
         }
 
         @children
+        if root.choice: SettingsDropdown {
+            model: AppState.setting-options(root.key);
+            current-value: AppState.setting-label(root.key, root.value);
+            selected(v) => {
+                AppState.setting-choose(root.key, v);
+                AppState.refocus();
+            }
+        }
     }
 }
 

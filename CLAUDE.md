@@ -142,6 +142,10 @@ Needs `mpv`/libmpv (`pacman -S mpv`). Optional at runtime: `yt-dlp` (trailers), 
   cache, overlay, or input-dispatch state must be reset there** — Seerr-scoped caches also in
   `seerr_auth::clear_connection` / `commit_connection`.
 - `token` and the Seerr key/cookie are AES-GCM encrypted by `load_config`/`save_config` only.
+- A fixed-choice Settings dropdown is one `settings::CHOICES` entry ((stored value, label) options + window get/set)
+  and a `SettingsRow { key: …; choice: true; value: AppState.settings-…; }` in settings.slint — labels, the keyboard
+  list, Right-cycling and the mouse pick all come from that entry (tests check both sides). Dynamic lists (devices,
+  fonts, regions…) stay `is_dynamic_dropdown`.
 - A Settings row backed by a `ProfileSettings` preference gets `per-profile: true` in settings.slint (the "Profile" tag)
   and goes into `ProfileSettings::copy_settings_from` + `settings::apply_profile_settings_to_window` ("Copy settings from…")
   — not the account rows in Profiles (remember login) or Integrations (the Seerr connection).
