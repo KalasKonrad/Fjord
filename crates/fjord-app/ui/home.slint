@@ -675,15 +675,30 @@ export component HomeScreen inherits Rectangle {
 
     background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg;
 
+    // Rows in the order chosen in Settings → Interface → Dashboard rows (shown rows only). A row's
+    // number (s) is its identity: focus, keyboard (AppState.find-*-section) and scroll key on it.
+    in property <[int]> row-order: [0, 1, 2, 3, 4, 5, 6];
+    pure function row-items(s: int) -> [CardItem] {
+        s == 0 ? continue-watching : s == 1 ? next-up : s == 2 ? recently-added : s == 3 ? recently-added-movies : s == 4 ? recently-added-albums : s == 5 ? watchlist : coming-up
+    }
+    pure function row-title(s: int) -> string {
+        s == 0 ? "Continue Watching" : s == 1 ? "Next Up" : s == 2 ? "Recently Added Shows" : s == 3 ? "Recently Added Movies" : s == 4 ? "Recently Added Music" : s == 5 ? "Watchlist" : "Coming Up"
+    }
+    // Watchlist / Coming Up hold Discover (TMDB) cards: play and menu go through Discover.
+    pure function row-is-discover(s: int) -> bool {
+        s == 5 || s == 6
+    }
+    // Position of row s in row-order (99 = not shown).
+    pure function row-pos(s: int) -> int {
+        row-order.length > 0 && row-order[0] == s ? 0 : row-order.length > 1 && row-order[1] == s ? 1 : row-order.length > 2 && row-order[2] == s ? 2 : row-order.length > 3 && row-order[3] == s ? 3 : row-order.length > 4 && row-order[4] == s ? 4 : row-order.length > 5 && row-order[5] == s ? 5 : row-order.length > 6 && row-order[6] == s ? 6 : 99
+    }
+    // The row at position k with the gap below it; 0 when there is none or it's empty.
+    pure function slot-h(k: int) -> length {
+        row-order.length > k && row-items(row-order[k]).length > 0 ? AppState.dash-ch + AppState.row-chrome-h + Theme.sp-lg : 0px
+    }
     pure function section-y(s: int) -> length {
-        Theme.sp-lg
-            + (continue-watching.length > 0 && s > 0 ? (AppState.dash-ch + AppState.row-chrome-h + Theme.sp-lg) : 0px)
-            + (next-up.length > 0 && s > 1 ? (AppState.dash-ch + AppState.row-chrome-h + Theme.sp-lg) : 0px)
-            + (recently-added.length > 0 && s > 2 ? (AppState.dash-ch + AppState.row-chrome-h + Theme.sp-lg) : 0px)
-            + (recently-added-movies.length > 0 && s > 3 ? (AppState.dash-ch + AppState.row-chrome-h + Theme.sp-lg) : 0px)
-            + (recently-added-albums.length > 0 && s > 4 ? (AppState.dash-ch + AppState.row-chrome-h + Theme.sp-lg) : 0px)
-        // Row 5 (Watchlist) needs its own term now that Coming Up follows it.
-        + (watchlist.length > 0 && s > 5 ? (AppState.dash-ch + AppState.row-chrome-h + Theme.sp-lg) : 0px)
+        let p = row-pos(s);
+        Theme.sp-lg + (p > 0 ? slot-h(0) : 0px) + (p > 1 ? slot-h(1) : 0px) + (p > 2 ? slot-h(2) : 0px) + (p > 3 ? slot-h(3) : 0px) + (p > 4 ? slot-h(4) : 0px) + (p > 5 ? slot-h(5) : 0px) + (p > 6 ? slot-h(6) : 0px)
     }
 
     VerticalLayout {
@@ -734,84 +749,63 @@ export component HomeScreen inherits Rectangle {
 
                 rows := VerticalLayout {
                     padding: Theme.sp-lg;
-                    spacing: Theme.sp-lg;
 
-                    if continue-watching.length > 0: SectionRow {
-                        section-title: "Continue Watching";
-                        items: continue-watching;
-                        section-focused: AppState.focused-section == 0;
-                        focused-card: AppState.focused-card;
-                        card-w: AppState.dash-cw;
-                        card-h: AppState.dash-ch;
-                        item-play(id, _) => { AppState.item-play(id); }
-                        item-context(id, hp, fav, rp, it, sid) => { AppState.open-context-menu(id, hp, fav, rp, it, sid); }
+                    padding-bottom: 0px;
+                    spacing: 0px;
+
+                    for s in root.row-order: Rectangle {
+
+                        height: row-items(s).length > 0 ? AppState.dash-ch + AppState.row-chrome-h + Theme.sp-lg : 0px;
+
+                        if row-items(s).length > 0: SectionRow {
+
+                            x: 0;
+
+                            y: 0;
+
+                            width: parent.width;
+
+                            section-title: row-title(s);
+
+                            items: row-items(s);
+
+                            section-focused: AppState.focused-section == s;
+
+                            focused-card: AppState.focused-card;
+
+                            card-w: AppState.dash-cw;
+
+                            card-h: AppState.dash-ch;
+
+                            item-play(id, it) => {
+
+                                if row-is-discover(s) {
+
+                                    AppState.open-discover-item(it == "DiscoverMovie" ? "movie" : "tv", id);
+                                } else {
+
+                                    AppState.item-play(id);
+                                }
+                            }
+
+                            item-context(id, hp, fav, rp, it, sid) => {
+
+                                if !row-is-discover(s) {
+
+                                    AppState.open-context-menu(id, hp, fav, rp, it, sid);
+                                }
+                            }
+
+                            item-context-full(itm) => {
+
+                                if row-is-discover(s) {
+
+                                    AppState.open-context-menu-discover(itm);
+                                }
+                            }
+                        }
                     }
-                    if next-up.length > 0: SectionRow {
-                        section-title: "Next Up";
-                        items: next-up;
-                        section-focused: AppState.focused-section == 1;
-                        focused-card: AppState.focused-card;
-                        card-w: AppState.dash-cw;
-                        card-h: AppState.dash-ch;
-                        item-play(id, _) => { AppState.item-play(id); }
-                        item-context(id, hp, fav, rp, it, sid) => { AppState.open-context-menu(id, hp, fav, rp, it, sid); }
-                    }
-                    if recently-added.length > 0: SectionRow {
-                        section-title: "Recently Added Shows";
-                        items: recently-added;
-                        section-focused: AppState.focused-section == 2;
-                        focused-card: AppState.focused-card;
-                        card-w: AppState.dash-cw;
-                        card-h: AppState.dash-ch;
-                        item-play(id, _) => { AppState.item-play(id); }
-                        item-context(id, hp, fav, rp, it, sid) => { AppState.open-context-menu(id, hp, fav, rp, it, sid); }
-                    }
-                    if recently-added-movies.length > 0: SectionRow {
-                        section-title: "Recently Added Movies";
-                        items: recently-added-movies;
-                        section-focused: AppState.focused-section == 3;
-                        focused-card: AppState.focused-card;
-                        card-w: AppState.dash-cw;
-                        card-h: AppState.dash-ch;
-                        item-play(id, _) => { AppState.item-play(id); }
-                        item-context(id, hp, fav, rp, it, sid) => { AppState.open-context-menu(id, hp, fav, rp, it, sid); }
-                    }
-                    if recently-added-albums.length > 0: SectionRow {
-                        section-title: "Recently Added Music";
-                        items: recently-added-albums;
-                        section-focused: AppState.focused-section == 4;
-                        focused-card: AppState.focused-card;
-                        card-w: AppState.dash-cw;
-                        card-h: AppState.dash-ch;
-                        item-play(id, _) => { AppState.item-play(id); }
-                        item-context(id, hp, fav, rp, it, sid) => { AppState.open-context-menu(id, hp, fav, rp, it, sid); }
-                    }
-                    // Watchlist row: Discover/TMDB cards, so play/context go through
-                    // open-discover-item/open-context-menu-discover (in-library redirect, Discover menu with the
-                    // Watchlist toggle). Not part of the LoadingSpinner condition — its Seerr fetch is
-                    // independent and usually slower.
-                    if watchlist.length > 0: SectionRow {
-                        section-title: "Watchlist";
-                        items: watchlist;
-                        section-focused: AppState.focused-section == 5;
-                        focused-card: AppState.focused-card;
-                        card-w: AppState.dash-cw;
-                        card-h: AppState.dash-ch;
-                        item-play(id, it) => { AppState.open-discover-item(it == "DiscoverMovie" ? "movie" : "tv", id); }
-                        item-context-full(itm) => { AppState.open-context-menu-discover(itm); }
-                    }
-                    // Coming Up row: same Discover routing as Watchlist; also outside the LoadingSpinner
-                    // condition.
-                    if coming-up.length > 0: SectionRow {
-                        section-title: "Coming Up";
-                        items: coming-up;
-                        section-focused: AppState.focused-section == 6;
-                        focused-card: AppState.focused-card;
-                        card-w: AppState.dash-cw;
-                        card-h: AppState.dash-ch;
-                        item-play(id, it) => { AppState.open-discover-item(it == "DiscoverMovie" ? "movie" : "tv", id); }
-                        item-context-full(itm) => { AppState.open-context-menu-discover(itm); }
-                    }
+
                     if continue-watching.length == 0 && next-up.length == 0 && recently-added.length == 0 && recently-added-movies.length == 0 && recently-added-albums.length == 0: LoadingSpinner {
                         height: 120px;
                     }
@@ -837,17 +831,30 @@ export component DashboardScreen inherits Rectangle {
 
     background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg;
 
+    // Rows in the order chosen in Settings → Interface → Dashboard rows (shown rows only). A row's
+    // number (s) is its identity: focus, keyboard (AppState.find-*-section) and scroll key on it.
+    in property <[int]> row-order: [0, 1, 2, 3, 4, 5, 6];
+    pure function row-items(s: int) -> [CardItem] {
+        s == 0 ? continue-watching : s == 1 ? next-up : s == 2 ? recently-added : s == 3 ? not-watched : s == 4 ? favorites : s == 5 ? watchlist : coming-up
+    }
+    pure function row-title(s: int) -> string {
+        s == 0 ? "Continue Watching" : s == 1 ? "Next Up" : s == 2 ? "Recently Added" : s == 3 ? "Not Watched" : s == 4 ? "Favorites" : s == 5 ? "Watchlist" : "Coming Up"
+    }
+    // Watchlist / Coming Up hold Discover (TMDB) cards: play and menu go through Discover.
+    pure function row-is-discover(s: int) -> bool {
+        s == 5 || s == 6
+    }
+    // Position of row s in row-order (99 = not shown).
+    pure function row-pos(s: int) -> int {
+        row-order.length > 0 && row-order[0] == s ? 0 : row-order.length > 1 && row-order[1] == s ? 1 : row-order.length > 2 && row-order[2] == s ? 2 : row-order.length > 3 && row-order[3] == s ? 3 : row-order.length > 4 && row-order[4] == s ? 4 : row-order.length > 5 && row-order[5] == s ? 5 : row-order.length > 6 && row-order[6] == s ? 6 : 99
+    }
+    // The row at position k with the gap below it; 0 when there is none or it's empty.
+    pure function slot-h(k: int) -> length {
+        row-order.length > k && row-items(row-order[k]).length > 0 ? AppState.dash-ch + AppState.row-chrome-h + Theme.sp-lg : 0px
+    }
     pure function section-y(s: int) -> length {
-        Theme.sp-lg
-            + (continue-watching.length > 0 && s > 0 ? (AppState.dash-ch + AppState.row-chrome-h + Theme.sp-lg) : 0px)
-            + (next-up.length > 0 && s > 1 ? (AppState.dash-ch + AppState.row-chrome-h + Theme.sp-lg) : 0px)
-            + (recently-added.length > 0 && s > 2 ? (AppState.dash-ch + AppState.row-chrome-h + Theme.sp-lg) : 0px)
-            + (not-watched.length > 0 && s > 3 ? (AppState.dash-ch + AppState.row-chrome-h + Theme.sp-lg) : 0px)
-            + (favorites.length > 0 && s > 4 ? (AppState.dash-ch + AppState.row-chrome-h + Theme.sp-lg) : 0px)
-        // Missing term for row 5 (Watchlist) added alongside row 6 (Coming
-        // Up, below) — see HomeScreen's own section-y for why this was
-        // safe to omit until now.
-        + (watchlist.length > 0 && s > 5 ? (AppState.dash-ch + AppState.row-chrome-h + Theme.sp-lg) : 0px)
+        let p = row-pos(s);
+        Theme.sp-lg + (p > 0 ? slot-h(0) : 0px) + (p > 1 ? slot-h(1) : 0px) + (p > 2 ? slot-h(2) : 0px) + (p > 3 ? slot-h(3) : 0px) + (p > 4 ? slot-h(4) : 0px) + (p > 5 ? slot-h(5) : 0px) + (p > 6 ? slot-h(6) : 0px)
     }
 
     VerticalLayout {
@@ -898,81 +905,63 @@ export component DashboardScreen inherits Rectangle {
 
                 rows := VerticalLayout {
                     padding: Theme.sp-lg;
-                    spacing: Theme.sp-lg;
 
-                    if continue-watching.length > 0: SectionRow {
-                        section-title: "Continue Watching";
-                        items: continue-watching;
-                        section-focused: AppState.focused-section == 0;
-                        focused-card: AppState.focused-card;
-                        card-w: AppState.dash-cw;
-                        card-h: AppState.dash-ch;
-                        item-play(id, _) => { AppState.item-play(id); }
-                        item-context(id, hp, fav, rp, it, sid) => { AppState.open-context-menu(id, hp, fav, rp, it, sid); }
+                    padding-bottom: 0px;
+                    spacing: 0px;
+
+                    for s in root.row-order: Rectangle {
+
+                        height: row-items(s).length > 0 ? AppState.dash-ch + AppState.row-chrome-h + Theme.sp-lg : 0px;
+
+                        if row-items(s).length > 0: SectionRow {
+
+                            x: 0;
+
+                            y: 0;
+
+                            width: parent.width;
+
+                            section-title: row-title(s);
+
+                            items: row-items(s);
+
+                            section-focused: AppState.focused-section == s;
+
+                            focused-card: AppState.focused-card;
+
+                            card-w: AppState.dash-cw;
+
+                            card-h: AppState.dash-ch;
+
+                            item-play(id, it) => {
+
+                                if row-is-discover(s) {
+
+                                    AppState.open-discover-item(it == "DiscoverMovie" ? "movie" : "tv", id);
+                                } else {
+
+                                    AppState.item-play(id);
+                                }
+                            }
+
+                            item-context(id, hp, fav, rp, it, sid) => {
+
+                                if !row-is-discover(s) {
+
+                                    AppState.open-context-menu(id, hp, fav, rp, it, sid);
+                                }
+                            }
+
+                            item-context-full(itm) => {
+
+                                if row-is-discover(s) {
+
+                                    AppState.open-context-menu-discover(itm);
+                                }
+                            }
+                        }
                     }
-                    if next-up.length > 0: SectionRow {
-                        section-title: "Next Up";
-                        items: next-up;
-                        section-focused: AppState.focused-section == 1;
-                        focused-card: AppState.focused-card;
-                        card-w: AppState.dash-cw;
-                        card-h: AppState.dash-ch;
-                        item-play(id, _) => { AppState.item-play(id); }
-                        item-context(id, hp, fav, rp, it, sid) => { AppState.open-context-menu(id, hp, fav, rp, it, sid); }
-                    }
-                    if recently-added.length > 0: SectionRow {
-                        section-title: "Recently Added";
-                        items: recently-added;
-                        section-focused: AppState.focused-section == 2;
-                        focused-card: AppState.focused-card;
-                        card-w: AppState.dash-cw;
-                        card-h: AppState.dash-ch;
-                        item-play(id, _) => { AppState.item-play(id); }
-                        item-context(id, hp, fav, rp, it, sid) => { AppState.open-context-menu(id, hp, fav, rp, it, sid); }
-                    }
-                    if not-watched.length > 0: SectionRow {
-                        section-title: "Not Watched";
-                        items: not-watched;
-                        section-focused: AppState.focused-section == 3;
-                        focused-card: AppState.focused-card;
-                        card-w: AppState.dash-cw;
-                        card-h: AppState.dash-ch;
-                        item-play(id, _) => { AppState.item-play(id); }
-                        item-context(id, hp, fav, rp, it, sid) => { AppState.open-context-menu(id, hp, fav, rp, it, sid); }
-                    }
-                    if favorites.length > 0: SectionRow {
-                        section-title: "Favorites";
-                        items: favorites;
-                        section-focused: AppState.focused-section == 4;
-                        focused-card: AppState.focused-card;
-                        card-w: AppState.dash-cw;
-                        card-h: AppState.dash-ch;
-                        item-play(id, _) => { AppState.item-play(id); }
-                        item-context(id, hp, fav, rp, it, sid) => { AppState.open-context-menu(id, hp, fav, rp, it, sid); }
-                    }
-                    // Watchlist row: Discover routing and outside the LoadingSpinner condition, as on
-                    // HomeScreen.
-                    if watchlist.length > 0: SectionRow {
-                        section-title: "Watchlist";
-                        items: watchlist;
-                        section-focused: AppState.focused-section == 5;
-                        focused-card: AppState.focused-card;
-                        card-w: AppState.dash-cw;
-                        card-h: AppState.dash-ch;
-                        item-play(id, it) => { AppState.open-discover-item(it == "DiscoverMovie" ? "movie" : "tv", id); }
-                        item-context-full(itm) => { AppState.open-context-menu-discover(itm); }
-                    }
-                    // Coming Up row: same routing as Watchlist, this dashboard's media type.
-                    if coming-up.length > 0: SectionRow {
-                        section-title: "Coming Up";
-                        items: coming-up;
-                        section-focused: AppState.focused-section == 6;
-                        focused-card: AppState.focused-card;
-                        card-w: AppState.dash-cw;
-                        card-h: AppState.dash-ch;
-                        item-play(id, it) => { AppState.open-discover-item(it == "DiscoverMovie" ? "movie" : "tv", id); }
-                        item-context-full(itm) => { AppState.open-context-menu-discover(itm); }
-                    }
+
                     if continue-watching.length == 0 && next-up.length == 0 && recently-added.length == 0 && not-watched.length == 0 && favorites.length == 0: LoadingSpinner {
                         height: 120px;
                     }
@@ -992,11 +981,30 @@ export component MusicDashboard inherits Rectangle {
 
     background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg;
 
+    // Rows in the order chosen in Settings → Interface → Dashboard rows (shown rows only). A row's
+    // number (s) is its identity: focus, keyboard (AppState.find-*-section) and scroll key on it.
+    in property <[int]> row-order: [0, 1, 2, 3];
+    pure function row-items(s: int) -> [CardItem] {
+        s == 0 ? recently-added : s == 1 ? recently-played : s == 2 ? favorites : playlists
+    }
+    pure function row-title(s: int) -> string {
+        s == 0 ? "Recently Added" : s == 1 ? "Recently Played" : s == 2 ? "Favorite Albums" : "Playlists"
+    }
+    // Watchlist / Coming Up hold Discover (TMDB) cards: play and menu go through Discover.
+    pure function row-is-discover(s: int) -> bool {
+        false
+    }
+    // Position of row s in row-order (99 = not shown).
+    pure function row-pos(s: int) -> int {
+        row-order.length > 0 && row-order[0] == s ? 0 : row-order.length > 1 && row-order[1] == s ? 1 : row-order.length > 2 && row-order[2] == s ? 2 : row-order.length > 3 && row-order[3] == s ? 3 : row-order.length > 4 && row-order[4] == s ? 4 : row-order.length > 5 && row-order[5] == s ? 5 : row-order.length > 6 && row-order[6] == s ? 6 : 99
+    }
+    // The row at position k with the gap below it; 0 when there is none or it's empty.
+    pure function slot-h(k: int) -> length {
+        row-order.length > k && row-items(row-order[k]).length > 0 ? AppState.dash-ch + AppState.row-chrome-h + Theme.sp-lg : 0px
+    }
     pure function section-y(s: int) -> length {
-        Theme.sp-lg
-            + (recently-added.length > 0 && s > 0 ? (AppState.dash-ch + AppState.row-chrome-h + Theme.sp-lg) : 0px)
-            + (recently-played.length > 0 && s > 1 ? (AppState.dash-ch + AppState.row-chrome-h + Theme.sp-lg) : 0px)
-            + (favorites.length > 0 && s > 2 ? (AppState.dash-ch + AppState.row-chrome-h + Theme.sp-lg) : 0px)
+        let p = row-pos(s);
+        Theme.sp-lg + (p > 0 ? slot-h(0) : 0px) + (p > 1 ? slot-h(1) : 0px) + (p > 2 ? slot-h(2) : 0px) + (p > 3 ? slot-h(3) : 0px) + (p > 4 ? slot-h(4) : 0px) + (p > 5 ? slot-h(5) : 0px) + (p > 6 ? slot-h(6) : 0px)
     }
 
     VerticalLayout {
@@ -1045,48 +1053,63 @@ export component MusicDashboard inherits Rectangle {
 
                 mus-rows := VerticalLayout {
                     padding: Theme.sp-lg;
-                    spacing: Theme.sp-lg;
 
-                    if recently-added.length > 0: SectionRow {
-                        section-title: "Recently Added";
-                        items: recently-added;
-                        section-focused: AppState.focused-section == 0;
-                        focused-card: AppState.focused-card;
-                        card-w: AppState.dash-cw;
-                        card-h: AppState.dash-ch;
-                        item-play(id, _) => { AppState.item-play(id); }
-                        item-context(id, hp, fav, rp, it, sid) => { AppState.open-context-menu(id, hp, fav, rp, it, sid); }
+                    padding-bottom: 0px;
+                    spacing: 0px;
+
+                    for s in root.row-order: Rectangle {
+
+                        height: row-items(s).length > 0 ? AppState.dash-ch + AppState.row-chrome-h + Theme.sp-lg : 0px;
+
+                        if row-items(s).length > 0: SectionRow {
+
+                            x: 0;
+
+                            y: 0;
+
+                            width: parent.width;
+
+                            section-title: row-title(s);
+
+                            items: row-items(s);
+
+                            section-focused: AppState.focused-section == s;
+
+                            focused-card: AppState.focused-card;
+
+                            card-w: AppState.dash-cw;
+
+                            card-h: AppState.dash-ch;
+
+                            item-play(id, it) => {
+
+                                if row-is-discover(s) {
+
+                                    AppState.open-discover-item(it == "DiscoverMovie" ? "movie" : "tv", id);
+                                } else {
+
+                                    AppState.item-play(id);
+                                }
+                            }
+
+                            item-context(id, hp, fav, rp, it, sid) => {
+
+                                if !row-is-discover(s) {
+
+                                    AppState.open-context-menu(id, hp, fav, rp, it, sid);
+                                }
+                            }
+
+                            item-context-full(itm) => {
+
+                                if row-is-discover(s) {
+
+                                    AppState.open-context-menu-discover(itm);
+                                }
+                            }
+                        }
                     }
-                    if recently-played.length > 0: SectionRow {
-                        section-title: "Recently Played";
-                        items: recently-played;
-                        section-focused: AppState.focused-section == 1;
-                        focused-card: AppState.focused-card;
-                        card-w: AppState.dash-cw;
-                        card-h: AppState.dash-ch;
-                        item-play(id, _) => { AppState.item-play(id); }
-                        item-context(id, hp, fav, rp, it, sid) => { AppState.open-context-menu(id, hp, fav, rp, it, sid); }
-                    }
-                    if favorites.length > 0: SectionRow {
-                        section-title: "Favorite Albums";
-                        items: favorites;
-                        section-focused: AppState.focused-section == 2;
-                        focused-card: AppState.focused-card;
-                        card-w: AppState.dash-cw;
-                        card-h: AppState.dash-ch;
-                        item-play(id, _) => { AppState.item-play(id); }
-                        item-context(id, hp, fav, rp, it, sid) => { AppState.open-context-menu(id, hp, fav, rp, it, sid); }
-                    }
-                    if playlists.length > 0: SectionRow {
-                        section-title: "Playlists";
-                        items: playlists;
-                        section-focused: AppState.focused-section == 3;
-                        focused-card: AppState.focused-card;
-                        card-w: AppState.dash-cw;
-                        card-h: AppState.dash-ch;
-                        item-play(id, _) => { AppState.item-play(id); }
-                        item-context(id, hp, fav, rp, it, sid) => { AppState.open-context-menu(id, hp, fav, rp, it, sid); }
-                    }
+
                     if recently-added.length == 0 && recently-played.length == 0 && favorites.length == 0 && playlists.length == 0: LoadingSpinner {
                         height: 120px;
                     }
@@ -1104,10 +1127,30 @@ export component CollectionsDashboard inherits Rectangle {
 
     background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg;
 
+    // Rows in the order chosen in Settings → Interface → Dashboard rows (shown rows only). A row's
+    // number (s) is its identity: focus, keyboard (AppState.find-*-section) and scroll key on it.
+    in property <[int]> row-order: [0, 1];
+    pure function row-items(s: int) -> [CardItem] {
+        s == 0 ? recently-added : unwatched
+    }
+    pure function row-title(s: int) -> string {
+        s == 0 ? "Recently Added" : "Unwatched"
+    }
+    // Watchlist / Coming Up hold Discover (TMDB) cards: play and menu go through Discover.
+    pure function row-is-discover(s: int) -> bool {
+        false
+    }
+    // Position of row s in row-order (99 = not shown).
+    pure function row-pos(s: int) -> int {
+        row-order.length > 0 && row-order[0] == s ? 0 : row-order.length > 1 && row-order[1] == s ? 1 : row-order.length > 2 && row-order[2] == s ? 2 : row-order.length > 3 && row-order[3] == s ? 3 : row-order.length > 4 && row-order[4] == s ? 4 : row-order.length > 5 && row-order[5] == s ? 5 : row-order.length > 6 && row-order[6] == s ? 6 : 99
+    }
+    // The row at position k with the gap below it; 0 when there is none or it's empty.
+    pure function slot-h(k: int) -> length {
+        row-order.length > k && row-items(row-order[k]).length > 0 ? AppState.dash-ch + AppState.row-chrome-h + Theme.sp-lg : 0px
+    }
     pure function section-y(s: int) -> length {
-        Theme.sp-lg
-            + (recently-added.length > 0 && s > 0 ? (AppState.dash-ch + AppState.row-chrome-h + Theme.sp-lg) : 0px)
-            + (unwatched.length > 0 && s > 1 ? (AppState.dash-ch + AppState.row-chrome-h + Theme.sp-lg) : 0px)
+        let p = row-pos(s);
+        Theme.sp-lg + (p > 0 ? slot-h(0) : 0px) + (p > 1 ? slot-h(1) : 0px) + (p > 2 ? slot-h(2) : 0px) + (p > 3 ? slot-h(3) : 0px) + (p > 4 ? slot-h(4) : 0px) + (p > 5 ? slot-h(5) : 0px) + (p > 6 ? slot-h(6) : 0px)
     }
 
     VerticalLayout {
@@ -1156,28 +1199,63 @@ export component CollectionsDashboard inherits Rectangle {
 
                 coll-rows := VerticalLayout {
                     padding: Theme.sp-lg;
-                    spacing: Theme.sp-lg;
 
-                    if recently-added.length > 0: SectionRow {
-                        section-title: "Recently Added";
-                        items: recently-added;
-                        section-focused: AppState.focused-section == 0;
-                        focused-card: AppState.focused-card;
-                        card-w: AppState.dash-cw;
-                        card-h: AppState.dash-ch;
-                        item-play(id, _) => { AppState.item-play(id); }
-                        item-context(id, hp, fav, rp, it, sid) => { AppState.open-context-menu(id, hp, fav, rp, it, sid); }
+                    padding-bottom: 0px;
+                    spacing: 0px;
+
+                    for s in root.row-order: Rectangle {
+
+                        height: row-items(s).length > 0 ? AppState.dash-ch + AppState.row-chrome-h + Theme.sp-lg : 0px;
+
+                        if row-items(s).length > 0: SectionRow {
+
+                            x: 0;
+
+                            y: 0;
+
+                            width: parent.width;
+
+                            section-title: row-title(s);
+
+                            items: row-items(s);
+
+                            section-focused: AppState.focused-section == s;
+
+                            focused-card: AppState.focused-card;
+
+                            card-w: AppState.dash-cw;
+
+                            card-h: AppState.dash-ch;
+
+                            item-play(id, it) => {
+
+                                if row-is-discover(s) {
+
+                                    AppState.open-discover-item(it == "DiscoverMovie" ? "movie" : "tv", id);
+                                } else {
+
+                                    AppState.item-play(id);
+                                }
+                            }
+
+                            item-context(id, hp, fav, rp, it, sid) => {
+
+                                if !row-is-discover(s) {
+
+                                    AppState.open-context-menu(id, hp, fav, rp, it, sid);
+                                }
+                            }
+
+                            item-context-full(itm) => {
+
+                                if row-is-discover(s) {
+
+                                    AppState.open-context-menu-discover(itm);
+                                }
+                            }
+                        }
                     }
-                    if unwatched.length > 0: SectionRow {
-                        section-title: "Unwatched";
-                        items: unwatched;
-                        section-focused: AppState.focused-section == 1;
-                        focused-card: AppState.focused-card;
-                        card-w: AppState.dash-cw;
-                        card-h: AppState.dash-ch;
-                        item-play(id, _) => { AppState.item-play(id); }
-                        item-context(id, hp, fav, rp, it, sid) => { AppState.open-context-menu(id, hp, fav, rp, it, sid); }
-                    }
+
                     if recently-added.length == 0 && unwatched.length == 0: LoadingSpinner {
                         height: 120px;
                     }

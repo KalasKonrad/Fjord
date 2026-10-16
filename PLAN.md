@@ -31,6 +31,10 @@ A small release: bug fixes, polish, minor features. Released per CLAUDE.md → R
   - [x] **Consistent wording:** done, live check in the checklist — setting names in sentence case, buttons/dialogs/rows in Title Case ("Key bindings" in the sidebar, "Copy Settings from…?"), American spelling (Favorite, color), "Couldn't …" errors without raw technical text (that goes to the log).
   - [x] **Theme colours + press flash:** done (theme tokens by role, only the two odd shadows changed; press flash added where it was missing), live check in the checklist — 2–3 overlay/scrim tokens instead of 8 hand-picked darkness values (+ a token for white text on images); press flash on the clickables that lack it (Discover filter pills/popup options, calendar days/popup entries, Now Playing queue rows).
   - [x] **Text size setting:** done, live check in the checklist — Settings → Interface → "Text size" Normal / Large (~+15%) / Extra large (~+30%), per profile (Profile tag, copied by "Copy settings from…"); every font size scales, small pills/badges grow with it.
+- [ ] **Dashboards: hero band + customizable rows (user, 2026-10-16)** — on all five dashboards (Home, TV Shows, Movies, Collections, Music):
+  - [x] **1. Rows from an order list** (no visible change): each dashboard draws its rows from `row-order`; keyboard (`find-*-section`) and scroll (`section-y`) follow it.
+  - [ ] **2. Hide / reorder rows**, per profile: Settings → Interface → "Dashboard rows…" — tabs per dashboard, each row with ✓ (show/hide), ▲, ▼ buttons; copied by "Copy settings from…".
+  - [ ] **3. Hero band** at the top: the focused card's backdrop, title, year/rating/runtime and 2–3 lines of overview (fades as focus moves, short delay so fast scrolling doesn't fetch every card); Discover cards (Watchlist/Coming Up) via Seerr details; Music uses the album cover. Settings → Interface on/off (default on, per profile).
 - [x] **Release helper:** `scripts/bump-packages.sh` (done 2026-10-15) — a script for CLAUDE.md → Releasing step 3 — sets `pkgver` in `PKGBUILD` and `fjord-bin/PKGBUILD` and fjord-bin's `sha256sums` from the published tarball.
 
 **Before tagging**

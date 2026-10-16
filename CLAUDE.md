@@ -155,7 +155,9 @@ Needs `mpv`/libmpv (`pacman -S mpv`). Optional at runtime: `yt-dlp` (trailers), 
   **change both sides together**: context-menu rows (`existing_*_menu_rows` ↔ `context_menu.slint`),
   settings rows (`settings::section_row_keys` ↔ `settings.slint`), D-pad zone lists (`existing_*_zones`),
   dashboard nav ladders in `app_state.slint`.
-- Adding a dashboard row: extend the screen's `section-y`/`row-y` scroll helper with a term for it.
+- Dashboard rows are data-driven (`row-order` per dashboard, home.slint `row-items`/`row-title`): a new row needs its
+  number there, in app_state.slint's `section-len`/`section-card-item` + `*-row-order` default, and in the Rust default
+  row list. Discover's landing rows still use their own `row-y` helper.
 
 ### Keyboard / D-pad
 - One global `FocusScope` (`fs`) feeds `keys::handle_key()`; `active_mode()` maps `AppState` flags to an
