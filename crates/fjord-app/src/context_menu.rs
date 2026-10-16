@@ -428,6 +428,8 @@ fn open_context_menu_state(g: &AppState, state: &Arc<Mutex<FjordState>>, args: O
         resume_pct,
         series_id,
     } = args;
+    // Only a playlist track sets this, right after opening (album.rs) — every other open clears it.
+    g.set_context_menu_playlist_index(-1);
     g.set_context_menu_item_id(id.clone());
     g.set_context_menu_item_type(item_type.clone());
     g.set_context_menu_series_id(series_id);
@@ -1230,7 +1232,8 @@ fn handle_key_discover_menu(action: &crate::keys::Action, g: &AppState) -> bool 
 
 /// Fixed row indices with gaps, in on-screen (Up/Down) order (like existing_discover_menu_rows):
 /// 0 Resume (resume-pct > 0 && !played), 1 Play from Start, 2 Play Next, 3 Add to Queue, 4 Mark
-/// Played, 5 Favourite, 7 Add to Playlist (music only), 8 Watchlist (a resolvable TMDB id + Seerr
+/// Played, 5 Favourite, 7 Add to Playlist (music only), 9 Remove from Playlist (a track opened
+/// from a playlist — context-menu-playlist-index), 8 Watchlist (a resolvable TMDB id + Seerr
 /// connected), 6 View Details (always, last — as in every menu). A list, not a min/max range:
 /// 7 can be absent while 8 is present.
 fn existing_jellyfin_menu_rows(g: &AppState) -> Vec<i32> {
@@ -1248,6 +1251,9 @@ fn existing_jellyfin_menu_rows(g: &AppState) -> Vec<i32> {
     rows.extend([1, 2, 3, 4, 5]);
     if is_music_type(item_type.as_str()) {
         rows.push(7);
+    }
+    if g.get_context_menu_playlist_index() >= 0 {
+        rows.push(9); // Remove from Playlist (a track opened from a playlist)
     }
     if !g.get_context_menu_jf_tmdb_id().is_empty() && g.get_seerr_connected() {
         rows.push(8);
@@ -1307,6 +1313,7 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
                 }
                 7 => g.invoke_open_playlist_picker(),
                 8 => g.invoke_context_jf_toggle_watchlist(),
+                9 => g.invoke_playlist_remove_entry(g.get_context_menu_playlist_index()),
                 _ => {}
             }
             g.set_show_context_menu(false);

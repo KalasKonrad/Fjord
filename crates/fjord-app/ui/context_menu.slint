@@ -6,7 +6,8 @@
 //                    the Rust lists of existing rows (in on-screen order) must match these `if`
 //                    conditions by hand. View Details is the last row in every menu.
 //                    Jellyfin, top to bottom: 0 Resume (resume-pct > 0), 1 Play from Start, 2 Play
-//                    Next, 3 Add to Queue, 4 Mark Played/Unplayed, 5 Favourite, 7 Add to Playlist
+//                    Next, 3 Add to Queue, 4 Mark Played/Unplayed, 5 Favourite, 7 Add to Playlist, 9 Remove
+//                    from Playlist (a playlist's track)
 //                    (Audio/MusicAlbum), 8 Watchlist (resolvable TMDB id + Seerr), 6 View Details;
 //                    a Season shows 4/5/6 only (existing_jellyfin_menu_rows).
 //                    Discover, top to bottom: 1 Request / Edit Request (mine or admin), 2 Cancel
@@ -471,6 +472,58 @@ export component ContextMenu inherits Rectangle {
                         }
                         pointer-event(e) => {
                             if e.kind == PointerEventKind.move { AppState.context-menu-focused = 7; }
+                        }
+                    }
+                }
+
+                // Row 9 — Remove from Playlist: only for a track opened from a playlist
+                // (context-menu-playlist-index >= 0). **Must match existing_jellyfin_menu_rows()'s
+                // row-9 check (context_menu.rs).**
+            if AppState.context-menu-playlist-index >= 0: Rectangle {
+                    height: 44px;
+                    border-radius: Theme.radius;
+                    background: AppState.context-menu-focused == 9 ? Theme.accent-muted : transparent;
+                    border-width: (ta9.pressed || pulse9.pulsing) ? 3px : 0px;
+                    border-color: Theme.focus-border;
+                    animate border-width {
+                        duration: 90ms * AppState.settings-animation-speed;
+                        easing: ease-out-expo;
+                    }
+                    pulse9 := PressPulse {
+                        trigger: AppState.kb-activate-pulse;
+                        active: AppState.context-menu-focused == 9;
+                    }
+
+                    HorizontalLayout {
+                        padding-left: 12px;
+                        padding-right: 12px;
+                        spacing: 10px;
+                        alignment: start;
+                        Text {
+                            text: "✕";
+                            font-family: "Noto Sans Symbols 2";
+                            color: AppState.context-menu-focused == 9 ? Theme.accent : Theme.text-muted;
+                            font-size: 14px * AppState.text-scale;
+                            vertical-alignment: center;
+                            width: 18px * AppState.text-scale;
+                        }
+
+                        Text {
+                            text: "Remove from Playlist";
+                            color: AppState.context-menu-focused == 9 ? Theme.text : Theme.text-muted;
+                            font-size: 14px * AppState.text-scale;
+                            vertical-alignment: center;
+                        }
+                    }
+
+                    ta9 := TouchArea {
+                        mouse-cursor: MouseCursor.pointer;
+                        clicked => {
+                            AppState.playlist-remove-entry(AppState.context-menu-playlist-index);
+                            AppState.show-context-menu = false;
+                        }
+                        pointer-event(e) => {
+                            if e.kind == PointerEventKind.move { AppState.context-menu-focused = 9; }
                         }
                     }
                 }
