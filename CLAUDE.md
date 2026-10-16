@@ -146,9 +146,10 @@ Needs `mpv`/libmpv (`pacman -S mpv`). Optional at runtime: `yt-dlp` (trailers), 
   and a `SettingsRow { key: …; choice: true; value: AppState.settings-…; }` in settings.slint — labels, the keyboard
   list, Right-cycling and the mouse pick all come from that entry (tests check both sides). Dynamic lists (devices,
   fonts, regions…) stay `is_dynamic_dropdown`.
-- A Settings row backed by a `ProfileSettings` preference gets `per-profile: true` in settings.slint (the "Profile" tag)
-  and goes into `ProfileSettings::copy_settings_from` + `settings::apply_profile_settings_to_window` ("Copy settings from…")
-  — not the account rows in Profiles (remember login) or Integrations (the Seerr connection).
+- A setting mirrored between config and a `settings-*` window property is one `bind!` line: `settings::DEVICE_BINDS`
+  (DeviceConfig) or `settings::PROFILE_BINDS` (ProfileSettings — exactly the rows tagged `per-profile: true`, the "Profile"
+  tag, which "Copy settings from…" copies; not the account rows in Profiles or Integrations' Seerr connection). Load,
+  store and copy come from it (a round-trip test through a real window checks them); an on/off row is a `TOGGLES` entry.
 
 ### UI models
 - Rebuild card rows through `apply_cards_preserving_identity` (mutates rows in place when ids/order match).

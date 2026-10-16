@@ -55,5 +55,10 @@ wayland-sys = { version = "0.31", features = ["client", "egl", "dlopen"] }
 glutin_egl_sys = "0.7"
 libloading = "0.8"
 
+[dev-dependencies]
+# Slint's own headless backend (already in Cargo.lock through slint, same version), so a test can
+# create the real MainWindow — settings.rs's config ↔ window round trip.
+i-slint-backend-testing = "=1.18.1"
+
 [build-dependencies]
 slint-build = "1"
