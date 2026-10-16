@@ -57,7 +57,8 @@ Needs `mpv`/libmpv (`pacman -S mpv`). Optional at runtime: `yt-dlp` (trailers), 
 - `text_field.rs` — caret editing for the hand-drawn text fields (`DrawnField`) + on-screen-keyboard ◀ ▶.
 - `config.rs` — `Config { device: DeviceConfig, profiles: Vec<ProfileSettings>, active_profile_id }`,
   `FjordState` (runtime state), `BoundedCache`, load/save + migrations, per-profile cache paths.
-- `keys/` — `mod.rs`: `handle_key()` dispatcher (overlay tiers first, then `active_mode()` routing); `overlays.rs`
+- `keys/` — `mod.rs`: `handle_key()` dispatcher: `tiers.rs` `RAW_TIERS` first (raw-key overlays, confirms, search
+  fields…, in priority order), then the key lookup, `global.rs` `GLOBAL_SHORTCUTS`, then `active_mode()` routing; `overlays.rs`
   (raw-key handlers for login, pickers, Connect Seerr, Bonfire…); `bindings.rs`
   (`Action`, `KeyCombo`, `Keybindings`, rebinding), `mode.rs` (`AppMode`, `active_mode()`), `dashboard.rs`, `library.rs`,
   `player.rs`, `text_input.rs` (on-screen keyboard opener, drawn search fields, playlist picker).
@@ -179,9 +180,9 @@ Needs `mpv`/libmpv (`pacman -S mpv`). Optional at runtime: `yt-dlp` (trailers), 
 - A focused `LineEdit` gets keys before `fs` (`fs` is a sibling, not an ancestor): handle Escape/Up/Down/Enter
   in the field's own `key-pressed`, and hand focus back with `AppState.refocus()` /
   `invoke_grab_keyboard_focus()` when a screen with native widgets closes.
-- New overlay checklist: add it to `active_mode()`, to the ResumePlayer / music-bar / mini-player-bar
-  exclusion lists in `keys.rs`, to the `sidebar-kb-active` exclusions, and give its `FadeGate` a
-  `!AppState.is-playing` guard.
+- New overlay checklist: add it to `active_mode()` (or, for a raw-key overlay, a `keys::RAW_TIERS` row at its priority),
+  to the ResumePlayer / music-bar / mini-player-bar exclusion lists in `keys/global.rs`, to the `sidebar-kb-active`
+  exclusions, and give its `FadeGate` a `!AppState.is-playing` guard.
 - Hand-drawn text fields (Discover/Browse/Library search, playlist name, join code) keep a `<field>-cursor` caret:
   edit them only through `text_field::DrawnField` (insert/backspace/delete/move) and draw them with
   `AppState.caret-text`. On-screen-keyboard edits of LineEdits go through `onscreen-keyboard-edit`.
