@@ -1,0 +1,112 @@
+// ── fjord-app · hero.slint ───────────────────────────────────────────────────
+//   HeroBand    the dashboard hero (Settings → Interface → Dashboard highlight): a band between a
+//               dashboard's title bar and its rows with the focused card's backdrop, title, meta
+//               line (MetaLine) and up to 3 lines of overview. Two HeroLayers (AppState.hero-a /
+//               -b) crossfade on hero-front-a; hero.rs fills the hidden one. Not focusable — it
+//               follows the row focus.
+//   HeroLayer   one layer: backdrop (cover-fit, top-aligned) under a left and a bottom fade to the
+//               page background; Music adds the sharp album cover on the right
+// ─────────────────────────────────────────────────────────────────────────────
+import { Theme, HeroInfo } from "theme.slint";
+import { AppState } from "app_state.slint";
+import { MetaLine } from "widgets.slint";
+
+component HeroLayer inherits Rectangle {
+    in property <HeroInfo> info;
+    // Text starts where the row titles below do (rows padding + SectionRow padding).
+    property <length> text-x: Theme.sp-lg + Theme.sp;
+
+    if root.info.has-backdrop: Image {
+        x: 0;
+        y: 0;
+        width: parent.width;
+        height: parent.height;
+        source: root.info.backdrop;
+        image-fit: cover;
+        vertical-alignment: top;
+    }
+    // The text sits on the left: fade the picture into the page background behind it, and into
+    // the rows at the bottom.
+    Rectangle {
+        background: @linear-gradient(90deg, Theme.bg 0%, Theme.bg 18%, Theme.bg.transparentize(100%) 70%);
+    }
+
+    Rectangle {
+        background: @linear-gradient(180deg, Theme.bg.transparentize(100%) 45%, Theme.bg 100%);
+    }
+
+    if root.info.has-cover: Rectangle {
+        height: parent.height - 2 * Theme.sp-lg;
+        width: self.height;
+        x: parent.width - self.width - Theme.sp-xl;
+        y: Theme.sp-lg;
+        border-radius: Theme.radius;
+        clip: true;
+        drop-shadow-blur: 24px;
+        drop-shadow-color: Theme.shadow;
+        Image {
+            width: parent.width;
+            height: parent.height;
+            source: root.info.cover;
+            image-fit: cover;
+        }
+    }
+
+    VerticalLayout {
+        x: root.text-x;
+        y: 0;
+        width: min(root.width * 0.55, root.width - root.text-x - Theme.sp-xl);
+        height: root.height;
+        alignment: end;
+        padding-bottom: Theme.sp;
+        spacing: Theme.sp-sm;
+
+        Text {
+            text: root.info.title;
+            color: Theme.text-bright;
+            font-size: 30px;
+            font-weight: 700;
+            overflow: elide;
+        }
+
+        if root.info.meta != "" || root.info.rating-label != "": MetaLine {
+            meta: root.info.meta;
+            rating-label: root.info.rating-label;
+        }
+
+        if root.info.overview != "": Text {
+            text: root.info.overview;
+            color: Theme.text-soft;
+            font-size: 15px * AppState.text-scale;
+            wrap: word-wrap;
+            max-lines: 3;
+            overflow: elide;
+        }
+    }
+}
+
+export component HeroBand inherits Rectangle {
+    clip: true;
+
+    HeroLayer {
+        width: parent.width;
+        height: parent.height;
+        info: AppState.hero-a;
+        opacity: AppState.hero-front-a ? 1 : 0;
+        animate opacity {
+            duration: 300ms * AppState.settings-animation-speed;
+            easing: ease-in-out;
+        }
+    }
+
+    HeroLayer {
+        width: parent.width;
+        height: parent.height;
+        info: AppState.hero-b;
+        opacity: AppState.hero-front-a ? 0 : 1;
+        animate opacity {
+            duration: 300ms * AppState.settings-animation-speed;
+            easing: ease-in-out;
+        }
+    }
+}

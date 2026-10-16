@@ -3,6 +3,7 @@
 //                   radius, font sizes
 //   Structs shared between Rust and Slint (one line each; details on the struct):
 //   DashRowItem     one row in the Dashboard rows editor (title, shown)
+//   HeroInfo        the dashboard hero's content (title, meta, rating, overview, backdrop/cover)
 //   VideoRect       a video spot's logical position/size (HDR Stage 5)
 //   OskEdit         text/caret/byte result of one on-screen-keyboard key
 //   TrackEntry      audio / video / subtitle track row for the track panels
@@ -93,6 +94,21 @@ export global Theme {
 // Where a video spot is on screen (HDR Stage 5): absolute position + size in logical px,
 // reported by widgets.slint's VideoSpot for video_surface.rs to draw the video there.
 // One row in Settings → Interface → Dashboard rows (dashboard_rows.rs pushes the open tab's rows).
+// The dashboard hero's content (hero.rs fills it): meta = "2024 • PG-13 • 2h 46m" style line,
+// rating-label = "★ 8.6" (MetaLine shows both). Music: `cover` is the sharp album cover beside the
+// text and `backdrop` the same cover decoded tiny (Slint stretches it smooth — a blur).
+export struct HeroInfo {
+    id: string,
+    title: string,
+    meta: string,
+    rating-label: string,
+    overview: string,
+    backdrop: image,
+    has-backdrop: bool,
+    cover: image,
+    has-cover: bool,
+}
+
 export struct DashRowItem {
     title: string,
     shown: bool,

@@ -20,6 +20,7 @@
 //                 slot (big lists built once; `*-ever-shown` latches, then `visible` toggles);
 //                 LibraryGrid serves navs 1–4
 //   _osk-open     resets AppState.onscreen-keyboard-caret when the on-screen keyboard opens
+//   _hero-key     the dashboard hero's target card id → AppState.hero-request (hero.rs)
 //   overlays (bottom → top)  PlayerScreen; Series, Season, Artist, Collection, Album, Detail,
 //                 RequestDetail, RequestOptions, Calendar, Blocklist, Person (last — covers the
 //                 screens it opens from); NowPlaying, ContextMenu, PlaylistPicker,
@@ -250,6 +251,14 @@ export component MainWindow inherits Window {
     // of a reset at each place that opens the keyboard.
     property <bool> _osk-open: AppState.show-onscreen-keyboard;
     changed _osk-open => { if _osk-open { AppState.onscreen-keyboard-caret = -1; } }
+
+    // Dashboard hero: tell hero.rs whenever the card it should describe changes ("" = no hero
+    // now — hero.rs keeps the layers; the band isn't shown then). hero.rs debounces.
+    property <string> _hero-key: AppState.hero-active ? AppState.hero-target().id : "";
+    changed _hero-key => {
+        let t = AppState.hero-target();
+        AppState.hero-request(_hero-key, t.item-type, t.series-id);
+    }
 
     // DiscoverScreen — same fix again: its grid grows with pagination
     // (maybe_autofill_grid has no cap). It has no lifecycle-dependent state (no init =>).

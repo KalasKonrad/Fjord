@@ -1324,6 +1324,17 @@ export component SettingsScreen inherits Rectangle {
                         }
 
                         SettingsRow {
+                            key: "ui.dashboard_hero";
+                            per-profile: true;
+                            title: "Dashboard highlight";
+                            subtitle: "A large picture with the title, details and story of the selected item above the dashboard rows — saved for this profile";
+                            ToggleSwitch {
+                                checked <=> AppState.settings-dashboard-hero;
+                                toggled => { AppState.settings-changed(); AppState.refocus(); }
+                            }
+                        }
+
+                        SettingsRow {
                             key: "ui.dashboard_rows";
                             per-profile: true;
                             title: "Dashboard rows";

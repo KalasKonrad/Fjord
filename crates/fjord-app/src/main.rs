@@ -44,6 +44,7 @@ mod discover;
 mod display_sync;
 mod dmabuf_plane;
 mod hdr;
+mod hero;
 mod home;
 mod keys;
 mod movies;
@@ -1132,6 +1133,7 @@ fn main() -> Result<()> {
     settings::wire_profile_defaults(&window, &state);
     settings::wire_copy_settings(&window, &state);
     dashboard_rows::wire(&window, &state);
+    hero::wire(&window, &state, &rt);
 
     settings::wire_regions(&window, &state, &rt);
 

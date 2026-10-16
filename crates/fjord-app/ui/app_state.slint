@@ -104,6 +104,8 @@
 //   Dashboard rows        home/tv/movies/collections/music-row-order (shown rows in order, pushed from
 //                         ProfileSettings.dashboard_rows), nav-row-order(); the editor: show-dashboard-rows,
 //                         dash-rows-tab/-items/-cursor/-col, dash-rows-open/-select-tab/-action
+//   Dashboard hero        settings-dashboard-hero, hero-a/-b + hero-front-a (crossfading layers),
+//                         hero-active, hero-target(), hero-request (hero.rs)
 //   Nav helpers           section-len, find-first/next/prev-section (walk nav-row-order; a hidden
 //                         focused row restarts at the first), section-card-item — hand-enumerated
 //                         ternary chains; adding a dashboard row needs explicit branches (see their comment)
@@ -145,6 +147,7 @@ import {
     OskEdit,
     VideoRect,
     DashRowItem,
+    HeroInfo,
 } from "theme.slint";
 import { StandardListView } from "std-widgets.slint";
 
@@ -1736,6 +1739,20 @@ export global AppState {
     callback dash-rows-open();
     callback dash-rows-select-tab(int);
     callback dash-rows-action(int, int); // row index, 0 toggle / 1 up / 2 down
+
+    // Dashboard hero (Settings → Interface → Dashboard highlight, per profile; hero.rs). Two layers
+    // crossfade: Rust fills the hidden one (hero-a / hero-b) and flips hero-front-a. hero-target()
+    // is the card it describes — the focused card, or the first card of the first shown row while
+    // the sidebar has focus; main.slint calls hero-request when it changes (hero.rs debounces).
+    // Off while video plays behind the UI (the video is the backdrop then) and on the library grid
+    // / Browse All.
+    in-out property <bool> settings-dashboard-hero: true;
+    in-out property <HeroInfo> hero-a;
+    in-out property <HeroInfo> hero-b;
+    in-out property <bool> hero-front-a: true;
+    out property <bool> hero-active: settings-dashboard-hero && active-nav >= 0 && active-nav <= 4
+        && !show-library && !show-browse && !(video-behind-ui && has-background-player);
+    callback hero-request(string, string, string); // id ("" = nothing), item-type, series-id
     public pure function nav-row-order() -> [int] {
         active-nav == 0 ? home-row-order : active-nav == 1 ? tv-row-order : active-nav == 2 ? movies-row-order
             : active-nav == 3 ? collections-row-order : music-row-order
@@ -1782,6 +1799,11 @@ export global AppState {
         if p - 5 >= 0 && p < 99 && section-len(o[p - 5]) > 0 { return o[p - 5]; }
         if p - 6 >= 0 && p < 99 && section-len(o[p - 6]) > 0 { return o[p - 6]; }
         return -1;
+    }
+
+    public pure function hero-target() -> CardItem {
+        let fs = focused-section;
+        section-card-item(fs >= 0 ? fs : find-first-section(), fs >= 0 ? focused-card : 0)
     }
 
     // Dashboard Confirm (keys.rs) reads the whole card via section-card-item (it

@@ -10,7 +10,7 @@
 //     requests       request submit/edit/actions, blocklist toggle
 //     trailers       trailer URL allow-list + yt-dlp check
 //     keys           keyboard: Discover grid/landing/filter bar/popups, request detail + options
-//   TMDB_*_BASE / fetch_tmdb_image  TMDB image URLs + cached fetch (also used by series.rs)
+//   TMDB_*_BASE / fetch_tmdb_image  TMDB image URLs + cached fetch (also used by series.rs, hero.rs)
 //   availability_tag    MediaStatus → CardItem.availability ("blocklisted" included)
 //   media_availability  both Seerr tiers → (availability, 4K-tier flag): owned/requested only in 4K
 //                       still counts ("4K In Library")
@@ -75,7 +75,7 @@ pub(crate) use wire::*;
 
 pub(crate) const TMDB_POSTER_BASE: &str = "https://image.tmdb.org/t/p/w500";
 
-const TMDB_BACKDROP_BASE: &str = "https://image.tmdb.org/t/p/w1280";
+pub(crate) const TMDB_BACKDROP_BASE: &str = "https://image.tmdb.org/t/p/w1280";
 
 const TMDB_LOGO_BASE: &str = "https://image.tmdb.org/t/p/w92"; // small, icon-sized — provider chips
 

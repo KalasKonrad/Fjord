@@ -14,9 +14,12 @@
 //                         binds the -tv / -movies properties)
 //   CollectionsDashboard  Collections tab: Recently Added + Unwatched rows
 //   MusicDashboard        Music tab: Recently Added Albums + Recently Played + Favorites + Playlists
+//   Hero                  each dashboard mounts hero.slint's HeroBand between its title bar and its
+//                         rows when AppState.hero-active (Settings → Interface → Dashboard highlight)
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme, CardItem } from "theme.slint";
 import { AppState } from "app_state.slint";
+import { HeroBand } from "hero.slint";
 import {
     FjordButton,
     MediaCard,
@@ -729,6 +732,12 @@ export component HomeScreen inherits Rectangle {
             }
         }
 
+        // Dashboard hero (hero.slint): fixed above the rows, which scroll below it.
+        if AppState.hero-active && AppState.hero-target().id != "": HeroBand {
+            // ~38% of the screen, but always room for one whole row below it.
+            height: max(120px, min(clamp(root.height * 0.38, 200px, 460px), root.height - 54px - AppState.dash-ch - AppState.row-chrome-h - 2 * Theme.sp-lg));
+        }
+
         home-fl-container := Rectangle {
             vertical-stretch: 1;
             horizontal-stretch: 1;
@@ -754,52 +763,31 @@ export component HomeScreen inherits Rectangle {
                     spacing: 0px;
 
                     for s in root.row-order: Rectangle {
-
                         height: row-items(s).length > 0 ? AppState.dash-ch + AppState.row-chrome-h + Theme.sp-lg : 0px;
-
                         if row-items(s).length > 0: SectionRow {
-
                             x: 0;
-
                             y: 0;
-
                             width: parent.width;
-
                             section-title: row-title(s);
-
                             items: row-items(s);
-
                             section-focused: AppState.focused-section == s;
-
                             focused-card: AppState.focused-card;
-
                             card-w: AppState.dash-cw;
-
                             card-h: AppState.dash-ch;
-
                             item-play(id, it) => {
-
                                 if row-is-discover(s) {
-
                                     AppState.open-discover-item(it == "DiscoverMovie" ? "movie" : "tv", id);
                                 } else {
-
                                     AppState.item-play(id);
                                 }
                             }
-
                             item-context(id, hp, fav, rp, it, sid) => {
-
                                 if !row-is-discover(s) {
-
                                     AppState.open-context-menu(id, hp, fav, rp, it, sid);
                                 }
                             }
-
                             item-context-full(itm) => {
-
                                 if row-is-discover(s) {
-
                                     AppState.open-context-menu-discover(itm);
                                 }
                             }
@@ -885,6 +873,12 @@ export component DashboardScreen inherits Rectangle {
             }
         }
 
+        // Dashboard hero (hero.slint): fixed above the rows, which scroll below it.
+        if AppState.hero-active && AppState.hero-target().id != "": HeroBand {
+            // ~38% of the screen, but always room for one whole row below it.
+            height: max(120px, min(clamp(root.height * 0.38, 200px, 460px), root.height - 54px - AppState.dash-ch - AppState.row-chrome-h - 2 * Theme.sp-lg));
+        }
+
         dash-fl-container := Rectangle {
             vertical-stretch: 1;
             horizontal-stretch: 1;
@@ -910,52 +904,31 @@ export component DashboardScreen inherits Rectangle {
                     spacing: 0px;
 
                     for s in root.row-order: Rectangle {
-
                         height: row-items(s).length > 0 ? AppState.dash-ch + AppState.row-chrome-h + Theme.sp-lg : 0px;
-
                         if row-items(s).length > 0: SectionRow {
-
                             x: 0;
-
                             y: 0;
-
                             width: parent.width;
-
                             section-title: row-title(s);
-
                             items: row-items(s);
-
                             section-focused: AppState.focused-section == s;
-
                             focused-card: AppState.focused-card;
-
                             card-w: AppState.dash-cw;
-
                             card-h: AppState.dash-ch;
-
                             item-play(id, it) => {
-
                                 if row-is-discover(s) {
-
                                     AppState.open-discover-item(it == "DiscoverMovie" ? "movie" : "tv", id);
                                 } else {
-
                                     AppState.item-play(id);
                                 }
                             }
-
                             item-context(id, hp, fav, rp, it, sid) => {
-
                                 if !row-is-discover(s) {
-
                                     AppState.open-context-menu(id, hp, fav, rp, it, sid);
                                 }
                             }
-
                             item-context-full(itm) => {
-
                                 if row-is-discover(s) {
-
                                     AppState.open-context-menu-discover(itm);
                                 }
                             }
@@ -1033,6 +1006,12 @@ export component MusicDashboard inherits Rectangle {
             }
         }
 
+        // Dashboard hero (hero.slint): fixed above the rows, which scroll below it.
+        if AppState.hero-active && AppState.hero-target().id != "": HeroBand {
+            // ~38% of the screen, but always room for one whole row below it.
+            height: max(120px, min(clamp(root.height * 0.38, 200px, 460px), root.height - 54px - AppState.dash-ch - AppState.row-chrome-h - 2 * Theme.sp-lg));
+        }
+
         mus-fl-container := Rectangle {
             vertical-stretch: 1;
             horizontal-stretch: 1;
@@ -1058,52 +1037,31 @@ export component MusicDashboard inherits Rectangle {
                     spacing: 0px;
 
                     for s in root.row-order: Rectangle {
-
                         height: row-items(s).length > 0 ? AppState.dash-ch + AppState.row-chrome-h + Theme.sp-lg : 0px;
-
                         if row-items(s).length > 0: SectionRow {
-
                             x: 0;
-
                             y: 0;
-
                             width: parent.width;
-
                             section-title: row-title(s);
-
                             items: row-items(s);
-
                             section-focused: AppState.focused-section == s;
-
                             focused-card: AppState.focused-card;
-
                             card-w: AppState.dash-cw;
-
                             card-h: AppState.dash-ch;
-
                             item-play(id, it) => {
-
                                 if row-is-discover(s) {
-
                                     AppState.open-discover-item(it == "DiscoverMovie" ? "movie" : "tv", id);
                                 } else {
-
                                     AppState.item-play(id);
                                 }
                             }
-
                             item-context(id, hp, fav, rp, it, sid) => {
-
                                 if !row-is-discover(s) {
-
                                     AppState.open-context-menu(id, hp, fav, rp, it, sid);
                                 }
                             }
-
                             item-context-full(itm) => {
-
                                 if row-is-discover(s) {
-
                                     AppState.open-context-menu-discover(itm);
                                 }
                             }
@@ -1179,6 +1137,12 @@ export component CollectionsDashboard inherits Rectangle {
             }
         }
 
+        // Dashboard hero (hero.slint): fixed above the rows, which scroll below it.
+        if AppState.hero-active && AppState.hero-target().id != "": HeroBand {
+            // ~38% of the screen, but always room for one whole row below it.
+            height: max(120px, min(clamp(root.height * 0.38, 200px, 460px), root.height - 54px - AppState.dash-ch - AppState.row-chrome-h - 2 * Theme.sp-lg));
+        }
+
         coll-fl-container := Rectangle {
             vertical-stretch: 1;
             horizontal-stretch: 1;
@@ -1204,52 +1168,31 @@ export component CollectionsDashboard inherits Rectangle {
                     spacing: 0px;
 
                     for s in root.row-order: Rectangle {
-
                         height: row-items(s).length > 0 ? AppState.dash-ch + AppState.row-chrome-h + Theme.sp-lg : 0px;
-
                         if row-items(s).length > 0: SectionRow {
-
                             x: 0;
-
                             y: 0;
-
                             width: parent.width;
-
                             section-title: row-title(s);
-
                             items: row-items(s);
-
                             section-focused: AppState.focused-section == s;
-
                             focused-card: AppState.focused-card;
-
                             card-w: AppState.dash-cw;
-
                             card-h: AppState.dash-ch;
-
                             item-play(id, it) => {
-
                                 if row-is-discover(s) {
-
                                     AppState.open-discover-item(it == "DiscoverMovie" ? "movie" : "tv", id);
                                 } else {
-
                                     AppState.item-play(id);
                                 }
                             }
-
                             item-context(id, hp, fav, rp, it, sid) => {
-
                                 if !row-is-discover(s) {
-
                                     AppState.open-context-menu(id, hp, fav, rp, it, sid);
                                 }
                             }
-
                             item-context-full(itm) => {
-
                                 if row-is-discover(s) {
-
                                     AppState.open-context-menu-discover(itm);
                                 }
                             }
