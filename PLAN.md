@@ -65,6 +65,8 @@ A small release: bug fixes, polish, minor features. Released per CLAUDE.md → R
 
 - [ ] **Icons (2026-10-15).** On the HTPC (fewest system fonts): 🔒 on PIN-protected profile/account tiles, Manage Profiles and Bonfire Admin ("🔒 PIN set") is a grey outline, not a colour emoji or a box; the ✕ close buttons (Manage Profiles, Connect Seerr, Bonfire Group, profile editing), "⏩ Resume" on a movie page, "× Clear" in Discover's filter bar, shuffle ⇌ and ⋮ on the music bar / Now Playing, ≡ in the context menu all show their symbol. Text-field carets (Browse/Discover/Library search, join code) are a thin "|". Dim grey text (hints like "Esc to clear", album track artists, empty states, Bonfire Group help text, the player's Sub/Audio delay labels) is readable from the sofa.
 
+- [ ] **Empty searches (2026-10-16).** Type something that matches nothing in a library's search (Movies/TV/Music) and in Browse All: "No results for "…"" appears in the middle; clear it and the items return. A library with Unwatched or Favorites on and nothing matching: "No results match the current filters". Opening a library never flashes the message while it loads.
+
 ### Packages and branch model (2026-10-14)
 - [ ] **fjord-bin-nightly.** Install confirmed on dev 2026-10-15: replaced `fjord-git`, pacman shows `fjord-bin-nightly r1162.31c8a80-1`, the log `0.5.0 (r1162.31c8a80)`. Still open: the first push to `release-0.5.1` that touches code starts an Actions run for that branch and updates "nightly"; `makepkg -si` in `fjord-bin-nightly/` then installs it (pkgver `r<count>.<hash>` of the branch).
 

@@ -133,6 +133,17 @@ export component BrowseScreen inherits Rectangle {
                     }
                 }
             }
+
+            // A search that found nothing says so (the list used to just go blank). Results land async,
+            // but the previous list stays until they do, so this can't flash mid-search.
+            if AppState.browse-query != "" && AppState.media-items.length == 0: Text {
+                text: "No results for \"\{AppState.browse-query}\"";
+                color: Theme.text-muted;
+                font-size: 14px * AppState.text-scale;
+                horizontal-alignment: center;
+                y: parent.height / 3;
+                width: parent.width;
+            }
         }
 
         Rectangle {

@@ -23,6 +23,9 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Improved: an empty search says so.** Searching a library or Browse All
+  (or filtering a library by Unwatched/Favorites) with no matches now shows
+  "No results for …" instead of a blank screen, like Discover does.
 - **New: Settings → Interface → Text size** — Normal, Large or Extra large
   text everywhere (menus, cards, settings, the player), saved per profile.
   Headings stay as they are.
