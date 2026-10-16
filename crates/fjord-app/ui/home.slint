@@ -613,8 +613,8 @@ export component LibraryGrid inherits Rectangle {
                 }
             }
 
-            // A library search that matched nothing says so. Only while searching: an empty grid without
-            // a query can just be a library still loading.
+            // A library search or filter (Unwatched/Favorites) that matched nothing says so. Not for an
+            // unfiltered empty grid: that can just be a library still loading.
             if (AppState.library-query != "" || AppState.library-filter-unwatched || AppState.library-filter-favorites) && AppState.library-display.length == 0: Text {
                 text: AppState.library-query != "" ? "No results for \"\{AppState.library-query}\"" : "No results match the current filters";
                 color: Theme.text-muted;
