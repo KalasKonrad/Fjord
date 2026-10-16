@@ -5,7 +5,11 @@
 //               -b) crossfade on hero-front-a; hero.rs fills the hidden one. Not focusable — it
 //               follows the row focus.
 //   HeroLayer   one layer: backdrop (cover-fit, top-aligned) under a left and a bottom fade to the
-//               page background; Music adds the sharp album cover on the right
+//               page background (only with `picture`, i.e. the band style); Music adds the sharp
+//               album cover on the right
+//   HeroBackdrop  Background style: the two layers' pictures behind the whole dashboard below its
+//               title bar, crossfading, dimmed like the detail pages (hero-fade-top → -bottom);
+//               HeroBand then shows only the text (top-aligned) and the rows scroll over the picture
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme, HeroInfo } from "theme.slint";
 import { AppState } from "app_state.slint";
@@ -13,10 +17,12 @@ import { MetaLine } from "widgets.slint";
 
 component HeroLayer inherits Rectangle {
     in property <HeroInfo> info;
+    // false in the Background style: HeroBackdrop draws the picture behind the whole dashboard.
+    in property <bool> picture: true;
     // Text starts where the dashboard title and the row titles below do (SectionRow's padding).
     property <length> text-x: Theme.sp;
 
-    if root.info.has-backdrop: Image {
+    if root.picture && root.info.has-backdrop: Image {
         x: 0;
         y: 0;
         width: parent.width;
@@ -27,11 +33,11 @@ component HeroLayer inherits Rectangle {
     }
     // The text sits on the left: fade the picture into the page background behind it, and into
     // the rows at the bottom.
-    Rectangle {
+    if root.picture: Rectangle {
         background: @linear-gradient(90deg, Theme.bg 0%, Theme.bg 18%, Theme.bg.transparentize(100%) 70%);
     }
 
-    Rectangle {
+    if root.picture: Rectangle {
         background: @linear-gradient(180deg, Theme.bg.transparentize(100%) 45%, Theme.bg 100%);
     }
 
@@ -57,7 +63,10 @@ component HeroLayer inherits Rectangle {
         y: 0;
         width: min(root.width * 0.55, root.width - root.text-x - Theme.sp-xl);
         height: root.height;
-        alignment: end;
+        // Band: the text sits low, on the picture's fade; Background: at the top, so it doesn't
+        // move with the length of the story.
+        alignment: root.picture ? LayoutAlignment.end : LayoutAlignment.start;
+        padding-top: Theme.sp-lg;
         padding-bottom: Theme.sp;
         spacing: Theme.sp-sm;
 
@@ -92,6 +101,7 @@ export component HeroBand inherits Rectangle {
         width: parent.width;
         height: parent.height;
         info: AppState.hero-a;
+        picture: !AppState.hero-background;
         opacity: AppState.hero-front-a ? 1 : 0;
         animate opacity {
             duration: 300ms * AppState.settings-animation-speed;
@@ -103,10 +113,44 @@ export component HeroBand inherits Rectangle {
         width: parent.width;
         height: parent.height;
         info: AppState.hero-b;
+        picture: !AppState.hero-background;
         opacity: AppState.hero-front-a ? 0 : 1;
         animate opacity {
             duration: 300ms * AppState.settings-animation-speed;
             easing: ease-in-out;
         }
+    }
+}
+
+export component HeroBackdrop inherits Rectangle {
+    clip: true;
+
+    Image {
+        width: parent.width;
+        height: parent.height;
+        source: AppState.hero-a.backdrop;
+        image-fit: cover;
+        opacity: AppState.hero-front-a ? 1 : 0;
+        animate opacity {
+            duration: 300ms * AppState.settings-animation-speed;
+            easing: ease-in-out;
+        }
+    }
+
+    Image {
+        width: parent.width;
+        height: parent.height;
+        source: AppState.hero-b.backdrop;
+        image-fit: cover;
+        opacity: AppState.hero-front-a ? 0 : 1;
+        animate opacity {
+            duration: 300ms * AppState.settings-animation-speed;
+            easing: ease-in-out;
+        }
+    }
+
+    // Darkens the picture so the rows and the text over it stay readable (as on the detail pages).
+    Rectangle {
+        background: @linear-gradient(180deg, Theme.hero-fade-top 0%, Theme.hero-fade-bottom 100%);
     }
 }

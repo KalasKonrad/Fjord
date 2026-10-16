@@ -19,7 +19,7 @@
 //                   Settings rows tagged "Profile", for "Copy settings from…"): auth (server_url/user_id/
 //                   token), subtitle/audio language, library sort, skip_*_mode/_secs, trailer
 //                   quality, dashboard_rows (per dashboard: row ids in order + shown; DashboardRow),
-//                   dashboard_hero (default on),
+//                   dashboard_hero ("off" | "band" (default) | "background"; reads the old bool),
 //                   Seerr connection (seerr_enabled/_url/_auth_method/_api_key/
 //                   _session_cookie), Discover filters (genres by name, providers by id), Request
 //                   Options' remembered choices; remember_login (false → never resumed silently,
@@ -111,8 +111,23 @@ fn default_skip_fade_mute_passthrough() -> bool {
 fn default_now_playing_auto_open() -> bool {
     true
 }
-fn default_dashboard_hero() -> bool {
-    true
+fn default_dashboard_hero() -> String {
+    "band".into()
+}
+/// ProfileSettings.dashboard_hero: the style string, or the on/off bool the first 0.5.1 nightlies
+/// wrote (true → "band", false → "off").
+fn de_dashboard_hero<'de, D: serde::Deserializer<'de>>(d: D) -> Result<String, D::Error> {
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Saved {
+        OnOff(bool),
+        Style(String),
+    }
+    Ok(match Saved::deserialize(d)? {
+        Saved::OnOff(true) => "band".into(),
+        Saved::OnOff(false) => "off".into(),
+        Saved::Style(s) => s,
+    })
 }
 fn default_hwdec() -> String {
     "auto".into()
@@ -687,10 +702,14 @@ pub(crate) struct ProfileSettings {
     // new rows are filled in from the defaults (dashboard_rows::rows_for).
     #[serde(default)]
     pub dashboard_rows: std::collections::BTreeMap<String, Vec<DashboardRow>>,
-    // ── Dashboard hero (Settings → Interface): the focused card's backdrop, title, details and
-    // overview in a band above the dashboard rows (hero.rs). On by default.
-    #[serde(default = "default_dashboard_hero")]
-    pub dashboard_hero: bool,
+    // ── Dashboard hero (Settings → Interface → Dashboard highlight): "off" | "band" (the focused
+    // card's backdrop, title, details and overview in a band above the rows) | "background" (its
+    // backdrop behind the whole dashboard, the text above the rows) — hero.rs. Default "band".
+    #[serde(
+        default = "default_dashboard_hero",
+        deserialize_with = "de_dashboard_hero"
+    )]
+    pub dashboard_hero: String,
 
     // ── Seerr integration (Settings → Integrations) — cleared on sign-out
     // alongside server_url/user_id/token. seerr_auth_method is purely
@@ -804,7 +823,7 @@ impl ProfileSettings {
         self.card_size = src.card_size.clone();
         self.text_size = src.text_size.clone();
         self.dashboard_rows = src.dashboard_rows.clone();
-        self.dashboard_hero = src.dashboard_hero;
+        self.dashboard_hero = src.dashboard_hero.clone();
         self.trailer_quality = src.trailer_quality.clone();
     }
 }
@@ -857,7 +876,7 @@ impl Default for ProfileSettings {
             card_size: default_card_size(),
             text_size: default_card_size(),
             dashboard_rows: Default::default(),
-            dashboard_hero: true,
+            dashboard_hero: default_dashboard_hero(),
             seerr_enabled: false,
             seerr_url: String::new(),
             seerr_auth_method: String::new(),
@@ -1246,7 +1265,7 @@ fn migrate_legacy_config(l: LegacyConfig) -> Config {
         card_size: default_card_size(),
         text_size: default_card_size(),
         dashboard_rows: Default::default(),
-        dashboard_hero: true,
+        dashboard_hero: default_dashboard_hero(),
     };
     let active_profile_id = profile.user_id.clone();
     Config {
@@ -2359,6 +2378,23 @@ mod tests {
     use super::*;
 
     #[test]
+    fn dashboard_hero_reads_the_old_switch_and_the_style() {
+        #[derive(Deserialize)]
+        struct W {
+            #[serde(
+                default = "default_dashboard_hero",
+                deserialize_with = "de_dashboard_hero"
+            )]
+            h: String,
+        }
+        let read = |json: &str| serde_json::from_str::<W>(json).unwrap().h;
+        assert_eq!(read(r#"{"h":true}"#), "band");
+        assert_eq!(read(r#"{"h":false}"#), "off");
+        assert_eq!(read(r#"{"h":"background"}"#), "background");
+        assert_eq!(read("{}"), "band");
+    }
+
+    #[test]
     fn copy_settings_from_copies_only_the_profile_settings() {
         let mut src = ProfileSettings {
             user_id: "aaaa0001000000000000000000000000".into(),
@@ -2378,7 +2414,7 @@ mod tests {
         src.text_size = "extra-large".into();
         src.trailer_quality = "720p".into();
         src.now_playing_auto_open = !ProfileSettings::default().now_playing_auto_open;
-        src.dashboard_hero = false;
+        src.dashboard_hero = "background".into();
         src.dashboard_rows.insert(
             "music".into(),
             vec![
@@ -2408,7 +2444,7 @@ mod tests {
         assert_eq!(dst.trailer_quality, "720p");
         assert_eq!(dst.now_playing_auto_open, src.now_playing_auto_open);
         assert_eq!(dst.dashboard_rows, src.dashboard_rows);
-        assert!(!dst.dashboard_hero);
+        assert_eq!(dst.dashboard_hero, "background");
         // Sign-in, identity, Integrations and remembered browsing state stay.
         assert_eq!(dst.user_id, "aaaa0002000000000000000000000000");
         assert_eq!(dst.token, "own-token");

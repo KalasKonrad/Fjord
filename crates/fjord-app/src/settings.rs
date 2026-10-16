@@ -193,7 +193,7 @@ const PLY_TRAILER_QUALITY: &str = "player.trailer_quality"; // every YouTube tra
 const UI_CARD_SIZE: &str = "ui.card_size"; // per profile, unlike the other UI rows
 const UI_TEXT_SIZE: &str = "ui.text_size"; // per profile, like card size
 const UI_DASHBOARD_ROWS: &str = "ui.dashboard_rows"; // per profile; opens dashboard_rows.rs's editor
-const UI_DASHBOARD_HERO: &str = "ui.dashboard_hero"; // per profile; hero.rs
+const UI_DASHBOARD_HERO: &str = "ui.dashboard_hero"; // per profile, a dropdown; hero.rs
 const UI_SCROLL_SPEED: &str = "ui.scroll_speed";
 const UI_ANIMATION_SPEED: &str = "ui.animation_speed";
 const UI_FONT_FAMILY: &str = "ui.font_family";
@@ -712,6 +712,7 @@ const CACHE_MAX_MB_VALUES: &[i32] = &[0, 150, 300, 500, 1000, 2000];
 const SKIP_MODE_4_MODEL: &[&str] = &["always-skip", "ask", "ask-timed", "never-skip"];
 const SKIP_MODE_3_MODEL: &[&str] = &["always-skip", "ask", "never-skip"];
 const CARD_SIZE_MODEL: &[&str] = &["small", "normal", "large", "extra-large", "huge"];
+const HERO_STYLE_MODEL: &[&str] = &["off", "band", "background"];
 const SKIP_SECS_MODEL: &[&str] = &["3", "5", "8", "10", "15", "20", "30"];
 const CREDITS_SECS_MODEL: &[&str] = &["10", "15", "20", "30", "45", "60"];
 const LOG_LEVEL_MODEL: &[&str] = &["error", "warn", "info", "debug"];
@@ -800,6 +801,14 @@ fn display_val<'a>(val: &'a str, key: &str) -> &'a str {
             _ => val,
         };
     }
+    if key == UI_DASHBOARD_HERO {
+        return match val {
+            "off" => "Off",
+            "band" => "Band at the top",
+            "background" => "Background",
+            _ => val,
+        };
+    }
     if key == UI_CARD_SIZE || key == UI_TEXT_SIZE {
         return match val {
             "small" => "Small",
@@ -861,6 +870,7 @@ fn dropdown_model(key: &str) -> Option<&'static [&'static str]> {
         }
         PLY_CREDITS_MODE => Some(SKIP_MODE_3_MODEL),
         UI_CARD_SIZE | UI_TEXT_SIZE => Some(CARD_SIZE_MODEL),
+        UI_DASHBOARD_HERO => Some(HERO_STYLE_MODEL),
         PLY_INTRO_SECS | PLY_RECAP_SECS | PLY_PREVIEW_SECS | PLY_COMMERCIAL_SECS => {
             Some(SKIP_SECS_MODEL)
         }
@@ -942,6 +952,7 @@ fn current_value_str(key: &str, g: &crate::AppState<'_>) -> String {
         PLY_CREDITS_MODE => g.get_settings_skip_credits_mode().to_string(),
         UI_CARD_SIZE => g.get_settings_card_size().to_string(),
         UI_TEXT_SIZE => g.get_settings_text_size().to_string(),
+        UI_DASHBOARD_HERO => g.get_settings_dashboard_hero().to_string(),
         PLY_CREDITS_SECS => g.get_settings_skip_credits_secs().to_string(),
         PLY_SEEK_STEP => g.get_settings_seek_step_secs().to_string(),
         PLY_SEEK_STEP_LONG => g.get_settings_seek_step_long_secs().to_string(),
@@ -1201,6 +1212,7 @@ pub(crate) fn apply_dropdown_selection(key: &str, cursor: i32, g: &crate::AppSta
         PLY_CREDITS_MODE => g.set_settings_skip_credits_mode(val.into()),
         UI_CARD_SIZE => g.set_settings_card_size(val.into()),
         UI_TEXT_SIZE => g.set_settings_text_size(val.into()),
+        UI_DASHBOARD_HERO => g.set_settings_dashboard_hero(val.into()),
         PLY_CREDITS_SECS => g.set_settings_skip_credits_secs(val.parse().unwrap_or(30)),
         PLY_SEEK_STEP => g.set_settings_seek_step_secs(val.parse().unwrap_or(10)),
         PLY_SEEK_STEP_LONG => g.set_settings_seek_step_long_secs(val.parse().unwrap_or(30)),
@@ -1260,7 +1272,8 @@ fn settings_row_action(key: &str, g: &crate::AppState<'_>) {
         GEN_PREWARM_METADATA => g.invoke_prewarm_metadata(),
         UI_DASHBOARD_ROWS => g.invoke_dash_rows_open(),
         UI_DASHBOARD_HERO => {
-            g.set_settings_dashboard_hero(!g.get_settings_dashboard_hero());
+            let v = cycle(g.get_settings_dashboard_hero().as_str(), HERO_STYLE_MODEL);
+            g.set_settings_dashboard_hero(v.into());
             g.invoke_settings_changed();
         }
         GEN_PREWARM_IMAGES => g.invoke_prewarm_images(),
@@ -2535,7 +2548,7 @@ pub(crate) fn apply_profile_settings_to_window(
     g.set_settings_card_size(ss(&cp.card_size));
     g.set_settings_text_size(ss(&cp.text_size));
     crate::dashboard_rows::push_row_orders(g, cp);
-    g.set_settings_dashboard_hero(cp.dashboard_hero);
+    g.set_settings_dashboard_hero(ss(&cp.dashboard_hero));
     g.set_settings_trailer_quality(ss(&cp.trailer_quality));
 }
 
@@ -2795,7 +2808,7 @@ pub(crate) fn read_settings_from_window(w: &MainWindow, s: &mut FjordState) {
     cp.skip_credits_mode = g.get_settings_skip_credits_mode().to_string();
     cp.card_size = g.get_settings_card_size().to_string();
     cp.text_size = g.get_settings_text_size().to_string();
-    cp.dashboard_hero = g.get_settings_dashboard_hero();
+    cp.dashboard_hero = g.get_settings_dashboard_hero().to_string();
     cp.skip_credits_secs = g.get_settings_skip_credits_secs().max(0) as u32;
     cp.seerr_enabled = g.get_settings_seerr_enabled();
     cp.trailer_quality = g.get_settings_trailer_quality().to_string();

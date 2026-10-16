@@ -1331,10 +1331,16 @@ export component SettingsScreen inherits Rectangle {
                             key: "ui.dashboard_hero";
                             per-profile: true;
                             title: "Dashboard highlight";
-                            subtitle: "A large picture with the title, details and story of the selected item above the dashboard rows — saved for this profile";
-                            ToggleSwitch {
-                                checked <=> AppState.settings-dashboard-hero;
-                                toggled => { AppState.settings-changed(); AppState.refocus(); }
+                            subtitle: "The selected item's picture, title, details and story on the dashboards: in a band above the rows, or as the background behind them — saved for this profile";
+                            SettingsDropdown {
+                                model: ["Off", "Band at the top", "Background"];
+                                current-value: AppState.settings-dashboard-hero == "off" ? "Off"
+                                    : AppState.settings-dashboard-hero == "background" ? "Background" : "Band at the top";
+                                selected(v) => {
+                                    AppState.settings-dashboard-hero = v == "Off" ? "off" : v == "Background" ? "background" : "band";
+                                    AppState.settings-changed();
+                                    AppState.refocus();
+                                }
                             }
                         }
 

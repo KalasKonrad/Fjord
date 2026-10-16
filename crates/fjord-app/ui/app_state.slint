@@ -104,8 +104,9 @@
 //   Dashboard rows        home/tv/movies/collections/music-row-order (shown rows in order, pushed from
 //                         ProfileSettings.dashboard_rows), nav-row-order(); the editor: show-dashboard-rows,
 //                         dash-rows-tab/-items/-cursor/-col, dash-rows-open/-select-tab/-action
-//   Dashboard hero        settings-dashboard-hero, hero-a/-b + hero-front-a (crossfading layers),
-//                         hero-active, hero-target(), hero-request (hero.rs)
+//   Dashboard hero        settings-dashboard-hero ("off"/"band"/"background") + hero-background,
+//                         hero-a/-b + hero-front-a (crossfading layers), hero-active, hero-target(),
+//                         hero-request (hero.rs)
 //   Nav helpers           section-len, find-first/next/prev-section (walk nav-row-order; a hidden
 //                         focused row restarts at the first), section-card-item — hand-enumerated
 //                         ternary chains; adding a dashboard row needs explicit branches (see their comment)
@@ -1750,11 +1751,13 @@ export global AppState {
     // the sidebar has focus; main.slint calls hero-request when it changes (hero.rs debounces).
     // Off while video plays behind the UI (the video is the backdrop then) and on the library grid
     // / Browse All.
-    in-out property <bool> settings-dashboard-hero: true;
+    // "off" | "band" | "background" (the picture behind the whole dashboard, the text above the rows).
+    in-out property <string> settings-dashboard-hero: "band";
+    out property <bool> hero-background: settings-dashboard-hero == "background";
     in-out property <HeroInfo> hero-a;
     in-out property <HeroInfo> hero-b;
     in-out property <bool> hero-front-a: true;
-    out property <bool> hero-active: settings-dashboard-hero && active-nav >= 0 && active-nav <= 4
+    out property <bool> hero-active: settings-dashboard-hero != "off" && active-nav >= 0 && active-nav <= 4
         && !show-library && !show-browse && !(video-behind-ui && has-background-player);
     callback hero-request(string, string, string); // id ("" = nothing), item-type, series-id
     public pure function nav-row-order() -> [int] {
