@@ -157,8 +157,9 @@ Needs `mpv`/libmpv (`pacman -S mpv`). Optional at runtime: `yt-dlp` (trailers), 
   through every code path that writes the same model.
 - Every model holding `CardItem`s must be listed in `context_menu::update_card_in_all_models`.
 - These lists exist twice, in Rust and as Slint `if` conditions, with no shared source of truth —
-  **change both sides together**: context-menu rows (`existing_*_menu_rows` ↔ `context_menu.slint`),
-  settings rows (`settings::section_row_keys` ↔ `settings.slint`), D-pad zone lists (`existing_*_zones`).
+  **change both sides together**: settings rows (`settings::section_row_keys` ↔ `settings.slint`), D-pad zone
+  lists (`existing_*_zones`). The context menu is built in Rust only (`context_menu::menu_rows` → a `for` in
+  context_menu.slint; Enter and click both run `activate`).
 - A card row's height is `AppState.row-h(card-h)` (title + cards + zoom room) — never `card-h + row-chrome-h` by hand;
   a focusable picture zooms with `transform-scale-x/-y: AppState.zoom(focused)` (+ `z`), and whatever scrolls it keeps
   `AppState.zoom-pad(size)` of room or anchors edge items inward (`MediaCard.zoom-anchor-x/-y`).

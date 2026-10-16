@@ -22,13 +22,18 @@
 //   wire_context_menu               open-context-menu (/-browse/-series-ep), mark played/unplayed
 //                                   (then refresh_series_next_up), favourite, play from start
 //                                   (series → next up; BoxSet toasts), Jellyfin-menu Watchlist row
-//   handle_key / existing_jellyfin_menu_rows  keyboard dispatch; row ids with gaps: 0 Resume,
-//                                   1–6 fixed, 7 Add to Playlist (music), 8 Watchlist; a Season
-//                                   gets a narrower menu; Discover* item types go to:
-//   handle_key_discover_menu / existing_discover_menu_rows  Discover family: 0 View Details,
-//                                   5 View Request, 1 Request/Edit, 2 Cancel, 3 Approve, 4 Decline,
-//                                   6 Watchlist, 7 Blocklist — gated by Seerr's real per-endpoint
-//                                   permissions; Confirm calls discover's on_context_discover_*
+//   existing_jellyfin_menu_rows / existing_discover_menu_rows  which row ids exist, in on-screen
+//                                   order — Jellyfin: 0 Resume, 1–6 fixed, 7 Add to Playlist
+//                                   (music), 9 Remove from Playlist, 8 Watchlist, 6 View Details
+//                                   last (a Season: 4/5/6); Discover: 1 Request/Edit, 2 Cancel,
+//                                   3 Approve, 4 Decline, 6 Watchlist, 7 Blocklist, 5 View
+//                                   Request, 0 View Details — gated by Seerr's real permissions
+//   menu_rows                       those ids as MenuRows (icon, font, label) — context_menu.slint
+//                                   draws them (pure context-menu-rows: follows changes while
+//                                   open), handle_key walks them
+//   activate                        run a row (Enter and click): the Jellyfin actions (then close)
+//                                   or discover's on_context_discover_* (they close)
+//   handle_key                      Up/Down loop over menu_rows, Enter → activate, Back closes
 //   Queue:
 //   find_title_in_state / find_title_in_models  title fallbacks by id
 //   enqueue_item / queue_from_context_menu  play next or append; Series → next-up episode,
@@ -50,7 +55,7 @@ use tracing::{debug, warn};
 use crate::config::FjordState;
 use crate::playback::{QueueItem, VideoState, start_playback};
 use crate::series::open_series_screen;
-use crate::{AppState, CardItem, MainWindow};
+use crate::{AppState, CardItem, MainWindow, MenuRow};
 use fjord_api::JellyfinClient;
 
 // Patch every dashboard row, library grid, and episode list; called after a successful API toggle.
@@ -504,6 +509,23 @@ pub(crate) fn wire_context_menu(
     video: Arc<Mutex<VideoState>>,
     rt_handle: tokio::runtime::Handle,
 ) {
+    // ── The rows (drawn by context_menu.slint) and a click on one ────────────
+    {
+        let ww = window.as_weak();
+        AppState::get(window).on_context_menu_rows(move || {
+            let rows = ww
+                .upgrade()
+                .map(|w| menu_rows(&AppState::get(&w)))
+                .unwrap_or_default();
+            ModelRc::new(VecModel::from(rows))
+        });
+        let ww = window.as_weak();
+        AppState::get(window).on_context_menu_activate(move |id| {
+            if let Some(w) = ww.upgrade() {
+                activate(&AppState::get(&w), id);
+            }
+        });
+    }
     // ── open-context-menu: called with full card data from Slint ─────────────
     {
         let state = Arc::clone(&state);
@@ -1178,58 +1200,6 @@ pub(crate) fn existing_discover_menu_rows(g: &AppState) -> Vec<i32> {
     rows
 }
 
-fn handle_key_discover_menu(action: &crate::keys::Action, g: &AppState) -> bool {
-    use crate::keys::Action;
-    let rows = existing_discover_menu_rows(g);
-    match action {
-        Action::Back | Action::OpenContextMenu => {
-            g.set_show_context_menu(false);
-            true
-        }
-        Action::Up => {
-            let pos = rows
-                .iter()
-                .position(|&r| r == g.get_context_menu_focused())
-                .unwrap_or(0);
-            g.set_context_menu_focused(rows[if pos == 0 { rows.len() - 1 } else { pos - 1 }]);
-            true
-        }
-        Action::Down => {
-            let pos = rows
-                .iter()
-                .position(|&r| r == g.get_context_menu_focused())
-                .unwrap_or(0);
-            g.set_context_menu_focused(rows[if pos + 1 >= rows.len() { 0 } else { pos + 1 }]);
-            true
-        }
-        Action::Confirm => {
-            // Each invoke_context_discover_* handler (discover.rs) closes
-            // the menu itself on activation — not repeated here.
-            match g.get_context_menu_focused() {
-                0 => g.invoke_context_discover_view_details(),
-                1 => {
-                    if g.get_context_menu_request_id().as_str().is_empty() {
-                        g.invoke_context_discover_request();
-                    } else {
-                        g.invoke_context_discover_edit_request();
-                    }
-                }
-                2 => g.invoke_context_discover_cancel_request(),
-                3 => g.invoke_context_discover_approve_request(),
-                4 => g.invoke_context_discover_decline_request(),
-                5 => g.invoke_context_discover_view_request(),
-                // Keyboard Enter on rows 6/7 (the mouse goes through context_menu.slint's
-                // `activated`).
-                6 => g.invoke_context_discover_toggle_watchlist(),
-                7 => g.invoke_context_discover_toggle_blocklist(),
-                _ => {}
-            }
-            true
-        }
-        _ => true, // swallow all other keys while the menu is open
-    }
-}
-
 /// Fixed row indices with gaps, in on-screen (Up/Down) order (like existing_discover_menu_rows):
 /// 0 Resume (resume-pct > 0 && !played), 1 Play from Start, 2 Play Next, 3 Add to Queue, 4 Mark
 /// Played, 5 Favourite, 7 Add to Playlist (music only), 9 Remove from Playlist (a track opened
@@ -1262,65 +1232,145 @@ fn existing_jellyfin_menu_rows(g: &AppState) -> Vec<i32> {
     rows
 }
 
-pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
-    if g.get_context_menu_item_type()
+const SYMBOLS: &str = "Noto Sans Symbols 2";
+
+fn menu_row(id: i32, icon: &str, icon_font: &str, label: &str) -> MenuRow {
+    MenuRow {
+        id,
+        icon: icon.into(),
+        icon_font: icon_font.into(),
+        label: label.into(),
+    }
+}
+
+/// The open menu's rows, top to bottom — what context_menu.slint draws (context-menu-rows, a
+/// pure callback: the properties read here are tracked, so the menu follows changes while open,
+/// e.g. a TMDB id resolving) and what Up/Down walk. Ids: existing_*_menu_rows.
+pub(crate) fn menu_rows(g: &AppState) -> Vec<MenuRow> {
+    let discover = g
+        .get_context_menu_item_type()
         .as_str()
-        .starts_with("Discover")
-    {
-        return handle_key_discover_menu(action, g);
+        .starts_with("Discover");
+    let star = |on: bool| if on { "★" } else { "☆" };
+    let watch_label = |on: bool| {
+        if on {
+            "Remove from Watchlist"
+        } else {
+            "Add to Watchlist"
+        }
+    };
+    if discover {
+        let on = g.get_context_menu_on_watchlist();
+        let blocklisted = g.get_context_menu_availability().as_str() == "blocklisted";
+        let requested = !g.get_context_menu_request_id().as_str().is_empty();
+        existing_discover_menu_rows(g)
+            .into_iter()
+            .map(|id| match id {
+                1 if requested => menu_row(1, "✎", SYMBOLS, "Edit Request"),
+                1 => menu_row(1, "+", "", "Request"),
+                2 => menu_row(2, "✕", SYMBOLS, "Cancel Request"),
+                3 => menu_row(3, "✓", "Adwaita Sans", "Approve"),
+                4 => menu_row(4, "✕", SYMBOLS, "Decline"),
+                6 => menu_row(6, star(on), SYMBOLS, watch_label(on)),
+                7 if blocklisted => menu_row(7, "✕", SYMBOLS, "Remove from Blocklist"),
+                7 => menu_row(7, "⛔", SYMBOLS, "Add to Blocklist"),
+                5 => menu_row(5, "ℹ", "", "View Request"),
+                _ => menu_row(0, "ℹ", "", "View Details"),
+            })
+            .collect()
+    } else {
+        let played = g.get_context_menu_has_played();
+        let fav = g.get_context_menu_is_favorite();
+        let on = g.get_context_menu_on_watchlist();
+        existing_jellyfin_menu_rows(g)
+            .into_iter()
+            .map(|id| match id {
+                0 => menu_row(0, "⏵", SYMBOLS, "Resume"),
+                1 => menu_row(1, "▶", SYMBOLS, "Play from Start"),
+                2 => menu_row(2, "⏭", SYMBOLS, "Play Next"),
+                3 => menu_row(3, "+", "", "Add to Queue"),
+                4 if played => menu_row(4, "✓", "Adwaita Sans", "Mark as Unplayed"),
+                4 => menu_row(4, "○", SYMBOLS, "Mark as Played"),
+                5 if fav => menu_row(5, "♥", "Adwaita Sans", "Remove from Favorites"),
+                5 => menu_row(5, "♡", SYMBOLS, "Add to Favorites"),
+                7 => menu_row(7, "≡", "Noto Sans Math", "Add to Playlist"),
+                9 => menu_row(9, "✕", SYMBOLS, "Remove from Playlist"),
+                8 => menu_row(8, star(on), "", watch_label(on)),
+                _ => menu_row(6, "ℹ", "", "View Details"),
+            })
+            .collect()
     }
-    use crate::keys::Action;
-    match action {
-        Action::Back | Action::OpenContextMenu => {
-            g.set_show_context_menu(false);
-            true
-        }
-        Action::Up => {
-            let rows = existing_jellyfin_menu_rows(g);
-            let f = g.get_context_menu_focused();
-            let pos = rows.iter().position(|&r| r == f).unwrap_or(0);
-            g.set_context_menu_focused(rows[if pos == 0 { rows.len() - 1 } else { pos - 1 }]);
-            true
-        }
-        Action::Down => {
-            let rows = existing_jellyfin_menu_rows(g);
-            let f = g.get_context_menu_focused();
-            let pos = rows.iter().position(|&r| r == f).unwrap_or(0);
-            g.set_context_menu_focused(rows[if pos + 1 >= rows.len() { 0 } else { pos + 1 }]);
-            true
-        }
-        Action::Confirm => {
-            let id = g.get_context_menu_item_id();
-            let played = g.get_context_menu_has_played();
-            let fav = g.get_context_menu_is_favorite();
-            let itype = g.get_context_menu_item_type();
-            match g.get_context_menu_focused() {
-                0 => g.invoke_item_play(id),
-                1 => g.invoke_context_play_from_start(id),
-                2 => g.invoke_queue_play_next_item(),
-                3 => g.invoke_queue_add_item(),
-                4 => g.invoke_context_mark_played(id, played),
-                5 => g.invoke_context_toggle_fav(id, fav),
-                // "Season" has no DetailPage — mirrors context_menu.slint's
-                // identical mouse-click special case (View Details row),
-                // added 2026-08-12 for the season-tab context menu.
-                6 => {
-                    if itype.as_str() == "Season" {
-                        g.invoke_open_season_detail(id, g.get_context_menu_series_id());
-                    } else {
-                        g.invoke_open_detail(id, itype);
-                    }
+}
+
+/// Run menu row `id` — Enter and a click both come here. Jellyfin rows close the menu after;
+/// each Discover handler (discover's on_context_discover_*) closes it itself.
+pub(crate) fn activate(g: &AppState, id: i32) {
+    debug!("context menu: activate row {id}");
+    g.set_context_menu_focused(id);
+    let itype = g.get_context_menu_item_type();
+    if itype.as_str().starts_with("Discover") {
+        match id {
+            0 => g.invoke_context_discover_view_details(),
+            1 => {
+                if g.get_context_menu_request_id().as_str().is_empty() {
+                    g.invoke_context_discover_request();
+                } else {
+                    g.invoke_context_discover_edit_request();
                 }
-                7 => g.invoke_open_playlist_picker(),
-                8 => g.invoke_context_jf_toggle_watchlist(),
-                9 => g.invoke_playlist_remove_entry(g.get_context_menu_playlist_index()),
-                _ => {}
             }
-            g.set_show_context_menu(false);
-            true
+            2 => g.invoke_context_discover_cancel_request(),
+            3 => g.invoke_context_discover_approve_request(),
+            4 => g.invoke_context_discover_decline_request(),
+            5 => g.invoke_context_discover_view_request(),
+            6 => g.invoke_context_discover_toggle_watchlist(),
+            7 => g.invoke_context_discover_toggle_blocklist(),
+            _ => {}
         }
-        _ => true, // swallow all other keys while the menu is open
+        return;
     }
+    let id_s = g.get_context_menu_item_id();
+    match id {
+        0 => g.invoke_item_play(id_s),
+        1 => g.invoke_context_play_from_start(id_s),
+        2 => g.invoke_queue_play_next_item(),
+        3 => g.invoke_queue_add_item(),
+        4 => g.invoke_context_mark_played(id_s, g.get_context_menu_has_played()),
+        5 => g.invoke_context_toggle_fav(id_s, g.get_context_menu_is_favorite()),
+        // A Season has no DetailPage: it opens its own screen (season id + series id).
+        6 => {
+            if itype.as_str() == "Season" {
+                g.invoke_open_season_detail(id_s, g.get_context_menu_series_id());
+            } else {
+                g.invoke_open_detail(id_s, itype);
+            }
+        }
+        7 => g.invoke_open_playlist_picker(),
+        8 => g.invoke_context_jf_toggle_watchlist(),
+        9 => g.invoke_playlist_remove_entry(g.get_context_menu_playlist_index()),
+        _ => {}
+    }
+    g.set_show_context_menu(false);
+}
+
+pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
+    use crate::keys::Action;
+    let step = |delta: i32| {
+        let ids: Vec<i32> = menu_rows(g).iter().map(|r| r.id).collect();
+        let pos = ids
+            .iter()
+            .position(|&r| r == g.get_context_menu_focused())
+            .unwrap_or(0) as i32;
+        let n = ids.len() as i32;
+        g.set_context_menu_focused(ids[((pos + delta) % n + n) as usize % n as usize]);
+    };
+    match action {
+        Action::Back | Action::OpenContextMenu => g.set_show_context_menu(false),
+        Action::Up => step(-1),
+        Action::Down => step(1),
+        Action::Confirm => activate(g, g.get_context_menu_focused()),
+        _ => {} // swallow all other keys while the menu is open
+    }
+    true
 }
 
 // ── Add-to-playlist picker ────────────────────────────────────────────────────

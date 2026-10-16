@@ -3,6 +3,7 @@
 //                   radius, font sizes
 //   Structs shared between Rust and Slint (one line each; details on the struct):
 //   DashRow         one dashboard row (title, cards, discover) — AppState.*-rows
+//   MenuRow         one context-menu row (id, icon, icon-font, label) — context_menu.rs menu_rows
 //   DashRowItem     one row in the Dashboard rows editor (title, shown)
 //   HeroInfo        the dashboard hero's content (title, meta, rating, overview, backdrop/cover)
 //   VideoRect       a video spot's logical position/size (HDR Stage 5)
@@ -112,6 +113,15 @@ export struct HeroInfo {
     has-backdrop: bool,
     cover: image,
     has-cover: bool,
+}
+
+// One context-menu row (context_menu.rs menu_rows): its id (the context-menu-focused value and what
+// activate runs), icon glyph + its pinned font ("" = the text font), label.
+export struct MenuRow {
+    id: int,
+    icon: string,
+    icon-font: string,
+    label: string,
 }
 
 export struct DashRowItem {
