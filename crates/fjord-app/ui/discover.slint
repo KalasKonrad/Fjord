@@ -397,15 +397,15 @@ export component DiscoverScreen inherits Rectangle {
             // target, so keyboard focus scrolls off-screen.
             pure function row-y(s: int) -> length {
                 Theme.sp-lg
-                    + (AppState.discover-trending.length > 0 && s > 0 ? (AppState.dash-ch + AppState.row-chrome-h + Theme.sp-lg) : 0px)
-                    + (AppState.discover-popular-movies.length > 0 && s > 1 ? (AppState.dash-ch + AppState.row-chrome-h + Theme.sp-lg) : 0px)
-                    + (AppState.discover-popular-tv.length > 0 && s > 2 ? (AppState.dash-ch + AppState.row-chrome-h + Theme.sp-lg) : 0px)
-                    + (AppState.discover-upcoming-movies.length > 0 && s > 3 ? (AppState.dash-ch + AppState.row-chrome-h + Theme.sp-lg) : 0px)
-                    + (AppState.discover-upcoming-tv.length > 0 && s > 4 ? (AppState.dash-ch + AppState.row-chrome-h + Theme.sp-lg) : 0px)
-                    + (AppState.discover-requested.length > 0 && s > 5 ? (AppState.dash-ch + AppState.row-chrome-h + Theme.sp-lg) : 0px)
-                    + (AppState.discover-new-in-theaters.length > 0 && s > 6 ? (AppState.dash-ch + AppState.row-chrome-h + Theme.sp-lg) : 0px)
+                    + (AppState.discover-trending.length > 0 && s > 0 ? (AppState.row-h(AppState.dash-ch) + Theme.sp-lg) : 0px)
+                    + (AppState.discover-popular-movies.length > 0 && s > 1 ? (AppState.row-h(AppState.dash-ch) + Theme.sp-lg) : 0px)
+                    + (AppState.discover-popular-tv.length > 0 && s > 2 ? (AppState.row-h(AppState.dash-ch) + Theme.sp-lg) : 0px)
+                    + (AppState.discover-upcoming-movies.length > 0 && s > 3 ? (AppState.row-h(AppState.dash-ch) + Theme.sp-lg) : 0px)
+                    + (AppState.discover-upcoming-tv.length > 0 && s > 4 ? (AppState.row-h(AppState.dash-ch) + Theme.sp-lg) : 0px)
+                    + (AppState.discover-requested.length > 0 && s > 5 ? (AppState.row-h(AppState.dash-ch) + Theme.sp-lg) : 0px)
+                    + (AppState.discover-new-in-theaters.length > 0 && s > 6 ? (AppState.row-h(AppState.dash-ch) + Theme.sp-lg) : 0px)
                 // Row 8 (Watchlist) needs row 7's (Coming Up) height.
-                + (AppState.discover-coming-up.length > 0 && s > 7 ? (AppState.dash-ch + AppState.row-chrome-h + Theme.sp-lg) : 0px)
+                + (AppState.discover-coming-up.length > 0 && s > 7 ? (AppState.row-h(AppState.dash-ch) + Theme.sp-lg) : 0px)
             }
 
             // root.content-h, not self/own height — see the doc comment on
@@ -413,7 +413,7 @@ export component DiscoverScreen inherits Rectangle {
             // mounted makes that unsafe here specifically.
             property <length> kb-y: AppState.focused-section < 0 ? 0px
                 : clamp(
-                      root.content-h / 2 - row-y(AppState.focused-section) - (AppState.dash-ch + AppState.row-chrome-h) / 2,
+                      root.content-h / 2 - row-y(AppState.focused-section) - (AppState.row-h(AppState.dash-ch)) / 2,
                       min(0px, root.content-h - landing-content.preferred-height),
                       0px);
             changed kb-y => { landing-fl.content-y = kb-y; }
@@ -644,12 +644,17 @@ export component DiscoverScreen inherits Rectangle {
                     spacing: gap;
 
                     for row-idx in (AppState.discover-results.length + AppState.library-cols - 1) / AppState.library-cols: HorizontalLayout {
+                        // The focused card's row draws above the next one (its zoom reaches into the gap).
+                        z: floor(AppState.discover-focused / AppState.library-cols) == row-idx ? 1 : 0;
                         alignment: start;
                         spacing: gap;
                         height: card-h;
 
                         for col-idx in AppState.library-cols: MediaCard {
                             property <int> idx: row-idx * AppState.library-cols + col-idx;
+                            // Edge cards zoom inward so the grid's edges don't cut them off.
+                            zoom-anchor-x: col-idx == 0 ? 0 : col-idx == AppState.library-cols - 1 ? 1 : 0.5;
+                            zoom-anchor-y: row-idx == 0 ? 0 : row-idx == floor((AppState.discover-results.length - 1) / AppState.library-cols) ? 1 : 0.5;
                             visible: idx < AppState.discover-results.length;
                             item: AppState.discover-results[idx];
                             width: card-w;

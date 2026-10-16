@@ -106,7 +106,8 @@
 //                         dash-rows-tab/-items/-cursor/-col, dash-rows-open/-select-tab/-action
 //   Focus highlight       settings-focus-color/-width/-style/-opacity/-zoom → focus-color, focus-width,
 //                         focus-line-width, focus-press-width, focus-glow(-blur), focus-scale; the ring
-//                         helpers ring-width / glow-ring-width / glow-blur every focusable element uses
+//                         helpers ring-width / glow-ring-width / glow-blur every focusable element uses;
+//                         zoom(focused) for focused pictures, zoom-pad(size) + row-h(card-h) for the room
 //   Dashboard hero        settings-dashboard-hero ("off"/"band"/"background") + hero-background,
 //                         hero-a/-b + hero-front-a (crossfading layers), hero-active, hero-target(),
 //                         hero-request (hero.rs)
@@ -1560,6 +1561,23 @@ export global AppState {
     }
     public pure function glow-blur(focused: bool) -> length {
         focus-glow && focused ? focus-glow-blur : 0px
+    }
+    // Zoom room: how far a focused picture of this size reaches past its edges (zoom + glow).
+    // Card rows add it above and below the cards (row-h); grids anchor edge cards instead.
+    public pure function zoom-pad(size: length) -> length {
+        size * (focus-scale - 1) / 2 + (focus-glow ? focus-glow-blur : 0px)
+    }
+    // A focused picture's transform-scale-x/-y (MediaCard, cast photos, profile tiles).
+    // focus-scale as the percent transform-scale wants (Slint won't turn float × % into %).
+    out property <percent> focus-scale-pct: settings-focus-zoom == "5" ? 105% : settings-focus-zoom == "10" ? 110%
+        : settings-focus-zoom == "15" ? 115% : settings-focus-zoom == "20" ? 120%
+        : settings-focus-zoom == "25" ? 125% : settings-focus-zoom == "30" ? 130% : 100%;
+    public pure function zoom(focused: bool) -> percent {
+        focused ? focus-scale-pct : 100%
+    }
+    // A card row's height: title + cards + zoom room (SectionRow, dashboards, Discover rows).
+    public pure function row-h(card-h: length) -> length {
+        card-h + row-chrome-h + 2 * zoom-pad(card-h)
     }
     out property <float> focus-scale: settings-focus-zoom == "5" ? 1.05 : settings-focus-zoom == "10" ? 1.10
         : settings-focus-zoom == "15" ? 1.15 : settings-focus-zoom == "20" ? 1.20

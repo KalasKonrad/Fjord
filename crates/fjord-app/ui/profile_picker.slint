@@ -43,6 +43,14 @@ component ProfileTileCard inherits VerticalLayout {
         x: (parent.width - self.width) / 2;
         border-radius: self.width / 2;
         background: root.is-add-tile ? Theme.surface-overlay : root.tile.avatar-color;
+        // Focus zoom (AppState.focus-scale), a render transform; tiles have room around them.
+        transform-scale-x: AppState.zoom(root.kbd-focused);
+        transform-scale-y: AppState.zoom(root.kbd-focused);
+        transform-origin: { x: self.width * 0.5, y: self.height / 2 };
+        animate transform-scale-x, transform-scale-y {
+            duration: 150ms * AppState.settings-animation-speed;
+            easing: ease-out-expo;
+        }
         border-width: AppState.glow-ring-width(root.kbd-focused, ta.pressed || tile-pulse.pulsing);
         drop-shadow-blur: AppState.glow-blur(root.kbd-focused);
         drop-shadow-color: AppState.focus-color;

@@ -172,12 +172,17 @@ export component ArtistScreen inherits Rectangle {
                         spacing: gap;
 
                         for row-idx in (AppState.artist-albums.length + AppState.library-cols - 1) / AppState.library-cols: HorizontalLayout {
+                            // The focused card's row draws above the next one (its zoom reaches into the gap).
+                            z: floor(AppState.artist-focused / AppState.library-cols) == row-idx ? 1 : 0;
                             alignment: start;
                             spacing: gap;
                             height: card-h;
 
                             for col-idx in AppState.library-cols: MediaCard {
                                 property <int> idx: row-idx * AppState.library-cols + col-idx;
+                                // Edge cards zoom inward so the grid's edges don't cut them off.
+                                zoom-anchor-x: col-idx == 0 ? 0 : col-idx == AppState.library-cols - 1 ? 1 : 0.5;
+                                zoom-anchor-y: row-idx == 0 ? 0 : row-idx == floor((AppState.artist-albums.length - 1) / AppState.library-cols) ? 1 : 0.5;
                                 visible: idx < AppState.artist-albums.length;
                                 item: AppState.artist-albums[idx];
                                 width: card-w;

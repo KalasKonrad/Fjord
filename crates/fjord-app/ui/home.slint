@@ -1,9 +1,11 @@
 // ── fjord-app · home.slint ───────────────────────────────────────────────────
-//   SectionRow            horizontal-scroll card row with a title; item-context-full(CardItem) and
+//   SectionRow            horizontal-scroll card row with a title, AppState.row-h(card-h) tall (zoom room
+//                         above/below the cards; the first card zooms from its left edge); item-context-full(CardItem) and
 //                         card-focused(int) callbacks for Discover-style rows (whole card for the
 //                         Discover menu; clicked index syncs keyboard focus)
 //   LibraryGrid           2-D poster grid for full library browse (Back button ring when
-//                         library-back-focused; search caret at library-query-cursor)
+//                         library-back-focused; search caret at library-query-cursor); edge cards zoom
+//                         inward, the focused card's row is raised (z) — as in the Discover/artist/collection grids
 //   Card sizes            SectionRow's default and the grid's cards scale with AppState.card-scale
 //                         (Settings → Interface → Card size); the dashboards pass dash-cw/-ch (scaled too)
 //   HomeScreen            Home tab: Continue Watching, Next Up, recently added shows/movies/albums,
@@ -49,7 +51,9 @@ export component SectionRow inherits Rectangle {
     // it.
     callback card-focused(int);
 
-    height: card-h + AppState.row-chrome-h;
+    // Room for the focused card's zoom/glow (AppState.zoom-pad), above and below the cards.
+    property <length> zoom-y: AppState.zoom-pad(root.card-h);
+    height: AppState.row-h(card-h);
 
     VerticalLayout {
         padding: Theme.sp;
@@ -74,8 +78,8 @@ export component SectionRow inherits Rectangle {
         changed kb-x => { fl.content-x = kb-x; }
 
         fl := Flickable {
-            height: card-h;
-            content-width: hbox.preferred-width + Theme.sp;
+            height: card-h + 2 * root.zoom-y;
+            content-width: hbox.preferred-width + Theme.sp + AppState.zoom-pad(root.card-w);
             animate content-x {
                 duration: 150ms * AppState.settings-scroll-speed;
                 easing: ease-out-expo;
@@ -84,10 +88,13 @@ export component SectionRow inherits Rectangle {
             hbox := HorizontalLayout {
                 spacing: 10px;
                 alignment: start;
+                padding-top: root.zoom-y;
+                padding-bottom: root.zoom-y;
 
                 for itm[i] in items: MediaCard {
                     width: root.card-w;
                     height: root.card-h;
+                    zoom-anchor-x: i == 0 ? 0 : 0.5;
                     item: itm;
                     focused: root.section-focused && i == root.focused-card;
                     clicked => { root.card-focused(i); root.item-play(itm.id, itm.item-type); }
@@ -515,12 +522,17 @@ export component LibraryGrid inherits Rectangle {
                     spacing: gap;
 
                     for row-idx in (AppState.library-display.length + AppState.library-cols - 1) / AppState.library-cols: HorizontalLayout {
+                        // The focused card's row draws above the next one (its zoom reaches into the gap).
+                        z: floor(AppState.library-focused / AppState.library-cols) == row-idx ? 1 : 0;
                         alignment: start;
                         spacing: gap;
                         height: card-h;
 
                         for col-idx in AppState.library-cols: MediaCard {
                             property <int> idx: row-idx * AppState.library-cols + col-idx;
+                            // Edge cards zoom inward so the grid's edges don't cut them off.
+                            zoom-anchor-x: col-idx == 0 ? 0 : col-idx == AppState.library-cols - 1 ? 1 : 0.5;
+                            zoom-anchor-y: row-idx == 0 ? 0 : row-idx == floor((AppState.library-display.length - 1) / AppState.library-cols) ? 1 : 0.5;
                             visible: idx < AppState.library-display.length;
                             item: AppState.library-display[idx];
                             width: card-w;
@@ -708,7 +720,7 @@ export component HomeScreen inherits Rectangle {
     }
     // The row at position k with the gap below it; 0 when there is none or it's empty.
     pure function slot-h(k: int) -> length {
-        row-order.length > k && row-items(row-order[k]).length > 0 ? AppState.dash-ch + AppState.row-chrome-h + Theme.sp-lg : 0px
+        row-order.length > k && row-items(row-order[k]).length > 0 ? AppState.row-h(AppState.dash-ch) + Theme.sp-lg : 0px
     }
     pure function section-y(s: int) -> length {
         let p = row-pos(s);
@@ -756,7 +768,7 @@ export component HomeScreen inherits Rectangle {
             // Band: ~38% of the screen, but always room for one whole row below it. Background: just
             // the text (title, meta line, 3 lines of story), the picture is behind everything.
             height: AppState.hero-background ? 88px + 76px * AppState.text-scale
-                : max(120px, min(clamp(root.height * 0.38, 200px, 460px), root.height - 54px - AppState.dash-ch - AppState.row-chrome-h - 2 * Theme.sp-lg));
+                : max(120px, min(clamp(root.height * 0.38, 200px, 460px), root.height - 54px - AppState.row-h(AppState.dash-ch) - 2 * Theme.sp-lg));
         }
 
         home-fl-container := Rectangle {
@@ -764,7 +776,7 @@ export component HomeScreen inherits Rectangle {
             horizontal-stretch: 1;
             property <length> kb-y: AppState.focused-section < 0 ? 0px
                 : clamp(
-                      self.height / 2 - section-y(AppState.focused-section) - (AppState.dash-ch + AppState.row-chrome-h) / 2,
+                      self.height / 2 - section-y(AppState.focused-section) - (AppState.row-h(AppState.dash-ch)) / 2,
                       min(0px, self.height - rows.preferred-height),
                       0px);
             changed kb-y => { fl.content-y = kb-y; }
@@ -785,7 +797,7 @@ export component HomeScreen inherits Rectangle {
                     spacing: 0px;
 
                     for s in root.row-order: Rectangle {
-                        height: row-items(s).length > 0 ? AppState.dash-ch + AppState.row-chrome-h + Theme.sp-lg : 0px;
+                        height: row-items(s).length > 0 ? AppState.row-h(AppState.dash-ch) + Theme.sp-lg : 0px;
                         if row-items(s).length > 0: SectionRow {
                             x: 0;
                             y: 0;
@@ -860,7 +872,7 @@ export component DashboardScreen inherits Rectangle {
     }
     // The row at position k with the gap below it; 0 when there is none or it's empty.
     pure function slot-h(k: int) -> length {
-        row-order.length > k && row-items(row-order[k]).length > 0 ? AppState.dash-ch + AppState.row-chrome-h + Theme.sp-lg : 0px
+        row-order.length > k && row-items(row-order[k]).length > 0 ? AppState.row-h(AppState.dash-ch) + Theme.sp-lg : 0px
     }
     pure function section-y(s: int) -> length {
         let p = row-pos(s);
@@ -908,7 +920,7 @@ export component DashboardScreen inherits Rectangle {
             // Band: ~38% of the screen, but always room for one whole row below it. Background: just
             // the text (title, meta line, 3 lines of story), the picture is behind everything.
             height: AppState.hero-background ? 88px + 76px * AppState.text-scale
-                : max(120px, min(clamp(root.height * 0.38, 200px, 460px), root.height - 54px - AppState.dash-ch - AppState.row-chrome-h - 2 * Theme.sp-lg));
+                : max(120px, min(clamp(root.height * 0.38, 200px, 460px), root.height - 54px - AppState.row-h(AppState.dash-ch) - 2 * Theme.sp-lg));
         }
 
         dash-fl-container := Rectangle {
@@ -916,7 +928,7 @@ export component DashboardScreen inherits Rectangle {
             horizontal-stretch: 1;
             property <length> kb-y: AppState.focused-section < 0 ? 0px
                 : clamp(
-                      self.height / 2 - section-y(AppState.focused-section) - (AppState.dash-ch + AppState.row-chrome-h) / 2,
+                      self.height / 2 - section-y(AppState.focused-section) - (AppState.row-h(AppState.dash-ch)) / 2,
                       min(0px, self.height - rows.preferred-height),
                       0px);
             changed kb-y => { fl.content-y = kb-y; }
@@ -937,7 +949,7 @@ export component DashboardScreen inherits Rectangle {
                     spacing: 0px;
 
                     for s in root.row-order: Rectangle {
-                        height: row-items(s).length > 0 ? AppState.dash-ch + AppState.row-chrome-h + Theme.sp-lg : 0px;
+                        height: row-items(s).length > 0 ? AppState.row-h(AppState.dash-ch) + Theme.sp-lg : 0px;
                         if row-items(s).length > 0: SectionRow {
                             x: 0;
                             y: 0;
@@ -1006,7 +1018,7 @@ export component MusicDashboard inherits Rectangle {
     }
     // The row at position k with the gap below it; 0 when there is none or it's empty.
     pure function slot-h(k: int) -> length {
-        row-order.length > k && row-items(row-order[k]).length > 0 ? AppState.dash-ch + AppState.row-chrome-h + Theme.sp-lg : 0px
+        row-order.length > k && row-items(row-order[k]).length > 0 ? AppState.row-h(AppState.dash-ch) + Theme.sp-lg : 0px
     }
     pure function section-y(s: int) -> length {
         let p = row-pos(s);
@@ -1052,7 +1064,7 @@ export component MusicDashboard inherits Rectangle {
             // Band: ~38% of the screen, but always room for one whole row below it. Background: just
             // the text (title, meta line, 3 lines of story), the picture is behind everything.
             height: AppState.hero-background ? 88px + 76px * AppState.text-scale
-                : max(120px, min(clamp(root.height * 0.38, 200px, 460px), root.height - 54px - AppState.dash-ch - AppState.row-chrome-h - 2 * Theme.sp-lg));
+                : max(120px, min(clamp(root.height * 0.38, 200px, 460px), root.height - 54px - AppState.row-h(AppState.dash-ch) - 2 * Theme.sp-lg));
         }
 
         mus-fl-container := Rectangle {
@@ -1060,7 +1072,7 @@ export component MusicDashboard inherits Rectangle {
             horizontal-stretch: 1;
             property <length> kb-y: AppState.focused-section < 0 ? 0px
                 : clamp(
-                      root.height / 2 - section-y(AppState.focused-section) - (AppState.dash-ch + AppState.row-chrome-h) / 2,
+                      root.height / 2 - section-y(AppState.focused-section) - (AppState.row-h(AppState.dash-ch)) / 2,
                       min(0px, root.height - mus-rows.preferred-height),
                       0px);
             changed kb-y => { mus-fl.content-y = kb-y; }
@@ -1081,7 +1093,7 @@ export component MusicDashboard inherits Rectangle {
                     spacing: 0px;
 
                     for s in root.row-order: Rectangle {
-                        height: row-items(s).length > 0 ? AppState.dash-ch + AppState.row-chrome-h + Theme.sp-lg : 0px;
+                        height: row-items(s).length > 0 ? AppState.row-h(AppState.dash-ch) + Theme.sp-lg : 0px;
                         if row-items(s).length > 0: SectionRow {
                             x: 0;
                             y: 0;
@@ -1148,7 +1160,7 @@ export component CollectionsDashboard inherits Rectangle {
     }
     // The row at position k with the gap below it; 0 when there is none or it's empty.
     pure function slot-h(k: int) -> length {
-        row-order.length > k && row-items(row-order[k]).length > 0 ? AppState.dash-ch + AppState.row-chrome-h + Theme.sp-lg : 0px
+        row-order.length > k && row-items(row-order[k]).length > 0 ? AppState.row-h(AppState.dash-ch) + Theme.sp-lg : 0px
     }
     pure function section-y(s: int) -> length {
         let p = row-pos(s);
@@ -1194,7 +1206,7 @@ export component CollectionsDashboard inherits Rectangle {
             // Band: ~38% of the screen, but always room for one whole row below it. Background: just
             // the text (title, meta line, 3 lines of story), the picture is behind everything.
             height: AppState.hero-background ? 88px + 76px * AppState.text-scale
-                : max(120px, min(clamp(root.height * 0.38, 200px, 460px), root.height - 54px - AppState.dash-ch - AppState.row-chrome-h - 2 * Theme.sp-lg));
+                : max(120px, min(clamp(root.height * 0.38, 200px, 460px), root.height - 54px - AppState.row-h(AppState.dash-ch) - 2 * Theme.sp-lg));
         }
 
         coll-fl-container := Rectangle {
@@ -1202,7 +1214,7 @@ export component CollectionsDashboard inherits Rectangle {
             horizontal-stretch: 1;
             property <length> kb-y: AppState.focused-section < 0 ? 0px
                 : clamp(
-                      root.height / 2 - section-y(AppState.focused-section) - (AppState.dash-ch + AppState.row-chrome-h) / 2,
+                      root.height / 2 - section-y(AppState.focused-section) - (AppState.row-h(AppState.dash-ch)) / 2,
                       min(0px, root.height - coll-rows.preferred-height),
                       0px);
             changed kb-y => { coll-fl.content-y = kb-y; }
@@ -1223,7 +1235,7 @@ export component CollectionsDashboard inherits Rectangle {
                     spacing: 0px;
 
                     for s in root.row-order: Rectangle {
-                        height: row-items(s).length > 0 ? AppState.dash-ch + AppState.row-chrome-h + Theme.sp-lg : 0px;
+                        height: row-items(s).length > 0 ? AppState.row-h(AppState.dash-ch) + Theme.sp-lg : 0px;
                         if row-items(s).length > 0: SectionRow {
                             x: 0;
                             y: 0;

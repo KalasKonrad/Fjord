@@ -20,12 +20,14 @@
 //   MediaCard          poster card for rows and grids: the poster fills the card, the full title +
 //                      subtitle sit over its bottom on a dark fade; badges ♥ / ★ (top-left), ✓ /
 //                      count / Seerr availability / cross-tier pill (top-right), progress strip;
-//                      flush focus ring; no poster fade
+//                      flush focus ring (glow from the poster); focus zoom via AppState.zoom from
+//                      zoom-anchor-x/-y (edge cards grow inward), raised with z; no poster fade
 //   LoadingSpinner     animated ring (speed-scaled dot rhythm)
 //   StatRow / ToggleSwitch / SectionHeader / SettingsDropdown / SettingsRow (key = settings.rs row key)
 //   PosterBlock        160×240 poster with badges (played, progress, unplayed count, request status)
 //   MetaLine           year · runtime · rating + optional ★ community rating
-//   CastRow            scrollable cast row (portrait, name, role); content-x follows focused-idx
+//   CastRow            scrollable cast row (portrait, name, role); content-x follows focused-idx;
+//                      zoom room above/below the photos (AppState.zoom-pad), focused photo zooms
 //   StorylineSection   collapsible overview; clicked-header() lets RequestDetailScreen sync its zone
 //   MiniPlayerBar      bottom bar for background video: 108px with a live thumbnail (a VideoSpot on the
 //                      separate surface), 56px when the video is behind the UI; float-card-focused
@@ -778,6 +780,10 @@ export component FadeGate {
 export component MediaCard inherits Rectangle {
     in property <CardItem> item;
     in property <bool> focused: false;
+    // Where the zoom grows from (0 = left/top edge, 0.5 = centre, 1 = right/bottom edge): a row's
+    // first card and a grid's edge cards grow inward, so their scroll area doesn't cut them off.
+    in property <float> zoom-anchor-x: 0.5;
+    in property <float> zoom-anchor-y: 0.5;
     callback clicked;
     callback right-clicked;
 
@@ -785,6 +791,16 @@ export component MediaCard inherits Rectangle {
     height: 224px;
     border-radius: Theme.radius;
     background: #00000000;
+    // Focus zoom (Settings → Interface → Zoom on the selected picture): a render transform, so
+    // nothing around it moves; drawn above its neighbours.
+    z: root.focused ? 1 : 0;
+    transform-scale-x: AppState.zoom(root.focused);
+    transform-scale-y: AppState.zoom(root.focused);
+    transform-origin: { x: self.width * root.zoom-anchor-x, y: self.height * root.zoom-anchor-y };
+    animate transform-scale-x, transform-scale-y {
+        duration: 150ms * AppState.settings-animation-speed;
+        easing: ease-out-expo;
+    }
     pulse := PressPulse {
         trigger: AppState.kb-activate-pulse;
         active: root.focused;
@@ -1502,7 +1518,7 @@ export component CastRow inherits VerticalLayout {
     // Card stride = 100px width + 16px spacing = 116px.
     // kb-x drives content-x via changed callback; mouse-wheel scroll works natively.
     fl := Flickable {
-        height: 162px;
+        height: 162px + 2 * AppState.zoom-pad(120px);
         content-width: hbox.preferred-width;
         animate content-x {
             duration: 150ms * AppState.settings-scroll-speed;
@@ -1512,15 +1528,26 @@ export component CastRow inherits VerticalLayout {
         hbox := HorizontalLayout {
             spacing: 16px;
             alignment: start;
+            padding-top: AppState.zoom-pad(120px);
+            padding-bottom: AppState.zoom-pad(120px);
 
             for c[i] in root.cast: VerticalLayout {
                 width: 100px;
                 spacing: 4px;
+                z: root.focused-idx == i ? 1 : 0;
 
                 // Single Rectangle with clip + border: Slint renders border on top of children
                 // so the focus ring is always visible even when the photo fills the area.
                 Rectangle {
                     height: 120px;
+                    // Focus zoom (AppState.focus-scale), a render transform; the row keeps room for it, the first photo grows from its left edge.
+                    transform-scale-x: AppState.zoom(root.focused-idx == i);
+                    transform-scale-y: AppState.zoom(root.focused-idx == i);
+                    transform-origin: { x: self.width * (i == 0 ? 0 : 0.5), y: self.height / 2 };
+                    animate transform-scale-x, transform-scale-y {
+                        duration: 150ms * AppState.settings-animation-speed;
+                        easing: ease-out-expo;
+                    }
                     border-radius: Theme.radius;
                     border-width: AppState.glow-ring-width(root.focused-idx == i, ta.pressed || cast-pulse.pulsing);
                     drop-shadow-blur: AppState.glow-blur(root.focused-idx == i);

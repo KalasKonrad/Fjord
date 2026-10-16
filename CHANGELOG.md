@@ -23,6 +23,10 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **New: the selected picture grows.** Posters and cards everywhere, cast
+  photos and profile tiles zoom a little when selected (10% by default) and
+  sit above their neighbours. Settings → Interface → Zoom on the selected
+  picture: Off, 5%–30%, saved per profile.
 - **New: choose how the selection looks.** Settings → Interface has a focus
   ring color (white, accent blue, gold, green, red), thickness (2–6px), style
   (line, glow, or both — the glow is on posters, tiles and buttons; rows and
