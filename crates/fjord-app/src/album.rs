@@ -577,6 +577,11 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
                     "Audio".into(),
                     "".into(),
                 );
+                // After the open (which clears it): offers "Remove from Playlist" — the remote has
+                // no Delete key.
+                if g.get_album_is_playlist() {
+                    g.set_context_menu_playlist_index(f);
+                }
             }
             true
         }

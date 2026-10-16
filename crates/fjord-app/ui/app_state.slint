@@ -1347,6 +1347,10 @@ export global AppState {
     // (handle_playlist_picker) share one grapheme-correct implementation.
     callback playlist-picker-name-append(string);
     callback playlist-picker-name-backspace();
+    // The track's row index when the menu was opened on a track inside a playlist (album.rs, C on a
+    // playlist track), else -1 (reset by every open): shows row 9 "Remove from Playlist" — the remote's
+    // way to do what the mouse's ✕ / the Delete key do.
+    in-out property <int> context-menu-playlist-index: -1;
     in-out property <int> context-menu-focused:     0;   // 0=Resume (if resume-pct>0 && !played) 1=Play from Start 2=Mark Played 3=Favourite 4=View Details
 
     // ── Key binding editor state ──────────────────────────────────────────────

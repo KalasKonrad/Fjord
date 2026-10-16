@@ -825,7 +825,7 @@ export component MediaCard inherits Rectangle {
                 y: 4px;
                 width: 24px;
                 height: 24px;
-                border-radius: 12px;
+                border-radius: Theme.radius-lg;
                 background: Theme.accent;
                 Text {
                     text: "❤";
@@ -846,7 +846,7 @@ export component MediaCard inherits Rectangle {
                 y: item.is-favorite ? 32px : 4px;
                 width: 24px;
                 height: 24px;
-                border-radius: 12px;
+                border-radius: Theme.radius-lg;
                 background: Theme.accent;
                 Text {
                     text: "★";
@@ -864,7 +864,7 @@ export component MediaCard inherits Rectangle {
                 y: 4px;
                 width: 24px;
                 height: 24px;
-                border-radius: 12px;
+                border-radius: Theme.radius-lg;
                 background: Theme.accent;
                 Text {
                     text: "✓";
@@ -883,7 +883,7 @@ export component MediaCard inherits Rectangle {
                 y: 4px;
                 width: 24px;
                 height: 24px;
-                border-radius: 12px;
+                border-radius: Theme.radius-lg;
                 background: Theme.accent;
                 Text {
                     text: "\{item.unplayed-count}";
@@ -1115,7 +1115,7 @@ export component SettingsDropdown inherits Rectangle {
     // Width tracks rendered text; capped so long descriptions don't overflow the settings row.
     width: min(max(80px, val.preferred-width + chevron.preferred-width + 24px), 280px);
     height: 34px;
-    border-radius: 6px;
+    border-radius: Theme.radius;
     background: ta.has-hover ? Theme.surface-overlay : Theme.surface-raised;
     border-width: ta.pressed ? 3px : 1px;
     border-color: ta.pressed ? Theme.focus-border : Theme.border;
@@ -1159,7 +1159,7 @@ export component SettingsDropdown inherits Rectangle {
 
         Rectangle {
             background: Theme.surface-raised;
-            border-radius: 6px;
+            border-radius: Theme.radius;
             border-width: 1px;
             border-color: Theme.border;
             drop-shadow-blur: 8px;

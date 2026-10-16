@@ -69,6 +69,8 @@ A small release: bug fixes, polish, minor features. Released per CLAUDE.md → R
 
 - [ ] **Plurals, wrapping, cursor (2026-10-16).** A profile tile with one profile says "1 profile"; a library search with one match "1 result"; an album with one track "1 track"; a missing season with one episode "1 episode". An episode page of a long-named series and the "Copy Settings from …?" dialog with a long profile name wrap instead of cutting off. With a mouse: hand cursor over every button, context-menu entry, tile, pill and list row; text cursor over the search fields.
 
+- [ ] **Remove from Playlist (2026-10-16).** Open a playlist, select a track, C (context menu): "Remove from Playlist" between "Add to Playlist" and "View Details"; Enter removes the track (the list updates). On an album's track (not a playlist) and everywhere else, the row is absent. The ✕ button and the Delete key still work.
+
 ### Packages and branch model (2026-10-14)
 - [ ] **fjord-bin-nightly.** Install confirmed on dev 2026-10-15: replaced `fjord-git`, pacman shows `fjord-bin-nightly r1162.31c8a80-1`, the log `0.5.0 (r1162.31c8a80)`. Still open: the first push to `release-0.5.1` that touches code starts an Actions run for that branch and updates "nightly"; `makepkg -si` in `fjord-bin-nightly/` then installs it (pkgver `r<count>.<hash>` of the branch).
 

@@ -23,6 +23,9 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Fixed: removing a track from a playlist needed a mouse or a keyboard.**
+  The context menu on a playlist's track (C on the remote) now has "Remove
+  from Playlist".
 - **Fixed: "1 tracks", "1 episodes", "1 profiles"** and similar — counts
   now use the singular for one. Long series names and dialog titles wrap
   instead of being cut off, and the mouse shows a hand over every button and
