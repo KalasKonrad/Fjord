@@ -706,7 +706,7 @@ export component PlayerScreen inherits Rectangle {
                         width: seek-track.thumb-w + 4px;
                         height: seek-track.thumb-w * AppState.trickplay-aspect + 4px;
                         x: clamp(self.anchor - self.width / 2, 0px, seek-track.width - self.width);
-                        y: (self.hovering ? -30px : 0px) - self.height - 6px;
+                        y: (self.hovering ? -8px - 22px * AppState.text-scale : 0px) - self.height - 6px;
                         background: Theme.osd-panel-solid;
                         border-radius: 4px;
                         Image {
@@ -721,10 +721,10 @@ export component PlayerScreen inherits Rectangle {
 
                     // Hover time tooltip
                     if seek-ta.has-hover && AppState.seek-hover-time != "": Rectangle {
-                        x: clamp(seek-ta.mouse-x - 26px, 0px, seek-track.width - 52px);
-                        y: -30px;
-                        width: 52px;
-                        height: 22px;
+                        x: clamp(seek-ta.mouse-x - self.width / 2, 0px, seek-track.width - self.width);
+                        y: -8px - self.height;
+                        width: 52px * AppState.text-scale;
+                        height: 22px * AppState.text-scale;
                         background: Theme.osd-panel-solid;
                         border-radius: 4px;
                         Text {

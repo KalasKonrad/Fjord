@@ -23,6 +23,10 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Improved: more text and card sizes.** Settings → Interface → Text size
+  and Card size now go from Small to Huge: text Small (−10%), Normal, Large,
+  Extra large, Huge (+50%); cards Small (−20%), Normal, Large, Extra large,
+  Huge (twice the size). Badges and pills on the cards grow with the text.
 - **Improved: screens line up.** Titles, search fields, filter/sort pills and
   the rows or grids below them now start at the same left edge on the
   dashboards, Discover, Browse All and the library grids, so switching between
