@@ -15,11 +15,12 @@
 //   CollectionsDashboard  Collections tab: Recently Added + Unwatched rows
 //   MusicDashboard        Music tab: Recently Added Albums + Recently Played + Favorites + Playlists
 //   Hero                  each dashboard mounts hero.slint's HeroBand between its title bar and its
-//                         rows when AppState.hero-active (Settings → Interface → Dashboard highlight)
+//                         rows when AppState.hero-active (Settings → Interface → Dashboard highlight),
+//                         and in the Background style HeroBackdrop behind everything below the title bar
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme, CardItem } from "theme.slint";
 import { AppState } from "app_state.slint";
-import { HeroBand } from "hero.slint";
+import { HeroBand, HeroBackdrop } from "hero.slint";
 import {
     FjordButton,
     MediaCard,
@@ -704,6 +705,14 @@ export component HomeScreen inherits Rectangle {
         Theme.sp-lg + (p > 0 ? slot-h(0) : 0px) + (p > 1 ? slot-h(1) : 0px) + (p > 2 ? slot-h(2) : 0px) + (p > 3 ? slot-h(3) : 0px) + (p > 4 ? slot-h(4) : 0px) + (p > 5 ? slot-h(5) : 0px) + (p > 6 ? slot-h(6) : 0px)
     }
 
+    // Dashboard hero, Background style (hero.slint): the picture behind everything below the title bar.
+    if AppState.hero-active && AppState.hero-background && AppState.hero-target().id != "": HeroBackdrop {
+        x: 0;
+        y: 54px;
+        width: root.width;
+        height: root.height - 54px;
+    }
+
     VerticalLayout {
         spacing: 0px;
 
@@ -734,8 +743,10 @@ export component HomeScreen inherits Rectangle {
 
         // Dashboard hero (hero.slint): fixed above the rows, which scroll below it.
         if AppState.hero-active && AppState.hero-target().id != "": HeroBand {
-            // ~38% of the screen, but always room for one whole row below it.
-            height: max(120px, min(clamp(root.height * 0.38, 200px, 460px), root.height - 54px - AppState.dash-ch - AppState.row-chrome-h - 2 * Theme.sp-lg));
+            // Band: ~38% of the screen, but always room for one whole row below it. Background: just
+            // the text (title, meta line, 3 lines of story), the picture is behind everything.
+            height: AppState.hero-background ? 88px + 76px * AppState.text-scale
+                : max(120px, min(clamp(root.height * 0.38, 200px, 460px), root.height - 54px - AppState.dash-ch - AppState.row-chrome-h - 2 * Theme.sp-lg));
         }
 
         home-fl-container := Rectangle {
@@ -846,6 +857,14 @@ export component DashboardScreen inherits Rectangle {
         Theme.sp-lg + (p > 0 ? slot-h(0) : 0px) + (p > 1 ? slot-h(1) : 0px) + (p > 2 ? slot-h(2) : 0px) + (p > 3 ? slot-h(3) : 0px) + (p > 4 ? slot-h(4) : 0px) + (p > 5 ? slot-h(5) : 0px) + (p > 6 ? slot-h(6) : 0px)
     }
 
+    // Dashboard hero, Background style (hero.slint): the picture behind everything below the title bar.
+    if AppState.hero-active && AppState.hero-background && AppState.hero-target().id != "": HeroBackdrop {
+        x: 0;
+        y: 54px;
+        width: root.width;
+        height: root.height - 54px;
+    }
+
     VerticalLayout {
         spacing: 0px;
 
@@ -876,8 +895,10 @@ export component DashboardScreen inherits Rectangle {
 
         // Dashboard hero (hero.slint): fixed above the rows, which scroll below it.
         if AppState.hero-active && AppState.hero-target().id != "": HeroBand {
-            // ~38% of the screen, but always room for one whole row below it.
-            height: max(120px, min(clamp(root.height * 0.38, 200px, 460px), root.height - 54px - AppState.dash-ch - AppState.row-chrome-h - 2 * Theme.sp-lg));
+            // Band: ~38% of the screen, but always room for one whole row below it. Background: just
+            // the text (title, meta line, 3 lines of story), the picture is behind everything.
+            height: AppState.hero-background ? 88px + 76px * AppState.text-scale
+                : max(120px, min(clamp(root.height * 0.38, 200px, 460px), root.height - 54px - AppState.dash-ch - AppState.row-chrome-h - 2 * Theme.sp-lg));
         }
 
         dash-fl-container := Rectangle {
@@ -982,6 +1003,14 @@ export component MusicDashboard inherits Rectangle {
         Theme.sp-lg + (p > 0 ? slot-h(0) : 0px) + (p > 1 ? slot-h(1) : 0px) + (p > 2 ? slot-h(2) : 0px) + (p > 3 ? slot-h(3) : 0px) + (p > 4 ? slot-h(4) : 0px) + (p > 5 ? slot-h(5) : 0px) + (p > 6 ? slot-h(6) : 0px)
     }
 
+    // Dashboard hero, Background style (hero.slint): the picture behind everything below the title bar.
+    if AppState.hero-active && AppState.hero-background && AppState.hero-target().id != "": HeroBackdrop {
+        x: 0;
+        y: 54px;
+        width: root.width;
+        height: root.height - 54px;
+    }
+
     VerticalLayout {
         spacing: 0px;
 
@@ -1010,8 +1039,10 @@ export component MusicDashboard inherits Rectangle {
 
         // Dashboard hero (hero.slint): fixed above the rows, which scroll below it.
         if AppState.hero-active && AppState.hero-target().id != "": HeroBand {
-            // ~38% of the screen, but always room for one whole row below it.
-            height: max(120px, min(clamp(root.height * 0.38, 200px, 460px), root.height - 54px - AppState.dash-ch - AppState.row-chrome-h - 2 * Theme.sp-lg));
+            // Band: ~38% of the screen, but always room for one whole row below it. Background: just
+            // the text (title, meta line, 3 lines of story), the picture is behind everything.
+            height: AppState.hero-background ? 88px + 76px * AppState.text-scale
+                : max(120px, min(clamp(root.height * 0.38, 200px, 460px), root.height - 54px - AppState.dash-ch - AppState.row-chrome-h - 2 * Theme.sp-lg));
         }
 
         mus-fl-container := Rectangle {
@@ -1114,6 +1145,14 @@ export component CollectionsDashboard inherits Rectangle {
         Theme.sp-lg + (p > 0 ? slot-h(0) : 0px) + (p > 1 ? slot-h(1) : 0px) + (p > 2 ? slot-h(2) : 0px) + (p > 3 ? slot-h(3) : 0px) + (p > 4 ? slot-h(4) : 0px) + (p > 5 ? slot-h(5) : 0px) + (p > 6 ? slot-h(6) : 0px)
     }
 
+    // Dashboard hero, Background style (hero.slint): the picture behind everything below the title bar.
+    if AppState.hero-active && AppState.hero-background && AppState.hero-target().id != "": HeroBackdrop {
+        x: 0;
+        y: 54px;
+        width: root.width;
+        height: root.height - 54px;
+    }
+
     VerticalLayout {
         spacing: 0px;
 
@@ -1142,8 +1181,10 @@ export component CollectionsDashboard inherits Rectangle {
 
         // Dashboard hero (hero.slint): fixed above the rows, which scroll below it.
         if AppState.hero-active && AppState.hero-target().id != "": HeroBand {
-            // ~38% of the screen, but always room for one whole row below it.
-            height: max(120px, min(clamp(root.height * 0.38, 200px, 460px), root.height - 54px - AppState.dash-ch - AppState.row-chrome-h - 2 * Theme.sp-lg));
+            // Band: ~38% of the screen, but always room for one whole row below it. Background: just
+            // the text (title, meta line, 3 lines of story), the picture is behind everything.
+            height: AppState.hero-background ? 88px + 76px * AppState.text-scale
+                : max(120px, min(clamp(root.height * 0.38, 200px, 460px), root.height - 54px - AppState.dash-ch - AppState.row-chrome-h - 2 * Theme.sp-lg));
         }
 
         coll-fl-container := Rectangle {
