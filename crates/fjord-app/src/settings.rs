@@ -43,8 +43,9 @@
 //                rows (Enter/Right flips, only while shown)
 //   apply_profile_settings_to_window  PROFILE_BINDS → window + dashboard row orders
 //   apply_settings_to_window ↔ read_settings_from_window  the binds + the special cases
-//                (device descriptions, speed floats, audio channels, seerr_enabled);
-//                settings-changed handler logs which settings changed; text values by name only)
+//                (device descriptions, speed floats, audio channels, seerr_enabled)
+//   settings_snapshot / settings_diff  the settings-changed handler logs which settings changed
+//                (text values by name only)
 //   fetch_audio_devices / fetch_system_fonts  startup fetches for the device and font dropdowns
 //                (duplicate device descriptions get a backend or name suffix)
 // ─────────────────────────────────────────────────────────────────────────────
