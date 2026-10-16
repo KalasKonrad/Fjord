@@ -1,7 +1,7 @@
 // ── fjord-app · dashboard_rows.rs ────────────────────────────────────────────
-//   DASHBOARDS        the five dashboards: config key, tab name, default rows (number, title).
-//                     Row numbers/titles must match home.slint's row-items/row-title and
-//                     app_state.slint's section-len / *-row-order defaults.
+//   DASHBOARDS        the five dashboards: config key + default row numbers (indexes into
+//                     AppState.<key>-rows, which hold titles and cards; must match its
+//                     *-row-order defaults). The editor reads titles from those lists (title).
 //   rows_for          a profile's saved rows for one dashboard merged with the defaults
 //                     (unknown/duplicate ids dropped, rows missing from the save appended, shown)
 //   push_row_orders   ProfileSettings → AppState.*-row-order (shown rows, in order) — called by
@@ -13,7 +13,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
 
-use slint::{ComponentHandle, Global, Model, ModelRc, VecModel};
+use slint::{ComponentHandle, Global, Model, ModelRc, SharedString, VecModel};
 use tracing::debug;
 
 use crate::config::{DashboardRow, FjordState, ProfileSettings, save_config};
@@ -22,63 +22,37 @@ use crate::{AppState, DashRowItem, MainWindow, show_toast};
 
 pub(crate) struct Dashboard {
     pub key: &'static str,
-    pub rows: &'static [(u8, &'static str)],
+    /// Row numbers in their default order (indexes into AppState.<key>-rows, which holds the
+    /// titles and cards). Movies has no row 1 (Next Up).
+    pub ids: &'static [u8],
 }
 
 /// Tab order = AppState.dash-rows-tab (0 Home … 4 Music).
 pub(crate) const DASHBOARDS: [Dashboard; 5] = [
     Dashboard {
         key: "home",
-        rows: &[
-            (0, "Continue Watching"),
-            (1, "Next Up"),
-            (2, "Recently Added Shows"),
-            (3, "Recently Added Movies"),
-            (4, "Recently Added Music"),
-            (5, "Watchlist"),
-            (6, "Coming Up"),
-        ],
+        ids: &[0, 1, 2, 3, 4, 5, 6],
     },
     Dashboard {
         key: "tv",
-        rows: &[
-            (0, "Continue Watching"),
-            (1, "Next Up"),
-            (2, "Recently Added"),
-            (3, "Not Watched"),
-            (4, "Favorites"),
-            (5, "Watchlist"),
-            (6, "Coming Up"),
-        ],
+        ids: &[0, 1, 2, 3, 4, 5, 6],
     },
     Dashboard {
         key: "movies",
-        rows: &[
-            (0, "Continue Watching"),
-            (2, "Recently Added"),
-            (3, "Not Watched"),
-            (4, "Favorites"),
-            (5, "Watchlist"),
-            (6, "Coming Up"),
-        ],
+        ids: &[0, 2, 3, 4, 5, 6],
     },
     Dashboard {
         key: "collections",
-        rows: &[(0, "Recently Added"), (1, "Unwatched")],
+        ids: &[0, 1],
     },
     Dashboard {
         key: "music",
-        rows: &[
-            (0, "Recently Added"),
-            (1, "Recently Played"),
-            (2, "Favorite Albums"),
-            (3, "Playlists"),
-        ],
+        ids: &[0, 1, 2, 3],
     },
 ];
 
 pub(crate) fn rows_for(cp: &ProfileSettings, dash: &Dashboard) -> Vec<DashboardRow> {
-    let known = |id: u8| dash.rows.iter().any(|(r, _)| *r == id);
+    let known = |id: u8| dash.ids.contains(&id);
     let mut out: Vec<DashboardRow> = Vec::new();
     if let Some(saved) = cp.dashboard_rows.get(dash.key) {
         for r in saved {
@@ -87,7 +61,7 @@ pub(crate) fn rows_for(cp: &ProfileSettings, dash: &Dashboard) -> Vec<DashboardR
             }
         }
     }
-    for (id, _) in dash.rows {
+    for id in dash.ids {
         if !out.iter().any(|o| o.id == *id) {
             out.push(DashboardRow {
                 id: *id,
@@ -115,20 +89,26 @@ pub(crate) fn push_row_orders(g: &AppState<'_>, cp: &ProfileSettings) {
     g.set_music_row_order(shown_order(cp, &DASHBOARDS[4]));
 }
 
-fn title(dash: &Dashboard, id: u8) -> &'static str {
-    dash.rows
-        .iter()
-        .find(|(r, _)| *r == id)
-        .map(|(_, t)| *t)
-        .unwrap_or("")
+/// A row's title, from the same AppState.<key>-rows list the dashboard draws.
+fn title(g: &AppState<'_>, tab: usize, id: u8) -> SharedString {
+    let rows = match tab {
+        0 => g.get_home_rows(),
+        1 => g.get_tv_rows(),
+        2 => g.get_movies_rows(),
+        3 => g.get_collections_rows(),
+        _ => g.get_music_rows(),
+    };
+    rows.row_data(id as usize)
+        .map(|r| r.title)
+        .unwrap_or_default()
 }
 
 fn push_editor_rows(g: &AppState<'_>, cp: &ProfileSettings) {
-    let dash = &DASHBOARDS[g.get_dash_rows_tab().clamp(0, 4) as usize];
-    let items: Vec<DashRowItem> = rows_for(cp, dash)
+    let tab = g.get_dash_rows_tab().clamp(0, 4) as usize;
+    let items: Vec<DashRowItem> = rows_for(cp, &DASHBOARDS[tab])
         .iter()
         .map(|r| DashRowItem {
-            title: title(dash, r.id).into(),
+            title: title(g, tab, r.id),
             shown: r.shown,
         })
         .collect();

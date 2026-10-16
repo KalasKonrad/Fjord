@@ -111,9 +111,10 @@
 //   Dashboard hero        settings-dashboard-hero ("off"/"band"/"background") + hero-background,
 //                         hero-a/-b + hero-front-a (crossfading layers), hero-active, hero-target(),
 //                         hero-request (hero.rs)
-//   Nav helpers           section-len, find-first/next/prev-section (walk nav-row-order; a hidden
-//                         focused row restarts at the first), section-card-item — hand-enumerated
-//                         ternary chains; adding a dashboard row needs explicit branches (see their comment)
+//   Dashboard row lists   home-/tv-/movies-/collections-/music-rows, discover-rows ([DashRow]: title,
+//                         cards, discover; index = row number) — drawn by CardRows, read by nav-rows()
+//   Nav helpers           section-len / section-card-item (nav-rows()[s]), find-first/next/prev-section
+//                         (walk nav-row-order; a hidden focused row restarts at the first)
 //   Callbacks — auth      do-login, sign-out, quit, toggle-fullscreen
 //   Callbacks — browse    nav-selected, filter-changed, browse-search-*, library-search-*
 //   Callbacks — play      item-play, play/resume-detail, open-detail/series, open-album, play-album-track
@@ -152,6 +153,7 @@ import {
     OskEdit,
     VideoRect,
     DashRowItem,
+    DashRow,
     HeroInfo,
 } from "theme.slint";
 import { StandardListView } from "std-widgets.slint";
@@ -1733,60 +1735,78 @@ export global AppState {
     callback connect-seerr-quickconnect-start(string);           // url
     callback connect-seerr-quickconnect-poll(string, string);    // url, secret
 
+    // ── Dashboard rows: the one list per dashboard ──────────────────────────────
+    // Index = row number (its identity for focus, keys, *-row-order and the Rust defaults in
+    // dashboard_rows.rs). DashboardView draws these; section-len / section-card-item read them
+    // for the keyboard; the Rows editor takes its titles from here. Adding a row: append it
+    // here, to the *-row-order default below and to dashboard_rows::DASHBOARDS. Movies has no
+    // Next Up (row 1 stays empty and out of its order).
+    out property <[DashRow]> home-rows: [
+        { title: "Continue Watching", items: continue-watching, discover: false },
+        { title: "Next Up", items: next-up, discover: false },
+        { title: "Recently Added Shows", items: recently-added, discover: false },
+        { title: "Recently Added Movies", items: recently-added-movies, discover: false },
+        { title: "Recently Added Music", items: recently-added-albums, discover: false },
+        { title: "Watchlist", items: discover-watchlist-mixed, discover: true },
+        { title: "Coming Up", items: discover-coming-up-mixed, discover: true },
+    ];
+    out property <[DashRow]> tv-rows: [
+        { title: "Continue Watching", items: continue-watching-tv, discover: false },
+        { title: "Next Up", items: next-up, discover: false },
+        { title: "Recently Added", items: recently-added-tv, discover: false },
+        { title: "Not Watched", items: not-watched-tv, discover: false },
+        { title: "Favorites", items: favorite-series, discover: false },
+        { title: "Watchlist", items: discover-watchlist-tv, discover: true },
+        { title: "Coming Up", items: discover-coming-up-tv, discover: true },
+    ];
+    out property <[DashRow]> movies-rows: [
+        { title: "Continue Watching", items: continue-watching-movies, discover: false },
+        { title: "Next Up", items: [], discover: false },
+        { title: "Recently Added", items: recently-added-movies, discover: false },
+        { title: "Not Watched", items: not-watched-movies, discover: false },
+        { title: "Favorites", items: favorite-movies, discover: false },
+        { title: "Watchlist", items: discover-watchlist-movies, discover: true },
+        { title: "Coming Up", items: discover-coming-up-movies, discover: true },
+    ];
+    out property <[DashRow]> collections-rows: [
+        { title: "Recently Added", items: recently-added-collections, discover: false },
+        { title: "Unwatched", items: unwatched-collections, discover: false },
+    ];
+    out property <[DashRow]> music-rows: [
+        { title: "Recently Added", items: recently-added-albums, discover: false },
+        { title: "Recently Played", items: recently-played-albums, discover: false },
+        { title: "Favorite Albums", items: favorite-albums, discover: false },
+        { title: "Playlists", items: music-playlists, discover: false },
+    ];
+    // Discover's landing rows (focus: focused-section = row number + discover-landing-card); the
+    // indexes are discover/landing.rs's landing_row_get/_set (appended only, never inserted).
+    out property <[DashRow]> discover-rows: [
+        { title: "Trending", items: discover-trending, discover: true },
+        { title: "Popular Movies", items: discover-popular-movies, discover: true },
+        { title: "Popular TV Shows", items: discover-popular-tv, discover: true },
+        { title: "Upcoming Movies", items: discover-upcoming-movies, discover: true },
+        { title: "Upcoming TV Shows", items: discover-upcoming-tv, discover: true },
+        { title: "Requested", items: discover-requested, discover: true },
+        { title: "New in Theaters", items: discover-new-in-theaters, discover: true },
+        // The last card is a poster-less sentinel (id "") that opens the calendar (CardRows).
+        { title: "Coming Up", items: discover-coming-up, discover: true },
+        // Every Seerr watchlist item, not deduped against Coming Up or the other rows.
+        { title: "Watchlist", items: discover-watchlist-mixed, discover: true },
+    ];
+    // The active dashboard's rows (none outside the five dashboards).
+    public pure function nav-rows() -> [DashRow] {
+        active-nav == 0 ? home-rows : active-nav == 1 ? tv-rows : active-nav == 2 ? movies-rows
+            : active-nav == 3 ? collections-rows : active-nav == 4 ? music-rows : []
+    }
     // ── Nav helper pure functions (used by MainWindow's keyboard handler) ───────
-    // section-len and section-card-item are ternary chains keyed on `s == N` whose
-    // trailing else covers the last row. Adding a dashboard row needs an EXPLICIT
-    // branch for the previous last index before the new else in both functions (otherwise
-    // the new row silently reads the previous row's data), plus its number in that
-    // dashboard's *-row-order default here, home.slint's row-items/row-title and Rust's
-    // default row list (settings). find-*-section walk the order list, not the numbers.
+    // find-*-section walk the dashboard's order list (nav-row-order), not the numbers.
     // "1 track" / "2 tracks" — every visible count goes through this (Rust side: main::plural).
     public pure function plural(n: int, one: string, many: string) -> string {
         return n == 1 ? "1 \{one}" : "\{n} \{many}";
     }
 
     public pure function section-len(s: int) -> int {
-        if active-nav == 0 {
-            s == 0 ? continue-watching.length :
-                s == 1 ? next-up.length :
-                s == 2 ? recently-added.length :
-                s == 3 ? recently-added-movies.length :
-                s == 4 ? recently-added-albums.length :
-                s == 5 ? discover-watchlist-mixed.length :
-                discover-coming-up-mixed.length
-        } else if active-nav == 1 {
-            // TV Shows dashboard
-            s == 0 ? continue-watching-tv.length :
-                s == 1 ? next-up.length :
-                s == 2 ? recently-added-tv.length :
-                s == 3 ? not-watched-tv.length :
-                s == 4 ? favorite-series.length :
-                s == 5 ? discover-watchlist-tv.length :
-                discover-coming-up-tv.length
-        } else if active-nav == 2 {
-            // Movies dashboard
-            s == 0 ? continue-watching-movies.length :
-                s == 1 ? 0 :
-                s == 2 ? recently-added-movies.length :
-                s == 3 ? not-watched-movies.length :
-                s == 4 ? favorite-movies.length :
-                s == 5 ? discover-watchlist-movies.length :
-                discover-coming-up-movies.length
-        } else if active-nav == 3 {
-            // Collections dashboard
-            s == 0 ? recently-added-collections.length :
-                s == 1 ? unwatched-collections.length :
-                0
-        } else if active-nav == 4 {
-            // Music dashboard
-            s == 0 ? recently-added-albums.length :
-                s == 1 ? recently-played-albums.length :
-                s == 2 ? favorite-albums.length :
-                s == 3 ? music-playlists.length :
-                0
-        } else {
-            0
-        }
+        nav-rows()[s].items.length
     }
 
     // Shown rows of each dashboard, in display order (Settings → Interface → Dashboard rows; Rust
@@ -1880,55 +1900,7 @@ export global AppState {
     // Dashboard Confirm (keys.rs) reads the whole card via section-card-item (it
     // branches on item-type), so there's no separate section-card-id chain to keep in sync.
     public pure function section-card-item(s: int, c: int) -> CardItem {
-        if active-nav == 0 {
-            s == 0 ? continue-watching[c] :
-                s == 1 ? next-up[c] :
-                s == 2 ? recently-added[c] :
-                s == 3 ? recently-added-movies[c] :
-                s == 4 ? recently-added-albums[c] :
-                s == 5 ? discover-watchlist-mixed[c] :
-                discover-coming-up-mixed[c]
-        } else if active-nav == 1 {
-            // TV Shows
-            s == 0 ? continue-watching-tv[c] :
-                s == 1 ? next-up[c] :
-                s == 2 ? recently-added-tv[c] :
-                s == 3 ? not-watched-tv[c] :
-                s == 4 ? favorite-series[c] :
-                s == 5 ? discover-watchlist-tv[c] :
-                discover-coming-up-tv[c]
-        } else if active-nav == 2 {
-            // Movies
-            s == 0 ? continue-watching-movies[c] :
-                s == 2 ? recently-added-movies[c] :
-                s == 3 ? not-watched-movies[c] :
-                s == 4 ? favorite-movies[c] :
-                s == 5 ? discover-watchlist-movies[c] :
-                discover-coming-up-movies[c]
-        } else if active-nav == 3 {
-            // Collections dashboard
-            s == 0 ? recently-added-collections[c] :
-                unwatched-collections[c]
-        } else if active-nav == 4 {
-            // Music dashboard
-            s == 0 ? recently-added-albums[c] :
-                s == 1 ? recently-played-albums[c] :
-                s == 2 ? favorite-albums[c] :
-                music-playlists[c]
-        } else {
-            {
-                id: "",
-                title: "",
-                year: 0,
-                item_type: "",
-                poster: @image-url(""),
-                has_played: false,
-                resume_pct: 0,
-                unplayed_count: 0,
-                is_favorite: false,
-                series_id: ""
-            }
-        }
+        nav-rows()[s].items[c]
     }
 
     // ── Callbacks — auth / nav ───────────────────────────────────────────────────
