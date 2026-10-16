@@ -1659,10 +1659,10 @@ export global AppState {
     // ── Nav helper pure functions (used by MainWindow's keyboard handler) ───────
     // section-len and section-card-item are ternary chains keyed on `s == N` whose
     // trailing else covers the last row. Adding a dashboard row needs an EXPLICIT
-    // branch for the previous last index before the new else, in all 3 nav branches of
-    // both functions (otherwise the new row silently reads the previous row's data),
-    // plus the find-first/next/prev-section bound. Self-check: the five-equality
-    // comparison appears exactly 6 times (2 functions × 3 navs).
+    // branch for the previous last index before the new else in both functions (otherwise
+    // the new row silently reads the previous row's data), plus its number in that
+    // dashboard's *-row-order default here, home.slint's row-items/row-title and Rust's
+    // default row list (settings). find-*-section walk the order list, not the numbers.
     // "1 track" / "2 tracks" — every visible count goes through this (Rust side: main::plural).
     public pure function plural(n: int, one: string, many: string) -> string {
         return n == 1 ? "1 \{one}" : "\{n} \{many}";
@@ -1712,34 +1712,57 @@ export global AppState {
         }
     }
 
+    // Shown rows of each dashboard, in display order (Settings → Interface → Dashboard rows; Rust
+    // pushes them from ProfileSettings). Row numbers are the section-len/section-card-item ids
+    // above; Movies has no row 1 (Next Up).
+    in-out property <[int]> home-row-order: [0, 1, 2, 3, 4, 5, 6];
+    in-out property <[int]> tv-row-order: [0, 1, 2, 3, 4, 5, 6];
+    in-out property <[int]> movies-row-order: [0, 2, 3, 4, 5, 6];
+    in-out property <[int]> collections-row-order: [0, 1];
+    in-out property <[int]> music-row-order: [0, 1, 2, 3];
+    public pure function nav-row-order() -> [int] {
+        active-nav == 0 ? home-row-order : active-nav == 1 ? tv-row-order : active-nav == 2 ? movies-row-order
+            : active-nav == 3 ? collections-row-order : music-row-order
+    }
+    // Position of row s in o (99 = not shown).
+    pure function row-pos-in(o: [int], s: int) -> int {
+        o.length > 0 && o[0] == s ? 0 : o.length > 1 && o[1] == s ? 1 : o.length > 2 && o[2] == s ? 2 : o.length > 3 && o[3] == s ? 3 : o.length > 4 && o[4] == s ? 4 : o.length > 5 && o[5] == s ? 5 : o.length > 6 && o[6] == s ? 6 : 99
+    }
+
+    // First / next / previous non-empty row in the dashboard's order.
     public pure function find-first-section() -> int {
-        if section-len(0) > 0 { return 0; }
-        if section-len(1) > 0 { return 1; }
-        if section-len(2) > 0 { return 2; }
-        if section-len(3) > 0 { return 3; }
-        if section-len(4) > 0 { return 4; }
-        if section-len(5) > 0 { return 5; }
-        if section-len(6) > 0 { return 6; }
+        let o = nav-row-order();
+        if o.length > 0 && section-len(o[0]) > 0 { return o[0]; }
+        if o.length > 1 && section-len(o[1]) > 0 { return o[1]; }
+        if o.length > 2 && section-len(o[2]) > 0 { return o[2]; }
+        if o.length > 3 && section-len(o[3]) > 0 { return o[3]; }
+        if o.length > 4 && section-len(o[4]) > 0 { return o[4]; }
+        if o.length > 5 && section-len(o[5]) > 0 { return o[5]; }
+        if o.length > 6 && section-len(o[6]) > 0 { return o[6]; }
         return 0;
     }
 
     public pure function find-next-section(from: int) -> int {
-        if from + 1 <= 6 && section-len(from + 1) > 0 { return from + 1; }
-        if from + 2 <= 6 && section-len(from + 2) > 0 { return from + 2; }
-        if from + 3 <= 6 && section-len(from + 3) > 0 { return from + 3; }
-        if from + 4 <= 6 && section-len(from + 4) > 0 { return from + 4; }
-        if from + 5 <= 6 && section-len(from + 5) > 0 { return from + 5; }
-        if from + 6 <= 6 && section-len(from + 6) > 0 { return from + 6; }
+        let o = nav-row-order();
+        let p = row-pos-in(o, from);
+        if p + 1 < o.length && section-len(o[p + 1]) > 0 { return o[p + 1]; }
+        if p + 2 < o.length && section-len(o[p + 2]) > 0 { return o[p + 2]; }
+        if p + 3 < o.length && section-len(o[p + 3]) > 0 { return o[p + 3]; }
+        if p + 4 < o.length && section-len(o[p + 4]) > 0 { return o[p + 4]; }
+        if p + 5 < o.length && section-len(o[p + 5]) > 0 { return o[p + 5]; }
+        if p + 6 < o.length && section-len(o[p + 6]) > 0 { return o[p + 6]; }
         return from;
     }
 
     public pure function find-prev-section(from: int) -> int {
-        if from - 1 >= 0 && section-len(from - 1) > 0 { return from - 1; }
-        if from - 2 >= 0 && section-len(from - 2) > 0 { return from - 2; }
-        if from - 3 >= 0 && section-len(from - 3) > 0 { return from - 3; }
-        if from - 4 >= 0 && section-len(from - 4) > 0 { return from - 4; }
-        if from - 5 >= 0 && section-len(from - 5) > 0 { return from - 5; }
-        if from - 6 >= 0 && section-len(from - 6) > 0 { return from - 6; }
+        let o = nav-row-order();
+        let p = row-pos-in(o, from);
+        if p - 1 >= 0 && p < 99 && section-len(o[p - 1]) > 0 { return o[p - 1]; }
+        if p - 2 >= 0 && p < 99 && section-len(o[p - 2]) > 0 { return o[p - 2]; }
+        if p - 3 >= 0 && p < 99 && section-len(o[p - 3]) > 0 { return o[p - 3]; }
+        if p - 4 >= 0 && p < 99 && section-len(o[p - 4]) > 0 { return o[p - 4]; }
+        if p - 5 >= 0 && p < 99 && section-len(o[p - 5]) > 0 { return o[p - 5]; }
+        if p - 6 >= 0 && p < 99 && section-len(o[p - 6]) > 0 { return o[p - 6]; }
         return -1;
     }
 

@@ -401,6 +401,7 @@ export component MainWindow inherits Window {
 
         if !AppState.show-browse && shown-nav == 0: HomeScreen {
             horizontal-stretch: 1;
+            row-order: AppState.home-row-order;
             continue-watching: AppState.continue-watching;
             next-up: AppState.next-up;
             recently-added: AppState.recently-added;
@@ -417,6 +418,7 @@ export component MainWindow inherits Window {
         if !AppState.show-browse && shown-nav == 1 && !AppState.show-library: DashboardScreen {
             horizontal-stretch: 1;
             screen-title: "TV Shows";
+            row-order: AppState.tv-row-order;
             continue-watching: AppState.continue-watching-tv;
             next-up: AppState.next-up;
             recently-added: AppState.recently-added-tv;
@@ -433,6 +435,7 @@ export component MainWindow inherits Window {
         if !AppState.show-browse && shown-nav == 2 && !AppState.show-library: DashboardScreen {
             horizontal-stretch: 1;
             screen-title: "Movies";
+            row-order: AppState.movies-row-order;
             continue-watching: AppState.continue-watching-movies;
             recently-added: AppState.recently-added-movies;
             not-watched: AppState.not-watched-movies;
@@ -447,6 +450,7 @@ export component MainWindow inherits Window {
         }
         if !AppState.show-browse && shown-nav == 3 && !AppState.show-library: CollectionsDashboard {
             horizontal-stretch: 1;
+            row-order: AppState.collections-row-order;
             recently-added: AppState.recently-added-collections;
             unwatched: AppState.unwatched-collections;
             opacity: nav-fade;
@@ -457,6 +461,7 @@ export component MainWindow inherits Window {
         }
         if !AppState.show-browse && shown-nav == 4 && !AppState.show-library: MusicDashboard {
             horizontal-stretch: 1;
+            row-order: AppState.music-row-order;
             recently-added: AppState.recently-added-albums;
             recently-played: AppState.recently-played-albums;
             favorites: AppState.favorite-albums;
