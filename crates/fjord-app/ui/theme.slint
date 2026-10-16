@@ -2,6 +2,7 @@
 //   Theme           global design tokens: colors (incl. focus-white/-gold/-green/-red, master-ring), spacing,
 //                   radius, font sizes
 //   Structs shared between Rust and Slint (one line each; details on the struct):
+//   DashRow         one dashboard row (title, cards, discover) — AppState.*-rows
 //   DashRowItem     one row in the Dashboard rows editor (title, shown)
 //   HeroInfo        the dashboard hero's content (title, meta, rating, overview, backdrop/cover)
 //   VideoRect       a video spot's logical position/size (HDR Stage 5)
@@ -229,6 +230,14 @@ export struct CardItem {
     // Discover cards only: the context menu's Add/Remove Watchlist label and
     // RequestDetailScreen's Watchlist button.
     on-watchlist: bool,
+}
+
+// One dashboard row (AppState.*-rows): its title, its cards, and whether they are Discover (TMDB)
+// cards — play and the context menu go through Discover for those.
+export struct DashRow {
+    title: string,
+    items: [CardItem],
+    discover: bool,
 }
 
 // Discover (Seerr) request-detail screen only — one row per TV season.

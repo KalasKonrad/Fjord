@@ -12,8 +12,8 @@
 //                   - landing rows (no query, no filters): Trending, Popular Movies/TV, Upcoming
 //                     Movies/TV, Requested, New in Theaters (release-date window), Coming Up (last
 //                     card: a "📅 Full Calendar" sentinel, id "" → open-calendar), Watchlist —
-//                     home.slint's SectionRow + section-y/kb-y idiom (row-y needs a term per
-//                     row); card-focused syncs keyboard focus on a click
+//                     home.slint's CardRows over AppState.discover-rows (the dashboards' rows
+//                     component); a click syncs keyboard focus (card-clicked)
 //                   - the results grid (search, or filtered browse — both write discover-results),
 //                     MediaCards with the Flickable + kb-y idiom
 //                   Empty states: not connected / loading (spinner) / no results. Right-click →
@@ -30,7 +30,7 @@ import {
     PressPulse,
     QwertyKeyboard,
 } from "widgets.slint";
-import { SectionRow } from "home.slint";
+import { CardRows } from "home.slint";
 
 component FilterPill inherits Rectangle {
     in property <string> text;
@@ -386,220 +386,24 @@ export component DiscoverScreen inherits Rectangle {
             }
         }
 
-        // ── Landing rows (no query, no filters) — HomeScreen's section-y/kb-y idiom. Any active
-        // filter swaps in the filtered grid (discover-results); the landing models stay underneath,
-        // so clearing the filters brings them straight back.
-        if AppState.discover-query == "" && !AppState.discover-filters-active && has-landing-rows: landing-container := Rectangle {
+        // ── Landing rows (no query, no filters): home.slint's CardRows over AppState.discover-rows.
+        // Any active filter swaps in the filtered grid (discover-results); the landing models stay
+        // underneath, so clearing the filters brings them straight back. Conditionally mounted, so
+        // the visible height comes from root (content-h), not its own (SLINT.md).
+        if AppState.discover-query == "" && !AppState.discover-filters-active && has-landing-rows: CardRows {
             vertical-stretch: 1;
             horizontal-stretch: 1;
-
-            // Every row needs its own term here — a missing one makes the rows after it share a scroll
-            // target, so keyboard focus scrolls off-screen.
-            pure function row-y(s: int) -> length {
-                Theme.sp-lg
-                    + (AppState.discover-trending.length > 0 && s > 0 ? (AppState.row-h(AppState.dash-ch) + Theme.sp-lg) : 0px)
-                    + (AppState.discover-popular-movies.length > 0 && s > 1 ? (AppState.row-h(AppState.dash-ch) + Theme.sp-lg) : 0px)
-                    + (AppState.discover-popular-tv.length > 0 && s > 2 ? (AppState.row-h(AppState.dash-ch) + Theme.sp-lg) : 0px)
-                    + (AppState.discover-upcoming-movies.length > 0 && s > 3 ? (AppState.row-h(AppState.dash-ch) + Theme.sp-lg) : 0px)
-                    + (AppState.discover-upcoming-tv.length > 0 && s > 4 ? (AppState.row-h(AppState.dash-ch) + Theme.sp-lg) : 0px)
-                    + (AppState.discover-requested.length > 0 && s > 5 ? (AppState.row-h(AppState.dash-ch) + Theme.sp-lg) : 0px)
-                    + (AppState.discover-new-in-theaters.length > 0 && s > 6 ? (AppState.row-h(AppState.dash-ch) + Theme.sp-lg) : 0px)
-                // Row 8 (Watchlist) needs row 7's (Coming Up) height.
-                + (AppState.discover-coming-up.length > 0 && s > 7 ? (AppState.row-h(AppState.dash-ch) + Theme.sp-lg) : 0px)
-            }
-
-            // root.content-h, not self/own height — see the doc comment on
-            // content-h up top for why this container being conditionally
-            // mounted makes that unsafe here specifically.
-            property <length> kb-y: AppState.focused-section < 0 ? 0px
-                : clamp(
-                      root.content-h / 2 - row-y(AppState.focused-section) - (AppState.row-h(AppState.dash-ch)) / 2,
-                      min(0px, root.content-h - landing-content.preferred-height),
-                      0px);
-            changed kb-y => { landing-fl.content-y = kb-y; }
-
-            landing-fl := Flickable {
-                width: parent.width;
-                height: parent.height;
-                content-width: self.width;
-                content-height: landing-content.preferred-height;
-                animate content-y {
-                    duration: 200ms * AppState.settings-scroll-speed;
-                    easing: ease-in-out;
-                }
-
-                landing-content := VerticalLayout {
-                    if AppState.discover-trending.length > 0: SectionRow {
-                        section-title: "Trending";
-                        items: AppState.discover-trending;
-                        section-focused: AppState.focused-section == 0;
-                        focused-card: AppState.discover-landing-card;
-                        card-w: AppState.dash-cw;
-                        card-h: AppState.dash-ch;
-                        card-focused(idx) => {
-                            AppState.focused-section = 0;
-                            AppState.discover-landing-card = idx;
-                            AppState.discover-header-focused = false;
-                            AppState.discover-filter-bar-active = false;
-                            AppState.discover-popup-open = "";
-                        }
-                        item-play(id, it) => { AppState.open-discover-item(it == "DiscoverMovie" ? "movie" : "tv", id); }
-                        item-context-full(itm) => { AppState.open-context-menu-discover(itm); }
-                    }
-                    if AppState.discover-popular-movies.length > 0: SectionRow {
-                        section-title: "Popular Movies";
-                        items: AppState.discover-popular-movies;
-                        section-focused: AppState.focused-section == 1;
-                        focused-card: AppState.discover-landing-card;
-                        card-w: AppState.dash-cw;
-                        card-h: AppState.dash-ch;
-                        card-focused(idx) => {
-                            AppState.focused-section = 1;
-                            AppState.discover-landing-card = idx;
-                            AppState.discover-header-focused = false;
-                            AppState.discover-filter-bar-active = false;
-                            AppState.discover-popup-open = "";
-                        }
-                        item-play(id, it) => { AppState.open-discover-item(it == "DiscoverMovie" ? "movie" : "tv", id); }
-                        item-context-full(itm) => { AppState.open-context-menu-discover(itm); }
-                    }
-                    if AppState.discover-popular-tv.length > 0: SectionRow {
-                        section-title: "Popular TV Shows";
-                        items: AppState.discover-popular-tv;
-                        section-focused: AppState.focused-section == 2;
-                        focused-card: AppState.discover-landing-card;
-                        card-w: AppState.dash-cw;
-                        card-h: AppState.dash-ch;
-                        card-focused(idx) => {
-                            AppState.focused-section = 2;
-                            AppState.discover-landing-card = idx;
-                            AppState.discover-header-focused = false;
-                            AppState.discover-filter-bar-active = false;
-                            AppState.discover-popup-open = "";
-                        }
-                        item-play(id, it) => { AppState.open-discover-item(it == "DiscoverMovie" ? "movie" : "tv", id); }
-                        item-context-full(itm) => { AppState.open-context-menu-discover(itm); }
-                    }
-                    if AppState.discover-upcoming-movies.length > 0: SectionRow {
-                        section-title: "Upcoming Movies";
-                        items: AppState.discover-upcoming-movies;
-                        section-focused: AppState.focused-section == 3;
-                        focused-card: AppState.discover-landing-card;
-                        card-w: AppState.dash-cw;
-                        card-h: AppState.dash-ch;
-                        card-focused(idx) => {
-                            AppState.focused-section = 3;
-                            AppState.discover-landing-card = idx;
-                            AppState.discover-header-focused = false;
-                            AppState.discover-filter-bar-active = false;
-                            AppState.discover-popup-open = "";
-                        }
-                        item-play(id, it) => { AppState.open-discover-item(it == "DiscoverMovie" ? "movie" : "tv", id); }
-                        item-context-full(itm) => { AppState.open-context-menu-discover(itm); }
-                    }
-                    if AppState.discover-upcoming-tv.length > 0: SectionRow {
-                        section-title: "Upcoming TV Shows";
-                        items: AppState.discover-upcoming-tv;
-                        section-focused: AppState.focused-section == 4;
-                        focused-card: AppState.discover-landing-card;
-                        card-w: AppState.dash-cw;
-                        card-h: AppState.dash-ch;
-                        card-focused(idx) => {
-                            AppState.focused-section = 4;
-                            AppState.discover-landing-card = idx;
-                            AppState.discover-header-focused = false;
-                            AppState.discover-filter-bar-active = false;
-                            AppState.discover-popup-open = "";
-                        }
-                        item-play(id, it) => { AppState.open-discover-item(it == "DiscoverMovie" ? "movie" : "tv", id); }
-                        item-context-full(itm) => { AppState.open-context-menu-discover(itm); }
-                    }
-                    if AppState.discover-requested.length > 0: SectionRow {
-                        section-title: "Requested";
-                        items: AppState.discover-requested;
-                        section-focused: AppState.focused-section == 5;
-                        focused-card: AppState.discover-landing-card;
-                        card-w: AppState.dash-cw;
-                        card-h: AppState.dash-ch;
-                        card-focused(idx) => {
-                            AppState.focused-section = 5;
-                            AppState.discover-landing-card = idx;
-                            AppState.discover-header-focused = false;
-                            AppState.discover-filter-bar-active = false;
-                            AppState.discover-popup-open = "";
-                        }
-                        item-play(id, it) => { AppState.open-discover-item(it == "DiscoverMovie" ? "movie" : "tv", id); }
-                        item-context-full(itm) => { AppState.open-context-menu-discover(itm); }
-                    }
-                    // "New in Theaters" (2026-07-18) — an approximation, see
-                    // AppState.discover-new-in-theaters' own doc comment.
-                    if AppState.discover-new-in-theaters.length > 0: SectionRow {
-                        section-title: "New in Theaters";
-                        items: AppState.discover-new-in-theaters;
-                        section-focused: AppState.focused-section == 6;
-                        focused-card: AppState.discover-landing-card;
-                        card-w: AppState.dash-cw;
-                        card-h: AppState.dash-ch;
-                        card-focused(idx) => {
-                            AppState.focused-section = 6;
-                            AppState.discover-landing-card = idx;
-                            AppState.discover-header-focused = false;
-                            AppState.discover-filter-bar-active = false;
-                            AppState.discover-popup-open = "";
-                        }
-                        item-play(id, it) => { AppState.open-discover-item(it == "DiscoverMovie" ? "movie" : "tv", id); }
-                        item-context-full(itm) => { AppState.open-context-menu-discover(itm); }
-                    }
-                    // "Coming Up": the last card is a poster-less sentinel (id "") that opens CalendarScreen;
-                    // handle_key_landing (discover) special-cases it for the keyboard.
-                    if AppState.discover-coming-up.length > 0: SectionRow {
-                        section-title: "Coming Up";
-                        items: AppState.discover-coming-up;
-                        section-focused: AppState.focused-section == 7;
-                        focused-card: AppState.discover-landing-card;
-                        card-w: AppState.dash-cw;
-                        card-h: AppState.dash-ch;
-                        card-focused(idx) => {
-                            AppState.focused-section = 7;
-                            AppState.discover-landing-card = idx;
-                            AppState.discover-header-focused = false;
-                            AppState.discover-filter-bar-active = false;
-                            AppState.discover-popup-open = "";
-                        }
-                        item-play(id, it) => {
-                            if id == "" {
-                                AppState.open-calendar();
-                            } else {
-                                AppState.open-discover-item(it == "DiscoverMovie" ? "movie" : "tv", id);
-                            }
-                        }
-                        item-context-full(itm) => {
-                            if itm.id != "" {
-                                AppState.open-context-menu-discover(itm);
-                            }
-                        }
-                    }
-
-                    // "Watchlist": every item on the Seerr watchlist, a plain row (no sentinel), not deduped
-                    // against Coming Up or other rows (see discover's comment).
-                    if AppState.discover-watchlist-mixed.length > 0: SectionRow {
-                        section-title: "Watchlist";
-                        items: AppState.discover-watchlist-mixed;
-                        section-focused: AppState.focused-section == 8;
-                        focused-card: AppState.discover-landing-card;
-                        card-w: AppState.dash-cw;
-                        card-h: AppState.dash-ch;
-                        card-focused(idx) => {
-                            AppState.focused-section = 8;
-                            AppState.discover-landing-card = idx;
-                            AppState.discover-header-focused = false;
-                            AppState.discover-filter-bar-active = false;
-                            AppState.discover-popup-open = "";
-                        }
-                        item-play(id, it) => { AppState.open-discover-item(it == "DiscoverMovie" ? "movie" : "tv", id); }
-                        item-context-full(itm) => { AppState.open-context-menu-discover(itm); }
-                    }
-                }
+            rows: AppState.discover-rows;
+            row-order: [0, 1, 2, 3, 4, 5, 6, 7, 8];
+            focused-card: AppState.discover-landing-card;
+            view-h: root.content-h;
+            // A click moves keyboard focus there (and out of the search field / filter bar).
+            card-clicked(row, card) => {
+                AppState.focused-section = row;
+                AppState.discover-landing-card = card;
+                AppState.discover-header-focused = false;
+                AppState.discover-filter-bar-active = false;
+                AppState.discover-popup-open = "";
             }
         }
 

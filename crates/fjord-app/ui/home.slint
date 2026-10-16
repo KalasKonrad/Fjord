@@ -8,19 +8,14 @@
 //                         inward, the focused card's row is raised (z) — as in the Discover/artist/collection grids
 //   Card sizes            SectionRow's default and the grid's cards scale with AppState.card-scale
 //                         (Settings → Interface → Card size); the dashboards pass dash-cw/-ch (scaled too)
-//   HomeScreen            Home tab: Continue Watching, Next Up, recently added shows/movies/albums,
-//                         then Watchlist and Coming Up (Seerr, mixed movies + series) when non-empty —
-//                         those two don't hold up the LoadingSpinner (their fetches are independent)
-//   DashboardScreen       Movies or TV tab: continue, next up, recently added, not watched, favorites,
-//                         then Watchlist and Coming Up filtered to the tab's media type (main.slint
-//                         binds the -tv / -movies properties)
-//   CollectionsDashboard  Collections tab: Recently Added + Unwatched rows
-//   MusicDashboard        Music tab: Recently Added Albums + Recently Played + Favorites + Playlists
-//   Hero                  each dashboard mounts hero.slint's HeroBand between its title bar and its
-//                         rows when AppState.hero-active (Settings → Interface → Dashboard highlight),
-//                         and in the Background style HeroBackdrop behind everything below the title bar
+//   DashboardView         Home, TV Shows, Movies, Collections and Music — one component: title bar,
+//                         the hero (HeroBand between title bar and rows when AppState.hero-active;
+//                         in the Background style HeroBackdrop behind everything below the title
+//                         bar), then the rows of AppState.*-rows (DashRow: title, cards, discover)
+//                         in row-order; Discover rows play/menu through Discover and don't hold up
+//                         the LoadingSpinner (their fetches are independent)
 // ─────────────────────────────────────────────────────────────────────────────
-import { Theme, CardItem } from "theme.slint";
+import { Theme, CardItem, DashRow } from "theme.slint";
 import { AppState } from "app_state.slint";
 import { HeroBand, HeroBackdrop } from "hero.slint";
 import {
@@ -685,38 +680,27 @@ export component LibraryGrid inherits Rectangle {
     }
 }
 
-// ── Home screen with curated rows ─────────────────────────────────────────────
-export component HomeScreen inherits Rectangle {
-    in property <[CardItem]> continue-watching;
-    in property <[CardItem]> next-up;
-    in property <[CardItem]> recently-added;
-    in property <[CardItem]> recently-added-movies;
-    in property <[CardItem]> recently-added-albums;
-    // Seerr Watchlist, movies + series — AppState.discover-watchlist-mixed (bound in main.slint),
-    // the same data as Discover's landing row.
-    in property <[CardItem]> watchlist;
-    // Coming Up, movies + series — AppState.discover-coming-up-mixed (sentinel-free, see that
-    // property).
-    in property <[CardItem]> coming-up;
+// ── Card rows: the scrolling list of SectionRows (dashboards, Discover's landing page) ──
+// `rows` (index = row number) in `row-order`; keyboard focus is AppState.focused-section (the row
+// number) + `focused-card`; the focused row is scrolled to the middle of `view-h` (the visible
+// height — a caller that mounts this with `if` passes a height from its own root, SLINT.md).
+// Discover rows play/menu through Discover; a Discover card with no id (Coming Up's last card)
+// opens the calendar.
+export component CardRows inherits Rectangle {
+    in property <[DashRow]> rows;
+    in property <[int]> row-order;
+    in property <int> focused-card;
+    in property <length> view-h;
+    in property <bool> loading;
+    // Mouse click/right-click on a card (row number, card index) — before it opens.
+    callback card-clicked(int, int);
 
-    background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg;
-
-    // Rows in the order chosen in Settings → Interface → Dashboard rows (shown rows only). A row's
-    // number (s) is its identity: focus, keyboard (AppState.find-*-section) and scroll key on it.
-    in property <[int]> row-order: [0, 1, 2, 3, 4, 5, 6];
     pure function row-items(s: int) -> [CardItem] {
-        s == 0 ? continue-watching : s == 1 ? next-up : s == 2 ? recently-added : s == 3 ? recently-added-movies : s == 4 ? recently-added-albums : s == 5 ? watchlist : coming-up
+        rows[s].items
     }
-    pure function row-title(s: int) -> string {
-        s == 0 ? "Continue Watching" : s == 1 ? "Next Up" : s == 2 ? "Recently Added Shows" : s == 3 ? "Recently Added Movies" : s == 4 ? "Recently Added Music" : s == 5 ? "Watchlist" : "Coming Up"
-    }
-    // Watchlist / Coming Up hold Discover (TMDB) cards: play and menu go through Discover.
-    pure function row-is-discover(s: int) -> bool {
-        s == 5 || s == 6
-    }
-    // Position of row s in row-order (99 = not shown).
+    // Position of row s in row-order (99 = not shown); unrolled — Slint functions have no loops.
     pure function row-pos(s: int) -> int {
-        row-order.length > 0 && row-order[0] == s ? 0 : row-order.length > 1 && row-order[1] == s ? 1 : row-order.length > 2 && row-order[2] == s ? 2 : row-order.length > 3 && row-order[3] == s ? 3 : row-order.length > 4 && row-order[4] == s ? 4 : row-order.length > 5 && row-order[5] == s ? 5 : row-order.length > 6 && row-order[6] == s ? 6 : 99
+        row-order.length > 0 && row-order[0] == s ? 0 : row-order.length > 1 && row-order[1] == s ? 1 : row-order.length > 2 && row-order[2] == s ? 2 : row-order.length > 3 && row-order[3] == s ? 3 : row-order.length > 4 && row-order[4] == s ? 4 : row-order.length > 5 && row-order[5] == s ? 5 : row-order.length > 6 && row-order[6] == s ? 6 : row-order.length > 7 && row-order[7] == s ? 7 : row-order.length > 8 && row-order[8] == s ? 8 : 99
     }
     // The row at position k with the gap below it; 0 when there is none or it's empty.
     pure function slot-h(k: int) -> length {
@@ -724,160 +708,92 @@ export component HomeScreen inherits Rectangle {
     }
     pure function section-y(s: int) -> length {
         let p = row-pos(s);
-        Theme.sp-lg + (p > 0 ? slot-h(0) : 0px) + (p > 1 ? slot-h(1) : 0px) + (p > 2 ? slot-h(2) : 0px) + (p > 3 ? slot-h(3) : 0px) + (p > 4 ? slot-h(4) : 0px) + (p > 5 ? slot-h(5) : 0px) + (p > 6 ? slot-h(6) : 0px)
+        Theme.sp-lg + (p > 0 ? slot-h(0) : 0px) + (p > 1 ? slot-h(1) : 0px) + (p > 2 ? slot-h(2) : 0px) + (p > 3 ? slot-h(3) : 0px) + (p > 4 ? slot-h(4) : 0px) + (p > 5 ? slot-h(5) : 0px) + (p > 6 ? slot-h(6) : 0px) + (p > 7 ? slot-h(7) : 0px)
     }
 
-    // Dashboard hero, Background style (hero.slint): the picture behind everything below the title bar.
-    if AppState.hero-active && AppState.hero-background && AppState.hero-target().id != "": HeroBackdrop {
-        x: 0;
-        y: 54px;
-        width: root.width;
-        height: root.height - 54px;
-    }
+    property <length> kb-y: AppState.focused-section < 0 ? 0px
+        : clamp(
+              root.view-h / 2 - section-y(AppState.focused-section) - AppState.row-h(AppState.dash-ch) / 2,
+              min(0px, root.view-h - rows-box.preferred-height),
+              0px);
+    changed kb-y => { fl.content-y = kb-y; }
 
-    VerticalLayout {
-        spacing: 0px;
-
-        Rectangle {
-            height: 54px;
-            background: Theme.surface;
-
-            HorizontalLayout {
-                padding-left: Theme.sp;
-                padding-right: Theme.sp;
-                alignment: start;
-
-                Text {
-                    text: "Home";
-                    color: Theme.text;
-                    font-size: 18px * AppState.text-scale;
-                    font-weight: 700;
-                    vertical-alignment: center;
-                }
-            }
-
-            Rectangle {
-                y: parent.height - 1px;
-                height: 1px;
-                background: Theme.border;
-            }
+    fl := Flickable {
+        width: parent.width;
+        height: parent.height;
+        content-width: self.width;
+        content-height: max(root.view-h, rows-box.preferred-height);
+        animate content-y {
+            duration: 150ms * AppState.settings-scroll-speed;
+            easing: ease-out-expo;
         }
 
-        // Dashboard hero (hero.slint): fixed above the rows, which scroll below it.
-        if AppState.hero-active && AppState.hero-target().id != "": HeroBand {
-            // Band: ~38% of the screen, but always room for one whole row below it. Background: just
-            // the text (title, meta line, 3 lines of story), the picture is behind everything.
-            height: AppState.hero-background ? 88px + 76px * AppState.text-scale
-                : max(120px, min(clamp(root.height * 0.38, 200px, 460px), root.height - 54px - AppState.row-h(AppState.dash-ch) - 2 * Theme.sp-lg));
-        }
+        rows-box := VerticalLayout {
+            padding: Theme.sp-lg;
+            padding-left: 0px;
+            padding-right: 0px;
+            padding-bottom: 0px;
+            spacing: 0px;
 
-        home-fl-container := Rectangle {
-            vertical-stretch: 1;
-            horizontal-stretch: 1;
-            property <length> kb-y: AppState.focused-section < 0 ? 0px
-                : clamp(
-                      self.height / 2 - section-y(AppState.focused-section) - (AppState.row-h(AppState.dash-ch)) / 2,
-                      min(0px, self.height - rows.preferred-height),
-                      0px);
-            changed kb-y => { fl.content-y = kb-y; }
-
-            fl := Flickable {
-                content-width: home-fl-container.width;
-                content-height: max(home-fl-container.height, rows.preferred-height);
-                animate content-y {
-                    duration: 150ms * AppState.settings-scroll-speed;
-                    easing: ease-out-expo;
-                }
-
-                rows := VerticalLayout {
-                    padding: Theme.sp-lg;
-                    padding-left: 0px;
-                    padding-right: 0px;
-                    padding-bottom: 0px;
-                    spacing: 0px;
-
-                    for s in root.row-order: Rectangle {
-                        height: row-items(s).length > 0 ? AppState.row-h(AppState.dash-ch) + Theme.sp-lg : 0px;
-                        if row-items(s).length > 0: SectionRow {
-                            x: 0;
-                            y: 0;
-                            width: parent.width;
-                            section-title: row-title(s);
-                            items: row-items(s);
-                            section-focused: AppState.focused-section == s;
-                            focused-card: AppState.focused-card;
-                            card-w: AppState.dash-cw;
-                            card-h: AppState.dash-ch;
-                            item-play(id, it) => {
-                                if row-is-discover(s) {
-                                    AppState.open-discover-item(it == "DiscoverMovie" ? "movie" : "tv", id);
-                                } else {
-                                    AppState.item-play(id);
-                                }
-                            }
-                            item-context(id, hp, fav, rp, it, sid) => {
-                                if !row-is-discover(s) {
-                                    AppState.open-context-menu(id, hp, fav, rp, it, sid);
-                                }
-                            }
-                            item-context-full(itm) => {
-                                if row-is-discover(s) {
-                                    AppState.open-context-menu-discover(itm);
-                                }
-                            }
+            for s in root.row-order: Rectangle {
+                height: row-items(s).length > 0 ? AppState.row-h(AppState.dash-ch) + Theme.sp-lg : 0px;
+                if row-items(s).length > 0: SectionRow {
+                    x: 0;
+                    y: 0;
+                    width: parent.width;
+                    section-title: root.rows[s].title;
+                    items: row-items(s);
+                    section-focused: AppState.focused-section == s;
+                    focused-card: root.focused-card;
+                    card-w: AppState.dash-cw;
+                    card-h: AppState.dash-ch;
+                    card-focused(idx) => { root.card-clicked(s, idx); }
+                    item-play(id, it) => {
+                        if !root.rows[s].discover {
+                            AppState.item-play(id);
+                        } else if id == "" {
+                            AppState.open-calendar();
+                        } else {
+                            AppState.open-discover-item(it == "DiscoverMovie" ? "movie" : "tv", id);
                         }
                     }
-
-                    if continue-watching.length == 0 && next-up.length == 0 && recently-added.length == 0 && recently-added-movies.length == 0 && recently-added-albums.length == 0: LoadingSpinner {
-                        height: 120px;
+                    item-context(id, hp, fav, rp, it, sid) => {
+                        if !root.rows[s].discover {
+                            AppState.open-context-menu(id, hp, fav, rp, it, sid);
+                        }
+                    }
+                    item-context-full(itm) => {
+                        if root.rows[s].discover && itm.id != "" {
+                            AppState.open-context-menu-discover(itm);
+                        }
                     }
                 }
+            }
+
+            if root.loading: LoadingSpinner {
+                height: 120px;
             }
         }
     }
 }
 
-// ── Dashboard screen — movies or TV shows (rows + browse button) ─────────────
-export component DashboardScreen inherits Rectangle {
-    in property <string> screen-title: "Dashboard";
-    in property <[CardItem]> continue-watching;
-    in property <[CardItem]> next-up;
-    in property <[CardItem]> recently-added;
-    in property <[CardItem]> not-watched;
-    in property <[CardItem]> favorites;
-    // Seerr Watchlist for this dashboard's type: AppState.discover-watchlist-tv (nav 1) or
-    // -movies (nav 2), bound in main.slint.
-    in property <[CardItem]> watchlist;
-    // Coming Up for this dashboard's type: discover-coming-up-tv (nav 1) or -movies (nav 2).
-    in property <[CardItem]> coming-up;
+// ── Dashboard (Home, TV Shows, Movies, Collections, Music) ────────────────────
+// One component for all five: title bar, the hero (band or background), and the rows in the
+// order chosen in Settings → Interface → Dashboard rows. `rows` is AppState.*-rows (index = row
+// number — its identity for focus, keys and scroll); `row-order` the shown rows in order.
+export component DashboardView inherits Rectangle {
+    in property <string> screen-title;
+    in property <[DashRow]> rows;
+    in property <[int]> row-order;
 
     background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg;
 
-    // Rows in the order chosen in Settings → Interface → Dashboard rows (shown rows only). A row's
-    // number (s) is its identity: focus, keyboard (AppState.find-*-section) and scroll key on it.
-    in property <[int]> row-order: [0, 1, 2, 3, 4, 5, 6];
-    pure function row-items(s: int) -> [CardItem] {
-        s == 0 ? continue-watching : s == 1 ? next-up : s == 2 ? recently-added : s == 3 ? not-watched : s == 4 ? favorites : s == 5 ? watchlist : coming-up
+    // Library row k has cards (Discover rows don't count: their fetches are independent and must
+    // not hold up the spinner).
+    pure function library-row-filled(k: int) -> bool {
+        rows.length > k && !rows[k].discover && rows[k].items.length > 0
     }
-    pure function row-title(s: int) -> string {
-        s == 0 ? "Continue Watching" : s == 1 ? "Next Up" : s == 2 ? "Recently Added" : s == 3 ? "Not Watched" : s == 4 ? "Favorites" : s == 5 ? "Watchlist" : "Coming Up"
-    }
-    // Watchlist / Coming Up hold Discover (TMDB) cards: play and menu go through Discover.
-    pure function row-is-discover(s: int) -> bool {
-        s == 5 || s == 6
-    }
-    // Position of row s in row-order (99 = not shown).
-    pure function row-pos(s: int) -> int {
-        row-order.length > 0 && row-order[0] == s ? 0 : row-order.length > 1 && row-order[1] == s ? 1 : row-order.length > 2 && row-order[2] == s ? 2 : row-order.length > 3 && row-order[3] == s ? 3 : row-order.length > 4 && row-order[4] == s ? 4 : row-order.length > 5 && row-order[5] == s ? 5 : row-order.length > 6 && row-order[6] == s ? 6 : 99
-    }
-    // The row at position k with the gap below it; 0 when there is none or it's empty.
-    pure function slot-h(k: int) -> length {
-        row-order.length > k && row-items(row-order[k]).length > 0 ? AppState.row-h(AppState.dash-ch) + Theme.sp-lg : 0px
-    }
-    pure function section-y(s: int) -> length {
-        let p = row-pos(s);
-        Theme.sp-lg + (p > 0 ? slot-h(0) : 0px) + (p > 1 ? slot-h(1) : 0px) + (p > 2 ? slot-h(2) : 0px) + (p > 3 ? slot-h(3) : 0px) + (p > 4 ? slot-h(4) : 0px) + (p > 5 ? slot-h(5) : 0px) + (p > 6 ? slot-h(6) : 0px)
-    }
+    property <bool> loading: !library-row-filled(0) && !library-row-filled(1) && !library-row-filled(2) && !library-row-filled(3) && !library-row-filled(4) && !library-row-filled(5) && !library-row-filled(6);
 
     // Dashboard hero, Background style (hero.slint): the picture behind everything below the title bar.
     if AppState.hero-active && AppState.hero-background && AppState.hero-target().id != "": HeroBackdrop {
@@ -900,7 +816,7 @@ export component DashboardScreen inherits Rectangle {
                 alignment: start;
 
                 Text {
-                    text: screen-title;
+                    text: root.screen-title;
                     color: Theme.text;
                     font-size: 18px * AppState.text-scale;
                     font-weight: 700;
@@ -923,353 +839,19 @@ export component DashboardScreen inherits Rectangle {
                 : max(120px, min(clamp(root.height * 0.38, 200px, 460px), root.height - 54px - AppState.row-h(AppState.dash-ch) - 2 * Theme.sp-lg));
         }
 
-        dash-fl-container := Rectangle {
+        // Not `if`-mounted, so its own height is safe as the visible height (SLINT.md).
+        CardRows {
             vertical-stretch: 1;
             horizontal-stretch: 1;
-            property <length> kb-y: AppState.focused-section < 0 ? 0px
-                : clamp(
-                      self.height / 2 - section-y(AppState.focused-section) - (AppState.row-h(AppState.dash-ch)) / 2,
-                      min(0px, self.height - rows.preferred-height),
-                      0px);
-            changed kb-y => { fl.content-y = kb-y; }
-
-            fl := Flickable {
-                content-width: dash-fl-container.width;
-                content-height: max(dash-fl-container.height, rows.preferred-height);
-                animate content-y {
-                    duration: 150ms * AppState.settings-scroll-speed;
-                    easing: ease-out-expo;
-                }
-
-                rows := VerticalLayout {
-                    padding: Theme.sp-lg;
-                    padding-left: 0px;
-                    padding-right: 0px;
-                    padding-bottom: 0px;
-                    spacing: 0px;
-
-                    for s in root.row-order: Rectangle {
-                        height: row-items(s).length > 0 ? AppState.row-h(AppState.dash-ch) + Theme.sp-lg : 0px;
-                        if row-items(s).length > 0: SectionRow {
-                            x: 0;
-                            y: 0;
-                            width: parent.width;
-                            section-title: row-title(s);
-                            items: row-items(s);
-                            section-focused: AppState.focused-section == s;
-                            focused-card: AppState.focused-card;
-                            card-w: AppState.dash-cw;
-                            card-h: AppState.dash-ch;
-                            item-play(id, it) => {
-                                if row-is-discover(s) {
-                                    AppState.open-discover-item(it == "DiscoverMovie" ? "movie" : "tv", id);
-                                } else {
-                                    AppState.item-play(id);
-                                }
-                            }
-                            item-context(id, hp, fav, rp, it, sid) => {
-                                if !row-is-discover(s) {
-                                    AppState.open-context-menu(id, hp, fav, rp, it, sid);
-                                }
-                            }
-                            item-context-full(itm) => {
-                                if row-is-discover(s) {
-                                    AppState.open-context-menu-discover(itm);
-                                }
-                            }
-                        }
-                    }
-
-                    if continue-watching.length == 0 && next-up.length == 0 && recently-added.length == 0 && not-watched.length == 0 && favorites.length == 0: LoadingSpinner {
-                        height: 120px;
-                    }
-                }
-            }
-        }
-    }
-}
-
-// ── Music tab: Recently Added + Recently Played + Favorites + Playlists rows ─
-
-export component MusicDashboard inherits Rectangle {
-    in property <[CardItem]> recently-added;
-    in property <[CardItem]> recently-played;
-    in property <[CardItem]> favorites;
-    in property <[CardItem]> playlists;
-
-    background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg;
-
-    // Rows in the order chosen in Settings → Interface → Dashboard rows (shown rows only). A row's
-    // number (s) is its identity: focus, keyboard (AppState.find-*-section) and scroll key on it.
-    in property <[int]> row-order: [0, 1, 2, 3];
-    pure function row-items(s: int) -> [CardItem] {
-        s == 0 ? recently-added : s == 1 ? recently-played : s == 2 ? favorites : playlists
-    }
-    pure function row-title(s: int) -> string {
-        s == 0 ? "Recently Added" : s == 1 ? "Recently Played" : s == 2 ? "Favorite Albums" : "Playlists"
-    }
-    // Watchlist / Coming Up hold Discover (TMDB) cards: play and menu go through Discover.
-    pure function row-is-discover(s: int) -> bool {
-        false
-    }
-    // Position of row s in row-order (99 = not shown).
-    pure function row-pos(s: int) -> int {
-        row-order.length > 0 && row-order[0] == s ? 0 : row-order.length > 1 && row-order[1] == s ? 1 : row-order.length > 2 && row-order[2] == s ? 2 : row-order.length > 3 && row-order[3] == s ? 3 : row-order.length > 4 && row-order[4] == s ? 4 : row-order.length > 5 && row-order[5] == s ? 5 : row-order.length > 6 && row-order[6] == s ? 6 : 99
-    }
-    // The row at position k with the gap below it; 0 when there is none or it's empty.
-    pure function slot-h(k: int) -> length {
-        row-order.length > k && row-items(row-order[k]).length > 0 ? AppState.row-h(AppState.dash-ch) + Theme.sp-lg : 0px
-    }
-    pure function section-y(s: int) -> length {
-        let p = row-pos(s);
-        Theme.sp-lg + (p > 0 ? slot-h(0) : 0px) + (p > 1 ? slot-h(1) : 0px) + (p > 2 ? slot-h(2) : 0px) + (p > 3 ? slot-h(3) : 0px) + (p > 4 ? slot-h(4) : 0px) + (p > 5 ? slot-h(5) : 0px) + (p > 6 ? slot-h(6) : 0px)
-    }
-
-    // Dashboard hero, Background style (hero.slint): the picture behind everything below the title bar.
-    if AppState.hero-active && AppState.hero-background && AppState.hero-target().id != "": HeroBackdrop {
-        x: 0;
-        y: 54px;
-        width: root.width;
-        height: root.height - 54px;
-    }
-
-    VerticalLayout {
-        spacing: 0px;
-
-        Rectangle {
-            height: 54px;
-            background: Theme.surface;
-            HorizontalLayout {
-                padding-left: Theme.sp;
-                padding-right: Theme.sp;
-                alignment: start;
-                Text {
-                    text: "Music";
-                    color: Theme.text;
-                    font-size: 18px * AppState.text-scale;
-                    font-weight: 700;
-                    vertical-alignment: center;
-                }
-            }
-
-            Rectangle {
-                y: parent.height - 1px;
-                height: 1px;
-                background: Theme.border;
-            }
-        }
-
-        // Dashboard hero (hero.slint): fixed above the rows, which scroll below it.
-        if AppState.hero-active && AppState.hero-target().id != "": HeroBand {
-            // Band: ~38% of the screen, but always room for one whole row below it. Background: just
-            // the text (title, meta line, 3 lines of story), the picture is behind everything.
-            height: AppState.hero-background ? 88px + 76px * AppState.text-scale
-                : max(120px, min(clamp(root.height * 0.38, 200px, 460px), root.height - 54px - AppState.row-h(AppState.dash-ch) - 2 * Theme.sp-lg));
-        }
-
-        mus-fl-container := Rectangle {
-            vertical-stretch: 1;
-            horizontal-stretch: 1;
-            property <length> kb-y: AppState.focused-section < 0 ? 0px
-                : clamp(
-                      root.height / 2 - section-y(AppState.focused-section) - (AppState.row-h(AppState.dash-ch)) / 2,
-                      min(0px, root.height - mus-rows.preferred-height),
-                      0px);
-            changed kb-y => { mus-fl.content-y = kb-y; }
-
-            mus-fl := Flickable {
-                content-width: mus-fl-container.width;
-                content-height: max(mus-fl-container.height, mus-rows.preferred-height);
-                animate content-y {
-                    duration: 150ms * AppState.settings-scroll-speed;
-                    easing: ease-out-expo;
-                }
-
-                mus-rows := VerticalLayout {
-                    padding: Theme.sp-lg;
-                    padding-left: 0px;
-                    padding-right: 0px;
-                    padding-bottom: 0px;
-                    spacing: 0px;
-
-                    for s in root.row-order: Rectangle {
-                        height: row-items(s).length > 0 ? AppState.row-h(AppState.dash-ch) + Theme.sp-lg : 0px;
-                        if row-items(s).length > 0: SectionRow {
-                            x: 0;
-                            y: 0;
-                            width: parent.width;
-                            section-title: row-title(s);
-                            items: row-items(s);
-                            section-focused: AppState.focused-section == s;
-                            focused-card: AppState.focused-card;
-                            card-w: AppState.dash-cw;
-                            card-h: AppState.dash-ch;
-                            item-play(id, it) => {
-                                if row-is-discover(s) {
-                                    AppState.open-discover-item(it == "DiscoverMovie" ? "movie" : "tv", id);
-                                } else {
-                                    AppState.item-play(id);
-                                }
-                            }
-                            item-context(id, hp, fav, rp, it, sid) => {
-                                if !row-is-discover(s) {
-                                    AppState.open-context-menu(id, hp, fav, rp, it, sid);
-                                }
-                            }
-                            item-context-full(itm) => {
-                                if row-is-discover(s) {
-                                    AppState.open-context-menu-discover(itm);
-                                }
-                            }
-                        }
-                    }
-
-                    if recently-added.length == 0 && recently-played.length == 0 && favorites.length == 0 && playlists.length == 0: LoadingSpinner {
-                        height: 120px;
-                    }
-                }
-            }
-        }
-    }
-}
-
-// ── Collections tab: Recently Added + Unwatched rows ─────────────────────────
-
-export component CollectionsDashboard inherits Rectangle {
-    in property <[CardItem]> recently-added;
-    in property <[CardItem]> unwatched;
-
-    background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg;
-
-    // Rows in the order chosen in Settings → Interface → Dashboard rows (shown rows only). A row's
-    // number (s) is its identity: focus, keyboard (AppState.find-*-section) and scroll key on it.
-    in property <[int]> row-order: [0, 1];
-    pure function row-items(s: int) -> [CardItem] {
-        s == 0 ? recently-added : unwatched
-    }
-    pure function row-title(s: int) -> string {
-        s == 0 ? "Recently Added" : "Unwatched"
-    }
-    // Watchlist / Coming Up hold Discover (TMDB) cards: play and menu go through Discover.
-    pure function row-is-discover(s: int) -> bool {
-        false
-    }
-    // Position of row s in row-order (99 = not shown).
-    pure function row-pos(s: int) -> int {
-        row-order.length > 0 && row-order[0] == s ? 0 : row-order.length > 1 && row-order[1] == s ? 1 : row-order.length > 2 && row-order[2] == s ? 2 : row-order.length > 3 && row-order[3] == s ? 3 : row-order.length > 4 && row-order[4] == s ? 4 : row-order.length > 5 && row-order[5] == s ? 5 : row-order.length > 6 && row-order[6] == s ? 6 : 99
-    }
-    // The row at position k with the gap below it; 0 when there is none or it's empty.
-    pure function slot-h(k: int) -> length {
-        row-order.length > k && row-items(row-order[k]).length > 0 ? AppState.row-h(AppState.dash-ch) + Theme.sp-lg : 0px
-    }
-    pure function section-y(s: int) -> length {
-        let p = row-pos(s);
-        Theme.sp-lg + (p > 0 ? slot-h(0) : 0px) + (p > 1 ? slot-h(1) : 0px) + (p > 2 ? slot-h(2) : 0px) + (p > 3 ? slot-h(3) : 0px) + (p > 4 ? slot-h(4) : 0px) + (p > 5 ? slot-h(5) : 0px) + (p > 6 ? slot-h(6) : 0px)
-    }
-
-    // Dashboard hero, Background style (hero.slint): the picture behind everything below the title bar.
-    if AppState.hero-active && AppState.hero-background && AppState.hero-target().id != "": HeroBackdrop {
-        x: 0;
-        y: 54px;
-        width: root.width;
-        height: root.height - 54px;
-    }
-
-    VerticalLayout {
-        spacing: 0px;
-
-        Rectangle {
-            height: 54px;
-            background: Theme.surface;
-            HorizontalLayout {
-                padding-left: Theme.sp;
-                padding-right: Theme.sp;
-                alignment: start;
-                Text {
-                    text: "Collections";
-                    color: Theme.text;
-                    font-size: 18px * AppState.text-scale;
-                    font-weight: 700;
-                    vertical-alignment: center;
-                }
-            }
-
-            Rectangle {
-                y: parent.height - 1px;
-                height: 1px;
-                background: Theme.border;
-            }
-        }
-
-        // Dashboard hero (hero.slint): fixed above the rows, which scroll below it.
-        if AppState.hero-active && AppState.hero-target().id != "": HeroBand {
-            // Band: ~38% of the screen, but always room for one whole row below it. Background: just
-            // the text (title, meta line, 3 lines of story), the picture is behind everything.
-            height: AppState.hero-background ? 88px + 76px * AppState.text-scale
-                : max(120px, min(clamp(root.height * 0.38, 200px, 460px), root.height - 54px - AppState.row-h(AppState.dash-ch) - 2 * Theme.sp-lg));
-        }
-
-        coll-fl-container := Rectangle {
-            vertical-stretch: 1;
-            horizontal-stretch: 1;
-            property <length> kb-y: AppState.focused-section < 0 ? 0px
-                : clamp(
-                      root.height / 2 - section-y(AppState.focused-section) - (AppState.row-h(AppState.dash-ch)) / 2,
-                      min(0px, root.height - coll-rows.preferred-height),
-                      0px);
-            changed kb-y => { coll-fl.content-y = kb-y; }
-
-            coll-fl := Flickable {
-                content-width: coll-fl-container.width;
-                content-height: max(coll-fl-container.height, coll-rows.preferred-height);
-                animate content-y {
-                    duration: 150ms * AppState.settings-scroll-speed;
-                    easing: ease-out-expo;
-                }
-
-                coll-rows := VerticalLayout {
-                    padding: Theme.sp-lg;
-                    padding-left: 0px;
-                    padding-right: 0px;
-                    padding-bottom: 0px;
-                    spacing: 0px;
-
-                    for s in root.row-order: Rectangle {
-                        height: row-items(s).length > 0 ? AppState.row-h(AppState.dash-ch) + Theme.sp-lg : 0px;
-                        if row-items(s).length > 0: SectionRow {
-                            x: 0;
-                            y: 0;
-                            width: parent.width;
-                            section-title: row-title(s);
-                            items: row-items(s);
-                            section-focused: AppState.focused-section == s;
-                            focused-card: AppState.focused-card;
-                            card-w: AppState.dash-cw;
-                            card-h: AppState.dash-ch;
-                            item-play(id, it) => {
-                                if row-is-discover(s) {
-                                    AppState.open-discover-item(it == "DiscoverMovie" ? "movie" : "tv", id);
-                                } else {
-                                    AppState.item-play(id);
-                                }
-                            }
-                            item-context(id, hp, fav, rp, it, sid) => {
-                                if !row-is-discover(s) {
-                                    AppState.open-context-menu(id, hp, fav, rp, it, sid);
-                                }
-                            }
-                            item-context-full(itm) => {
-                                if row-is-discover(s) {
-                                    AppState.open-context-menu-discover(itm);
-                                }
-                            }
-                        }
-                    }
-
-                    if recently-added.length == 0 && unwatched.length == 0: LoadingSpinner {
-                        height: 120px;
-                    }
-                }
+            rows: root.rows;
+            row-order: root.row-order;
+            focused-card: AppState.focused-card;
+            view-h: self.height;
+            loading: root.loading;
+            // A click syncs keyboard focus (Back returns to the clicked card).
+            card-clicked(row, card) => {
+                AppState.focused-section = row;
+                AppState.focused-card = card;
             }
         }
     }

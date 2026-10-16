@@ -154,15 +154,14 @@ Needs `mpv`/libmpv (`pacman -S mpv`). Optional at runtime: `yt-dlp` (trailers), 
 - Every model holding `CardItem`s must be listed in `context_menu::update_card_in_all_models`.
 - These lists exist twice, in Rust and as Slint `if` conditions, with no shared source of truth —
   **change both sides together**: context-menu rows (`existing_*_menu_rows` ↔ `context_menu.slint`),
-  settings rows (`settings::section_row_keys` ↔ `settings.slint`), D-pad zone lists (`existing_*_zones`),
-  dashboard nav ladders in `app_state.slint`.
+  settings rows (`settings::section_row_keys` ↔ `settings.slint`), D-pad zone lists (`existing_*_zones`).
 - A card row's height is `AppState.row-h(card-h)` (title + cards + zoom room) — never `card-h + row-chrome-h` by hand;
   a focusable picture zooms with `transform-scale-x/-y: AppState.zoom(focused)` (+ `z`), and whatever scrolls it keeps
   `AppState.zoom-pad(size)` of room or anchors edge items inward (`MediaCard.zoom-anchor-x/-y`).
-- Dashboard rows are data-driven (`row-order` per dashboard, home.slint `row-items`/`row-title`): a new row needs its
-  number there, in app_state.slint's `section-len`/`section-card-item` + `*-row-order` default, and in
-  `dashboard_rows::DASHBOARDS` (per-profile hide/reorder; saved lists are merged with it). Discover's landing rows
-  still use their own `row-y` helper.
+- Dashboard rows and Discover's landing rows are lists in AppState (`home-rows` … `music-rows`, `discover-rows`:
+  `DashRow { title, items, discover }`, index = row number) drawn by home.slint's `CardRows` (dashboards through
+  `DashboardView`); keyboard nav reads the same lists (`nav-rows()`). A new row: append it there, to the
+  `*-row-order` default and to `dashboard_rows::DASHBOARDS` (Discover: `landing_row_get/_set`).
 
 ### Keyboard / D-pad
 - One global `FocusScope` (`fs`) feeds `keys::handle_key()`; `active_mode()` maps `AppState` flags to an
