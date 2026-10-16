@@ -3,21 +3,21 @@
 //     bindings   Action, KeyCombo, KeyMap/Keybindings, defaults, rebinding, keybinding rows + nav
 //     mode       AppMode + active_mode()
 //     overlays   raw-key handlers for the pre-AppMode overlays (login, pickers, Bonfire, Seerr…)
-//     dashboard  dashboard dispatch, global shortcuts, bar focus fallbacks
+//     dashboard  dashboard dispatch, bar focus fallbacks
+//     tiers      RAW_TIERS: the raw-key tiers checked before any key lookup (+ RawKey)
+//     global     GLOBAL_SHORTCUTS: Quit/fullscreen/resume/queue/Now Playing/music/bar focus (+ KeyCtx)
 //     library    library grid dispatch
 //     player     player, queue panel and Now Playing dispatch
 //     text_input on-screen keyboard opener/cursor math, drawn search fields, playlist picker
 //   key          Slint key string constants
 //   lookup_action  KeyCombo → Action (exact match first; with Shift held, a printable key
 //                  falls back to its unshifted binding)
-//   handle_key   router: on-screen keyboard gate (first — the keyboard can be open on any wired
-//                screen; arrows move its cursor, Enter bumps kb-activate-pulse, only Ctrl+Q passes)
-//                → login → startup gate (connecting swallows keys; offline: Enter retries) →
-//                profile/account picker tiers → global confirm dialogs and the other raw-key
-//                overlay tiers (incl. the Dashboard rows editor, dashboard_rows::handle_keys) → search bypasses → loading guard → rebind capture → key lookup →
-//                global shortcuts (Ctrl+Q, R resume, bar focus — excluding overlay/detail modes)
-//                → active_mode() → per-screen handler (context_menu, series, season, detail,
-//                browse, discover…, settings::dispatch_settings)
+//   handle_key   router: RAW_TIERS (tiers.rs — on-screen keyboard, login/pickers, overlays and
+//                confirms, profile edit, startup gate, search fields, playlist picker, loading guard,
+//                rebind capture; first open tier owns the key) → key lookup (+ the Enter
+//                kb-activate-pulse) → GLOBAL_SHORTCUTS (global.rs — Ctrl+Q, F, R, N, q, m, music,
+//                bar focus; excluding overlay/detail modes) → active_mode() → per-screen handler
+//                (context_menu, series, season, detail, browse, discover…, settings::dispatch_settings)
 //   caret_key    Left/Right/Home/End/Delete → text_field caret for the drawn fields (Discover/
 //                Browse/Library search, playlist name — Right still creates at the end — and the
 //                Bonfire join code)
@@ -53,19 +53,23 @@ pub mod key {
 
 mod bindings;
 mod dashboard;
+mod global;
 mod library;
 mod mode;
 mod overlays;
 mod player;
 mod text_input;
+mod tiers;
 
 pub(crate) use bindings::*;
 pub(crate) use dashboard::*;
+pub(crate) use global::*;
 pub(crate) use library::*;
 pub(crate) use mode::*;
 pub(crate) use overlays::*;
 pub(crate) use player::*;
 pub(crate) use text_input::*;
+pub(crate) use tiers::*;
 
 // ── Dispatch ──────────────────────────────────────────────────────────────────
 
@@ -115,225 +119,10 @@ pub(crate) fn handle_key(
         return false;
     }
 
-    if g.get_show_onscreen_keyboard() && g.get_settings_onscreen_keyboard_enabled() {
-        return handle_onscreen_keyboard_keys(&g, key, ctrl);
-    }
-
-    if g.get_show_login() {
-        return handle_login_keys(&g, key, ctrl);
-    }
-
-    if g.get_show_profile_picker() {
-        return handle_profile_picker_keys(&g, key, ctrl);
-    }
-
-    if g.get_show_account_picker() {
-        return handle_account_picker_keys(&g, key, ctrl, window);
-    }
-
-    if g.get_show_sidebar_profile_menu() {
-        return handle_sidebar_profile_menu_keys(&g, key, ctrl, window);
-    }
-
-    if g.get_show_connect_seerr() {
-        return handle_connect_seerr_keys(&g, key, ctrl, window);
-    }
-
-    // "Remember this login" confirm-password modal (see app_state.slint). No zones — one
-    // password field; Cancel/Confirm through its accepted=>/Escape.
-    if g.get_show_remember_login_confirm() {
-        if ctrl && (key == "q" || key == "Q") {
-            g.invoke_quit();
-            return true;
-        }
-        if key == key::ESCAPE {
-            g.invoke_remember_login_confirm_cancel();
-            return true;
-        }
-        if key == key::RETURN {
-            g.set_kb_activate_pulse(g.get_kb_activate_pulse().wrapping_add(1));
-        }
-        return true;
-    }
-
-    // Sign Out confirmation (see show-sign-out-confirm): global (main.slint), opened from
-    // Settings' Profiles row, the sidebar quick-menu and OfflineScreen's Change Server — checked
-    // before active_mode() so it wins wherever it was opened.
-    if g.get_show_sign_out_confirm() {
-        if ctrl && (key == "q" || key == "Q") {
-            g.invoke_quit();
-            return true;
-        }
-        if key == key::LEFT {
-            g.set_sign_out_confirm_focused(0);
-        } else if key == key::RIGHT {
-            g.set_sign_out_confirm_focused(1);
-        } else if key == key::RETURN {
-            if g.get_sign_out_confirm_focused() == 1 {
-                g.invoke_sign_out();
-            }
-            g.set_show_sign_out_confirm(false);
-        } else if key == key::ESCAPE || key == key::BACKSPACE {
-            g.set_show_sign_out_confirm(false);
-        }
-        return true;
-    }
-
-    // Cancel-Seerr-request confirmation (see show-cancel-request-confirm): global too — the
-    // Discover context menu and RequestDetailScreen's ⋮ More both open it.
-    if g.get_show_cancel_request_confirm() {
-        if ctrl && (key == "q" || key == "Q") {
-            g.invoke_quit();
-            return true;
-        }
-        if key == key::LEFT {
-            g.set_cancel_request_confirm_focused(0);
-        } else if key == key::RIGHT {
-            g.set_cancel_request_confirm_focused(1);
-        } else if key == key::RETURN {
-            if g.get_cancel_request_confirm_focused() == 1 {
-                g.invoke_cancel_request_confirmed();
-            }
-            g.set_show_cancel_request_confirm(false);
-        } else if key == key::ESCAPE || key == key::BACKSPACE {
-            g.set_show_cancel_request_confirm(false);
-        }
-        return true;
-    }
-
-    if g.get_show_manage_profiles() {
-        return handle_manage_profiles_keys(&g, key, ctrl, window);
-    }
-    if g.get_show_dashboard_rows() {
-        return crate::dashboard_rows::handle_keys(&g, key, ctrl, window);
-    }
-    if g.get_show_bonfire_group() {
-        return handle_bonfire_group_keys(&g, key, ctrl, window);
-    }
-
-    // ProfileEditScreen — full D-pad dispatch (zones: profile-edit-zone in app_state.slint).
-    // Escape is handled here (it must tell "close the dropdown" from "cancel the screen") and
-    // skipped while a LineEdit has focus (profile-edit-text-editing) — the field's own
-    // key-pressed consumes it then.
-    if g.get_show_profile_edit() {
-        if ctrl && (key == "q" || key == "Q") {
-            g.invoke_quit();
-            return true;
-        }
-        // Delete-profile confirmation: this tier owns Left/Right/Confirm/Back (ConfirmDialog has no
-        // key handling), as raw keys. Checked before Escape-closes-screen, so Escape/Backspace
-        // cancel the dialog first.
-        if g.get_show_profile_edit_delete_confirm() {
-            if key == key::LEFT {
-                g.set_profile_edit_delete_confirm_focused(0);
-            } else if key == key::RIGHT {
-                g.set_profile_edit_delete_confirm_focused(1);
-            } else if key == key::RETURN {
-                if g.get_profile_edit_delete_confirm_focused() == 1 {
-                    g.invoke_profile_edit_delete();
-                }
-                g.set_show_profile_edit_delete_confirm(false);
-            } else if key == key::ESCAPE || key == key::BACKSPACE {
-                g.set_show_profile_edit_delete_confirm(false);
-            }
-            return true;
-        }
-        if key == key::RETURN {
-            g.set_kb_activate_pulse(g.get_kb_activate_pulse().wrapping_add(1));
-        }
-        if key == key::ESCAPE && !g.get_profile_edit_text_editing() {
-            if g.get_profile_edit_dropdown_open() {
-                g.set_profile_edit_dropdown_open(false);
-            } else {
-                g.invoke_profile_edit_cancel();
-            }
-            return true;
-        }
-        return crate::profile_edit::handle_key_profile_edit(key, &g);
-    }
-
-    // Startup connectivity gate: ConnectingScreen has nothing to focus; on
-    // OfflineScreen Left/Right cycle the 3 buttons (0=Retry 1=Change Server
-    // 2=Quit — a permanent failure needs a way out besides retrying forever)
-    // and Enter activates the focused one, since neither screen has a native
-    // widget focus path the way LoginScreen's LineEdits do. Ctrl+Q still
-    // quits directly regardless of focus, matching the global Quit shortcut
-    // used everywhere else — both branches below return unconditionally, so
-    // without this the later global Quit pre-dispatch would never run here.
-    if (g.get_show_connecting() || g.get_show_offline()) && ctrl && (key == "q" || key == "Q") {
-        g.invoke_quit();
-        return true;
-    }
-    if g.get_show_connecting() {
-        return true;
-    }
-    if g.get_show_offline() {
-        return handle_offline_keys(&g, key);
-    }
-
-    // Search field text-input modes bypass the KeyMap
-    if g.get_show_library() && g.get_library_header_focused() {
-        return handle_library_search(key, ctrl, window);
-    }
-    if g.get_show_browse() && g.get_browse_header_focused() {
-        return handle_browse_search(key, ctrl, window);
-    }
-    if g.get_active_nav() == 6 && !g.get_show_request_detail() && g.get_discover_header_focused() {
-        return handle_discover_search(key, ctrl, window);
-    }
-    if g.get_show_playlist_picker() {
-        // Same reason as the show_offline block above: this returns before the
-        // main RETURN handler's kb-activate-pulse bump, so PlaylistPicker's own
-        // PressPulse-driven rows (new-pulse/p-pulse in context_menu.slint) never
-        // flashed on keyboard Enter.
-        if key == key::RETURN {
-            g.set_kb_activate_pulse(g.get_kb_activate_pulse().wrapping_add(1));
-        }
-        return handle_playlist_picker(key, ctrl, window);
-    }
-
-    // While a detail/series page is loading (app-content-loading), block all keys except
-    // Back/Escape (cancel the pending load) and Quit.
-    if g.get_app_content_loading() {
-        let cancel = key == key::ESCAPE || key == key::BACKSPACE;
-        let quit = ctrl && (key == "q" || key == "Q");
-        if cancel || quit {
-            g.set_app_content_loading(false);
-            g.set_app_loading_progress(0.0);
-            // Clear both IDs so any still-running fetch tasks see a stale check and exit.
-            g.set_detail_id("".into());
-            g.set_series_id("".into());
-            if quit {
-                g.invoke_quit();
-            }
-        }
-        return true; // swallow all keys during loading
-    }
-
-    // Keybinding rebind capture
-    if g.get_keybinding_rebinding() {
-        if key == key::ESCAPE {
-            debug!("keybindings: rebind cancelled (Escape)");
-            g.set_keybinding_rebinding(false);
-        } else {
-            let fi = g.get_keybinding_focused();
-            debug!(
-                "keybindings: rebind capture key={key:?} shift={shift} ctrl={ctrl} for row {fi}"
-            );
-            drop(g);
-            rebind_action(fi, key, shift, ctrl, state, window);
-        }
-        return true;
-    }
-
-    // Tab in library grid mode: toggle sort bar focus
-    if key == "\t" && g.get_show_library() && !g.get_library_header_focused() {
-        let focused = g.get_library_sort_focused();
-        g.set_library_sort_focused(!focused);
-        if !focused {
-            g.set_library_sort_cursor(sort_bar_init_cursor(&g));
-        }
-        return true;
+    // Raw-key tiers first (tiers.rs): overlays, confirms, the startup gate, search fields…
+    let raw = RawKey { key, shift, ctrl };
+    if let Some((_, _, keys)) = RAW_TIERS.iter().find(|(_, open, _)| open(&g, &raw)) {
+        return keys(&g, &raw, window, state);
     }
 
     // Key → Action lookup. KeyCombo::new lower-cases key, so Caps Lock never
@@ -366,356 +155,17 @@ pub(crate) fn handle_key(
     }
     drop(g);
 
-    // Ctrl+Q quits from ANY mode — handled once here, not per screen (per-mode arms missed
-    // several screens).
-    if action == Some(Action::Quit) {
-        crate::AppState::get(window).invoke_quit();
-        return true;
-    }
-
-    // F / F11 toggles fullscreen from any non-player mode. Several focus states
-    // (album/artist/collection button rows, queue panel, context menu) swallowed
-    // it with catch-all arms; like Quit it has no per-screen meaning. The Player
-    // arm keeps its own handling so the controls-reveal behaviour is unchanged.
-    if action == Some(Action::Fullscreen) && mode != AppMode::Player {
-        crate::AppState::get(window).invoke_toggle_fullscreen();
-        return true;
-    }
-
-    // Global R: resume the background player from any non-fullscreen, non-detail, non-overlay
-    // mode (RequestDetail/RequestOptions included in the exclusions — R must not jump to the
-    // player mid-request).
-    if action == Some(Action::ResumePlayer)
-        && !matches!(
-            mode,
-            AppMode::Player
-                | AppMode::Person
-                | AppMode::Season
-                | AppMode::Detail
-                | AppMode::Artist
-                | AppMode::Collection
-                | AppMode::Album
-                | AppMode::ContextMenu
-                | AppMode::QueuePanel
-                | AppMode::NowPlaying
-                | AppMode::RequestDetail
-                | AppMode::RequestOptions
-                | AppMode::Calendar
-                | AppMode::CalendarDayPopup
-                | AppMode::Blocklist
-                | AppMode::BonfireAdmin
-        )
-    {
-        let g = crate::AppState::get(window);
-        if g.get_has_background_player() {
-            g.invoke_resume_player();
-            return true;
-        }
-    }
-
-    // N: focus the mini-player bar from any non-player screen.
-    if action == Some(Action::FocusFloatCard)
-        && mode != AppMode::Player
-        && mode != AppMode::ContextMenu
-    {
-        let g = crate::AppState::get(window);
-        if g.get_has_background_player() && !g.get_is_playing() {
-            g.set_float_card_focused(0);
-            return true;
-        }
-    }
-
-    // q: the queue panel opens from any non-ContextMenu mode whenever audio is
-    // playing OR the queue has content — a queue built while idle stays reachable
-    // (Phase 56). Player mode keeps its own arm in dispatch_player.
-    if action == Some(Action::OpenQueuePanel)
-        && !matches!(mode, AppMode::ContextMenu | AppMode::Player)
-    {
-        let g = crate::AppState::get(window);
-        if g.get_show_queue_panel() {
-            g.set_show_queue_panel(false);
-        } else if g.get_is_audio_playing() || g.get_queue_count() > 0 {
-            g.invoke_refresh_queue_display();
-            // Cursor: current item when one is playing, else the first row.
-            g.set_queue_panel_cursor(0);
-            let items = g.get_queue_items();
-            for i in 0..items.row_count() {
-                if let Some(e) = items.row_data(i)
-                    && e.is_current
-                {
-                    g.set_queue_panel_cursor(i as i32);
-                    break;
-                }
-            }
-            g.set_show_queue_panel(true);
-        } else {
-            crate::show_toast(
-                slint::ComponentHandle::as_weak(window),
-                "Queue is empty".to_string(),
-            );
-        }
-        return true;
-    }
-
-    // m: fullscreen Now Playing screen — toggles from any non-ContextMenu/Player
-    // mode while audio is playing; opening resets focus to the transport row.
-    if action == Some(Action::ToggleNowPlaying)
-        && !matches!(mode, AppMode::ContextMenu | AppMode::Player)
-    {
-        let g = crate::AppState::get(window);
-        if g.get_is_audio_playing() {
-            if g.get_show_now_playing() {
-                g.set_show_now_playing(false);
-            } else {
-                g.invoke_open_now_playing();
-            }
-        }
-        return true;
-    }
-
-    // Global playlist controls when audio is playing (fire from any mode except ContextMenu).
-    if mode != AppMode::ContextMenu {
-        let g = crate::AppState::get(window);
-        if g.get_is_audio_playing()
-            && let Some(ref a) = action
-        {
-            match a {
-                Action::PrevTrack => {
-                    g.invoke_queue_prev_track();
-                    return true;
-                }
-                Action::NextTrack => {
-                    g.invoke_queue_next_track();
-                    return true;
-                }
-                Action::ToggleShuffle => {
-                    g.invoke_toggle_shuffle();
-                    return true;
-                }
-                Action::CycleRepeat => {
-                    g.invoke_cycle_repeat();
-                    return true;
-                }
-                Action::ToggleLyrics => {
-                    g.invoke_toggle_lyrics();
-                    return true;
-                }
-                _ => {}
-            }
-        }
-    }
-
-    // Music bar keyboard focus: intercept nav keys when a button is focused.
-    // Layout: [art (0)] | [⏸/▶ (1)] [⏹ (2)] | [timeline (3)] | [⏮ (4)] [⏭ (5)] [⇌ (6)] [↺ (7)] [⋮ (8)] [♪ (9)] [🔉 (10)] [🔊 (11)]
-    //         Left zone   Centre zone            Below buttons   Right zone (9 only when lyrics-available; 10/11 always)
-    // Left/Right: 0↔1↔2 → 4↔5↔6↔7↔8↔(9)↔10↔11 (skip over 3, and over 9 when lyrics unavailable); Down from any button→3; Up from 3→1.
-    // Excluded screens: a stale music-bar-focused from earlier keyboard use survives a
-    // mouse-driven screen switch and would hijack that screen's arrows/Enter.
-    if !matches!(
-        mode,
-        AppMode::Player
-            | AppMode::ContextMenu
-            | AppMode::QueuePanel
-            | AppMode::NowPlaying
-            | AppMode::RequestDetail
-            | AppMode::RequestOptions
-            | AppMode::Calendar
-            | AppMode::CalendarDayPopup
-            | AppMode::Blocklist
-            | AppMode::BonfireAdmin
-    ) {
-        let mf = crate::AppState::get(window).get_music_bar_focused();
-        if mf >= 0 {
-            let g = crate::AppState::get(window);
-            if g.get_is_audio_playing() {
-                let Some(ref action) = action else {
-                    return false;
-                };
-                match action {
-                    Action::Left => {
-                        match mf {
-                            3 => {
-                                g.invoke_music_bar_seek_rel(-10.0);
-                            }
-                            4 => {
-                                g.set_music_bar_focused(2);
-                            } // ⏮ ← ⏹ (skip timeline)
-                            // Slot 10 (🔉) steps back to 9 (♪) only when lyrics are available.
-                            10 => {
-                                g.set_music_bar_focused(if g.get_lyrics_available() {
-                                    9
-                                } else {
-                                    8
-                                });
-                            }
-                            1 | 2 | 5 | 6 | 7 | 8 | 9 | 11 => {
-                                g.set_music_bar_focused(mf - 1);
-                            }
-                            _ => {} // 0: absorbed
-                        }
-                        return true;
-                    }
-                    Action::Right => {
-                        match mf {
-                            3 => {
-                                g.invoke_music_bar_seek_rel(10.0);
-                            }
-                            2 => {
-                                g.set_music_bar_focused(4);
-                            } // ⏹ → ⏮ (skip timeline)
-                            // Slot 8 (⋮) advances to 9 (♪) when available, else straight to 10 (🔉).
-                            8 => {
-                                g.set_music_bar_focused(if g.get_lyrics_available() {
-                                    9
-                                } else {
-                                    10
-                                });
-                            }
-                            0 | 1 | 4 | 5 | 6 | 7 | 9 | 10 => {
-                                g.set_music_bar_focused(mf + 1);
-                            }
-                            _ => {} // 11: absorbed
-                        }
-                        return true;
-                    }
-                    Action::Down => {
-                        if mf != 3 {
-                            g.set_music_bar_focused(3);
-                        }
-                        return true;
-                    }
-                    Action::Up => {
-                        if mf == 3 {
-                            g.set_music_bar_focused(1);
-                        } else {
-                            g.set_music_bar_focused(-1);
-                        }
-                        return true;
-                    }
-                    Action::Confirm => {
-                        match mf {
-                            0 => {
-                                g.invoke_open_now_playing();
-                            }
-                            2 => {
-                                g.set_music_bar_focused(-1);
-                                g.invoke_music_bar_stop();
-                            }
-                            4 => {
-                                g.invoke_queue_prev_track();
-                            }
-                            5 => {
-                                g.invoke_queue_next_track();
-                            }
-                            6 => {
-                                g.invoke_toggle_shuffle();
-                            }
-                            7 => {
-                                g.invoke_cycle_repeat();
-                            }
-                            8 => {
-                                // ⋮ Queue button: open queue panel
-                                g.invoke_refresh_queue_display();
-                                let items = g.get_queue_items();
-                                for i in 0..items.row_count() {
-                                    if let Some(e) = items.row_data(i)
-                                        && e.is_current
-                                    {
-                                        g.set_queue_panel_cursor(i as i32);
-                                        break;
-                                    }
-                                }
-                                g.set_show_queue_panel(true);
-                            }
-                            9 => {
-                                g.invoke_toggle_lyrics();
-                            } // ♪ Lyrics
-                            10 => {
-                                g.invoke_volume_down();
-                            } // 🔉
-                            11 => {
-                                g.invoke_volume_up();
-                            } // 🔊
-                            _ => {
-                                g.invoke_music_bar_play_pause();
-                            } // 1 or 3
-                        }
-                        return true;
-                    }
-                    Action::Back => {
-                        g.set_music_bar_focused(-1);
-                        return true;
-                    }
-                    _ => {}
-                }
-            } else {
-                crate::AppState::get(window).set_music_bar_focused(-1);
-            }
-        }
-    }
-
-    // Mini-player bar focused: intercept nav keys before the underlying screen sees them.
-    // RequestDetail/RequestOptions added 2026-07-18 — same stale-focus-survives-
-    // a-mouse-click reasoning as the music-bar block above.
-    if !matches!(
-        mode,
-        AppMode::Player
-            | AppMode::ContextMenu
-            | AppMode::NowPlaying
-            | AppMode::QueuePanel
-            | AppMode::RequestDetail
-            | AppMode::RequestOptions
-            | AppMode::Calendar
-            | AppMode::CalendarDayPopup
-            | AppMode::Blocklist
-            | AppMode::BonfireAdmin
-    ) {
-        let fc = crate::AppState::get(window).get_float_card_focused();
-        if fc >= 0 {
-            let g = crate::AppState::get(window);
-            if g.get_has_background_player() && !g.get_is_playing() {
-                let Some(ref action) = action else {
-                    return false;
-                };
-                match action {
-                    Action::Left | Action::Right => {
-                        g.set_float_card_focused(1 - fc);
-                        return true;
-                    }
-                    Action::Confirm => {
-                        g.set_float_card_focused(-1);
-                        if fc == 0 {
-                            g.invoke_resume_player();
-                        } else {
-                            g.invoke_stop_playback();
-                        }
-                        return true;
-                    }
-                    Action::Up | Action::Back => {
-                        g.set_float_card_focused(-1);
-                        return true;
-                    }
-                    Action::Down => {
-                        return true; // already at bottom, absorb
-                    }
-                    _ => {}
-                }
-            } else {
-                crate::AppState::get(window).set_float_card_focused(-1);
-            }
-        }
-    }
-
-    // Music bar: Space/K/P pause/play during audio-only from any non-player mode.
-    // PausePlay lives in the player map; look it up directly when is-audio-playing.
-    if !matches!(mode, AppMode::Player | AppMode::ContextMenu) {
-        let g = crate::AppState::get(window);
-        if g.get_is_audio_playing() {
-            let player_action = lookup_action(&state.lock().unwrap().keybindings.player, &combo);
-            if let Some(Action::PausePlay) = player_action {
-                g.invoke_music_bar_play_pause();
-                return true;
-            }
+    // Global shortcuts (global.rs), in order: Ctrl+Q, fullscreen, R, N, q, m, music, bars.
+    let ctx = KeyCtx {
+        action: action.clone(),
+        mode: mode.clone(),
+        combo: &combo,
+        window,
+        state,
+    };
+    for shortcut in GLOBAL_SHORTCUTS {
+        if let Some(handled) = shortcut(&ctx) {
+            return handled;
         }
     }
 
