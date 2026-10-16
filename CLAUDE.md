@@ -122,7 +122,9 @@ Needs `mpv`/libmpv (`pacman -S mpv`). Optional at runtime: `yt-dlp` (trailers), 
   screen reopening for another item.
 - Surface errors with `show_toast(ww, msg)` (safe from any thread): "Couldn't <do X> — {short_error(&e)}", the full
   error in the log (a toast never shows request URLs). UI text: sentence case for setting names, options and form
-  labels; Title Case for buttons, dialog titles and row/section titles; American spelling (Favorite, color).
+  labels; Title Case for buttons, dialog titles and row/section titles; American spelling (Favorite, color). Counts
+  go through `AppState.plural(n, "track", "tracks")` / `main::plural`; clickables get `mouse-cursor` (pointer, or text
+  over drawn fields).
 - **Server data never becomes a file name or program argument unchecked:** ids go through
   `config::safe_cache_name` (32 hex) before any cache path; only bytes passing `poster::is_image` are
   written as images. External programs get server-provided strings only after `--` and an allow-list

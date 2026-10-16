@@ -110,7 +110,7 @@ export component SeasonScreen inherits Rectangle {
 
                                 if AppState.season-meta != "": Text {
                                     text: AppState.season-meta;
-                                    color: AppState.season-has-backdrop ? #ffffff : Theme.text-muted;
+                                    color: AppState.season-has-backdrop ? Theme.text-bright : Theme.text-muted;
                                     font-size: 13px * AppState.text-scale;
                                 }
                             }

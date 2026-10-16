@@ -130,7 +130,7 @@ component VirtualKeyboardKey inherits Rectangle {
 
     Text {
         text: root.label;
-        color: root.active ? #ffffff : (root.kb-focused ? Theme.accent : Theme.text);
+        color: root.active ? Theme.text-bright : (root.kb-focused ? Theme.accent : Theme.text);
         font-size: 22px * AppState.text-scale;
         font-weight: 600;
         horizontal-alignment: center;
@@ -140,6 +140,7 @@ component VirtualKeyboardKey inherits Rectangle {
     }
 
     ta := TouchArea {
+        mouse-cursor: MouseCursor.pointer;
         clicked => { root.activated(); }
     }
 }
@@ -333,7 +334,7 @@ export component FjordButton inherits Rectangle {
         spacing: 6px;
         if root.icon-left != "": Text {
             text: root.icon-left;
-            color: root.enabled ? #ffffff : Theme.text-subtle;
+            color: root.enabled ? Theme.text-bright : Theme.text-subtle;
             font-size: 14px * AppState.text-scale;
             font-weight: 600;
             font-family: "Noto Sans Symbols 2";
@@ -341,14 +342,14 @@ export component FjordButton inherits Rectangle {
         }
         if root.text != "": Text {
             text: root.text;
-            color: root.enabled ? #ffffff : Theme.text-subtle;
+            color: root.enabled ? Theme.text-bright : Theme.text-subtle;
             font-size: 14px * AppState.text-scale;
             font-weight: 600;
             vertical-alignment: center;
         }
         if root.icon-right != "": Text {
             text: root.icon-right;
-            color: root.enabled ? #ffffff : Theme.text-subtle;
+            color: root.enabled ? Theme.text-bright : Theme.text-subtle;
             font-size: 14px * AppState.text-scale;
             font-weight: 600;
             font-family: "Noto Sans Symbols 2";
@@ -416,6 +417,8 @@ export component ConfirmDialog inherits Rectangle {
                 font-size: 16px * AppState.text-scale;
                 font-weight: 700;
                 horizontal-alignment: center;
+                // Titles can carry a name ("Copy Settings from <profile>?"): wrap rather than cut.
+                wrap: word-wrap;
             }
 
             Text {
@@ -1062,6 +1065,7 @@ export component ToggleSwitch inherits Rectangle {
     }
 
     ta := TouchArea {
+        mouse-cursor: MouseCursor.pointer;
         clicked => {
             root.checked = !root.checked;
             root.toggled();
@@ -2623,6 +2627,7 @@ export component SidebarProfileMenu inherits Rectangle {
                 }
 
                 row-ta := TouchArea {
+                    mouse-cursor: MouseCursor.pointer;
                     clicked => {
                         AppState.sidebar-profile-menu-focused = i;
                         AppState.sidebar-profile-menu-action(i);

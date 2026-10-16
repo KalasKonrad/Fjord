@@ -146,7 +146,8 @@ export component LibraryGrid inherits Rectangle {
                 }
 
                 Text {
-                    text: AppState.library-query != "" ? "\{AppState.library-display.length} results" : "\{AppState.library-display.length} items";
+                    text: AppState.library-query != "" ? AppState.plural(AppState.library-display.length, "result", "results")
+                        : AppState.plural(AppState.library-display.length, "item", "items");
                     color: AppState.library-query != "" ? Theme.accent : Theme.text-muted;
                     font-size: 13px * AppState.text-scale;
                     vertical-alignment: center;
@@ -206,6 +207,7 @@ export component LibraryGrid inherits Rectangle {
                         }
 
                         v-ta := TouchArea {
+                            mouse-cursor: MouseCursor.pointer;
                             clicked => { AppState.library-music-view-changed(vi); }
                         }
                     }
@@ -260,6 +262,7 @@ export component LibraryGrid inherits Rectangle {
                     }
 
                     sort-ta := TouchArea {
+                        mouse-cursor: MouseCursor.pointer;
                         clicked => { AppState.library-sort-apply(si, AppState.library-filter-unwatched, AppState.library-filter-favorites); }
                     }
                 }
@@ -298,6 +301,7 @@ export component LibraryGrid inherits Rectangle {
                     }
 
                     mf-ta := TouchArea {
+                        mouse-cursor: MouseCursor.pointer;
                         clicked => { AppState.library-sort-apply(AppState.library-sort, AppState.library-filter-unwatched, !AppState.library-filter-favorites); }
                     }
                 }
@@ -337,6 +341,7 @@ export component LibraryGrid inherits Rectangle {
                     }
 
                     fw-ta := TouchArea {
+                        mouse-cursor: MouseCursor.pointer;
                         clicked => { AppState.library-sort-apply(AppState.library-sort, !AppState.library-filter-unwatched, AppState.library-filter-favorites); }
                     }
                 }
@@ -371,6 +376,7 @@ export component LibraryGrid inherits Rectangle {
                     }
 
                     ff-ta := TouchArea {
+                        mouse-cursor: MouseCursor.pointer;
                         clicked => { AppState.library-sort-apply(AppState.library-sort, AppState.library-filter-unwatched, !AppState.library-filter-favorites); }
                     }
                 }
@@ -412,6 +418,7 @@ export component LibraryGrid inherits Rectangle {
                 // Mouse path into search — the browse bar had this, the library
                 // field didn't (search was keyboard-only for mouse users).
                 TouchArea {
+                    mouse-cursor: MouseCursor.text;
                     clicked => {
                         AppState.library-header-focused = true;
                         AppState.library-sort-focused = false;

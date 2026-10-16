@@ -1177,7 +1177,7 @@ fn spawn_missing_seasons(
                         _ => "Upcoming".to_string(),
                     }
                 } else {
-                    format!("{} episodes", season.episode_count)
+                    crate::plural(season.episode_count as u64, "episode", "episodes")
                 };
                 (
                     season.season_number,

@@ -120,7 +120,7 @@ export component SeriesScreen inherits Rectangle {
 
                             if AppState.series-tagline != "": Text {
                                 text: AppState.series-tagline;
-                                color: AppState.series-has-backdrop ? #ffffff : Theme.text-muted;
+                                color: AppState.series-has-backdrop ? Theme.text-bright : Theme.text-muted;
                                 font-size: 15px * AppState.text-scale;
                                 font-italic: true;
                                 wrap: word-wrap;
@@ -133,14 +133,14 @@ export component SeriesScreen inherits Rectangle {
 
                             if AppState.series-genres != "": Text {
                                 text: AppState.series-genres;
-                                color: AppState.series-has-backdrop ? #ffffff : Theme.text-muted;
+                                color: AppState.series-has-backdrop ? Theme.text-bright : Theme.text-muted;
                                 font-size: 13px * AppState.text-scale;
                                 wrap: word-wrap;
                             }
 
                             if AppState.series-studio != "": Text {
                                 text: AppState.series-studio;
-                                color: AppState.series-has-backdrop ? #ffffff : Theme.text-muted;
+                                color: AppState.series-has-backdrop ? Theme.text-bright : Theme.text-muted;
                                 font-size: 13px * AppState.text-scale;
                             }
 
@@ -281,7 +281,7 @@ export component SeriesScreen inherits Rectangle {
 
                             lbl := Text {
                                 text: s.name;
-                                color: i == AppState.series-season-idx ? #ffffff : Theme.text-muted;
+                                color: i == AppState.series-season-idx ? Theme.text-bright : Theme.text-muted;
                                 font-size: 13px * AppState.text-scale;
                                 font-weight: i == AppState.series-season-idx ? 700 : 400;
                                 horizontal-alignment: center;
@@ -289,6 +289,7 @@ export component SeriesScreen inherits Rectangle {
                             }
 
                             season-ta := TouchArea {
+                                mouse-cursor: MouseCursor.pointer;
                                 clicked => {
                                     AppState.series-season-idx = i;
                                     AppState.series-select-season(i);

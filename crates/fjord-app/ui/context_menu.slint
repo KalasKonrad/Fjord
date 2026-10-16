@@ -68,6 +68,7 @@ component DiscoverMenuRow inherits Rectangle {
     }
 
     ta := TouchArea {
+        mouse-cursor: MouseCursor.pointer;
         clicked => { root.activated(); }
         pointer-event(e) => {
             if e.kind == PointerEventKind.move { AppState.context-menu-focused = row-index; }
@@ -156,6 +157,7 @@ export component ContextMenu inherits Rectangle {
                     }
 
                     ta0 := TouchArea {
+                        mouse-cursor: MouseCursor.pointer;
                         clicked => {
                             AppState.item-play(AppState.context-menu-item-id);
                             AppState.show-context-menu = false;
@@ -206,6 +208,7 @@ export component ContextMenu inherits Rectangle {
                     }
 
                     ta1 := TouchArea {
+                        mouse-cursor: MouseCursor.pointer;
                         clicked => {
                             AppState.context-play-from-start(AppState.context-menu-item-id);
                             AppState.show-context-menu = false;
@@ -256,6 +259,7 @@ export component ContextMenu inherits Rectangle {
                     }
 
                     ta2 := TouchArea {
+                        mouse-cursor: MouseCursor.pointer;
                         clicked => {
                             AppState.queue-play-next-item();
                             AppState.show-context-menu = false;
@@ -305,6 +309,7 @@ export component ContextMenu inherits Rectangle {
                     }
 
                     ta3 := TouchArea {
+                        mouse-cursor: MouseCursor.pointer;
                         clicked => {
                             AppState.queue-add-item();
                             AppState.show-context-menu = false;
@@ -357,6 +362,7 @@ export component ContextMenu inherits Rectangle {
                     }
 
                     ta4 := TouchArea {
+                        mouse-cursor: MouseCursor.pointer;
                         clicked => {
                             AppState.context-mark-played(AppState.context-menu-item-id, AppState.context-menu-has-played);
                             AppState.show-context-menu = false;
@@ -408,6 +414,7 @@ export component ContextMenu inherits Rectangle {
                     }
 
                     ta5 := TouchArea {
+                        mouse-cursor: MouseCursor.pointer;
                         clicked => {
                             AppState.context-toggle-fav(AppState.context-menu-item-id, AppState.context-menu-is-favorite);
                             AppState.show-context-menu = false;
@@ -457,6 +464,7 @@ export component ContextMenu inherits Rectangle {
                     }
 
                     ta7 := TouchArea {
+                        mouse-cursor: MouseCursor.pointer;
                         clicked => {
                             AppState.open-playlist-picker();
                             AppState.show-context-menu = false;
@@ -508,6 +516,7 @@ export component ContextMenu inherits Rectangle {
                     }
 
                     ta8 := TouchArea {
+                        mouse-cursor: MouseCursor.pointer;
                         clicked => {
                             AppState.context-menu-focused = 8;
                             AppState.context-jf-toggle-watchlist();
@@ -557,6 +566,7 @@ export component ContextMenu inherits Rectangle {
                     }
 
                     ta6 := TouchArea {
+                        mouse-cursor: MouseCursor.pointer;
                         clicked => {
                         // A Season opens its own screen (season.rs::open_season_screen, by season-id + series-id) —
                         // DetailPage has no concept of a season.

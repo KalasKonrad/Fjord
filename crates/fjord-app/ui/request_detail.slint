@@ -571,6 +571,7 @@ export component RequestOptionsOverlay inherits Rectangle {
                         }
 
                         twok-ta := TouchArea {
+                            mouse-cursor: MouseCursor.pointer;
                             clicked => {
                                 AppState.request-options-zone = 0;
                                 AppState.request-detail-set-quality(false);
@@ -579,7 +580,7 @@ export component RequestOptionsOverlay inherits Rectangle {
 
                         Text {
                             text: "2K";
-                            color: !AppState.request-detail-want-4k ? #ffffff : Theme.text-muted;
+                            color: !AppState.request-detail-want-4k ? Theme.text-bright : Theme.text-muted;
                             font-size: 14px * AppState.text-scale;
                             font-weight: 700;
                             horizontal-alignment: center;
@@ -605,6 +606,7 @@ export component RequestOptionsOverlay inherits Rectangle {
                         }
 
                         fourk-ta := TouchArea {
+                            mouse-cursor: MouseCursor.pointer;
                             clicked => {
                                 AppState.request-options-zone = 0;
                                 AppState.request-detail-set-quality(true);
@@ -613,7 +615,7 @@ export component RequestOptionsOverlay inherits Rectangle {
 
                         Text {
                             text: "4K";
-                            color: AppState.request-detail-want-4k ? #ffffff : Theme.text-muted;
+                            color: AppState.request-detail-want-4k ? Theme.text-bright : Theme.text-muted;
                             font-size: 14px * AppState.text-scale;
                             font-weight: 700;
                             horizontal-alignment: center;
@@ -676,6 +678,7 @@ export component RequestOptionsOverlay inherits Rectangle {
                             }
 
                             profile-ta := TouchArea {
+                                mouse-cursor: MouseCursor.pointer;
                                 clicked => {
                                     AppState.request-options-zone = 1;
                                     AppState.request-detail-focused-profile = i;
@@ -685,7 +688,7 @@ export component RequestOptionsOverlay inherits Rectangle {
 
                             Text {
                                 text: p.name;
-                                color: p.id == AppState.request-detail-selected-profile-id ? #ffffff : Theme.text-muted;
+                                color: p.id == AppState.request-detail-selected-profile-id ? Theme.text-bright : Theme.text-muted;
                                 font-size: 13px * AppState.text-scale;
                                 font-weight: 600;
                                 overflow: elide;
@@ -754,6 +757,7 @@ export component RequestOptionsOverlay inherits Rectangle {
                             }
 
                             tag-ta := TouchArea {
+                                mouse-cursor: MouseCursor.pointer;
                                 clicked => {
                                     AppState.request-options-zone = 2;
                                     AppState.request-detail-focused-tag = i;
@@ -775,7 +779,7 @@ export component RequestOptionsOverlay inherits Rectangle {
                                 }
                                 Text {
                                     text: t.label;
-                                    color: t.selected ? #ffffff : Theme.text-muted;
+                                    color: t.selected ? Theme.text-bright : Theme.text-muted;
                                     font-size: 13px * AppState.text-scale;
                                     font-weight: 600;
                                     overflow: elide;
@@ -881,6 +885,7 @@ export component RequestOptionsOverlay inherits Rectangle {
                                 }
 
                                 season-ta := TouchArea {
+                                    mouse-cursor: MouseCursor.pointer;
                                     clicked => {
                                         AppState.request-options-zone = 3;
                                         AppState.request-detail-focused-season = i;
@@ -898,7 +903,7 @@ export component RequestOptionsOverlay inherits Rectangle {
                             }
 
                             Text {
-                                text: "\{s.episode-count} episodes";
+                                text: AppState.plural(s.episode-count, "episode", "episodes");
                                 color: Theme.text-muted;
                                 font-size: 11px * AppState.text-scale;
                             }
@@ -936,6 +941,7 @@ export component RequestOptionsOverlay inherits Rectangle {
                     }
 
                     cancel-ta := TouchArea {
+                        mouse-cursor: MouseCursor.pointer;
                         clicked => {
                             AppState.request-options-zone = 4;
                             AppState.request-options-confirm-focused = 0;

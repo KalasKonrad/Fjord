@@ -300,9 +300,18 @@ fn open_music_screen(
                     .map(|t| (t / 10_000_000) as f64)
                     .sum();
                 let meta = if year.is_empty() {
-                    format!("{} tracks · {}", n_tracks, fmt_secs(total_secs))
+                    format!(
+                        "{} · {}",
+                        crate::plural(n_tracks as u64, "track", "tracks"),
+                        fmt_secs(total_secs)
+                    )
                 } else {
-                    format!("{} · {} tracks · {}", year, n_tracks, fmt_secs(total_secs))
+                    format!(
+                        "{} · {} · {}",
+                        year,
+                        crate::plural(n_tracks as u64, "track", "tracks"),
+                        fmt_secs(total_secs)
+                    )
                 };
                 g.set_album_meta(meta.as_str().into());
                 g.set_album_artist(if is_playlist {
@@ -406,9 +415,18 @@ fn spawn_album_revalidate(
             .map(|t| (t / 10_000_000) as f64)
             .sum();
         let meta = if year.is_empty() {
-            format!("{} tracks · {}", n_tracks, fmt_secs(total_secs))
+            format!(
+                "{} · {}",
+                crate::plural(n_tracks as u64, "track", "tracks"),
+                fmt_secs(total_secs)
+            )
         } else {
-            format!("{} · {} tracks · {}", year, n_tracks, fmt_secs(total_secs))
+            format!(
+                "{} · {} · {}",
+                year,
+                crate::plural(n_tracks as u64, "track", "tracks"),
+                fmt_secs(total_secs)
+            )
         };
         let artist = if is_playlist {
             "Playlist".to_string()

@@ -118,6 +118,7 @@ export component NowPlayingScreen inherits Rectangle {
                     x: (parent.width - self.width) / 2;
                     spacing: 6px;
                     prog-ta := TouchArea {
+                        mouse-cursor: MouseCursor.pointer;
                         height: 6px;
                         clicked => {
                             AppState.music-bar-seek(self.mouse-x / self.width);
@@ -347,6 +348,7 @@ export component NowPlayingScreen inherits Rectangle {
                         alignment: start;
 
                         for entry[i] in AppState.queue-items: chip-ta := TouchArea {
+                            mouse-cursor: MouseCursor.pointer;
                             width: 92px;
                             clicked => { AppState.queue-jump(entry.index); }
 

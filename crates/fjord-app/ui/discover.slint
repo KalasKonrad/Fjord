@@ -149,6 +149,7 @@ component FilterChip inherits Rectangle {
     }
 
     ta := TouchArea {
+        mouse-cursor: MouseCursor.pointer;
         clicked => {
             AppState.discover-popup-cursor = root.idx;
             AppState.discover-popup-confirm();
@@ -199,7 +200,7 @@ export component DiscoverScreen inherits Rectangle {
                 }
 
                 if AppState.discover-query != "": Text {
-                    text: "\{AppState.discover-results.length} results";
+                    text: AppState.plural(AppState.discover-results.length, "result", "results");
                     color: Theme.accent;
                     font-size: 13px * AppState.text-scale;
                     vertical-alignment: center;
@@ -232,6 +233,7 @@ export component DiscoverScreen inherits Rectangle {
                 background: Theme.bg;
 
                 TouchArea {
+                    mouse-cursor: MouseCursor.text;
                     clicked => {
                         AppState.discover-header-focused = true;
                         AppState.discover-filter-bar-active = false;

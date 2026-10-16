@@ -50,6 +50,7 @@ export component BrowseScreen inherits Rectangle {
                     }
 
                     search-ta := TouchArea {
+                        mouse-cursor: MouseCursor.text;
                         clicked => {
                             AppState.browse-header-focused = true;
                             AppState.current-item = -1;

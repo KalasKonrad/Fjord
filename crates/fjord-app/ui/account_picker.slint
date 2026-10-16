@@ -56,6 +56,7 @@ component AccountTileCard inherits VerticalLayout {
         }
 
         ta := TouchArea {
+            mouse-cursor: MouseCursor.pointer;
             clicked => { root.activated(); }
         }
 
@@ -96,7 +97,7 @@ component AccountTileCard inherits VerticalLayout {
     // Bonfire master with no sub-profiles configured yet (profile-count
     // == 1 either way, since the master itself always counts as 1).
     if !root.is-add-tile && root.tile.profile-count > 1: Text {
-        text: root.tile.profile-count + " profiles";
+        text: AppState.plural(root.tile.profile-count, "profile", "profiles");
         color: Theme.text-subtle;
         font-size: 11px * AppState.text-scale;
         horizontal-alignment: center;
