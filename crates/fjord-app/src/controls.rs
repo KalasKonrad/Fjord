@@ -1,5 +1,7 @@
 // ── fjord-app · controls.rs ──────────────────────────────────────────────────
-//   wire_controls  registers all AppState player callbacks on the window
+//   wire_controls  registers all AppState player callbacks on the window, one function per area:
+//                  wire_playback (playback + seek + skip segment), wire_track_panels,
+//                  wire_volume_and_overlay, wire_chapters_and_delays
 //     playback     pause_play_toggle, seek_*, stop_playback
 //     seek / intro seek_to (throttled ≤10/s), seek_drag_started (pause during scrub, queries mpv
 //                  directly), seek_committed (seek + resume + optimistic playback-pos),
@@ -103,9 +105,23 @@ pub(crate) fn wire_controls(
     seek_suppress: Arc<AtomicU32>,
     rt_handle: tokio::runtime::Handle,
 ) {
+    wire_playback(window, &video, &state, &seek_suppress, &rt_handle);
+    wire_track_panels(window, &video, &state);
+    wire_volume_and_overlay(window, &video, &controls_show, &rt_handle);
+    wire_chapters_and_delays(window, &video);
+}
+
+/// Play/pause, seeking (steps, accumulated, the seek bar: drag, hover time), stop, skip segment and its timed prompt.
+fn wire_playback(
+    window: &MainWindow,
+    video: &Arc<Mutex<VideoState>>,
+    state: &Arc<Mutex<FjordState>>,
+    seek_suppress: &Arc<AtomicU32>,
+    rt_handle: &tokio::runtime::Handle,
+) {
     // ── playback ──────────────────────────────────────────────────────────────
     {
-        let video = Arc::clone(&video);
+        let video = Arc::clone(video);
         let ww = window.as_weak();
         AppState::get(window).on_pause_play_toggle(move || {
             let vs = video.lock().unwrap();
@@ -133,7 +149,7 @@ pub(crate) fn wire_controls(
         });
     }
     {
-        let video = Arc::clone(&video);
+        let video = Arc::clone(video);
         let ww = window.as_weak();
         AppState::get(window).on_seek_backward(move || {
             let Some(w) = ww.upgrade() else { return };
@@ -145,7 +161,7 @@ pub(crate) fn wire_controls(
         });
     }
     {
-        let video = Arc::clone(&video);
+        let video = Arc::clone(video);
         let ww = window.as_weak();
         AppState::get(window).on_seek_forward(move || {
             let Some(w) = ww.upgrade() else { return };
@@ -157,7 +173,7 @@ pub(crate) fn wire_controls(
         });
     }
     {
-        let video = Arc::clone(&video);
+        let video = Arc::clone(video);
         let ww = window.as_weak();
         AppState::get(window).on_seek_backward_long(move || {
             let Some(w) = ww.upgrade() else { return };
@@ -169,7 +185,7 @@ pub(crate) fn wire_controls(
         });
     }
     {
-        let video = Arc::clone(&video);
+        let video = Arc::clone(video);
         let ww = window.as_weak();
         AppState::get(window).on_seek_forward_long(move || {
             let Some(w) = ww.upgrade() else { return };
@@ -184,7 +200,7 @@ pub(crate) fn wire_controls(
         // Keyboard seek accumulation: +secs = forward, -secs = backward.
         // Accumulates into VideoState.seek_pending_secs and resets the debounce counter.
         // The 16ms timer in wire_mpv_timer executes the seek after ~480ms of inactivity.
-        let video = Arc::clone(&video);
+        let video = Arc::clone(video);
         let ww = window.as_weak();
         let rt = rt_handle.clone();
         AppState::get(window).on_seek_acc(move |delta| {
@@ -216,17 +232,17 @@ pub(crate) fn wire_controls(
         });
     }
     {
-        let video = Arc::clone(&video);
+        let video = Arc::clone(video);
         let ww = window.as_weak();
         let rth = rt_handle.clone();
-        let state = Arc::clone(&state);
+        let state = Arc::clone(state);
         AppState::get(window).on_stop_playback(move || {
             info!("stop_playback requested");
             do_stop_playback(&video, &ww, &rth, &state);
         });
     }
     {
-        let video = Arc::clone(&video);
+        let video = Arc::clone(video);
         // Throttle drag seeks to at most one per 100 ms — rapid seeks can cause
         // libmpv to abort internally. Initialised 200 ms in the past so the very
         // first drag seek always goes through.
@@ -253,7 +269,7 @@ pub(crate) fn wire_controls(
     // Set in seek_drag_started, cleared and consumed in seek_committed.
     let seek_was_playing = Arc::new(AtomicBool::new(false));
     {
-        let video = Arc::clone(&video);
+        let video = Arc::clone(video);
         let swp = Arc::clone(&seek_was_playing);
         AppState::get(window).on_seek_drag_started(move || {
             // Query mpv directly so we stay in sync even if mpv self-paused on a
@@ -269,10 +285,10 @@ pub(crate) fn wire_controls(
         });
     }
     {
-        let video = Arc::clone(&video);
+        let video = Arc::clone(video);
         let ww = window.as_weak();
         let swp = Arc::clone(&seek_was_playing);
-        let ss = Arc::clone(&seek_suppress);
+        let ss = Arc::clone(seek_suppress);
         AppState::get(window).on_seek_committed(move |ratio| {
             let mut did_seek = false;
             {
@@ -315,7 +331,7 @@ pub(crate) fn wire_controls(
     // ── seek hover tooltip ────────────────────────────────────────────────────
     {
         let ww = window.as_weak();
-        let video = Arc::clone(&video);
+        let video = Arc::clone(video);
         let rt = rt_handle.clone();
         AppState::get(window).on_update_seek_hover(move |fraction| {
             let Some(w) = ww.upgrade() else { return };
@@ -332,7 +348,7 @@ pub(crate) fn wire_controls(
         // the automatic paths in the tick loop. skip_segment_handled is set here: the position
         // doesn't move until the delayed seek, and the tick loop would otherwise re-show the
         // dismissed overlay during the fade.
-        let video = Arc::clone(&video);
+        let video = Arc::clone(video);
         let ww = window.as_weak();
         AppState::get(window).on_skip_segment(move || {
             let Some(w) = ww.upgrade() else { return };
@@ -356,7 +372,7 @@ pub(crate) fn wire_controls(
     {
         // dismiss_skip_timed: user pressed "Don't Skip" in the ask-timed overlay.
         // Mark the segment handled so it won't re-show, and hide the overlay immediately.
-        let video = Arc::clone(&video);
+        let video = Arc::clone(video);
         let ww = window.as_weak();
         AppState::get(window).on_dismiss_skip_timed(move || {
             {
@@ -369,9 +385,17 @@ pub(crate) fn wire_controls(
             }
         });
     }
+}
+
+/// The subtitle/audio track panels: select and commit.
+fn wire_track_panels(
+    window: &MainWindow,
+    video: &Arc<Mutex<VideoState>>,
+    state: &Arc<Mutex<FjordState>>,
+) {
     // ── track panels ──────────────────────────────────────────────────────────
     {
-        let video = Arc::clone(&video);
+        let video = Arc::clone(video);
         AppState::get(window).on_select_sub(move |id| {
             if let Some(p) = video.lock().unwrap().player.as_ref() {
                 debug!("select subtitle track id={}", id);
@@ -380,7 +404,7 @@ pub(crate) fn wire_controls(
         });
     }
     {
-        let video = Arc::clone(&video);
+        let video = Arc::clone(video);
         AppState::get(window).on_select_audio(move |id| {
             if let Some(p) = video.lock().unwrap().player.as_ref() {
                 debug!("select audio track id={}", id);
@@ -389,8 +413,8 @@ pub(crate) fn wire_controls(
         });
     }
     {
-        let video = Arc::clone(&video);
-        let state = Arc::clone(&state);
+        let video = Arc::clone(video);
+        let state = Arc::clone(state);
         let ww = window.as_weak();
         AppState::get(window).on_commit_panel_selection(move || {
             let Some(w) = ww.upgrade() else { return };
@@ -482,11 +506,20 @@ pub(crate) fn wire_controls(
             }
         });
     }
+}
+
+/// Volume and mute (with the overlay), the OSD controls, video track, resume/minimize, stats.
+fn wire_volume_and_overlay(
+    window: &MainWindow,
+    video: &Arc<Mutex<VideoState>>,
+    controls_show: &Arc<AtomicBool>,
+    rt_handle: &tokio::runtime::Handle,
+) {
     // ── volume + overlay ──────────────────────────────────────────────────────
     // Generation counter: only the latest volume-change task hides the overlay.
     let volume_gen = Arc::new(AtomicU32::new(0));
     {
-        let video = Arc::clone(&video);
+        let video = Arc::clone(video);
         let ww = window.as_weak();
         let rt = rt_handle.clone();
         let vgen = Arc::clone(&volume_gen);
@@ -521,7 +554,7 @@ pub(crate) fn wire_controls(
         });
     }
     {
-        let video = Arc::clone(&video);
+        let video = Arc::clone(video);
         let ww = window.as_weak();
         let rt = rt_handle.clone();
         let vgen = Arc::clone(&volume_gen);
@@ -557,6 +590,7 @@ pub(crate) fn wire_controls(
     }
     {
         let ww = window.as_weak();
+        let controls_show = Arc::clone(controls_show);
         AppState::get(window).on_show_controls(move || {
             if let Some(w) = ww.upgrade() {
                 AppState::get(&w).set_controls_visible(true);
@@ -569,7 +603,7 @@ pub(crate) fn wire_controls(
         });
     }
     {
-        let video = Arc::clone(&video);
+        let video = Arc::clone(video);
         AppState::get(window).on_select_video(move |id| {
             if let Some(p) = video.lock().unwrap().player.as_ref() {
                 debug!("select video track id={}", id);
@@ -593,7 +627,7 @@ pub(crate) fn wire_controls(
         });
     }
     {
-        let video = Arc::clone(&video);
+        let video = Arc::clone(video);
         AppState::get(window).on_mute_toggle(move || {
             if let Some(p) = video.lock().unwrap().player.as_ref() {
                 p.toggle_mute();
@@ -640,9 +674,13 @@ pub(crate) fn wire_controls(
             }
         });
     }
+}
+
+/// Chapter previous/next/jump and the subtitle/audio delay steps.
+fn wire_chapters_and_delays(window: &MainWindow, video: &Arc<Mutex<VideoState>>) {
     // ── chapter navigation ────────────────────────────────────────────────────
     {
-        let video = Arc::clone(&video);
+        let video = Arc::clone(video);
         let ww = window.as_weak();
         AppState::get(window).on_chapter_prev(move || {
             let name = {
@@ -663,7 +701,7 @@ pub(crate) fn wire_controls(
         });
     }
     {
-        let video = Arc::clone(&video);
+        let video = Arc::clone(video);
         let ww = window.as_weak();
         AppState::get(window).on_chapter_next(move || {
             let name = {
@@ -685,7 +723,7 @@ pub(crate) fn wire_controls(
     }
     // ── sub / audio delay ─────────────────────────────────────────────────────
     {
-        let video = Arc::clone(&video);
+        let video = Arc::clone(video);
         let ww = window.as_weak();
         AppState::get(window).on_sub_delay_inc(move || {
             let delay = {
@@ -704,7 +742,7 @@ pub(crate) fn wire_controls(
         });
     }
     {
-        let video = Arc::clone(&video);
+        let video = Arc::clone(video);
         let ww = window.as_weak();
         AppState::get(window).on_sub_delay_dec(move || {
             let delay = {
@@ -723,7 +761,7 @@ pub(crate) fn wire_controls(
         });
     }
     {
-        let video = Arc::clone(&video);
+        let video = Arc::clone(video);
         let ww = window.as_weak();
         AppState::get(window).on_audio_delay_inc(move || {
             let delay = {
@@ -742,7 +780,7 @@ pub(crate) fn wire_controls(
         });
     }
     {
-        let video = Arc::clone(&video);
+        let video = Arc::clone(video);
         let ww = window.as_weak();
         AppState::get(window).on_audio_delay_dec(move || {
             let delay = {
@@ -762,7 +800,7 @@ pub(crate) fn wire_controls(
     }
     // ── chapter jump (Chapters panel click / kbd Enter) ───────────────────────
     {
-        let video = Arc::clone(&video);
+        let video = Arc::clone(video);
         AppState::get(window).on_chapter_jump(move |idx| {
             let vs = video.lock().unwrap();
             let Some(p) = vs.player.as_ref() else { return };

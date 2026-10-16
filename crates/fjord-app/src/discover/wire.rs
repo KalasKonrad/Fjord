@@ -1,8 +1,10 @@
 // ── fjord-app · discover/wire.rs ─────────────────────────────────────────────
-//   wire_discover              registers every Discover/RequestDetail AppState callback (search
-//                              append/backspace/clear, load-more, open-discover-item, request
-//                              detail/options, context-menu actions, filters, Missing Seasons …)
-//   on_nav_selected            (in wire_discover) the ONE nav-selected handler: logs it, calls
+//   wire_discover              registers every Discover/RequestDetail AppState callback, one
+//                              function per area: wire_nav, wire_filters, wire_search (append/
+//                              backspace/delete/clear, load more), wire_request_detail (open
+//                              item, Missing Seasons, seasons/tags/quality/Request),
+//                              wire_discover_menu (context-menu actions), wire_calendar
+//   on_nav_selected            (in wire_nav) the ONE nav-selected handler: logs it, calls
 //                              browse.rs's per-nav logic, closes the on-screen keyboard on every tab
 //                              switch, resets Discover's popup/filter bar and Settings' keybinding
 //                              state when leaving them; on arriving at Discover: landing rows (once),
@@ -57,9 +59,24 @@ pub(crate) fn wire_discover(
     state: Arc<Mutex<FjordState>>,
     rt: tokio::runtime::Handle,
 ) {
-    let g = AppState::get(window);
     let discover_gen = Arc::new(AtomicU64::new(0));
 
+    wire_nav(window, &state, &rt, &discover_gen);
+    wire_filters(window, &state, &rt, &discover_gen);
+    wire_search(window, &state, &rt, &discover_gen);
+    wire_request_detail(window, &state, &rt);
+    wire_discover_menu(window, &state, &rt);
+    wire_calendar(window, &state, &rt);
+}
+
+/// Sidebar navigation into Discover: the landing rows on first arrival, the movie list refresh.
+fn wire_nav(
+    window: &MainWindow,
+    state: &Arc<Mutex<FjordState>>,
+    rt: &tokio::runtime::Handle,
+    discover_gen: &Arc<AtomicU64>,
+) {
+    let g = AppState::get(window);
     // Discover's landing rows are fetched once per session, on first arrival.
     // nav-selected fires from both the sidebar click and browse::sidebar_nav's keyboard
     // cycle, so this one registration covers both. It also refreshes the movie list
@@ -67,9 +84,9 @@ pub(crate) fn wire_discover(
     // login), `all_movies` is only fetched when the Movies grid opens, and
     // `find_local_item` needs its fresh `ProviderIds` for the in-library redirect.
     g.on_nav_selected({
-        let state = Arc::clone(&state);
+        let state = Arc::clone(state);
         let ww = window.as_weak();
-        let generation = Arc::clone(&discover_gen);
+        let generation = Arc::clone(discover_gen);
         let rt = rt.clone();
         move |nav| {
             debug!("nav-selected({nav})"); // sidebar click or key (2026-10-08 diagnostics)
@@ -129,12 +146,21 @@ pub(crate) fn wire_discover(
             }
         }
     });
+}
 
+/// The filter bar: type, sort, rating, year, genres, providers, Clear, and its popups.
+fn wire_filters(
+    window: &MainWindow,
+    state: &Arc<Mutex<FjordState>>,
+    rt: &tokio::runtime::Handle,
+    discover_gen: &Arc<AtomicU64>,
+) {
+    let g = AppState::get(window);
     // ── Discover filters (2026-07-18) ──────────────────────────────────────
     g.on_discover_filter_type_selected({
-        let state = Arc::clone(&state);
+        let state = Arc::clone(state);
         let ww = window.as_weak();
-        let generation = Arc::clone(&discover_gen);
+        let generation = Arc::clone(discover_gen);
         let rt = rt.clone();
         move |desc| {
             let Some(w) = ww.upgrade() else { return };
@@ -158,9 +184,9 @@ pub(crate) fn wire_discover(
     });
 
     g.on_discover_filter_sort_selected({
-        let state = Arc::clone(&state);
+        let state = Arc::clone(state);
         let ww = window.as_weak();
-        let generation = Arc::clone(&discover_gen);
+        let generation = Arc::clone(discover_gen);
         let rt = rt.clone();
         move |desc| {
             let key = discover_sort_key(desc.as_str());
@@ -176,9 +202,9 @@ pub(crate) fn wire_discover(
     });
 
     g.on_discover_filter_rating_selected({
-        let state = Arc::clone(&state);
+        let state = Arc::clone(state);
         let ww = window.as_weak();
-        let generation = Arc::clone(&discover_gen);
+        let generation = Arc::clone(discover_gen);
         let rt = rt.clone();
         move |desc| {
             let value = discover_rating_value(desc.as_str());
@@ -195,9 +221,9 @@ pub(crate) fn wire_discover(
     });
 
     g.on_discover_filter_year_selected({
-        let state = Arc::clone(&state);
+        let state = Arc::clone(state);
         let ww = window.as_weak();
-        let generation = Arc::clone(&discover_gen);
+        let generation = Arc::clone(discover_gen);
         let rt = rt.clone();
         move |desc| {
             let value = discover_year_value(desc.as_str());
@@ -218,9 +244,9 @@ pub(crate) fn wire_discover(
     // Config's persisted name/id list is rebuilt from whichever rows ended
     // up selected.
     g.on_discover_filter_genre_toggle({
-        let state = Arc::clone(&state);
+        let state = Arc::clone(state);
         let ww = window.as_weak();
-        let generation = Arc::clone(&discover_gen);
+        let generation = Arc::clone(discover_gen);
         let rt = rt.clone();
         move |idx| {
             let Some(w) = ww.upgrade() else { return };
@@ -248,9 +274,9 @@ pub(crate) fn wire_discover(
     });
 
     g.on_discover_filter_provider_toggle({
-        let state = Arc::clone(&state);
+        let state = Arc::clone(state);
         let ww = window.as_weak();
-        let generation = Arc::clone(&discover_gen);
+        let generation = Arc::clone(discover_gen);
         let rt = rt.clone();
         move |idx| {
             let Some(w) = ww.upgrade() else { return };
@@ -278,9 +304,9 @@ pub(crate) fn wire_discover(
     });
 
     g.on_discover_filter_clear({
-        let state = Arc::clone(&state);
+        let state = Arc::clone(state);
         let ww = window.as_weak();
-        let generation = Arc::clone(&discover_gen);
+        let generation = Arc::clone(discover_gen);
         let rt = rt.clone();
         move || {
             let Some(w) = ww.upgrade() else { return };
@@ -327,11 +353,20 @@ pub(crate) fn wire_discover(
             handle_key_discover_popup(&Action::Confirm, &AppState::get(&w));
         }
     });
+}
 
+/// The drawn search field (type, Backspace, Delete, clear) and loading more results.
+fn wire_search(
+    window: &MainWindow,
+    state: &Arc<Mutex<FjordState>>,
+    rt: &tokio::runtime::Handle,
+    discover_gen: &Arc<AtomicU64>,
+) {
+    let g = AppState::get(window);
     g.on_discover_search_append({
-        let state = Arc::clone(&state);
+        let state = Arc::clone(state);
         let ww = window.as_weak();
-        let generation = Arc::clone(&discover_gen);
+        let generation = Arc::clone(discover_gen);
         let rt = rt.clone();
         move |ch| {
             let Some(w) = ww.upgrade() else { return };
@@ -356,9 +391,9 @@ pub(crate) fn wire_discover(
         }
     });
     g.on_discover_search_backspace({
-        let state = Arc::clone(&state);
+        let state = Arc::clone(state);
         let ww = window.as_weak();
-        let generation = Arc::clone(&discover_gen);
+        let generation = Arc::clone(discover_gen);
         let rt = rt.clone();
         move || {
             let Some(w) = ww.upgrade() else { return };
@@ -376,9 +411,9 @@ pub(crate) fn wire_discover(
     });
     // Delete key: removes the letter after the caret (2026-10-04).
     g.on_discover_search_delete({
-        let state = Arc::clone(&state);
+        let state = Arc::clone(state);
         let ww = window.as_weak();
-        let generation = Arc::clone(&discover_gen);
+        let generation = Arc::clone(discover_gen);
         let rt = rt.clone();
         move || {
             let Some(w) = ww.upgrade() else { return };
@@ -395,9 +430,9 @@ pub(crate) fn wire_discover(
         }
     });
     g.on_discover_search_clear({
-        let state = Arc::clone(&state);
+        let state = Arc::clone(state);
         let ww = window.as_weak();
-        let generation = Arc::clone(&discover_gen);
+        let generation = Arc::clone(discover_gen);
         let rt = rt.clone();
         move || {
             let Some(w) = ww.upgrade() else { return };
@@ -415,9 +450,9 @@ pub(crate) fn wire_discover(
         }
     });
     g.on_discover_load_more({
-        let state = Arc::clone(&state);
+        let state = Arc::clone(state);
         let ww = window.as_weak();
-        let generation = Arc::clone(&discover_gen);
+        let generation = Arc::clone(discover_gen);
         let rt = rt.clone();
         move || {
             let Some(w) = ww.upgrade() else { return };
@@ -444,9 +479,17 @@ pub(crate) fn wire_discover(
             );
         }
     });
+}
 
+/// Opening a Discover item and the request page: seasons, tags, quality, Request.
+fn wire_request_detail(
+    window: &MainWindow,
+    state: &Arc<Mutex<FjordState>>,
+    rt: &tokio::runtime::Handle,
+) {
+    let g = AppState::get(window);
     g.on_open_discover_item({
-        let state = Arc::clone(&state);
+        let state = Arc::clone(state);
         let ww = window.as_weak();
         let rt = rt.clone();
         move |media_type, tmdb_id| {
@@ -463,7 +506,7 @@ pub(crate) fn wire_discover(
     // Wired here, not in keys.rs: handle_key has no state/rt for the async TMDB
     // resolution + request-detail open (same as on_open_discover_item).
     g.on_series_missing_season_activate({
-        let state = Arc::clone(&state);
+        let state = Arc::clone(state);
         let ww = window.as_weak();
         let rt = rt.clone();
         move |idx| {
@@ -506,7 +549,7 @@ pub(crate) fn wire_discover(
     });
 
     g.on_request_detail_request({
-        let state = Arc::clone(&state);
+        let state = Arc::clone(state);
         let ww = window.as_weak();
         let rt = rt.clone();
         move || {
@@ -534,7 +577,15 @@ pub(crate) fn wire_discover(
             set_quality(&AppState::get(&w), want_4k);
         }
     });
+}
 
+/// The Discover context menu (and the request page’s More menu): view, request, edit, cancel, approve, decline, watchlist, blocklist.
+fn wire_discover_menu(
+    window: &MainWindow,
+    state: &Arc<Mutex<FjordState>>,
+    rt: &tokio::runtime::Handle,
+) {
+    let g = AppState::get(window);
     // ── Discover context menu (2026-07-18) ────────────────────────────────
     g.on_open_context_menu_discover({
         let ww = window.as_weak();
@@ -591,7 +642,7 @@ pub(crate) fn wire_discover(
     });
 
     g.on_context_discover_view_details({
-        let state = Arc::clone(&state);
+        let state = Arc::clone(state);
         let ww = window.as_weak();
         let rt = rt.clone();
         move || {
@@ -618,7 +669,7 @@ pub(crate) fn wire_discover(
     // find_local_item redirect, so a partly-owned item's request stays reachable — see
     // open_discover_item_ex.
     g.on_context_discover_view_request({
-        let state = Arc::clone(&state);
+        let state = Arc::clone(state);
         let ww = window.as_weak();
         let rt = rt.clone();
         move || {
@@ -644,7 +695,7 @@ pub(crate) fn wire_discover(
     });
 
     g.on_context_discover_request({
-        let state = Arc::clone(&state);
+        let state = Arc::clone(state);
         let ww = window.as_weak();
         let rt = rt.clone();
         move || {
@@ -670,7 +721,7 @@ pub(crate) fn wire_discover(
     });
 
     g.on_context_discover_edit_request({
-        let state = Arc::clone(&state);
+        let state = Arc::clone(state);
         let ww = window.as_weak();
         let rt = rt.clone();
         move || {
@@ -716,7 +767,7 @@ pub(crate) fn wire_discover(
     });
 
     g.on_cancel_request_confirmed({
-        let state = Arc::clone(&state);
+        let state = Arc::clone(state);
         let ww = window.as_weak();
         let rt = rt.clone();
         move || {
@@ -737,7 +788,7 @@ pub(crate) fn wire_discover(
     });
 
     g.on_context_discover_approve_request({
-        let state = Arc::clone(&state);
+        let state = Arc::clone(state);
         let ww = window.as_weak();
         let rt = rt.clone();
         move || {
@@ -759,7 +810,7 @@ pub(crate) fn wire_discover(
     });
 
     g.on_context_discover_decline_request({
-        let state = Arc::clone(&state);
+        let state = Arc::clone(state);
         let ww = window.as_weak();
         let rt = rt.clone();
         move || {
@@ -783,7 +834,7 @@ pub(crate) fn wire_discover(
     // Watchlist + Release Calendar (2026-07-18) — always visible in the
     // Discover context menu, unlike Request's own availability gating.
     g.on_context_discover_toggle_watchlist({
-        let state = Arc::clone(&state);
+        let state = Arc::clone(state);
         let ww = window.as_weak();
         let rt = rt.clone();
         move || {
@@ -805,7 +856,7 @@ pub(crate) fn wire_discover(
     // RequestDetailScreen's own Watchlist button (2026-07-18) — same toggle,
     // sourced from request-detail-* state since this page has no CardItem.
     g.on_request_detail_toggle_watchlist({
-        let state = Arc::clone(&state);
+        let state = Arc::clone(state);
         let ww = window.as_weak();
         let rt = rt.clone();
         move || {
@@ -831,7 +882,7 @@ pub(crate) fn wire_discover(
     // Discover context menu's Blocklist row: like Watchlist, but "adding" = not
     // currently blocklisted (blocklisted is an availability value — see availability_tag).
     g.on_context_discover_toggle_blocklist({
-        let state = Arc::clone(&state);
+        let state = Arc::clone(state);
         let ww = window.as_weak();
         let rt = rt.clone();
         move || {
@@ -853,7 +904,7 @@ pub(crate) fn wire_discover(
     // RequestDetailScreen's own Blocklist button (2026-08-06) — same shape
     // as its Watchlist sibling above.
     g.on_request_detail_toggle_blocklist({
-        let state = Arc::clone(&state);
+        let state = Arc::clone(state);
         let ww = window.as_weak();
         let rt = rt.clone();
         move || {
@@ -874,10 +925,14 @@ pub(crate) fn wire_discover(
             );
         }
     });
+}
 
+/// The release calendar: open, month paging, a day’s popup and its entries.
+fn wire_calendar(window: &MainWindow, state: &Arc<Mutex<FjordState>>, rt: &tokio::runtime::Handle) {
+    let g = AppState::get(window);
     // ── Calendar screen (2026-07-18, Watchlist + Release Calendar) ──────────
     g.on_open_calendar({
-        let state = Arc::clone(&state);
+        let state = Arc::clone(state);
         let ww = window.as_weak();
         move || {
             let Some(w) = ww.upgrade() else { return };
@@ -897,7 +952,7 @@ pub(crate) fn wire_discover(
     });
 
     g.on_calendar_prev_month({
-        let state = Arc::clone(&state);
+        let state = Arc::clone(state);
         let ww = window.as_weak();
         move || {
             let Some(w) = ww.upgrade() else { return };
@@ -917,7 +972,7 @@ pub(crate) fn wire_discover(
     });
 
     g.on_calendar_next_month({
-        let state = Arc::clone(&state);
+        let state = Arc::clone(state);
         let ww = window.as_weak();
         move || {
             let Some(w) = ww.upgrade() else { return };
@@ -939,7 +994,7 @@ pub(crate) fn wire_discover(
     // Mouse click on a day cell — mirrors handle_key_calendar's Confirm arm
     // for the day-grid case, so mouse and keyboard can't diverge.
     g.on_calendar_day_selected({
-        let state = Arc::clone(&state);
+        let state = Arc::clone(state);
         let ww = window.as_weak();
         move |day| {
             let Some(w) = ww.upgrade() else { return };
@@ -953,7 +1008,7 @@ pub(crate) fn wire_discover(
     // Mouse click on a day-popup entry — mirrors
     // handle_key_calendar_day_popup's Confirm arm.
     g.on_calendar_day_popup_entry_selected({
-        let state = Arc::clone(&state);
+        let state = Arc::clone(state);
         let ww = window.as_weak();
         let rt = rt.clone();
         move |idx| {
