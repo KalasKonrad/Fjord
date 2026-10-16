@@ -7,7 +7,9 @@
 //               a server trailer file is ok), ♥ favourite and ✓ watched IconCircleButtons; "Ends
 //               HH:MM" below, centered under Play.
 //               Then CastRow, the collection row, "More Like This", "Recommended" (Seerr), and the
-//               scrollable overview.
+//               scrollable overview. Keyboard scroll (kb-y): a focused row comes to the middle from
+//               its 0-height anchor (cast-/collection-/similar-/recommended-anchor), as on the series
+//               page; the header area uses detail-scroll.
 //               Button focus: detail-focused-btn (-1 Back, 0 Play, 1 Resume, 2 Series, 6 Trailer,
 //               3 Fav, 4 Watched — Left/Right order in detail.rs's existing_detail_buttons; 5 =
 //               Overview, below); cast focus: detail-cast-focused.
@@ -29,8 +31,19 @@ import { SectionRow } from "home.slint";
 
 export component DetailPage inherits Rectangle {
     background: Theme.bg;
-    property <length> kb-y: clamp(-AppState.detail-scroll,
-                                  min(0px, self.height - detail-content.preferred-height), 0px);
+    // Keyboard scroll: a focused row (cast / collection / similar / recommended) is brought to the
+    // middle from its real position — the 0-height anchors before each section, as on the series
+    // page; the header (buttons, overview) uses detail-scroll (0, or detail.rs's small nudge when
+    // there's nothing below). Mouse-wheel still works: content-y is only assigned in `changed`.
+    property <length> kb-y: {
+        let row = AppState.detail-focused-row;
+        let lo = min(0px, self.height - detail-content.preferred-height);
+        row == 1 ? clamp(self.height / 2 - cast-anchor.y, lo, 0px)
+            : row == 2 ? clamp(self.height / 2 - collection-anchor.y, lo, 0px)
+            : row == 3 ? clamp(self.height / 2 - similar-anchor.y, lo, 0px)
+            : row == 4 ? clamp(self.height / 2 - recommended-anchor.y, lo, 0px)
+            : clamp(-AppState.detail-scroll, lo, 0px)
+    };
     changed kb-y => { detail-fl.content-y = kb-y; }
 
     detail-fl := Flickable {
@@ -226,6 +239,10 @@ export component DetailPage inherits Rectangle {
                 }
             }
 
+            cast-anchor := Rectangle {
+                height: 0px;
+            }
+
             if AppState.detail-cast.length > 0: VerticalLayout {
                 padding-left: 48px;
                 padding-right: 48px;
@@ -247,6 +264,10 @@ export component DetailPage inherits Rectangle {
                         AppState.open-person(AppState.detail-cast[idx].id, AppState.detail-cast[idx].name);
                     }
                 }
+            }
+
+            collection-anchor := Rectangle {
+                height: 0px;
             }
 
             if AppState.detail-collection.length > 0: VerticalLayout {
@@ -271,6 +292,10 @@ export component DetailPage inherits Rectangle {
                 }
             }
 
+            similar-anchor := Rectangle {
+                height: 0px;
+            }
+
             if AppState.detail-similar.length > 0: VerticalLayout {
                 padding-left: 48px;
                 padding-right: 48px;
@@ -291,6 +316,10 @@ export component DetailPage inherits Rectangle {
                         AppState.open-context-menu(id, played, fav, rpct, itype, sid);
                     }
                 }
+            }
+
+            recommended-anchor := Rectangle {
+                height: 0px;
             }
 
             if AppState.detail-recommended.length > 0: VerticalLayout {

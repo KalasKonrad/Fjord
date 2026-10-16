@@ -15,7 +15,8 @@
 //                       spawn_main; spawns the DetailCtx tasks
 //   existing_detail_buttons / fix_trailer_focus  the header buttons Left/Right step through (Play,
 //                       Resume, Series →, Trailer when "ok", ♥, ✓ — must match detail.slint)
-//   handle_key          rows: 0 header, 1 cast, 2 collection, 3 similar, 4 recommended
+//   handle_key          rows: 0 header, 1 cast, 2 collection, 3 similar, 4 recommended (only
+//                       which row has focus — detail.slint scrolls to it from its real position)
 //   fetch_card_posters  async: parallel poster fetch for a slice of MediaItems → pixel buffers
 //   items_to_cards      Vec<CardItem> from items + pre-fetched buffers (UI thread)
 //   wire_detail         callbacks moved from main() (0.5.0 step 3): open the detail page
@@ -752,26 +753,6 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
     let row = g.get_detail_focused_row();
     let bg = g.get_has_background_player();
 
-    let scroll_for = |r: i32| -> f32 {
-        const BASE: f32 = 600.0;
-        const SECTION: f32 = 280.0;
-        match r {
-            0 => 0.0,
-            1 => BASE,
-            2 => BASE + if cast_len > 0 { SECTION } else { 0.0 },
-            3 => {
-                BASE + if cast_len > 0 { SECTION } else { 0.0 }
-                    + if coll_len > 0 { SECTION } else { 0.0 }
-            }
-            4 => {
-                BASE + if cast_len > 0 { SECTION } else { 0.0 }
-                    + if coll_len > 0 { SECTION } else { 0.0 }
-                    + if sim_len > 0 { SECTION } else { 0.0 }
-            }
-            _ => 0.0,
-        }
-    };
-
     match action {
         Action::Back => {
             if bg {
@@ -820,7 +801,7 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
                     } else {
                         g.set_detail_focused_row(0);
                     }
-                    g.set_detail_scroll(scroll_for(g.get_detail_focused_row()));
+                    g.set_detail_scroll(0.0);
                 }
                 3 => {
                     g.set_detail_similar_focused(-1);
@@ -833,7 +814,7 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
                     } else {
                         g.set_detail_focused_row(0);
                     }
-                    g.set_detail_scroll(scroll_for(g.get_detail_focused_row()));
+                    g.set_detail_scroll(0.0);
                 }
                 _ => {
                     g.set_detail_recommended_focused(-1);
@@ -849,7 +830,7 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
                     } else {
                         g.set_detail_focused_row(0);
                     }
-                    g.set_detail_scroll(scroll_for(g.get_detail_focused_row()));
+                    g.set_detail_scroll(0.0);
                 }
             }
             true
@@ -933,7 +914,7 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
                 _ => {} // already at bottom
             }
             if g.get_detail_focused_row() != old_row {
-                g.set_detail_scroll(scroll_for(g.get_detail_focused_row()));
+                g.set_detail_scroll(0.0);
             }
             true
         }
