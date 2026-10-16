@@ -10,7 +10,7 @@
 //   existing_connect_seerr_zones  ConnectSeerrScreen's D-pad zones (-1 ✕, 0 URL, 1 tabs, 2+ by
 //                        method/polling), dispatched inline in keys.rs's show_connect_seerr tier
 //   clear_connection / commit_connection  connection-scoped resets (Calendar/filter caches,
-//                        person caches, the 3 watchlist models); commit also starts
+//                        person caches, hero_discover_cache, the 3 watchlist models); commit also starts
 //                        ensure_discover_watchlist
 //   wire_connect_seerr   ConnectSeerrScreen: the 4 auth methods (API key, Jellyfin login, Quick
 //                        Connect, local account) + open/disconnect; every URL goes through
@@ -184,6 +184,7 @@ pub(crate) fn clear_connection(state: &Arc<Mutex<FjordState>>, ww: &Weak<MainWin
     // Request/watchlist-patched results from the old connection would show stale pill state.
     s.person_tmdb_id_cache.clear();
     s.person_other_work_cache.clear();
+    s.hero_discover_cache.clear();
     let cfg = s.config.clone();
     let profile = cfg.active().clone();
     drop(s);
@@ -276,6 +277,7 @@ fn commit_connection(
     // different server/catalog, same reasoning as the other clears above.
     s.person_tmdb_id_cache.clear();
     s.person_other_work_cache.clear();
+    s.hero_discover_cache.clear();
     let cfg = s.config.clone();
     let profile = cfg.active().clone();
     drop(s);

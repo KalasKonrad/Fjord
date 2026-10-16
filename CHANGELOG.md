@@ -23,6 +23,12 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **New: a highlight above the dashboard rows.** Home, TV Shows, Movies,
+  Collections and Music show the selected item large at the top — its
+  backdrop (an album's cover on Music), title, year, rating, length and the
+  start of its story — and it follows you as you move along the rows,
+  Watchlist and Coming Up included. Turn it off in Settings → Interface →
+  Dashboard highlight (saved per profile).
 - **New: choose your dashboard rows.** Settings → Interface → Dashboard
   rows: for Home, TV Shows, Movies, Collections and Music, hide the rows you
   don't use and move the others up or down. Saved per profile (and copied by

@@ -70,7 +70,7 @@ Needs `mpv`/libmpv (`pacman -S mpv`). Optional at runtime: `yt-dlp` (trailers), 
 - Screens: `detail`, `series`, `season`, `collection`, `album` (albums + playlists), `artist`, `person`,
   `browse`, `home`/`movies`/`poster` (dashboards, library grid, poster loading), `discover/` (Discover,
   RequestDetail, Calendar, Watchlist — one file per area, list in `discover/mod.rs`), `blocklist`, `settings`, `context_menu`,
-  `dashboard_rows` (per-profile row order/visibility + its editor).
+  `dashboard_rows` (per-profile row order/visibility + its editor), `hero` (the dashboards' hero band).
 - Accounts/profiles: `auth.rs` (login, `finish_session_setup`), `profile.rs` (pickers, `switch_to_profile`,
   Bonfire sync, idle lock), `profile_edit.rs`, `bonfire_admin.rs`, `secrets.rs` (secrets encrypted at rest).
 - Integrations/platform: `seerr_auth.rs`, `ws.rs` (Jellyfin WebSocket delta sync), `prewarm.rs`, `hdr.rs`

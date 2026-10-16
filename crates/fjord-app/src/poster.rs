@@ -8,7 +8,8 @@
 //   fetch_backdrop_cached  thin wrapper: fetch_image_cached(…, Backdrop)
 //   fetch_posters_for_delta  generic concurrent poster fetch for a WS delta batch (any item
 //                          type mix); doesn't replace a model — caller patches rows itself
-//   decode_scaled / decode_poster_buffer (≤600px) / decode_backdrop_buffer (≤3840px)
+//   decode_scaled / decode_poster_buffer (≤600px) / decode_backdrop_buffer (≤3840px) /
+//                          decode_blur_buffer (24px — the Music hero's blurred cover)
 //                          decode-to-size: originals are 1000-3000px, cards render ≤400px
 //   push_decoded_section   decode poster bytes for one section and push it on the UI thread;
 //                          session-guarded (per-profile content — the push_ functions and their
@@ -219,6 +220,14 @@ pub(crate) fn decode_poster_buffer(
     bytes: &[u8],
 ) -> Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>> {
     decode_scaled(bytes, 600)
+}
+
+/// The Music hero's background: the album cover decoded to 24 px — Slint stretches it smooth,
+/// which reads as a blur.
+pub(crate) fn decode_blur_buffer(
+    bytes: &[u8],
+) -> Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>> {
+    decode_scaled(bytes, 24)
 }
 
 /// Backdrops render full-window — cap at 3840 so 4K sources display 1:1 on a

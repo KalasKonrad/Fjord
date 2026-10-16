@@ -19,6 +19,7 @@
 //                   Settings rows tagged "Profile", for "Copy settings from…"): auth (server_url/user_id/
 //                   token), subtitle/audio language, library sort, skip_*_mode/_secs, trailer
 //                   quality, dashboard_rows (per dashboard: row ids in order + shown; DashboardRow),
+//                   dashboard_hero (default on),
 //                   Seerr connection (seerr_enabled/_url/_auth_method/_api_key/
 //                   _session_cookie), Discover filters (genres by name, providers by id), Request
 //                   Options' remembered choices; remember_login (false → never resumed silently,
@@ -37,7 +38,7 @@
 //                   audio_devices / system_fonts (startup fetches), movie_collections,
 //                   remembered_tracks, ws_abort, ws_connected / ws_last_keepalive_at (stall-recovery
 //                   budget), PIN buffers, live_requires_pin, available_plugins, the screen-open
-//                   BoundedCaches (persisted together) + person caches, Seerr state
+//                   BoundedCaches (persisted together) + person caches, hero_discover_cache, Seerr state
 //                   (client, regions, languages, permissions, watchlist/calendar/known requests,
 //                   jellyfin_watchlist_ids + its resync generation), screen_revalidate_last_run,
 //                   pending_keybind_rebind, trailer_playable/trailer_checks/trailer_candidates/
@@ -108,6 +109,9 @@ fn default_skip_fade_mute_passthrough() -> bool {
     true
 }
 fn default_now_playing_auto_open() -> bool {
+    true
+}
+fn default_dashboard_hero() -> bool {
     true
 }
 fn default_hwdec() -> String {
@@ -683,6 +687,10 @@ pub(crate) struct ProfileSettings {
     // new rows are filled in from the defaults (dashboard_rows::rows_for).
     #[serde(default)]
     pub dashboard_rows: std::collections::BTreeMap<String, Vec<DashboardRow>>,
+    // ── Dashboard hero (Settings → Interface): the focused card's backdrop, title, details and
+    // overview in a band above the dashboard rows (hero.rs). On by default.
+    #[serde(default = "default_dashboard_hero")]
+    pub dashboard_hero: bool,
 
     // ── Seerr integration (Settings → Integrations) — cleared on sign-out
     // alongside server_url/user_id/token. seerr_auth_method is purely
@@ -796,6 +804,7 @@ impl ProfileSettings {
         self.card_size = src.card_size.clone();
         self.text_size = src.text_size.clone();
         self.dashboard_rows = src.dashboard_rows.clone();
+        self.dashboard_hero = src.dashboard_hero;
         self.trailer_quality = src.trailer_quality.clone();
     }
 }
@@ -848,6 +857,7 @@ impl Default for ProfileSettings {
             card_size: default_card_size(),
             text_size: default_card_size(),
             dashboard_rows: Default::default(),
+            dashboard_hero: true,
             seerr_enabled: false,
             seerr_url: String::new(),
             seerr_auth_method: String::new(),
@@ -1236,6 +1246,7 @@ fn migrate_legacy_config(l: LegacyConfig) -> Config {
         card_size: default_card_size(),
         text_size: default_card_size(),
         dashboard_rows: Default::default(),
+        dashboard_hero: true,
     };
     let active_profile_id = profile.user_id.clone();
     Config {
@@ -1940,6 +1951,9 @@ pub(crate) struct FjordState {
     // for opening a Discover cast member (RequestDetailScreen's CastRow). Session-only:
     // cheap to redo, and the library can change what a search finds.
     pub local_person_by_tmdb_cache: BoundedCache<Option<String>>,
+    // Dashboard hero (hero.rs): Seerr movie/TV text + backdrop path by "movie-<tmdb>"/"tv-<tmdb>".
+    // Session-only; cleared with the other Seerr-scoped caches.
+    pub hero_discover_cache: BoundedCache<(crate::hero::HeroText, Option<String>)>,
     // In-flight marker for open_person_from_discover: the TMDB person id being resolved.
     // Repeat presses on the same cast member are ignored until it resolves and the
     // screen opens (otherwise each press ran a full resolve + open chain;
@@ -2183,6 +2197,7 @@ impl FjordState {
             person_tmdb_id_cache: BoundedCache::new(100),
             person_other_work_cache: BoundedCache::new(40),
             local_person_by_tmdb_cache: BoundedCache::new(100),
+            hero_discover_cache: BoundedCache::new(200),
             person_discover_resolving: None,
             prewarm_metadata_running: false,
             prewarm_metadata_total: 0,
@@ -2363,6 +2378,7 @@ mod tests {
         src.text_size = "extra-large".into();
         src.trailer_quality = "720p".into();
         src.now_playing_auto_open = !ProfileSettings::default().now_playing_auto_open;
+        src.dashboard_hero = false;
         src.dashboard_rows.insert(
             "music".into(),
             vec![
@@ -2392,6 +2408,7 @@ mod tests {
         assert_eq!(dst.trailer_quality, "720p");
         assert_eq!(dst.now_playing_auto_open, src.now_playing_auto_open);
         assert_eq!(dst.dashboard_rows, src.dashboard_rows);
+        assert!(!dst.dashboard_hero);
         // Sign-in, identity, Integrations and remembered browsing state stay.
         assert_eq!(dst.user_id, "aaaa0002000000000000000000000000");
         assert_eq!(dst.token, "own-token");

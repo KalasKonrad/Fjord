@@ -93,6 +93,7 @@ pub(crate) fn reset_session_state(
     s.container_tracks_cache.clear();
     s.person_tmdb_id_cache.clear();
     s.person_other_work_cache.clear();
+    s.hero_discover_cache.clear();
     s.local_person_by_tmdb_cache.clear(); // 2026-08-13 — a different Jellyfin user means a different library/Person set entirely
     // A resolve in flight at sign-out would otherwise block that tmdb_id for the whole next
     // session.
@@ -195,6 +196,8 @@ pub(crate) fn reset_session_state(
         g.set_manage_profiles_close_focused(false);
         // Dashboard rows editor: it edits the outgoing profile's rows.
         g.set_show_dashboard_rows(false);
+        // Dashboard hero: the outgoing profile's item must not linger.
+        crate::hero::reset(&g);
         g.set_show_profile_edit(false);
         // Only the profile-edit flags that gate input dispatch (keys.rs checks text-editing/
         // dropdown-open before routing a key); the cursor ints are display state that
