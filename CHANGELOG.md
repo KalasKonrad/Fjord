@@ -23,6 +23,10 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Fixed: "1 tracks", "1 episodes", "1 profiles"** and similar — counts
+  now use the singular for one. Long series names and dialog titles wrap
+  instead of being cut off, and the mouse shows a hand over every button and
+  menu entry (a text cursor over search fields).
 - **Improved: an empty search says so.** Searching a library or Browse All
   (or filtering a library by Unwatched/Favorites) with no matches now shows
   "No results for …" instead of a blank screen, like Discover does.

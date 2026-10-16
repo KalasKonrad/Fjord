@@ -231,6 +231,15 @@ pub(crate) fn purge_deleted_item(
 
 /// Show a bottom-center error toast.  Safe to call from any thread or the Slint event loop.
 /// The Slint Timer in main.slint auto-dismisses it after 4 s.
+/// "1 track" / "2 tracks" for a visible count (Slint side: AppState.plural).
+pub(crate) fn plural(n: u64, one: &str, many: &str) -> String {
+    if n == 1 {
+        format!("1 {one}")
+    } else {
+        format!("{n} {many}")
+    }
+}
+
 /// The short reason after "Couldn't …" in a toast: the server's answer ("404 Not Found") or
 /// "the server isn't reachable" for request errors, otherwise the error's own message (which
 /// carries the server's text where the client read the response body) with any URL cut off.

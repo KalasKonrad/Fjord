@@ -331,6 +331,7 @@ export component ProfileEditScreen inherits Rectangle {
                         }
 
                         swatch-ta := TouchArea {
+                            mouse-cursor: MouseCursor.pointer;
                             clicked => {
                                 AppState.profile-edit-zone = 1;
                                 AppState.profile-edit-avatar-cursor = i;

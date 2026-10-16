@@ -63,6 +63,7 @@ component GroupToggleRow inherits Rectangle {
     }
 
     TouchArea {
+        mouse-cursor: MouseCursor.pointer;
         clicked => { root.toggled(); }
     }
 }
@@ -299,6 +300,7 @@ export component BonfireGroupScreen inherits Rectangle {
                                 }
 
                                 TouchArea {
+                                    mouse-cursor: MouseCursor.text;
                                     clicked => {
                                         AppState.bonfire-group-zone = join-base;
                                         // Keyboard off in Settings: typing goes straight

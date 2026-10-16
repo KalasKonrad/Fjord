@@ -1659,6 +1659,11 @@ export global AppState {
     // both functions (otherwise the new row silently reads the previous row's data),
     // plus the find-first/next/prev-section bound. Self-check: the five-equality
     // comparison appears exactly 6 times (2 functions × 3 navs).
+    // "1 track" / "2 tracks" — every visible count goes through this (Rust side: main::plural).
+    public pure function plural(n: int, one: string, many: string) -> string {
+        return n == 1 ? "1 \{one}" : "\{n} \{many}";
+    }
+
     public pure function section-len(s: int) -> int {
         if active-nav == 0 {
             s == 0 ? continue-watching.length :
