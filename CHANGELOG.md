@@ -23,6 +23,11 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Improved: screens line up.** Titles, search fields, filter/sort pills and
+  the rows or grids below them now start at the same left edge on the
+  dashboards, Discover, Browse All and the library grids, so switching between
+  them no longer shifts things sideways. The sidebar shows just the logo and
+  FJORD (the small "Jellyfin" under it is gone).
 - **New: a highlight above the dashboard rows.** Home, TV Shows, Movies,
   Collections and Music show the selected item large at the top — its
   backdrop (an album's cover on Music), title, year, rating, length and the

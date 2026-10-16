@@ -13,8 +13,8 @@ import { MetaLine } from "widgets.slint";
 
 component HeroLayer inherits Rectangle {
     in property <HeroInfo> info;
-    // Text starts where the row titles below do (rows padding + SectionRow padding).
-    property <length> text-x: Theme.sp-lg + Theme.sp;
+    // Text starts where the dashboard title and the row titles below do (SectionRow's padding).
+    property <length> text-x: Theme.sp;
 
     if root.info.has-backdrop: Image {
         x: 0;
