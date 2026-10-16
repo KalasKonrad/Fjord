@@ -189,8 +189,10 @@ export component LibraryGrid inherits Rectangle {
                         y: (parent.height - self.height) / 2;
                         border-radius: Theme.radius;
                         background: v-active ? Theme.accent : (v-focused ? Theme.surface-overlay : transparent);
-                        border-width: (v-ta.pressed || v-pulse.pulsing) ? 3px : ((v-focused || (!v-active)) ? 1px : 0px);
-                        border-color: v-focused ? Theme.text : Theme.border-strong;
+                        border-width: max(!v-active ? 1px : 0px, AppState.glow-ring-width(v-focused, v-ta.pressed || v-pulse.pulsing));
+                        drop-shadow-blur: AppState.glow-blur(v-focused);
+                        drop-shadow-color: AppState.focus-color;
+                        border-color: (v-focused || v-ta.pressed || v-pulse.pulsing) ? AppState.focus-color : Theme.border-strong;
                         animate border-width {
                             duration: 90ms * AppState.settings-animation-speed;
                             easing: ease-out-expo;
@@ -244,8 +246,10 @@ export component LibraryGrid inherits Rectangle {
                     y: (parent.height - self.height) / 2;
                     border-radius: Theme.radius;
                     background: pill-active ? Theme.accent : (pill-focused ? Theme.surface-overlay : transparent);
-                    border-width: (sort-ta.pressed || sort-pulse.pulsing) ? 4px : (pill-focused ? 2px : 0px);
-                    border-color: pill-active ? Theme.text : Theme.focus-border;
+                    border-width: AppState.glow-ring-width(pill-focused, sort-ta.pressed || sort-pulse.pulsing);
+                    drop-shadow-blur: AppState.glow-blur(pill-focused);
+                    drop-shadow-color: AppState.focus-color;
+                    border-color: pill-active ? Theme.text : AppState.focus-color;
                     animate border-width {
                         duration: 90ms * AppState.settings-animation-speed;
                         easing: ease-out-expo;
@@ -283,8 +287,10 @@ export component LibraryGrid inherits Rectangle {
                     y: (parent.height - self.height) / 2;
                     border-radius: Theme.radius;
                     background: mf-active ? Theme.accent : (mf-focused ? Theme.surface-overlay : transparent);
-                    border-width: (mf-ta.pressed || mf-pulse.pulsing) ? 4px : (mf-focused ? 2px : 0px);
-                    border-color: mf-active ? Theme.text : Theme.focus-border;
+                    border-width: AppState.glow-ring-width(mf-focused, mf-ta.pressed || mf-pulse.pulsing);
+                    drop-shadow-blur: AppState.glow-blur(mf-focused);
+                    drop-shadow-color: AppState.focus-color;
+                    border-color: mf-active ? Theme.text : AppState.focus-color;
                     animate border-width {
                         duration: 90ms * AppState.settings-animation-speed;
                         easing: ease-out-expo;
@@ -323,8 +329,10 @@ export component LibraryGrid inherits Rectangle {
                     y: (parent.height - self.height) / 2;
                     border-radius: Theme.radius;
                     background: fw-active ? Theme.accent : (fw-focused ? Theme.surface-overlay : transparent);
-                    border-width: (fw-ta.pressed || fw-pulse.pulsing) ? 4px : (fw-focused ? 2px : 0px);
-                    border-color: fw-active ? Theme.text : Theme.focus-border;
+                    border-width: AppState.glow-ring-width(fw-focused, fw-ta.pressed || fw-pulse.pulsing);
+                    drop-shadow-blur: AppState.glow-blur(fw-focused);
+                    drop-shadow-color: AppState.focus-color;
+                    border-color: fw-active ? Theme.text : AppState.focus-color;
                     animate border-width {
                         duration: 90ms * AppState.settings-animation-speed;
                         easing: ease-out-expo;
@@ -358,8 +366,10 @@ export component LibraryGrid inherits Rectangle {
                     y: (parent.height - self.height) / 2;
                     border-radius: Theme.radius;
                     background: ff-active ? Theme.accent : (ff-focused ? Theme.surface-overlay : transparent);
-                    border-width: (ff-ta.pressed || ff-pulse.pulsing) ? 4px : (ff-focused ? 2px : 0px);
-                    border-color: ff-active ? Theme.text : Theme.focus-border;
+                    border-width: AppState.glow-ring-width(ff-focused, ff-ta.pressed || ff-pulse.pulsing);
+                    drop-shadow-blur: AppState.glow-blur(ff-focused);
+                    drop-shadow-color: AppState.focus-color;
+                    border-color: ff-active ? Theme.text : AppState.focus-color;
                     animate border-width {
                         duration: 90ms * AppState.settings-animation-speed;
                         easing: ease-out-expo;
@@ -415,8 +425,8 @@ export component LibraryGrid inherits Rectangle {
                 width: parent.width - Theme.sp * 2;
                 height: 36px;
                 border-radius: Theme.radius;
-                border-width: AppState.library-header-focused ? 2px : 1px;
-                border-color: AppState.library-header-focused ? Theme.focus-border : Theme.border;
+                border-width: max(1px, AppState.ring-width(AppState.library-header-focused, false));
+                border-color: AppState.library-header-focused ? AppState.focus-color : Theme.border;
                 background: Theme.bg;
 
                 // Mouse path into search — the browse bar had this, the library
@@ -589,8 +599,8 @@ export component LibraryGrid inherits Rectangle {
                         height: 16px;
                         border-radius: 3px;
                         background: tracking ? Theme.accent-muted : transparent;
-                        border-width: (ltr-ta.pressed || ltr-pulse.pulsing) ? 2.5px : 0px;
-                        border-color: Theme.focus-border;
+                        border-width: AppState.ring-width(ltr-pulse.active, ltr-ta.pressed || ltr-pulse.pulsing);
+                        border-color: AppState.focus-color;
                         animate border-width {
                             duration: 90ms * AppState.settings-animation-speed;
                             easing: ease-out-expo;

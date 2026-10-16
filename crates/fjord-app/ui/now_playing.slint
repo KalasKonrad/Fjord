@@ -360,9 +360,10 @@ export component NowPlayingScreen inherits Rectangle {
                                     x: (parent.width - self.width) / 2;
                                     border-radius: Theme.radius;
                                     background: Theme.surface-overlay;
-                                    border-width: (chip-ta.pressed || chip-pulse.pulsing) ? 4px
-                                        : (!AppState.now-playing-back-focused && AppState.now-playing-in-strip && i == AppState.now-playing-strip-focused ? 2px : 0px);
-                                    border-color: Theme.focus-border;
+                                    border-width: AppState.glow-ring-width(!AppState.now-playing-back-focused && AppState.now-playing-in-strip && i == AppState.now-playing-strip-focused, chip-ta.pressed || chip-pulse.pulsing);
+                                    drop-shadow-blur: AppState.glow-blur(!AppState.now-playing-back-focused && AppState.now-playing-in-strip && i == AppState.now-playing-strip-focused);
+                                    drop-shadow-color: AppState.focus-color;
+                                    border-color: AppState.focus-color;
                                     clip: true;
                                     animate border-width {
                                         duration: 90ms * AppState.settings-animation-speed;

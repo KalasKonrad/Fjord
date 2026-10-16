@@ -180,7 +180,11 @@ Needs `mpv`/libmpv (`pacman -S mpv`). Optional at runtime: `yt-dlp` (trailers), 
   clear `show-onscreen-keyboard` (use choke points like `close_login_screen`). Open it **only** through
   `AppState.open-onscreen-keyboard(target)` / `keys::open_onscreen_keyboard` — they honour Settings' off
   switch; on `false` the caller does its own Enter action (next field / submit).
-- Clickable elements get the `PressPulse` border flash (`kb-activate-pulse`); focus rings use `Theme.focus-border`.
+- Clickable elements get the `PressPulse` border flash (`kb-activate-pulse`). Focus rings follow the per-profile focus
+  settings through AppState helpers only: `border-color: AppState.focus-color` + `border-width:
+  AppState.ring-width(focused, ta.pressed || pulse.pulsing)` for rows/fields/menu entries (`max(1px, …)` with an idle
+  border); opaque pictures/tiles/buttons/pills use `glow-ring-width(…)` + `drop-shadow-blur: AppState.glow-blur(focused)`
+  / `drop-shadow-color: AppState.focus-color` (a glow under a see-through element floods it).
 - Backdrops, OSD panels, shadows and text over images use their `Theme` tokens (`scrim*`, `osd-panel*`, `shadow*`,
   `hero-fade-*`, `text-bright`/`text-soft`) — no hand-picked colours or alphas in screens.
 

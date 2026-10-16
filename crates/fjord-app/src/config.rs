@@ -20,6 +20,7 @@
 //                   token), subtitle/audio language, library sort, skip_*_mode/_secs, trailer
 //                   quality, dashboard_rows (per dashboard: row ids in order + shown; DashboardRow),
 //                   dashboard_hero ("off" | "band" (default) | "background"; reads the old bool),
+//                   focus_color/_width/_style/_opacity/_zoom (focus ring + picture zoom),
 //                   Seerr connection (seerr_enabled/_url/_auth_method/_api_key/
 //                   _session_cookie), Discover filters (genres by name, providers by id), Request
 //                   Options' remembered choices; remember_login (false → never resumed silently,
@@ -110,6 +111,21 @@ fn default_skip_fade_mute_passthrough() -> bool {
 }
 fn default_now_playing_auto_open() -> bool {
     true
+}
+fn default_focus_color() -> String {
+    "white".into()
+}
+fn default_focus_width() -> String {
+    "3".into()
+}
+fn default_focus_style() -> String {
+    "line".into()
+}
+fn default_focus_opacity() -> String {
+    "solid".into()
+}
+fn default_focus_zoom() -> String {
+    "10".into()
 }
 fn default_dashboard_hero() -> String {
     "band".into()
@@ -710,6 +726,20 @@ pub(crate) struct ProfileSettings {
         deserialize_with = "de_dashboard_hero"
     )]
     pub dashboard_hero: String,
+    // ── Focus highlight (Settings → Interface): the ring around whatever has keyboard focus and
+    // the zoom of a focused picture. color "white" | "blue" | "gold" | "green" | "red"; width
+    // "2" | "3" | "4" | "6" (px); style "line" | "glow" | "both"; opacity "solid" | "see-through";
+    // zoom "0" | "5" … "30" (%). AppState.focus-* turns them into the values every ring reads.
+    #[serde(default = "default_focus_color")]
+    pub focus_color: String,
+    #[serde(default = "default_focus_width")]
+    pub focus_width: String,
+    #[serde(default = "default_focus_style")]
+    pub focus_style: String,
+    #[serde(default = "default_focus_opacity")]
+    pub focus_opacity: String,
+    #[serde(default = "default_focus_zoom")]
+    pub focus_zoom: String,
 
     // ── Seerr integration (Settings → Integrations) — cleared on sign-out
     // alongside server_url/user_id/token. seerr_auth_method is purely
@@ -824,6 +854,11 @@ impl ProfileSettings {
         self.text_size = src.text_size.clone();
         self.dashboard_rows = src.dashboard_rows.clone();
         self.dashboard_hero = src.dashboard_hero.clone();
+        self.focus_color = src.focus_color.clone();
+        self.focus_width = src.focus_width.clone();
+        self.focus_style = src.focus_style.clone();
+        self.focus_opacity = src.focus_opacity.clone();
+        self.focus_zoom = src.focus_zoom.clone();
         self.trailer_quality = src.trailer_quality.clone();
     }
 }
@@ -877,6 +912,11 @@ impl Default for ProfileSettings {
             text_size: default_card_size(),
             dashboard_rows: Default::default(),
             dashboard_hero: default_dashboard_hero(),
+            focus_color: default_focus_color(),
+            focus_width: default_focus_width(),
+            focus_style: default_focus_style(),
+            focus_opacity: default_focus_opacity(),
+            focus_zoom: default_focus_zoom(),
             seerr_enabled: false,
             seerr_url: String::new(),
             seerr_auth_method: String::new(),
@@ -1266,6 +1306,11 @@ fn migrate_legacy_config(l: LegacyConfig) -> Config {
         text_size: default_card_size(),
         dashboard_rows: Default::default(),
         dashboard_hero: default_dashboard_hero(),
+        focus_color: default_focus_color(),
+        focus_width: default_focus_width(),
+        focus_style: default_focus_style(),
+        focus_opacity: default_focus_opacity(),
+        focus_zoom: default_focus_zoom(),
     };
     let active_profile_id = profile.user_id.clone();
     Config {
@@ -2415,6 +2460,8 @@ mod tests {
         src.trailer_quality = "720p".into();
         src.now_playing_auto_open = !ProfileSettings::default().now_playing_auto_open;
         src.dashboard_hero = "background".into();
+        src.focus_color = "gold".into();
+        src.focus_zoom = "25".into();
         src.dashboard_rows.insert(
             "music".into(),
             vec![
@@ -2445,6 +2492,10 @@ mod tests {
         assert_eq!(dst.now_playing_auto_open, src.now_playing_auto_open);
         assert_eq!(dst.dashboard_rows, src.dashboard_rows);
         assert_eq!(dst.dashboard_hero, "background");
+        assert_eq!(
+            (dst.focus_color.as_str(), dst.focus_zoom.as_str()),
+            ("gold", "25")
+        );
         // Sign-in, identity, Integrations and remembered browsing state stay.
         assert_eq!(dst.user_id, "aaaa0002000000000000000000000000");
         assert_eq!(dst.token, "own-token");

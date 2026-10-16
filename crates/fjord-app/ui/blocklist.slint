@@ -102,8 +102,8 @@ export component BlocklistScreen inherits Rectangle {
                         background: (!AppState.blocklist-back-focused && i == AppState.blocklist-focused) ? Theme.surface-overlay
                             : row-ta.has-hover ? #ffffff08
                             : transparent;
-                        border-width: (row-ta.pressed || row-pulse.pulsing) ? 3px : 0px;
-                        border-color: Theme.focus-border;
+                        border-width: AppState.ring-width(row-pulse.active, row-ta.pressed || row-pulse.pulsing);
+                        border-color: AppState.focus-color;
                         animate border-width {
                             duration: 90ms * AppState.settings-animation-speed;
                             easing: ease-out-expo;

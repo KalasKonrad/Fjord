@@ -268,8 +268,10 @@ export component SeriesScreen inherits Rectangle {
                             y: 6px;
                             border-radius: Theme.radius;
                             background: i == AppState.series-season-idx ? Theme.accent : Theme.surface;
-                            border-width: (season-ta.pressed || season-pulse.pulsing) ? 3px : 0px;
-                            border-color: Theme.text;
+                            border-width: AppState.glow-ring-width(season-pulse.active, season-ta.pressed || season-pulse.pulsing);
+                            drop-shadow-blur: AppState.glow-blur(season-pulse.active);
+                            drop-shadow-color: AppState.focus-color;
+                            border-color: AppState.focus-color;
                             animate border-width {
                                 duration: 90ms * AppState.settings-animation-speed;
                                 easing: ease-out-expo;

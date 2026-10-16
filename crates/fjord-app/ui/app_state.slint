@@ -104,6 +104,9 @@
 //   Dashboard rows        home/tv/movies/collections/music-row-order (shown rows in order, pushed from
 //                         ProfileSettings.dashboard_rows), nav-row-order(); the editor: show-dashboard-rows,
 //                         dash-rows-tab/-items/-cursor/-col, dash-rows-open/-select-tab/-action
+//   Focus highlight       settings-focus-color/-width/-style/-opacity/-zoom → focus-color, focus-width,
+//                         focus-line-width, focus-press-width, focus-glow(-blur), focus-scale; the ring
+//                         helpers ring-width / glow-ring-width / glow-blur every focusable element uses
 //   Dashboard hero        settings-dashboard-hero ("off"/"band"/"background") + hero-background,
 //                         hero-a/-b + hero-front-a (crossfading layers), hero-active, hero-target(),
 //                         hero-request (hero.rs)
@@ -1518,6 +1521,49 @@ export global AppState {
     out property <float> text-scale: settings-text-size == "small" ? 0.9 : settings-text-size == "large" ? 1.15
         : settings-text-size == "extra-large" ? 1.3 : settings-text-size == "huge" ? 1.5 : 1.0;
     out property <length> row-chrome-h: 56px + 20px * (text-scale - 1.0);
+
+    // ── Focus highlight (Settings → Interface, per profile) ────────────────────────
+    // What every focus ring reads: focus-color (border colour), focus-width (the line while
+    // focused — rows, fields and menu entries always show it), focus-line-width (the same for
+    // elements that can glow — pictures, tiles, buttons, pills — 0 in the Glow style),
+    // focus-press-width (the press flash), focus-glow + focus-glow-blur (a drop shadow in
+    // focus-color, only on those opaque elements: under a see-through row it would flood it), and
+    // focus-scale (the zoom of a focused picture — cards, posters, tiles, cast photos).
+    in-out property <string> settings-focus-color: "white";
+    in-out property <string> settings-focus-width: "3";
+    in-out property <string> settings-focus-style: "line";
+    in-out property <string> settings-focus-opacity: "solid";
+    in-out property <string> settings-focus-zoom: "10";
+    property <color> focus-base: settings-focus-color == "blue" ? Theme.accent
+        : settings-focus-color == "gold" ? Theme.focus-gold
+        : settings-focus-color == "green" ? Theme.focus-green
+        : settings-focus-color == "red" ? Theme.focus-red : Theme.focus-white;
+    out property <color> focus-color: settings-focus-opacity == "see-through" ? focus-base.transparentize(0.4) : focus-base;
+    property <length> focus-thickness: settings-focus-width == "2" ? 2px
+        : settings-focus-width == "4" ? 4px : settings-focus-width == "6" ? 6px : 3px;
+    out property <length> focus-width: focus-thickness;
+    out property <length> focus-line-width: settings-focus-style == "glow" ? 0px : focus-thickness;
+    out property <length> focus-press-width: focus-thickness + 2px;
+    out property <bool> focus-glow: settings-focus-style != "line";
+    out property <length> focus-glow-blur: 8px + 3 * focus-thickness;
+    // The ring helpers every focusable element uses (CLAUDE.md → Keyboard / D-pad):
+    //   ring-width       rows, fields, menu entries — always a line; wrap in max(1px, …) for an
+    //                    element with a thin idle border
+    //   glow-ring-width  pictures, tiles, buttons, pills (opaque) — no line in the Glow style
+    //   glow-blur        their drop-shadow-blur (drop-shadow-color: focus-color)
+    // `pressed` = mouse press or the keyboard PressPulse (`ta.pressed || pulse.pulsing`).
+    public pure function ring-width(focused: bool, pressed: bool) -> length {
+        pressed ? focus-press-width : focused ? focus-width : 0px
+    }
+    public pure function glow-ring-width(focused: bool, pressed: bool) -> length {
+        pressed ? focus-press-width : focused ? focus-line-width : 0px
+    }
+    public pure function glow-blur(focused: bool) -> length {
+        focus-glow && focused ? focus-glow-blur : 0px
+    }
+    out property <float> focus-scale: settings-focus-zoom == "5" ? 1.05 : settings-focus-zoom == "10" ? 1.10
+        : settings-focus-zoom == "15" ? 1.15 : settings-focus-zoom == "20" ? 1.20
+        : settings-focus-zoom == "25" ? 1.25 : settings-focus-zoom == "30" ? 1.30 : 1.0;
 
     // ── Player seek step (Settings → Playback → Skipping) ───────────────────────
     in-out property <int> settings-seek-step-secs:       10;

@@ -23,6 +23,13 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **New: choose how the selection looks.** Settings → Interface has a focus
+  ring color (white, accent blue, gold, green, red), thickness (2–6px), style
+  (line, glow, or both — the glow is on posters, tiles and buttons; rows and
+  menus keep the line), and transparency. Every highlighted thing — cards,
+  buttons, menus, Settings rows, lists, the sidebar — now shows the same ring,
+  by default a solid 3px white line (thicker and brighter than before), and
+  the press flash follows it. Saved per profile.
 - **Improved: more text and card sizes.** Settings → Interface → Text size
   and Card size now go from Small to Huge: text Small (−10%), Normal, Large,
   Extra large, Huge (+50%); cards Small (−20%), Normal, Large, Extra large,

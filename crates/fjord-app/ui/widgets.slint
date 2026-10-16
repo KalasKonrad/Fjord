@@ -117,8 +117,10 @@ component VirtualKeyboardKey inherits Rectangle {
         : root.active ? Theme.accent
         : kb-focused ? Theme.surface-overlay
         : Theme.surface;
-    border-width: (ta.pressed || pulse.pulsing) ? 3px : (kb-focused ? 2px : 0px);
-    border-color: Theme.focus-border;
+    border-width: AppState.glow-ring-width(kb-focused, ta.pressed || pulse.pulsing);
+    drop-shadow-blur: AppState.glow-blur(kb-focused);
+    drop-shadow-color: AppState.focus-color;
+    border-color: AppState.focus-color;
     animate background, border-width {
         duration: 90ms * AppState.settings-animation-speed;
         easing: ease-out-expo;
@@ -311,8 +313,10 @@ export component FjordButton inherits Rectangle {
 
     height: 38px;
     border-radius: Theme.radius;
-    border-width: (ta.pressed || pulse.pulsing) ? 4px : (kbd-focused ? 2px : 0px);
-    border-color: Theme.focus-border;
+    border-width: AppState.glow-ring-width(kbd-focused, ta.pressed || pulse.pulsing);
+    drop-shadow-blur: AppState.glow-blur(kbd-focused);
+    drop-shadow-color: AppState.focus-color;
+    border-color: AppState.focus-color;
     background: !enabled ? Theme.surface-raised
         : ta.has-hover ? (danger ? #c53030 : Theme.accent-hover)
         : (danger ? Theme.error : Theme.accent);
@@ -370,8 +374,10 @@ export component TabButton inherits Rectangle {
     height: 34px;
     border-radius: Theme.radius;
     background: active ? Theme.accent : (ta.has-hover ? Theme.surface : transparent);
-    border-width: (ta.pressed || pulse.pulsing) ? 3px : (kbd-focused && active ? 2px : 0px);
-    border-color: Theme.focus-border;
+    border-width: AppState.glow-ring-width(kbd-focused && active, ta.pressed || pulse.pulsing);
+    drop-shadow-blur: AppState.glow-blur(kbd-focused && active);
+    drop-shadow-color: AppState.focus-color;
+    border-color: AppState.focus-color;
     animate border-width, background {
         duration: 90ms * AppState.settings-animation-speed;
         easing: ease-out-expo;
@@ -476,8 +482,8 @@ export component ConfirmDialog inherits Rectangle {
                     height: 38px;
                     border-radius: Theme.radius;
                     background: transparent;
-                    border-width: (cancel-ta.pressed || cancel-pulse.pulsing) ? 4px : (root.focused == 0 ? 2px : 1px);
-                    border-color: root.focused == 0 ? Theme.focus-border : Theme.border-strong;
+                    border-width: max(1px, AppState.ring-width(root.focused == 0, cancel-ta.pressed || cancel-pulse.pulsing));
+                    border-color: root.focused == 0 ? AppState.focus-color : Theme.border-strong;
                     animate border-width {
                         duration: 90ms * AppState.settings-animation-speed;
                         easing: ease-out-expo;
@@ -522,8 +528,10 @@ export component IconCircleButton inherits Rectangle {
     width: 38px;
     height: 38px;
     border-radius: 19px;
-    border-width: (ta.pressed || pulse.pulsing) ? 4px : (kbd-focused ? 2px : 0px);
-    border-color: Theme.focus-border;
+    border-width: AppState.glow-ring-width(kbd-focused, ta.pressed || pulse.pulsing);
+    drop-shadow-blur: AppState.glow-blur(kbd-focused);
+    drop-shadow-color: AppState.focus-color;
+    border-color: AppState.focus-color;
     background: active ? Theme.accent
         : ta.has-hover ? Theme.surface-overlay
         : Theme.surface-raised;
@@ -583,8 +591,8 @@ export component NavItem inherits Rectangle {
         duration: 140ms * AppState.settings-animation-speed;
         easing: ease;
     }
-    border-width: (ta.pressed || pulse.pulsing) ? 3px : 0px;
-    border-color: Theme.focus-border;
+    border-width: AppState.ring-width(pulse.active, ta.pressed || pulse.pulsing);
+    border-color: AppState.focus-color;
     animate border-width {
         duration: 90ms * AppState.settings-animation-speed;
         easing: ease-out-expo;
@@ -636,8 +644,8 @@ export component BrowseItem inherits Rectangle {
     height: 42px;
     border-radius: Theme.radius;
     background: { let hov = ta.has-hover; selected ? Theme.accent-muted : (hov ? Theme.surface-raised : #00000000) };
-    border-width: (ta.pressed || pulse.pulsing) ? 3px : 0px;
-    border-color: Theme.focus-border;
+    border-width: AppState.ring-width(pulse.active, ta.pressed || pulse.pulsing);
+    border-color: AppState.focus-color;
     animate border-width {
         duration: 90ms * AppState.settings-animation-speed;
         easing: ease-out-expo;
@@ -798,6 +806,10 @@ export component MediaCard inherits Rectangle {
         poster-rect := Rectangle {
             border-radius: Theme.radius;
             background: Theme.surface-raised;
+            // Glow style: the poster casts it (opaque — a shadow under the transparent ring overlay
+            // would flood the poster).
+            drop-shadow-blur: AppState.glow-blur(root.focused);
+            drop-shadow-color: AppState.focus-color;
             clip: true;
 
             // No fade-in on the poster: grids reveal posters one by one as their fetches finish,
@@ -1019,8 +1031,8 @@ export component MediaCard inherits Rectangle {
         width: root.width;
         height: root.height;
         border-radius: Theme.radius;
-        border-width: (ta.pressed || pulse.pulsing) ? 4px : (focused ? 2px : 0px);
-        border-color: Theme.focus-border;
+        border-width: AppState.glow-ring-width(focused, ta.pressed || pulse.pulsing);
+        border-color: AppState.focus-color;
         background: transparent;
         animate border-width {
             duration: 90ms * AppState.settings-animation-speed;
@@ -1156,8 +1168,8 @@ export component SettingsDropdown inherits Rectangle {
     height: 34px;
     border-radius: Theme.radius;
     background: ta.has-hover ? Theme.surface-overlay : Theme.surface-raised;
-    border-width: ta.pressed ? 3px : 1px;
-    border-color: ta.pressed ? Theme.focus-border : Theme.border;
+    border-width: max(1px, AppState.ring-width(false, ta.pressed));
+    border-color: ta.pressed ? AppState.focus-color : Theme.border;
     animate border-width {
         duration: 90ms * AppState.settings-animation-speed;
         easing: ease-out-expo;
@@ -1261,8 +1273,8 @@ export component SettingsRow inherits Rectangle {
             ? Theme.accent-muted
             : (hov ? Theme.surface : transparent)
     };
-    border-width: (ta.pressed || pulse.pulsing) ? 3px : 0px;
-    border-color: Theme.focus-border;
+    border-width: AppState.ring-width(pulse.active, ta.pressed || pulse.pulsing);
+    border-color: AppState.focus-color;
     animate border-width {
         duration: 90ms * AppState.settings-animation-speed;
         easing: ease-out-expo;
@@ -1343,8 +1355,8 @@ export component FieldFocusWrap inherits Rectangle {
     in property <bool> focused: false;
     height: 40px;
     border-radius: Theme.radius;
-    border-width: root.focused ? 2px : 0px;
-    border-color: Theme.focus-border;
+    border-width: AppState.ring-width(root.focused, false);
+    border-color: AppState.focus-color;
     animate border-width {
         duration: 90ms * AppState.settings-animation-speed;
         easing: ease-out-expo;
@@ -1510,8 +1522,10 @@ export component CastRow inherits VerticalLayout {
                 Rectangle {
                     height: 120px;
                     border-radius: Theme.radius;
-                    border-width: (ta.pressed || cast-pulse.pulsing) ? 4px : (root.focused-idx == i ? 2px : 0px);
-                    border-color: Theme.focus-border;
+                    border-width: AppState.glow-ring-width(root.focused-idx == i, ta.pressed || cast-pulse.pulsing);
+                    drop-shadow-blur: AppState.glow-blur(root.focused-idx == i);
+                    drop-shadow-color: AppState.focus-color;
+                    border-color: AppState.focus-color;
                     background: Theme.surface-raised;
                     clip: true;
                     animate border-width {
@@ -1572,8 +1586,8 @@ export component StorylineSection inherits VerticalLayout {
     hdr := Rectangle {
         height: 44px;
         background: ta.has-hover ? Theme.surface : transparent;
-        border-width: (ta.pressed || story-pulse.pulsing) ? 4px : (root.kbd-focused ? 2px : 0px);
-        border-color: Theme.focus-border;
+        border-width: AppState.ring-width(root.kbd-focused, ta.pressed || story-pulse.pulsing);
+        border-color: AppState.focus-color;
         border-radius: Theme.radius;
         animate border-width {
             duration: 90ms * AppState.settings-animation-speed;
@@ -1725,8 +1739,8 @@ export component MiniPlayerBar inherits Rectangle {
         y: 0;
         width: root.width;
         height: root.height;
-        border-width: 2px;
-        border-color: Theme.focus-border;
+        border-width: AppState.ring-width(true, false);
+        border-color: AppState.focus-color;
         border-radius: 0px;
         background: transparent;
     }
@@ -1873,8 +1887,8 @@ export component MusicPlayerBar inherits Rectangle {
 
             Rectangle {
                 border-radius: Theme.radius;
-                border-width: (ta-left.pressed || left-pulse.pulsing) ? 4px : (AppState.music-bar-focused == 0 ? 2px : 0px);
-                border-color: Theme.focus-border;
+                border-width: AppState.ring-width(AppState.music-bar-focused == 0, ta-left.pressed || left-pulse.pulsing);
+                border-color: AppState.focus-color;
                 background: ta-left.has-hover ? Theme.surface-overlay : transparent;
                 animate border-width {
                     duration: 90ms * AppState.settings-animation-speed;
@@ -1961,8 +1975,8 @@ export component MusicPlayerBar inherits Rectangle {
                         width: parent.width;
                         height: parent.height;
                         border-radius: 18px;
-                        border-width: (ta-pp.pressed || pp-pulse.pulsing) ? 4px : (AppState.music-bar-focused == 1 ? 2px : 0px);
-                        border-color: Theme.focus-border;
+                        border-width: AppState.ring-width(AppState.music-bar-focused == 1, ta-pp.pressed || pp-pulse.pulsing);
+                        border-color: AppState.focus-color;
                         background: ta-pp.has-hover ? Theme.surface-overlay : transparent;
                         animate border-width {
                             duration: 90ms * AppState.settings-animation-speed;
@@ -1996,8 +2010,8 @@ export component MusicPlayerBar inherits Rectangle {
                         width: parent.width;
                         height: parent.height;
                         border-radius: 18px;
-                        border-width: (ta-stop.pressed || stop-pulse.pulsing) ? 4px : (AppState.music-bar-focused == 2 ? 2px : 0px);
-                        border-color: Theme.focus-border;
+                        border-width: AppState.ring-width(AppState.music-bar-focused == 2, ta-stop.pressed || stop-pulse.pulsing);
+                        border-color: AppState.focus-color;
                         background: ta-stop.has-hover ? Theme.surface-overlay : transparent;
                         animate border-width {
                             duration: 90ms * AppState.settings-animation-speed;
@@ -2286,8 +2300,8 @@ export component QueuePanel inherits Rectangle {
                                     : i == AppState.queue-panel-cursor ? Theme.surface-overlay
                                     : row-ta.has-hover ? #ffffff08
                                     : transparent;
-                                border-width: (row-ta.pressed || row-pulse.pulsing) ? 3px : 0px;
-                                border-color: Theme.focus-border;
+                                border-width: AppState.ring-width(row-pulse.active, row-ta.pressed || row-pulse.pulsing);
+                                border-color: AppState.focus-color;
                                 animate border-width {
                                     duration: 90ms * AppState.settings-animation-speed;
                                     easing: ease-out-expo;
@@ -2648,8 +2662,8 @@ export component SidebarProfileMenu inherits Rectangle {
                 height: 44px;
                 border-radius: Theme.radius;
                 background: AppState.sidebar-profile-menu-focused == i ? Theme.accent-muted : transparent;
-                border-width: (row-ta.pressed || row-pulse.pulsing) ? 3px : 0px;
-                border-color: Theme.focus-border;
+                border-width: AppState.ring-width(row-pulse.active, row-ta.pressed || row-pulse.pulsing);
+                border-color: AppState.focus-color;
                 animate border-width {
                     duration: 90ms * AppState.settings-animation-speed;
                     easing: ease-out-expo;

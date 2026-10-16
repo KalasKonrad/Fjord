@@ -1,5 +1,5 @@
 // ── fjord-app · theme.slint ──────────────────────────────────────────────────
-//   Theme           global design tokens: colors (incl. focus-border, master-ring), spacing,
+//   Theme           global design tokens: colors (incl. focus-white/-gold/-green/-red, master-ring), spacing,
 //                   radius, font sizes
 //   Structs shared between Rust and Slint (one line each; details on the struct):
 //   DashRowItem     one row in the Dashboard rows editor (title, shown)
@@ -41,13 +41,17 @@ export global Theme {
     out property <color> accent-hover:    #0090c4;
     out property <color> accent-muted:    #00a4dc40;  // ~25 % alpha
 
-    // The one keyboard-focus/press border colour, everywhere (solid accent blended into
-    // accent-tinted backgrounds like a focused SettingsRow or a checked ToggleSwitch).
-    out property <color> focus-border:    #ffffff99;
+    // Focus ring colours (Settings → Interface → Focus ring color; AppState.focus-color picks one
+    // and applies the transparency). "Accent blue" is `accent`. The gold is a lighter yellow than
+    // master-ring so a focused master tile still shows both.
+    out property <color> focus-white:     #ffffff;
+    out property <color> focus-gold:      #ffd60a;
+    out property <color> focus-green:     #34c759;
+    out property <color> focus-red:       #ff5a5a;
 
     // Permanent ring on the household's master tile (ProfilePickerScreen). A different colour
-    // from focus-border — both can show at once; gold collides with no other meaning
-    // (accent = blue, error = red).
+    // from the default focus ring (white) — both can show at once; gold collides with no other
+    // meaning (accent = blue, error = red).
     out property <color> master-ring:     #f0b429;
 
     // ── Text ─────────────────────────────────────────────────────────────────

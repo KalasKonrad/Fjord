@@ -102,8 +102,8 @@ component TrackPanel inherits Rectangle {
                         : hov ? Theme.surface
                         : transparent
                 };
-                border-width: (off-ta.pressed || off-pulse.pulsing) ? 3px : 0px;
-                border-color: Theme.focus-border;
+                border-width: AppState.ring-width(off-pulse.active, off-ta.pressed || off-pulse.pulsing);
+                border-color: AppState.focus-color;
                 animate border-width {
                     duration: 90ms * AppState.settings-animation-speed;
                     easing: ease-out-expo;
@@ -143,8 +143,8 @@ component TrackPanel inherits Rectangle {
                         : hov ? Theme.surface
                         : transparent
                 };
-                border-width: (row-ta.pressed || row-pulse.pulsing) ? 3px : 0px;
-                border-color: Theme.focus-border;
+                border-width: AppState.ring-width(row-pulse.active, row-ta.pressed || row-pulse.pulsing);
+                border-color: AppState.focus-color;
                 animate border-width {
                     duration: 90ms * AppState.settings-animation-speed;
                     easing: ease-out-expo;
