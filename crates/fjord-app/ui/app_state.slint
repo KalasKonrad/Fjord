@@ -155,6 +155,7 @@ import {
     VideoRect,
     DashRowItem,
     DashRow,
+    MenuRow,
     HeroInfo,
 } from "theme.slint";
 import { StandardListView } from "std-widgets.slint";
@@ -1367,6 +1368,10 @@ export global AppState {
     // playlist track), else -1 (reset by every open): shows row 9 "Remove from Playlist" — the remote's
     // way to do what the mouse's ✕ / the Delete key do.
     in-out property <int> context-menu-playlist-index: -1;
+    // The open menu's rows, top to bottom (context_menu.rs menu_rows; pure, so the menu follows the
+    // properties it reads while open) and running one (Enter goes through the same Rust function).
+    pure callback context-menu-rows() -> [MenuRow];
+    callback context-menu-activate(int);
     in-out property <int> context-menu-focused:     0;   // 0=Resume (if resume-pct>0 && !played) 1=Play from Start 2=Mark Played 3=Favourite 4=View Details
 
     // ── Key binding editor state ──────────────────────────────────────────────
