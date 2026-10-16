@@ -41,8 +41,8 @@ export component BrowseScreen inherits Rectangle {
                     horizontal-stretch: 1;
                     height: 36px;
                     border-radius: Theme.radius;
-                    border-width: search-ta.pressed ? 4px : (AppState.browse-header-focused ? 2px : 1px);
-                    border-color: AppState.browse-header-focused ? Theme.focus-border : Theme.border;
+                    border-width: max(1px, AppState.ring-width(AppState.browse-header-focused, search-ta.pressed));
+                    border-color: AppState.browse-header-focused ? AppState.focus-color : Theme.border;
                     background: Theme.bg;
                     animate border-width {
                         duration: 90ms * AppState.settings-animation-speed;

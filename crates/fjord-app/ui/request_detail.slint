@@ -558,9 +558,10 @@ export component RequestOptionsOverlay inherits Rectangle {
                         height: 40px;
                         border-radius: Theme.radius;
                         background: !AppState.request-detail-want-4k ? Theme.accent : Theme.surface-overlay;
-                        border-width: (twok-ta.pressed || twok-pulse.pulsing) ? 4px
-                            : (AppState.request-options-zone == 0 && !AppState.request-detail-want-4k ? 2px : 1px);
-                        border-color: !AppState.request-detail-want-4k ? #ffffff99 : Theme.border-strong;
+                        border-width: max(1px, AppState.glow-ring-width(AppState.request-options-zone == 0 && !AppState.request-detail-want-4k, twok-ta.pressed || twok-pulse.pulsing));
+                        drop-shadow-blur: AppState.glow-blur(AppState.request-options-zone == 0 && !AppState.request-detail-want-4k);
+                        drop-shadow-color: AppState.focus-color;
+                        border-color: (twok-ta.pressed || twok-pulse.pulsing || (AppState.request-options-zone == 0 && !AppState.request-detail-want-4k)) ? AppState.focus-color : Theme.border-strong;
                         animate border-width, background {
                             duration: 90ms * AppState.settings-animation-speed;
                             easing: ease-out-expo;
@@ -593,9 +594,10 @@ export component RequestOptionsOverlay inherits Rectangle {
                         height: 40px;
                         border-radius: Theme.radius;
                         background: AppState.request-detail-want-4k ? Theme.accent : Theme.surface-overlay;
-                        border-width: (fourk-ta.pressed || fourk-pulse.pulsing) ? 4px
-                            : (AppState.request-options-zone == 0 && AppState.request-detail-want-4k ? 2px : 1px);
-                        border-color: AppState.request-detail-want-4k ? #ffffff99 : Theme.border-strong;
+                        border-width: max(1px, AppState.glow-ring-width(AppState.request-options-zone == 0 && AppState.request-detail-want-4k, fourk-ta.pressed || fourk-pulse.pulsing));
+                        drop-shadow-blur: AppState.glow-blur(AppState.request-options-zone == 0 && AppState.request-detail-want-4k);
+                        drop-shadow-color: AppState.focus-color;
+                        border-color: (fourk-ta.pressed || fourk-pulse.pulsing || (AppState.request-options-zone == 0 && AppState.request-detail-want-4k)) ? AppState.focus-color : Theme.border-strong;
                         animate border-width, background {
                             duration: 90ms * AppState.settings-animation-speed;
                             easing: ease-out-expo;
@@ -661,13 +663,14 @@ export component RequestOptionsOverlay inherits Rectangle {
                             height: 36px;
                             border-radius: self.height / 2;
                             background: p.id == AppState.request-detail-selected-profile-id ? Theme.accent : Theme.surface-overlay;
-                            border-width: (profile-ta.pressed || profile-pulse.pulsing) ? 4px
-                                : (AppState.request-options-zone == 1 && AppState.request-detail-focused-profile == i ? 2px : 1px);
-                            // Focused or selected → Theme.focus-border (the app-wide focus colour); the focused state
+                            border-width: max(1px, AppState.glow-ring-width(AppState.request-options-zone == 1 && AppState.request-detail-focused-profile == i, profile-ta.pressed || profile-pulse.pulsing));
+                            drop-shadow-blur: AppState.glow-blur(AppState.request-options-zone == 1 && AppState.request-detail-focused-profile == i);
+                            drop-shadow-color: AppState.focus-color;
+                            // Focused or selected → AppState.focus-color (the app-wide focus colour); the focused state
                             // used to only thicken the gray border, too hard to see.
                             border-color: (p.id == AppState.request-detail-selected-profile-id
                                 || (AppState.request-options-zone == 1 && AppState.request-detail-focused-profile == i))
-                                ? Theme.focus-border : Theme.border-strong;
+                                ? AppState.focus-color : Theme.border-strong;
                             animate border-width, background {
                                 duration: 90ms * AppState.settings-animation-speed;
                                 easing: ease-out-expo;
@@ -736,17 +739,18 @@ export component RequestOptionsOverlay inherits Rectangle {
                         spacing: 16px;
                         alignment: start;
 
-                        // Pill chips with an always-visible border (subtle idle, focus-border when focused or
+                        // Pill chips with an always-visible border (subtle idle, focus colour when focused or
                         // selected) — borderless chips read as gray blobs.
                         for t[i] in AppState.request-detail-tags: Rectangle {
                             width: 110px;
                             height: 36px;
                             border-radius: self.height / 2;
                             background: t.selected ? Theme.accent : Theme.surface-overlay;
-                            border-width: (tag-ta.pressed || tag-pulse.pulsing) ? 4px
-                                : (AppState.request-options-zone == 2 && AppState.request-detail-focused-tag == i ? 2px : 1px);
+                            border-width: max(1px, AppState.glow-ring-width(AppState.request-options-zone == 2 && AppState.request-detail-focused-tag == i, tag-ta.pressed || tag-pulse.pulsing));
+                            drop-shadow-blur: AppState.glow-blur(AppState.request-options-zone == 2 && AppState.request-detail-focused-tag == i);
+                            drop-shadow-color: AppState.focus-color;
                             border-color: (t.selected || (AppState.request-options-zone == 2 && AppState.request-detail-focused-tag == i))
-                                ? Theme.focus-border : Theme.border-strong;
+                                ? AppState.focus-color : Theme.border-strong;
                             animate border-width, background {
                                 duration: 90ms * AppState.settings-animation-speed;
                                 easing: ease-out-expo;
@@ -834,9 +838,10 @@ export component RequestOptionsOverlay inherits Rectangle {
                                 border-radius: Theme.radius;
                                 clip: true;
                                 background: Theme.surface-overlay;
-                                border-width: (season-ta.pressed || season-pulse.pulsing) ? 4px
-                                    : (AppState.request-options-zone == 3 && AppState.request-detail-focused-season == i ? 2px : 0px);
-                                border-color: Theme.focus-border;
+                                border-width: AppState.glow-ring-width(AppState.request-options-zone == 3 && AppState.request-detail-focused-season == i, season-ta.pressed || season-pulse.pulsing);
+                                drop-shadow-blur: AppState.glow-blur(AppState.request-options-zone == 3 && AppState.request-detail-focused-season == i);
+                                drop-shadow-color: AppState.focus-color;
+                                border-color: AppState.focus-color;
                                 animate border-width {
                                     duration: 90ms * AppState.settings-animation-speed;
                                     easing: ease-out-expo;
@@ -928,9 +933,8 @@ export component RequestOptionsOverlay inherits Rectangle {
                     height: 38px;
                     border-radius: Theme.radius;
                     background: transparent;
-                    border-width: (cancel-ta.pressed || cancel-pulse.pulsing) ? 4px
-                        : (AppState.request-options-zone == 4 && AppState.request-options-confirm-focused == 0 ? 2px : 1px);
-                    border-color: AppState.request-options-zone == 4 && AppState.request-options-confirm-focused == 0 ? Theme.focus-border : Theme.border-strong;
+                    border-width: max(1px, AppState.ring-width(AppState.request-options-zone == 4 && AppState.request-options-confirm-focused == 0, cancel-ta.pressed || cancel-pulse.pulsing));
+                    border-color: AppState.request-options-zone == 4 && AppState.request-options-confirm-focused == 0 ? AppState.focus-color : Theme.border-strong;
                     animate border-width {
                         duration: 90ms * AppState.settings-animation-speed;
                         easing: ease-out-expo;

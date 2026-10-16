@@ -48,8 +48,10 @@ component MethodTab inherits Rectangle {
     // Persistent 2px ring + 3px press flash (VirtualKeyboardKey's convention) — only on the
     // ACTIVE tab: all four tabs share one zone (1) and Left/Right switch the active tab, so
     // kbd-focused alone would ring every tab at once.
-    border-width: (ta.pressed || pulse.pulsing) ? 3px : (kbd-focused && active ? 2px : 0px);
-    border-color: Theme.focus-border;
+    border-width: AppState.glow-ring-width(kbd-focused && active, ta.pressed || pulse.pulsing);
+    drop-shadow-blur: AppState.glow-blur(kbd-focused && active);
+    drop-shadow-color: AppState.focus-color;
+    border-color: AppState.focus-color;
     animate border-width, background {
         duration: 90ms * AppState.settings-animation-speed;
         easing: ease-out-expo;

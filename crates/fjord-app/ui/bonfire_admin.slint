@@ -153,8 +153,8 @@ export component BonfireAdminScreen inherits Rectangle {
                         background: (AppState.bonfire-admin-cursor == i) ? Theme.surface-overlay
                             : row-ta.has-hover ? #ffffff08
                             : transparent;
-                        border-width: (row-ta.pressed || row-pulse.pulsing) ? 3px : 0px;
-                        border-color: Theme.focus-border;
+                        border-width: AppState.ring-width(row-pulse.active, row-ta.pressed || row-pulse.pulsing);
+                        border-color: AppState.focus-color;
                         animate border-width {
                             duration: 90ms * AppState.settings-animation-speed;
                             easing: ease-out-expo;
@@ -262,10 +262,8 @@ export component BonfireAdminScreen inherits Rectangle {
                                             active: AppState.bonfire-admin-cursor == i && AppState.bonfire-admin-col == 0;
                                         }
 
-                                        border-width: (reset-ta.pressed || reset-pulse.pulsing) ? 3px
-                                            : (AppState.bonfire-admin-cursor == i && AppState.bonfire-admin-col == 0) ? 2px
-                                            : 1px;
-                                        border-color: (AppState.bonfire-admin-cursor == i && AppState.bonfire-admin-col == 0) ? Theme.focus-border : Theme.border-strong;
+                                        border-width: max(1px, AppState.ring-width(AppState.bonfire-admin-cursor == i && AppState.bonfire-admin-col == 0, reset-ta.pressed || reset-pulse.pulsing));
+                                        border-color: (AppState.bonfire-admin-cursor == i && AppState.bonfire-admin-col == 0) ? AppState.focus-color : Theme.border-strong;
                                         Text {
                                             text: "Reset PIN";
                                             color: Theme.error;
@@ -308,10 +306,10 @@ export component BonfireAdminScreen inherits Rectangle {
                                                 active: AppState.bonfire-admin-cursor == i && AppState.bonfire-admin-col == 1;
                                             }
 
-                                            border-width: (limit-ta.pressed || limit-pulse.pulsing) ? 3px
-                                                : (AppState.bonfire-admin-cursor == i && AppState.bonfire-admin-col == 1) ? 2px
-                                                : 0px;
-                                            border-color: Theme.focus-border;
+                                            border-width: AppState.glow-ring-width(AppState.bonfire-admin-cursor == i && AppState.bonfire-admin-col == 1, limit-ta.pressed || limit-pulse.pulsing);
+                                            drop-shadow-blur: AppState.glow-blur(AppState.bonfire-admin-cursor == i && AppState.bonfire-admin-col == 1);
+                                            drop-shadow-color: AppState.focus-color;
+                                            border-color: AppState.focus-color;
                                             Text {
                                                 // Slint's ternary requires both branches to share
                                                 // a type — "" + row.max-profiles coerces the int
@@ -374,8 +372,8 @@ export component BonfireAdminScreen inherits Rectangle {
                 for row[i] in AppState.bonfire-admin-audit-rows: Rectangle {
                     height: root.row-h;
                     background: (AppState.bonfire-admin-cursor == i) ? Theme.surface-overlay : transparent;
-                    border-width: (audit-pulse.pulsing) ? 3px : 0px;
-                    border-color: Theme.focus-border;
+                    border-width: AppState.ring-width(audit-pulse.active, audit-pulse.pulsing);
+                    border-color: AppState.focus-color;
                     animate border-width {
                         duration: 90ms * AppState.settings-animation-speed;
                         easing: ease-out-expo;

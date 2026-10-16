@@ -26,8 +26,8 @@ component CalendarDayCell inherits Rectangle {
 
     border-radius: Theme.radius;
     background: root.kbd-focused ? Theme.accent-muted : (ta.has-hover && root.day > 0 ? Theme.surface-overlay : transparent);
-    border-width: (ta.pressed || pulse.pulsing) ? 3px : (root.kbd-focused ? 2px : 0px);
-    border-color: Theme.focus-border;
+    border-width: AppState.ring-width(root.kbd-focused, ta.pressed || pulse.pulsing);
+    border-color: AppState.focus-color;
     animate border-width {
         duration: 90ms * AppState.settings-animation-speed;
         easing: ease-out-expo;
@@ -215,8 +215,8 @@ export component CalendarScreen inherits Rectangle {
                     height: 52px;
                     border-radius: Theme.radius;
                     background: AppState.calendar-day-popup-cursor == idx ? Theme.accent-muted : (pta.has-hover ? Theme.surface-overlay : transparent);
-                    border-width: (pta.pressed || ppulse.pulsing) ? 3px : (AppState.calendar-day-popup-cursor == idx ? 2px : 0px);
-                    border-color: Theme.focus-border;
+                    border-width: AppState.ring-width(AppState.calendar-day-popup-cursor == idx, pta.pressed || ppulse.pulsing);
+                    border-color: AppState.focus-color;
                     animate border-width {
                         duration: 90ms * AppState.settings-animation-speed;
                         easing: ease-out-expo;

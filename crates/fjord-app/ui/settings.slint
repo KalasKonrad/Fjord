@@ -122,6 +122,9 @@ export component SettingsScreen inherits Rectangle {
 
                 // Section list — keyed on sect-keys[i]; sect-labels[i] is the display text.
                 for label[i] in sect-labels: Rectangle {
+                    // Keyboard focus is on this section (left pane), not just "selected".
+                    property <bool> sect-kb: AppState.settings-section == sect-keys[i]
+                        && (sect-keys[i] == "keybindings" ? AppState.keybinding-focused < 0 : AppState.settings-focused == "");
                     height: 44px;
                     border-radius: Theme.radius;
                     background: {
@@ -132,15 +135,15 @@ export component SettingsScreen inherits Rectangle {
                             : (AppState.settings-focused == "" ? Theme.accent : Theme.accent-muted))
                             : (hov ? Theme.surface-raised : transparent)
                     };
-                    border-width: (sect-ta.pressed || sect-pulse.pulsing) ? 3px : 0px;
-                    border-color: Theme.focus-border;
+                    border-width: AppState.ring-width(sect-pulse.active, sect-ta.pressed || sect-pulse.pulsing);
+                    border-color: AppState.focus-color;
                     animate border-width {
                         duration: 90ms * AppState.settings-animation-speed;
                         easing: ease-out-expo;
                     }
                     sect-pulse := PressPulse {
                         trigger: AppState.kb-activate-pulse;
-                        active: AppState.settings-section == sect-keys[i];
+                        active: sect-kb;
                     }
 
                     sect-ta := TouchArea {
@@ -1357,6 +1360,86 @@ export component SettingsScreen inherits Rectangle {
                         }
 
                         SettingsRow {
+                            key: "ui.focus_color";
+                            per-profile: true;
+                            title: "Focus ring color";
+                            subtitle: "Color of the ring around whatever is selected — saved for this profile";
+                            SettingsDropdown {
+                                model: ["White", "Accent blue", "Gold", "Green", "Red"];
+                                current-value: AppState.settings-focus-color == "blue" ? "Accent blue" : AppState.settings-focus-color == "gold" ? "Gold" : AppState.settings-focus-color == "green" ? "Green" : AppState.settings-focus-color == "red" ? "Red" : "White";
+                                selected(v) => {
+                                    AppState.settings-focus-color = v == "Accent blue" ? "blue" : v == "Gold" ? "gold" : v == "Green" ? "green" : v == "Red" ? "red" : "white";
+                                    AppState.settings-changed();
+                                    AppState.refocus();
+                                }
+                            }
+                        }
+
+                        SettingsRow {
+                            key: "ui.focus_width";
+                            per-profile: true;
+                            title: "Focus ring thickness";
+                            subtitle: "How thick the ring around the selected item is — saved for this profile";
+                            SettingsDropdown {
+                                model: ["Thin (2px)", "Medium (3px)", "Thick (4px)", "Extra thick (6px)"];
+                                current-value: AppState.settings-focus-width == "3" ? "Medium (3px)" : AppState.settings-focus-width == "4" ? "Thick (4px)" : AppState.settings-focus-width == "6" ? "Extra thick (6px)" : "Thin (2px)";
+                                selected(v) => {
+                                    AppState.settings-focus-width = v == "Medium (3px)" ? "3" : v == "Thick (4px)" ? "4" : v == "Extra thick (6px)" ? "6" : "2";
+                                    AppState.settings-changed();
+                                    AppState.refocus();
+                                }
+                            }
+                        }
+
+                        SettingsRow {
+                            key: "ui.focus_style";
+                            per-profile: true;
+                            title: "Focus ring style";
+                            subtitle: "A line around the selected item, a soft glow, or both — saved for this profile";
+                            SettingsDropdown {
+                                model: ["Line", "Glow", "Line and glow"];
+                                current-value: AppState.settings-focus-style == "glow" ? "Glow" : AppState.settings-focus-style == "both" ? "Line and glow" : "Line";
+                                selected(v) => {
+                                    AppState.settings-focus-style = v == "Glow" ? "glow" : v == "Line and glow" ? "both" : "line";
+                                    AppState.settings-changed();
+                                    AppState.refocus();
+                                }
+                            }
+                        }
+
+                        SettingsRow {
+                            key: "ui.focus_opacity";
+                            per-profile: true;
+                            title: "Focus ring transparency";
+                            subtitle: "Solid, or see-through so the ring is softer — saved for this profile";
+                            SettingsDropdown {
+                                model: ["Solid", "See-through"];
+                                current-value: AppState.settings-focus-opacity == "see-through" ? "See-through" : "Solid";
+                                selected(v) => {
+                                    AppState.settings-focus-opacity = v == "See-through" ? "see-through" : "solid";
+                                    AppState.settings-changed();
+                                    AppState.refocus();
+                                }
+                            }
+                        }
+
+                        SettingsRow {
+                            key: "ui.focus_zoom";
+                            per-profile: true;
+                            title: "Zoom on the selected picture";
+                            subtitle: "How much a selected poster, cover, photo or profile tile grows — saved for this profile";
+                            SettingsDropdown {
+                                model: ["Off", "5%", "10%", "15%", "20%", "25%", "30%"];
+                                current-value: AppState.settings-focus-zoom == "5" ? "5%" : AppState.settings-focus-zoom == "10" ? "10%" : AppState.settings-focus-zoom == "15" ? "15%" : AppState.settings-focus-zoom == "20" ? "20%" : AppState.settings-focus-zoom == "25" ? "25%" : AppState.settings-focus-zoom == "30" ? "30%" : "Off";
+                                selected(v) => {
+                                    AppState.settings-focus-zoom = v == "5%" ? "5" : v == "10%" ? "10" : v == "15%" ? "15" : v == "20%" ? "20" : v == "25%" ? "25" : v == "30%" ? "30" : "0";
+                                    AppState.settings-changed();
+                                    AppState.refocus();
+                                }
+                            }
+                        }
+
+                        SettingsRow {
                             key: "general.video_behind";
                             title: "Video in background";
                             subtitle: "Show video behind the UI when you press Back during playback";
@@ -1525,8 +1608,8 @@ export component SettingsScreen inherits Rectangle {
                             background: AppState.settings-focused == "profiles.manage_profiles" ? Theme.accent-muted
                                 : (manage-ta.has-hover ? Theme.surface : transparent);
                             height: 48px;
-                            border-width: (manage-ta.pressed || manage-pulse.pulsing) ? 3px : 0px;
-                            border-color: Theme.focus-border;
+                            border-width: AppState.ring-width(manage-pulse.active, manage-ta.pressed || manage-pulse.pulsing);
+                            border-color: AppState.focus-color;
                             animate border-width {
                                 duration: 90ms * AppState.settings-animation-speed;
                                 easing: ease-out-expo;
@@ -1612,8 +1695,8 @@ export component SettingsScreen inherits Rectangle {
                             background: AppState.settings-focused == "profiles.add_account" ? Theme.accent-muted
                                 : (addacct-ta.has-hover ? Theme.surface : transparent);
                             height: 48px;
-                            border-width: (addacct-ta.pressed || addacct-pulse.pulsing) ? 3px : 0px;
-                            border-color: Theme.focus-border;
+                            border-width: AppState.ring-width(addacct-pulse.active, addacct-ta.pressed || addacct-pulse.pulsing);
+                            border-color: AppState.focus-color;
                             animate border-width {
                                 duration: 90ms * AppState.settings-animation-speed;
                                 easing: ease-out-expo;
@@ -1658,8 +1741,8 @@ export component SettingsScreen inherits Rectangle {
                             background: AppState.settings-focused == "profiles.sign_out" ? Theme.accent-muted
                                 : (signout-ta.has-hover ? Theme.surface : transparent);
                             height: 48px;
-                            border-width: (signout-ta.pressed || signout-pulse.pulsing) ? 3px : 0px;
-                            border-color: Theme.focus-border;
+                            border-width: AppState.ring-width(signout-pulse.active, signout-ta.pressed || signout-pulse.pulsing);
+                            border-color: AppState.focus-color;
                             animate border-width {
                                 duration: 90ms * AppState.settings-animation-speed;
                                 easing: ease-out-expo;
@@ -1695,8 +1778,8 @@ export component SettingsScreen inherits Rectangle {
                             background: AppState.settings-focused == "profiles.bonfire_group" ? Theme.accent-muted
                                 : (bonfire-group-ta.has-hover ? Theme.surface : transparent);
                             height: 48px;
-                            border-width: (bonfire-group-ta.pressed || bonfire-group-pulse.pulsing) ? 3px : 0px;
-                            border-color: Theme.focus-border;
+                            border-width: AppState.ring-width(bonfire-group-pulse.active, bonfire-group-ta.pressed || bonfire-group-pulse.pulsing);
+                            border-color: AppState.focus-color;
                             animate border-width {
                                 duration: 90ms * AppState.settings-animation-speed;
                                 easing: ease-out-expo;
@@ -1734,8 +1817,8 @@ export component SettingsScreen inherits Rectangle {
                             background: AppState.settings-focused == "profiles.bonfire_admin" ? Theme.accent-muted
                                 : (bonfire-admin-ta.has-hover ? Theme.surface : transparent);
                             height: 48px;
-                            border-width: (bonfire-admin-ta.pressed || bonfire-admin-pulse.pulsing) ? 3px : 0px;
-                            border-color: Theme.focus-border;
+                            border-width: AppState.ring-width(bonfire-admin-pulse.active, bonfire-admin-ta.pressed || bonfire-admin-pulse.pulsing);
+                            border-color: AppState.focus-color;
                             animate border-width {
                                 duration: 90ms * AppState.settings-animation-speed;
                                 easing: ease-out-expo;
@@ -1791,8 +1874,8 @@ export component SettingsScreen inherits Rectangle {
                             background: AppState.keybinding-focused == i
                                 ? (AppState.keybinding-rebinding ? Theme.accent : Theme.accent-muted)
                                 : (kb-ta.has-hover ? Theme.surface : transparent);
-                            border-width: (kb-ta.pressed || kb-pulse.pulsing) ? 3px : 0px;
-                            border-color: Theme.focus-border;
+                            border-width: AppState.ring-width(kb-pulse.active, kb-ta.pressed || kb-pulse.pulsing);
+                            border-color: AppState.focus-color;
                             animate border-width {
                                 duration: 90ms * AppState.settings-animation-speed;
                                 easing: ease-out-expo;
@@ -1838,8 +1921,8 @@ export component SettingsScreen inherits Rectangle {
                             background: AppState.keybinding-focused == i + AppState.keybinding-normal.length
                                 ? (AppState.keybinding-rebinding ? Theme.accent : Theme.accent-muted)
                                 : (kb-player-ta.has-hover ? Theme.surface : transparent);
-                            border-width: (kb-player-ta.pressed || kb-player-pulse.pulsing) ? 3px : 0px;
-                            border-color: Theme.focus-border;
+                            border-width: AppState.ring-width(kb-player-pulse.active, kb-player-ta.pressed || kb-player-pulse.pulsing);
+                            border-color: AppState.focus-color;
                             animate border-width {
                                 duration: 90ms * AppState.settings-animation-speed;
                                 easing: ease-out-expo;
@@ -1937,8 +2020,8 @@ export component SettingsScreen inherits Rectangle {
                             background: AppState.settings-focused == "integrations.seerr_connect" ? Theme.accent-muted
                                 : (int-connect-ta.has-hover ? Theme.surface : transparent);
                             height: 48px;
-                            border-width: (int-connect-ta.pressed || int-connect-pulse.pulsing) ? 3px : 0px;
-                            border-color: Theme.focus-border;
+                            border-width: AppState.ring-width(int-connect-pulse.active, int-connect-ta.pressed || int-connect-pulse.pulsing);
+                            border-color: AppState.focus-color;
                             animate border-width {
                                 duration: 90ms * AppState.settings-animation-speed;
                                 easing: ease-out-expo;
@@ -2056,8 +2139,8 @@ export component SettingsScreen inherits Rectangle {
                             background: AppState.settings-focused == "integrations.manage_blocklist" ? Theme.accent-muted
                                 : (int-blocklist-ta.has-hover ? Theme.surface : transparent);
                             height: 48px;
-                            border-width: (int-blocklist-ta.pressed || int-blocklist-pulse.pulsing) ? 3px : 0px;
-                            border-color: Theme.focus-border;
+                            border-width: AppState.ring-width(int-blocklist-pulse.active, int-blocklist-ta.pressed || int-blocklist-pulse.pulsing);
+                            border-color: AppState.focus-color;
                             animate border-width {
                                 duration: 90ms * AppState.settings-animation-speed;
                                 easing: ease-out-expo;
@@ -2407,8 +2490,8 @@ export component SettingsScreen inherits Rectangle {
                             background: i == AppState.settings-dropdown-cursor
                                 ? Theme.accent-muted
                                 : (kbdd-item-ta.has-hover ? Theme.surface-overlay : transparent);
-                            border-width: (kbdd-item-ta.pressed || kbdd-pulse.pulsing) ? 3px : 0px;
-                            border-color: Theme.focus-border;
+                            border-width: AppState.ring-width(kbdd-pulse.active, kbdd-item-ta.pressed || kbdd-pulse.pulsing);
+                            border-color: AppState.focus-color;
                             animate border-width {
                                 duration: 90ms * AppState.settings-animation-speed;
                                 easing: ease-out-expo;

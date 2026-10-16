@@ -261,8 +261,8 @@ export component LoginScreen inherits Rectangle {
                 // aligned it) — the same fix as ProfileEditScreen's "Skip PIN on this network" row.
                 height: 36px;
                 border-radius: Theme.radius;
-                border-width: AppState.login-zone == 3 ? 2px : 0px;
-                border-color: Theme.focus-border;
+                border-width: AppState.ring-width(AppState.login-zone == 3, false);
+                border-color: AppState.focus-color;
                 animate border-width {
                     duration: 90ms * AppState.settings-animation-speed;
                     easing: ease-out-expo;

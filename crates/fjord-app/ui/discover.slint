@@ -41,8 +41,8 @@ component FilterPill inherits Rectangle {
     width: max(50px, txt.preferred-width + 20px);
     border-radius: self.height / 2;
     background: root.active ? Theme.accent-muted : (ta.has-hover ? Theme.surface-overlay : Theme.surface-raised);
-    border-width: (ta.pressed || pulse.pulsing) ? 3px : (root.active ? 2px : 1px);
-    border-color: root.active ? Theme.focus-border : Theme.border;
+    border-width: max(1px, AppState.ring-width(root.active, ta.pressed || pulse.pulsing));
+    border-color: root.active ? AppState.focus-color : Theme.border;
     animate border-width {
         duration: 90ms * AppState.settings-animation-speed;
         easing: ease-out-expo;
@@ -84,8 +84,8 @@ component PopupOption inherits Rectangle {
     height: 32px;
     border-radius: 4px;
     background: root.option-focused ? Theme.accent-muted : (ta.has-hover ? Theme.surface-overlay : transparent);
-    border-width: (ta.pressed || pulse.pulsing) ? 2px : 0px;
-    border-color: Theme.focus-border;
+    border-width: AppState.ring-width(pulse.active, ta.pressed || pulse.pulsing);
+    border-color: AppState.focus-color;
     animate border-width {
         duration: 90ms * AppState.settings-animation-speed;
         easing: ease-out-expo;
@@ -126,8 +126,10 @@ component FilterChip inherits Rectangle {
     height: 36px;
     border-radius: self.height / 2;
     background: root.selected ? Theme.accent : Theme.surface-overlay;
-    border-width: (ta.pressed || pulse.pulsing) ? 3px : (root.chip-focused ? 2px : 1px);
-    border-color: (root.chip-focused || ta.pressed) ? Theme.focus-border : Theme.border;
+    border-width: max(1px, AppState.glow-ring-width(root.chip-focused, ta.pressed || pulse.pulsing));
+    drop-shadow-blur: AppState.glow-blur(root.chip-focused);
+    drop-shadow-color: AppState.focus-color;
+    border-color: (root.chip-focused || ta.pressed) ? AppState.focus-color : Theme.border;
     animate border-width {
         duration: 90ms * AppState.settings-animation-speed;
         easing: ease-out-expo;
@@ -228,8 +230,8 @@ export component DiscoverScreen inherits Rectangle {
                 width: parent.width - Theme.sp * 2;
                 height: 36px;
                 border-radius: Theme.radius;
-                border-width: AppState.discover-header-focused ? 2px : 1px;
-                border-color: AppState.discover-header-focused ? Theme.focus-border : Theme.border;
+                border-width: max(1px, AppState.ring-width(AppState.discover-header-focused, false));
+                border-color: AppState.discover-header-focused ? AppState.focus-color : Theme.border;
                 background: Theme.bg;
 
                 TouchArea {

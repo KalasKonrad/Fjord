@@ -194,6 +194,12 @@ const UI_CARD_SIZE: &str = "ui.card_size"; // per profile, unlike the other UI r
 const UI_TEXT_SIZE: &str = "ui.text_size"; // per profile, like card size
 const UI_DASHBOARD_ROWS: &str = "ui.dashboard_rows"; // per profile; opens dashboard_rows.rs's editor
 const UI_DASHBOARD_HERO: &str = "ui.dashboard_hero"; // per profile, a dropdown; hero.rs
+// Focus highlight, per profile (AppState.focus-*).
+const UI_FOCUS_COLOR: &str = "ui.focus_color";
+const UI_FOCUS_WIDTH: &str = "ui.focus_width";
+const UI_FOCUS_STYLE: &str = "ui.focus_style";
+const UI_FOCUS_OPACITY: &str = "ui.focus_opacity";
+const UI_FOCUS_ZOOM: &str = "ui.focus_zoom";
 const UI_SCROLL_SPEED: &str = "ui.scroll_speed";
 const UI_ANIMATION_SPEED: &str = "ui.animation_speed";
 const UI_FONT_FAMILY: &str = "ui.font_family";
@@ -310,6 +316,11 @@ fn section_row_keys(section: &str, g: &crate::AppState<'_>) -> Vec<&'static str>
             UI_TEXT_SIZE,
             UI_DASHBOARD_HERO,
             UI_DASHBOARD_ROWS,
+            UI_FOCUS_COLOR,
+            UI_FOCUS_WIDTH,
+            UI_FOCUS_STYLE,
+            UI_FOCUS_OPACITY,
+            UI_FOCUS_ZOOM,
             GEN_VIDEO_BEHIND,
             UI_FONT_FAMILY,
             UI_ONSCREEN_KEYBOARD,
@@ -713,6 +724,11 @@ const SKIP_MODE_4_MODEL: &[&str] = &["always-skip", "ask", "ask-timed", "never-s
 const SKIP_MODE_3_MODEL: &[&str] = &["always-skip", "ask", "never-skip"];
 const CARD_SIZE_MODEL: &[&str] = &["small", "normal", "large", "extra-large", "huge"];
 const HERO_STYLE_MODEL: &[&str] = &["off", "band", "background"];
+const FOCUS_COLOR_MODEL: &[&str] = &["white", "blue", "gold", "green", "red"];
+const FOCUS_WIDTH_MODEL: &[&str] = &["2", "3", "4", "6"];
+const FOCUS_STYLE_MODEL: &[&str] = &["line", "glow", "both"];
+const FOCUS_OPACITY_MODEL: &[&str] = &["solid", "see-through"];
+const FOCUS_ZOOM_MODEL: &[&str] = &["0", "5", "10", "15", "20", "25", "30"];
 const SKIP_SECS_MODEL: &[&str] = &["3", "5", "8", "10", "15", "20", "30"];
 const CREDITS_SECS_MODEL: &[&str] = &["10", "15", "20", "30", "45", "60"];
 const LOG_LEVEL_MODEL: &[&str] = &["error", "warn", "info", "debug"];
@@ -801,6 +817,52 @@ fn display_val<'a>(val: &'a str, key: &str) -> &'a str {
             _ => val,
         };
     }
+    if key == UI_FOCUS_COLOR {
+        return match val {
+            "white" => "White",
+            "blue" => "Accent blue",
+            "gold" => "Gold",
+            "green" => "Green",
+            "red" => "Red",
+            _ => val,
+        };
+    }
+    if key == UI_FOCUS_WIDTH {
+        return match val {
+            "2" => "Thin (2px)",
+            "3" => "Medium (3px)",
+            "4" => "Thick (4px)",
+            "6" => "Extra thick (6px)",
+            _ => val,
+        };
+    }
+    if key == UI_FOCUS_STYLE {
+        return match val {
+            "line" => "Line",
+            "glow" => "Glow",
+            "both" => "Line and glow",
+            _ => val,
+        };
+    }
+    if key == UI_FOCUS_OPACITY {
+        return match val {
+            "solid" => "Solid",
+            "see-through" => "See-through",
+            _ => val,
+        };
+    }
+    if key == UI_FOCUS_ZOOM {
+        return match val {
+            "0" => "Off",
+            "5" => "5%",
+            "10" => "10%",
+            "15" => "15%",
+            "20" => "20%",
+            "25" => "25%",
+            "30" => "30%",
+            _ => val,
+        };
+    }
     if key == UI_DASHBOARD_HERO {
         return match val {
             "off" => "Off",
@@ -871,6 +933,11 @@ fn dropdown_model(key: &str) -> Option<&'static [&'static str]> {
         PLY_CREDITS_MODE => Some(SKIP_MODE_3_MODEL),
         UI_CARD_SIZE | UI_TEXT_SIZE => Some(CARD_SIZE_MODEL),
         UI_DASHBOARD_HERO => Some(HERO_STYLE_MODEL),
+        UI_FOCUS_COLOR => Some(FOCUS_COLOR_MODEL),
+        UI_FOCUS_WIDTH => Some(FOCUS_WIDTH_MODEL),
+        UI_FOCUS_STYLE => Some(FOCUS_STYLE_MODEL),
+        UI_FOCUS_OPACITY => Some(FOCUS_OPACITY_MODEL),
+        UI_FOCUS_ZOOM => Some(FOCUS_ZOOM_MODEL),
         PLY_INTRO_SECS | PLY_RECAP_SECS | PLY_PREVIEW_SECS | PLY_COMMERCIAL_SECS => {
             Some(SKIP_SECS_MODEL)
         }
@@ -953,6 +1020,11 @@ fn current_value_str(key: &str, g: &crate::AppState<'_>) -> String {
         UI_CARD_SIZE => g.get_settings_card_size().to_string(),
         UI_TEXT_SIZE => g.get_settings_text_size().to_string(),
         UI_DASHBOARD_HERO => g.get_settings_dashboard_hero().to_string(),
+        UI_FOCUS_COLOR => g.get_settings_focus_color().to_string(),
+        UI_FOCUS_WIDTH => g.get_settings_focus_width().to_string(),
+        UI_FOCUS_STYLE => g.get_settings_focus_style().to_string(),
+        UI_FOCUS_OPACITY => g.get_settings_focus_opacity().to_string(),
+        UI_FOCUS_ZOOM => g.get_settings_focus_zoom().to_string(),
         PLY_CREDITS_SECS => g.get_settings_skip_credits_secs().to_string(),
         PLY_SEEK_STEP => g.get_settings_seek_step_secs().to_string(),
         PLY_SEEK_STEP_LONG => g.get_settings_seek_step_long_secs().to_string(),
@@ -1213,6 +1285,11 @@ pub(crate) fn apply_dropdown_selection(key: &str, cursor: i32, g: &crate::AppSta
         UI_CARD_SIZE => g.set_settings_card_size(val.into()),
         UI_TEXT_SIZE => g.set_settings_text_size(val.into()),
         UI_DASHBOARD_HERO => g.set_settings_dashboard_hero(val.into()),
+        UI_FOCUS_COLOR => g.set_settings_focus_color(val.into()),
+        UI_FOCUS_WIDTH => g.set_settings_focus_width(val.into()),
+        UI_FOCUS_STYLE => g.set_settings_focus_style(val.into()),
+        UI_FOCUS_OPACITY => g.set_settings_focus_opacity(val.into()),
+        UI_FOCUS_ZOOM => g.set_settings_focus_zoom(val.into()),
         PLY_CREDITS_SECS => g.set_settings_skip_credits_secs(val.parse().unwrap_or(30)),
         PLY_SEEK_STEP => g.set_settings_seek_step_secs(val.parse().unwrap_or(10)),
         PLY_SEEK_STEP_LONG => g.set_settings_seek_step_long_secs(val.parse().unwrap_or(30)),
@@ -1274,6 +1351,31 @@ fn settings_row_action(key: &str, g: &crate::AppState<'_>) {
         UI_DASHBOARD_HERO => {
             let v = cycle(g.get_settings_dashboard_hero().as_str(), HERO_STYLE_MODEL);
             g.set_settings_dashboard_hero(v.into());
+            g.invoke_settings_changed();
+        }
+        UI_FOCUS_COLOR => {
+            let v = cycle(g.get_settings_focus_color().as_str(), FOCUS_COLOR_MODEL);
+            g.set_settings_focus_color(v.into());
+            g.invoke_settings_changed();
+        }
+        UI_FOCUS_WIDTH => {
+            let v = cycle(g.get_settings_focus_width().as_str(), FOCUS_WIDTH_MODEL);
+            g.set_settings_focus_width(v.into());
+            g.invoke_settings_changed();
+        }
+        UI_FOCUS_STYLE => {
+            let v = cycle(g.get_settings_focus_style().as_str(), FOCUS_STYLE_MODEL);
+            g.set_settings_focus_style(v.into());
+            g.invoke_settings_changed();
+        }
+        UI_FOCUS_OPACITY => {
+            let v = cycle(g.get_settings_focus_opacity().as_str(), FOCUS_OPACITY_MODEL);
+            g.set_settings_focus_opacity(v.into());
+            g.invoke_settings_changed();
+        }
+        UI_FOCUS_ZOOM => {
+            let v = cycle(g.get_settings_focus_zoom().as_str(), FOCUS_ZOOM_MODEL);
+            g.set_settings_focus_zoom(v.into());
             g.invoke_settings_changed();
         }
         GEN_PREWARM_IMAGES => g.invoke_prewarm_images(),
@@ -2549,6 +2651,11 @@ pub(crate) fn apply_profile_settings_to_window(
     g.set_settings_text_size(ss(&cp.text_size));
     crate::dashboard_rows::push_row_orders(g, cp);
     g.set_settings_dashboard_hero(ss(&cp.dashboard_hero));
+    g.set_settings_focus_color(ss(&cp.focus_color));
+    g.set_settings_focus_width(ss(&cp.focus_width));
+    g.set_settings_focus_style(ss(&cp.focus_style));
+    g.set_settings_focus_opacity(ss(&cp.focus_opacity));
+    g.set_settings_focus_zoom(ss(&cp.focus_zoom));
     g.set_settings_trailer_quality(ss(&cp.trailer_quality));
 }
 
@@ -2809,6 +2916,11 @@ pub(crate) fn read_settings_from_window(w: &MainWindow, s: &mut FjordState) {
     cp.card_size = g.get_settings_card_size().to_string();
     cp.text_size = g.get_settings_text_size().to_string();
     cp.dashboard_hero = g.get_settings_dashboard_hero().to_string();
+    cp.focus_color = g.get_settings_focus_color().to_string();
+    cp.focus_width = g.get_settings_focus_width().to_string();
+    cp.focus_style = g.get_settings_focus_style().to_string();
+    cp.focus_opacity = g.get_settings_focus_opacity().to_string();
+    cp.focus_zoom = g.get_settings_focus_zoom().to_string();
     cp.skip_credits_secs = g.get_settings_skip_credits_secs().max(0) as u32;
     cp.seerr_enabled = g.get_settings_seerr_enabled();
     cp.trailer_quality = g.get_settings_trailer_quality().to_string();
