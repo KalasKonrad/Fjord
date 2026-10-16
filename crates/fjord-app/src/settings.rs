@@ -12,7 +12,9 @@
 //   Row keys     the const block below, "<section>.<field>", grouped by section (bespoke button
 //                rows — Sign Out, Add Account, Connect/Disconnect, Manage Blocklist, Prewarm —
 //                use the same shape)
-//   section_row_keys(section, g)  the ordered visible rows of a section — the source of truth
+//   SECTION_ROWS / row_shown / section_row_keys  every row per section in on-screen order (a
+//                test checks it against settings.slint), the visibility conditions, and the
+//                rows on screen now — the source of truth for Up/Down stepping
 //                for Up/Down stepping
 //   set_focused / set_section / row_focused  focus helpers (row_focused = mouse click path)
 //   dispatch_settings  keyboard: section list → rows / key bindings; Enter opens a dropdown
@@ -218,102 +220,86 @@ const INT_MANAGE_BLOCKLIST: &str = "integrations.manage_blocklist";
 
 // ── Row existence per section (replaces the old duplicated skip-logic) ────────
 
-fn section_row_keys(section: &str, g: &crate::AppState<'_>) -> Vec<&'static str> {
-    match section {
-        SECTION_PLAYBACK => {
-            let mut rows = vec![PLY_INTRO_MODE];
-            if g.get_settings_skip_intro_mode().as_str() == "ask-timed" {
-                rows.push(PLY_INTRO_SECS);
-            }
-            rows.push(PLY_RECAP_MODE);
-            if g.get_settings_skip_recap_mode().as_str() == "ask-timed" {
-                rows.push(PLY_RECAP_SECS);
-            }
-            rows.push(PLY_PREVIEW_MODE);
-            if g.get_settings_skip_preview_mode().as_str() == "ask-timed" {
-                rows.push(PLY_PREVIEW_SECS);
-            }
-            rows.push(PLY_COMMERCIAL_MODE);
-            if g.get_settings_skip_commercial_mode().as_str() == "ask-timed" {
-                rows.push(PLY_COMMERCIAL_SECS);
-            }
-            rows.push(PLY_CREDITS_MODE);
-            if g.get_settings_skip_credits_mode().as_str() == "ask" {
-                rows.push(PLY_CREDITS_SECS);
-            }
-            rows.extend([
-                PLY_SKIP_FADE_MS,
-                PLY_SEEK_STEP,
-                PLY_SEEK_STEP_LONG,
-                PLY_TRAILER_QUALITY,
-            ]);
-            rows
-        }
-        SECTION_LANGUAGE => {
-            let mut rows = vec![AUD_AUDIO_LANG, PLY_SUB_ENABLED];
-            if g.get_settings_sub_enabled() {
-                rows.extend([
-                    PLY_SUB_LANG,
-                    PLY_SUB_LANG2,
-                    PLY_SUB_TYPE,
-                    PLY_SUB_SCALE,
-                    PLY_SUB_POS,
-                    PLY_SUB_RESPECT_ASS,
-                ]);
-                if !g.get_settings_sub_respect_ass_styling() {
-                    rows.extend([PLY_SUB_COLOR, PLY_SUB_BACKGROUND]);
-                }
-            }
-            rows
-        }
-        SECTION_DISPLAY => {
-            let mut rows = vec![GEN_LAUNCH_FULLSCREEN, VID_TARGET_COLORSPACE];
-            // HDR Stage 5 (2026-10-05): only on Wayland, where it does anything.
-            if g.get_is_wayland() {
-                rows.push(VID_SEPARATE_VIDEO_SURFACE);
-            }
-            // Always visible: mpv's target-colorspace-hint-strict falls back to this curve when the
-            // compositor refuses HDR passthrough (Player::new sets tone-mapping and the hint
-            // independently), so the curve must stay choosable.
-            rows.push(VID_TONE_MAPPING);
-            rows.push(VID_DISPLAY_SYNC_ENABLED);
-            if g.get_settings_display_sync_enabled() {
-                rows.push(VID_DISPLAY_SYNC_SCREEN);
-                rows.push(VID_DISPLAY_SYNC_SYNC_RESOLUTION);
-                rows.push(VID_DISPLAY_SYNC_SYNC_REFRESH_RATE);
-                rows.push(VID_DISPLAY_SYNC_DEFAULT_RESOLUTION);
-                rows.push(VID_DISPLAY_SYNC_DEFAULT_HZ);
-                rows.push(VID_DISPLAY_SYNC_SCALE_4K);
-                rows.push(VID_DISPLAY_SYNC_SCALE_1080P);
-                if g.get_settings_display_sync_sync_resolution() {
-                    rows.push(VID_DISPLAY_SYNC_4K_ODD_FPS_MODE);
-                }
-                rows.push(VID_DISPLAY_SYNC_HDR_MODE);
-                rows.push(VID_DISPLAY_SYNC_WCG_MODE);
-                rows.push(VID_DISPLAY_SYNC_TRAILERS);
-            }
-            rows
-        }
-        SECTION_AUDIO => {
-            let mut rows = vec![AUD_AUDIO_DEVICE, AUD_CHANNELS, AUD_SPDIF];
-            if g.get_settings_audio_spdif() {
-                rows.extend([
-                    AUD_SPDIF_AC3,
-                    AUD_SPDIF_EAC3,
-                    AUD_SPDIF_DTS,
-                    AUD_SPDIF_DTS_HD,
-                    AUD_SPDIF_TRUEHD,
-                    AUD_PASSTHROUGH_DEVICE,
-                ]);
-                if g.get_settings_device_is_pipewire() {
-                    rows.push(AUD_ALSA_IRQ);
-                }
-                rows.push(AUD_SKIP_FADE_MUTE);
-            }
-            rows.extend([AUD_GAPLESS, AUD_NOW_PLAYING_AUTO_OPEN]);
-            rows
-        }
-        SECTION_UI => vec![
+/// Every Settings row, per section, in on-screen order (Up/Down follow it); `row_shown` hides the
+/// conditional ones. settings.slint draws the same rows in the same order with the same
+/// conditions — the test `section_rows_match_settings_slint` checks rows and order.
+const SECTION_ROWS: &[(&str, &[&str])] = &[
+    (
+        SECTION_PLAYBACK,
+        &[
+            PLY_INTRO_MODE,
+            PLY_INTRO_SECS,
+            PLY_RECAP_MODE,
+            PLY_RECAP_SECS,
+            PLY_PREVIEW_MODE,
+            PLY_PREVIEW_SECS,
+            PLY_COMMERCIAL_MODE,
+            PLY_COMMERCIAL_SECS,
+            PLY_CREDITS_MODE,
+            PLY_CREDITS_SECS,
+            PLY_SKIP_FADE_MS,
+            PLY_SEEK_STEP,
+            PLY_SEEK_STEP_LONG,
+            PLY_TRAILER_QUALITY,
+        ],
+    ),
+    (
+        SECTION_LANGUAGE,
+        &[
+            AUD_AUDIO_LANG,
+            PLY_SUB_ENABLED,
+            PLY_SUB_LANG,
+            PLY_SUB_LANG2,
+            PLY_SUB_TYPE,
+            PLY_SUB_SCALE,
+            PLY_SUB_POS,
+            PLY_SUB_RESPECT_ASS,
+            PLY_SUB_COLOR,
+            PLY_SUB_BACKGROUND,
+        ],
+    ),
+    (
+        SECTION_DISPLAY,
+        &[
+            GEN_LAUNCH_FULLSCREEN,
+            VID_TARGET_COLORSPACE,
+            VID_SEPARATE_VIDEO_SURFACE,
+            VID_TONE_MAPPING,
+            VID_DISPLAY_SYNC_ENABLED,
+            VID_DISPLAY_SYNC_SCREEN,
+            VID_DISPLAY_SYNC_SYNC_RESOLUTION,
+            VID_DISPLAY_SYNC_SYNC_REFRESH_RATE,
+            VID_DISPLAY_SYNC_DEFAULT_RESOLUTION,
+            VID_DISPLAY_SYNC_DEFAULT_HZ,
+            VID_DISPLAY_SYNC_SCALE_4K,
+            VID_DISPLAY_SYNC_SCALE_1080P,
+            VID_DISPLAY_SYNC_4K_ODD_FPS_MODE,
+            VID_DISPLAY_SYNC_HDR_MODE,
+            VID_DISPLAY_SYNC_WCG_MODE,
+            VID_DISPLAY_SYNC_TRAILERS,
+        ],
+    ),
+    (
+        SECTION_AUDIO,
+        &[
+            AUD_AUDIO_DEVICE,
+            AUD_CHANNELS,
+            AUD_SPDIF,
+            AUD_SPDIF_AC3,
+            AUD_SPDIF_EAC3,
+            AUD_SPDIF_DTS,
+            AUD_SPDIF_DTS_HD,
+            AUD_SPDIF_TRUEHD,
+            AUD_PASSTHROUGH_DEVICE,
+            AUD_ALSA_IRQ,
+            AUD_SKIP_FADE_MUTE,
+            AUD_GAPLESS,
+            AUD_NOW_PLAYING_AUTO_OPEN,
+        ],
+    ),
+    (
+        SECTION_UI,
+        &[
             UI_CARD_SIZE,
             UI_TEXT_SIZE,
             UI_DASHBOARD_HERO,
@@ -329,81 +315,122 @@ fn section_row_keys(section: &str, g: &crate::AppState<'_>) -> Vec<&'static str>
             UI_SCROLL_SPEED,
             UI_ANIMATION_SPEED,
         ],
-        SECTION_PROFILES => {
-            let mut rows = vec![PROF_LAUNCH_POLICY];
-            if g.get_settings_launch_policy().as_str() == "default" {
-                rows.push(PROF_DEFAULT_PROFILE);
-            }
-            if g.get_settings_is_master_profile() {
-                rows.push(PROF_MANAGE_PROFILES);
-            }
-            if g.get_settings_copy_sources_display().row_count() > 0 {
-                rows.push(PROF_COPY_SETTINGS);
-            }
-            rows.push(PROF_ACCOUNT_LAUNCH_POLICY);
-            if g.get_settings_account_launch_policy().as_str() == "default" {
-                rows.push(PROF_DEFAULT_ACCOUNT);
-            }
-            rows.push(PROF_ADD_ACCOUNT);
-            rows.push(PROF_REMEMBER_LOGIN);
-            rows.push(PROF_SIGN_OUT);
-            if g.get_settings_is_master_profile() {
-                rows.push(PROF_BONFIRE_GROUP);
-            }
-            if g.get_jellyfin_is_server_admin() {
-                rows.push(PROF_BONFIRE_ADMIN);
-            }
-            rows
-        }
-        SECTION_INTEGRATIONS => {
-            let mut rows = vec![INT_SEERR_ENABLED];
-            if g.get_settings_seerr_enabled() {
-                rows.push(INT_SEERR_CONNECT);
-                if g.get_seerr_connected() {
-                    rows.extend([
-                        INT_STREAMING_REGION,
-                        INT_DISPLAY_LANGUAGE,
-                        INT_DISCOVER_LANGUAGE,
-                        INT_DISCOVER_REGION,
-                    ]);
-                    if g.get_seerr_can_manage_blocklist() {
-                        rows.push(INT_MANAGE_BLOCKLIST);
-                    }
-                }
-            }
-            rows
-        }
-        SECTION_ADVANCED => {
-            let mut rows = vec![VID_HWDEC];
-            // vf only works around NVDEC's stride corruption (see CLAUDE.md), so it's shown only
-            // with NVDEC selected explicitly — "auto" counts as not NVDEC.
-            if matches!(g.get_settings_hwdec().as_str(), "nvdec" | "nvdec-copy") {
-                rows.push(VID_VF);
-            }
-            rows.extend([VID_DEINTERLACE, VID_VIDEO_SYNC, VID_INTERPOLATION]);
-            if g.get_settings_interpolation() {
-                rows.push(VID_TSCALE);
-            }
-            rows.push(VID_OPENGL_EARLY_FLUSH);
-            if g.get_settings_video_sync().as_str() == "display-resample" {
-                rows.push(VID_VIDEO_LATENCY_HACKS);
-            }
-            // 10-bit video plane (2026-10-08): only with the separate video surface (Wayland).
-            if g.get_is_wayland() && g.get_settings_separate_video_surface() {
-                rows.push(VID_OWN_BUFFERS);
-            }
-            rows.extend([
-                VID_DITHER_OFF,
-                PLY_CACHE_SECS,
-                PLY_CACHE_MAX_MB,
-                GEN_PREWARM_METADATA,
-                GEN_PREWARM_IMAGES,
-                GEN_LOG_LEVEL,
-            ]);
-            rows
-        }
-        _ => vec![],
+    ),
+    (
+        SECTION_PROFILES,
+        &[
+            PROF_LAUNCH_POLICY,
+            PROF_DEFAULT_PROFILE,
+            PROF_MANAGE_PROFILES,
+            PROF_COPY_SETTINGS,
+            PROF_ACCOUNT_LAUNCH_POLICY,
+            PROF_DEFAULT_ACCOUNT,
+            PROF_ADD_ACCOUNT,
+            PROF_REMEMBER_LOGIN,
+            PROF_SIGN_OUT,
+            PROF_BONFIRE_GROUP,
+            PROF_BONFIRE_ADMIN,
+        ],
+    ),
+    (
+        SECTION_INTEGRATIONS,
+        &[
+            INT_SEERR_ENABLED,
+            INT_SEERR_CONNECT,
+            INT_STREAMING_REGION,
+            INT_DISPLAY_LANGUAGE,
+            INT_DISCOVER_LANGUAGE,
+            INT_DISCOVER_REGION,
+            INT_MANAGE_BLOCKLIST,
+        ],
+    ),
+    (
+        SECTION_ADVANCED,
+        &[
+            VID_HWDEC,
+            VID_VF,
+            VID_DEINTERLACE,
+            VID_VIDEO_SYNC,
+            VID_INTERPOLATION,
+            VID_TSCALE,
+            VID_OPENGL_EARLY_FLUSH,
+            VID_VIDEO_LATENCY_HACKS,
+            VID_OWN_BUFFERS,
+            VID_DITHER_OFF,
+            PLY_CACHE_SECS,
+            PLY_CACHE_MAX_MB,
+            GEN_PREWARM_METADATA,
+            GEN_PREWARM_IMAGES,
+            GEN_LOG_LEVEL,
+        ],
+    ),
+];
+
+/// Whether a row is on screen right now — the same conditions as settings.slint's `if`s.
+fn row_shown(key: &str, g: &crate::AppState<'_>) -> bool {
+    let subs = g.get_settings_sub_enabled();
+    let sync = g.get_settings_display_sync_enabled();
+    let spdif = g.get_settings_audio_spdif();
+    let seerr = g.get_settings_seerr_enabled();
+    let seerr_connected = seerr && g.get_seerr_connected();
+    match key {
+        PLY_INTRO_SECS => g.get_settings_skip_intro_mode().as_str() == "ask-timed",
+        PLY_RECAP_SECS => g.get_settings_skip_recap_mode().as_str() == "ask-timed",
+        PLY_PREVIEW_SECS => g.get_settings_skip_preview_mode().as_str() == "ask-timed",
+        PLY_COMMERCIAL_SECS => g.get_settings_skip_commercial_mode().as_str() == "ask-timed",
+        PLY_CREDITS_SECS => g.get_settings_skip_credits_mode().as_str() == "ask",
+        PLY_SUB_LANG | PLY_SUB_LANG2 | PLY_SUB_TYPE | PLY_SUB_SCALE | PLY_SUB_POS
+        | PLY_SUB_RESPECT_ASS => subs,
+        PLY_SUB_COLOR | PLY_SUB_BACKGROUND => subs && !g.get_settings_sub_respect_ass_styling(),
+        // HDR Stage 5: only on Wayland, where it does anything.
+        VID_SEPARATE_VIDEO_SURFACE => g.get_is_wayland(),
+        VID_DISPLAY_SYNC_SCREEN
+        | VID_DISPLAY_SYNC_SYNC_RESOLUTION
+        | VID_DISPLAY_SYNC_SYNC_REFRESH_RATE
+        | VID_DISPLAY_SYNC_DEFAULT_RESOLUTION
+        | VID_DISPLAY_SYNC_DEFAULT_HZ
+        | VID_DISPLAY_SYNC_SCALE_4K
+        | VID_DISPLAY_SYNC_SCALE_1080P
+        | VID_DISPLAY_SYNC_HDR_MODE
+        | VID_DISPLAY_SYNC_WCG_MODE
+        | VID_DISPLAY_SYNC_TRAILERS => sync,
+        VID_DISPLAY_SYNC_4K_ODD_FPS_MODE => sync && g.get_settings_display_sync_sync_resolution(),
+        AUD_SPDIF_AC3
+        | AUD_SPDIF_EAC3
+        | AUD_SPDIF_DTS
+        | AUD_SPDIF_DTS_HD
+        | AUD_SPDIF_TRUEHD
+        | AUD_PASSTHROUGH_DEVICE
+        | AUD_SKIP_FADE_MUTE => spdif,
+        AUD_ALSA_IRQ => spdif && g.get_settings_device_is_pipewire(),
+        PROF_DEFAULT_PROFILE => g.get_settings_launch_policy().as_str() == "default",
+        PROF_MANAGE_PROFILES | PROF_BONFIRE_GROUP => g.get_settings_is_master_profile(),
+        PROF_COPY_SETTINGS => g.get_settings_copy_sources_display().row_count() > 0,
+        PROF_DEFAULT_ACCOUNT => g.get_settings_account_launch_policy().as_str() == "default",
+        PROF_BONFIRE_ADMIN => g.get_jellyfin_is_server_admin(),
+        INT_SEERR_CONNECT => seerr,
+        INT_STREAMING_REGION
+        | INT_DISPLAY_LANGUAGE
+        | INT_DISCOVER_LANGUAGE
+        | INT_DISCOVER_REGION => seerr_connected,
+        INT_MANAGE_BLOCKLIST => seerr_connected && g.get_seerr_can_manage_blocklist(),
+        // vf only works around NVDEC's stride corruption (see CLAUDE.md): only with NVDEC chosen
+        // explicitly — "auto" counts as not NVDEC.
+        VID_VF => matches!(g.get_settings_hwdec().as_str(), "nvdec" | "nvdec-copy"),
+        VID_TSCALE => g.get_settings_interpolation(),
+        VID_VIDEO_LATENCY_HACKS => g.get_settings_video_sync().as_str() == "display-resample",
+        // 10-bit video plane: only with the separate video surface (Wayland).
+        VID_OWN_BUFFERS => g.get_is_wayland() && g.get_settings_separate_video_surface(),
+        _ => true,
     }
+}
+
+fn section_row_keys(section: &str, g: &crate::AppState<'_>) -> Vec<&'static str> {
+    SECTION_ROWS
+        .iter()
+        .find(|(s, _)| *s == section)
+        .map(|(_, keys)| keys.iter().copied().filter(|k| row_shown(k, g)).collect())
+        .unwrap_or_default()
 }
 
 // ── Main dispatch ─────────────────────────────────────────────────────────────
@@ -3039,6 +3066,44 @@ mod tests {
                 !is_dynamic_dropdown(c.key),
                 "{} is also a dynamic dropdown",
                 c.key
+            );
+        }
+    }
+
+    #[test]
+    fn section_rows_match_settings_slint() {
+        // Each section's block in settings.slint lists the same rows in the same order as
+        // SECTION_ROWS (rows are `key: "…"` on a SettingsRow, or `settings-focused == "…"` on the
+        // custom ones in Profiles/Integrations) — Up/Down would otherwise skip or misorder rows.
+        let slint = include_str!("../ui/settings.slint");
+        let marker = "AppState.settings-section == \"";
+        for (section, keys) in SECTION_ROWS {
+            let start = slint
+                .find(&format!("{marker}{section}\""))
+                .unwrap_or_else(|| panic!("no block for section {section}"));
+            let rest = &slint[start + marker.len()..];
+            let block = &rest[..rest.find(marker).unwrap_or(rest.len())];
+            let mut found: Vec<&str> = Vec::new();
+            let mut i = 0;
+            while i < block.len() {
+                let next_key = block[i..].find("key: \"").map(|p| (p, "key: \""));
+                let next_focus = block[i..]
+                    .find("settings-focused == \"")
+                    .map(|p| (p, "settings-focused == \""));
+                let Some((p, pat)) = [next_key, next_focus].into_iter().flatten().min() else {
+                    break;
+                };
+                let from = i + p + pat.len();
+                let end = from + block[from..].find('"').unwrap();
+                let k = &block[from..end];
+                if !found.contains(&k) {
+                    found.push(k);
+                }
+                i = end;
+            }
+            assert_eq!(
+                &found, keys,
+                "section {section}: settings.slint rows differ"
             );
         }
     }
