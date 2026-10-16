@@ -193,6 +193,8 @@ pub(crate) fn reset_session_state(
         // showing the outgoing profile's own household data.
         g.set_show_manage_profiles(false);
         g.set_manage_profiles_close_focused(false);
+        // Dashboard rows editor: it edits the outgoing profile's rows.
+        g.set_show_dashboard_rows(false);
         g.set_show_profile_edit(false);
         // Only the profile-edit flags that gate input dispatch (keys.rs checks text-editing/
         // dropdown-open before routing a key); the cursor ints are display state that

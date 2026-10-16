@@ -101,7 +101,11 @@
 //   Key binding editor    keybinding-normal/-player rows, keybinding-focused, keybinding-rebinding;
 //                         reset-to-defaults and rebind-collision ConfirmDialogs + keybinding-collision-
 //                         confirmed/-cancelled; settings-row-focused(string) (mouse click on a SettingsRow)
-//   Nav helpers           section-len, find-first/next/prev-section, section-card-item — hand-enumerated
+//   Dashboard rows        home/tv/movies/collections/music-row-order (shown rows in order, pushed from
+//                         ProfileSettings.dashboard_rows), nav-row-order(); the editor: show-dashboard-rows,
+//                         dash-rows-tab/-items/-cursor/-col, dash-rows-open/-select-tab/-action
+//   Nav helpers           section-len, find-first/next/prev-section (walk nav-row-order; a hidden
+//                         focused row restarts at the first), section-card-item — hand-enumerated
 //                         ternary chains; adding a dashboard row needs explicit branches (see their comment)
 //   Callbacks — auth      do-login, sign-out, quit, toggle-fullscreen
 //   Callbacks — browse    nav-selected, filter-changed, browse-search-*, library-search-*
@@ -140,6 +144,7 @@ import {
     BonfireAuditRow,
     OskEdit,
     VideoRect,
+    DashRowItem,
 } from "theme.slint";
 import { StandardListView } from "std-widgets.slint";
 
@@ -1720,6 +1725,17 @@ export global AppState {
     in-out property <[int]> movies-row-order: [0, 2, 3, 4, 5, 6];
     in-out property <[int]> collections-row-order: [0, 1];
     in-out property <[int]> music-row-order: [0, 1, 2, 3];
+    // Settings → Interface → Dashboard rows… editor (dashboard_rows.rs; keys in its raw tier,
+    // keys/mod.rs): tab 0 Home … 4 Music, the open tab's rows, cursor -2 = ✕ close, -1 = tabs,
+    // else a row; col 0 = ✓ shown, 1 = ▲, 2 = ▼.
+    in-out property <bool> show-dashboard-rows: false;
+    in-out property <int> dash-rows-tab: 0;
+    in-out property <[DashRowItem]> dash-rows-items: [];
+    in-out property <int> dash-rows-cursor: -1;
+    in-out property <int> dash-rows-col: 0;
+    callback dash-rows-open();
+    callback dash-rows-select-tab(int);
+    callback dash-rows-action(int, int); // row index, 0 toggle / 1 up / 2 down
     public pure function nav-row-order() -> [int] {
         active-nav == 0 ? home-row-order : active-nav == 1 ? tv-row-order : active-nav == 2 ? movies-row-order
             : active-nav == 3 ? collections-row-order : music-row-order
@@ -1745,6 +1761,8 @@ export global AppState {
     public pure function find-next-section(from: int) -> int {
         let o = nav-row-order();
         let p = row-pos-in(o, from);
+        // A row hidden in the Dashboard rows editor while it had focus: restart at the top.
+        if p == 99 { return find-first-section(); }
         if p + 1 < o.length && section-len(o[p + 1]) > 0 { return o[p + 1]; }
         if p + 2 < o.length && section-len(o[p + 2]) > 0 { return o[p + 2]; }
         if p + 3 < o.length && section-len(o[p + 3]) > 0 { return o[p + 3]; }

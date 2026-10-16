@@ -69,7 +69,8 @@ Needs `mpv`/libmpv (`pacman -S mpv`). Optional at runtime: `yt-dlp` (trailers), 
   `trickplay.rs` (seek-bar thumbnails from Jellyfin's trickplay images).
 - Screens: `detail`, `series`, `season`, `collection`, `album` (albums + playlists), `artist`, `person`,
   `browse`, `home`/`movies`/`poster` (dashboards, library grid, poster loading), `discover/` (Discover,
-  RequestDetail, Calendar, Watchlist — one file per area, list in `discover/mod.rs`), `blocklist`, `settings`, `context_menu`.
+  RequestDetail, Calendar, Watchlist — one file per area, list in `discover/mod.rs`), `blocklist`, `settings`, `context_menu`,
+  `dashboard_rows` (per-profile row order/visibility + its editor).
 - Accounts/profiles: `auth.rs` (login, `finish_session_setup`), `profile.rs` (pickers, `switch_to_profile`,
   Bonfire sync, idle lock), `profile_edit.rs`, `bonfire_admin.rs`, `secrets.rs` (secrets encrypted at rest).
 - Integrations/platform: `seerr_auth.rs`, `ws.rs` (Jellyfin WebSocket delta sync), `prewarm.rs`, `hdr.rs`
@@ -156,8 +157,9 @@ Needs `mpv`/libmpv (`pacman -S mpv`). Optional at runtime: `yt-dlp` (trailers), 
   settings rows (`settings::section_row_keys` ↔ `settings.slint`), D-pad zone lists (`existing_*_zones`),
   dashboard nav ladders in `app_state.slint`.
 - Dashboard rows are data-driven (`row-order` per dashboard, home.slint `row-items`/`row-title`): a new row needs its
-  number there, in app_state.slint's `section-len`/`section-card-item` + `*-row-order` default, and in the Rust default
-  row list. Discover's landing rows still use their own `row-y` helper.
+  number there, in app_state.slint's `section-len`/`section-card-item` + `*-row-order` default, and in
+  `dashboard_rows::DASHBOARDS` (per-profile hide/reorder; saved lists are merged with it). Discover's landing rows
+  still use their own `row-y` helper.
 
 ### Keyboard / D-pad
 - One global `FocusScope` (`fs`) feeds `keys::handle_key()`; `active_mode()` maps `AppState` flags to an

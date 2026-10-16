@@ -38,6 +38,7 @@ mod collection;
 mod config;
 mod context_menu;
 mod controls;
+mod dashboard_rows;
 mod detail;
 mod discover;
 mod display_sync;
@@ -1130,6 +1131,7 @@ fn main() -> Result<()> {
 
     settings::wire_profile_defaults(&window, &state);
     settings::wire_copy_settings(&window, &state);
+    dashboard_rows::wire(&window, &state);
 
     settings::wire_regions(&window, &state, &rt);
 

@@ -23,7 +23,7 @@
 //   overlays (bottom → top)  PlayerScreen; Series, Season, Artist, Collection, Album, Detail,
 //                 RequestDetail, RequestOptions, Calendar, Blocklist, Person (last — covers the
 //                 screens it opens from); NowPlaying, ContextMenu, PlaylistPicker,
-//                 SidebarProfileMenu, ConnectSeerr, ManageProfiles, ProfileEdit,
+//                 SidebarProfileMenu, ConnectSeerr, ManageProfiles, DashboardRows, ProfileEdit,
 //                 RememberLoginConfirm, BonfireGroup, BonfireAdmin, Sign Out confirm, Cancel
 //                 Request confirm, QueuePanel, LyricsView, VolumeOverlay, Toast (4 s)
 //   fades         free-floating overlays mount through `gateN := FadeGate` (fade in and out);
@@ -73,6 +73,7 @@ import { ConnectingScreen, OfflineScreen } from "connect.slint";
 import { ProfilePickerScreen } from "profile_picker.slint";
 import { AccountPickerScreen } from "account_picker.slint";
 import { ManageProfilesScreen } from "manage_profiles.slint";
+import { DashboardRowsScreen } from "dashboard_rows.slint";
 import { ProfileEditScreen } from "profile_edit.slint";
 import { RememberLoginConfirmOverlay } from "remember_login_confirm.slint";
 import { BonfireGroupScreen } from "bonfire_group.slint";
@@ -871,6 +872,22 @@ export component MainWindow inherits Window {
         width: parent.width;
         height: parent.height;
         opacity: gate36.fade-opacity;
+        animate opacity {
+            duration: 200ms * AppState.settings-animation-speed;
+            easing: ease-out-expo;
+        }
+    }
+    // Dashboard rows editor (Settings → Interface), the same free-floating overlay shape.
+    gate46 := FadeGate {
+        show: AppState.show-dashboard-rows && !AppState.is-playing;
+    }
+
+    if gate46.mounted: DashboardRowsScreen {
+        x: 0;
+        y: 0;
+        width: parent.width;
+        height: parent.height;
+        opacity: gate46.fade-opacity;
         animate opacity {
             duration: 200ms * AppState.settings-animation-speed;
             easing: ease-out-expo;

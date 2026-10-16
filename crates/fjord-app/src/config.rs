@@ -18,7 +18,8 @@
 //   ProfileSettings settings that follow the PERSON, keyed by user_id (copy_settings_from: the
 //                   Settings rows tagged "Profile", for "Copy settings from…"): auth (server_url/user_id/
 //                   token), subtitle/audio language, library sort, skip_*_mode/_secs, trailer
-//                   quality, Seerr connection (seerr_enabled/_url/_auth_method/_api_key/
+//                   quality, dashboard_rows (per dashboard: row ids in order + shown; DashboardRow),
+//                   Seerr connection (seerr_enabled/_url/_auth_method/_api_key/
 //                   _session_cookie), Discover filters (genres by name, providers by id), Request
 //                   Options' remembered choices; remember_login (false → never resumed silently,
 //                   StartupGate::RequireLogin); Bonfire: is_bonfire/master_user_id/has_pin/
@@ -677,6 +678,11 @@ pub(crate) struct ProfileSettings {
     // AppState.text-scale turns it into 1.0 / 1.15 / 1.3 for every font under 24px.
     #[serde(default = "default_card_size")]
     pub text_size: String,
+    // ── Dashboard rows (Settings → Interface → Dashboard rows…): per dashboard ("home", "tv",
+    // "movies", "collections", "music") the rows in display order with shown/hidden. Missing or
+    // new rows are filled in from the defaults (dashboard_rows::rows_for).
+    #[serde(default)]
+    pub dashboard_rows: std::collections::BTreeMap<String, Vec<DashboardRow>>,
 
     // ── Seerr integration (Settings → Integrations) — cleared on sign-out
     // alongside server_url/user_id/token. seerr_auth_method is purely
@@ -736,6 +742,14 @@ pub(crate) struct ProfileSettings {
     pub request_pref_tv: RequestPreference,
 }
 
+/// One dashboard row's place and visibility (Settings → Interface → Dashboard rows; the row
+/// numbers are dashboard_rows.rs's / app_state.slint's section ids).
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub(crate) struct DashboardRow {
+    pub id: u8,
+    pub shown: bool,
+}
+
 #[derive(Serialize, Deserialize, Clone, Default)]
 pub(crate) struct RequestPreference {
     #[serde(default)]
@@ -781,6 +795,7 @@ impl ProfileSettings {
         self.skip_credits_secs = src.skip_credits_secs;
         self.card_size = src.card_size.clone();
         self.text_size = src.text_size.clone();
+        self.dashboard_rows = src.dashboard_rows.clone();
         self.trailer_quality = src.trailer_quality.clone();
     }
 }
@@ -832,6 +847,7 @@ impl Default for ProfileSettings {
             library_music_view: 0,
             card_size: default_card_size(),
             text_size: default_card_size(),
+            dashboard_rows: Default::default(),
             seerr_enabled: false,
             seerr_url: String::new(),
             seerr_auth_method: String::new(),
@@ -1219,6 +1235,7 @@ fn migrate_legacy_config(l: LegacyConfig) -> Config {
         request_pref_tv: RequestPreference::default(),
         card_size: default_card_size(),
         text_size: default_card_size(),
+        dashboard_rows: Default::default(),
     };
     let active_profile_id = profile.user_id.clone();
     Config {
@@ -2346,6 +2363,16 @@ mod tests {
         src.text_size = "extra-large".into();
         src.trailer_quality = "720p".into();
         src.now_playing_auto_open = !ProfileSettings::default().now_playing_auto_open;
+        src.dashboard_rows.insert(
+            "music".into(),
+            vec![
+                DashboardRow { id: 3, shown: true },
+                DashboardRow {
+                    id: 0,
+                    shown: false,
+                },
+            ],
+        );
 
         let mut dst = ProfileSettings {
             user_id: "aaaa0002000000000000000000000000".into(),
@@ -2364,6 +2391,7 @@ mod tests {
         assert_eq!(dst.text_size, "extra-large");
         assert_eq!(dst.trailer_quality, "720p");
         assert_eq!(dst.now_playing_auto_open, src.now_playing_auto_open);
+        assert_eq!(dst.dashboard_rows, src.dashboard_rows);
         // Sign-in, identity, Integrations and remembered browsing state stay.
         assert_eq!(dst.user_id, "aaaa0002000000000000000000000000");
         assert_eq!(dst.token, "own-token");

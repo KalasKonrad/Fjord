@@ -14,7 +14,7 @@
 //                screen; arrows move its cursor, Enter bumps kb-activate-pulse, only Ctrl+Q passes)
 //                → login → startup gate (connecting swallows keys; offline: Enter retries) →
 //                profile/account picker tiers → global confirm dialogs and the other raw-key
-//                overlay tiers → search bypasses → loading guard → rebind capture → key lookup →
+//                overlay tiers (incl. the Dashboard rows editor, dashboard_rows::handle_keys) → search bypasses → loading guard → rebind capture → key lookup →
 //                global shortcuts (Ctrl+Q, R resume, bar focus — excluding overlay/detail modes)
 //                → active_mode() → per-screen handler (context_menu, series, season, detail,
 //                browse, discover…, settings::dispatch_settings)
@@ -203,6 +203,9 @@ pub(crate) fn handle_key(
 
     if g.get_show_manage_profiles() {
         return handle_manage_profiles_keys(&g, key, ctrl, window);
+    }
+    if g.get_show_dashboard_rows() {
+        return crate::dashboard_rows::handle_keys(&g, key, ctrl, window);
     }
     if g.get_show_bonfire_group() {
         return handle_bonfire_group_keys(&g, key, ctrl, window);

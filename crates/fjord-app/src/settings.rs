@@ -29,11 +29,13 @@
 //   wire_device_lists      audio/passthrough device and font lists (fetched once) + their dropdowns
 //   wire_profile_defaults  default profile / account dropdowns (local, no network)
 //   wire_copy_settings     "Copy settings from…": source picked → confirm → copy_settings_from +
+//                          dashboard_rows into the config (no window mirror) +
 //                          apply_profile_settings_to_window + settings-changed (save, live-apply, log)
 //   wire_regions           Seerr streaming/discover region + display/discover language
 //                          (GET-mutate-POST of the user's general settings)
 //   wire_settings_changed  settings-changed (persist + live-apply), dropdown mouse pick, row focus
-//   apply_profile_settings_to_window  the "Profile"-tagged settings → window (shared by both)
+//   apply_profile_settings_to_window  the "Profile"-tagged settings → window (shared by both),
+//                incl. the dashboards' row orders (dashboard_rows::push_row_orders)
 //   apply_settings_to_window ↔ read_settings_from_window; settings_snapshot/settings_diff (the
 //                settings-changed handler logs which settings changed; text values by name only)
 //   fetch_audio_devices / fetch_system_fonts  startup fetches for the device and font dropdowns
@@ -190,6 +192,7 @@ const PLY_TRAILER_QUALITY: &str = "player.trailer_quality"; // every YouTube tra
 // ── UI section rows ───────────────────────────────────────────────────────────
 const UI_CARD_SIZE: &str = "ui.card_size"; // per profile, unlike the other UI rows
 const UI_TEXT_SIZE: &str = "ui.text_size"; // per profile, like card size
+const UI_DASHBOARD_ROWS: &str = "ui.dashboard_rows"; // per profile; opens dashboard_rows.rs's editor
 const UI_SCROLL_SPEED: &str = "ui.scroll_speed";
 const UI_ANIMATION_SPEED: &str = "ui.animation_speed";
 const UI_FONT_FAMILY: &str = "ui.font_family";
@@ -304,6 +307,7 @@ fn section_row_keys(section: &str, g: &crate::AppState<'_>) -> Vec<&'static str>
         SECTION_UI => vec![
             UI_CARD_SIZE,
             UI_TEXT_SIZE,
+            UI_DASHBOARD_ROWS,
             GEN_VIDEO_BEHIND,
             UI_FONT_FAMILY,
             UI_ONSCREEN_KEYBOARD,
@@ -1250,6 +1254,7 @@ fn settings_row_action(key: &str, g: &crate::AppState<'_>) {
             g.invoke_settings_changed();
         }
         GEN_PREWARM_METADATA => g.invoke_prewarm_metadata(),
+        UI_DASHBOARD_ROWS => g.invoke_dash_rows_open(),
         GEN_PREWARM_IMAGES => g.invoke_prewarm_images(),
 
         PROF_LAUNCH_POLICY => {
@@ -2099,7 +2104,7 @@ pub(crate) fn wire_copy_settings(
             let source_id = g.get_copy_settings_source_id().to_string();
             let label = g.get_copy_settings_source_label().to_string();
             let merged = {
-                let s = state_ok.lock().unwrap();
+                let mut s = state_ok.lock().unwrap();
                 let Some(src) = s.config.profiles.iter().find(|p| p.user_id == source_id) else {
                     drop(s);
                     warn!("copy settings: source profile {source_id} is gone");
@@ -2111,6 +2116,9 @@ pub(crate) fn wire_copy_settings(
                 };
                 let mut merged = s.config.active().clone();
                 merged.copy_settings_from(src);
+                // Not mirrored in a settings-* property, so read_settings_from_window (run by
+                // settings-changed below) wouldn't carry it: write it to the config directly.
+                s.config.active_mut().dashboard_rows = merged.dashboard_rows.clone();
                 merged
             };
             apply_profile_settings_to_window(&g, &merged);
@@ -2518,6 +2526,7 @@ pub(crate) fn apply_profile_settings_to_window(
     g.set_settings_skip_credits_secs(cp.skip_credits_secs as i32);
     g.set_settings_card_size(ss(&cp.card_size));
     g.set_settings_text_size(ss(&cp.text_size));
+    crate::dashboard_rows::push_row_orders(g, cp);
     g.set_settings_trailer_quality(ss(&cp.trailer_quality));
 }
 
