@@ -754,6 +754,10 @@ export global AppState {
     in-out property <bool> is-audio-playing:    false; // music bar active (audio-only playback)
     in-out property <string> music-bar-title:     "";
     in-out property <string> music-bar-artist:    "";
+    // The playing song's format + quality (playback/tracks.rs spawn_audio_quality, from its Jellyfin
+    // streams): short for the bar ("FLAC 16/44.1"), long for Now Playing ("FLAC · 16-bit / 44.1 kHz").
+    in-out property <string> music-bar-quality: "";
+    in-out property <string> music-bar-quality-long: "";
     in-out property <string> music-bar-album-id:  "";   // for album art fetch + open-album nav
     in-out property <image> music-bar-art;
     in-out property <bool> music-bar-has-art:   false;

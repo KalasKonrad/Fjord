@@ -1255,6 +1255,8 @@ pub(crate) fn start_playback(
                     g.set_music_bar_artist(artist.into());
                     g.set_music_bar_album_id(album_art_id.into());
                     g.set_music_bar_has_art(false);
+                    g.set_music_bar_quality("".into());
+                    g.set_music_bar_quality_long("".into());
                     g.set_music_bar_paused(false);
                     g.set_music_bar_pos(0.0);
                     g.set_music_bar_elapsed("0:00".into());
@@ -1279,8 +1281,17 @@ pub(crate) fn start_playback(
                     g.set_controls_visible(false);
                 }
             }
-            // For audio tracks: fetch album art for music bar (and player background).
+            // For audio tracks: fetch album art for music bar (and player background), and the
+            // song's format + quality.
             if is_audio {
+                crate::playback::spawn_audio_quality(
+                    Arc::clone(&client_art),
+                    item_id_art.clone(),
+                    video,
+                    window_weak,
+                    rt_handle,
+                    my_gen,
+                );
                 let ww_art = window_weak.clone();
                 let vid_art = Arc::clone(video);
                 let art_id = audio_meta

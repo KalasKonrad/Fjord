@@ -23,6 +23,11 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **New: a song's format and quality.** Track lists (albums, playlists, an
+  artist's Tracks) show it next to the length — "FLAC 16/44.1" for lossless
+  (bit depth / kHz), "MP3 256 kbps" for compressed — the music bar shows it
+  after the artist, and Now Playing spells it out under the title ("FLAC ·
+  16-bit / 44.1 kHz").
 - **Fixed: songs added to the queue never played during a playlist on
   repeat.** Queued songs waited for the playlist to end, which with Repeat
   All never happened. Now Add to Queue plays the songs right after the

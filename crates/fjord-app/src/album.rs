@@ -1,5 +1,6 @@
 // ── fjord-app · album.rs ──────────────────────────────────────────────────────
-//   media_items_to_tracks  MediaItem → TrackItem (also the artist page's Tracks) incl. multi-disc separators: disc_header ("" or
+//   media_items_to_tracks  MediaItem → TrackItem (also the artist page's Tracks; quality = the song's
+//                         format/quality, AudioQuality::short) incl. multi-disc separators: disc_header ("" or
 //                         "Disc N" on a disc's first track) and precomputed row_y_px (album.slint's
 //                         scroll math reads them by index)
 //   open_album_screen     → open_music_screen(is_playlist=false)
@@ -106,6 +107,11 @@ pub(crate) fn media_items_to_tracks(
                 album_id: m.album_id.as_deref().unwrap_or("").into(),
                 disc_header: disc_header.into(),
                 row_y_px,
+                quality: m
+                    .audio_quality()
+                    .map(|q| q.short())
+                    .unwrap_or_default()
+                    .into(),
             }
         })
         .collect()

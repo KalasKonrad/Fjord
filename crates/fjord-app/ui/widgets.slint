@@ -35,7 +35,8 @@
 //                      edge with the line, the poster's in the Glow style); focus zoom via AppState.zoom from
 //                      zoom-anchor-x/-y (edge cards grow inward), raised with z; no poster fade
 //   TrackRow           one track of a track list (album/playlist page, the artist page's Tracks):
-//                      number, title (+ artist if not the page's), duration, ♥, ✕ (playlists), disc label
+//                      number, title (+ artist if not the page's), format/quality, duration, ♥, ✕
+//                      (playlists), disc label
 //   LoadingSpinner     animated ring (speed-scaled dot rhythm)
 //   StatRow / ToggleSwitch / SectionHeader / SettingsDropdown / SettingsRow (key = settings.rs row key;
 //                      `choice: true` + `value` = a fixed-choice row: its dropdown comes from
@@ -1304,6 +1305,14 @@ export component TrackRow inherits Rectangle {
             }
         }
 
+        // Format + quality ("FLAC 16/44.1", "MP3 256 kbps")
+        if root.track.quality != "": Text {
+            text: root.track.quality;
+            color: Theme.text-subtle;
+            font-size: 11px * AppState.text-scale;
+            vertical-alignment: center;
+        }
+
         // Duration
         Text {
             text: root.track.duration;
@@ -2308,11 +2317,23 @@ export component MusicPlayerBar inherits Rectangle {
                             overflow: elide;
                         }
 
-                        Text {
-                            text: AppState.music-bar-artist;
-                            color: Theme.text-muted;
-                            font-size: 12px * AppState.text-scale;
-                            overflow: elide;
+                        // Artist, then the song's format/quality (the artist elides first).
+                        HorizontalLayout {
+                            spacing: 8px;
+                            Text {
+                                text: AppState.music-bar-artist;
+                                color: Theme.text-muted;
+                                font-size: 12px * AppState.text-scale;
+                                overflow: elide;
+                                horizontal-stretch: 1;
+                            }
+
+                            if AppState.music-bar-quality != "": Text {
+                                text: AppState.music-bar-quality;
+                                color: Theme.text-subtle;
+                                font-size: 11px * AppState.text-scale;
+                                vertical-alignment: center;
+                            }
                         }
                     }
                 }

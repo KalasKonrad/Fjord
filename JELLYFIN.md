@@ -194,6 +194,16 @@ Server side (`Folder.FillUserDataDtoValues`): `PlayedPercentage = played / total
 played, so a series whose only activity is an in-progress episode still reports 0 — Fjord
 also excludes series that have an episode in Continue Watching or Next Up.
 
+### A song's format and quality **[used]** (verified live 2026-10-17)
+With `Fields=MediaStreams` an `Audio` item carries a top-level `Container` (`"flac"`, `"mp3"`,
+`"ogg"`) and `MediaStreams`: one `Type:"Audio"` entry with `Codec` (`"flac"`, `"mp3"`,
+`"vorbis"`), `BitRate` (bit/s — 824095 for a 16/44.1 FLAC, 256000 MP3, 96000 Vorbis),
+`SampleRate` (Hz) and `BitDepth` (lossless only; null for MP3/Vorbis), plus an
+`EmbeddedImage` (the cover, `mjpeg`) and a `Lyric` entry. Requested on the album, playlist and
+folder track lists; `get_item_detail` already includes MediaStreams.
+`MediaItem::audio_quality()` → "FLAC 16/44.1" / "MP3 256 kbps" (rows, music bar),
+"FLAC · 16-bit / 44.1 kHz" (Now Playing).
+
 ### An artist folder's loose tracks **[used]** (verified live 2026-10-17)
 ```
 GET /Users/{userId}/Items

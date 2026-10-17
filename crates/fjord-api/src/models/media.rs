@@ -15,8 +15,11 @@
 //                   playlist fields: media_type, playlist_item_id (entry id for removal), child_count
 //                   media_streams: Vec<MediaStream> (Fields=MediaStreams only); video_stream_info() ->
 //                   Option<VideoStreamInfo> (width/fps/is_hdr) — display-mode-sync's pre-decode switch
-//   MediaStream     one MediaStreams[] entry — only Video entries are kept (video_streams_only) — Type/Width/Height/
-//                   RealFrameRate/AverageFrameRate/VideoRange; no per-file mastering-luminance/CLL/FALL
+//   MediaStream     one MediaStreams[] entry — the Video entries + the first Audio one are kept
+//                   (video_and_first_audio) — Type/Width/Height/RealFrameRate/AverageFrameRate/VideoRange,
+//                   audio Codec/BitRate/SampleRate/BitDepth; no per-file mastering-luminance/CLL/FALL
+//   AudioQuality    a song's format + quality from MediaItem::audio_quality() (with Container):
+//                   short() "FLAC 24/96" / "MP3 256 kbps", long() "FLAC · 24-bit / 96 kHz"
 //   VideoStreamInfo extracted width/fps/is_hdr summary returned by MediaItem::video_stream_info()
 // ─────────────────────────────────────────────────────────────────────────────
 use serde::{Deserialize, Serialize};
@@ -56,8 +59,8 @@ pub struct StudioInfo {
 }
 
 // One entry of MediaItem.media_streams — video/audio/subtitle tracks mixed
-// together on the wire; only Type=="Video" entries are consumed today (see
-// MediaItem::video_stream_info()).
+// together on the wire; the Video entries (MediaItem::video_stream_info()) and
+// the first Audio entry (MediaItem::audio_quality()) are kept.
 #[derive(Debug, Clone, Deserialize, Serialize, Default)]
 pub struct MediaStream {
     #[serde(rename = "Type", default)]
@@ -72,6 +75,88 @@ pub struct MediaStream {
     pub average_frame_rate: Option<f64>,
     #[serde(rename = "VideoRange", default)]
     pub video_range: Option<String>,
+    // Audio (verified live 2026-10-17): Codec "flac"/"mp3"/"vorbis"…, BitRate (bit/s),
+    // SampleRate (Hz), BitDepth (lossless only — null for MP3/Vorbis).
+    #[serde(rename = "Codec", default, skip_serializing_if = "Option::is_none")]
+    pub codec: Option<String>,
+    #[serde(rename = "BitRate", default, skip_serializing_if = "Option::is_none")]
+    pub bit_rate: Option<i64>,
+    #[serde(
+        rename = "SampleRate",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub sample_rate: Option<i64>,
+    #[serde(rename = "BitDepth", default, skip_serializing_if = "Option::is_none")]
+    pub bit_depth: Option<i64>,
+}
+
+/// A song's format and quality, from its first audio stream (`MediaItem::audio_quality`).
+#[derive(Debug, Clone, PartialEq)]
+pub struct AudioQuality {
+    /// "FLAC", "MP3", "OGG", "AAC", "Opus", "ALAC", "WAV"…
+    pub format: String,
+    pub lossless: bool,
+    pub bit_depth: Option<i64>,
+    /// Hz
+    pub sample_rate: Option<i64>,
+    /// bit/s
+    pub bitrate: Option<i64>,
+}
+
+impl AudioQuality {
+    /// Sample rate in kHz as people write it: 44.1, 48, 96, 88.2, 192.
+    fn khz(&self) -> Option<String> {
+        let hz = self.sample_rate.filter(|r| *r > 0)?;
+        let k = hz as f64 / 1000.0;
+        Some(if (k - k.round()).abs() < 0.05 {
+            format!("{}", k.round() as i64)
+        } else {
+            format!("{k:.1}")
+        })
+    }
+
+    fn kbps(&self) -> Option<i64> {
+        self.bitrate
+            .filter(|b| *b > 0)
+            .map(|b| (b as f64 / 1000.0).round() as i64)
+    }
+
+    /// Compact, for track rows and the music bar: lossless "FLAC 24/96", lossy "MP3 256 kbps";
+    /// just the format when the details are missing.
+    pub fn short(&self) -> String {
+        if self.lossless {
+            match (self.bit_depth.filter(|d| *d > 0), self.khz()) {
+                (Some(d), Some(k)) => format!("{} {d}/{k}", self.format),
+                _ => self.format.clone(),
+            }
+        } else {
+            match self.kbps() {
+                Some(k) => format!("{} {k} kbps", self.format),
+                None => self.format.clone(),
+            }
+        }
+    }
+
+    /// Spelled out, for Now Playing: "FLAC · 24-bit / 96 kHz", "MP3 · 256 kbps · 44.1 kHz".
+    pub fn long(&self) -> String {
+        let mut parts = vec![self.format.clone()];
+        if self.lossless {
+            match (self.bit_depth.filter(|d| *d > 0), self.khz()) {
+                (Some(d), Some(k)) => parts.push(format!("{d}-bit / {k} kHz")),
+                (None, Some(k)) => parts.push(format!("{k} kHz")),
+                _ => {}
+            }
+        } else {
+            if let Some(k) = self.kbps() {
+                parts.push(format!("{k} kbps"));
+            }
+            if let Some(k) = self.khz() {
+                parts.push(format!("{k} kHz"));
+            }
+        }
+        parts.join(" · ")
+    }
 }
 
 // Extracted, ready-to-use summary of a MediaItem's primary video stream —
@@ -83,12 +168,20 @@ pub struct VideoStreamInfo {
     pub is_hdr: bool,
 }
 
-fn video_streams_only<'de, D>(d: D) -> Result<Vec<MediaStream>, D::Error>
+fn video_and_first_audio<'de, D>(d: D) -> Result<Vec<MediaStream>, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
     let mut v: Vec<MediaStream> = Option::deserialize(d)?.unwrap_or_default();
-    v.retain(|s| s.stream_type == "Video");
+    let mut audio_kept = false;
+    v.retain(|s| match s.stream_type.as_str() {
+        "Video" => true,
+        "Audio" if !audio_kept => {
+            audio_kept = true;
+            true
+        }
+        _ => false,
+    });
     Ok(v)
 }
 
@@ -260,17 +353,21 @@ pub struct MediaItem {
     // reliable; per-file mastering-luminance/MaxCLL/MaxFALL are NOT exposed
     // here at all (confirmed absent from a real Dolby Vision item's raw
     // response) — see video_stream_info()'s own doc comment.
-    // Only Type=="Video" entries are kept (video_streams_only): MediaItems
-    // with this field end up in item_detail_cache, which is persisted to
-    // screen_caches.json and can hold the whole library after a prewarm —
-    // keeping every audio/subtitle entry would bloat it for data nothing reads.
+    // Only the Type=="Video" entries and the first Audio one are kept
+    // (video_and_first_audio): MediaItems with this field end up in item_detail_cache,
+    // which is persisted to screen_caches.json and can hold the whole library after a
+    // prewarm — keeping every audio/subtitle entry would bloat it for data nothing reads.
     #[serde(
         rename = "MediaStreams",
         default,
-        deserialize_with = "video_streams_only",
+        deserialize_with = "video_and_first_audio",
         skip_serializing_if = "Vec::is_empty"
     )]
     pub media_streams: Vec<MediaStream>,
+    // "flac", "mp3", "ogg"… (top-level, verified with Fields=MediaStreams 2026-10-17) — names an
+    // Ogg Vorbis file "OGG" and PCM by its container ("WAV", "AIFF").
+    #[serde(rename = "Container", default, skip_serializing_if = "Option::is_none")]
+    pub container: Option<String>,
 }
 
 impl MediaItem {
@@ -319,6 +416,48 @@ impl MediaItem {
             width,
             fps,
             is_hdr: v.video_range.as_deref() == Some("HDR"),
+        })
+    }
+
+    /// The format and quality of the first audio stream (needs `Fields=MediaStreams`); `None`
+    /// without one. Lossless: FLAC, ALAC, WAV/AIFF (PCM), APE, WavPack, DSD, TrueHD/MLP.
+    pub fn audio_quality(&self) -> Option<AudioQuality> {
+        let a = self
+            .media_streams
+            .iter()
+            .find(|s| s.stream_type == "Audio")?;
+        let codec = a.codec.as_deref().unwrap_or("").to_ascii_lowercase();
+        let container = self.container.as_deref().unwrap_or("").to_ascii_lowercase();
+        let (format, lossless) = match codec.as_str() {
+            "flac" => ("FLAC".to_string(), true),
+            "alac" => ("ALAC".to_string(), true),
+            "ape" => ("APE".to_string(), true),
+            "wavpack" => ("WavPack".to_string(), true),
+            "truehd" | "mlp" => ("TrueHD".to_string(), true),
+            c if c.starts_with("pcm_") => {
+                let f = if container.contains("aif") {
+                    "AIFF"
+                } else {
+                    "WAV"
+                };
+                (f.to_string(), true)
+            }
+            c if c.starts_with("dsd_") => ("DSD".to_string(), true),
+            "mp3" => ("MP3".to_string(), false),
+            "aac" => ("AAC".to_string(), false),
+            "vorbis" => ("OGG".to_string(), false),
+            "opus" => ("Opus".to_string(), false),
+            c if c.starts_with("wma") => ("WMA".to_string(), false),
+            "" if container.is_empty() => return None,
+            "" => (container.to_uppercase(), false),
+            c => (c.to_uppercase(), false),
+        };
+        Some(AudioQuality {
+            format,
+            lossless,
+            bit_depth: a.bit_depth,
+            sample_rate: a.sample_rate,
+            bitrate: a.bit_rate,
         })
     }
 
@@ -569,15 +708,19 @@ mod tests {
     }
 
     #[test]
-    fn media_streams_keeps_only_video_entries() {
+    fn media_streams_keeps_video_and_the_first_audio_entry() {
         let json = r#"{"Id":"m1","Name":"M","Type":"Movie","MediaStreams":[
             {"Type":"Audio"},{"Type":"Subtitle"},
             {"Type":"Video","Width":1920,"RealFrameRate":24.0},
-            {"Type":"Subtitle"}
+            {"Type":"Audio"},{"Type":"Subtitle"}
         ]}"#;
         let item: MediaItem = serde_json::from_str(json).unwrap();
-        assert_eq!(item.media_streams.len(), 1);
-        assert_eq!(item.media_streams[0].stream_type, "Video");
+        let types: Vec<&str> = item
+            .media_streams
+            .iter()
+            .map(|s| s.stream_type.as_str())
+            .collect();
+        assert_eq!(types, ["Audio", "Video"]);
 
         let null = r#"{"Id":"m1","Name":"M","Type":"Movie","MediaStreams":null}"#;
         let item: MediaItem = serde_json::from_str(null).unwrap();
@@ -594,5 +737,67 @@ mod tests {
             .video_stream_info()
             .expect("should find the video stream");
         assert!(!info.is_hdr);
+    }
+
+    // The server's real answers (2026-10-17): a FLAC, an MP3 and an Ogg Vorbis track.
+    fn song(container: &str, stream: &str) -> MediaItem {
+        let json = format!(
+            r#"{{"Id":"s","Name":"S","Type":"Audio","Container":"{container}","MediaStreams":[{stream},
+                {{"Type":"EmbeddedImage","Codec":"mjpeg","BitDepth":8}},{{"Type":"Lyric"}}]}}"#
+        );
+        serde_json::from_str(&json).unwrap()
+    }
+
+    #[test]
+    fn audio_quality_labels() {
+        let flac = song(
+            "flac",
+            r#"{"Type":"Audio","Codec":"flac","BitRate":824095,"SampleRate":44100,"BitDepth":16}"#,
+        )
+        .audio_quality()
+        .unwrap();
+        assert_eq!(
+            (flac.short(), flac.long()),
+            ("FLAC 16/44.1".into(), "FLAC · 16-bit / 44.1 kHz".into())
+        );
+        let hires = song(
+            "flac",
+            r#"{"Type":"Audio","Codec":"flac","SampleRate":96000,"BitDepth":24}"#,
+        )
+        .audio_quality()
+        .unwrap();
+        assert_eq!(hires.short(), "FLAC 24/96");
+        let mp3 = song(
+            "mp3",
+            r#"{"Type":"Audio","Codec":"mp3","BitRate":256000,"SampleRate":44100}"#,
+        )
+        .audio_quality()
+        .unwrap();
+        assert_eq!(
+            (mp3.short(), mp3.long()),
+            ("MP3 256 kbps".into(), "MP3 · 256 kbps · 44.1 kHz".into())
+        );
+        let ogg = song(
+            "ogg",
+            r#"{"Type":"Audio","Codec":"vorbis","BitRate":96000,"SampleRate":44100}"#,
+        )
+        .audio_quality()
+        .unwrap();
+        assert_eq!(ogg.short(), "OGG 96 kbps");
+        let wav = song(
+            "wav",
+            r#"{"Type":"Audio","Codec":"pcm_s24le","SampleRate":48000,"BitDepth":24}"#,
+        )
+        .audio_quality()
+        .unwrap();
+        assert_eq!(wav.short(), "WAV 24/48");
+        // No details: just the format; no audio stream at all: nothing.
+        let bare = song("flac", r#"{"Type":"Audio","Codec":"flac"}"#)
+            .audio_quality()
+            .unwrap();
+        assert_eq!((bare.short(), bare.long()), ("FLAC".into(), "FLAC".into()));
+        let none: MediaItem =
+            serde_json::from_str(r#"{"Id":"m","Name":"M","Type":"Audio"}"#).unwrap();
+        assert!(none.audio_quality().is_none());
     }
 }
