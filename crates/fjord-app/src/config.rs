@@ -22,6 +22,7 @@
 //                   dashboard_hero ("off" | "band" (default) | "background"; reads the old bool),
 //                   focus_color/_width/_style/_glow/_glow_on/_opacity/_zoom (focus ring, glow
 //                   strength and scope, picture zoom), screensaver_mins (0 = off),
+//                   now_playing_auto_open_secs (0 = off; reads the old bool),
 //                   Seerr connection (seerr_enabled/_url/_auth_method/_api_key/
 //                   _session_cookie), Discover filters (genres by name, providers by id), Request
 //                   Options' remembered choices; remember_login (false → never resumed silently,
@@ -110,8 +111,23 @@ fn default_gapless() -> bool {
 fn default_skip_fade_mute_passthrough() -> bool {
     true
 }
-fn default_now_playing_auto_open() -> bool {
-    true
+fn default_now_playing_auto_open_secs() -> u32 {
+    30
+}
+/// ProfileSettings.now_playing_auto_open_secs: seconds, or the on/off bool older versions saved
+/// (`now_playing_auto_open`; on = the old fixed 30 s).
+fn de_now_playing_auto_open_secs<'de, D: serde::Deserializer<'de>>(d: D) -> Result<u32, D::Error> {
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Saved {
+        OnOff(bool),
+        Secs(u32),
+    }
+    Ok(match Saved::deserialize(d)? {
+        Saved::OnOff(true) => default_now_playing_auto_open_secs(),
+        Saved::OnOff(false) => 0,
+        Saved::Secs(s) => s,
+    })
 }
 fn default_screensaver_mins() -> u32 {
     5
@@ -665,12 +681,15 @@ pub(crate) struct ProfileSettings {
     pub sub_background: bool,
     #[serde(default)]
     pub audio_lang: String,
-    // Auto-open the fullscreen Now Playing screen after ~30 s idle while music
-    // plays. Fixed threshold in v1 — only the on/off is a setting. Profile-
-    // scoped (2026-08-08, Bonfire Phase 1): pure per-viewer UX preference,
-    // unlike gapless_audio's hardware-compatibility framing.
-    #[serde(default = "default_now_playing_auto_open")]
-    pub now_playing_auto_open: bool,
+    // Auto-open the fullscreen Now Playing screen after this many seconds without a key press or
+    // mouse movement while music plays (0 = off; Settings → Audio, per profile — a per-viewer
+    // preference). Older versions saved an on/off `now_playing_auto_open` (on = a fixed 30 s).
+    #[serde(
+        default = "default_now_playing_auto_open_secs",
+        alias = "now_playing_auto_open",
+        deserialize_with = "de_now_playing_auto_open_secs"
+    )]
+    pub now_playing_auto_open_secs: u32,
     // Screensaver while music plays (Settings → Audio, 2026-10-17): minutes without a key press or
     // mouse movement before the window turns black (0 = off). The screen itself stays on —
     // playback keeps inhibiting power saving (HDMI must keep its signal). screensaver.rs.
@@ -886,7 +905,7 @@ impl Default for ProfileSettings {
             sub_respect_ass_styling: true,
             sub_color: String::new(),
             sub_background: false,
-            now_playing_auto_open: true,
+            now_playing_auto_open_secs: default_now_playing_auto_open_secs(),
             skip_intro_mode: default_skip_mode(),
             skip_intro_secs: 8,
             skip_recap_mode: default_skip_mode(),
@@ -1062,7 +1081,7 @@ struct LegacyConfig {
     pub audio_channels: String,
     #[serde(default = "default_gapless")]
     pub gapless_audio: bool,
-    #[serde(default = "default_now_playing_auto_open")]
+    #[serde(default = "default_true")]
     pub now_playing_auto_open: bool,
     #[serde(default)]
     pub alsa_irq_scheduling: bool,
@@ -1266,7 +1285,11 @@ fn migrate_legacy_config(l: LegacyConfig) -> Config {
         sub_color: l.sub_color,
         sub_background: l.sub_background,
         audio_lang: l.audio_lang,
-        now_playing_auto_open: l.now_playing_auto_open,
+        now_playing_auto_open_secs: if l.now_playing_auto_open {
+            default_now_playing_auto_open_secs()
+        } else {
+            0
+        },
         skip_intro_mode: l.skip_intro_mode,
         skip_intro_secs: l.skip_intro_secs,
         skip_recap_mode: l.skip_recap_mode,
@@ -2442,6 +2465,27 @@ mod tests {
     }
 
     #[test]
+    fn now_playing_auto_open_reads_the_old_switch_and_seconds() {
+        let read = |json: &str| {
+            serde_json::from_value::<ProfileSettings>({
+                let mut v = serde_json::to_value(ProfileSettings::default()).unwrap();
+                let o = v.as_object_mut().unwrap();
+                o.remove("now_playing_auto_open_secs");
+                if let serde_json::Value::Object(extra) = serde_json::from_str(json).unwrap() {
+                    o.extend(extra);
+                }
+                v
+            })
+            .unwrap()
+            .now_playing_auto_open_secs
+        };
+        assert_eq!(read(r#"{"now_playing_auto_open":true}"#), 30);
+        assert_eq!(read(r#"{"now_playing_auto_open":false}"#), 0);
+        assert_eq!(read(r#"{"now_playing_auto_open_secs":120}"#), 120);
+        assert_eq!(read("{}"), 30);
+    }
+
+    #[test]
     fn copy_settings_from_copies_only_the_profile_settings() {
         let mut src = ProfileSettings {
             user_id: "aaaa0001000000000000000000000000".into(),
@@ -2460,7 +2504,7 @@ mod tests {
         src.card_size = "large".into();
         src.text_size = "extra-large".into();
         src.trailer_quality = "720p".into();
-        src.now_playing_auto_open = !ProfileSettings::default().now_playing_auto_open;
+        src.now_playing_auto_open_secs = 120;
         src.dashboard_hero = "background".into();
         src.focus_color = "gold".into();
         src.focus_zoom = "25".into();
@@ -2494,7 +2538,7 @@ mod tests {
         assert_eq!(dst.card_size, "large");
         assert_eq!(dst.text_size, "extra-large");
         assert_eq!(dst.trailer_quality, "720p");
-        assert_eq!(dst.now_playing_auto_open, src.now_playing_auto_open);
+        assert_eq!(dst.now_playing_auto_open_secs, 120);
         assert_eq!(dst.dashboard_rows, src.dashboard_rows);
         assert_eq!(dst.dashboard_hero, "background");
         assert_eq!(dst.screensaver_mins, 15);

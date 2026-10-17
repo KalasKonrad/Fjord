@@ -3,7 +3,7 @@
 //                            key dispatch (keys::wire_key_dispatch) and the mouse tap below,
 //                            touch_playback() by profile::wire_idle_lock_timer (while media plays);
 //                            idle_for() for the idle lock, input_idle_for() (real input only) for
-//                            the screensaver
+//                            the screensaver and the Now Playing auto-open (playback/timer.rs)
 //   FjordApplicationHandler  the one CustomApplicationHandler Slint allows (registered via
 //                            slint::BackendSelector before MainWindow::new()), so it carries every
 //                            concern needing that hook: (1) the mouse-activity tap — sees every

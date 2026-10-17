@@ -306,10 +306,10 @@ pub(crate) struct VideoState {
     // push_queue_display to render a synthetic now-playing row when the current
     // play is not the playlist row at playlist_index (queue jump, single track).
     pub now_playing: Option<QueueItem>,
-    // Idle ticks (16 ms each) since the fullscreen Now Playing screen was last
-    // open — drives the auto-open feature. Pinned to 0 while the screen IS
-    // open (any close path then needs a fresh idle window before re-firing).
-    pub music_idle_ticks: u32,
+    // Since when music has played with the fullscreen Now Playing screen closed (None while it is
+    // open or no music plays) — with the last input, drives the auto-open (timer.rs
+    // music_auto_open): any close path needs a fresh idle stretch before it opens again.
+    pub music_idle_since: Option<Instant>,
     // Lyrics for the current Audio track (populated by get_lyrics; None = no/unknown lyrics).
     pub lyrics: Option<Vec<(u64, String)>>,
     pub lyrics_available: bool,
@@ -407,7 +407,7 @@ impl Default for VideoState {
             video_spot_waits: 0,
             startup_snapshot_ticks: 0,
             now_playing: None,
-            music_idle_ticks: 0,
+            music_idle_since: None,
             lyrics: None,
             lyrics_available: false,
             preloaded_next: None,

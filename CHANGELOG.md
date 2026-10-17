@@ -23,6 +23,10 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Improved: Auto-open Now Playing has a delay setting.** Settings → Audio →
+  "Auto-open Now Playing" is now Off / 15 s / 30 s / 1 / 2 / 5 min instead of
+  on/off (default 30 s, as before; a saved "off" stays off), per profile.
+  Moving the mouse now also counts as activity, not only key presses.
 - **Fixed: a playlist, album or artist page could show a long code instead of
   its name** — e.g. View Details on a Music dashboard card before the library
   list was opened. Every page now takes its name from the server (collections
