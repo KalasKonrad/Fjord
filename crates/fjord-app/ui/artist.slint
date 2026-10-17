@@ -1,5 +1,7 @@
 // ── fjord-app · artist.slint ──────────────────────────────────────────────────
-//   ArtistScreen  MusicArtist detail: portrait + meta + album grid
+//   ArtistScreen  MusicArtist detail: portrait + meta + album grid + Tracks (the folder's loose
+//                 tracks: artist-tracks / -in-tracks / -track-focused, TrackRow); the page scrolls to
+//                 the focused album row or track (kb-y from the laid-out positions)
 //                 artist-focused: int (focused album card flat index)
 //                 artist-back-focused: bool (Back button has focus)
 //                 artist-btn-focused: int (-1=none, 0=▶ Play All, 1=♥, 2=bio)
@@ -14,6 +16,7 @@ import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
 import {
     StackPage,
+    TrackRow,
     FjordButton,
     MediaCard,
     IconCircleButton,
@@ -28,11 +31,18 @@ export component ArtistScreen inherits StackPage {
         ((AppState.artist-albums.length + AppState.library-cols - 1) / AppState.library-cols)
         * (card-h + gap) + gap;
 
-    property <length> kb-y: clamp(
-        -(AppState.artist-focused / AppState.library-cols) * (card-h + gap) + fl-container.height / 2 - card-h / 2,
-        min(0px, fl-container.height - grid-content-height),
-        0px);
-    changed kb-y => { art-fl.content-y = kb-y; }
+    property <length> track-h: 48px;
+
+    // Keyboard scroll: the page follows the focused album row or track (the header → the top).
+    // Positions come from the laid-out elements (fl-container, tracks-section), so the bio above
+    // and the grid's row count are included. root.height, not fl.height (SLINT.md).
+    property <length> focus-top: AppState.artist-in-tracks
+        ? tracks-section.y + tracks-list.y + AppState.artist-track-focused * track-h
+        : fl-container.y + gap + floor(AppState.artist-focused / AppState.library-cols) * (card-h + gap);
+    property <length> focus-h: AppState.artist-in-tracks ? track-h : card-h;
+    property <length> kb-y: AppState.artist-back-focused || AppState.artist-btn-focused >= 0 ? 0px
+        : clamp(root.height / 2 - focus-top - focus-h / 2, min(0px, root.height - art-content.preferred-height), 0px);
+    changed kb-y => { fl.content-y = kb-y; }
 
     fl := Flickable {
         width: parent.width;
@@ -160,50 +170,85 @@ export component ArtistScreen inherits StackPage {
                 height: grid-content-height;
                 horizontal-stretch: 1;
 
-                art-fl := Flickable {
-                    content-width: fl-container.width;
-                    content-height: max(fl-container.height, grid-content-height);
-                    animate content-y {
-                        duration: 150ms * AppState.settings-scroll-speed;
-                        easing: ease-out-expo;
-                    }
+                VerticalLayout {
+                    padding: gap;
+                    spacing: gap;
 
-                    VerticalLayout {
-                        padding: gap;
-                        spacing: gap;
-
-                        for row-idx in (AppState.artist-albums.length + AppState.library-cols - 1) / AppState.library-cols: HorizontalLayout {
+                    for row-idx in (AppState.artist-albums.length + AppState.library-cols - 1) / AppState.library-cols: HorizontalLayout {
                             // The focused card's row draws above the next one (its zoom reaches into the gap).
                             z: floor(AppState.artist-focused / AppState.library-cols) == row-idx ? 1 : 0;
-                            alignment: start;
-                            spacing: gap;
-                            height: card-h;
+                        alignment: start;
+                        spacing: gap;
+                        height: card-h;
 
-                            for col-idx in AppState.library-cols: MediaCard {
-                                property <int> idx: row-idx * AppState.library-cols + col-idx;
+                        for col-idx in AppState.library-cols: MediaCard {
+                            property <int> idx: row-idx * AppState.library-cols + col-idx;
                                 // Edge cards zoom inward so the grid's edges don't cut them off.
                                 zoom-anchor-x: col-idx == 0 ? 0 : col-idx == AppState.library-cols - 1 ? 1 : 0.5;
-                                zoom-anchor-y: row-idx == 0 ? 0 : row-idx == floor((AppState.artist-albums.length - 1) / AppState.library-cols) ? 1 : 0.5;
-                                visible: idx < AppState.artist-albums.length;
-                                item: AppState.artist-albums[idx];
-                                width: card-w;
-                                focused: idx == AppState.artist-focused && !AppState.artist-back-focused;
-                                clicked => {
+                            zoom-anchor-y: row-idx == 0 ? 0 : row-idx == floor((AppState.artist-albums.length - 1) / AppState.library-cols) ? 1 : 0.5;
+                            visible: idx < AppState.artist-albums.length;
+                            item: AppState.artist-albums[idx];
+                            width: card-w;
+                                // Not while the header or the Tracks have the keys.
+                                focused: idx == AppState.artist-focused && !AppState.artist-back-focused
+                                && AppState.artist-btn-focused < 0 && !AppState.artist-in-tracks;
+                            clicked => {
                                     // Single click opens (grid-wide convention);
                                     // focus syncs so Back returns the cursor here.
                                     AppState.artist-focused = idx;
-                                    AppState.artist-back-focused = false;
-                                    AppState.artist-btn-focused = -1;
-                                    let c = AppState.artist-albums[idx];
-                                    AppState.open-album(c.id, c.title);
-                                }
-                                right-clicked => {
-                                    let c = AppState.artist-albums[idx];
-                                    AppState.context-menu-title = c.title;
-                                    AppState.open-context-menu(c.id, c.has-played, c.is-favorite, c.resume-pct, c.item-type, c.series-id);
-                                }
+                                AppState.artist-back-focused = false;
+                                AppState.artist-btn-focused = -1;
+                                AppState.artist-in-tracks = false;
+                                let c = AppState.artist-albums[idx];
+                                AppState.open-album(c.id, c.title);
+                            }
+                            right-clicked => {
+                                let c = AppState.artist-albums[idx];
+                                AppState.context-menu-title = c.title;
+                                AppState.open-context-menu(c.id, c.has-played, c.is-favorite, c.resume-pct, c.item-type, c.series-id);
                             }
                         }
+                    }
+                }
+            }
+
+            // ── Tracks: files lying directly in the artist's folder, in no album (untagged files —
+            // artist.rs). Height 0 when there are none (an invisible layout child still takes room).
+            tracks-section := VerticalLayout {
+                visible: AppState.artist-tracks.length > 0;
+                height: AppState.artist-tracks.length > 0 ? self.preferred-height : 0px;
+                padding-left: gap;
+                padding-right: gap;
+                padding-top: gap;
+                spacing: 8px;
+
+                Text {
+                    text: "Tracks";
+                    color: Theme.text;
+                    font-size: 16px * AppState.text-scale;
+                    font-weight: 700;
+                }
+
+                tracks-list := Rectangle {
+                    height: AppState.artist-tracks.length * track-h;
+
+                    for trk[i] in AppState.artist-tracks: TrackRow {
+                        x: 0px;
+                        y: trk.row-y-px * 1px;
+                        width: parent.width;
+                        height: track-h;
+                        track: trk;
+                        index: i;
+                        focused: AppState.artist-in-tracks && i == AppState.artist-track-focused
+                            && !AppState.artist-back-focused && AppState.artist-btn-focused < 0;
+                        page-artist: AppState.artist-title;
+                        clicked => {
+                            AppState.artist-in-tracks = true;
+                            AppState.artist-track-focused = i;
+                            AppState.artist-back-focused = false;
+                            AppState.artist-btn-focused = -1;
+                        }
+                        double-clicked => { AppState.play-artist-track(trk.id); }
                     }
                 }
             }
