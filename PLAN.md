@@ -37,6 +37,15 @@ A small release: bug fixes, polish, minor features. Released per CLAUDE.md → R
   - [x] **3. Hero band** at the top: the focused card's backdrop, title, year/rating/runtime and 2–3 lines of overview (fades as focus moves, short delay so fast scrolling doesn't fetch every card); Discover cards (Watchlist/Coming Up) via Seerr details; Music uses the album cover. Settings → Interface on/off (default on, per profile).
 - [x] **Release helper:** `scripts/bump-packages.sh` (done 2026-10-15) — a script for CLAUDE.md → Releasing step 3 — sets `pkgver` in `PKGBUILD` and `fjord-bin/PKGBUILD` and fjord-bin's `sha256sums` from the published tarball.
 
+**Maintainability (refactors, no visible change)**
+- [x] **Done 2026-10-16/17, not live-tested yet** (each has its own item in the Live-test checklist): detail page scrolls to the real row; one dashboard component + card-rows list (Discover's landing rows too); Settings dropdowns from one table (`CHOICES`); Settings row list as a table + guard test; Settings ↔ config mirroring from one list per side + round-trip test; context menu built from one Rust list; playback tick split into steps; key router as tables (`RAW_TIERS`, `GLOBAL_SHORTCUTS`); `wire_discover` / `wire_controls` split by area.
+- [ ] **Live test round first** — before any refactor below: the Live-test checklist on the dev machine, then playback on the HTPC (HDR, display sync, the NVIDIA path go through the playback tick); check the logs, fix what turns up. ~20 commits are untested; more moves on top would make a regression harder to trace.
+- [ ] **Keyboard zones from one list** (after the test round): the detail-style pages step through button/zone lists that Slint repeats as `if` conditions — `detail::existing_detail_buttons`, `series::existing_series_buttons`, `profile_edit::existing_profile_edit_zones`, `discover::keys::existing_zones` (+ the Bonfire group / Connect Seerr zone lists). Build them in Rust and draw from them in Slint, like the context menu — removes CLAUDE.md's last "change both sides together" rule. `series::handle_key` (549 lines) and `detail::handle_key` (368) shrink with it. The biggest of these four.
+- [ ] **`playback::start_playback` split by step** (569 lines: setup, mpv config, video surface, the display-sync pre-decode wait), like the tick — pure move; needs a playback test (dev + HTPC).
+- [ ] **`widgets.slint` split into files** (2,738 lines, ~30 components): cards, settings widgets, player bars, keyboards… — pure move + imports, low risk.
+- [ ] **`discover::open_discover_item_ex` in phases** (515 lines): fetch, build, apply — the request page opener.
+- Not planned (low gain or high churn): splitting `AppState` into several globals (every Rust access would change), `reset_session_state` (a list by nature), `main()` (setup + `wire_*` calls).
+
 **Before tagging**
 - [ ] **Settings crash watch (Issues):** if it hasn't come back, remove the temporary `--cfg slint_debug_property` (Pending) and close the issue; if it has, fix it first.
 - [ ] The first nightly from `release-0.5.1` built and installed (Live-test checklist).
