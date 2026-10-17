@@ -112,7 +112,7 @@
 //                         ProfileSettings.dashboard_rows), nav-row-order(); the editor: show-dashboard-rows,
 //                         dash-rows-tab/-items/-cursor/-col, dash-rows-open/-select-tab/-action
 //   Focus highlight       settings-focus-color/-width/-style/-glow/-opacity/-zoom → focus-color, focus-width,
-//                         focus-line-width, focus-press-width, focus-glow, glow-1/-2/-3 + glow-reach (the
+//                         focus-line-width, focus-press-width, focus-glow, glow-1/-2/-3 + glow-reach + glow-color (the
 //                         glow strength's halos, cast by widgets.slint FocusGlow), settings-focus-glow-on →
 //                         sidebar-glow / row-glow + focus-halo(radius, layers) (FocusHalo's image, halo.rs),
 //                         focus-scale; the ring helpers ring-width / nav-ring-width / glow-ring-width;
@@ -1593,7 +1593,7 @@ export global AppState {
     in-out property <string> settings-focus-color: "white";
     in-out property <string> settings-focus-width: "3";
     in-out property <string> settings-focus-style: "line";
-    in-out property <string> settings-focus-glow: "strong";
+    in-out property <string> settings-focus-glow: "soft";
     // "pictures" | "sidebar" | "everything" (Settings → Interface → Glow on): pictures, tiles,
     // buttons and pills always glow in the Glow styles; also the sidebar; also every row, field,
     // menu entry and list row.
@@ -1611,16 +1611,20 @@ export global AppState {
     out property <length> focus-line-width: settings-focus-style == "glow" ? 0px : focus-thickness;
     out property <length> focus-press-width: focus-thickness + 2px;
     out property <bool> focus-glow: settings-focus-style != "line";
-    // Glow strength (Settings → Interface → Focus glow strength): FocusGlow's halos, tight → wide,
-    // as drop-shadow blurs (0 = no layer). At a 3px ring: soft 17 (one layer), medium 8 + 24,
-    // strong 6 + 16 + 32, very strong 9 + 24 + 48; a thinner/thicker ring scales them by (t + 3) / 6.
+    // Glow strength (Settings → Interface → Focus glow strength): the glow's layers, tight → wide,
+    // as drop-shadow blurs (0 = no layer). At a 3px ring: one layer for faint 6 (half as bright,
+    // glow-color), very soft 10, subtle 13, soft 17 (the default); medium 8 + 24, strong 6 + 16 + 32,
+    // very strong 9 + 24 + 48. A thinner/thicker ring scales them by (t + 3) / 6. An unknown value
+    // reads as soft.
+    property <string> glow-level: settings-focus-glow;
+    property <bool> glow-multi: glow-level == "medium" || glow-level == "strong" || glow-level == "very-strong";
     property <float> glow-k: (focus-thickness + 3px) / 6px;
-    out property <length> glow-1: glow-k * (settings-focus-glow == "soft" ? 17px
-        : settings-focus-glow == "medium" ? 8px : settings-focus-glow == "very-strong" ? 9px : 6px);
-    out property <length> glow-2: glow-k * (settings-focus-glow == "soft" ? 0px
-        : settings-focus-glow == "medium" ? 24px : settings-focus-glow == "very-strong" ? 24px : 16px);
-    out property <length> glow-3: glow-k * (settings-focus-glow == "soft" || settings-focus-glow == "medium" ? 0px
-        : settings-focus-glow == "very-strong" ? 48px : 32px);
+    out property <length> glow-1: glow-k * (glow-level == "faint" ? 6px : glow-level == "very-soft" ? 10px
+        : glow-level == "subtle" ? 13px : glow-level == "medium" ? 8px : glow-level == "strong" ? 6px
+        : glow-level == "very-strong" ? 9px : 17px);
+    out property <length> glow-2: glow-k * (!glow-multi ? 0px : glow-level == "strong" ? 16px : 24px);
+    out property <length> glow-3: glow-k * (glow-level == "strong" ? 32px : glow-level == "very-strong" ? 48px : 0px);
+    out property <color> glow-color: glow-level == "faint" ? focus-color.transparentize(0.5) : focus-color;
     // How far the glow reaches past an element's edge (a drop shadow's image ends one blur out).
     out property <length> glow-reach: focus-glow ? max(glow-1, max(glow-2, glow-3)) : 0px;
     out property <bool> sidebar-glow: focus-glow && settings-focus-glow-on != "pictures";

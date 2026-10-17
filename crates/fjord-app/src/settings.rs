@@ -918,6 +918,9 @@ const FOCUS_STYLE_OPTIONS: &[(&str, &str)] = &[
     ("both", "Line and glow"),
 ];
 const FOCUS_GLOW_OPTIONS: &[(&str, &str)] = &[
+    ("faint", "Faint"),
+    ("very-soft", "Very soft"),
+    ("subtle", "Subtle"),
     ("soft", "Soft"),
     ("medium", "Medium"),
     ("strong", "Strong"),
@@ -3629,6 +3632,37 @@ mod tests {
             }
         }
         n
+    }
+
+    #[test]
+    fn glow_levels_at_a_3px_ring() {
+        i_slint_backend_testing::init_no_event_loop();
+        let window = crate::MainWindow::new().unwrap();
+        let g = crate::AppState::get(&window);
+        g.set_settings_focus_width("3".into());
+        g.set_settings_focus_style("glow".into());
+        assert_eq!(g.get_settings_focus_glow().as_str(), "soft", "default");
+        for (level, layers) in [
+            ("faint", [6.0, 0.0, 0.0]),
+            ("very-soft", [10.0, 0.0, 0.0]),
+            ("subtle", [13.0, 0.0, 0.0]),
+            ("soft", [17.0, 0.0, 0.0]),
+            ("medium", [8.0, 24.0, 0.0]),
+            ("strong", [6.0, 16.0, 32.0]),
+            ("very-strong", [9.0, 24.0, 48.0]),
+            ("bogus", [17.0, 0.0, 0.0]),
+        ] {
+            g.set_settings_focus_glow(level.into());
+            assert_eq!(
+                [g.get_glow_1(), g.get_glow_2(), g.get_glow_3()],
+                layers,
+                "{level}"
+            );
+        }
+        g.set_settings_focus_glow("faint".into());
+        assert!(g.get_glow_color().alpha() < g.get_focus_color().alpha());
+        g.set_settings_focus_glow("soft".into());
+        assert_eq!(g.get_glow_color(), g.get_focus_color());
     }
 
     #[test]
