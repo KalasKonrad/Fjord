@@ -168,7 +168,7 @@ const AUD_ALSA_IRQ: &str = "audio.alsa_irq"; // virtual — hidden when SPDIF of
 const AUD_SKIP_FADE_MUTE: &str = "audio.skip_fade_mute"; // virtual — hidden when SPDIF off
 const AUD_AUDIO_LANG: &str = "audio.lang";
 const AUD_GAPLESS: &str = "audio.gapless";
-const AUD_NOW_PLAYING_AUTO_OPEN: &str = "audio.now_playing_auto_open";
+const AUD_NOW_PLAYING_AUTO_OPEN: &str = "audio.now_playing_auto_open_secs"; // per profile; timer.rs
 const AUD_SCREENSAVER: &str = "audio.screensaver_mins"; // per profile; screensaver.rs
 
 // ── Player (config) section rows ──────────────────────────────────────────────
@@ -756,6 +756,14 @@ const SKIP_MODE_3_OPTIONS: &[(&str, &str)] = &[
     ("ask", "Ask"),
     ("never-skip", "Never skip"),
 ];
+const NOW_PLAYING_SECS_OPTIONS: &[(&str, &str)] = &[
+    ("0", "Off"),
+    ("15", "15 s"),
+    ("30", "30 s"),
+    ("60", "1 min"),
+    ("120", "2 min"),
+    ("300", "5 min"),
+];
 const SCREENSAVER_MINS_OPTIONS: &[(&str, &str)] = &[
     ("0", "Off"),
     ("1", "1 min"),
@@ -1104,6 +1112,14 @@ static CHOICES: &[Choice] = &[
         field: Field::Str(
             |g| g.get_settings_skip_credits_mode(),
             |g, v| g.set_settings_skip_credits_mode(v),
+        ),
+    },
+    Choice {
+        key: AUD_NOW_PLAYING_AUTO_OPEN,
+        options: NOW_PLAYING_SECS_OPTIONS,
+        field: Field::Int(
+            |g| g.get_settings_now_playing_auto_open_secs(),
+            |g, v| g.set_settings_now_playing_auto_open_secs(v),
         ),
     },
     Choice {
@@ -2169,10 +2185,10 @@ pub(crate) static PROFILE_BINDS: &[ProfileBind] = &[
     ),
     bind!(
         Profile,
-        now_playing_auto_open,
-        get_settings_now_playing_auto_open,
-        set_settings_now_playing_auto_open,
-        bool
+        now_playing_auto_open_secs,
+        get_settings_now_playing_auto_open_secs,
+        set_settings_now_playing_auto_open_secs,
+        u32
     ),
     bind!(
         Profile,
@@ -2436,11 +2452,6 @@ static TOGGLES: &[Toggle] = &[
         AUD_GAPLESS,
         |g| g.get_settings_gapless_audio(),
         |g, v| g.set_settings_gapless_audio(v),
-    ),
-    (
-        AUD_NOW_PLAYING_AUTO_OPEN,
-        |g| g.get_settings_now_playing_auto_open(),
-        |g, v| g.set_settings_now_playing_auto_open(v),
     ),
     (
         UI_ONSCREEN_KEYBOARD,

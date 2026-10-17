@@ -818,7 +818,7 @@ pub(crate) fn wire_idle_lock_timer(
         // Active, non-paused playback continuously counts as activity —
         // implemented as "keep resetting the clock to now while genuinely
         // playing," not a separate skip-the-check branch, matching how
-        // music_idle_ticks already treats its own gating condition.
+        // the Now Playing auto-open (timer.rs) treats its own gating condition.
         // Paused playback does NOT suppress the clock: someone stepping
         // away with a movie paused is exactly the scenario a household
         // security lock exists to catch, matching how a phone still locks

@@ -850,6 +850,7 @@ fn main() -> Result<()> {
         rt.handle().clone(),
         Arc::clone(&controls_show),
         Arc::clone(&seek_suppress),
+        activity_clock.clone(),
     );
     std::mem::forget(mpv_timer);
 
@@ -1166,7 +1167,7 @@ fn main() -> Result<()> {
 
     prewarm::wire_prewarm(&window, &state, &rt);
 
-    keys::wire_key_dispatch(&window, &state, &video, &rt, &activity_clock);
+    keys::wire_key_dispatch(&window, &state, &rt, &activity_clock);
     screensaver::wire_screensaver(&window, activity_clock.clone());
 
     keys::wire_keybindings(&window, &state);

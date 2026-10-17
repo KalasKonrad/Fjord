@@ -18,7 +18,9 @@
 //                           freezes while paused) + arming the fade-to-black seek
 //   up_next_and_credits     Up Next trigger (credits mode), credits mark-played and its rewind revert
 //   seek_and_controls       seek accumulation debounce, OSD controls idle hide
-//   music_auto_open         idle → open Now Playing (acted on after the lock)
+//   music_auto_open         Settings' seconds without input (ActivityClock — keys and the mouse)
+//                           while music plays with Now Playing closed → open it (acted on after the
+//                           lock); auto_open_due is the pure check (unit-tested)
 //   gapless_preload         append the next track near the end (backs off after a failed append)
 //   poll_player             mpv events: natural end, a failed open (same budget as stalls), the
 //                           trailer open retry (TRAILER_OPEN_RETRY_SECS, once), gapless commit
@@ -44,7 +46,10 @@ struct Tick<'a> {
     controls_show: &'a AtomicBool,
     seek_suppress: &'a AtomicU32,
     gapless_enabled: bool,
-    now_playing_auto_open: bool,
+    /// Settings → Audio "Auto-open Now Playing" (0 = off).
+    now_playing_auto_open_secs: u32,
+    /// How long ago the last key press or mouse movement was (ActivityClock::input_idle_for).
+    input_idle: Duration,
     connection_likely_healthy: bool,
     live_pos: Option<f64>,
     live_dur: Option<f64>,
@@ -93,6 +98,7 @@ pub(crate) fn wire_mpv_timer(
     rt_handle: tokio::runtime::Handle,
     controls_show: Arc<AtomicBool>,
     seek_suppress: Arc<AtomicU32>,
+    activity: crate::activity::ActivityClock,
 ) -> slint::Timer {
     let video_timer = video;
     let window_timer = window_weak;
@@ -103,7 +109,7 @@ pub(crate) fn wire_mpv_timer(
         slint::TimerMode::Repeated,
         Duration::from_millis(16),
         move || {
-            let (gapless_enabled, now_playing_auto_open, connection_likely_healthy) = {
+            let (gapless_enabled, now_playing_auto_open_secs, connection_likely_healthy) = {
                 let s = state_timer.lock().unwrap();
                 // See MAX_STALL_RELOAD_ATTEMPTS_HEALTHY/_UNHEALTHY's own doc
                 // comment for the full reasoning. 45s (vs. the WS's own 30s
@@ -115,7 +121,7 @@ pub(crate) fn wire_mpv_timer(
                         .is_some_and(|t| t.elapsed() < Duration::from_secs(45));
                 (
                     s.config.device.gapless_audio,
-                    s.config.active().now_playing_auto_open,
+                    s.config.active().now_playing_auto_open_secs,
                     healthy,
                 )
             };
@@ -149,7 +155,8 @@ pub(crate) fn wire_mpv_timer(
                     controls_show: &controls_show,
                     seek_suppress: &seek_suppress,
                     gapless_enabled,
-                    now_playing_auto_open,
+                    now_playing_auto_open_secs,
+                    input_idle: activity.input_idle_for(),
                     connection_likely_healthy,
                     live_pos,
                     live_dur,
@@ -1397,36 +1404,40 @@ fn seek_and_controls(vs: &mut VideoState, t: &Tick) {
     }
 }
 
+/// Auto-open Now Playing is due: `secs` (0 = off) have passed both since music started playing
+/// with the screen closed (`closed_for`) and since the last key press or mouse movement.
+fn auto_open_due(closed_for: Duration, input_idle: Duration, secs: u32) -> bool {
+    secs > 0 && closed_for.min(input_idle) >= Duration::from_secs(u64::from(secs))
+}
+
 fn music_auto_open(vs: &mut VideoState, t: &Tick, out: &mut TickOut) {
     let Tick {
         window_timer,
-        now_playing_auto_open,
+        now_playing_auto_open_secs,
+        input_idle,
         ..
     } = *t;
-    // Idle-ticks + auto-open Now Playing (Settings → Audio → MUSIC,
-    // default on; fixed 30 s threshold). Pinned to 0 while the screen
-    // IS open so any close path — keyboard, mouse click, Confirm on a
-    // control — needs a fresh 30 s of idle before it can pop again.
-    // The actual invoke happens AFTER this block releases `vs` (below,
-    // alongside gapless_commit/banner_trigger) — invoke_open_now_playing
-    // synchronously calls refresh-queue-display, which locks this same
-    // mutex; firing it while `vs` is still held self-deadlocked the UI
-    // thread (mpv's own audio thread kept playing regardless, which is
-    // why music continued while the interface froze solid).
-    if vs.current_is_audio && vs.player.is_some() {
-        if let Some(w) = window_timer.upgrade() {
-            let g = AppState::get(&w);
-            if g.get_show_now_playing() {
-                vs.music_idle_ticks = 0;
-            } else {
-                vs.music_idle_ticks = vs.music_idle_ticks.saturating_add(1);
-                if now_playing_auto_open && vs.music_idle_ticks == 1875 {
-                    out.auto_open_now_playing = true;
-                }
-            }
-        }
-    } else {
-        vs.music_idle_ticks = 0;
+    // Auto-open Now Playing (Settings → Audio, per profile): after that long without input while
+    // music plays. The idle stretch restarts while the screen IS open, so any close path —
+    // keyboard, mouse click, Confirm on a control — needs a fresh full stretch before it pops
+    // again. The actual invoke happens in `dispatch`, after `vs` is released —
+    // invoke_open_now_playing synchronously calls refresh-queue-display, which locks this same
+    // mutex; firing it while `vs` was still held self-deadlocked the UI thread.
+    let closed = vs.current_is_audio
+        && vs.player.is_some()
+        && window_timer
+            .upgrade()
+            .is_some_and(|w| !AppState::get(&w).get_show_now_playing());
+    if !closed {
+        vs.music_idle_since = None;
+        return;
+    }
+    let since = *vs.music_idle_since.get_or_insert_with(Instant::now);
+    if auto_open_due(since.elapsed(), input_idle, now_playing_auto_open_secs) {
+        debug!("music: {now_playing_auto_open_secs} s without input — opening Now Playing");
+        out.auto_open_now_playing = true;
+        // Fires once: the next stretch starts now (the screen normally opens right away).
+        vs.music_idle_since = Some(Instant::now());
     }
 }
 
@@ -2132,5 +2143,23 @@ fn on_natural_end(t: &Tick) {
                 });
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn auto_open_waits_for_both_the_music_and_the_last_input() {
+        let s = Duration::from_secs;
+        assert!(auto_open_due(s(31), s(40), 30));
+        assert!(!auto_open_due(s(31), s(10), 30), "the mouse moved 10 s ago");
+        assert!(
+            !auto_open_due(s(10), s(400), 30),
+            "Now Playing closed 10 s ago"
+        );
+        assert!(auto_open_due(s(15), s(15), 15));
+        assert!(!auto_open_due(s(9999), s(9999), 0), "Off");
     }
 }

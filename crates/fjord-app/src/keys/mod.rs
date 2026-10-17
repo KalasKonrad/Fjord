@@ -23,7 +23,8 @@
 //                Browse/Library search, playlist name — Right still creates at the end — and the
 //                Bonfire join code)
 //   wire_key_dispatch  callbacks moved from main() (0.5.0 step 3): the global key dispatch (fs
-//                FocusScope → handle_key)
+//                FocusScope → handle_key); every key touches the ActivityClock (idle lock,
+//                screensaver, Now Playing auto-open)
 // ─────────────────────────────────────────────────────────────────────────────
 
 use serde::{Deserialize, Serialize};
@@ -489,7 +490,6 @@ fn caret_key(field: &crate::text_field::DrawnField, key: &str, g: &crate::AppSta
 pub(crate) fn wire_key_dispatch(
     window: &crate::MainWindow,
     state: &std::sync::Arc<std::sync::Mutex<crate::config::FjordState>>,
-    video: &std::sync::Arc<std::sync::Mutex<crate::playback::VideoState>>,
     rt: &tokio::runtime::Runtime,
     activity_clock: &crate::activity::ActivityClock,
 ) {
@@ -497,11 +497,9 @@ pub(crate) fn wire_key_dispatch(
     use crate::*;
     let window = slint::ComponentHandle::clone_strong(window);
     let state = std::sync::Arc::clone(state);
-    let video = std::sync::Arc::clone(video);
     // ── keyboard dispatch ────────────────────────────────────────────────────
     {
         let state2 = Arc::clone(&state);
-        let video2k = Arc::clone(&video);
         let ww = window.as_weak();
         let rt2 = rt.handle().clone();
         let clock2 = activity_clock.clone();
@@ -509,11 +507,9 @@ pub(crate) fn wire_key_dispatch(
             let Some(w) = ww.upgrade() else {
                 return false;
             };
-            // Any key resets the Now Playing idle-auto-open countdown.
-            video2k.lock().unwrap().music_idle_ticks = 0;
-            // Any key also resets the Bonfire idle-lock clock (Phase 4,
-            // 2026-08-29) — the single choke point every keypress already
-            // passes through, same one music_idle_ticks resets from above.
+            // Any key resets the activity clock: the Bonfire idle lock, the screensaver and the Now
+            // Playing auto-open (playback/timer.rs) read it — the single choke point every keypress
+            // passes through (the mouse touches it in activity.rs).
             clock2.touch();
             // A key that ends the screensaver does nothing else (screensaver.rs).
             {
