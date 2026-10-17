@@ -1,7 +1,8 @@
 // ── fjord-app · account_picker.slint ─────────────────────────────────────────
 //   AccountTileCard      account tile: avatar, "N profiles", "LINKED" badge (tile.is-group-account
 //                        — another master's account through a Bonfire group), lock badge (has-pin,
-//                        single-profile accounts only)
+//                        single-profile accounts only); a FocusGlow holder (glow + zoom) around
+//                        the clipped circle
 //   AccountPickerScreen  the tier above ProfilePickerScreen, shown when 2+ ACCOUNTS are known (a
 //                        plain login, or a Bonfire household via its master — profile.rs's
 //                        AccountGroup). Centered tile row (no scrolling) + "+ Add Account" tile +
@@ -15,7 +16,12 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme, AccountTile } from "theme.slint";
 import { AppState } from "app_state.slint";
-import { FjordButton, PressPulse, LoadingSpinner } from "widgets.slint";
+import {
+    FocusGlow,
+    FjordButton,
+    PressPulse,
+    LoadingSpinner,
+} from "widgets.slint";
 
 component AccountTileCard inherits VerticalLayout {
     in property <AccountTile> tile;
@@ -26,12 +32,11 @@ component AccountTileCard inherits VerticalLayout {
     spacing: 8px;
     width: 132px;
 
-    Rectangle {
+    // The glow + zoom holder (FocusGlow); the avatar circle inside it is clipped, its ring over the content.
+    FocusGlow {
         width: 108px;
         height: 108px;
         x: (parent.width - self.width) / 2;
-        border-radius: self.width / 2;
-        background: root.is-add-tile ? Theme.surface-overlay : root.tile.avatar-color;
         // Focus zoom (AppState.focus-scale), a render transform; tiles have room around them.
         transform-scale-x: AppState.zoom(root.kbd-focused);
         transform-scale-y: AppState.zoom(root.kbd-focused);
@@ -40,55 +45,61 @@ component AccountTileCard inherits VerticalLayout {
             duration: 150ms * AppState.settings-animation-speed;
             easing: ease-out-expo;
         }
-        border-width: AppState.glow-ring-width(root.kbd-focused, ta.pressed || tile-pulse.pulsing);
-        drop-shadow-blur: AppState.glow-blur(root.kbd-focused);
-        drop-shadow-color: AppState.focus-color;
-        border-color: AppState.focus-color;
-        clip: true;
-        animate border-width {
-            duration: 90ms * AppState.settings-animation-speed;
-            easing: ease-out-expo;
-        }
         tile-pulse := PressPulse {
             trigger: AppState.kb-activate-pulse;
             active: root.kbd-focused;
         }
 
-        Text {
-            text: root.is-add-tile ? "+" : root.tile.avatar-initial;
-            color: Theme.text;
-            font-size: root.is-add-tile ? 40px : 42px;
-            font-weight: 700;
-            horizontal-alignment: center;
-            vertical-alignment: center;
-            width: parent.width;
-            height: parent.height;
-        }
+        radius: self.width / 2;
+        glowing: root.kbd-focused;
 
-        ta := TouchArea {
-            mouse-cursor: MouseCursor.pointer;
-            clicked => { root.activated(); }
-        }
-
-        // Lock badge, like ProfileTileCard's (U+1F512, Noto Sans Symbols2). Only for
-        // profile-count == 1 — see AccountTile.has-pin in theme.slint.
-        if !root.is-add-tile && root.tile.has-pin: Rectangle {
-            width: 30px;
-            height: 30px;
-            x: parent.width - self.width - 2px;
-            y: parent.height - self.height - 2px;
+        Rectangle {
             border-radius: self.width / 2;
-            background: Theme.surface;
-            border-width: 1px;
-            border-color: Theme.border-strong;
+            background: root.is-add-tile ? Theme.surface-overlay : root.tile.avatar-color;
+            border-width: AppState.glow-ring-width(root.kbd-focused, ta.pressed || tile-pulse.pulsing);
+            border-color: AppState.focus-color;
+            clip: true;
+            animate border-width {
+                duration: 90ms * AppState.settings-animation-speed;
+                easing: ease-out-expo;
+            }
+
             Text {
-                text: "🔒";
-                font-family: "Noto Sans Symbols 2";
-                font-size: 14px * AppState.text-scale;
+                text: root.is-add-tile ? "+" : root.tile.avatar-initial;
+                color: Theme.text;
+                font-size: root.is-add-tile ? 40px : 42px;
+                font-weight: 700;
                 horizontal-alignment: center;
                 vertical-alignment: center;
                 width: parent.width;
                 height: parent.height;
+            }
+
+            ta := TouchArea {
+                mouse-cursor: MouseCursor.pointer;
+                clicked => { root.activated(); }
+            }
+
+            // Lock badge, like ProfileTileCard's (U+1F512, Noto Sans Symbols2). Only for
+            // profile-count == 1 — see AccountTile.has-pin in theme.slint.
+            if !root.is-add-tile && root.tile.has-pin: Rectangle {
+                width: 30px;
+                height: 30px;
+                x: parent.width - self.width - 2px;
+                y: parent.height - self.height - 2px;
+                border-radius: self.width / 2;
+                background: Theme.surface;
+                border-width: 1px;
+                border-color: Theme.border-strong;
+                Text {
+                    text: "🔒";
+                    font-family: "Noto Sans Symbols 2";
+                    font-size: 14px * AppState.text-scale;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    width: parent.width;
+                    height: parent.height;
+                }
             }
         }
     }

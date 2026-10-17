@@ -19,6 +19,7 @@
 import { Theme, ToggleListItem } from "theme.slint";
 import { AppState } from "app_state.slint";
 import {
+    FocusGlow,
     FjordButton,
     VirtualKeyboard,
     QwertyKeyboard,
@@ -312,21 +313,16 @@ export component ProfileEditScreen inherits Rectangle {
                         border-color: Theme.border-strong;
                     }
 
-                    for c[i] in avatar-palette-colors: Rectangle {
+                    for c[i] in avatar-palette-colors: FocusGlow {
                         width: 32px;
                         height: 32px;
                         y: 4px;
-                        border-radius: 16px;
-                        background: c;
-                        border-width: max(AppState.profile-edit-avatar-color == avatar-palette-hex[i] ? 3px : 0px,
+                        radius: 16px;
+                        fill: c;
+                        ring-width: max(AppState.profile-edit-avatar-color == avatar-palette-hex[i] ? 3px : 0px,
                                 AppState.glow-ring-width(AppState.profile-edit-zone == 1 && AppState.profile-edit-avatar-cursor == i, swatch-ta.pressed || swatch-pulse.pulsing));
-                        drop-shadow-blur: AppState.glow-blur(AppState.profile-edit-zone == 1 && AppState.profile-edit-avatar-cursor == i);
-                        drop-shadow-color: AppState.focus-color;
-                        border-color: (AppState.profile-edit-zone == 1 && AppState.profile-edit-avatar-cursor == i) ? AppState.focus-color : Theme.text;
-                        animate border-width {
-                            duration: 90ms * AppState.settings-animation-speed;
-                            easing: ease-out-expo;
-                        }
+                        glowing: AppState.profile-edit-zone == 1 && AppState.profile-edit-avatar-cursor == i;
+                        ring-color: (AppState.profile-edit-zone == 1 && AppState.profile-edit-avatar-cursor == i) ? AppState.focus-color : Theme.text;
                         swatch-pulse := PressPulse {
                             trigger: AppState.kb-activate-pulse;
                             active: AppState.profile-edit-zone == 1 && AppState.profile-edit-avatar-cursor == i;

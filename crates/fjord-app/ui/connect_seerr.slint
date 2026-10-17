@@ -1,5 +1,5 @@
 // ── fjord-app · connect_seerr.slint ──────────────────────────────────────────
-//   MethodTab           one sign-in method tab (ring + press pulse only on the active tab)
+//   MethodTab           one sign-in method tab, a FocusGlow (ring, glow + press pulse only on the active tab)
 //   ConnectSeerrScreen  free-floating overlay, mounted by main.slint's gate30 FadeGate (the gate
 //                       must live at the mount site). A server URL LineEdit shared by the 4 methods
 //                       (API key, Jellyfin, Quick Connect, local account), a tab row picks which
@@ -29,6 +29,7 @@
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
 import {
+    FocusGlow,
     FjordButton,
     FieldFocusWrap,
     QwertyKeyboard,
@@ -36,26 +37,21 @@ import {
 } from "widgets.slint";
 import { LineEdit } from "std-widgets.slint";
 
-component MethodTab inherits Rectangle {
+component MethodTab inherits FocusGlow {
     in property <string> label;
     in property <bool> active;
     in property <bool> kbd-focused;
     callback clicked;
 
     height: 34px;
-    border-radius: Theme.radius;
-    background: active ? Theme.accent : (ta.has-hover ? Theme.surface : transparent);
+    radius: Theme.radius;
+    fill: active ? Theme.accent : (ta.has-hover ? Theme.surface : transparent);
     // Persistent 2px ring + 3px press flash (VirtualKeyboardKey's convention) — only on the
     // ACTIVE tab: all four tabs share one zone (1) and Left/Right switch the active tab, so
     // kbd-focused alone would ring every tab at once.
-    border-width: AppState.glow-ring-width(kbd-focused && active, ta.pressed || pulse.pulsing);
-    drop-shadow-blur: AppState.glow-blur(kbd-focused && active);
-    drop-shadow-color: AppState.focus-color;
-    border-color: AppState.focus-color;
-    animate border-width, background {
-        duration: 90ms * AppState.settings-animation-speed;
-        easing: ease-out-expo;
-    }
+    ring-width: AppState.glow-ring-width(kbd-focused && active, ta.pressed || pulse.pulsing);
+    glowing: kbd-focused && active;
+    animate-fill: true;
     pulse := PressPulse {
         trigger: AppState.kb-activate-pulse;
         active: root.active && root.kbd-focused;

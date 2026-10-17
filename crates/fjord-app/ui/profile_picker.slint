@@ -1,6 +1,6 @@
 // ── fjord-app · profile_picker.slint ─────────────────────────────────────────
 //   ProfileTileCard      avatar tile: master ring (tile.is-root, Theme.master-ring), lock badge
-//                        (has-pin), focus ring
+//                        (has-pin), focus ring; a FocusGlow holder (glow + zoom) around the clipped circle
 //   ProfileSectionRow    one household: optional "{name}'s Bonfire" header + its tile row
 //   ProfilePickerScreen  "Who's watching?" for one account (account_picker.slint is the tier
 //                        above; profile.rs's StartupGate decides): sections of tiles from that
@@ -22,6 +22,7 @@
 import { Theme, ProfileTile, ProfileSection } from "theme.slint";
 import { AppState } from "app_state.slint";
 import {
+    FocusGlow,
     FjordButton,
     VirtualKeyboard,
     PressPulse,
@@ -37,12 +38,11 @@ component ProfileTileCard inherits VerticalLayout {
     spacing: 8px;
     width: 132px;
 
-    Rectangle {
+    // The glow + zoom holder (FocusGlow); the avatar circle inside it is clipped, its ring over the content.
+    FocusGlow {
         width: 108px;
         height: 108px;
         x: (parent.width - self.width) / 2;
-        border-radius: self.width / 2;
-        background: root.is-add-tile ? Theme.surface-overlay : root.tile.avatar-color;
         // Focus zoom (AppState.focus-scale), a render transform; tiles have room around them.
         transform-scale-x: AppState.zoom(root.kbd-focused);
         transform-scale-y: AppState.zoom(root.kbd-focused);
@@ -51,72 +51,78 @@ component ProfileTileCard inherits VerticalLayout {
             duration: 150ms * AppState.settings-animation-speed;
             easing: ease-out-expo;
         }
-        border-width: AppState.glow-ring-width(root.kbd-focused, ta.pressed || tile-pulse.pulsing);
-        drop-shadow-blur: AppState.glow-blur(root.kbd-focused);
-        drop-shadow-color: AppState.focus-color;
-        border-color: AppState.focus-color;
-        clip: true;
-        animate border-width {
-            duration: 90ms * AppState.settings-animation-speed;
-            easing: ease-out-expo;
-        }
         tile-pulse := PressPulse {
             trigger: AppState.kb-activate-pulse;
             active: root.kbd-focused;
         }
 
-        // Master/root ring: marks the household's own master tile (Bonfire's picker shows a crown;
-        // U+1F451 isn't in the bundled fonts, and ★ already means Watchlist here). `tile.is-root` =
-        // profile::is_true_master — not `!tile.is-bonfire`, which is wrong for a group account
-        // (see build_tile). Inside the avatar Rectangle (a sibling would become its own layout row),
-        // inset so it reads as a second concentric ring next to the keyboard focus border (a
-        // different colour; both can show).
-        if !root.is-add-tile && root.tile.is-root: Rectangle {
-            x: 3px;
-            y: 3px;
-            width: parent.width - 6px;
-            height: parent.height - 6px;
-            border-radius: self.width / 2;
-            border-width: 2px;
-            border-color: Theme.master-ring;
-        }
+        radius: self.width / 2;
+        glowing: root.kbd-focused;
 
-        Text {
-            text: root.is-add-tile ? "+" : root.tile.avatar-initial;
-            color: Theme.text;
-            font-size: root.is-add-tile ? 40px : 42px;
-            font-weight: 700;
-            horizontal-alignment: center;
-            vertical-alignment: center;
-            width: parent.width;
-            height: parent.height;
-        }
-
-        // Lock badge: a PIN is set (has-pin) — not necessarily "will prompt now"
-        // (bypassPinOnLocalNetwork can skip it).
-        if !root.is-add-tile && root.tile.has-pin: Rectangle {
-            width: 30px;
-            height: 30px;
-            x: parent.width - self.width - 2px;
-            y: parent.height - self.height - 2px;
+        Rectangle {
             border-radius: self.width / 2;
-            background: Theme.surface;
-            border-width: 1px;
-            border-color: Theme.border-strong;
+            background: root.is-add-tile ? Theme.surface-overlay : root.tile.avatar-color;
+            border-width: AppState.glow-ring-width(root.kbd-focused, ta.pressed || tile-pulse.pulsing);
+            border-color: AppState.focus-color;
+            clip: true;
+            animate border-width {
+                duration: 90ms * AppState.settings-animation-speed;
+                easing: ease-out-expo;
+            }
+
+            // Master/root ring: marks the household's own master tile (Bonfire's picker shows a crown;
+            // U+1F451 isn't in the bundled fonts, and ★ already means Watchlist here). `tile.is-root` =
+            // profile::is_true_master — not `!tile.is-bonfire`, which is wrong for a group account
+            // (see build_tile). Inside the avatar Rectangle (a sibling would become its own layout row),
+            // inset so it reads as a second concentric ring next to the keyboard focus border (a
+            // different colour; both can show).
+            if !root.is-add-tile && root.tile.is-root: Rectangle {
+                x: 3px;
+                y: 3px;
+                width: parent.width - 6px;
+                height: parent.height - 6px;
+                border-radius: self.width / 2;
+                border-width: 2px;
+                border-color: Theme.master-ring;
+            }
+
             Text {
-                text: "🔒";
-                font-family: "Noto Sans Symbols 2";
-                font-size: 14px * AppState.text-scale;
+                text: root.is-add-tile ? "+" : root.tile.avatar-initial;
+                color: Theme.text;
+                font-size: root.is-add-tile ? 40px : 42px;
+                font-weight: 700;
                 horizontal-alignment: center;
                 vertical-alignment: center;
                 width: parent.width;
                 height: parent.height;
             }
-        }
 
-        ta := TouchArea {
-            mouse-cursor: MouseCursor.pointer;
-            clicked => { root.activated(); }
+            // Lock badge: a PIN is set (has-pin) — not necessarily "will prompt now"
+            // (bypassPinOnLocalNetwork can skip it).
+            if !root.is-add-tile && root.tile.has-pin: Rectangle {
+                width: 30px;
+                height: 30px;
+                x: parent.width - self.width - 2px;
+                y: parent.height - self.height - 2px;
+                border-radius: self.width / 2;
+                background: Theme.surface;
+                border-width: 1px;
+                border-color: Theme.border-strong;
+                Text {
+                    text: "🔒";
+                    font-family: "Noto Sans Symbols 2";
+                    font-size: 14px * AppState.text-scale;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    width: parent.width;
+                    height: parent.height;
+                }
+            }
+
+            ta := TouchArea {
+                mouse-cursor: MouseCursor.pointer;
+                clicked => { root.activated(); }
+            }
         }
     }
 

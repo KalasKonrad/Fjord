@@ -28,6 +28,7 @@
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
 import {
+    FocusGlow,
     FjordButton,
     PosterBlock,
     MetaLine,
@@ -553,19 +554,15 @@ export component RequestOptionsOverlay inherits Rectangle {
                 HorizontalLayout {
                     alignment: center;
                     spacing: 10px;
-                    twok-btn := Rectangle {
+                    twok-btn := FocusGlow {
                         width: 90px;
                         height: 40px;
-                        border-radius: Theme.radius;
-                        background: !AppState.request-detail-want-4k ? Theme.accent : Theme.surface-overlay;
-                        border-width: max(1px, AppState.glow-ring-width(AppState.request-options-zone == 0 && !AppState.request-detail-want-4k, twok-ta.pressed || twok-pulse.pulsing));
-                        drop-shadow-blur: AppState.glow-blur(AppState.request-options-zone == 0 && !AppState.request-detail-want-4k);
-                        drop-shadow-color: AppState.focus-color;
-                        border-color: (twok-ta.pressed || twok-pulse.pulsing || (AppState.request-options-zone == 0 && !AppState.request-detail-want-4k)) ? AppState.focus-color : Theme.border-strong;
-                        animate border-width, background {
-                            duration: 90ms * AppState.settings-animation-speed;
-                            easing: ease-out-expo;
-                        }
+                        radius: Theme.radius;
+                        fill: !AppState.request-detail-want-4k ? Theme.accent : Theme.surface-overlay;
+                        ring-width: max(1px, AppState.glow-ring-width(AppState.request-options-zone == 0 && !AppState.request-detail-want-4k, twok-ta.pressed || twok-pulse.pulsing));
+                        glowing: AppState.request-options-zone == 0 && !AppState.request-detail-want-4k;
+                        ring-color: (twok-ta.pressed || twok-pulse.pulsing || (AppState.request-options-zone == 0 && !AppState.request-detail-want-4k)) ? AppState.focus-color : Theme.border-strong;
+                        animate-fill: true;
                         twok-pulse := PressPulse {
                             trigger: AppState.kb-activate-pulse;
                             active: AppState.request-options-zone == 0 && !AppState.request-detail-want-4k;
@@ -589,19 +586,15 @@ export component RequestOptionsOverlay inherits Rectangle {
                         }
                     }
 
-                    fourk-btn := Rectangle {
+                    fourk-btn := FocusGlow {
                         width: 90px;
                         height: 40px;
-                        border-radius: Theme.radius;
-                        background: AppState.request-detail-want-4k ? Theme.accent : Theme.surface-overlay;
-                        border-width: max(1px, AppState.glow-ring-width(AppState.request-options-zone == 0 && AppState.request-detail-want-4k, fourk-ta.pressed || fourk-pulse.pulsing));
-                        drop-shadow-blur: AppState.glow-blur(AppState.request-options-zone == 0 && AppState.request-detail-want-4k);
-                        drop-shadow-color: AppState.focus-color;
-                        border-color: (fourk-ta.pressed || fourk-pulse.pulsing || (AppState.request-options-zone == 0 && AppState.request-detail-want-4k)) ? AppState.focus-color : Theme.border-strong;
-                        animate border-width, background {
-                            duration: 90ms * AppState.settings-animation-speed;
-                            easing: ease-out-expo;
-                        }
+                        radius: Theme.radius;
+                        fill: AppState.request-detail-want-4k ? Theme.accent : Theme.surface-overlay;
+                        ring-width: max(1px, AppState.glow-ring-width(AppState.request-options-zone == 0 && AppState.request-detail-want-4k, fourk-ta.pressed || fourk-pulse.pulsing));
+                        glowing: AppState.request-options-zone == 0 && AppState.request-detail-want-4k;
+                        ring-color: (fourk-ta.pressed || fourk-pulse.pulsing || (AppState.request-options-zone == 0 && AppState.request-detail-want-4k)) ? AppState.focus-color : Theme.border-strong;
+                        animate-fill: true;
                         fourk-pulse := PressPulse {
                             trigger: AppState.kb-activate-pulse;
                             active: AppState.request-options-zone == 0 && AppState.request-detail-want-4k;
@@ -658,23 +651,19 @@ export component RequestOptionsOverlay inherits Rectangle {
                         spacing: 16px;
                         alignment: start;
 
-                        for p[i] in AppState.request-detail-profiles: Rectangle {
+                        for p[i] in AppState.request-detail-profiles: FocusGlow {
                             width: 130px;
                             height: 36px;
-                            border-radius: self.height / 2;
-                            background: p.id == AppState.request-detail-selected-profile-id ? Theme.accent : Theme.surface-overlay;
-                            border-width: max(1px, AppState.glow-ring-width(AppState.request-options-zone == 1 && AppState.request-detail-focused-profile == i, profile-ta.pressed || profile-pulse.pulsing));
-                            drop-shadow-blur: AppState.glow-blur(AppState.request-options-zone == 1 && AppState.request-detail-focused-profile == i);
-                            drop-shadow-color: AppState.focus-color;
+                            radius: self.height / 2;
+                            fill: p.id == AppState.request-detail-selected-profile-id ? Theme.accent : Theme.surface-overlay;
+                            ring-width: max(1px, AppState.glow-ring-width(AppState.request-options-zone == 1 && AppState.request-detail-focused-profile == i, profile-ta.pressed || profile-pulse.pulsing));
+                            glowing: AppState.request-options-zone == 1 && AppState.request-detail-focused-profile == i;
                             // Focused or selected → AppState.focus-color (the app-wide focus colour); the focused state
                             // used to only thicken the gray border, too hard to see.
-                            border-color: (p.id == AppState.request-detail-selected-profile-id
+                            ring-color: (p.id == AppState.request-detail-selected-profile-id
                                 || (AppState.request-options-zone == 1 && AppState.request-detail-focused-profile == i))
                                 ? AppState.focus-color : Theme.border-strong;
-                            animate border-width, background {
-                                duration: 90ms * AppState.settings-animation-speed;
-                                easing: ease-out-expo;
-                            }
+                            animate-fill: true;
                             profile-pulse := PressPulse {
                                 trigger: AppState.kb-activate-pulse;
                                 active: AppState.request-options-zone == 1 && AppState.request-detail-focused-profile == i;
@@ -741,20 +730,16 @@ export component RequestOptionsOverlay inherits Rectangle {
 
                         // Pill chips with an always-visible border (subtle idle, focus colour when focused or
                         // selected) — borderless chips read as gray blobs.
-                        for t[i] in AppState.request-detail-tags: Rectangle {
+                        for t[i] in AppState.request-detail-tags: FocusGlow {
                             width: 110px;
                             height: 36px;
-                            border-radius: self.height / 2;
-                            background: t.selected ? Theme.accent : Theme.surface-overlay;
-                            border-width: max(1px, AppState.glow-ring-width(AppState.request-options-zone == 2 && AppState.request-detail-focused-tag == i, tag-ta.pressed || tag-pulse.pulsing));
-                            drop-shadow-blur: AppState.glow-blur(AppState.request-options-zone == 2 && AppState.request-detail-focused-tag == i);
-                            drop-shadow-color: AppState.focus-color;
-                            border-color: (t.selected || (AppState.request-options-zone == 2 && AppState.request-detail-focused-tag == i))
+                            radius: self.height / 2;
+                            fill: t.selected ? Theme.accent : Theme.surface-overlay;
+                            ring-width: max(1px, AppState.glow-ring-width(AppState.request-options-zone == 2 && AppState.request-detail-focused-tag == i, tag-ta.pressed || tag-pulse.pulsing));
+                            glowing: AppState.request-options-zone == 2 && AppState.request-detail-focused-tag == i;
+                            ring-color: (t.selected || (AppState.request-options-zone == 2 && AppState.request-detail-focused-tag == i))
                                 ? AppState.focus-color : Theme.border-strong;
-                            animate border-width, background {
-                                duration: 90ms * AppState.settings-animation-speed;
-                                easing: ease-out-expo;
-                            }
+                            animate-fill: true;
                             tag-pulse := PressPulse {
                                 trigger: AppState.kb-activate-pulse;
                                 active: AppState.request-options-zone == 2 && AppState.request-detail-focused-tag == i;
@@ -833,68 +818,73 @@ export component RequestOptionsOverlay inherits Rectangle {
                             width: 110px;
                             spacing: 4px;
 
-                            Rectangle {
+                            // The glow holder (FocusGlow); the poster inside it is clipped, its ring over the picture.
+                            FocusGlow {
                                 height: 165px;
-                                border-radius: Theme.radius;
-                                clip: true;
-                                background: Theme.surface-overlay;
-                                border-width: AppState.glow-ring-width(AppState.request-options-zone == 3 && AppState.request-detail-focused-season == i, season-ta.pressed || season-pulse.pulsing);
-                                drop-shadow-blur: AppState.glow-blur(AppState.request-options-zone == 3 && AppState.request-detail-focused-season == i);
-                                drop-shadow-color: AppState.focus-color;
-                                border-color: AppState.focus-color;
-                                animate border-width {
-                                    duration: 90ms * AppState.settings-animation-speed;
-                                    easing: ease-out-expo;
-                                }
                                 season-pulse := PressPulse {
                                     trigger: AppState.kb-activate-pulse;
                                     active: AppState.request-options-zone == 3 && AppState.request-detail-focused-season == i;
                                 }
 
-                                if s.has-poster: Image {
-                                    source: s.poster;
-                                    width: parent.width;
-                                    height: parent.height;
-                                    image-fit: cover;
-                                }
-                                if !s.has-poster: Text {
-                                    text: s.season-number;
-                                    color: Theme.text-muted;
-                                    font-size: 28px;
-                                    font-weight: 700;
-                                    horizontal-alignment: center;
-                                    vertical-alignment: center;
-                                    width: parent.width;
-                                    height: parent.height;
-                                }
+                                radius: Theme.radius;
+                                glowing: AppState.request-options-zone == 3 && AppState.request-detail-focused-season == i;
 
-                                // ✓ selected badge (top-right), same idiom as PosterBlock's played badge
-                                if s.selected: Rectangle {
-                                    x: parent.width - 26px;
-                                    y: 6px;
-                                    width: 20px;
-                                    height: 20px;
-                                    border-radius: 10px;
-                                    background: Theme.accent;
-                                    Text {
-                                        text: "✓";
-                                        font-family: "Adwaita Sans";
-                                        color: white;
-                                        font-size: 10px * AppState.text-scale;
+                                Rectangle {
+                                    border-radius: Theme.radius;
+                                    clip: true;
+                                    background: Theme.surface-overlay;
+                                    border-width: AppState.glow-ring-width(AppState.request-options-zone == 3 && AppState.request-detail-focused-season == i, season-ta.pressed || season-pulse.pulsing);
+                                    border-color: AppState.focus-color;
+                                    animate border-width {
+                                        duration: 90ms * AppState.settings-animation-speed;
+                                        easing: ease-out-expo;
+                                    }
+
+                                    if s.has-poster: Image {
+                                        source: s.poster;
+                                        width: parent.width;
+                                        height: parent.height;
+                                        image-fit: cover;
+                                    }
+                                    if !s.has-poster: Text {
+                                        text: s.season-number;
+                                        color: Theme.text-muted;
+                                        font-size: 28px;
                                         font-weight: 700;
                                         horizontal-alignment: center;
                                         vertical-alignment: center;
                                         width: parent.width;
                                         height: parent.height;
                                     }
-                                }
 
-                                season-ta := TouchArea {
-                                    mouse-cursor: MouseCursor.pointer;
-                                    clicked => {
-                                        AppState.request-options-zone = 3;
-                                        AppState.request-detail-focused-season = i;
-                                        AppState.request-detail-toggle-season(i);
+                                    // ✓ selected badge (top-right), same idiom as PosterBlock's played badge
+                                    if s.selected: Rectangle {
+                                        x: parent.width - 26px;
+                                        y: 6px;
+                                        width: 20px;
+                                        height: 20px;
+                                        border-radius: 10px;
+                                        background: Theme.accent;
+                                        Text {
+                                            text: "✓";
+                                            font-family: "Adwaita Sans";
+                                            color: white;
+                                            font-size: 10px * AppState.text-scale;
+                                            font-weight: 700;
+                                            horizontal-alignment: center;
+                                            vertical-alignment: center;
+                                            width: parent.width;
+                                            height: parent.height;
+                                        }
+                                    }
+
+                                    season-ta := TouchArea {
+                                        mouse-cursor: MouseCursor.pointer;
+                                        clicked => {
+                                            AppState.request-options-zone = 3;
+                                            AppState.request-detail-focused-season = i;
+                                            AppState.request-detail-toggle-season(i);
+                                        }
                                     }
                                 }
                             }

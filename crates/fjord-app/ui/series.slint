@@ -13,6 +13,7 @@
 import { Theme, SeasonEntry, CardItem } from "theme.slint";
 import { AppState } from "app_state.slint";
 import {
+    FocusGlow,
     FjordButton,
     IconCircleButton,
     MetaLine,
@@ -262,20 +263,14 @@ export component SeriesScreen inherits Rectangle {
                         spacing: 8px;
                         alignment: start;
 
-                        for s[i] in AppState.series-seasons: Rectangle {
+                        for s[i] in AppState.series-seasons: FocusGlow {
                             width: max(80px, lbl.preferred-width + 24px);
                             height: 32px;
                             y: 6px;
-                            border-radius: Theme.radius;
-                            background: i == AppState.series-season-idx ? Theme.accent : Theme.surface;
-                            border-width: AppState.glow-ring-width(season-pulse.active, season-ta.pressed || season-pulse.pulsing);
-                            drop-shadow-blur: AppState.glow-blur(season-pulse.active);
-                            drop-shadow-color: AppState.focus-color;
-                            border-color: AppState.focus-color;
-                            animate border-width {
-                                duration: 90ms * AppState.settings-animation-speed;
-                                easing: ease-out-expo;
-                            }
+                            radius: Theme.radius;
+                            fill: i == AppState.series-season-idx ? Theme.accent : Theme.surface;
+                            ring-width: AppState.glow-ring-width(season-pulse.active, season-ta.pressed || season-pulse.pulsing);
+                            glowing: season-pulse.active;
                             season-pulse := PressPulse {
                                 trigger: AppState.kb-activate-pulse;
                                 active: AppState.series-in-season-row && i == AppState.series-season-idx;

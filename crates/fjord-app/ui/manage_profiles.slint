@@ -1,4 +1,5 @@
 // ── fjord-app · manage_profiles.slint ────────────────────────────────────────
+//   ManageProfileTile     one tile: a FocusGlow holder (glow + zoom) around the clipped avatar circle
 //   ManageProfilesScreen  Settings → Profiles → Manage Profiles (master accounts only): the
 //                         profile-picker tile row + "+" (reuses ProfileTile), but a tile opens
 //                         ProfileEditScreen in edit mode and "+" in create mode. A free-floating
@@ -9,7 +10,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme, ProfileTile } from "theme.slint";
 import { AppState } from "app_state.slint";
-import { FjordButton, PressPulse } from "widgets.slint";
+import { FocusGlow, FjordButton, PressPulse } from "widgets.slint";
 
 component ManageProfileTile inherits VerticalLayout {
     in property <ProfileTile> tile;
@@ -22,12 +23,11 @@ component ManageProfileTile inherits VerticalLayout {
     spacing: 8px;
     width: 120px;
 
-    Rectangle {
+    // The glow + zoom holder (FocusGlow); the avatar circle inside it is clipped, its ring over the content.
+    FocusGlow {
         width: 96px;
         height: 96px;
         x: (parent.width - self.width) / 2;
-        border-radius: self.width / 2;
-        background: root.is-add-tile ? Theme.surface-overlay : root.tile.avatar-color;
         // Focus zoom (AppState.focus-scale), a render transform; tiles have room around them.
         transform-scale-x: AppState.zoom(root.kbd-focused);
         transform-scale-y: AppState.zoom(root.kbd-focused);
@@ -36,54 +36,60 @@ component ManageProfileTile inherits VerticalLayout {
             duration: 150ms * AppState.settings-animation-speed;
             easing: ease-out-expo;
         }
-        border-width: AppState.glow-ring-width(root.kbd-focused, ta.pressed || tile-pulse.pulsing);
-        drop-shadow-blur: AppState.glow-blur(root.kbd-focused);
-        drop-shadow-color: AppState.focus-color;
-        border-color: AppState.focus-color;
-        clip: true;
-        animate border-width {
-            duration: 90ms * AppState.settings-animation-speed;
-            easing: ease-out-expo;
-        }
         tile-pulse := PressPulse {
             trigger: AppState.kb-activate-pulse;
             active: root.kbd-focused;
         }
 
-        Text {
-            text: root.is-add-tile ? "+" : root.tile.avatar-initial;
-            color: Theme.text;
-            font-size: root.is-add-tile ? 36px : 38px;
-            font-weight: 700;
-            horizontal-alignment: center;
-            vertical-alignment: center;
-            width: parent.width;
-            height: parent.height;
-        }
+        radius: self.width / 2;
+        glowing: root.kbd-focused;
 
-        if !root.is-add-tile && root.tile.has-pin: Rectangle {
-            width: 26px;
-            height: 26px;
-            x: parent.width - self.width - 2px;
-            y: parent.height - self.height - 2px;
+        Rectangle {
             border-radius: self.width / 2;
-            background: Theme.surface;
-            border-width: 1px;
-            border-color: Theme.border-strong;
+            background: root.is-add-tile ? Theme.surface-overlay : root.tile.avatar-color;
+            border-width: AppState.glow-ring-width(root.kbd-focused, ta.pressed || tile-pulse.pulsing);
+            border-color: AppState.focus-color;
+            clip: true;
+            animate border-width {
+                duration: 90ms * AppState.settings-animation-speed;
+                easing: ease-out-expo;
+            }
+
             Text {
-                text: "🔒";
-                font-family: "Noto Sans Symbols 2";
-                font-size: 12px * AppState.text-scale;
+                text: root.is-add-tile ? "+" : root.tile.avatar-initial;
+                color: Theme.text;
+                font-size: root.is-add-tile ? 36px : 38px;
+                font-weight: 700;
                 horizontal-alignment: center;
                 vertical-alignment: center;
                 width: parent.width;
                 height: parent.height;
             }
-        }
 
-        ta := TouchArea {
-            mouse-cursor: MouseCursor.pointer;
-            clicked => { root.activated(); }
+            if !root.is-add-tile && root.tile.has-pin: Rectangle {
+                width: 26px;
+                height: 26px;
+                x: parent.width - self.width - 2px;
+                y: parent.height - self.height - 2px;
+                border-radius: self.width / 2;
+                background: Theme.surface;
+                border-width: 1px;
+                border-color: Theme.border-strong;
+                Text {
+                    text: "🔒";
+                    font-family: "Noto Sans Symbols 2";
+                    font-size: 12px * AppState.text-scale;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    width: parent.width;
+                    height: parent.height;
+                }
+            }
+
+            ta := TouchArea {
+                mouse-cursor: MouseCursor.pointer;
+                clicked => { root.activated(); }
+            }
         }
     }
 

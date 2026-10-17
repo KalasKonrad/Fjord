@@ -19,7 +19,8 @@
 //                    ALSA IRQ scheduling on PipeWire, skip-fade mute); gapless, Now Playing
 //                    auto-open
 //       Interface    ("ui") card size, video behind UI, text font, on-screen keyboard, scroll and
-//                    animation speed
+//                    animation speed; focus ring color/thickness/style, glow strength (only when the
+//                    style isn't Line), transparency, zoom
 //       Profiles     launch policy (+ default profile), Manage Profiles (master account), Copy
 //                    settings from… (when other profiles exist), account launch policy (+ default account), Add Account, remember login,
 //                    Sign Out, Bonfire Group (master account), Bonfire Admin (server admin)
@@ -1050,6 +1051,15 @@ export component SettingsScreen inherits Rectangle {
                             per-profile: true;
                             title: "Focus ring style";
                             subtitle: "A line around the selected item, a soft glow, or both — saved for this profile";
+                        }
+
+                        if AppState.settings-focus-style != "line": SettingsRow {
+                            key: "ui.focus_glow";
+                            choice: true;
+                            value: AppState.settings-focus-glow;
+                            per-profile: true;
+                            title: "Focus glow strength";
+                            subtitle: "How far the glow reaches around the selected item — saved for this profile";
                         }
 
                         SettingsRow {

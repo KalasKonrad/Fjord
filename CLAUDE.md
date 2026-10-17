@@ -193,8 +193,9 @@ Needs `mpv`/libmpv (`pacman -S mpv`). Optional at runtime: `yt-dlp` (trailers), 
 - Clickable elements get the `PressPulse` border flash (`kb-activate-pulse`). Focus rings follow the per-profile focus
   settings through AppState helpers only: `border-color: AppState.focus-color` + `border-width:
   AppState.ring-width(focused, ta.pressed || pulse.pulsing)` for rows/fields/menu entries (`max(1px, …)` with an idle
-  border); opaque pictures/tiles/buttons/pills use `glow-ring-width(…)` + `drop-shadow-blur: AppState.glow-blur(focused)`
-  / `drop-shadow-color: AppState.focus-color` (a glow under a see-through element floods it).
+  border); opaque pictures/tiles/buttons/pills are a `FocusGlow` (widgets.slint): `fill`/`ring-width: glow-ring-width(…)`/
+  `ring-color`/`radius`/`glowing` instead of background/border-*/border-radius/drop shadow (a drop shadow is the whole
+  shape blurred, so it floods anything see-through drawn over it); a clipped picture goes inside a FocusGlow holder.
 - Backdrops, OSD panels, shadows and text over images use their `Theme` tokens (`scrim*`, `osd-panel*`, `shadow*`,
   `hero-fade-*`, `text-bright`/`text-soft`) — no hand-picked colours or alphas in screens.
 

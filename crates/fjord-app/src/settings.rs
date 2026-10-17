@@ -206,6 +206,7 @@ const UI_DASHBOARD_HERO: &str = "ui.dashboard_hero"; // per profile, a dropdown;
 const UI_FOCUS_COLOR: &str = "ui.focus_color";
 const UI_FOCUS_WIDTH: &str = "ui.focus_width";
 const UI_FOCUS_STYLE: &str = "ui.focus_style";
+const UI_FOCUS_GLOW: &str = "ui.focus_glow"; // virtual — only when focus_style isn't "line"
 const UI_FOCUS_OPACITY: &str = "ui.focus_opacity";
 const UI_FOCUS_ZOOM: &str = "ui.focus_zoom";
 const UI_SCROLL_SPEED: &str = "ui.scroll_speed";
@@ -311,6 +312,7 @@ const SECTION_ROWS: &[(&str, &[&str])] = &[
             UI_FOCUS_COLOR,
             UI_FOCUS_WIDTH,
             UI_FOCUS_STYLE,
+            UI_FOCUS_GLOW,
             UI_FOCUS_OPACITY,
             UI_FOCUS_ZOOM,
             GEN_VIDEO_BEHIND,
@@ -388,6 +390,7 @@ fn row_shown(key: &str, g: &crate::AppState<'_>) -> bool {
         PLY_SUB_COLOR | PLY_SUB_BACKGROUND => subs && !g.get_settings_sub_respect_ass_styling(),
         // HDR Stage 5: only on Wayland, where it does anything.
         VID_SEPARATE_VIDEO_SURFACE => g.get_is_wayland(),
+        UI_FOCUS_GLOW => g.get_settings_focus_style().as_str() != "line",
         VID_DISPLAY_SYNC_SCREEN
         | VID_DISPLAY_SYNC_SYNC_RESOLUTION
         | VID_DISPLAY_SYNC_SYNC_REFRESH_RATE
@@ -912,6 +915,12 @@ const FOCUS_STYLE_OPTIONS: &[(&str, &str)] = &[
     ("glow", "Glow"),
     ("both", "Line and glow"),
 ];
+const FOCUS_GLOW_OPTIONS: &[(&str, &str)] = &[
+    ("soft", "Soft"),
+    ("medium", "Medium"),
+    ("strong", "Strong"),
+    ("very-strong", "Very strong"),
+];
 const FOCUS_OPACITY_OPTIONS: &[(&str, &str)] =
     &[("solid", "Solid"), ("see-through", "See-through")];
 const FOCUS_ZOOM_OPTIONS: &[(&str, &str)] = &[
@@ -1274,6 +1283,14 @@ static CHOICES: &[Choice] = &[
         field: Field::Str(
             |g| g.get_settings_focus_style(),
             |g, v| g.set_settings_focus_style(v),
+        ),
+    },
+    Choice {
+        key: UI_FOCUS_GLOW,
+        options: FOCUS_GLOW_OPTIONS,
+        field: Field::Str(
+            |g| g.get_settings_focus_glow(),
+            |g, v| g.set_settings_focus_glow(v),
         ),
     },
     Choice {
@@ -2223,6 +2240,13 @@ pub(crate) static PROFILE_BINDS: &[ProfileBind] = &[
         focus_style,
         get_settings_focus_style,
         set_settings_focus_style,
+        str
+    ),
+    bind!(
+        Profile,
+        focus_glow,
+        get_settings_focus_glow,
+        set_settings_focus_glow,
         str
     ),
     bind!(
