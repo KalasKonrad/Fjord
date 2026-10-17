@@ -141,9 +141,10 @@ pub(crate) fn handle_key(
     };
     let mode = active_mode(&g);
     // AppState.sidebar-kb-active (app_state.slint) is a pure Slint expression
-    // mirroring this same active_mode()==Dashboard condition, not something
-    // pushed from here — it needs to stay correct for mouse-driven screen
-    // changes too, not just keyboard ones.
+    // mirroring when these handlers move the sidebar (Dashboard/Discover with
+    // focused-section < 0, Browse before its list, Settings before its section
+    // list), not something pushed from here — it needs to stay correct for
+    // mouse-driven screen changes too, not just keyboard ones.
     // Every focusable widgets.slint::PressPulse instance plays a brief
     // border-flash "press" cue when this bumps, gated on its own already-
     // existing focus/selection expression — this is the single centralized

@@ -25,6 +25,8 @@
 //                         (-1 = tab switcher)/-col, bonfire-admin-rows / -audit-rows (lazy), Reset PIN
 //                         confirm (stashes its target) — bonfire_admin.rs::open_bonfire_admin_screen
 //   Toast notification    toast-message, toast-visible (auto-dismissed after 4 s)
+//   Press animation       kb-activate-pulse; sidebar-kb-active (the sidebar holds the keyboard focus:
+//                         dashboards/Discover, Browse All before its list, Settings before its sections)
 //   Navigation state      active-nav, focused-section, focused-card, float-card-focused;
 //                         settings-focused (string key, "" = left pane), settings-section ("" = sidebar),
 //                         settings-focused-visual-index (scroll-to-view only)
@@ -466,9 +468,12 @@ export global AppState {
     // expression is currently true, playing a brief border-flash "press" cue.
     // Mouse press feedback needs no Rust involvement (TouchArea.pressed).
     in-out property <int> kb-activate-pulse: 0;
-    // True only under the same condition keys.rs::active_mode() calls
-    // AppMode::Dashboard, plus focused-section < 0 — the one narrow condition
-    // under which the sidebar is genuinely the thing holding focus. Used by
+    // True exactly while the sidebar holds the keyboard focus: AppMode::Dashboard (or Discover)
+    // with focused-section < 0, Browse All before its list is entered (current-item < 0, search
+    // field not focused — browse::handle_key moves the sidebar then), and Settings before its
+    // section list is entered (settings-section "" — settings.rs's sidebar branch). Browse All and
+    // Settings open the moment the sidebar cursor lands on them, so leaving them out entirely
+    // showed no focus ring on those two sidebar entries (2026-10-17). Used by
     // both the press-pulse gate above and NavItem's own background highlight
     // (widgets.slint) in place of the old per-instance `kbd-focused` prop
     // (`focused-section < 0` alone, identically bound on every sidebar row),
@@ -500,12 +505,12 @@ export global AppState {
         && !(show-request-detail && !is-playing)
         && !is-playing
         && !show-library
-        && !show-browse
         && !show-sidebar-profile-menu
         && !show-manage-profiles
         && !show-profile-edit
-        && active-nav != 10
-        && focused-section < 0;
+        && ((show-browse && current-item < 0 && !browse-header-focused)
+        || (!show-browse && active-nav == 10 && settings-section == "")
+        || (!show-browse && active-nav != 10 && focused-section < 0));
         // show-sidebar-profile-menu / -manage-profiles / -profile-edit keep active-nav at
         // 7 and don't touch focused-section, so without this exclusion the sidebar's
         // Profile row would flash its press-pulse with every Enter inside those overlays
