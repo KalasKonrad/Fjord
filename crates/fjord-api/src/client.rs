@@ -33,6 +33,7 @@
 //                   failure; a 403 for a non-admin logs at debug)
 //     websocket     ws_url() → ws[s]://host/socket?api_key=…&deviceId=…
 //   Fields          ProviderIds on detail/boxset/filmography/by-ids fetches (TMDB resolution);
+//                   MediaStreams on the track lists (album, playlist, folder) — the songs' format/quality;
 //                   MediaStreams on get_item_detail, get_items_by_ids_detailed (keep in sync),
 //                   get_next_up_for_series and get_series_episodes (video_stream_info() before
 //                   playback); RecursiveItemCount on get_all_series and get_items_by_ids (makes
@@ -1298,7 +1299,7 @@ impl JellyfinClient {
             .append_pair("IncludeItemTypes", "Audio")
             .append_pair(
                 "Fields",
-                "RunTimeTicks,UserData,IndexNumber,ParentIndexNumber,AlbumArtist,Album",
+                "RunTimeTicks,UserData,IndexNumber,ParentIndexNumber,AlbumArtist,Album,MediaStreams",
             )
             .append_pair("SortBy", "ParentIndexNumber,IndexNumber")
             .append_pair("SortOrder", "Ascending");
@@ -1328,7 +1329,7 @@ impl JellyfinClient {
             .append_pair("Recursive", "false")
             .append_pair(
                 "Fields",
-                "RunTimeTicks,UserData,IndexNumber,ParentIndexNumber,AlbumArtist,Album",
+                "RunTimeTicks,UserData,IndexNumber,ParentIndexNumber,AlbumArtist,Album,MediaStreams",
             )
             .append_pair("SortBy", "SortName")
             .append_pair("SortOrder", "Ascending");
@@ -1382,7 +1383,10 @@ impl JellyfinClient {
         let mut url = self.api_url(&format!("/Playlists/{}/Items", playlist_id))?;
         url.query_pairs_mut()
             .append_pair("UserId", &self.user_id)
-            .append_pair("Fields", "RunTimeTicks,UserData,AlbumArtist,Album");
+            .append_pair(
+                "Fields",
+                "RunTimeTicks,UserData,AlbumArtist,Album,MediaStreams",
+            );
         Ok(self
             .http
             .get(url)

@@ -2,8 +2,10 @@
 //   fmt_secs                seconds → "H:MM:SS" / "M:SS"
 //   fmt_ends_at             remaining seconds → local wall-clock "HH:MM" (empty when ≤ 0)
 //   build_track_model       Vec<TrackInfo> → ModelRc<TrackEntry>; title preferred, falls back to external filename base
-//   apply_audio_track       music bar + album art + lyrics for an Audio track a GAPLESS transition
-//                           started (condensed mirror of start_playback's is_audio block)
+//   spawn_audio_quality     the playing song's format + quality (music-bar-quality / -long) from one
+//                           item-detail fetch, generation-guarded (start_playback + apply_audio_track)
+//   apply_audio_track       music bar + album art + lyrics + quality for an Audio track a GAPLESS
+//                           transition started (condensed mirror of start_playback's is_audio block)
 // ─────────────────────────────────────────────────────────────────────────────
 use super::*;
 
@@ -125,7 +127,43 @@ pub(crate) fn build_track_model(tracks: &[TrackInfo], kind: &str) -> ModelRc<Tra
     ModelRc::new(VecModel::from(entries))
 }
 
-// Music-bar UI + album art + lyrics for an Audio track that just started via a
+// The playing song's format + quality for the music bar and Now Playing (music-bar-quality /
+// -long): its Jellyfin streams, from one item-detail fetch (Fields include MediaStreams).
+// Generation-guarded like the art and lyrics; empty when the server reports no audio stream.
+pub(crate) fn spawn_audio_quality(
+    client: Arc<fjord_api::JellyfinClient>,
+    item_id: String,
+    video: &Arc<Mutex<VideoState>>,
+    ww: &slint::Weak<MainWindow>,
+    rt: &tokio::runtime::Handle,
+    my_gen: u64,
+) {
+    let video = Arc::clone(video);
+    let ww = ww.clone();
+    rt.spawn(async move {
+        let quality = match client.get_item_detail(&item_id).await {
+            Ok(item) => item.audio_quality(),
+            Err(e) => {
+                debug!("audio quality for {item_id}: {e:#}");
+                None
+            }
+        };
+        let (short, long) = quality.map(|q| (q.short(), q.long())).unwrap_or_default();
+        debug!("audio quality for {item_id}: {long:?}");
+        let _ = slint::invoke_from_event_loop(move || {
+            if video.lock().unwrap().playback_generation != my_gen {
+                return;
+            }
+            if let Some(w) = ww.upgrade() {
+                let g = AppState::get(&w);
+                g.set_music_bar_quality(ss(&short));
+                g.set_music_bar_quality_long(ss(&long));
+            }
+        });
+    });
+}
+
+// Music-bar UI + album art + lyrics + quality for an Audio track that just started via a
 // GAPLESS transition (same mpv instance). Condensed mirror of start_playback's
 // is_audio block — keep the two in sync when changing music-bar behaviour.
 // `my_gen` guards the async art/lyrics pushes against later track changes.
@@ -144,6 +182,8 @@ pub(crate) fn apply_audio_track(
         g.set_music_bar_artist(ss(&artist));
         g.set_music_bar_album_id(ss(&art_id));
         g.set_music_bar_has_art(false);
+        g.set_music_bar_quality("".into());
+        g.set_music_bar_quality_long("".into());
         g.set_music_bar_pos(0.0);
         g.set_music_bar_elapsed("0:00".into());
         g.set_lyrics_available(false);
@@ -156,6 +196,7 @@ pub(crate) fn apply_audio_track(
     }
     let client = video.lock().unwrap().client.as_ref().map(Arc::clone);
     let Some(client) = client else { return };
+    spawn_audio_quality(Arc::clone(&client), qi.id.clone(), video, ww, rt, my_gen);
 
     // Album art (generation-guarded)
     {

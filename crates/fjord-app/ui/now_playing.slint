@@ -117,6 +117,15 @@ export component NowPlayingScreen inherits Rectangle {
                         horizontal-alignment: center;
                         overflow: elide;
                     }
+
+                    // Format + quality: "FLAC · 16-bit / 44.1 kHz", "MP3 · 256 kbps · 44.1 kHz"
+                    if AppState.music-bar-quality-long != "": Text {
+                        text: AppState.music-bar-quality-long;
+                        color: Theme.text-subtle;
+                        font-size: 13px * AppState.text-scale;
+                        horizontal-alignment: center;
+                        overflow: elide;
+                    }
                 }
 
                 VerticalLayout {

@@ -170,6 +170,7 @@ export struct TrackItem {
     disc-header: string,   // "" = no separator above this row; else "Disc N" to show
     row-y-px: float,    // precomputed absolute Y (px) for this row, already
                             // accounting for every disc-header's own extra height
+    quality: string,    // "FLAC 16/44.1", "MP3 256 kbps" — AudioQuality::short (fjord-api); "" unknown
 }
 
 // A cast member shown on the detail page.
