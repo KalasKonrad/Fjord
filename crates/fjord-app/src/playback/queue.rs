@@ -7,7 +7,11 @@
 //     take_repeat_all_ring_next  the queue, head plays) — natural end, gapless peek/commit and ⏭ Next
 //   upcoming_count          queue-count definition: playlist tracks after current + queue items
 //   playlist_prev/_next, peek_natural_next/commit_natural_next, invalidate_preload,
-//   rebuild_shuffle_order/toggle_shuffle, shuffle_indices — playlist + queue stepping
+//   rebuild_shuffle_order/toggle_shuffle, shuffle_indices — playlist + queue stepping (every advance:
+//                           gapless, a song's normal end, ⏭)
+//   first_queued_song / join_playlist  songs queued during an album/playlist play before it continues
+//                           and join it as they start (Repeat All loops them, ⏮ goes back past them)
+//   move_playlist_to        a new shuffle round (Repeat All) reshuffles — joined songs land anywhere
 //   resolve_true_next_episode  the ONLY resolver for "what's next" auto-advance — trusts
 //                           /Shows/NextUp's answer only when verifiably forward of the current
 //                           episode (position check against the series' own ordered list),
@@ -195,6 +199,64 @@ pub(crate) fn take_repeat_all_ring_next(vs: &mut VideoState) -> Option<QueueItem
     }
 }
 
+// ── Songs queued during an album / playlist ───────────────────────────────────
+// "Add to Queue" / "Play Next" while an album or playlist plays: the queued songs play before
+// the playlist continues (Play Next at the front, Add to Queue in the order added), and each one
+// joins the session's playlist as it starts — right after the song it follows — so Repeat All
+// loops it and ⏮ goes back past it. Only songs: a queued video waits in the queue (class-gated).
+
+/// The queue index of the next song to play before the playlist continues, if any.
+fn first_queued_song(vs: &VideoState) -> Option<usize> {
+    if !vs.current_is_audio || vs.playlist.is_empty() {
+        return None;
+    }
+    vs.queue.iter().position(|q| q.item_type == "Audio")
+}
+
+/// A queued song that starts playing joins the session playlist right after the current song
+/// and becomes the current one. In shuffle it takes the slot after the current one in this
+/// round's order (the round continues after it); the next round reshuffles everything.
+pub(crate) fn join_playlist(vs: &mut VideoState, song: QueueItem) {
+    let at = (vs.playlist_index + 1).min(vs.playlist.len());
+    let cur_pos = vs
+        .shuffle_order
+        .iter()
+        .position(|&i| i == vs.playlist_index);
+    vs.playlist.insert(at, song);
+    for idx in vs.shuffle_order.iter_mut() {
+        if *idx >= at {
+            *idx += 1;
+        }
+    }
+    if vs.shuffle && !vs.shuffle_order.is_empty() {
+        let pos = cur_pos.map_or(vs.shuffle_order.len(), |p| p + 1);
+        vs.shuffle_order.insert(pos, at);
+    }
+    vs.playlist_index = at;
+}
+
+/// Whether moving on from the current song starts a new shuffle round (Repeat All).
+fn shuffle_round_ends(vs: &VideoState) -> bool {
+    vs.shuffle
+        && vs.repeat_mode == RepeatMode::All
+        && !vs.shuffle_order.is_empty()
+        && vs
+            .shuffle_order
+            .iter()
+            .position(|&i| i == vs.playlist_index)
+            .is_none_or(|p| p + 1 >= vs.shuffle_order.len())
+}
+
+/// Moves the playlist to `idx`. A new shuffle round (Repeat All) gets a fresh order — the song
+/// starting it first — so songs that joined during a round land at random spots in the next.
+fn move_playlist_to(vs: &mut VideoState, idx: usize) {
+    let new_round = shuffle_round_ends(vs);
+    vs.playlist_index = idx;
+    if new_round {
+        rebuild_shuffle_order(vs);
+    }
+}
+
 // Non-mutating preview of what natural end will play (class-gated like the
 // timer's advance). Used by the gapless preload check.
 pub(crate) fn peek_natural_next(vs: &VideoState) -> Option<QueueItem> {
@@ -207,6 +269,9 @@ pub(crate) fn peek_natural_next(vs: &VideoState) -> Option<QueueItem> {
             .first()
             .cloned()
             .or_else(|| vs.now_playing.clone().filter(|q| q.item_type == "Audio"));
+    }
+    if let Some(i) = first_queued_song(vs) {
+        return vs.queue.get(i).cloned();
     }
     let ended_audio = vs.current_is_audio;
     let queue_head_matches = vs
@@ -248,12 +313,19 @@ pub(crate) fn commit_natural_next(vs: &mut VideoState, qi: &QueueItem) {
         }
         return;
     }
+    if let Some(i) = first_queued_song(vs)
+        && vs.queue[i].id == qi.id
+    {
+        let song = vs.queue.remove(i);
+        join_playlist(vs, song);
+        return;
+    }
     if vs.current_is_audio
         && !vs.playlist.is_empty()
         && let Some(i) = natural_next_index(vs)
         && vs.playlist.get(i).map(|q| q.id == qi.id).unwrap_or(false)
     {
-        vs.playlist_index = i;
+        move_playlist_to(vs, i);
         return;
     }
     if vs.queue.first().map(|q| q.id == qi.id).unwrap_or(false) {
@@ -272,6 +344,12 @@ pub(crate) fn invalidate_preload(vs: &mut VideoState) {
 }
 
 pub(crate) fn playlist_next(vs: &mut VideoState) -> Option<QueueItem> {
+    // A queued song comes before the playlist continues (and joins it).
+    if let Some(i) = first_queued_song(vs) {
+        let song = vs.queue.remove(i);
+        join_playlist(vs, song.clone());
+        return Some(song);
+    }
     let len = vs.playlist.len();
     if len > 0 {
         let next_idx = if vs.shuffle && !vs.shuffle_order.is_empty() {
@@ -299,7 +377,7 @@ pub(crate) fn playlist_next(vs: &mut VideoState) -> Option<QueueItem> {
             }
         };
         if let Some(idx) = next_idx {
-            vs.playlist_index = idx;
+            move_playlist_to(vs, idx);
             return Some(vs.playlist[idx].clone());
         }
         // Playlist exhausted (Repeat Off) — fall through to the queue below.
@@ -497,5 +575,100 @@ mod tests {
         vs.playlist = vec![song("a"), song("b")];
         vs.playlist_index = 1;
         assert_eq!(peek_natural_next(&vs).map(|q| q.id), Some("a".into()));
+    }
+
+    /// Plays everything natural end would, `n` times, and returns the ids in order.
+    fn play_on(vs: &mut VideoState, n: usize) -> Vec<String> {
+        (0..n)
+            .map(|_| {
+                let q = peek_natural_next(vs).expect("something next");
+                commit_natural_next(vs, &q);
+                vs.now_playing = Some(q.clone());
+                q.id
+            })
+            .collect()
+    }
+
+    fn ids(v: &[QueueItem]) -> Vec<&str> {
+        v.iter().map(|q| q.id.as_str()).collect()
+    }
+
+    #[test]
+    fn queued_songs_play_before_the_playlist_continues_and_join_the_loop() {
+        // The HTPC case: a playlist on Repeat All, songs added to the queue — they never played.
+        let mut vs = playing("a", RepeatMode::All);
+        vs.playlist = vec![song("a"), song("b"), song("c")];
+        vs.playlist_index = 0;
+        vs.queue = vec![song("x"), song("y")]; // Add to Queue: in the order added
+        assert_eq!(play_on(&mut vs, 3), ["x", "y", "b"]);
+        assert!(vs.queue.is_empty());
+        assert_eq!(ids(&vs.playlist), ["a", "x", "y", "b", "c"]);
+        // Next round: they're part of the loop, where they were played.
+        assert_eq!(play_on(&mut vs, 4), ["c", "a", "x", "y"]);
+    }
+
+    #[test]
+    fn play_next_comes_before_earlier_queued_songs() {
+        let mut vs = playing("a", RepeatMode::Off);
+        vs.playlist = vec![song("a"), song("b")];
+        vs.queue = vec![song("x")];
+        vs.queue.insert(0, song("p")); // Play Next = the queue's front (context_menu::enqueue_item)
+        assert_eq!(play_on(&mut vs, 3), ["p", "x", "b"]);
+    }
+
+    #[test]
+    fn next_button_takes_a_queued_song_first() {
+        let mut vs = playing("a", RepeatMode::Off);
+        vs.playlist = vec![song("a"), song("b")];
+        vs.queue = vec![song("x")];
+        assert_eq!(playlist_next(&mut vs).map(|q| q.id), Some("x".into()));
+        assert_eq!(ids(&vs.playlist), ["a", "x", "b"]);
+        assert_eq!(vs.playlist_index, 1);
+        assert_eq!(playlist_next(&mut vs).map(|q| q.id), Some("b".into()));
+        // ⏮ from b goes back to x, then a.
+        assert_eq!(playlist_prev(&mut vs).map(|q| q.id), Some("x".into()));
+    }
+
+    #[test]
+    fn a_queued_video_doesnt_jump_ahead_of_the_songs() {
+        let mut vs = playing("a", RepeatMode::Off);
+        vs.playlist = vec![song("a"), song("b")];
+        let mut video = song("v");
+        video.item_type = "Episode".into();
+        vs.queue = vec![video, song("x")];
+        assert_eq!(play_on(&mut vs, 2), ["x", "b"]);
+        assert_eq!(ids(&vs.queue), ["v"], "the video waits");
+    }
+
+    #[test]
+    fn shuffle_a_joined_song_plays_next_and_the_round_continues() {
+        let mut vs = playing("a", RepeatMode::All);
+        vs.shuffle = true;
+        vs.playlist = vec![song("a"), song("b"), song("c"), song("d")];
+        vs.shuffle_order = vec![0, 2, 1, 3]; // a, c, b, d
+        vs.playlist_index = 0;
+        vs.queue = vec![song("x")];
+        assert_eq!(play_on(&mut vs, 4), ["x", "c", "b", "d"]);
+        assert_eq!(vs.playlist.len(), 5);
+    }
+
+    #[test]
+    fn shuffle_repeat_all_reshuffles_each_new_round() {
+        let mut vs = playing("d", RepeatMode::All);
+        vs.shuffle = true;
+        vs.playlist = vec![song("a"), song("b"), song("c"), song("d")];
+        vs.shuffle_order = vec![0, 1, 2, 3];
+        vs.playlist_index = 3; // the round's last song
+        let next = play_on(&mut vs, 1);
+        assert_eq!(
+            next,
+            ["a"],
+            "the next round starts where the old order wrapped to"
+        );
+        // A fresh order with the playing song first, every song once.
+        assert_eq!(vs.shuffle_order[0], vs.playlist_index);
+        let mut sorted = vs.shuffle_order.clone();
+        sorted.sort();
+        assert_eq!(sorted, [0, 1, 2, 3]);
     }
 }

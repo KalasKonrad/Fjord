@@ -26,7 +26,8 @@
 //                           gapless UI, the Up Next countdown task (counts unpaused time only), and
 //                           the natural-end advance (resolve_true_next_episode, EOF-before-fetch
 //                           fallback; duration guard: an EOF far short of the duration is never a
-//                           real end)
+//                           real end); the song/playlist/queue step is queue.rs's peek + commit,
+//                           the same as the gapless path
 //   loaded_since/loaded_ok  time since mpv's FileLoaded — chapters, tracks, Branch B and the skip-segment
 //                           check key off it, not play_start (before FileLoaded time-pos reads a fake 0)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1982,81 +1983,16 @@ fn on_natural_end(t: &Tick) {
     // premature "end" (see the duration guard above) — an EOF that
     // isn't a genuine finish must never start whatever's next.
     if !had_series && !premature {
+        // The same rule as the gapless path (queue.rs): Repeat One, the Repeat All ring, queued
+        // songs before the playlist continues, the playlist (Repeat/shuffle), then the queue —
+        // class-gated (audio follows audio, video follows video).
         let next_item: Option<QueueItem> = {
             let mut vs = video_timer.lock().unwrap();
-            // Class-gated advance: audio only follows audio, video only
-            // follows video — a movie ending must not start queued music.
-            let ended_audio = vs.current_is_audio;
-            let queue_head_matches = vs
-                .queue
-                .first()
-                .map(|q| (q.item_type == "Audio") == ended_audio)
-                .unwrap_or(false);
-            if let Some(q) = repeat_one_target(&vs) {
-                // Repeat One: replay the song that just ended, with or
-                // without a playlist loaded (see repeat_one_target).
-                info!("repeat one: replaying {}", q.id);
-                Some(q)
-            } else if repeat_all_ring(&vs) {
-                // Repeat All, no album playlist: rotate the queue ring.
-                let next = take_repeat_all_ring_next(&mut vs);
-                if let Some(q) = &next {
-                    info!(
-                        "repeat all: next {} ({} song(s) in the loop)",
-                        q.id,
-                        vs.queue.len() + 1
-                    );
-                }
-                next
-            } else if ended_audio && !vs.playlist.is_empty() {
-                // Playlist mode (album/artist): advance with repeat/shuffle logic.
-                let len = vs.playlist.len();
-                let next_idx = match vs.repeat_mode {
-                    RepeatMode::One => Some(vs.playlist_index), // restart same track
-                    RepeatMode::Off | RepeatMode::All => {
-                        if vs.shuffle && !vs.shuffle_order.is_empty() {
-                            let cur_pos = vs
-                                .shuffle_order
-                                .iter()
-                                .position(|&i| i == vs.playlist_index)
-                                .unwrap_or(0);
-                            let next_pos = cur_pos + 1;
-                            match vs.repeat_mode {
-                                RepeatMode::Off => vs.shuffle_order.get(next_pos).copied(),
-                                RepeatMode::All => Some(vs.shuffle_order[next_pos % len]),
-                                RepeatMode::One => unreachable!(),
-                            }
-                        } else {
-                            let next = vs.playlist_index + 1;
-                            match vs.repeat_mode {
-                                RepeatMode::Off => {
-                                    if next < len {
-                                        Some(next)
-                                    } else {
-                                        None
-                                    }
-                                }
-                                RepeatMode::All => Some(next % len),
-                                RepeatMode::One => unreachable!(),
-                            }
-                        }
-                    }
-                };
-                if let Some(idx) = next_idx {
-                    vs.playlist_index = idx;
-                    Some(vs.playlist[idx].clone())
-                } else if queue_head_matches {
-                    // Playlist exhausted (Repeat Off) — queued audio plays next.
-                    Some(vs.queue.remove(0))
-                } else {
-                    None
-                }
-            } else if queue_head_matches {
-                // Context-menu queue: pop from front (same media class only).
-                Some(vs.queue.remove(0))
-            } else {
-                None
+            let next = peek_natural_next(&vs);
+            if let Some(q) = &next {
+                commit_natural_next(&mut vs, q);
             }
+            next
         };
 
         if let Some(q) = next_item {
