@@ -23,6 +23,15 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Fixed: songs added to the queue never played during a playlist on
+  repeat.** Queued songs waited for the playlist to end, which with Repeat
+  All never happened. Now Add to Queue plays the songs right after the
+  current one (in the order you added them; Play Next goes before those),
+  then the playlist continues. They become part of that playlist for the
+  session: with Repeat All they come around again, with shuffle they play
+  next this round and at a random spot in later rounds (shuffle with Repeat
+  All now mixes every new round). The queue panel and Up Next list them right
+  after the current song.
 - **New: an artist's tracks without an album.** Music files lying directly in
   an artist's folder with no album (e.g. untagged files in "Various Artists")
   now show as "Tracks" under the albums on that artist's page; Enter plays

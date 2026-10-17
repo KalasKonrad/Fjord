@@ -3,7 +3,9 @@
 //   step 3)
 //   wire_music_bar         music bar, Now Playing, queue panel open
 //   wire_queue             queue prev/next/shuffle/repeat, queue panel, lyrics
-//   push_queue_display / spawn_queue_poster_loading  queue panel model + its posters
+//   push_queue_display / spawn_queue_poster_loading  queue panel model + its posters (songs queued
+//                                   during an album/playlist listed right after the current one);
+//                                   queue-jump to a queued song joins it to the playlist
 // ─────────────────────────────────────────────────────────────────────────────
 
 use crate::{AppState, MainWindow};
@@ -315,7 +317,13 @@ pub(crate) fn wire_queue(
                     if qidx >= vs.queue.len() {
                         return;
                     }
-                    vs.queue.remove(qidx)
+                    let item = vs.queue.remove(qidx);
+                    // A queued song played during an album/playlist joins it (queue.rs), so the
+                    // playlist continues after it.
+                    if item.item_type == "Audio" && vs.current_is_audio && !vs.playlist.is_empty() {
+                        crate::playback::join_playlist(&mut vs, item.clone());
+                    }
+                    item
                 }
             };
             let s = state_qj.lock().unwrap();
@@ -548,13 +556,25 @@ pub(crate) fn push_queue_display(vs: &crate::playback::VideoState, g: &AppState)
         }
     }
 
+    // Queued rows keep index = playlist.len() + their queue position (queue-jump / -remove).
+    // Songs queued during an album/playlist play before it continues (queue.rs), so they're
+    // listed right after the current row; anything else queued (videos, or no playlist) after it all.
     let base = vs.playlist.len() as i32;
-    items.extend(
-        vs.queue
-            .iter()
-            .enumerate()
-            .map(|(i, qi)| to_entry(base + i as i32, qi, false, true)),
+    let plays_first = |qi: &crate::playback::QueueItem| {
+        vs.current_is_audio && !vs.playlist.is_empty() && qi.item_type == "Audio"
+    };
+    let (first, last): (Vec<_>, Vec<_>) = vs
+        .queue
+        .iter()
+        .enumerate()
+        .map(|(i, qi)| (plays_first(qi), to_entry(base + i as i32, qi, false, true)))
+        .partition(|(f, _)| *f);
+    let after_current = items.iter().position(|e| e.is_current).map_or(0, |p| p + 1);
+    items.splice(
+        after_current..after_current,
+        first.into_iter().map(|(_, e)| e),
     );
+    items.extend(last.into_iter().map(|(_, e)| e));
     g.set_queue_items(ModelRc::new(VecModel::from(items)));
     g.set_queue_count(crate::playback::upcoming_count(vs));
 }

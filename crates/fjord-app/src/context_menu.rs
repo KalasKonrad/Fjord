@@ -36,7 +36,9 @@
 //   handle_key                      Up/Down loop over menu_rows, Enter → activate, Back closes
 //   Queue:
 //   find_title_in_state / find_title_in_models  title fallbacks by id
-//   enqueue_item / queue_from_context_menu  play next or append; Series → next-up episode,
+//   enqueue_item / queue_from_context_menu  Play Next = the queue's front, Add to Queue = its back
+//                                   (during an album/playlist they play before it continues and
+//                                   join it — queue.rs); Series → next-up episode,
 //                                   MusicAlbum/MusicArtist → their tracks, BoxSet toasts
 //   wire_queue_callbacks            on_queue_add_item / on_queue_play_next_item
 //   Playlists:
@@ -948,36 +950,14 @@ fn find_title_in_models(g: &AppState, id: &str) -> Option<String> {
         .or_else(|| find(g.get_person_filmography()))
 }
 
-// Insert `item` into the playback collections. play_next=true inserts right
-// after the current playlist position (or at the queue front when there is no
-// playlist); play_next=false appends to the context-menu queue.
+// Queue `item`: Play Next at the front of the queue, Add to Queue at its back. While an album or
+// playlist plays, queued songs play before it continues and join it as they start (queue.rs
+// first_queued_song / join_playlist), so Repeat All loops them and shuffle mixes them in.
 fn enqueue_item(vs: &mut VideoState, item: QueueItem, play_next: bool) {
     // Upcoming order changes — drop any gapless-preloaded entry first.
     crate::playback::invalidate_preload(vs);
     if play_next {
-        if !vs.playlist.is_empty() {
-            // Insert after the current playlist position (plays next within album)
-            let insert_at = (vs.playlist_index + 1).min(vs.playlist.len());
-            vs.playlist.insert(insert_at, item);
-            // Keep shuffle_order valid: shift indices >= insert_at up by one
-            for idx in vs.shuffle_order.iter_mut() {
-                if *idx >= insert_at {
-                    *idx += 1;
-                }
-            }
-            // Insert right after the CURRENT item's slot in shuffle_order (slot 1 is behind the
-            // cursor once playback has advanced, and would never play).
-            if vs.shuffle && !vs.shuffle_order.is_empty() {
-                let cur_pos = vs
-                    .shuffle_order
-                    .iter()
-                    .position(|&i| i == vs.playlist_index)
-                    .unwrap_or(0);
-                vs.shuffle_order.insert(cur_pos + 1, insert_at);
-            }
-        } else {
-            vs.queue.insert(0, item);
-        }
+        vs.queue.insert(0, item);
     } else {
         vs.queue.push(item);
     }
