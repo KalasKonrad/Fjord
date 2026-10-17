@@ -18,7 +18,8 @@
 //                      instead of background/border-*/border-radius) or as a holder of a clipped picture
 //   FocusHalo          the glow around a focused row/field/menu entry (`sidebar: true` for the sidebar's):
 //                      a hollow nine-slice image (AppState.focus-halo, halo.rs) reaching past the
-//                      element's edges, lit by Settings "Glow on"; never covers the row itself
+//                      element's edges, lit by Settings "Glow on"; never covers the row itself.
+//                      Both stay dark while a bottom bar has the keys (AppState.bar-focus) unless `in-bar`
 //   VirtualKeyboard    numeric PIN keypad (3×4, cursor driven by Rust); VirtualKeyboardKey = its cell
 //   QwertyKeyboard     on-screen alphanumeric keyboard: letters/symbols pages, sticky Shift, last row
 //                      123 · ◀ · space · ▶ · Done; floating panel; key values live only here, row
@@ -44,7 +45,9 @@
 //                      separate surface), 56px when the video is behind the UI; float-card-focused
 //   VideoSpot          reports its absolute rect into AppState.video-rect-* (separate video surface)
 //   MusicPlayerBar     72px bottom bar while audio plays: art + title/artist, transport + progress,
-//                      Prev/Next/Shuffle/Repeat/Queue/Lyrics/volume
+//                      Prev/Next/Shuffle/Repeat/Queue/Lyrics/volume; focus from AppState.bar-focused(n)
+//                      (the bars' elements are `in-bar` / bar-ring-width: they stay lit while the
+//                      rest of the window hides its focus, AppState.bar-focus)
 //   QueuePanel         right-side queue overlay ("Queue N of M", Clear All → ConfirmDialog)
 //   LyricsView         lyrics overlay, active line highlighted and kept in view
 //   ToastNotification  bottom-centre message pill (dismissed by main.slint's Timer)
@@ -126,7 +129,10 @@ export component FocusGlow inherits Rectangle {
     in property <brush> ring-color: AppState.focus-color;
     // Fade fill changes (90 ms, like the ring) — for an element whose fill follows focus or selection.
     in property <bool> animate-fill: false;
-    property <bool> lit: root.glowing && AppState.focus-glow;
+    // A bottom bar's own button (music bar, mini player): it keeps its glow while the bar has the
+    // keys (AppState.bar-focus hides every other element's).
+    in property <bool> in-bar: false;
+    property <bool> lit: root.glowing && AppState.focus-glow && (root.in-bar || !AppState.bar-focus);
     property <duration> fill-ms: root.animate-fill ? 90ms * AppState.settings-animation-speed : 0ms;
 
     z: root.lit ? 1 : 0;
@@ -180,7 +186,10 @@ export component FocusHalo inherits Rectangle {
     in property <bool> glowing;
     in property <length> radius: 0px;
     in property <bool> sidebar: false;
-    property <bool> lit: root.glowing && (root.sidebar ? AppState.sidebar-glow : AppState.row-glow);
+    // A bottom bar's own element: keeps its glow while the bar has the keys (bar-focus).
+    in property <bool> in-bar: false;
+    property <bool> lit: root.glowing && (root.in-bar || !AppState.bar-focus)
+        && (root.sidebar ? AppState.sidebar-glow : AppState.row-glow);
     // The image's reach, rounded up like halo.rs does.
     property <length> pad: ceil(AppState.glow-reach / 1px) * 1px;
 
@@ -410,7 +419,8 @@ export component FjordButton inherits FocusGlow {
 
     height: 38px;
     radius: Theme.radius;
-    ring-width: AppState.glow-ring-width(kbd-focused, ta.pressed || pulse.pulsing);
+    ring-width: root.in-bar ? AppState.bar-glow-ring-width(kbd-focused, ta.pressed || pulse.pulsing)
+        : AppState.glow-ring-width(kbd-focused, ta.pressed || pulse.pulsing);
     glowing: kbd-focused;
     fill: !enabled ? Theme.surface-raised
         : ta.has-hover ? (danger ? #c53030 : Theme.accent-hover)
@@ -619,7 +629,8 @@ export component IconCircleButton inherits FocusGlow {
     width: 38px;
     height: 38px;
     radius: 19px;
-    ring-width: AppState.glow-ring-width(kbd-focused, ta.pressed || pulse.pulsing);
+    ring-width: root.in-bar ? AppState.bar-glow-ring-width(kbd-focused, ta.pressed || pulse.pulsing)
+        : AppState.glow-ring-width(kbd-focused, ta.pressed || pulse.pulsing);
     glowing: kbd-focused;
     fill: active ? Theme.accent
         : ta.has-hover ? Theme.surface-overlay
@@ -1896,18 +1907,19 @@ export component MiniPlayerBar inherits Rectangle {
     }
 
     // Focus ring
-    if AppState.float-card-focused >= 0: Rectangle {
+    if AppState.float-card-active: Rectangle {
         x: 0;
         y: 0;
         width: root.width;
         height: root.height;
-        border-width: AppState.ring-width(true, false);
+        border-width: AppState.bar-ring-width(true, false);
         border-color: AppState.focus-color;
         border-radius: 0px;
         background: transparent;
         FocusHalo {
             glowing: true;
             radius: 0px;
+            in-bar: true;
         }
     }
 
@@ -1960,7 +1972,8 @@ export component MiniPlayerBar inherits Rectangle {
                     text: "Resume";
                     height: 28px;
                     width: 120px * AppState.text-scale;
-                    kbd-focused: AppState.float-card-focused == 0;
+                    kbd-focused: AppState.float-focused(0);
+                    in-bar: true;
                     clicked => { AppState.float-card-focused = -1; AppState.resume-player(); }
                 }
 
@@ -1970,7 +1983,8 @@ export component MiniPlayerBar inherits Rectangle {
                     height: 28px;
                     width: 80px * AppState.text-scale;
                     danger: true;
-                    kbd-focused: AppState.float-card-focused == 1;
+                    kbd-focused: AppState.float-focused(1);
+                    in-bar: true;
                     clicked => { AppState.float-card-focused = -1; AppState.stop-playback(); }
                 }
             }
@@ -2008,7 +2022,8 @@ export component MiniPlayerBar inherits Rectangle {
                 text: "Resume";
                 height: 28px;
                 width: 120px * AppState.text-scale;
-                kbd-focused: AppState.float-card-focused == 0;
+                kbd-focused: AppState.float-focused(0);
+                in-bar: true;
                 clicked => { AppState.float-card-focused = -1; AppState.resume-player(); }
             }
 
@@ -2018,7 +2033,8 @@ export component MiniPlayerBar inherits Rectangle {
                 height: 28px;
                 width: 80px * AppState.text-scale;
                 danger: true;
-                kbd-focused: AppState.float-card-focused == 1;
+                kbd-focused: AppState.float-focused(1);
+                in-bar: true;
                 clicked => { AppState.float-card-focused = -1; AppState.stop-playback(); }
             }
         }
@@ -2053,7 +2069,7 @@ export component MusicPlayerBar inherits Rectangle {
 
             Rectangle {
                 border-radius: Theme.radius;
-                border-width: AppState.ring-width(AppState.music-bar-focused == 0, ta-left.pressed || left-pulse.pulsing);
+                border-width: AppState.bar-ring-width(AppState.bar-focused(0), ta-left.pressed || left-pulse.pulsing);
                 border-color: AppState.focus-color;
                 background: ta-left.has-hover ? Theme.surface-overlay : transparent;
                 animate border-width {
@@ -2061,13 +2077,14 @@ export component MusicPlayerBar inherits Rectangle {
                     easing: ease-out-expo;
                 }
                 FocusHalo {
-                    glowing: AppState.music-bar-focused == 0;
+                    glowing: AppState.bar-focused(0);
+                    in-bar: true;
                     radius: Theme.radius;
                 }
 
                 left-pulse := PressPulse {
                     trigger: AppState.kb-activate-pulse;
-                    active: AppState.music-bar-focused == 0;
+                    active: AppState.bar-focused(0);
                 }
 
                 HorizontalLayout {
@@ -2146,7 +2163,7 @@ export component MusicPlayerBar inherits Rectangle {
                         width: parent.width;
                         height: parent.height;
                         border-radius: 18px;
-                        border-width: AppState.ring-width(AppState.music-bar-focused == 1, ta-pp.pressed || pp-pulse.pulsing);
+                        border-width: AppState.bar-ring-width(AppState.bar-focused(1), ta-pp.pressed || pp-pulse.pulsing);
                         border-color: AppState.focus-color;
                         background: ta-pp.has-hover ? Theme.surface-overlay : transparent;
                         animate border-width {
@@ -2154,13 +2171,14 @@ export component MusicPlayerBar inherits Rectangle {
                             easing: ease-out-expo;
                         }
                         FocusHalo {
-                            glowing: AppState.music-bar-focused == 1;
+                            glowing: AppState.bar-focused(1);
+                            in-bar: true;
                             radius: 18px;
                         }
 
                         pp-pulse := PressPulse {
                             trigger: AppState.kb-activate-pulse;
-                            active: AppState.music-bar-focused == 1;
+                            active: AppState.bar-focused(1);
                         }
 
                         Text {
@@ -2186,7 +2204,7 @@ export component MusicPlayerBar inherits Rectangle {
                         width: parent.width;
                         height: parent.height;
                         border-radius: 18px;
-                        border-width: AppState.ring-width(AppState.music-bar-focused == 2, ta-stop.pressed || stop-pulse.pulsing);
+                        border-width: AppState.bar-ring-width(AppState.bar-focused(2), ta-stop.pressed || stop-pulse.pulsing);
                         border-color: AppState.focus-color;
                         background: ta-stop.has-hover ? Theme.surface-overlay : transparent;
                         animate border-width {
@@ -2194,13 +2212,14 @@ export component MusicPlayerBar inherits Rectangle {
                             easing: ease-out-expo;
                         }
                         FocusHalo {
-                            glowing: AppState.music-bar-focused == 2;
+                            glowing: AppState.bar-focused(2);
+                            in-bar: true;
                             radius: 18px;
                         }
 
                         stop-pulse := PressPulse {
                             trigger: AppState.kb-activate-pulse;
-                            active: AppState.music-bar-focused == 2;
+                            active: AppState.bar-focused(2);
                         }
 
                         Text {
@@ -2239,7 +2258,7 @@ export component MusicPlayerBar inherits Rectangle {
                         AppState.music-bar-seek(self.mouse-x / self.width);
                     }
                     // Track — thicker + brighter when keyboard-focused (slot 3)
-                    property <bool> tl-focused: AppState.music-bar-focused == 3;
+                    property <bool> tl-focused: AppState.bar-focused(3);
                     Rectangle {
                         x: 0;
                         width: parent.width;
@@ -2281,52 +2300,60 @@ export component MusicPlayerBar inherits Rectangle {
 
             IconCircleButton {
                 icon: "⏮";
-                kbd-focused: AppState.music-bar-focused == 4;
+                kbd-focused: AppState.bar-focused(4);
+                in-bar: true;
                 clicked => { AppState.queue-prev-track(); }
             }
 
             IconCircleButton {
                 icon: "⏭";
-                kbd-focused: AppState.music-bar-focused == 5;
+                kbd-focused: AppState.bar-focused(5);
+                in-bar: true;
                 clicked => { AppState.queue-next-track(); }
             }
 
             IconCircleButton {
                 icon: "⇌";
                 active: AppState.queue-shuffle;
-                kbd-focused: AppState.music-bar-focused == 6;
+                kbd-focused: AppState.bar-focused(6);
+                in-bar: true;
                 clicked => { AppState.toggle-shuffle(); }
             }
 
             IconCircleButton {
                 icon: AppState.queue-repeat-mode == 2 ? "↺¹" : "↺";
                 active: AppState.queue-repeat-mode > 0;
-                kbd-focused: AppState.music-bar-focused == 7;
+                kbd-focused: AppState.bar-focused(7);
+                in-bar: true;
                 clicked => { AppState.cycle-repeat(); }
             }
 
             IconCircleButton {
                 icon: "⋮";
                 active: AppState.show-queue-panel;
-                kbd-focused: AppState.music-bar-focused == 8;
+                kbd-focused: AppState.bar-focused(8);
+                in-bar: true;
                 clicked => { AppState.open-queue-panel(); }
             }
 
             if AppState.lyrics-available: IconCircleButton {
                 icon: "♪";
                 active: AppState.show-lyrics;
-                kbd-focused: AppState.music-bar-focused == 9;
+                kbd-focused: AppState.bar-focused(9);
+                in-bar: true;
                 clicked => { AppState.toggle-lyrics(); }
             }
             IconCircleButton {
                 icon: "🔉";
-                kbd-focused: AppState.music-bar-focused == 10;
+                kbd-focused: AppState.bar-focused(10);
+                in-bar: true;
                 clicked => { AppState.volume-down(); }
             }
 
             IconCircleButton {
                 icon: "🔊";
-                kbd-focused: AppState.music-bar-focused == 11;
+                kbd-focused: AppState.bar-focused(11);
+                in-bar: true;
                 clicked => { AppState.volume-up(); }
             }
         }

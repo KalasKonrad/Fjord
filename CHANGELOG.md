@@ -23,6 +23,11 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Fixed: two things looked selected at once.** Moving down into the music
+  bar (or the mini player) left the card, track or row you came from looking
+  selected; it now shows its highlight again when you go back up. And a music
+  bar button no longer stays lit while the queue, Now Playing or a menu has
+  the keys.
 - **Fixed: an album opened from an artist page couldn't be navigated** — the
   keys went to the artist page underneath (seen on Various Artists). The same
   family: a film opened from a person page now opens on top instead of under

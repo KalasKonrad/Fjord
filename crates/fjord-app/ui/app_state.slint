@@ -29,7 +29,9 @@
 //                         dashboards/Discover, Browse All before its list, Settings before its sections)
 //   Screen stack          screen-seq + series-/season-/artist-/collection-/album-/detail-/request-detail-/
 //                         request-options-/calendar-/blocklist-/person-z (open order; keys::open_screen)
-//   Navigation state      active-nav, focused-section, focused-card, float-card-focused;
+//   Navigation state      active-nav, focused-section, focused-card, float-card-focused; music-bar-active /
+//                         float-card-active / bar-focus + bar-focused(n) / float-focused(n) (a bottom bar has
+//                         the keys — keys/global.rs; everything else's focus is hidden meanwhile)
 //                         settings-focused (string key, "" = left pane), settings-section ("" = sidebar),
 //                         settings-focused-visual-index (scroll-to-view only)
 //   Server info           server-url (+ server-unencrypted), server-name, server-version, client-version
@@ -601,6 +603,24 @@ export global AppState {
     in-out property <int> focused-section:   -1;
     in-out property <int> focused-card:       0;
     in-out property <int> float-card-focused: -1;  // -1=not focused, 0=Resume, 1=Stop; floating mini-player
+    // The bottom bars have the keys (keys/global.rs reads these, the bars draw their focus from
+    // them): the music bar's / the mini-player card's remembered button, unless an overlay that
+    // takes their keys is up (the player, a menu, Now Playing, the queue, the request/calendar/
+    // blocklist pages, Bonfire Admin) — it stays remembered for when that closes. While one has
+    // them, bar-focus hides everything else's focus (ring, glow, zoom — the AppState helpers), so
+    // the card or row you came from doesn't look selected; Up returns to it.
+    property <bool> bar-overlay: is-playing || show-context-menu || show-queue-panel
+        || (show-now-playing && is-audio-playing) || show-request-detail || show-request-options
+        || show-calendar || show-calendar-day-popup || show-blocklist || show-bonfire-admin;
+    out property <bool> music-bar-active: music-bar-focused >= 0 && is-audio-playing && !bar-overlay;
+    out property <bool> float-card-active: float-card-focused >= 0 && has-background-player && !bar-overlay;
+    out property <bool> bar-focus: music-bar-active || float-card-active;
+    public pure function bar-focused(slot: int) -> bool {
+        music-bar-active && music-bar-focused == slot
+    }
+    public pure function float-focused(slot: int) -> bool {
+        float-card-active && float-card-focused == slot
+    }
     in property <string> server-url:       "";
     // True for an http:// server (set by crate::set_server_url_ui) — Settings
     // shows "not encrypted" under SERVER (2026-10-09 security review).
@@ -1616,13 +1636,21 @@ export global AppState {
     //   glow-ring-width  pictures, tiles, buttons, pills (opaque) — no line in the Glow style;
     //                    they are FocusGlow elements (widgets.slint), which cast the glow
     // `pressed` = mouse press or the keyboard PressPulse (`ta.pressed || pulse.pulsing`).
+    //   bar-ring-width / bar-glow-ring-width  the bottom bars' own (not hidden by bar-focus)
+    // Everything but the bars shows no focus while a bar has the keys (bar-focus).
     public pure function ring-width(focused: bool, pressed: bool) -> length {
-        pressed ? focus-press-width : focused ? (row-glow ? focus-line-width : focus-width) : 0px
+        pressed ? focus-press-width : focused && !bar-focus ? (row-glow ? focus-line-width : focus-width) : 0px
     }
     public pure function nav-ring-width(focused: bool, pressed: bool) -> length {
-        pressed ? focus-press-width : focused ? (sidebar-glow ? focus-line-width : focus-width) : 0px
+        pressed ? focus-press-width : focused && !bar-focus ? (sidebar-glow ? focus-line-width : focus-width) : 0px
     }
     public pure function glow-ring-width(focused: bool, pressed: bool) -> length {
+        pressed ? focus-press-width : focused && !bar-focus ? focus-line-width : 0px
+    }
+    public pure function bar-ring-width(focused: bool, pressed: bool) -> length {
+        pressed ? focus-press-width : focused ? (row-glow ? focus-line-width : focus-width) : 0px
+    }
+    public pure function bar-glow-ring-width(focused: bool, pressed: bool) -> length {
         pressed ? focus-press-width : focused ? focus-line-width : 0px
     }
     // Zoom room: how far a focused picture of this size reaches past its edges (zoom + glow, which
@@ -1636,7 +1664,7 @@ export global AppState {
         : settings-focus-zoom == "15" ? 115% : settings-focus-zoom == "20" ? 120%
         : settings-focus-zoom == "25" ? 125% : settings-focus-zoom == "30" ? 130% : 100%;
     public pure function zoom(focused: bool) -> percent {
-        focused ? focus-scale-pct : 100%
+        focused && !bar-focus ? focus-scale-pct : 100%
     }
     // A card row's height: title + cards + zoom room (SectionRow, dashboards, Discover rows).
     public pure function row-h(card-h: length) -> length {
