@@ -19,6 +19,7 @@ import { Theme, CardItem, DashRow } from "theme.slint";
 import { AppState } from "app_state.slint";
 import { HeroBand, HeroBackdrop } from "hero.slint";
 import {
+    FocusHalo,
     FocusGlow,
     FjordButton,
     MediaCard,
@@ -407,6 +408,11 @@ export component LibraryGrid inherits Rectangle {
                 border-color: AppState.library-header-focused ? AppState.focus-color : Theme.border;
                 background: Theme.bg;
 
+                FocusHalo {
+                    glowing: AppState.library-header-focused;
+                    radius: Theme.radius;
+                }
+
                 // Mouse path into search — the browse bar had this, the library
                 // field didn't (search was keyboard-only for mouse users).
                 TouchArea {
@@ -588,6 +594,11 @@ export component LibraryGrid inherits Rectangle {
                             duration: 90ms * AppState.settings-animation-speed;
                             easing: ease-out-expo;
                         }
+                        FocusHalo {
+                            glowing: ltr-pulse.active;
+                            radius: 3px;
+                        }
+
                         ltr-pulse := PressPulse {
                             trigger: AppState.kb-activate-pulse;
                             active: kb-focused;

@@ -39,7 +39,8 @@ are bumped together as one step, not separately.
   (line, glow, or both — the glow is on posters, tiles and buttons; rows and
   menus keep the line), glow strength (Soft, Medium, Strong — the default —
   or Very strong; with line and glow, the glow starts where the line ends),
-  and transparency. Every highlighted thing — cards,
+  what glows (pictures and buttons; also the sidebar; or everything — the
+  default — rows, fields, menus and lists too), and transparency. Every highlighted thing — cards,
   buttons, menus, Settings rows, lists, the sidebar — now shows the same ring,
   by default a solid 3px white line (thicker and brighter than before), and
   the press flash follows it. Saved per profile.

@@ -19,6 +19,7 @@
 import { Theme, ToggleListItem } from "theme.slint";
 import { AppState } from "app_state.slint";
 import {
+    FocusHalo,
     FocusGlow,
     FjordButton,
     VirtualKeyboard,
@@ -45,6 +46,11 @@ component ToggleRow inherits Rectangle {
         duration: 90ms * AppState.settings-animation-speed;
         easing: ease-out-expo;
     }
+    FocusHalo {
+        glowing: root.kbd-focused;
+        radius: Theme.radius;
+    }
+
     pulse := PressPulse {
         trigger: AppState.kb-activate-pulse;
         active: root.kbd-focused;
@@ -247,6 +253,11 @@ export component ProfileEditScreen inherits Rectangle {
                         duration: 90ms * AppState.settings-animation-speed;
                         easing: ease-out-expo;
                     }
+                    FocusHalo {
+                        glowing: AppState.profile-edit-zone == 0;
+                        radius: Theme.radius;
+                    }
+
                     name-field := LineEdit {
                         x: 2px;
                         y: 2px;
@@ -404,6 +415,11 @@ export component ProfileEditScreen inherits Rectangle {
                         duration: 90ms * AppState.settings-animation-speed;
                         easing: ease-out-expo;
                     }
+                    FocusHalo {
+                        glowing: AppState.profile-edit-zone == 3;
+                        radius: Theme.radius;
+                    }
+
                     rating-dd := SettingsDropdown {
                         x: 2px;
                         y: 2px;
@@ -463,6 +479,11 @@ export component ProfileEditScreen inherits Rectangle {
                         duration: 90ms * AppState.settings-animation-speed;
                         easing: ease-out-expo;
                     }
+                    FocusHalo {
+                        glowing: AppState.profile-edit-zone == 5;
+                        radius: Theme.radius;
+                    }
+
                     blocked-tags-field := LineEdit {
                         x: 2px;
                         y: 2px;
@@ -530,6 +551,11 @@ export component ProfileEditScreen inherits Rectangle {
                         duration: 90ms * AppState.settings-animation-speed;
                         easing: ease-out-expo;
                     }
+                    FocusHalo {
+                        glowing: AppState.profile-edit-zone == 6;
+                        radius: Theme.radius;
+                    }
+
                     allowed-tags-field := LineEdit {
                         x: 2px;
                         y: 2px;
@@ -599,6 +625,11 @@ export component ProfileEditScreen inherits Rectangle {
                         duration: 90ms * AppState.settings-animation-speed;
                         easing: ease-out-expo;
                     }
+                    FocusHalo {
+                        glowing: AppState.profile-edit-zone == 7;
+                        radius: Theme.radius;
+                    }
+
                     lockout-dd := SettingsDropdown {
                         x: 2px;
                         y: 2px;
@@ -623,6 +654,11 @@ export component ProfileEditScreen inherits Rectangle {
                         duration: 90ms * AppState.settings-animation-speed;
                         easing: ease-out-expo;
                     }
+                    FocusHalo {
+                        glowing: AppState.profile-edit-zone == 8;
+                        radius: Theme.radius;
+                    }
+
                     Text {
                         x: 12px;
                         y: (parent.height - self.height) / 2;
@@ -923,6 +959,11 @@ export component ProfileEditScreen inherits Rectangle {
                         duration: 90ms * AppState.settings-animation-speed;
                         easing: ease-out-expo;
                     }
+                    FocusHalo {
+                        glowing: i == AppState.profile-edit-dropdown-cursor;
+                        radius: 4px;
+                    }
+
                     dd-pulse := PressPulse {
                         trigger: AppState.kb-activate-pulse;
                         active: i == AppState.profile-edit-dropdown-cursor;

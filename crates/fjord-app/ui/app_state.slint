@@ -109,8 +109,9 @@
 //                         dash-rows-tab/-items/-cursor/-col, dash-rows-open/-select-tab/-action
 //   Focus highlight       settings-focus-color/-width/-style/-glow/-opacity/-zoom → focus-color, focus-width,
 //                         focus-line-width, focus-press-width, focus-glow, glow-1/-2/-3 + glow-reach (the
-//                         glow strength's halos, cast by widgets.slint FocusGlow), focus-scale; the ring
-//                         helpers ring-width / glow-ring-width every focusable element uses;
+//                         glow strength's halos, cast by widgets.slint FocusGlow), settings-focus-glow-on →
+//                         sidebar-glow / row-glow + focus-halo(radius, layers) (FocusHalo's image, halo.rs),
+//                         focus-scale; the ring helpers ring-width / nav-ring-width / glow-ring-width;
 //                         zoom(focused) for focused pictures, zoom-pad(size) + row-h(card-h) for the room
 //   Dashboard hero        settings-dashboard-hero ("off"/"band"/"background") + hero-background,
 //                         hero-a/-b + hero-front-a (crossfading layers), hero-active, hero-target(),
@@ -1544,15 +1545,19 @@ export global AppState {
 
     // ── Focus highlight (Settings → Interface, per profile) ────────────────────────
     // What every focus ring reads: focus-color (border colour), focus-width (the line while
-    // focused — rows, fields and menu entries always show it), focus-line-width (the same for
-    // elements that can glow — pictures, tiles, buttons, pills — 0 in the Glow style),
-    // focus-press-width (the press flash), focus-glow + glow-1/-2/-3 (the halos FocusGlow casts in
-    // focus-color, only around those opaque elements: under a see-through row one would flood it),
-    // and focus-scale (the zoom of a focused picture — cards, posters, tiles, cast photos).
+    // focused), focus-line-width (the same for pictures, tiles, buttons, pills — 0 in the Glow
+    // style), focus-press-width (the press flash), focus-glow + glow-1/-2/-3 (the glow's layers:
+    // FocusGlow casts them around those opaque elements, FocusHalo draws them as an image around
+    // rows, fields and menus — sidebar-glow / row-glow, Settings "Glow on"), and focus-scale (the
+    // zoom of a focused picture — cards, posters, tiles, cast photos).
     in-out property <string> settings-focus-color: "white";
     in-out property <string> settings-focus-width: "3";
     in-out property <string> settings-focus-style: "line";
     in-out property <string> settings-focus-glow: "strong";
+    // "pictures" | "sidebar" | "everything" (Settings → Interface → Glow on): pictures, tiles,
+    // buttons and pills always glow in the Glow styles; also the sidebar; also every row, field,
+    // menu entry and list row.
+    in-out property <string> settings-focus-glow-on: "everything";
     in-out property <string> settings-focus-opacity: "solid";
     in-out property <string> settings-focus-zoom: "10";
     property <color> focus-base: settings-focus-color == "blue" ? Theme.accent
@@ -1578,14 +1583,24 @@ export global AppState {
         : settings-focus-glow == "very-strong" ? 48px : 32px);
     // How far the glow reaches past an element's edge (a drop shadow's image ends one blur out).
     out property <length> glow-reach: focus-glow ? max(glow-1, max(glow-2, glow-3)) : 0px;
+    out property <bool> sidebar-glow: focus-glow && settings-focus-glow-on != "pictures";
+    out property <bool> row-glow: focus-glow && settings-focus-glow-on == "everything";
+    // The hollow glow image FocusHalo draws (halo.rs): white, the glow's alpha outside a rounded
+    // rectangle of this corner radius, nothing inside; nine-slice, reach + radius on every side.
+    pure callback focus-halo(length, length, length, length) -> image;
     // The ring helpers every focusable element uses (CLAUDE.md → Keyboard / D-pad):
-    //   ring-width       rows, fields, menu entries — always a line; wrap in max(1px, …) for an
-    //                    element with a thin idle border
+    //   ring-width       rows, fields, menu entries (+ a FocusHalo child for the glow) — no line
+    //                    in the Glow style while row-glow; wrap in max(1px, …) for an element
+    //                    with a thin idle border
+    //   nav-ring-width   the sidebar's entries (FocusHalo `sidebar: true`) — the same by sidebar-glow
     //   glow-ring-width  pictures, tiles, buttons, pills (opaque) — no line in the Glow style;
     //                    they are FocusGlow elements (widgets.slint), which cast the glow
     // `pressed` = mouse press or the keyboard PressPulse (`ta.pressed || pulse.pulsing`).
     public pure function ring-width(focused: bool, pressed: bool) -> length {
-        pressed ? focus-press-width : focused ? focus-width : 0px
+        pressed ? focus-press-width : focused ? (row-glow ? focus-line-width : focus-width) : 0px
+    }
+    public pure function nav-ring-width(focused: bool, pressed: bool) -> length {
+        pressed ? focus-press-width : focused ? (sidebar-glow ? focus-line-width : focus-width) : 0px
     }
     public pure function glow-ring-width(focused: bool, pressed: bool) -> length {
         pressed ? focus-press-width : focused ? focus-line-width : 0px

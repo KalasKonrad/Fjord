@@ -25,6 +25,7 @@
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
 import {
+    FocusHalo,
     FocusGlow,
     MediaCard,
     LoadingSpinner,
@@ -48,6 +49,11 @@ component FilterPill inherits Rectangle {
         duration: 90ms * AppState.settings-animation-speed;
         easing: ease-out-expo;
     }
+    FocusHalo {
+        glowing: root.active;
+        radius: parent.height / 2;
+    }
+
     pulse := PressPulse {
         trigger: AppState.kb-activate-pulse;
         active: root.active;
@@ -91,6 +97,11 @@ component PopupOption inherits Rectangle {
         duration: 90ms * AppState.settings-animation-speed;
         easing: ease-out-expo;
     }
+    FocusHalo {
+        glowing: pulse.active;
+        radius: 4px;
+    }
+
     pulse := PressPulse {
         trigger: AppState.kb-activate-pulse;
         active: root.option-focused;
@@ -229,6 +240,11 @@ export component DiscoverScreen inherits Rectangle {
                 border-width: max(1px, AppState.ring-width(AppState.discover-header-focused, false));
                 border-color: AppState.discover-header-focused ? AppState.focus-color : Theme.border;
                 background: Theme.bg;
+
+                FocusHalo {
+                    glowing: AppState.discover-header-focused;
+                    radius: Theme.radius;
+                }
 
                 TouchArea {
                     mouse-cursor: MouseCursor.text;

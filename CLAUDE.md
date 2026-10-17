@@ -67,7 +67,7 @@ Needs `mpv`/libmpv (`pacman -S mpv`). Optional at runtime: `yt-dlp` (trailers), 
   segments, Up Next, stall recovery, gapless, HDR/display-sync — locked steps, then `dispatch` after the lock); `stall.rs`, `queue.rs` (playlist/queue/repeat), `tracks.rs`,
   `inhibit.rs`. Submodules are re-exported, so callers use `crate::playback::*`.
 - `controls.rs` (player callbacks), `stats.rs` (stats overlay), `music.rs` (music bar, queue controls/panel, lyrics),
-  `trickplay.rs` (seek-bar thumbnails from Jellyfin's trickplay images).
+  `trickplay.rs` (seek-bar thumbnails from Jellyfin's trickplay images), `halo.rs` (the focus glow image around rows).
 - Screens: `detail`, `series`, `season`, `collection`, `album` (albums + playlists), `artist`, `person`,
   `browse`, `home`/`movies`/`poster` (dashboards, library grid, poster loading), `discover/` (Discover,
   RequestDetail, Calendar, Watchlist — one file per area, list in `discover/mod.rs`), `blocklist`, `settings`, `context_menu`,
@@ -192,8 +192,9 @@ Needs `mpv`/libmpv (`pacman -S mpv`). Optional at runtime: `yt-dlp` (trailers), 
   switch; on `false` the caller does its own Enter action (next field / submit).
 - Clickable elements get the `PressPulse` border flash (`kb-activate-pulse`). Focus rings follow the per-profile focus
   settings through AppState helpers only: `border-color: AppState.focus-color` + `border-width:
-  AppState.ring-width(focused, ta.pressed || pulse.pulsing)` for rows/fields/menu entries (`max(1px, …)` with an idle
-  border); opaque pictures/tiles/buttons/pills are a `FocusGlow` (widgets.slint): `fill`/`ring-width: glow-ring-width(…)`/
+  AppState.ring-width(focused, ta.pressed || pulse.pulsing)` + a `FocusHalo { glowing: focused; radius: …; }` child for
+  rows/fields/menu entries (`max(1px, …)` with an idle border; the sidebar's: `nav-ring-width` + `sidebar: true`);
+  opaque pictures/tiles/buttons/pills are a `FocusGlow` (widgets.slint): `fill`/`ring-width: glow-ring-width(…)`/
   `ring-color`/`radius`/`glowing` instead of background/border-*/border-radius/drop shadow (a drop shadow is the whole
   shape blurred, so it floods anything see-through drawn over it); a clipped picture goes inside a FocusGlow holder.
 - Backdrops, OSD panels, shadows and text over images use their `Theme` tokens (`scrim*`, `osd-panel*`, `shadow*`,

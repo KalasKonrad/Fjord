@@ -39,6 +39,7 @@
 import { Theme, TrackEntry } from "theme.slint";
 import { AppState } from "app_state.slint";
 import {
+    FocusHalo,
     FjordButton,
     StatRow,
     LoadingSpinner,
@@ -108,6 +109,11 @@ component TrackPanel inherits Rectangle {
                     duration: 90ms * AppState.settings-animation-speed;
                     easing: ease-out-expo;
                 }
+                FocusHalo {
+                    glowing: off-pulse.active;
+                    radius: Theme.radius;
+                }
+
                 off-pulse := PressPulse {
                     trigger: AppState.kb-activate-pulse;
                     active: AppState.player-panel-cursor == 0;
@@ -149,6 +155,11 @@ component TrackPanel inherits Rectangle {
                     duration: 90ms * AppState.settings-animation-speed;
                     easing: ease-out-expo;
                 }
+                FocusHalo {
+                    glowing: row-pulse.active;
+                    radius: Theme.radius;
+                }
+
                 row-pulse := PressPulse {
                     trigger: AppState.kb-activate-pulse;
                     active: AppState.player-panel-cursor == i + (root.has-off-row ? 1 : 0);

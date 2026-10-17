@@ -4,7 +4,7 @@
 //   IconCircleButton   38px circle button, accent when active; per-icon pinned fonts (Adwaita Sans
 //                      for ♥/✓, Noto Sans Symbols 2 otherwise); also Now Playing's transport row
 //   TabButton          tab pill (Bonfire admin, Dashboard rows editor); ring only on the active tab
-//   NavItem            sidebar row (icon + label + one "selected" state)
+//   NavItem            sidebar row (icon + label + one "selected" state); nav-ring-width + a sidebar FocusHalo
 //   BrowseItem         one row in the browse / search list
 //   FadeInTrigger      fade-in-on-creation helper (Timer kick; the opacity animate is speed-scaled);
 //                      used by player.slint's skip overlays and the permanently mounted screens
@@ -16,6 +16,9 @@
 //                      layers cast AppState.glow-1/-2/-3 and repaint `fill`; the ring (ring-width /
 //                      ring-color) on top; raised (z) while lit. Used as the element (fill/ring-*/radius
 //                      instead of background/border-*/border-radius) or as a holder of a clipped picture
+//   FocusHalo          the glow around a focused row/field/menu entry (`sidebar: true` for the sidebar's):
+//                      a hollow nine-slice image (AppState.focus-halo, halo.rs) reaching past the
+//                      element's edges, lit by Settings "Glow on"; never covers the row itself
 //   VirtualKeyboard    numeric PIN keypad (3×4, cursor driven by Rust); VirtualKeyboardKey = its cell
 //   QwertyKeyboard     on-screen alphanumeric keyboard: letters/symbols pages, sticky Shift, last row
 //                      123 · ◀ · space · ▶ · Done; floating panel; key values live only here, row
@@ -162,6 +165,35 @@ export component FocusGlow inherits Rectangle {
                 easing: ease-out-expo;
             }
         }
+    }
+}
+
+// ── FocusHalo ────────────────────────────────────────────────────────────────
+// The glow around a focused row, field or menu entry (Settings → Interface → Glow on: the sidebar
+// with `sidebar: true`, everything else with row-glow). Put it as the element's first child: it
+// fills the element and, while lit, draws AppState.focus-halo's hollow nine-slice image reaching
+// past every edge — nothing inside the element, so a see-through or transparent row isn't
+// flooded (FocusGlow needs an opaque fill for that). x/y are set and the image is `if`-mounted,
+// so neither feeds into the element's own size (Slint skips such children for layout info).
+// A scrolling list or a clipped box around the element cuts the glow at its edge.
+export component FocusHalo inherits Rectangle {
+    in property <bool> glowing;
+    in property <length> radius: 0px;
+    in property <bool> sidebar: false;
+    property <bool> lit: root.glowing && (root.sidebar ? AppState.sidebar-glow : AppState.row-glow);
+    // The image's reach, rounded up like halo.rs does.
+    property <length> pad: ceil(AppState.glow-reach / 1px) * 1px;
+
+    x: 0;
+    y: 0;
+
+    if root.lit: Image {
+        x: -root.pad;
+        y: -root.pad;
+        width: root.width + 2 * root.pad;
+        height: root.height + 2 * root.pad;
+        source: AppState.focus-halo(root.radius, AppState.glow-1, AppState.glow-2, AppState.glow-3);
+        colorize: AppState.focus-color;
     }
 }
 
@@ -542,6 +574,11 @@ export component ConfirmDialog inherits Rectangle {
                         duration: 90ms * AppState.settings-animation-speed;
                         easing: ease-out-expo;
                     }
+                    FocusHalo {
+                        glowing: root.focused == 0;
+                        radius: Theme.radius;
+                    }
+
                     cancel-pulse := PressPulse {
                         trigger: AppState.kb-activate-pulse;
                         active: root.focused == 0;
@@ -639,12 +676,18 @@ export component NavItem inherits Rectangle {
         duration: 140ms * AppState.settings-animation-speed;
         easing: ease;
     }
-    border-width: AppState.ring-width(pulse.active, ta.pressed || pulse.pulsing);
+    border-width: AppState.nav-ring-width(pulse.active, ta.pressed || pulse.pulsing);
     border-color: AppState.focus-color;
     animate border-width {
         duration: 90ms * AppState.settings-animation-speed;
         easing: ease-out-expo;
     }
+    FocusHalo {
+        glowing: pulse.active;
+        radius: Theme.radius;
+        sidebar: true;
+    }
+
     pulse := PressPulse {
         trigger: AppState.kb-activate-pulse;
         active: root.active && AppState.sidebar-kb-active;
@@ -698,6 +741,11 @@ export component BrowseItem inherits Rectangle {
         duration: 90ms * AppState.settings-animation-speed;
         easing: ease-out-expo;
     }
+    FocusHalo {
+        glowing: pulse.active;
+        radius: Theme.radius;
+    }
+
     pulse := PressPulse {
         trigger: AppState.kb-activate-pulse;
         active: root.selected;
@@ -1356,6 +1404,11 @@ export component SettingsRow inherits Rectangle {
         duration: 90ms * AppState.settings-animation-speed;
         easing: ease-out-expo;
     }
+    FocusHalo {
+        glowing: pulse.active;
+        radius: Theme.radius;
+    }
+
     // !show-dashboard-rows: Enter inside that editor (opened from the focused row) bumps the shared
     // kb-activate-pulse — the row behind the translucent backdrop must not flash with it.
     pulse := PressPulse {
@@ -1447,6 +1500,10 @@ export component FieldFocusWrap inherits Rectangle {
         easing: ease-out-expo;
     }
     @children
+    FocusHalo {
+        glowing: root.focused;
+        radius: Theme.radius;
+    }
 }
 
 // ── Detail page shared atoms ──────────────────────────────────────────────────
@@ -1693,6 +1750,11 @@ export component StorylineSection inherits VerticalLayout {
             duration: 90ms * AppState.settings-animation-speed;
             easing: ease-out-expo;
         }
+        FocusHalo {
+            glowing: root.kbd-focused;
+            radius: Theme.radius;
+        }
+
         story-pulse := PressPulse {
             trigger: AppState.kb-activate-pulse;
             active: root.kbd-focused;
@@ -1843,6 +1905,10 @@ export component MiniPlayerBar inherits Rectangle {
         border-color: AppState.focus-color;
         border-radius: 0px;
         background: transparent;
+        FocusHalo {
+            glowing: true;
+            radius: 0px;
+        }
     }
 
     // ── Mode 3: live video + info ─────────────────────────────────────────────
@@ -1994,6 +2060,11 @@ export component MusicPlayerBar inherits Rectangle {
                     duration: 90ms * AppState.settings-animation-speed;
                     easing: ease-out-expo;
                 }
+                FocusHalo {
+                    glowing: AppState.music-bar-focused == 0;
+                    radius: Theme.radius;
+                }
+
                 left-pulse := PressPulse {
                     trigger: AppState.kb-activate-pulse;
                     active: AppState.music-bar-focused == 0;
@@ -2082,6 +2153,11 @@ export component MusicPlayerBar inherits Rectangle {
                             duration: 90ms * AppState.settings-animation-speed;
                             easing: ease-out-expo;
                         }
+                        FocusHalo {
+                            glowing: AppState.music-bar-focused == 1;
+                            radius: 18px;
+                        }
+
                         pp-pulse := PressPulse {
                             trigger: AppState.kb-activate-pulse;
                             active: AppState.music-bar-focused == 1;
@@ -2117,6 +2193,11 @@ export component MusicPlayerBar inherits Rectangle {
                             duration: 90ms * AppState.settings-animation-speed;
                             easing: ease-out-expo;
                         }
+                        FocusHalo {
+                            glowing: AppState.music-bar-focused == 2;
+                            radius: 18px;
+                        }
+
                         stop-pulse := PressPulse {
                             trigger: AppState.kb-activate-pulse;
                             active: AppState.music-bar-focused == 2;
@@ -2406,6 +2487,10 @@ export component QueuePanel inherits Rectangle {
                                     duration: 90ms * AppState.settings-animation-speed;
                                     easing: ease-out-expo;
                                 }
+                                FocusHalo {
+                                    glowing: row-pulse.active;
+                                }
+
                                 row-pulse := PressPulse {
                                     trigger: AppState.kb-activate-pulse;
                                     active: i == AppState.queue-panel-cursor;
@@ -2768,6 +2853,11 @@ export component SidebarProfileMenu inherits Rectangle {
                     duration: 90ms * AppState.settings-animation-speed;
                     easing: ease-out-expo;
                 }
+                FocusHalo {
+                    glowing: row-pulse.active;
+                    radius: Theme.radius;
+                }
+
                 row-pulse := PressPulse {
                     trigger: AppState.kb-activate-pulse;
                     active: AppState.sidebar-profile-menu-focused == i;
