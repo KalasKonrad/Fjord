@@ -606,15 +606,13 @@ export component SettingsScreen inherits Rectangle {
                         }
 
                         if AppState.settings-sub-enabled && !AppState.settings-sub-respect-ass-styling: SettingsRow {
-                            key: "player.sub_background";
+                            key: "player.sub_background_pct";
+                            choice: true;
+                            value: AppState.settings-sub-background-pct;
                             per-profile: true;
                             indent: true;
                             title: "Subtitle background box";
-                            subtitle: "Draw a solid box behind subtitle text";
-                            ToggleSwitch {
-                                checked <=> AppState.settings-sub-background;
-                                toggled => { AppState.settings-changed(); AppState.refocus(); }
-                            }
+                            subtitle: "A box behind subtitle text — Light, Medium and Dark let the picture show through, Solid doesn't";
                         }
                     }
 

@@ -7,6 +7,7 @@
 //   RememberedTracks  { audio_lang, sub_lang } — one series' manually picked track languages
 //   default_* fns   serde defaults for DeviceConfig/ProfileSettings fields
 //   sub_color_hex   ProfileSettings.sub_color display name → mpv hex colour ("" = don't touch)
+//   de_sub_background_pct  the subtitle box level (%) — reads the old on/off sub_background
 //   vf_mpv_value / deser_vf  DeviceConfig.vf display label → raw mpv sentinel ("" / "auto");
 //                   deser_vf migrates old raw values to the labels
 //   DeviceConfig    settings of THIS BOX, whoever is signed in: hwdec/vf/audio device/seek step/
@@ -132,6 +133,20 @@ fn de_now_playing_auto_open_secs<'de, D: serde::Deserializer<'de>>(d: D) -> Resu
 }
 fn default_screensaver_mins() -> u32 {
     5
+}
+/// ProfileSettings.sub_background_pct: a %, or the on/off bool older versions saved (on = 75 %).
+fn de_sub_background_pct<'de, D: serde::Deserializer<'de>>(d: D) -> Result<u32, D::Error> {
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Saved {
+        OnOff(bool),
+        Pct(u32),
+    }
+    Ok(match Saved::deserialize(d)? {
+        Saved::OnOff(true) => 75,
+        Saved::OnOff(false) => 0,
+        Saved::Pct(p) => p,
+    })
 }
 fn default_controls_hide_secs() -> u32 {
     3
@@ -676,7 +691,7 @@ pub(crate) struct ProfileSettings {
     pub sub_pos_pct: u32,
     // true (default) = don't touch mpv's sub-ass-override (its own default,
     // "scale" tier — embedded ASS styling is respected); false = force it,
-    // so sub_color/sub_background below also apply to ASS-styled subtitles.
+    // so sub_color/sub_background_pct below also apply to ASS-styled subtitles.
     #[serde(default = "default_true")]
     pub sub_respect_ass_styling: bool,
     // Display name from a static preset table ("" | "White" | "Yellow" | ...),
@@ -684,8 +699,14 @@ pub(crate) struct ProfileSettings {
     // that's translated to an mpv value at point of use.
     #[serde(default)]
     pub sub_color: String,
-    #[serde(default)]
-    pub sub_background: bool,
+    // The box behind subtitle text, its opacity in % (0 Off, 25 Light, 50 Medium, 75 Dark,
+    // 100 Solid). Older versions saved an on/off `sub_background` (on = 75 %).
+    #[serde(
+        default,
+        alias = "sub_background",
+        deserialize_with = "de_sub_background_pct"
+    )]
+    pub sub_background_pct: u32,
     #[serde(default)]
     pub audio_lang: String,
     // Auto-open the fullscreen Now Playing screen after this many seconds without a key press or
@@ -918,7 +939,7 @@ impl Default for ProfileSettings {
             sub_pos_pct: 100,
             sub_respect_ass_styling: true,
             sub_color: String::new(),
-            sub_background: false,
+            sub_background_pct: 0,
             now_playing_auto_open_secs: default_now_playing_auto_open_secs(),
             skip_intro_mode: default_skip_mode(),
             skip_intro_secs: 8,
@@ -1299,7 +1320,7 @@ fn migrate_legacy_config(l: LegacyConfig) -> Config {
         sub_pos_pct: l.sub_pos_pct,
         sub_respect_ass_styling: l.sub_respect_ass_styling,
         sub_color: l.sub_color,
-        sub_background: l.sub_background,
+        sub_background_pct: if l.sub_background { 75 } else { 0 },
         audio_lang: l.audio_lang,
         now_playing_auto_open_secs: if l.now_playing_auto_open {
             default_now_playing_auto_open_secs()
@@ -2407,7 +2428,7 @@ impl FjordState {
             sub_pos: cp.sub_pos_pct as i64,
             sub_respect_ass_styling: cp.sub_respect_ass_styling,
             sub_color: sub_color_hex(&cp.sub_color).to_string(),
-            sub_background: cp.sub_background,
+            sub_background_pct: cp.sub_background_pct,
             ytdl_format: None, // trailer-only; set by the caller (main.rs) when playing one
         }
     }
@@ -2501,6 +2522,25 @@ mod tests {
         assert_eq!(read(r#"{"now_playing_auto_open":false}"#), 0);
         assert_eq!(read(r#"{"now_playing_auto_open_secs":120}"#), 120);
         assert_eq!(read("{}"), 30);
+    }
+
+    #[test]
+    fn subtitle_box_reads_the_old_switch_and_levels() {
+        let read = |json: &str| {
+            let mut v = serde_json::to_value(ProfileSettings::default()).unwrap();
+            let o = v.as_object_mut().unwrap();
+            o.remove("sub_background_pct");
+            if let serde_json::Value::Object(extra) = serde_json::from_str(json).unwrap() {
+                o.extend(extra);
+            }
+            serde_json::from_value::<ProfileSettings>(v)
+                .unwrap()
+                .sub_background_pct
+        };
+        assert_eq!(read(r#"{"sub_background":true}"#), 75);
+        assert_eq!(read(r#"{"sub_background":false}"#), 0);
+        assert_eq!(read(r#"{"sub_background_pct":25}"#), 25);
+        assert_eq!(read("{}"), 0);
     }
 
     #[test]
