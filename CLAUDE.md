@@ -219,8 +219,12 @@ Needs `mpv`/libmpv (`pacman -S mpv`). Optional at runtime: `yt-dlp` (trailers), 
 - In an `if`-mounted layout child, don't read `self.width/height` in a `changed` tracker — use `root.*`.
   A child must never size itself from its parent **Layout's** width (binding loop) — use `root.width`.
 - No explicit x/y/width/height derived from `root` on a layout element inside a reusable component — use `padding`.
-- A `Layout` placed directly in a plain `Rectangle` needs `height: self.preferred-height;` when anything reads
-  its height. An unconstrained Layout fills its parent's width; it does not hug its content.
+- A `Layout` placed directly in a plain `Rectangle` — or in a `Flickable` whose `content-height` is computed from
+  it — needs `height: self.preferred-height;` (otherwise it fills the viewport, stretches, and feeds back into its
+  own measurement). An unconstrained Layout fills its parent's width; it does not hug its content.
+- Slint UI can be probed headless in a temporary test: `i_slint_backend_testing::init_no_event_loop()`, the real
+  `MainWindow`, `show()`, `mock_elapsed_time(..)` to run `changed` handlers, `ElementHandle::find_by_element_id(&w,
+  "Screen::id")` for positions — run with `SLINT_EMIT_DEBUG_INFO=1` (element ids exist only then). See SLINT.md.
 - `opacity: 0` is still hit-testable (use `visible: false`). Plain `Rectangle` children are centered (set `x: 0`).
 - Ternaries only track the evaluated branch — read reactive values into a `let` first.
 - `changed` only watches properties on the current component — mirror `AppState` values into a local property.

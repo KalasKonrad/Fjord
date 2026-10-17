@@ -243,6 +243,27 @@ Use `Arc<T>` when you need shared ownership inside the closure.
 
 ---
 
+## Probing the UI headless (2026-10-17)
+
+Layout and scroll bugs can be measured without the screen: a temporary `#[test]` creates the real window on Slint's testing backend (`i-slint-backend-testing`, a dev-dependency at the Cargo.lock version):
+
+```rust
+i_slint_backend_testing::init_no_event_loop();          // per test thread
+let w = crate::MainWindow::new().unwrap();
+w.window().set_size(slint::LogicalSize::new(1280.0, 720.0));
+slint::ComponentHandle::show(&w).unwrap();               // builds the item tree
+let g = crate::AppState::get(&w);
+g.set_active_nav(10);                                    // drive state like Rust does
+i_slint_backend_testing::mock_elapsed_time(std::time::Duration::from_millis(50)); // runs timers, animations, `changed` handlers
+for e in i_slint_backend_testing::ElementHandle::find_by_element_id(&w, "SettingsScreen::kb-ta") {
+    println!("{:?} {:?}", e.absolute_position(), e.size());
+}
+```
+
+Run it with `SLINT_EMIT_DEBUG_INFO=1 cargo test … -- --nocapture` — without that variable the compiled UI carries no element ids and every query finds nothing. Ids are `Component::id`. Rows of a `for` inside a Flickable are instantiated lazily (near the viewport), so "the n-th element found" isn't row n — compute positions from a parent's offset instead. Delete the test afterwards (CLAUDE.md → one-off diagnostics).
+
+**Found this way:** Settings → Key bindings stopped following the focus (2026-10-17). `right-inner` (the content VerticalLayout in the right pane's Flickable) had no height, so it filled the Flickable's viewport, whose `content-height` is computed from that same layout's measurement (`kb-content-h-override` = Reset's y + height, + 2 × 32px margin). Each focus change: measure → content-height + 64 → the layout stretches → Reset moves down 64 → measure again. The rows crept down 64px per step while `kb-y` assumed fixed positions. `height: self.preferred-height` on the layout breaks the loop.
+
 ## Known Slint gotchas
 
 These have each caused real bugs in this codebase:

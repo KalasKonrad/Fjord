@@ -326,6 +326,11 @@ export component SettingsScreen inherits Rectangle {
                 right-inner := VerticalLayout {
                     y: Theme.sp-xl;
                     width: parent.width - Theme.sp-xl * 2;
+                    // Its own height, not the Flickable's: content-height comes from this layout's
+                    // measurement (right-vp-h / the Key Bindings kb-content-h-override), so filling the
+                    // viewport stretched the section, pushed Reset down, raised the next measurement —
+                    // the rows crept 64px per focus step and the scroll fell behind.
+                    height: self.preferred-height;
                     x: Theme.sp-xl;
 
                     // ── Playback section ────────────────────────────────────────────────────
