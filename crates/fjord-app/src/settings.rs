@@ -180,7 +180,7 @@ const PLY_SUB_SCALE: &str = "player.sub_scale";
 const PLY_SUB_POS: &str = "player.sub_pos";
 const PLY_SUB_RESPECT_ASS: &str = "player.sub_respect_ass";
 const PLY_SUB_COLOR: &str = "player.sub_color"; // virtual — only when !sub_respect_ass_styling
-const PLY_SUB_BACKGROUND: &str = "player.sub_background"; // virtual — only when !sub_respect_ass_styling
+const PLY_SUB_BACKGROUND: &str = "player.sub_background_pct"; // virtual — only when !sub_respect_ass_styling
 const PLY_CACHE_SECS: &str = "player.cache_secs";
 const PLY_CACHE_MAX_MB: &str = "player.cache_max_mb";
 const PLY_INTRO_MODE: &str = "player.intro_mode";
@@ -768,6 +768,13 @@ const NOW_PLAYING_SECS_OPTIONS: &[(&str, &str)] = &[
     ("120", "2 min"),
     ("300", "5 min"),
 ];
+const SUB_BACKGROUND_OPTIONS: &[(&str, &str)] = &[
+    ("0", "Off"),
+    ("25", "Light"),
+    ("50", "Medium"),
+    ("75", "Dark"),
+    ("100", "Solid"),
+];
 const CONTROLS_HIDE_SECS_OPTIONS: &[(&str, &str)] =
     &[("2", "2 s"), ("3", "3 s"), ("5", "5 s"), ("10", "10 s")];
 const TOAST_SECS_OPTIONS: &[(&str, &str)] =
@@ -1128,6 +1135,14 @@ static CHOICES: &[Choice] = &[
         field: Field::Int(
             |g| g.get_settings_now_playing_auto_open_secs(),
             |g, v| g.set_settings_now_playing_auto_open_secs(v),
+        ),
+    },
+    Choice {
+        key: PLY_SUB_BACKGROUND,
+        options: SUB_BACKGROUND_OPTIONS,
+        field: Field::Int(
+            |g| g.get_settings_sub_background_pct(),
+            |g, v| g.set_settings_sub_background_pct(v),
         ),
     },
     Choice {
@@ -2195,10 +2210,10 @@ pub(crate) static PROFILE_BINDS: &[ProfileBind] = &[
     ),
     bind!(
         Profile,
-        sub_background,
-        get_settings_sub_background,
-        set_settings_sub_background,
-        bool
+        sub_background_pct,
+        get_settings_sub_background_pct,
+        set_settings_sub_background_pct,
+        u32
     ),
     bind!(
         Profile,
@@ -2505,11 +2520,6 @@ static TOGGLES: &[Toggle] = &[
         PLY_SUB_RESPECT_ASS,
         |g| g.get_settings_sub_respect_ass_styling(),
         |g, v| g.set_settings_sub_respect_ass_styling(v),
-    ),
-    (
-        PLY_SUB_BACKGROUND,
-        |g| g.get_settings_sub_background(),
-        |g, v| g.set_settings_sub_background(v),
     ),
     (
         INT_SEERR_ENABLED,
@@ -3349,7 +3359,7 @@ pub(crate) fn wire_settings_changed(
             let sub_pos = s.config.active().sub_pos_pct as i64;
             let sub_respect_ass = s.config.active().sub_respect_ass_styling;
             let sub_color = sub_color_hex(&s.config.active().sub_color).to_string();
-            let sub_background = s.config.active().sub_background;
+            let sub_background_pct = s.config.active().sub_background_pct;
             let cfg = s.config.clone();
             drop(s);
             save_config(&cfg);
@@ -3359,7 +3369,7 @@ pub(crate) fn wire_settings_changed(
                     sub_pos,
                     sub_respect_ass,
                     &sub_color,
-                    sub_background,
+                    sub_background_pct,
                 );
             }
             w.window().set_fullscreen(launch_fs);

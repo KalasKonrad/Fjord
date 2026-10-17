@@ -23,6 +23,10 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Improved: the subtitle background box has levels.** Settings →
+  Subtitles → "Subtitle background box" is Off / Light / Medium / Dark /
+  Solid instead of on/off (a saved "on" is Dark, the same box as before).
+  Turning it off during a video now removes the box right away.
 - **New: how long the player controls and messages stay up.** Settings →
   Player → "Hide controls after" (2 / 3 / 5 / 10 s, default 3 s) and Settings
   → Interface → "Message duration" (3 / 4 / 6 / 10 s, default 4 s), per

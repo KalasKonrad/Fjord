@@ -21,7 +21,8 @@
 //                   tracks: set_track_preferences (before load), get_tracks, set_sub_track /
 //                     set_audio_track / set_video_track, apply_auto_vf,
 //                     adjust_sub_delay / adjust_audio_delay, set_sub_style (live, same
-//                     conditional rules as PlayerConfig)
+//                     conditional rules as PlayerConfig; a box level of 0 restores mpv's style)
+//   sub_back_color  the subtitle box's opacity % → mpv color (unit-tested)
 //                   chapters: get_chapter_count, get_chapters, chapter_step
 //                   transport: toggle_pause / set_paused, seek_forward / seek_backward / seek_to, stop,
 //                     get_position / get_duration, poll_stats, raw_handle_ptr
@@ -84,14 +85,16 @@ pub struct PlayerConfig {
     // behavior change for anyone who hasn't touched these settings.
     pub sub_scale: f64,
     pub sub_pos: i64,
-    // false forces sub-ass-override=force so sub_color/sub_background below
+    // false forces sub-ass-override=force so sub_color/sub_background_pct below
     // also apply to ASS-styled subtitles (mpv's own default leaves ASS
     // styling alone for those two). true (default) never touches the option.
     pub sub_respect_ass_styling: bool,
     // Raw mpv color string (e.g. "#FFFF00"), already resolved from a display
     // name by the caller — empty means "don't touch sub-color at all".
     pub sub_color: String,
-    pub sub_background: bool,
+    // A box behind subtitle text: its opacity in % (25 Light, 50 Medium, 75 Dark, 100 Solid);
+    // 0 = no box (mpv's own outline-and-shadow).
+    pub sub_background_pct: u32,
     // mpv `ytdl-format` — a yt-dlp format-selector string, only meaningful
     // when the loaded URL isn't directly playable media (e.g. a YouTube
     // watch-page URL, resolved via mpv's bundled ytdl_hook). `None` = don't
@@ -125,7 +128,7 @@ impl Default for PlayerConfig {
             sub_pos: 100,
             sub_respect_ass_styling: true,
             sub_color: String::new(),
-            sub_background: false,
+            sub_background_pct: 0,
             ytdl_format: None,
         }
     }
@@ -373,8 +376,8 @@ impl Player {
             if !config.sub_color.is_empty() {
                 init.set_option("sub-color", config.sub_color.as_str())?;
             }
-            if config.sub_background {
-                init.set_option("sub-back-color", "#C0000000")?;
+            if let Some(color) = sub_back_color(config.sub_background_pct) {
+                init.set_option("sub-back-color", color.as_str())?;
                 init.set_option("sub-border-style", "background-box")?;
             }
             if let Some(fmt) = &config.ytdl_format {
@@ -957,7 +960,7 @@ impl Player {
         pos: i64,
         respect_ass_styling: bool,
         color: &str,
-        background: bool,
+        background_pct: u32,
     ) {
         if let Err(e) = self.mpv.set_property("sub-scale", scale) {
             warn!("set_sub_style: sub-scale failed: {}", e);
@@ -973,13 +976,19 @@ impl Player {
         {
             warn!("set_sub_style: sub-color failed: {}", e);
         }
-        if background {
-            if let Err(e) = self.mpv.set_property("sub-back-color", "#C0000000") {
-                warn!("set_sub_style: sub-back-color failed: {}", e);
+        // Off goes back to mpv's default style live (before, turning the box off left it up
+        // until the next video).
+        let border = match sub_back_color(background_pct) {
+            Some(back) => {
+                if let Err(e) = self.mpv.set_property("sub-back-color", back.as_str()) {
+                    warn!("set_sub_style: sub-back-color failed: {}", e);
+                }
+                "background-box"
             }
-            if let Err(e) = self.mpv.set_property("sub-border-style", "background-box") {
-                warn!("set_sub_style: sub-border-style failed: {}", e);
-            }
+            None => "outline-and-shadow",
+        };
+        if let Err(e) = self.mpv.set_property("sub-border-style", border) {
+            warn!("set_sub_style: sub-border-style failed: {}", e);
         }
     }
 
@@ -1316,9 +1325,24 @@ impl Drop for MpvRenderCtx {
     }
 }
 
+/// The subtitle box's color for an opacity in % — black, mpv's `#AARRGGBB`; `None` = no box.
+/// 75 % is `#C0000000`, the one fixed box before the levels existed.
+pub fn sub_back_color(pct: u32) -> Option<String> {
+    (pct > 0).then(|| format!("#{:02X}000000", (pct * 256 / 100).min(255)))
+}
+
 #[cfg(test)]
 mod tests {
-    use super::redact_api_key;
+    use super::{redact_api_key, sub_back_color};
+
+    #[test]
+    fn subtitle_box_levels() {
+        assert_eq!(sub_back_color(0), None);
+        assert_eq!(sub_back_color(25).as_deref(), Some("#40000000"));
+        assert_eq!(sub_back_color(50).as_deref(), Some("#80000000"));
+        assert_eq!(sub_back_color(75).as_deref(), Some("#C0000000"));
+        assert_eq!(sub_back_color(100).as_deref(), Some("#FF000000"));
+    }
 
     #[test]
     fn redacts_the_token_wherever_it_sits() {
