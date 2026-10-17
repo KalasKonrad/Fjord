@@ -23,6 +23,12 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Fixed: an album opened from an artist page couldn't be navigated** — the
+  keys went to the artist page underneath (seen on Various Artists). The same
+  family: a film opened from a person page now opens on top instead of under
+  it, and a request or Discover page opened from one of these pages too.
+  Every page now opens on top of the one you came from, and Back returns to
+  it.
 - **Fixed: display-sync choices picked from the list did nothing.** Settings →
   Display: choosing the 4K or 1080p scale, the odd-frame-rate 4K mode or the
   HDR / wide-color mode from the opened list (Enter on the remote) now takes

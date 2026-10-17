@@ -519,7 +519,7 @@ impl SeriesCtx {
                 }
                 // Show the series screen and clear the loading overlay.
                 if !revalidate {
-                    g.set_show_series(true);
+                    crate::keys::open_screen(&g, crate::keys::StackScreen::Series);
                     g.set_app_content_loading(false);
                     g.set_app_loading_progress(0.0);
                     w.invoke_grab_keyboard_focus();

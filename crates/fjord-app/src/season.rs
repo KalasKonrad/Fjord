@@ -332,7 +332,7 @@ fn spawn_season_fetch(args: SeasonFetchArgs) {
             g.set_season_cast(ModelRc::new(VecModel::from(cast_members)));
             if !revalidate {
                 g.set_app_content_loading(false);
-                g.set_show_season(true);
+                crate::keys::open_screen(&g, crate::keys::StackScreen::Season);
                 w.invoke_grab_keyboard_focus();
             }
         });

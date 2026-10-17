@@ -337,7 +337,7 @@ fn open_music_screen(
             g.set_album_focused_track(0);
             g.set_album_back_focused(false);
             g.set_app_content_loading(false);
-            g.set_show_album(true);
+            crate::keys::open_screen(&g, crate::keys::StackScreen::Album);
             w.invoke_grab_keyboard_focus();
         });
     });

@@ -164,7 +164,7 @@ pub(crate) fn open_person_screen(
                 let fresh = items_to_cards(&film_items, film_bufs);
                 g.set_person_filmography(crate::apply_cards_preserving_identity(&g.get_person_filmography(), fresh));
             }
-            g.set_show_person(true);
+            crate::keys::open_screen(&g, crate::keys::StackScreen::Person);
             g.set_app_content_loading(false);
             g.set_app_loading_progress(0.0);
             w.invoke_grab_keyboard_focus();
@@ -595,7 +595,7 @@ fn open_person_screen_tmdb(
             }
             let cards = discover::discover_cards_from(ready);
             g.set_person_other_work(ModelRc::new(VecModel::from(cards)));
-            g.set_show_person(true);
+            crate::keys::open_screen(&g, crate::keys::StackScreen::Person);
             g.set_app_content_loading(false);
             g.set_app_loading_progress(0.0);
             w.invoke_grab_keyboard_focus();

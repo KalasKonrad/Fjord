@@ -271,7 +271,7 @@ pub(crate) fn open_artist_screen(
             g.set_artist_focused(0);
             g.set_artist_back_focused(false);
             g.set_app_content_loading(false);
-            g.set_show_artist(true);
+            crate::keys::open_screen(&g, crate::keys::StackScreen::Artist);
             w.invoke_grab_keyboard_focus();
         });
     });

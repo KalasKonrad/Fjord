@@ -80,7 +80,7 @@ pub(crate) fn open_blocklist_screen(
                 g.set_blocklist_focused(0);
                 g.set_blocklist_back_focused(false);
                 g.set_blocklist_loading_more(false);
-                g.set_show_blocklist(true);
+                crate::keys::open_screen(&g, crate::keys::StackScreen::Blocklist);
                 w.invoke_grab_keyboard_focus();
             }
         }
