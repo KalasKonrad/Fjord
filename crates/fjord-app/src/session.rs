@@ -130,13 +130,14 @@ pub(crate) fn reset_session_state(
         let g = AppState::get(&w);
         g.set_show_browse(false);
         g.set_show_library(false);
-        g.set_show_detail(false);
-        g.set_show_series(false);
-        g.set_show_season(false);
-        g.set_show_person(false);
-        g.set_show_collection(false);
-        g.set_show_album(false);
-        g.set_show_artist(false);
+        // The stacked pages (Detail, Series, Season, Person, Collection, Album, Artist, Request
+        // Detail/Options, Calendar, Blocklist) close and their open order (keys::open_screen)
+        // starts over.
+        for screen in crate::keys::StackScreen::ALL {
+            screen.set_shown(&g, false);
+            screen.set_z(&g, 0);
+        }
+        g.set_screen_seq(0);
         // Clear every screen's id too: in-flight fetch commits only check "is this id still
         // open", so a stale one landing after the switch would re-open its screen with the old
         // profile's data. (The worst sites also check session_current.)
@@ -178,14 +179,11 @@ pub(crate) fn reset_session_state(
         g.set_show_onscreen_keyboard(false);
         g.set_onscreen_keyboard_target(ss(""));
         g.set_onscreen_keyboard_cursor(0);
-        // Discover's overlay screens: the outgoing profile's content must not stay open.
-        g.set_show_request_detail(false);
-        g.set_show_request_options(false);
-        g.set_show_calendar(false);
+        // Discover's overlay screens (Request Detail/Options and Calendar close with the stack
+        // above): the outgoing profile's content must not stay open.
         g.set_show_calendar_day_popup(false);
-        // Blocklist + PlaylistPicker: same (the idle lock can catch a user on either). Their
-        // main.slint FadeGates also exclude the pickers.
-        g.set_show_blocklist(false);
+        // PlaylistPicker: same (the idle lock can catch a user on it, like on the Blocklist).
+        // Its main.slint FadeGate also excludes the pickers.
         g.set_show_playlist_picker(false);
         g.set_playlist_picker_naming(false);
         g.set_playlist_picker_name(ss(""));

@@ -27,6 +27,8 @@
 //   Toast notification    toast-message, toast-visible (auto-dismissed after 4 s)
 //   Press animation       kb-activate-pulse; sidebar-kb-active (the sidebar holds the keyboard focus:
 //                         dashboards/Discover, Browse All before its list, Settings before its sections)
+//   Screen stack          screen-seq + series-/season-/artist-/collection-/album-/detail-/request-detail-/
+//                         request-options-/calendar-/blocklist-/person-z (open order; keys::open_screen)
 //   Navigation state      active-nav, focused-section, focused-card, float-card-focused;
 //                         settings-focused (string key, "" = left pane), settings-section ("" = sidebar),
 //                         settings-focused-visual-index (scroll-to-view only)
@@ -462,6 +464,24 @@ export global AppState {
     // ── Toast notification ────────────────────────────────────────────────────
     in-out property <string> toast-message: "";
     in-out property <bool> toast-visible:  false;
+
+    // ── Screen stack ───────────────────────────────────────────────────────────
+    // The full-screen pages (main.slint's `stack`) are ordered by when they were opened:
+    // keys::open_screen stamps the opened page's `*-z` with the next screen-seq (also when it
+    // was already open underneath); main.slint draws them by it and keys::active_mode gives the
+    // keys to the highest one shown. Restoring a page after playback keeps its old value.
+    in-out property <int> screen-seq: 0;
+    in-out property <int> series-z: 0;
+    in-out property <int> season-z: 0;
+    in-out property <int> artist-z: 0;
+    in-out property <int> collection-z: 0;
+    in-out property <int> album-z: 0;
+    in-out property <int> detail-z: 0;
+    in-out property <int> request-detail-z: 0;
+    in-out property <int> request-options-z: 0;
+    in-out property <int> calendar-z: 0;
+    in-out property <int> blocklist-z: 0;
+    in-out property <int> person-z: 0;
 
     // ── Press animation ────────────────────────────────────────────────────────
     // Bumped once by keys.rs::handle_key() on every Enter press; every mounted

@@ -378,7 +378,7 @@ impl DetailCtx {
                 }
                 // Show the detail page and clear the loading overlay.
                 if !revalidate {
-                    g.set_show_detail(true);
+                    crate::keys::open_screen(&g, crate::keys::StackScreen::Detail);
                     g.set_app_content_loading(false);
                     g.set_app_loading_progress(0.0);
                     w.invoke_grab_keyboard_focus();

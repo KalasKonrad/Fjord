@@ -21,9 +21,9 @@
 //                 LibraryGrid serves navs 1–4
 //   _osk-open     resets AppState.onscreen-keyboard-caret when the on-screen keyboard opens
 //   _hero-key     the dashboard hero's target card id → AppState.hero-request (hero.rs)
-//   overlays (bottom → top)  PlayerScreen; Series, Season, Artist, Collection, Album, Detail,
-//                 RequestDetail, RequestOptions, Calendar, Blocklist, Person (last — covers the
-//                 screens it opens from); NowPlaying, ContextMenu, PlaylistPicker,
+//   overlays (bottom → top)  PlayerScreen; `stack` — Series, Season, Artist, Collection, Album,
+//                 Detail, RequestDetail, RequestOptions, Calendar, Blocklist, Person, drawn in the
+//                 order they were opened (z = AppState *-z, keys::open_screen); NowPlaying, ContextMenu, PlaylistPicker,
 //                 SidebarProfileMenu, ConnectSeerr, ManageProfiles, DashboardRows, ProfileEdit,
 //                 RememberLoginConfirm, BonfireGroup, BonfireAdmin, Sign Out confirm, Cancel
 //                 Request confirm, QueuePanel, LyricsView, VolumeOverlay, Toast (4 s)
@@ -561,165 +561,186 @@ export component MainWindow inherits Window {
     // gets full height, and video start latency is too perception-sensitive for an
     // artificial opacity ramp on top of it.
     if AppState.is-playing:                          PlayerScreen { }
-    gate15 := FadeGate {
-        show: AppState.show-series && !AppState.is-playing;
-    }
-
-    if gate15.mounted: SeriesScreen {
+    // The full-screen pages over the dashboards, stacked in the order they were opened: opening
+    // one stamps its AppState `*-z` with the next screen-seq (keys::open_screen) — also when it
+    // was already open underneath — and keys::active_mode gives the keys to the highest one shown,
+    // so an album opened from an artist page or a film opened from a person page lies on top of
+    // the page it came from, and Back reveals that page again. In their own container so these z
+    // values only order them among themselves; everything after it stays above them.
+    stack := Rectangle {
+        x: 0;
         y: 0;
-        height: parent.height - total-bar-h;
-        background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg;
-        opacity: gate15.fade-opacity;
-        animate opacity {
-            duration: 200ms * AppState.settings-animation-speed;
-            easing: ease-out-expo;
+        width: root.width;
+        height: root.height;
+
+        gate15 := FadeGate {
+            show: AppState.show-series && !AppState.is-playing;
         }
-    }
-    gate16 := FadeGate {
-        show: AppState.show-season && !AppState.is-playing;
-    }
 
-    if gate16.mounted: SeasonScreen {
-        y: 0;
-        height: parent.height - total-bar-h;
-        background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg;
-        opacity: gate16.fade-opacity;
-        animate opacity {
-            duration: 200ms * AppState.settings-animation-speed;
-            easing: ease-out-expo;
+        if gate15.mounted: SeriesScreen {
+            z: AppState.series-z;
+            y: 0;
+            height: parent.height - total-bar-h;
+            background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg;
+            opacity: gate15.fade-opacity;
+            animate opacity {
+                duration: 200ms * AppState.settings-animation-speed;
+                easing: ease-out-expo;
+            }
         }
-    }
-    gate17 := FadeGate {
-        show: AppState.show-artist && !AppState.is-playing;
-    }
-
-    if gate17.mounted: ArtistScreen {
-        y: 0;
-        height: parent.height - total-bar-h;
-        background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg;
-        opacity: gate17.fade-opacity;
-        animate opacity {
-            duration: 200ms * AppState.settings-animation-speed;
-            easing: ease-out-expo;
+        gate16 := FadeGate {
+            show: AppState.show-season && !AppState.is-playing;
         }
-    }
-    gate18 := FadeGate {
-        show: AppState.show-collection && !AppState.is-playing;
-    }
 
-    if gate18.mounted: CollectionScreen {
-        y: 0;
-        height: parent.height - total-bar-h;
-        background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg;
-        opacity: gate18.fade-opacity;
-        animate opacity {
-            duration: 200ms * AppState.settings-animation-speed;
-            easing: ease-out-expo;
+        if gate16.mounted: SeasonScreen {
+            z: AppState.season-z;
+            y: 0;
+            height: parent.height - total-bar-h;
+            background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg;
+            opacity: gate16.fade-opacity;
+            animate opacity {
+                duration: 200ms * AppState.settings-animation-speed;
+                easing: ease-out-expo;
+            }
         }
-    }
-    gate19 := FadeGate {
-        show: AppState.show-album && !AppState.is-playing;
-    }
-
-    if gate19.mounted: AlbumScreen {
-        y: 0;
-        height: parent.height - total-bar-h;
-        background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg;
-        opacity: gate19.fade-opacity;
-        animate opacity {
-            duration: 200ms * AppState.settings-animation-speed;
-            easing: ease-out-expo;
+        gate17 := FadeGate {
+            show: AppState.show-artist && !AppState.is-playing;
         }
-    }
-    gate20 := FadeGate {
-        show: AppState.show-detail && !AppState.is-playing;
-    }
 
-    if gate20.mounted: DetailPage {
-        y: 0;
-        height: parent.height - total-bar-h;
-        background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg;
-        opacity: gate20.fade-opacity;
-        animate opacity {
-            duration: 200ms * AppState.settings-animation-speed;
-            easing: ease-out-expo;
+        if gate17.mounted: ArtistScreen {
+            z: AppState.artist-z;
+            y: 0;
+            height: parent.height - total-bar-h;
+            background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg;
+            opacity: gate17.fade-opacity;
+            animate opacity {
+                duration: 200ms * AppState.settings-animation-speed;
+                easing: ease-out-expo;
+            }
         }
-    }
-    gate31 := FadeGate {
-        show: AppState.show-request-detail && !AppState.is-playing;
-    }
-
-    if gate31.mounted: RequestDetailScreen {
-        y: 0;
-        height: parent.height - total-bar-h;
-        opacity: gate31.fade-opacity;
-        animate opacity {
-            duration: 200ms * AppState.settings-animation-speed;
-            easing: ease-out-expo;
+        gate18 := FadeGate {
+            show: AppState.show-collection && !AppState.is-playing;
         }
-    }
 
-    // Request Options modal — above RequestDetailScreen (opened from its Request button)
-    gate32 := FadeGate {
-        show: AppState.show-request-options && !AppState.is-playing;
-    }
-
-    if gate32.mounted: RequestOptionsOverlay {
-        width: parent.width;
-        height: parent.height;
-        opacity: gate32.fade-opacity;
-        animate opacity {
-            duration: 200ms * AppState.settings-animation-speed;
-            easing: ease-out-expo;
+        if gate18.mounted: CollectionScreen {
+            z: AppState.collection-z;
+            y: 0;
+            height: parent.height - total-bar-h;
+            background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg;
+            opacity: gate18.fade-opacity;
+            animate opacity {
+                duration: 200ms * AppState.settings-animation-speed;
+                easing: ease-out-expo;
+            }
         }
-    }
-
-    // Calendar (from Discover's "Coming Up" row). Like every overlay, guarded by !is-playing.
-    gate33 := FadeGate {
-        show: AppState.show-calendar && !AppState.is-playing;
-    }
-
-    if gate33.mounted: CalendarScreen {
-        y: 0;
-        height: parent.height - total-bar-h;
-        opacity: gate33.fade-opacity;
-        animate opacity {
-            duration: 200ms * AppState.settings-animation-speed;
-            easing: ease-out-expo;
+        gate19 := FadeGate {
+            show: AppState.show-album && !AppState.is-playing;
         }
-    }
 
-    // Manage Blocklist (Settings → Integrations). !is-playing, and hidden under the pickers
-    // (otherwise an idle lock left it painted over the PIN pad — see reset_session_state).
-    gate34 := FadeGate {
-        show: AppState.show-blocklist && !AppState.is-playing && !AppState.show-profile-picker && !AppState.show-account-picker;
-    }
-
-    if gate34.mounted: BlocklistScreen {
-        y: 0;
-        height: parent.height - total-bar-h;
-        opacity: gate34.fade-opacity;
-        animate opacity {
-            duration: 200ms * AppState.settings-animation-speed;
-            easing: ease-out-expo;
+        if gate19.mounted: AlbumScreen {
+            z: AppState.album-z;
+            y: 0;
+            height: parent.height - total-bar-h;
+            background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg;
+            opacity: gate19.fade-opacity;
+            animate opacity {
+                duration: 200ms * AppState.settings-animation-speed;
+                easing: ease-out-expo;
+            }
         }
-    }
+        gate20 := FadeGate {
+            show: AppState.show-detail && !AppState.is-playing;
+        }
 
-    // PersonScreen stays the LAST overlay here: the screens it opens from (Detail, Series, …,
-    // RequestDetail) don't clear their own show-X flags — Person covers them by z-order. Keep
-    // any new sibling overlay above this one.
-    gate21 := FadeGate {
-        show: AppState.show-person && !AppState.is-playing;
-    }
+        if gate20.mounted: DetailPage {
+            z: AppState.detail-z;
+            y: 0;
+            height: parent.height - total-bar-h;
+            background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg;
+            opacity: gate20.fade-opacity;
+            animate opacity {
+                duration: 200ms * AppState.settings-animation-speed;
+                easing: ease-out-expo;
+            }
+        }
+        gate31 := FadeGate {
+            show: AppState.show-request-detail && !AppState.is-playing;
+        }
 
-    if gate21.mounted: PersonScreen {
-        y: 0;
-        height: parent.height - total-bar-h;
-        background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg;
-        opacity: gate21.fade-opacity;
-        animate opacity {
-            duration: 200ms * AppState.settings-animation-speed;
-            easing: ease-out-expo;
+        if gate31.mounted: RequestDetailScreen {
+            z: AppState.request-detail-z;
+            y: 0;
+            height: parent.height - total-bar-h;
+            opacity: gate31.fade-opacity;
+            animate opacity {
+                duration: 200ms * AppState.settings-animation-speed;
+                easing: ease-out-expo;
+            }
+        }
+
+        // Request Options modal — above RequestDetailScreen (opened from its Request button)
+        gate32 := FadeGate {
+            show: AppState.show-request-options && !AppState.is-playing;
+        }
+
+        if gate32.mounted: RequestOptionsOverlay {
+            z: AppState.request-options-z;
+            width: parent.width;
+            height: parent.height;
+            opacity: gate32.fade-opacity;
+            animate opacity {
+                duration: 200ms * AppState.settings-animation-speed;
+                easing: ease-out-expo;
+            }
+        }
+
+        // Calendar (from Discover's "Coming Up" row). Like every overlay, guarded by !is-playing.
+        gate33 := FadeGate {
+            show: AppState.show-calendar && !AppState.is-playing;
+        }
+
+        if gate33.mounted: CalendarScreen {
+            z: AppState.calendar-z;
+            y: 0;
+            height: parent.height - total-bar-h;
+            opacity: gate33.fade-opacity;
+            animate opacity {
+                duration: 200ms * AppState.settings-animation-speed;
+                easing: ease-out-expo;
+            }
+        }
+
+        // Manage Blocklist (Settings → Integrations). !is-playing, and hidden under the pickers
+        // (otherwise an idle lock left it painted over the PIN pad — see reset_session_state).
+        gate34 := FadeGate {
+            show: AppState.show-blocklist && !AppState.is-playing && !AppState.show-profile-picker && !AppState.show-account-picker;
+        }
+
+        if gate34.mounted: BlocklistScreen {
+            z: AppState.blocklist-z;
+            y: 0;
+            height: parent.height - total-bar-h;
+            opacity: gate34.fade-opacity;
+            animate opacity {
+                duration: 200ms * AppState.settings-animation-speed;
+                easing: ease-out-expo;
+            }
+        }
+
+        gate21 := FadeGate {
+            show: AppState.show-person && !AppState.is-playing;
+        }
+
+        if gate21.mounted: PersonScreen {
+            z: AppState.person-z;
+            y: 0;
+            height: parent.height - total-bar-h;
+            background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg;
+            opacity: gate21.fade-opacity;
+            animate opacity {
+                duration: 200ms * AppState.settings-animation-speed;
+                easing: ease-out-expo;
+            }
         }
     }
 

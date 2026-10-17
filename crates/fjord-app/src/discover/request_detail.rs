@@ -594,7 +594,7 @@ pub(crate) fn open_request_options_modal(g: &AppState) {
     let zones = existing_option_zones(g);
     g.set_request_options_zone(zones.first().copied().unwrap_or(0));
     g.set_request_options_confirm_focused(1);
-    g.set_show_request_options(true);
+    crate::keys::open_screen(g, crate::keys::StackScreen::RequestOptions);
 }
 
 pub(crate) fn open_discover_item(
@@ -1088,7 +1088,7 @@ pub(crate) fn open_discover_item_ex(
             // Show the screen and clear the overlay now that the main content has landed (like
             // the native detail screens). Before the match below, so a failing follow-up action
             // (e.g. EditRequest's fetch) still leaves the loaded content visible.
-            g.set_show_request_detail(true);
+            crate::keys::open_screen(&g, crate::keys::StackScreen::RequestDetail);
             g.set_app_content_loading(false);
             g.set_app_loading_progress(0.0);
             w.invoke_grab_keyboard_focus();

@@ -947,7 +947,7 @@ fn wire_calendar(window: &MainWindow, state: &Arc<Mutex<FjordState>>, rt: &tokio
                 let s = state.lock().unwrap();
                 push_calendar_view(&g, &s);
             }
-            g.set_show_calendar(true);
+            crate::keys::open_screen(&g, crate::keys::StackScreen::Calendar);
         }
     });
 

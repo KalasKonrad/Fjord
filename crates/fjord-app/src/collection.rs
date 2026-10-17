@@ -231,7 +231,7 @@ pub(crate) fn open_collection_screen(
             g.set_collection_back_focused(false);
             g.set_collection_title(title2.as_str().into());
             g.set_app_content_loading(false);
-            g.set_show_collection(true);
+            crate::keys::open_screen(&g, crate::keys::StackScreen::Collection);
             w.invoke_grab_keyboard_focus();
         });
     });
