@@ -562,7 +562,8 @@ export component MainWindow inherits Window {
     // gets full height, and video start latency is too perception-sensitive for an
     // artificial opacity ramp on top of it.
     if AppState.is-playing:                          PlayerScreen { }
-    // The full-screen pages over the dashboards, stacked in the order they were opened: opening
+    // The full-screen pages over the dashboards (StackPage components — size, background and fade
+    // come from that base), stacked in the order they were opened: opening
     // one stamps its AppState `*-z` with the next screen-seq (keys::open_screen) — also when it
     // was already open underneath — and keys::active_mode gives the keys to the highest one shown,
     // so an album opened from an artist page or a film opened from a person page lies on top of
@@ -572,7 +573,8 @@ export component MainWindow inherits Window {
         x: 0;
         y: 0;
         width: root.width;
-        height: root.height;
+        // The page area: the window above the bottom bars (each StackPage fills it).
+        height: root.height - total-bar-h;
 
         gate15 := FadeGate {
             show: AppState.show-series && !AppState.is-playing;
@@ -580,103 +582,61 @@ export component MainWindow inherits Window {
 
         if gate15.mounted: SeriesScreen {
             z: AppState.series-z;
-            y: 0;
-            height: parent.height - total-bar-h;
-            background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg;
-            opacity: gate15.fade-opacity;
-            animate opacity {
-                duration: 200ms * AppState.settings-animation-speed;
-                easing: ease-out-expo;
-            }
+            fade: gate15.fade-opacity;
         }
+
         gate16 := FadeGate {
             show: AppState.show-season && !AppState.is-playing;
         }
 
         if gate16.mounted: SeasonScreen {
             z: AppState.season-z;
-            y: 0;
-            height: parent.height - total-bar-h;
-            background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg;
-            opacity: gate16.fade-opacity;
-            animate opacity {
-                duration: 200ms * AppState.settings-animation-speed;
-                easing: ease-out-expo;
-            }
+            fade: gate16.fade-opacity;
         }
+
         gate17 := FadeGate {
             show: AppState.show-artist && !AppState.is-playing;
         }
 
         if gate17.mounted: ArtistScreen {
             z: AppState.artist-z;
-            y: 0;
-            height: parent.height - total-bar-h;
-            background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg;
-            opacity: gate17.fade-opacity;
-            animate opacity {
-                duration: 200ms * AppState.settings-animation-speed;
-                easing: ease-out-expo;
-            }
+            fade: gate17.fade-opacity;
         }
+
         gate18 := FadeGate {
             show: AppState.show-collection && !AppState.is-playing;
         }
 
         if gate18.mounted: CollectionScreen {
             z: AppState.collection-z;
-            y: 0;
-            height: parent.height - total-bar-h;
-            background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg;
-            opacity: gate18.fade-opacity;
-            animate opacity {
-                duration: 200ms * AppState.settings-animation-speed;
-                easing: ease-out-expo;
-            }
+            fade: gate18.fade-opacity;
         }
+
         gate19 := FadeGate {
             show: AppState.show-album && !AppState.is-playing;
         }
 
         if gate19.mounted: AlbumScreen {
             z: AppState.album-z;
-            y: 0;
-            height: parent.height - total-bar-h;
-            background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg;
-            opacity: gate19.fade-opacity;
-            animate opacity {
-                duration: 200ms * AppState.settings-animation-speed;
-                easing: ease-out-expo;
-            }
+            fade: gate19.fade-opacity;
         }
+
         gate20 := FadeGate {
             show: AppState.show-detail && !AppState.is-playing;
         }
 
         if gate20.mounted: DetailPage {
             z: AppState.detail-z;
-            y: 0;
-            height: parent.height - total-bar-h;
-            background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg;
-            opacity: gate20.fade-opacity;
-            animate opacity {
-                duration: 200ms * AppState.settings-animation-speed;
-                easing: ease-out-expo;
-            }
+            fade: gate20.fade-opacity;
         }
+
         gate31 := FadeGate {
             show: AppState.show-request-detail && !AppState.is-playing;
         }
 
         if gate31.mounted: RequestDetailScreen {
             z: AppState.request-detail-z;
-            y: 0;
-            height: parent.height - total-bar-h;
-            opacity: gate31.fade-opacity;
-            animate opacity {
-                duration: 200ms * AppState.settings-animation-speed;
-                easing: ease-out-expo;
-            }
+            fade: gate31.fade-opacity;
         }
 
         // Request Options modal — above RequestDetailScreen (opened from its Request button)
@@ -686,13 +646,7 @@ export component MainWindow inherits Window {
 
         if gate32.mounted: RequestOptionsOverlay {
             z: AppState.request-options-z;
-            width: parent.width;
-            height: parent.height;
-            opacity: gate32.fade-opacity;
-            animate opacity {
-                duration: 200ms * AppState.settings-animation-speed;
-                easing: ease-out-expo;
-            }
+            fade: gate32.fade-opacity;
         }
 
         // Calendar (from Discover's "Coming Up" row). Like every overlay, guarded by !is-playing.
@@ -702,13 +656,7 @@ export component MainWindow inherits Window {
 
         if gate33.mounted: CalendarScreen {
             z: AppState.calendar-z;
-            y: 0;
-            height: parent.height - total-bar-h;
-            opacity: gate33.fade-opacity;
-            animate opacity {
-                duration: 200ms * AppState.settings-animation-speed;
-                easing: ease-out-expo;
-            }
+            fade: gate33.fade-opacity;
         }
 
         // Manage Blocklist (Settings → Integrations). !is-playing, and hidden under the pickers
@@ -719,13 +667,7 @@ export component MainWindow inherits Window {
 
         if gate34.mounted: BlocklistScreen {
             z: AppState.blocklist-z;
-            y: 0;
-            height: parent.height - total-bar-h;
-            opacity: gate34.fade-opacity;
-            animate opacity {
-                duration: 200ms * AppState.settings-animation-speed;
-                easing: ease-out-expo;
-            }
+            fade: gate34.fade-opacity;
         }
 
         gate21 := FadeGate {
@@ -734,14 +676,7 @@ export component MainWindow inherits Window {
 
         if gate21.mounted: PersonScreen {
             z: AppState.person-z;
-            y: 0;
-            height: parent.height - total-bar-h;
-            background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg;
-            opacity: gate21.fade-opacity;
-            animate opacity {
-                duration: 200ms * AppState.settings-animation-speed;
-                easing: ease-out-expo;
-            }
+            fade: gate21.fade-opacity;
         }
     }
 

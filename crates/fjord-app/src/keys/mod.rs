@@ -8,6 +8,7 @@
 //     global     GLOBAL_SHORTCUTS: Quit/fullscreen/resume/queue/Now Playing/music/bar focus (+ KeyCtx)
 //     library    library grid dispatch
 //     player     player, queue panel and Now Playing dispatch
+//     page_header  the album and artist pages' shared header (← Back, ▶ Play All + ♥, bio)
 //     text_input on-screen keyboard opener/cursor math, drawn search fields, playlist picker
 //   key          Slint key string constants
 //   lookup_action  KeyCombo → Action (exact match first; with Shift held, a printable key
@@ -57,6 +58,7 @@ mod global;
 mod library;
 mod mode;
 mod overlays;
+mod page_header;
 mod player;
 mod text_input;
 mod tiers;
@@ -67,6 +69,7 @@ pub(crate) use global::*;
 pub(crate) use library::*;
 pub(crate) use mode::*;
 pub(crate) use overlays::*;
+pub(crate) use page_header::*;
 pub(crate) use player::*;
 pub(crate) use text_input::*;
 pub(crate) use tiers::*;

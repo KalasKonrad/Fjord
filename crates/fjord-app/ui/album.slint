@@ -16,6 +16,7 @@
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
 import {
+    StackPage,
     FocusHalo,
     FjordButton,
     IconCircleButton,
@@ -23,7 +24,7 @@ import {
     PressPulse,
 } from "widgets.slint";
 
-export component AlbumScreen inherits Rectangle {
+export component AlbumScreen inherits StackPage {
 
     property <length> track-h: 48px;
     // Must match SectionHeader's own fixed 28px height (widgets.slint) — the

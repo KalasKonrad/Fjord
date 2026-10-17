@@ -11,6 +11,8 @@
 //                      used by player.slint's skip overlays and the permanently mounted screens
 //   FadeGate           symmetric fade in/out that owns mount/unmount (`if gate.mounted: X {
 //                      opacity: gate.fade-opacity; }`) — every main.slint screen/overlay uses it
+//   StackPage          base of main.slint's stacked full-screen pages: fills the stack, page background
+//                      (see-through for video behind the UI), `fade` from its FadeGate
 //   PressPulse         keyboard half of the press animation (kb-activate-pulse → 110 ms `pulsing`);
 //                      border-only, so pressing never resizes or re-weights text
 //   FocusGlow          a focusable picture/tile/button/pill that glows while focused: three stacked
@@ -109,6 +111,22 @@ export component PressPulse {
             root.pulsing = false;
             self.running = false;
         }
+    }
+}
+
+// ── StackPage ────────────────────────────────────────────────────────────────
+// The base of every full-screen page in main.slint's `stack` (Series, Season, Artist, Collection,
+// Album, Detail, Person, Request Detail/Options, Calendar, Blocklist): it fills the stack (the window
+// above the bottom bars), has the page background — see-through while a video plays behind the UI —
+// and fades with its FadeGate (`fade: gateN.fade-opacity`). A page with its own background (a
+// modal's scrim, an always-opaque page) sets `background:` in its definition.
+export component StackPage inherits Rectangle {
+    in property <float> fade: 1;
+    background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg;
+    opacity: root.fade;
+    animate opacity {
+        duration: 200ms * AppState.settings-animation-speed;
+        easing: ease-out-expo;
     }
 }
 

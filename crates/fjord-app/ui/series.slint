@@ -13,6 +13,7 @@
 import { Theme, SeasonEntry, CardItem } from "theme.slint";
 import { AppState } from "app_state.slint";
 import {
+    StackPage,
     FocusGlow,
     FjordButton,
     IconCircleButton,
@@ -24,8 +25,7 @@ import {
 } from "widgets.slint";
 import { SectionRow } from "home.slint";
 
-export component SeriesScreen inherits Rectangle {
-    background: Theme.bg;
+export component SeriesScreen inherits StackPage {
 
     fl := Flickable {
         width: parent.width;

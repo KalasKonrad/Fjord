@@ -13,13 +13,14 @@
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
 import {
+    StackPage,
     FjordButton,
     MediaCard,
     IconCircleButton,
     StorylineSection,
 } from "widgets.slint";
 
-export component ArtistScreen inherits Rectangle {
+export component ArtistScreen inherits StackPage {
     property <length> card-w: 145px * AppState.card-scale;
     property <length> card-h: 224px * AppState.card-scale;
     property <length> gap:    14px;

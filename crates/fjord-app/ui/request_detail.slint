@@ -28,6 +28,7 @@
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
 import {
+    StackPage,
     FocusHalo,
     FocusGlow,
     FjordButton,
@@ -68,8 +69,7 @@ component MetaRow inherits HorizontalLayout {
     }
 }
 
-export component RequestDetailScreen inherits Rectangle {
-    background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg;
+export component RequestDetailScreen inherits StackPage {
 
     property <bool> has-cast: AppState.request-detail-cast.length > 0;
     // Purely-display metadata panel (Status/dates/language/countries/
@@ -482,7 +482,7 @@ export component RequestDetailScreen inherits Rectangle {
 // *-hbox.preferred-width)` wide so a server with 1–3 chips doesn't get a wide empty box;
 // every chip has a fixed width, so preferred-width doesn't depend on the Flickable (no
 // binding loop).
-export component RequestOptionsOverlay inherits Rectangle {
+export component RequestOptionsOverlay inherits StackPage {
     background: Theme.scrim;
 
     property <bool> has-profiles: AppState.request-detail-profiles.length > 0;

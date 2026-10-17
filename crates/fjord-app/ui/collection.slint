@@ -12,6 +12,7 @@
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
 import {
+    StackPage,
     FjordButton,
     MediaCard,
     PosterBlock,
@@ -20,7 +21,7 @@ import {
 } from "widgets.slint";
 import { SectionRow } from "home.slint";
 
-export component CollectionScreen inherits Rectangle {
+export component CollectionScreen inherits StackPage {
     property <length> card-w: 145px * AppState.card-scale;
     property <length> card-h: 224px * AppState.card-scale;
     property <length> gap:    14px;

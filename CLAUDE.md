@@ -210,7 +210,8 @@ Needs `mpv`/libmpv (`pacman -S mpv`). Optional at runtime: `yt-dlp` (trailers), 
 - The full-screen pages over the dashboards (Detail, Series, Season, Person, Artist, Album, Collection, Request
   Detail/Options, Calendar, Blocklist) are a stack: open one with `keys::open_screen(&g, StackScreen::X)` (show flag +
   open order), never `set_show_x(true)` alone (a restore after playback is the exception). main.slint's `stack` draws
-  them by `AppState.*-z` and `active_mode` gives the keys to the top one; a new page = a `StackScreen` entry + `z:` there.
+  them by `AppState.*-z` and `active_mode` gives the keys to the top one; a new page = a `StackScreen` entry + a component
+  that `inherits StackPage` (size, page background, fade) mounted there by a FadeGate with `z:` and `fade:`.
 - Free-floating overlays mount via `FadeGate` (fades in and out). Screens sharing AppShell's
   `HorizontalLayout` content slot must never be mounted two at once — dashboards switch via the sequential
   `shown-nav`/`nav-fade` mechanism in `main.slint`.

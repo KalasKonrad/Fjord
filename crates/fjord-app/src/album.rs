@@ -10,9 +10,10 @@
 //                         + item_detail_cache (loading overlay only on a miss); tracks + cover in
 //                         parallel; generation- and session-guarded commit shows the page; a cache
 //                         hit revalidates
-//   handle_key            Back / ▶ + ♥ button row / bio (slot 2) / track list; Up from track 0 →
-//                         bio (or the buttons); C → context menu; Delete → playlist-remove-entry
-//                         (playlists); Enter → play-album-track; Down at the last track → false
+//   handle_key            header (← Back / ▶ + ♥ / bio: keys::header_keys, shared with the artist
+//                         page) / track list; Up from track 0 → keys::list_up_to_header; C →
+//                         context menu; Delete → playlist-remove-entry (playlists); Enter →
+//                         play-album-track; Down at the last track → false
 //   wire_album            callbacks moved from main() (0.5.0 step 3): album / playlist screen
 //   wire_album_play_all   callbacks moved from main() (0.5.0 step 3): Play all on the album screen
 // ─────────────────────────────────────────────────────────────────────────────
@@ -456,72 +457,9 @@ fn spawn_album_revalidate(
 pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
     use crate::keys::Action;
 
-    // ── Back button focused ────────────────────────────────────────────────────
-    if g.get_album_back_focused() {
-        return match action {
-            Action::Confirm | Action::Back => {
-                g.set_show_album(false);
-                true
-            }
-            Action::Down => {
-                g.set_album_back_focused(false);
-                g.set_album_btn_focused(0);
-                true
-            }
-            Action::Up => false, // allow focus_bar_on_up
-            _ => true,
-        };
-    }
-
-    // ── ▶ Play All / ♥ button row + bio focused (0=Play All, 1=♥, 2=bio) ─────
-    let btn = g.get_album_btn_focused();
-    if btn >= 0 {
-        return match action {
-            Action::Left => {
-                if btn > 0 && btn <= 1 {
-                    g.set_album_btn_focused(btn - 1);
-                }
-                true
-            }
-            Action::Right => {
-                if btn < 1 {
-                    g.set_album_btn_focused(btn + 1);
-                }
-                true
-            }
-            Action::Confirm => {
-                match btn {
-                    0 => g.invoke_play_album_all(),
-                    1 => g.invoke_toggle_album_fav(),
-                    _ => g.set_album_overview_expanded(!g.get_album_overview_expanded()),
-                }
-                true
-            }
-            Action::Up => {
-                if btn == 2 {
-                    g.set_album_btn_focused(0); // bio → ▶ Play All
-                } else {
-                    g.set_album_btn_focused(-1);
-                    g.set_album_back_focused(true);
-                }
-                true
-            }
-            Action::Down => {
-                if btn <= 1 && !g.get_album_overview().is_empty() {
-                    g.set_album_btn_focused(2); // buttons → bio
-                } else {
-                    g.set_album_btn_focused(-1);
-                    g.set_album_focused_track(0);
-                }
-                true
-            }
-            Action::Back => {
-                g.set_album_btn_focused(-1);
-                g.set_show_album(false);
-                true
-            }
-            _ => true,
-        };
+    // ── Header: ← Back / ▶ Play All + ♥ / bio (shared with the artist page) ──────
+    if let Some(handled) = crate::keys::header_keys(crate::keys::MusicPage::Album, action, g) {
+        return handled;
     }
 
     // ── Track list ─────────────────────────────────────────────────────────────
@@ -536,10 +474,8 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
         Action::Up => {
             if f > 0 {
                 g.set_album_focused_track(f - 1);
-            } else if !g.get_album_overview().is_empty() {
-                g.set_album_btn_focused(2); // tracks → bio (sits between header and list)
             } else {
-                g.set_album_btn_focused(0);
+                crate::keys::list_up_to_header(crate::keys::MusicPage::Album, g);
             }
             true
         }

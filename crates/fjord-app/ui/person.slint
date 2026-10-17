@@ -10,11 +10,10 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme, CardItem } from "theme.slint";
 import { AppState } from "app_state.slint";
-import { FjordButton } from "widgets.slint";
+import { StackPage, FjordButton } from "widgets.slint";
 import { SectionRow } from "home.slint";
 
-export component PersonScreen inherits Rectangle {
-    background: Theme.bg;
+export component PersonScreen inherits StackPage {
 
     fl := Flickable {
         width: parent.width;

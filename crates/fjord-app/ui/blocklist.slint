@@ -15,13 +15,14 @@
 import { Theme, BlocklistRow } from "theme.slint";
 import { AppState } from "app_state.slint";
 import {
+    StackPage,
     FocusHalo,
     FjordButton,
     PressPulse,
     LoadingSpinner,
 } from "widgets.slint";
 
-export component BlocklistScreen inherits Rectangle {
+export component BlocklistScreen inherits StackPage {
     background: Theme.bg;
 
     property <length> row-h: 64px;

@@ -5,9 +5,9 @@
 //                        artist albums + portrait + detail in parallel (cached parts skip the
 //                        network); CardItem model with posters via apply_cards_preserving_identity;
 //                        a generation- and session-guarded commit shows the page
-//   handle_key           keyboard dispatch: Back button / btn row / bio (slot 2) / album grid;
-//                        Up from row 0 → bio (or btn row); btn row → Back / bio / grid;
-//                        Enter on album → open-album; C → context menu
+//   handle_key           keyboard dispatch: header (← Back / ▶ + ♥ / bio: keys::header_keys, shared
+//                        with the album page) / album grid; Up from row 0 →
+//                        keys::list_up_to_header; Enter on album → open-album; C → context menu
 //   wire_artist            callbacks moved from main() (0.5.0 step 3): artist screen
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
@@ -427,71 +427,9 @@ fn spawn_artist_revalidate(
 pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
     use crate::keys::Action;
 
-    // ── Back button focused ────────────────────────────────────────────────────
-    if g.get_artist_back_focused() {
-        return match action {
-            Action::Confirm | Action::Back => {
-                g.invoke_close_artist();
-                true
-            }
-            Action::Down => {
-                g.set_artist_back_focused(false);
-                g.set_artist_btn_focused(0);
-                true
-            }
-            Action::Up => false, // allow focus_bar_on_down
-            _ => true,
-        };
-    }
-
-    // ── ▶/♥ button row + bio focused (0=Play All, 1=♥, 2=bio) ─────────────────
-    let btn = g.get_artist_btn_focused();
-    if btn >= 0 {
-        return match action {
-            Action::Left => {
-                if btn > 0 && btn <= 1 {
-                    g.set_artist_btn_focused(btn - 1);
-                }
-                true
-            }
-            Action::Right => {
-                if btn < 1 {
-                    g.set_artist_btn_focused(btn + 1);
-                }
-                true
-            }
-            Action::Confirm => {
-                match btn {
-                    0 => g.invoke_play_artist_all(),
-                    1 => g.invoke_toggle_artist_fav(),
-                    _ => g.set_artist_overview_expanded(!g.get_artist_overview_expanded()),
-                }
-                true
-            }
-            Action::Up => {
-                if btn == 2 {
-                    g.set_artist_btn_focused(0); // bio → ▶ Play All
-                } else {
-                    g.set_artist_btn_focused(-1);
-                    g.set_artist_back_focused(true);
-                }
-                true
-            }
-            Action::Down => {
-                if btn <= 1 && !g.get_artist_overview().is_empty() {
-                    g.set_artist_btn_focused(2); // buttons → bio
-                } else {
-                    g.set_artist_btn_focused(-1); // → album grid
-                }
-                true
-            }
-            Action::Back => {
-                g.set_artist_btn_focused(-1);
-                g.invoke_close_artist();
-                true
-            }
-            _ => true,
-        };
+    // ── Header: ← Back / ▶ Play All + ♥ / bio (shared with the album page) ───────
+    if let Some(handled) = crate::keys::header_keys(crate::keys::MusicPage::Artist, action, g) {
+        return handled;
     }
 
     // ── Album grid ─────────────────────────────────────────────────────────────
@@ -527,12 +465,7 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
         }
         Action::Up => {
             if f < cols {
-                // first row → bio (sits between header and grid) or button row
-                if !g.get_artist_overview().is_empty() {
-                    g.set_artist_btn_focused(2);
-                } else {
-                    g.set_artist_btn_focused(0);
-                }
+                crate::keys::list_up_to_header(crate::keys::MusicPage::Artist, g);
                 true
             } else {
                 g.set_artist_focused(f - cols);
