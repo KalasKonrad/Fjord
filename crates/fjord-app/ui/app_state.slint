@@ -49,7 +49,8 @@
 //                         video-surface-active + video-rect-* + window-bg (separate video surface)
 //   Now Playing auto-open settings-now-playing-auto-open-secs (0 = off; playback/timer.rs)
 //   Screensaver           settings-screensaver-mins, screensaver-active / -paused / -enabled,
-//                         toggle-screensaver() (the ☾ button; screensaver.rs runs it)
+//                         toggle-screensaver() (the ☾ button + a toast saying what it did;
+//                         screensaver.rs runs it)
 //   Music bar             is-audio-playing, music-bar-title/artist/album-id/art/has-art/pos/elapsed/total/paused,
 //                         music-bar-play-pause/-stop/-open-album, play-album-all
 //   Now Playing / player  show-now-playing, now-playing-in-strip/-ctrl-focused/-strip-focused, open-now-playing;
@@ -1564,8 +1565,11 @@ export global AppState {
     in-out property <bool> screensaver-active: false;
     in-out property <bool> screensaver-paused: false;
     out property <bool> screensaver-enabled: settings-screensaver-mins > 0;
+    // The ☾ button: a toast says what it did (the button's lit/dim state alone was unclear).
     public function toggle-screensaver() {
         screensaver-paused = !screensaver-paused;
+        toast-message = screensaver-paused ? "Screensaver off until the music stops" : "Screensaver on";
+        toast-visible = true;
     }
     in-out property <string> settings-passthrough-device:      ""; // video output while SPDIF on ("" = same as audio output)
     in-out property <string> settings-passthrough-device-desc: "";
