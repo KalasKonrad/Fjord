@@ -196,6 +196,7 @@ const PLY_CREDITS_SECS: &str = "player.credits_secs"; // virtual — only when c
 const PLY_SEEK_STEP: &str = "player.seek_step";
 const PLY_SEEK_STEP_LONG: &str = "player.seek_step_long";
 const PLY_SKIP_FADE_MS: &str = "player.skip_fade_ms";
+const PLY_CONTROLS_HIDE: &str = "player.controls_hide_secs"; // per profile; timer.rs
 const PLY_TRAILER_QUALITY: &str = "player.trailer_quality"; // every YouTube trailer; was in Integrations
 
 // ── UI section rows ───────────────────────────────────────────────────────────
@@ -215,6 +216,7 @@ const UI_SCROLL_SPEED: &str = "ui.scroll_speed";
 const UI_ANIMATION_SPEED: &str = "ui.animation_speed";
 const UI_FONT_FAMILY: &str = "ui.font_family";
 const UI_ONSCREEN_KEYBOARD: &str = "ui.onscreen_keyboard"; // 2026-08-27, default on
+const UI_TOAST_SECS: &str = "ui.toast_secs"; // per profile; main.slint's toast timer
 
 // ── Integrations section rows ─────────────────────────────────────────────────
 const INT_SEERR_ENABLED: &str = "integrations.seerr_enabled";
@@ -247,6 +249,7 @@ const SECTION_ROWS: &[(&str, &[&str])] = &[
             PLY_SKIP_FADE_MS,
             PLY_SEEK_STEP,
             PLY_SEEK_STEP_LONG,
+            PLY_CONTROLS_HIDE,
             PLY_TRAILER_QUALITY,
         ],
     ),
@@ -322,6 +325,7 @@ const SECTION_ROWS: &[(&str, &[&str])] = &[
             GEN_VIDEO_BEHIND,
             UI_FONT_FAMILY,
             UI_ONSCREEN_KEYBOARD,
+            UI_TOAST_SECS,
             UI_SCROLL_SPEED,
             UI_ANIMATION_SPEED,
         ],
@@ -764,6 +768,10 @@ const NOW_PLAYING_SECS_OPTIONS: &[(&str, &str)] = &[
     ("120", "2 min"),
     ("300", "5 min"),
 ];
+const CONTROLS_HIDE_SECS_OPTIONS: &[(&str, &str)] =
+    &[("2", "2 s"), ("3", "3 s"), ("5", "5 s"), ("10", "10 s")];
+const TOAST_SECS_OPTIONS: &[(&str, &str)] =
+    &[("3", "3 s"), ("4", "4 s"), ("6", "6 s"), ("10", "10 s")];
 const SCREENSAVER_MINS_OPTIONS: &[(&str, &str)] = &[
     ("0", "Off"),
     ("1", "1 min"),
@@ -1120,6 +1128,22 @@ static CHOICES: &[Choice] = &[
         field: Field::Int(
             |g| g.get_settings_now_playing_auto_open_secs(),
             |g, v| g.set_settings_now_playing_auto_open_secs(v),
+        ),
+    },
+    Choice {
+        key: PLY_CONTROLS_HIDE,
+        options: CONTROLS_HIDE_SECS_OPTIONS,
+        field: Field::Int(
+            |g| g.get_settings_controls_hide_secs(),
+            |g, v| g.set_settings_controls_hide_secs(v),
+        ),
+    },
+    Choice {
+        key: UI_TOAST_SECS,
+        options: TOAST_SECS_OPTIONS,
+        field: Field::Int(
+            |g| g.get_settings_toast_secs(),
+            |g, v| g.set_settings_toast_secs(v),
         ),
     },
     Choice {
@@ -2335,6 +2359,20 @@ pub(crate) static PROFILE_BINDS: &[ProfileBind] = &[
         screensaver_mins,
         get_settings_screensaver_mins,
         set_settings_screensaver_mins,
+        u32
+    ),
+    bind!(
+        Profile,
+        controls_hide_secs,
+        get_settings_controls_hide_secs,
+        set_settings_controls_hide_secs,
+        u32
+    ),
+    bind!(
+        Profile,
+        toast_secs,
+        get_settings_toast_secs,
+        set_settings_toast_secs,
         u32
     ),
     bind!(

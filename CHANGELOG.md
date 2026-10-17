@@ -23,6 +23,10 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **New: how long the player controls and messages stay up.** Settings →
+  Player → "Hide controls after" (2 / 3 / 5 / 10 s, default 3 s) and Settings
+  → Interface → "Message duration" (3 / 4 / 6 / 10 s, default 4 s), per
+  profile. Both were fixed before (3 s and 4 s).
 - **Improved: the ☾ button says what it did** — "Screensaver off until the
   music stops" or "Screensaver on".
 - **Improved: Auto-open Now Playing has a delay setting.** Settings → Audio →
