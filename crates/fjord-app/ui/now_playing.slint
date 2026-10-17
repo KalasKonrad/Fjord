@@ -9,7 +9,12 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
-import { FjordButton, IconCircleButton, PressPulse } from "widgets.slint";
+import {
+    FocusGlow,
+    FjordButton,
+    IconCircleButton,
+    PressPulse,
+} from "widgets.slint";
 
 export component NowPlayingScreen inherits Rectangle {
     background: Theme.bg;
@@ -354,41 +359,46 @@ export component NowPlayingScreen inherits Rectangle {
 
                             VerticalLayout {
                                 spacing: 4px;
-                                Rectangle {
+                                // The glow holder (FocusGlow); the cover inside it is clipped, its ring over the picture.
+                                FocusGlow {
                                     width: 72px;
                                     height: 72px;
                                     x: (parent.width - self.width) / 2;
-                                    border-radius: Theme.radius;
-                                    background: Theme.surface-overlay;
-                                    border-width: AppState.glow-ring-width(!AppState.now-playing-back-focused && AppState.now-playing-in-strip && i == AppState.now-playing-strip-focused, chip-ta.pressed || chip-pulse.pulsing);
-                                    drop-shadow-blur: AppState.glow-blur(!AppState.now-playing-back-focused && AppState.now-playing-in-strip && i == AppState.now-playing-strip-focused);
-                                    drop-shadow-color: AppState.focus-color;
-                                    border-color: AppState.focus-color;
-                                    clip: true;
-                                    animate border-width {
-                                        duration: 90ms * AppState.settings-animation-speed;
-                                        easing: ease-out-expo;
-                                    }
                                     chip-pulse := PressPulse {
                                         trigger: AppState.kb-activate-pulse;
                                         active: !AppState.now-playing-back-focused && AppState.now-playing-in-strip && i == AppState.now-playing-strip-focused;
                                     }
 
-                                    if entry.has-poster: Image {
-                                        width: parent.width;
-                                        height: parent.height;
-                                        image-fit: cover;
-                                        source: entry.poster;
-                                    }
-                                    if !entry.has-poster: Text {
-                                        text: "♫";
-                                        font-family: "Noto Sans Symbols 2";
-                                        color: Theme.text-subtle;
-                                        font-size: 22px * AppState.text-scale;
-                                        horizontal-alignment: center;
-                                        vertical-alignment: center;
-                                        width: parent.width;
-                                        height: parent.height;
+                                    radius: Theme.radius;
+                                    glowing: !AppState.now-playing-back-focused && AppState.now-playing-in-strip && i == AppState.now-playing-strip-focused;
+
+                                    Rectangle {
+                                        border-radius: Theme.radius;
+                                        background: Theme.surface-overlay;
+                                        border-width: AppState.glow-ring-width(!AppState.now-playing-back-focused && AppState.now-playing-in-strip && i == AppState.now-playing-strip-focused, chip-ta.pressed || chip-pulse.pulsing);
+                                        border-color: AppState.focus-color;
+                                        clip: true;
+                                        animate border-width {
+                                            duration: 90ms * AppState.settings-animation-speed;
+                                            easing: ease-out-expo;
+                                        }
+
+                                        if entry.has-poster: Image {
+                                            width: parent.width;
+                                            height: parent.height;
+                                            image-fit: cover;
+                                            source: entry.poster;
+                                        }
+                                        if !entry.has-poster: Text {
+                                            text: "♫";
+                                            font-family: "Noto Sans Symbols 2";
+                                            color: Theme.text-subtle;
+                                            font-size: 22px * AppState.text-scale;
+                                            horizontal-alignment: center;
+                                            vertical-alignment: center;
+                                            width: parent.width;
+                                            height: parent.height;
+                                        }
                                     }
                                 }
 

@@ -11,6 +11,7 @@
 import { Theme, BonfireAdminRow, BonfireAuditRow } from "theme.slint";
 import { AppState } from "app_state.slint";
 import {
+    FocusGlow,
     FjordButton,
     PressPulse,
     LoadingSpinner,
@@ -296,20 +297,18 @@ export component BonfireAdminScreen inherits Rectangle {
                                             AppState.bonfire-admin-col = 1;
                                             AppState.bonfire-admin-cycle-limit(row.profile-user-id);
                                         }
-                                        Rectangle {
+                                        FocusGlow {
                                             width: parent.width;
                                             height: parent.height;
-                                            border-radius: Theme.radius;
-                                            background: Theme.surface-overlay;
+                                            radius: Theme.radius;
+                                            fill: Theme.surface-overlay;
                                             limit-pulse := PressPulse {
                                                 trigger: AppState.kb-activate-pulse;
                                                 active: AppState.bonfire-admin-cursor == i && AppState.bonfire-admin-col == 1;
                                             }
 
-                                            border-width: AppState.glow-ring-width(AppState.bonfire-admin-cursor == i && AppState.bonfire-admin-col == 1, limit-ta.pressed || limit-pulse.pulsing);
-                                            drop-shadow-blur: AppState.glow-blur(AppState.bonfire-admin-cursor == i && AppState.bonfire-admin-col == 1);
-                                            drop-shadow-color: AppState.focus-color;
-                                            border-color: AppState.focus-color;
+                                            ring-width: AppState.glow-ring-width(AppState.bonfire-admin-cursor == i && AppState.bonfire-admin-col == 1, limit-ta.pressed || limit-pulse.pulsing);
+                                            glowing: AppState.bonfire-admin-cursor == i && AppState.bonfire-admin-col == 1;
                                             Text {
                                                 // Slint's ternary requires both branches to share
                                                 // a type — "" + row.max-profiles coerces the int

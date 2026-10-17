@@ -19,6 +19,7 @@ import { Theme, CardItem, DashRow } from "theme.slint";
 import { AppState } from "app_state.slint";
 import { HeroBand, HeroBackdrop } from "hero.slint";
 import {
+    FocusGlow,
     FjordButton,
     MediaCard,
     LoadingSpinner,
@@ -182,23 +183,18 @@ export component LibraryGrid inherits Rectangle {
                 if AppState.active-nav == 4: HorizontalLayout {
                     spacing: 4px;
                     alignment: center;
-                    for vi in 3: Rectangle {
+                    for vi in 3: FocusGlow {
                         property <bool> v-active:  AppState.library-music-view == vi;
                         property <bool> v-focused: { let hf = AppState.library-sort-focused; let sc = AppState.library-sort-cursor; hf && sc == vi };
                         property <string> v-lbl:   vi == 0 ? "Artists" : vi == 1 ? "Albums" : "Playlists";
                         width: v-t.preferred-width + 18px;
                         height: 26px;
                         y: (parent.height - self.height) / 2;
-                        border-radius: Theme.radius;
-                        background: v-active ? Theme.accent : (v-focused ? Theme.surface-overlay : transparent);
-                        border-width: max(!v-active ? 1px : 0px, AppState.glow-ring-width(v-focused, v-ta.pressed || v-pulse.pulsing));
-                        drop-shadow-blur: AppState.glow-blur(v-focused);
-                        drop-shadow-color: AppState.focus-color;
-                        border-color: (v-focused || v-ta.pressed || v-pulse.pulsing) ? AppState.focus-color : Theme.border-strong;
-                        animate border-width {
-                            duration: 90ms * AppState.settings-animation-speed;
-                            easing: ease-out-expo;
-                        }
+                        radius: Theme.radius;
+                        fill: v-active ? Theme.accent : (v-focused ? Theme.surface-overlay : transparent);
+                        ring-width: max(!v-active ? 1px : 0px, AppState.glow-ring-width(v-focused, v-ta.pressed || v-pulse.pulsing));
+                        glowing: v-focused;
+                        ring-color: (v-focused || v-ta.pressed || v-pulse.pulsing) ? AppState.focus-color : Theme.border-strong;
                         v-pulse := PressPulse {
                             trigger: AppState.kb-activate-pulse;
                             active: v-focused;
@@ -234,7 +230,7 @@ export component LibraryGrid inherits Rectangle {
                 }
 
                 // Sort pills — for Music (nav=4) these are at cursor offset 3 (so cursor = si + 3)
-                for si in 5: Rectangle {
+                for si in 5: FocusGlow {
                     property <bool> pill-active:  AppState.library-sort == si;
                     property <bool> pill-focused: {
                         let hf = AppState.library-sort-focused;
@@ -246,16 +242,11 @@ export component LibraryGrid inherits Rectangle {
                     width: pill-t.preferred-width + 18px;
                     height: 26px;
                     y: (parent.height - self.height) / 2;
-                    border-radius: Theme.radius;
-                    background: pill-active ? Theme.accent : (pill-focused ? Theme.surface-overlay : transparent);
-                    border-width: AppState.glow-ring-width(pill-focused, sort-ta.pressed || sort-pulse.pulsing);
-                    drop-shadow-blur: AppState.glow-blur(pill-focused);
-                    drop-shadow-color: AppState.focus-color;
-                    border-color: pill-active ? Theme.text : AppState.focus-color;
-                    animate border-width {
-                        duration: 90ms * AppState.settings-animation-speed;
-                        easing: ease-out-expo;
-                    }
+                    radius: Theme.radius;
+                    fill: pill-active ? Theme.accent : (pill-focused ? Theme.surface-overlay : transparent);
+                    ring-width: AppState.glow-ring-width(pill-focused, sort-ta.pressed || sort-pulse.pulsing);
+                    glowing: pill-focused;
+                    ring-color: pill-active ? Theme.text : AppState.focus-color;
                     sort-pulse := PressPulse {
                         trigger: AppState.kb-activate-pulse;
                         active: pill-focused;
@@ -281,22 +272,17 @@ export component LibraryGrid inherits Rectangle {
                 if AppState.active-nav == 4: Rectangle {
                     width: 8px;
                 }
-                if AppState.active-nav == 4: Rectangle {
+                if AppState.active-nav == 4: FocusGlow {
                     property <bool> mf-active:  AppState.library-filter-favorites;
                     property <bool> mf-focused: { let hf = AppState.library-sort-focused; let sc = AppState.library-sort-cursor; hf && sc == 8 };
                     width: mf-t.preferred-width + 18px;
                     height: 26px;
                     y: (parent.height - self.height) / 2;
-                    border-radius: Theme.radius;
-                    background: mf-active ? Theme.accent : (mf-focused ? Theme.surface-overlay : transparent);
-                    border-width: AppState.glow-ring-width(mf-focused, mf-ta.pressed || mf-pulse.pulsing);
-                    drop-shadow-blur: AppState.glow-blur(mf-focused);
-                    drop-shadow-color: AppState.focus-color;
-                    border-color: mf-active ? Theme.text : AppState.focus-color;
-                    animate border-width {
-                        duration: 90ms * AppState.settings-animation-speed;
-                        easing: ease-out-expo;
-                    }
+                    radius: Theme.radius;
+                    fill: mf-active ? Theme.accent : (mf-focused ? Theme.surface-overlay : transparent);
+                    ring-width: AppState.glow-ring-width(mf-focused, mf-ta.pressed || mf-pulse.pulsing);
+                    glowing: mf-focused;
+                    ring-color: mf-active ? Theme.text : AppState.focus-color;
                     mf-pulse := PressPulse {
                         trigger: AppState.kb-activate-pulse;
                         active: mf-focused;
@@ -323,22 +309,17 @@ export component LibraryGrid inherits Rectangle {
                     width: 8px;
                 }
 
-                if AppState.library-has-filters: Rectangle {
+                if AppState.library-has-filters: FocusGlow {
                     property <bool> fw-active:  AppState.library-filter-unwatched;
                     property <bool> fw-focused: { let hf = AppState.library-sort-focused; let sc = AppState.library-sort-cursor; hf && sc == 5 };
                     width: fw-t.preferred-width + 18px;
                     height: 26px;
                     y: (parent.height - self.height) / 2;
-                    border-radius: Theme.radius;
-                    background: fw-active ? Theme.accent : (fw-focused ? Theme.surface-overlay : transparent);
-                    border-width: AppState.glow-ring-width(fw-focused, fw-ta.pressed || fw-pulse.pulsing);
-                    drop-shadow-blur: AppState.glow-blur(fw-focused);
-                    drop-shadow-color: AppState.focus-color;
-                    border-color: fw-active ? Theme.text : AppState.focus-color;
-                    animate border-width {
-                        duration: 90ms * AppState.settings-animation-speed;
-                        easing: ease-out-expo;
-                    }
+                    radius: Theme.radius;
+                    fill: fw-active ? Theme.accent : (fw-focused ? Theme.surface-overlay : transparent);
+                    ring-width: AppState.glow-ring-width(fw-focused, fw-ta.pressed || fw-pulse.pulsing);
+                    glowing: fw-focused;
+                    ring-color: fw-active ? Theme.text : AppState.focus-color;
                     fw-pulse := PressPulse {
                         trigger: AppState.kb-activate-pulse;
                         active: fw-focused;
@@ -360,22 +341,17 @@ export component LibraryGrid inherits Rectangle {
                     }
                 }
 
-                if AppState.library-has-filters: Rectangle {
+                if AppState.library-has-filters: FocusGlow {
                     property <bool> ff-active:  AppState.library-filter-favorites;
                     property <bool> ff-focused: { let hf = AppState.library-sort-focused; let sc = AppState.library-sort-cursor; hf && sc == 6 };
                     width: ff-t.preferred-width + 18px;
                     height: 26px;
                     y: (parent.height - self.height) / 2;
-                    border-radius: Theme.radius;
-                    background: ff-active ? Theme.accent : (ff-focused ? Theme.surface-overlay : transparent);
-                    border-width: AppState.glow-ring-width(ff-focused, ff-ta.pressed || ff-pulse.pulsing);
-                    drop-shadow-blur: AppState.glow-blur(ff-focused);
-                    drop-shadow-color: AppState.focus-color;
-                    border-color: ff-active ? Theme.text : AppState.focus-color;
-                    animate border-width {
-                        duration: 90ms * AppState.settings-animation-speed;
-                        easing: ease-out-expo;
-                    }
+                    radius: Theme.radius;
+                    fill: ff-active ? Theme.accent : (ff-focused ? Theme.surface-overlay : transparent);
+                    ring-width: AppState.glow-ring-width(ff-focused, ff-ta.pressed || ff-pulse.pulsing);
+                    glowing: ff-focused;
+                    ring-color: ff-active ? Theme.text : AppState.focus-color;
                     ff-pulse := PressPulse {
                         trigger: AppState.kb-activate-pulse;
                         active: ff-focused;

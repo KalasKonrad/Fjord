@@ -12,6 +12,10 @@
 //                      opacity: gate.fade-opacity; }`) — every main.slint screen/overlay uses it
 //   PressPulse         keyboard half of the press animation (kb-activate-pulse → 110 ms `pulsing`);
 //                      border-only, so pressing never resizes or re-weights text
+//   FocusGlow          a focusable picture/tile/button/pill that glows while focused: three stacked
+//                      layers cast AppState.glow-1/-2/-3 and repaint `fill`; the ring (ring-width /
+//                      ring-color) on top; raised (z) while lit. Used as the element (fill/ring-*/radius
+//                      instead of background/border-*/border-radius) or as a holder of a clipped picture
 //   VirtualKeyboard    numeric PIN keypad (3×4, cursor driven by Rust); VirtualKeyboardKey = its cell
 //   QwertyKeyboard     on-screen alphanumeric keyboard: letters/symbols pages, sticky Shift, last row
 //                      123 · ◀ · space · ▶ · Done; floating panel; key values live only here, row
@@ -20,7 +24,8 @@
 //   MediaCard          poster card for rows and grids: the poster fills the card, the full title +
 //                      subtitle sit over its bottom on a dark fade; badges ♥ / ★ (top-left), ✓ /
 //                      count / Seerr availability / cross-tier pill (top-right), progress strip;
-//                      flush focus ring (glow from the poster); focus zoom via AppState.zoom from
+//                      flush focus ring; a FocusGlow under the poster while focused (from the card's
+//                      edge with the line, the poster's in the Glow style); focus zoom via AppState.zoom from
 //                      zoom-anchor-x/-y (edge cards grow inward), raised with z; no poster fade
 //   LoadingSpinner     animated ring (speed-scaled dot rhythm)
 //   StatRow / ToggleSwitch / SectionHeader / SettingsDropdown / SettingsRow (key = settings.rs row key;
@@ -29,7 +34,8 @@
 //   PosterBlock        160×240 poster with badges (played, progress, unplayed count, request status)
 //   MetaLine           year · runtime · rating + optional ★ community rating
 //   CastRow            scrollable cast row (portrait, name, role); content-x follows focused-idx;
-//                      zoom room above/below the photos (AppState.zoom-pad), focused photo zooms
+//                      zoom room above/below the photos (AppState.zoom-pad), focused photo zooms and
+//                      glows (a FocusGlow holder around the clipped photo)
 //   StorylineSection   collapsible overview; clicked-header() lets RequestDetailScreen sync its zone
 //   MiniPlayerBar      bottom bar for background video: 108px with a live thumbnail (a VideoSpot on the
 //                      separate surface), 56px when the video is behind the UI; float-card-focused
@@ -99,6 +105,66 @@ export component PressPulse {
     }
 }
 
+// ── FocusGlow ────────────────────────────────────────────────────────────────
+// A focusable picture, tile, button or pill that glows while focused (Settings → Interface → Focus
+// ring style + Focus glow strength). Use it in place of the element's Rectangle — `fill`,
+// `ring-width`, `ring-color`, `radius` instead of background, border-width, border-color,
+// border-radius, and `glowing` for the focus. The halos (AppState.glow-1/-2/-3, tight → wide) are
+// the drop shadows of three stacked layers: a Slint drop shadow is a blurred *filled* shape, so
+// every layer repaints `fill` over the halo below it, and the ring sits on the top layer, under
+// the element's own children. A clipped picture (ring drawn over the photo) goes inside it as a
+// child and `fill` stays transparent: the picture covers the halos' fill. The glow reaches
+// AppState.glow-reach past the edge; a glowing element is raised over its siblings (z).
+export component FocusGlow inherits Rectangle {
+    in property <bool> glowing;
+    in property <brush> fill: transparent;
+    in property <length> radius;
+    in property <length> ring-width: 0px;
+    in property <brush> ring-color: AppState.focus-color;
+    // Fade fill changes (90 ms, like the ring) — for an element whose fill follows focus or selection.
+    in property <bool> animate-fill: false;
+    property <bool> lit: root.glowing && AppState.focus-glow;
+    property <duration> fill-ms: root.animate-fill ? 90ms * AppState.settings-animation-speed : 0ms;
+
+    z: root.lit ? 1 : 0;
+    border-radius: root.radius;
+    background: root.lit ? root.fill : transparent;
+    drop-shadow-blur: root.lit ? AppState.glow-3 : 0px;
+    drop-shadow-color: AppState.focus-color;
+    animate background {
+        duration: root.fill-ms;
+        easing: ease-out-expo;
+    }
+
+    Rectangle {
+        border-radius: root.radius;
+        background: root.lit ? root.fill : transparent;
+        drop-shadow-blur: root.lit ? AppState.glow-2 : 0px;
+        drop-shadow-color: AppState.focus-color;
+        animate background {
+            duration: root.fill-ms;
+            easing: ease-out-expo;
+        }
+
+        Rectangle {
+            border-radius: root.radius;
+            background: root.fill;
+            border-width: root.ring-width;
+            border-color: root.ring-color;
+            drop-shadow-blur: root.lit ? AppState.glow-1 : 0px;
+            drop-shadow-color: AppState.focus-color;
+            animate background {
+                duration: root.fill-ms;
+                easing: ease-out-expo;
+            }
+            animate border-width {
+                duration: 90ms * AppState.settings-animation-speed;
+                easing: ease-out-expo;
+            }
+        }
+    }
+}
+
 // ── VirtualKeyboard (numeric) ────────────────────────────────────────────────
 // On-screen numeric keypad for PINs: a D-pad grid like the app's other pickers — the
 // caller's Rust code owns the cursor (keys flow through keys.rs; this widget captures
@@ -106,7 +172,7 @@ export component PressPulse {
 // kb-activate-pulse). No fixed PIN length (Bonfire documents none), so "confirm" is a
 // key, not auto-submit. Nested VerticalLayout{HorizontalLayout{for}} like
 // calendar.slint, not GridLayout.
-component VirtualKeyboardKey inherits Rectangle {
+component VirtualKeyboardKey inherits FocusGlow {
     in property <string> label;
     in property <bool> kb-focused;
     // Optional persistent "toggled on" state (filled accent), separate from kb-focused
@@ -116,19 +182,14 @@ component VirtualKeyboardKey inherits Rectangle {
 
     width: 68px;
     height: 68px;
-    border-radius: Theme.radius;
-    background: ta.pressed ? Theme.accent-muted
+    radius: Theme.radius;
+    fill: ta.pressed ? Theme.accent-muted
         : root.active ? Theme.accent
         : kb-focused ? Theme.surface-overlay
         : Theme.surface;
-    border-width: AppState.glow-ring-width(kb-focused, ta.pressed || pulse.pulsing);
-    drop-shadow-blur: AppState.glow-blur(kb-focused);
-    drop-shadow-color: AppState.focus-color;
-    border-color: AppState.focus-color;
-    animate background, border-width {
-        duration: 90ms * AppState.settings-animation-speed;
-        easing: ease-out-expo;
-    }
+    animate-fill: true;
+    ring-width: AppState.glow-ring-width(kb-focused, ta.pressed || pulse.pulsing);
+    glowing: kb-focused;
 
     pulse := PressPulse {
         trigger: AppState.kb-activate-pulse;
@@ -302,7 +363,7 @@ export component QwertyKeyboard inherits Rectangle {
 }
 
 // ── Accent button ─────────────────────────────────────────────────────────────
-export component FjordButton inherits Rectangle {
+export component FjordButton inherits FocusGlow {
     in property <string> text;
     // Optional icon glyph(s) in their own Text pinned to Noto Sans Symbols 2 (like every
     // icon), so a button like "▶ Play" doesn't push the WORD through Noto (no Latin
@@ -316,18 +377,12 @@ export component FjordButton inherits Rectangle {
     callback clicked;
 
     height: 38px;
-    border-radius: Theme.radius;
-    border-width: AppState.glow-ring-width(kbd-focused, ta.pressed || pulse.pulsing);
-    drop-shadow-blur: AppState.glow-blur(kbd-focused);
-    drop-shadow-color: AppState.focus-color;
-    border-color: AppState.focus-color;
-    background: !enabled ? Theme.surface-raised
+    radius: Theme.radius;
+    ring-width: AppState.glow-ring-width(kbd-focused, ta.pressed || pulse.pulsing);
+    glowing: kbd-focused;
+    fill: !enabled ? Theme.surface-raised
         : ta.has-hover ? (danger ? #c53030 : Theme.accent-hover)
         : (danger ? Theme.error : Theme.accent);
-    animate border-width {
-        duration: 90ms * AppState.settings-animation-speed;
-        easing: ease-out-expo;
-    }
     pulse := PressPulse {
         trigger: AppState.kb-activate-pulse;
         active: root.kbd-focused;
@@ -369,23 +424,18 @@ export component FjordButton inherits Rectangle {
 
 // Tab switcher pill (Bonfire admin, Dashboard rows editor): accent fill when active; the focus ring
 // shows only on the active tab while the caller's tab row has keyboard focus.
-export component TabButton inherits Rectangle {
+export component TabButton inherits FocusGlow {
     in property <string> label;
     in property <bool> active;
     in property <bool> kbd-focused;
     callback clicked;
 
     height: 34px;
-    border-radius: Theme.radius;
-    background: active ? Theme.accent : (ta.has-hover ? Theme.surface : transparent);
-    border-width: AppState.glow-ring-width(kbd-focused && active, ta.pressed || pulse.pulsing);
-    drop-shadow-blur: AppState.glow-blur(kbd-focused && active);
-    drop-shadow-color: AppState.focus-color;
-    border-color: AppState.focus-color;
-    animate border-width, background {
-        duration: 90ms * AppState.settings-animation-speed;
-        easing: ease-out-expo;
-    }
+    radius: Theme.radius;
+    fill: active ? Theme.accent : (ta.has-hover ? Theme.surface : transparent);
+    animate-fill: true;
+    ring-width: AppState.glow-ring-width(kbd-focused && active, ta.pressed || pulse.pulsing);
+    glowing: kbd-focused && active;
     pulse := PressPulse {
         trigger: AppState.kb-activate-pulse;
         active: root.active && root.kbd-focused;
@@ -523,7 +573,7 @@ export component ConfirmDialog inherits Rectangle {
 }
 
 // ── Circle icon button (♥ fav / ✓ watched) ───────────────────────────────────
-export component IconCircleButton inherits Rectangle {
+export component IconCircleButton inherits FocusGlow {
     in property <string> icon;
     in property <bool> active:      false;
     in property <bool> kbd-focused: false;
@@ -531,18 +581,12 @@ export component IconCircleButton inherits Rectangle {
 
     width: 38px;
     height: 38px;
-    border-radius: 19px;
-    border-width: AppState.glow-ring-width(kbd-focused, ta.pressed || pulse.pulsing);
-    drop-shadow-blur: AppState.glow-blur(kbd-focused);
-    drop-shadow-color: AppState.focus-color;
-    border-color: AppState.focus-color;
-    background: active ? Theme.accent
+    radius: 19px;
+    ring-width: AppState.glow-ring-width(kbd-focused, ta.pressed || pulse.pulsing);
+    glowing: kbd-focused;
+    fill: active ? Theme.accent
         : ta.has-hover ? Theme.surface-overlay
         : Theme.surface-raised;
-    animate border-width {
-        duration: 90ms * AppState.settings-animation-speed;
-        easing: ease-out-expo;
-    }
     pulse := PressPulse {
         trigger: AppState.kb-activate-pulse;
         active: root.kbd-focused;
@@ -808,6 +852,21 @@ export component MediaCard inherits Rectangle {
         active: root.focused;
     }
 
+    // The glow (Glow styles), only on the focused card, under the poster (z: 0 — FocusGlow raises a
+    // glowing element). "Line and glow": from the card's edge, so it starts where the ring's line
+    // ends (the line covers the 3px gutter); "Glow": from the poster's edge (from the card's edge,
+    // the halos' fill would show in the gutter as a line).
+    if root.focused && AppState.focus-glow: FocusGlow {
+        property <length> inset: AppState.focus-line-width > 0 ? 0px : 3px;
+        x: self.inset;
+        y: self.inset;
+        width: root.width - 2 * self.inset;
+        height: root.height - 2 * self.inset;
+        z: 0;
+        glowing: true;
+        radius: Theme.radius;
+    }
+
     // Inset 3px on every side so the focus/press ring (flush with root, declared last)
     // has a gutter and doesn't bite into the poster/title. Use `padding`, NOT explicit
     // x/y/width/height bindings on this layout: LibraryGrid gives MediaCard no explicit
@@ -824,10 +883,6 @@ export component MediaCard inherits Rectangle {
         poster-rect := Rectangle {
             border-radius: Theme.radius;
             background: Theme.surface-raised;
-            // Glow style: the poster casts it (opaque — a shadow under the transparent ring overlay
-            // would flood the poster).
-            drop-shadow-blur: AppState.glow-blur(root.focused);
-            drop-shadow-color: AppState.focus-color;
             clip: true;
 
             // No fade-in on the poster: grids reveal posters one by one as their fetches finish,
@@ -1550,9 +1605,10 @@ export component CastRow inherits VerticalLayout {
                 spacing: 4px;
                 z: root.focused-idx == i ? 1 : 0;
 
-                // Single Rectangle with clip + border: Slint renders border on top of children
-                // so the focus ring is always visible even when the photo fills the area.
-                Rectangle {
+                // The glow + zoom holder (FocusGlow), the photo inside it: a Rectangle with clip +
+                // border — Slint renders that border on top of the children, so the focus ring
+                // shows even when the photo fills the area.
+                FocusGlow {
                     height: 120px;
                     // Focus zoom (AppState.focus-scale), a render transform; the row keeps room for it, the first photo grows from its left edge.
                     transform-scale-x: AppState.zoom(root.focused-idx == i);
@@ -1562,36 +1618,39 @@ export component CastRow inherits VerticalLayout {
                         duration: 150ms * AppState.settings-animation-speed;
                         easing: ease-out-expo;
                     }
-                    border-radius: Theme.radius;
-                    border-width: AppState.glow-ring-width(root.focused-idx == i, ta.pressed || cast-pulse.pulsing);
-                    drop-shadow-blur: AppState.glow-blur(root.focused-idx == i);
-                    drop-shadow-color: AppState.focus-color;
-                    border-color: AppState.focus-color;
-                    background: Theme.surface-raised;
-                    clip: true;
-                    animate border-width {
-                        duration: 90ms * AppState.settings-animation-speed;
-                        easing: ease-out-expo;
-                    }
+                    radius: Theme.radius;
+                    glowing: root.focused-idx == i;
                     cast-pulse := PressPulse {
                         trigger: AppState.kb-activate-pulse;
                         active: root.focused-idx == i;
                     }
 
-                    if c.has-photo: Image {
-                        source: c.photo;
-                        width: parent.width;
-                        height: parent.height;
-                        image-fit: cover;
-                    }
-
-                    // Hover overlay — read has-hover before ternary to keep binding alive
                     Rectangle {
-                        background: { let h = ta.has-hover; h ? #ffffff18 : transparent; }
-                    }
+                        border-radius: Theme.radius;
+                        border-width: AppState.glow-ring-width(root.focused-idx == i, ta.pressed || cast-pulse.pulsing);
+                        border-color: AppState.focus-color;
+                        background: Theme.surface-raised;
+                        clip: true;
+                        animate border-width {
+                            duration: 90ms * AppState.settings-animation-speed;
+                            easing: ease-out-expo;
+                        }
 
-                    ta := TouchArea {
-                        clicked => { root.item-selected(i); }
+                        if c.has-photo: Image {
+                            source: c.photo;
+                            width: parent.width;
+                            height: parent.height;
+                            image-fit: cover;
+                        }
+
+                        // Hover overlay — read has-hover before ternary to keep binding alive
+                        Rectangle {
+                            background: { let h = ta.has-hover; h ? #ffffff18 : transparent; }
+                        }
+
+                        ta := TouchArea {
+                            clicked => { root.item-selected(i); }
+                        }
                     }
                 }
 

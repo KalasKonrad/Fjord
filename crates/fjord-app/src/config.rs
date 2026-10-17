@@ -20,7 +20,8 @@
 //                   token), subtitle/audio language, library sort, skip_*_mode/_secs, trailer
 //                   quality, dashboard_rows (per dashboard: row ids in order + shown; DashboardRow),
 //                   dashboard_hero ("off" | "band" (default) | "background"; reads the old bool),
-//                   focus_color/_width/_style/_opacity/_zoom (focus ring + picture zoom),
+//                   focus_color/_width/_style/_glow/_opacity/_zoom (focus ring, glow strength +
+//                   picture zoom),
 //                   Seerr connection (seerr_enabled/_url/_auth_method/_api_key/
 //                   _session_cookie), Discover filters (genres by name, providers by id), Request
 //                   Options' remembered choices; remember_login (false → never resumed silently,
@@ -120,6 +121,9 @@ fn default_focus_width() -> String {
 }
 fn default_focus_style() -> String {
     "line".into()
+}
+fn default_focus_glow() -> String {
+    "strong".into()
 }
 fn default_focus_opacity() -> String {
     "solid".into()
@@ -728,14 +732,17 @@ pub(crate) struct ProfileSettings {
     pub dashboard_hero: String,
     // ── Focus highlight (Settings → Interface): the ring around whatever has keyboard focus and
     // the zoom of a focused picture. color "white" | "blue" | "gold" | "green" | "red"; width
-    // "2" | "3" | "4" | "6" (px); style "line" | "glow" | "both"; opacity "solid" | "see-through";
-    // zoom "0" | "5" … "30" (%). AppState.focus-* turns them into the values every ring reads.
+    // "2" | "3" | "4" | "6" (px); style "line" | "glow" | "both"; glow "soft" | "medium" | "strong" |
+    // "very-strong" (the glow's reach, Glow styles only); opacity "solid" | "see-through"; zoom
+    // "0" | "5" … "30" (%). AppState.focus-* / glow-* turn them into the values every ring reads.
     #[serde(default = "default_focus_color")]
     pub focus_color: String,
     #[serde(default = "default_focus_width")]
     pub focus_width: String,
     #[serde(default = "default_focus_style")]
     pub focus_style: String,
+    #[serde(default = "default_focus_glow")]
+    pub focus_glow: String,
     #[serde(default = "default_focus_opacity")]
     pub focus_opacity: String,
     #[serde(default = "default_focus_zoom")]
@@ -889,6 +896,7 @@ impl Default for ProfileSettings {
             focus_color: default_focus_color(),
             focus_width: default_focus_width(),
             focus_style: default_focus_style(),
+            focus_glow: default_focus_glow(),
             focus_opacity: default_focus_opacity(),
             focus_zoom: default_focus_zoom(),
             seerr_enabled: false,
@@ -1283,6 +1291,7 @@ fn migrate_legacy_config(l: LegacyConfig) -> Config {
         focus_color: default_focus_color(),
         focus_width: default_focus_width(),
         focus_style: default_focus_style(),
+        focus_glow: default_focus_glow(),
         focus_opacity: default_focus_opacity(),
         focus_zoom: default_focus_zoom(),
     };
@@ -2436,6 +2445,7 @@ mod tests {
         src.dashboard_hero = "background".into();
         src.focus_color = "gold".into();
         src.focus_zoom = "25".into();
+        src.focus_glow = "very-strong".into();
         src.dashboard_rows.insert(
             "music".into(),
             vec![
@@ -2467,8 +2477,12 @@ mod tests {
         assert_eq!(dst.dashboard_rows, src.dashboard_rows);
         assert_eq!(dst.dashboard_hero, "background");
         assert_eq!(
-            (dst.focus_color.as_str(), dst.focus_zoom.as_str()),
-            ("gold", "25")
+            (
+                dst.focus_color.as_str(),
+                dst.focus_zoom.as_str(),
+                dst.focus_glow.as_str()
+            ),
+            ("gold", "25", "very-strong")
         );
         // Sign-in, identity, Integrations and remembered browsing state stay.
         assert_eq!(dst.user_id, "aaaa0002000000000000000000000000");
