@@ -26,7 +26,8 @@
 //                 order they were opened (z = AppState *-z, keys::open_screen); NowPlaying, ContextMenu, PlaylistPicker,
 //                 SidebarProfileMenu, ConnectSeerr, ManageProfiles, DashboardRows, ProfileEdit,
 //                 RememberLoginConfirm, BonfireGroup, BonfireAdmin, Sign Out confirm, Cancel
-//                 Request confirm, QueuePanel, LyricsView, VolumeOverlay, Toast (4 s)
+//                 Request confirm, QueuePanel, LyricsView, VolumeOverlay, Toast (4 s), screensaver
+//                 (gate47: Theme.blackout over everything while AppState.screensaver-active)
 //   fades         free-floating overlays mount through `gateN := FadeGate` (fade in and out);
 //                 the permanently-mounted screens use FadeInTrigger once; PlayerScreen and the
 //                 bars don't fade (start latency; bars change the layout height). All scale
@@ -1113,6 +1114,28 @@ export component MainWindow inherits Window {
         animate opacity {
             duration: 200ms * AppState.settings-animation-speed;
             easing: ease-out-expo;
+        }
+    }
+
+    // Screensaver while music plays (screensaver.rs): black over everything, pointer hidden. A key
+    // (swallowed) or the mouse ends it — keys in keys::wire_key_dispatch, mouse movement through
+    // the input clock, a click here. The screen stays on: playback inhibits power saving.
+    gate47 := FadeGate {
+        show: AppState.screensaver-active && !AppState.is-playing;
+    }
+
+    if gate47.mounted: Rectangle {
+        background: Theme.blackout;
+        opacity: gate47.fade-opacity;
+        animate opacity {
+            duration: 200ms * AppState.settings-animation-speed;
+            easing: ease-out-expo;
+        }
+        TouchArea {
+            mouse-cursor: MouseCursor.none;
+            clicked => {
+                AppState.screensaver-active = false;
+            }
         }
     }
 }

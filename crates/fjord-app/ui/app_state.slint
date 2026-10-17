@@ -47,6 +47,8 @@
 //                         skip-fade-active (fade-to-black around the seek)
 //   Player state          is-playing, is-paused, playing-artist, video-frame, playback-ends-at;
 //                         video-surface-active + video-rect-* + window-bg (separate video surface)
+//   Screensaver           settings-screensaver-mins, screensaver-active / -paused / -enabled,
+//                         toggle-screensaver() (the ☾ button; screensaver.rs runs it)
 //   Music bar             is-audio-playing, music-bar-title/artist/album-id/art/has-art/pos/elapsed/total/paused,
 //                         music-bar-play-pause/-stop/-open-album, play-album-all
 //   Now Playing / player  show-now-playing, now-playing-in-strip/-ctrl-focused/-strip-focused, open-now-playing;
@@ -1537,6 +1539,18 @@ export global AppState {
     in-out property <string> settings-audio-channels:        "auto-safe"; // mpv --audio-channels
     in-out property <bool> settings-gapless-audio:         true; // preload next track into same mpv instance
     in-out property <bool> settings-now-playing-auto-open: true; // pop the fullscreen Now Playing screen after ~30s idle
+    // ── Screensaver while music plays (Settings → Audio, per profile; screensaver.rs) ──
+    // settings-screensaver-mins: minutes without a key press or mouse movement (0 = off).
+    // screensaver-active: the black overlay is up (main.slint); any key (swallowed) or the mouse
+    // ends it. screensaver-paused: the ☾ button in the music bar / Now Playing turned it off until
+    // the music stops. The screen never turns off — playback keeps inhibiting power saving.
+    in-out property <int> settings-screensaver-mins: 5;
+    in-out property <bool> screensaver-active: false;
+    in-out property <bool> screensaver-paused: false;
+    out property <bool> screensaver-enabled: settings-screensaver-mins > 0;
+    public function toggle-screensaver() {
+        screensaver-paused = !screensaver-paused;
+    }
     in-out property <string> settings-passthrough-device:      ""; // video output while SPDIF on ("" = same as audio output)
     in-out property <string> settings-passthrough-device-desc: "";
     in-out property <[string]> settings-audio-device-display:  [];

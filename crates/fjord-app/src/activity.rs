@@ -1,8 +1,9 @@
 // ── fjord-app · activity.rs ───────────────────────────────────────────────────
-//   ActivityClock            lock-free, Clone-able "last user activity" timestamp — touched by the
-//                            key dispatch (keys::wire_key_dispatch), the mouse tap below and
-//                            profile::wire_idle_lock_timer (while media plays); read by the idle
-//                            lock
+//   ActivityClock            lock-free, Clone-able "last user activity" timestamps — touch() by the
+//                            key dispatch (keys::wire_key_dispatch) and the mouse tap below,
+//                            touch_playback() by profile::wire_idle_lock_timer (while media plays);
+//                            idle_for() for the idle lock, input_idle_for() (real input only) for
+//                            the screensaver
 //   FjordApplicationHandler  the one CustomApplicationHandler Slint allows (registered via
 //                            slint::BackendSelector before MainWindow::new()), so it carries every
 //                            concern needing that hook: (1) the mouse-activity tap — sees every
@@ -34,6 +35,9 @@ use std::time::{Duration, Instant};
 pub(crate) struct ActivityClock {
     start: Instant,
     millis_since_start: Arc<AtomicU64>,
+    /// The last real input only (keys, mouse) — `touch_playback` doesn't move it. The
+    /// screensaver reads it: playback keeps the idle lock's clock fresh, but not this.
+    input_millis_since_start: Arc<AtomicU64>,
 }
 
 impl ActivityClock {
@@ -44,24 +48,41 @@ impl ActivityClock {
         Self {
             start: Instant::now(),
             millis_since_start: Arc::new(AtomicU64::new(0)),
+            input_millis_since_start: Arc::new(AtomicU64::new(0)),
         }
     }
 
-    /// Record "activity happened right now". Called from the winit-level
-    /// mouse tap (CursorMoved/MouseInput/MouseWheel), from `on_handle_key`
-    /// on every keypress, and from `wire_idle_lock_timer` itself while media
-    /// plays (see that function's own doc comment for why that counts too).
-    pub(crate) fn touch(&self) {
-        let elapsed_ms = self.start.elapsed().as_millis().min(u128::from(u64::MAX)) as u64;
-        self.millis_since_start.store(elapsed_ms, Ordering::Relaxed);
+    fn now_ms(&self) -> u64 {
+        self.start.elapsed().as_millis().min(u128::from(u64::MAX)) as u64
     }
 
-    /// Elapsed time since the last `touch()` (or since construction, if
-    /// `touch()` was never called at all).
+    /// Record "the user did something right now". Called from the winit-level
+    /// mouse tap (CursorMoved/MouseInput/MouseWheel) and from `on_handle_key`
+    /// on every keypress. Moves both readings.
+    pub(crate) fn touch(&self) {
+        let now = self.now_ms();
+        self.millis_since_start.store(now, Ordering::Relaxed);
+        self.input_millis_since_start.store(now, Ordering::Relaxed);
+    }
+
+    /// Record "media is playing" for the idle lock (`wire_idle_lock_timer`, see its doc comment
+    /// for why that counts as activity) — not real input, so `input_idle_for` keeps counting.
+    pub(crate) fn touch_playback(&self) {
+        self.millis_since_start
+            .store(self.now_ms(), Ordering::Relaxed);
+    }
+
+    /// Elapsed time since the last `touch()`/`touch_playback()` (or since construction) — the
+    /// idle lock's measure.
     pub(crate) fn idle_for(&self) -> Duration {
         let last_ms = self.millis_since_start.load(Ordering::Relaxed);
-        let now_ms = self.start.elapsed().as_millis().min(u128::from(u64::MAX)) as u64;
-        Duration::from_millis(now_ms.saturating_sub(last_ms))
+        Duration::from_millis(self.now_ms().saturating_sub(last_ms))
+    }
+
+    /// Elapsed time since the last real input (`touch()`) — the screensaver's measure.
+    pub(crate) fn input_idle_for(&self) -> Duration {
+        let last_ms = self.input_millis_since_start.load(Ordering::Relaxed);
+        Duration::from_millis(self.now_ms().saturating_sub(last_ms))
     }
 }
 
@@ -119,5 +140,21 @@ impl CustomApplicationHandler for FjordApplicationHandler {
         }
 
         EventResult::Propagate
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn playback_keeps_the_idle_lock_clock_fresh_but_not_the_input_clock() {
+        let clock = ActivityClock::new();
+        std::thread::sleep(Duration::from_millis(30));
+        clock.touch_playback();
+        assert!(clock.idle_for() < Duration::from_millis(20));
+        assert!(clock.input_idle_for() >= Duration::from_millis(30));
+        clock.touch();
+        assert!(clock.input_idle_for() < Duration::from_millis(20));
     }
 }

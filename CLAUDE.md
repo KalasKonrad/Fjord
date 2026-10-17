@@ -75,6 +75,8 @@ Needs `mpv`/libmpv (`pacman -S mpv`). Optional at runtime: `yt-dlp` (trailers), 
 - Accounts/profiles: `auth.rs` (login, `finish_session_setup`), `profile.rs` (pickers, `switch_to_profile`,
   Bonfire sync, idle lock), `profile_edit.rs`, `bonfire_admin.rs`, `secrets.rs` (secrets encrypted at rest).
 - `ui_watch.rs` — debug log of UI-thread stalls and slow frames (`ui: event loop busy …`, `ui: slow frame …`).
+- `screensaver.rs` — black overlay while music plays after N minutes without real input (`ActivityClock::input_idle_for`;
+  playback only refreshes the idle lock's `idle_for`). Never turns the screen off; playback keeps the inhibits.
 - Integrations/platform: `seerr_auth.rs`, `ws.rs` (Jellyfin WebSocket delta sync), `prewarm.rs`, `hdr.rs`
   (Wayland color-management worker), `video_surface.rs` (video subsurface) + `dmabuf_plane.rs` (its own 10-bit
   buffers), `display_sync.rs` (kscreen-doctor mode matching), `activity.rs` (winit event tap: idle detection +

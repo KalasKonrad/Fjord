@@ -21,7 +21,7 @@
 //                   quality, dashboard_rows (per dashboard: row ids in order + shown; DashboardRow),
 //                   dashboard_hero ("off" | "band" (default) | "background"; reads the old bool),
 //                   focus_color/_width/_style/_glow/_glow_on/_opacity/_zoom (focus ring, glow
-//                   strength and scope, picture zoom),
+//                   strength and scope, picture zoom), screensaver_mins (0 = off),
 //                   Seerr connection (seerr_enabled/_url/_auth_method/_api_key/
 //                   _session_cookie), Discover filters (genres by name, providers by id), Request
 //                   Options' remembered choices; remember_login (false → never resumed silently,
@@ -112,6 +112,9 @@ fn default_skip_fade_mute_passthrough() -> bool {
 }
 fn default_now_playing_auto_open() -> bool {
     true
+}
+fn default_screensaver_mins() -> u32 {
+    5
 }
 fn default_focus_color() -> String {
     "white".into()
@@ -668,6 +671,11 @@ pub(crate) struct ProfileSettings {
     // unlike gapless_audio's hardware-compatibility framing.
     #[serde(default = "default_now_playing_auto_open")]
     pub now_playing_auto_open: bool,
+    // Screensaver while music plays (Settings → Audio, 2026-10-17): minutes without a key press or
+    // mouse movement before the window turns black (0 = off). The screen itself stays on —
+    // playback keeps inhibiting power saving (HDMI must keep its signal). screensaver.rs.
+    #[serde(default = "default_screensaver_mins")]
+    pub screensaver_mins: u32,
 
     // ── Intro Skipper skip modes ─────────────────────────────────────────────
     // "always-skip" | "ask" | "ask-timed" | "never-skip"  (Intro/Recap/Preview/Commercial)
@@ -905,6 +913,7 @@ impl Default for ProfileSettings {
             focus_style: default_focus_style(),
             focus_glow: default_focus_glow(),
             focus_glow_on: default_focus_glow_on(),
+            screensaver_mins: default_screensaver_mins(),
             focus_opacity: default_focus_opacity(),
             focus_zoom: default_focus_zoom(),
             seerr_enabled: false,
@@ -1301,6 +1310,7 @@ fn migrate_legacy_config(l: LegacyConfig) -> Config {
         focus_style: default_focus_style(),
         focus_glow: default_focus_glow(),
         focus_glow_on: default_focus_glow_on(),
+        screensaver_mins: default_screensaver_mins(),
         focus_opacity: default_focus_opacity(),
         focus_zoom: default_focus_zoom(),
     };
@@ -2456,6 +2466,7 @@ mod tests {
         src.focus_zoom = "25".into();
         src.focus_glow = "very-strong".into();
         src.focus_glow_on = "sidebar".into();
+        src.screensaver_mins = 15;
         src.dashboard_rows.insert(
             "music".into(),
             vec![
@@ -2486,6 +2497,7 @@ mod tests {
         assert_eq!(dst.now_playing_auto_open, src.now_playing_auto_open);
         assert_eq!(dst.dashboard_rows, src.dashboard_rows);
         assert_eq!(dst.dashboard_hero, "background");
+        assert_eq!(dst.screensaver_mins, 15);
         assert_eq!(
             (
                 dst.focus_color.as_str(),

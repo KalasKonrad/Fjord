@@ -824,7 +824,7 @@ pub(crate) fn wire_idle_lock_timer(
         // security lock exists to catch, matching how a phone still locks
         // with an app open and paused.
         if (g.get_is_playing() || g.get_is_audio_playing()) && !g.get_is_paused() {
-            clock.touch();
+            clock.touch_playback();
             return;
         }
 

@@ -57,6 +57,7 @@ mod poster;
 mod prewarm;
 mod profile;
 mod profile_edit;
+mod screensaver;
 mod season;
 mod secrets;
 mod seerr_auth;
@@ -1166,6 +1167,7 @@ fn main() -> Result<()> {
     prewarm::wire_prewarm(&window, &state, &rt);
 
     keys::wire_key_dispatch(&window, &state, &video, &rt, &activity_clock);
+    screensaver::wire_screensaver(&window, activity_clock.clone());
 
     keys::wire_keybindings(&window, &state);
 

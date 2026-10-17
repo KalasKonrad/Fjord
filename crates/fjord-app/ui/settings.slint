@@ -17,7 +17,7 @@
 //                    modes, trailers)
 //       Audio        device, channels, SPDIF (+ AC3/EAC3/DTS/DTS-HD/TrueHD, passthrough device,
 //                    ALSA IRQ scheduling on PipeWire, skip-fade mute); gapless, Now Playing
-//                    auto-open
+//                    auto-open, screensaver while music plays
 //       Interface    ("ui") card size, video behind UI, text font, on-screen keyboard, scroll and
 //                    animation speed; focus ring color/thickness/style, glow strength + Glow on (only
 //                    when the style isn't Line), transparency, zoom
@@ -981,6 +981,15 @@ export component SettingsScreen inherits Rectangle {
                                 checked <=> AppState.settings-now-playing-auto-open;
                                 toggled => { AppState.settings-changed(); AppState.refocus(); }
                             }
+                        }
+
+                        SettingsRow {
+                            key: "audio.screensaver_mins";
+                            choice: true;
+                            value: AppState.settings-screensaver-mins;
+                            per-profile: true;
+                            title: "Screensaver while music plays";
+                            subtitle: "Turn the picture black after this long without a key press or mouse movement; the TV stays on — saved for this profile";
                         }
                     }
 
