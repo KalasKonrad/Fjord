@@ -14,7 +14,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
-import { FjordButton, PressPulse } from "widgets.slint";
+import { FocusHalo, FjordButton, PressPulse } from "widgets.slint";
 
 component CalendarDayCell inherits Rectangle {
     in property <int> day; // 0 = blank cell (outside the current month)
@@ -32,6 +32,11 @@ component CalendarDayCell inherits Rectangle {
         duration: 90ms * AppState.settings-animation-speed;
         easing: ease-out-expo;
     }
+    FocusHalo {
+        glowing: root.kbd-focused;
+        radius: Theme.radius;
+    }
+
     pulse := PressPulse {
         trigger: AppState.kb-activate-pulse;
         active: root.kbd-focused;
@@ -221,6 +226,11 @@ export component CalendarScreen inherits Rectangle {
                         duration: 90ms * AppState.settings-animation-speed;
                         easing: ease-out-expo;
                     }
+                    FocusHalo {
+                        glowing: AppState.calendar-day-popup-cursor == idx;
+                        radius: Theme.radius;
+                    }
+
                     ppulse := PressPulse {
                         trigger: AppState.kb-activate-pulse;
                         active: AppState.calendar-day-popup-cursor == idx;

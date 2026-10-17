@@ -23,6 +23,7 @@
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
 import {
+    FocusHalo,
     FjordButton,
     ToggleSwitch,
     QwertyKeyboard,
@@ -267,6 +268,11 @@ export component LoginScreen inherits Rectangle {
                     duration: 90ms * AppState.settings-animation-speed;
                     easing: ease-out-expo;
                 }
+                FocusHalo {
+                    glowing: AppState.login-zone == 3;
+                    radius: Theme.radius;
+                }
+
                 Text {
                     x: 12px;
                     y: (parent.height - self.height) / 2;

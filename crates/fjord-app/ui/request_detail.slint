@@ -28,6 +28,7 @@
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
 import {
+    FocusHalo,
     FocusGlow,
     FjordButton,
     PosterBlock,
@@ -929,6 +930,11 @@ export component RequestOptionsOverlay inherits Rectangle {
                         duration: 90ms * AppState.settings-animation-speed;
                         easing: ease-out-expo;
                     }
+                    FocusHalo {
+                        glowing: AppState.request-options-zone == 4 && AppState.request-options-confirm-focused == 0;
+                        radius: Theme.radius;
+                    }
+
                     cancel-pulse := PressPulse {
                         trigger: AppState.kb-activate-pulse;
                         active: AppState.request-options-zone == 4 && AppState.request-options-confirm-focused == 0;

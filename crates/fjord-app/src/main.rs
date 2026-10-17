@@ -43,6 +43,7 @@ mod detail;
 mod discover;
 mod display_sync;
 mod dmabuf_plane;
+mod halo;
 mod hdr;
 mod hero;
 mod home;
@@ -1133,6 +1134,7 @@ fn main() -> Result<()> {
     settings::wire_profile_defaults(&window, &state);
     settings::wire_copy_settings(&window, &state);
     settings::wire_choice_rows(&window);
+    halo::wire(&window);
     dashboard_rows::wire(&window, &state);
     hero::wire(&window, &state, &rt);
 

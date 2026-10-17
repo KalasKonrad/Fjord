@@ -16,6 +16,7 @@
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
 import {
+    FocusHalo,
     FjordButton,
     IconCircleButton,
     StorylineSection,
@@ -237,6 +238,10 @@ export component AlbumScreen inherits Rectangle {
                             duration: 90ms * AppState.settings-animation-speed;
                             easing: ease-out-expo;
                         }
+                        FocusHalo {
+                            glowing: track-pulse.active;
+                        }
+
                         track-pulse := PressPulse {
                             trigger: AppState.kb-activate-pulse;
                             active: focused;

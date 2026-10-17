@@ -18,6 +18,7 @@
 import { Theme, BonfireGroupMemberTile } from "theme.slint";
 import { AppState } from "app_state.slint";
 import {
+    FocusHalo,
     FjordButton,
     PressPulse,
     ConfirmDialog,
@@ -39,6 +40,11 @@ component GroupToggleRow inherits Rectangle {
         duration: 90ms * AppState.settings-animation-speed;
         easing: ease-out-expo;
     }
+    FocusHalo {
+        glowing: root.kbd-focused;
+        radius: Theme.radius;
+    }
+
     row-pulse := PressPulse {
         trigger: AppState.kb-activate-pulse;
         active: root.kbd-focused;
@@ -81,6 +87,11 @@ component GroupMemberRow inherits Rectangle {
         duration: 90ms * AppState.settings-animation-speed;
         easing: ease-out-expo;
     }
+    FocusHalo {
+        glowing: root.kbd-focused;
+        radius: Theme.radius;
+    }
+
     row-pulse := PressPulse {
         trigger: AppState.kb-activate-pulse;
         active: root.kbd-focused;
@@ -287,6 +298,11 @@ export component BonfireGroupScreen inherits Rectangle {
                                 background: Theme.surface-overlay;
                                 border-width: AppState.ring-width(AppState.bonfire-group-zone == join-base, false);
                                 border-color: AppState.focus-color;
+                                FocusHalo {
+                                    glowing: AppState.bonfire-group-zone == join-base;
+                                    radius: Theme.radius;
+                                }
+
                                 Text {
                                     text: AppState.bonfire-group-join-code == "" ? "Enter join code…"
                                         : AppState.bonfire-group-zone == join-base ? AppState.caret-text(AppState.bonfire-group-join-code, AppState.bonfire-group-join-code-cursor, "|")

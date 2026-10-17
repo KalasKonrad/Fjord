@@ -19,8 +19,8 @@
 //                    ALSA IRQ scheduling on PipeWire, skip-fade mute); gapless, Now Playing
 //                    auto-open
 //       Interface    ("ui") card size, video behind UI, text font, on-screen keyboard, scroll and
-//                    animation speed; focus ring color/thickness/style, glow strength (only when the
-//                    style isn't Line), transparency, zoom
+//                    animation speed; focus ring color/thickness/style, glow strength + Glow on (only
+//                    when the style isn't Line), transparency, zoom
 //       Profiles     launch policy (+ default profile), Manage Profiles (master account), Copy
 //                    settings from… (when other profiles exist), account launch policy (+ default account), Add Account, remember login,
 //                    Sign Out, Bonfire Group (master account), Bonfire Admin (server admin)
@@ -47,6 +47,7 @@
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
 import {
+    FocusHalo,
     FjordButton,
     ToggleSwitch,
     SectionHeader,
@@ -143,6 +144,11 @@ export component SettingsScreen inherits Rectangle {
                         duration: 90ms * AppState.settings-animation-speed;
                         easing: ease-out-expo;
                     }
+                    FocusHalo {
+                        glowing: sect-pulse.active;
+                        radius: Theme.radius;
+                    }
+
                     sect-pulse := PressPulse {
                         trigger: AppState.kb-activate-pulse;
                         active: sect-kb;
@@ -1062,6 +1068,15 @@ export component SettingsScreen inherits Rectangle {
                             subtitle: "How far the glow reaches around the selected item — saved for this profile";
                         }
 
+                        if AppState.settings-focus-style != "line": SettingsRow {
+                            key: "ui.focus_glow_on";
+                            choice: true;
+                            value: AppState.settings-focus-glow-on;
+                            per-profile: true;
+                            title: "Glow on";
+                            subtitle: "Pictures and buttons only, also the sidebar, or every row, field and menu too — saved for this profile";
+                        }
+
                         SettingsRow {
                             key: "ui.focus_opacity";
                             choice: true;
@@ -1182,11 +1197,16 @@ export component SettingsScreen inherits Rectangle {
                                 duration: 90ms * AppState.settings-animation-speed;
                                 easing: ease-out-expo;
                             }
-                        // !show-manage-profiles: the overlay's backdrop is translucent and Enter inside it bumps
+                            FocusHalo {
+                                glowing: manage-pulse.active;
+                                radius: Theme.radius;
+                            }
+
+                            // !show-manage-profiles: the overlay's backdrop is translucent and Enter inside it bumps
                         // the shared kb-activate-pulse, which flashed this row as if the key leaked through.
                         // settings-focused is deliberately kept — it returns focus to this row when the overlay
                         // closes.
-                        manage-pulse := PressPulse {
+                            manage-pulse := PressPulse {
                                 trigger: AppState.kb-activate-pulse;
                                 active: AppState.settings-focused == "profiles.manage_profiles" && !AppState.show-manage-profiles;
                             }
@@ -1260,6 +1280,11 @@ export component SettingsScreen inherits Rectangle {
                                 duration: 90ms * AppState.settings-animation-speed;
                                 easing: ease-out-expo;
                             }
+                            FocusHalo {
+                                glowing: addacct-pulse.active;
+                                radius: Theme.radius;
+                            }
+
                             addacct-pulse := PressPulse {
                                 trigger: AppState.kb-activate-pulse;
                                 active: AppState.settings-focused == "profiles.add_account";
@@ -1306,6 +1331,11 @@ export component SettingsScreen inherits Rectangle {
                                 duration: 90ms * AppState.settings-animation-speed;
                                 easing: ease-out-expo;
                             }
+                            FocusHalo {
+                                glowing: signout-pulse.active;
+                                radius: Theme.radius;
+                            }
+
                             signout-pulse := PressPulse {
                                 trigger: AppState.kb-activate-pulse;
                                 active: AppState.settings-focused == "profiles.sign_out";
@@ -1343,10 +1373,15 @@ export component SettingsScreen inherits Rectangle {
                                 duration: 90ms * AppState.settings-animation-speed;
                                 easing: ease-out-expo;
                             }
-                        // !show-bonfire-group — same fix, same reasoning, as
+                            FocusHalo {
+                                glowing: bonfire-group-pulse.active;
+                                radius: Theme.radius;
+                            }
+
+                            // !show-bonfire-group — same fix, same reasoning, as
                         // manage-pulse's own doc comment above (found from the
                         // live report this bug was originally caught by).
-                        bonfire-group-pulse := PressPulse {
+                            bonfire-group-pulse := PressPulse {
                                 trigger: AppState.kb-activate-pulse;
                                 active: AppState.settings-focused == "profiles.bonfire_group" && !AppState.show-bonfire-group;
                             }
@@ -1382,9 +1417,14 @@ export component SettingsScreen inherits Rectangle {
                                 duration: 90ms * AppState.settings-animation-speed;
                                 easing: ease-out-expo;
                             }
-                        // !show-bonfire-admin — same fix, same reasoning, as
+                            FocusHalo {
+                                glowing: bonfire-admin-pulse.active;
+                                radius: Theme.radius;
+                            }
+
+                            // !show-bonfire-admin — same fix, same reasoning, as
                         // manage-pulse's/bonfire-group-pulse's own doc comments above.
-                        bonfire-admin-pulse := PressPulse {
+                            bonfire-admin-pulse := PressPulse {
                                 trigger: AppState.kb-activate-pulse;
                                 active: AppState.settings-focused == "profiles.bonfire_admin" && !AppState.show-bonfire-admin;
                             }
@@ -1439,6 +1479,11 @@ export component SettingsScreen inherits Rectangle {
                                 duration: 90ms * AppState.settings-animation-speed;
                                 easing: ease-out-expo;
                             }
+                            FocusHalo {
+                                glowing: kb-pulse.active;
+                                radius: Theme.radius;
+                            }
+
                             kb-pulse := PressPulse {
                                 trigger: AppState.kb-activate-pulse;
                                 active: AppState.keybinding-focused == i;
@@ -1486,6 +1531,11 @@ export component SettingsScreen inherits Rectangle {
                                 duration: 90ms * AppState.settings-animation-speed;
                                 easing: ease-out-expo;
                             }
+                            FocusHalo {
+                                glowing: kb-player-pulse.active;
+                                radius: Theme.radius;
+                            }
+
                             kb-player-pulse := PressPulse {
                                 trigger: AppState.kb-activate-pulse;
                                 active: AppState.keybinding-focused == i + AppState.keybinding-normal.length;
@@ -1585,6 +1635,11 @@ export component SettingsScreen inherits Rectangle {
                                 duration: 90ms * AppState.settings-animation-speed;
                                 easing: ease-out-expo;
                             }
+                            FocusHalo {
+                                glowing: int-connect-pulse.active;
+                                radius: Theme.radius;
+                            }
+
                             int-connect-pulse := PressPulse {
                                 trigger: AppState.kb-activate-pulse;
                                 active: AppState.settings-focused == "integrations.seerr_connect";
@@ -1704,6 +1759,11 @@ export component SettingsScreen inherits Rectangle {
                                 duration: 90ms * AppState.settings-animation-speed;
                                 easing: ease-out-expo;
                             }
+                            FocusHalo {
+                                glowing: int-blocklist-pulse.active;
+                                radius: Theme.radius;
+                            }
+
                             int-blocklist-pulse := PressPulse {
                                 trigger: AppState.kb-activate-pulse;
                                 active: AppState.settings-focused == "integrations.manage_blocklist";
@@ -1989,6 +2049,11 @@ export component SettingsScreen inherits Rectangle {
                                 duration: 90ms * AppState.settings-animation-speed;
                                 easing: ease-out-expo;
                             }
+                            FocusHalo {
+                                glowing: kbdd-pulse.active;
+                                radius: 4px;
+                            }
+
                             kbdd-pulse := PressPulse {
                                 trigger: AppState.kb-activate-pulse;
                                 active: i == AppState.settings-dropdown-cursor;

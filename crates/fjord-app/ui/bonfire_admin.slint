@@ -11,6 +11,7 @@
 import { Theme, BonfireAdminRow, BonfireAuditRow } from "theme.slint";
 import { AppState } from "app_state.slint";
 import {
+    FocusHalo,
     FocusGlow,
     FjordButton,
     PressPulse,
@@ -160,6 +161,10 @@ export component BonfireAdminScreen inherits Rectangle {
                             duration: 90ms * AppState.settings-animation-speed;
                             easing: ease-out-expo;
                         }
+                        FocusHalo {
+                            glowing: row-pulse.active;
+                        }
+
                         row-pulse := PressPulse {
                             trigger: AppState.kb-activate-pulse;
                             active: AppState.bonfire-admin-cursor == i;
@@ -258,6 +263,11 @@ export component BonfireAdminScreen inherits Rectangle {
                                         height: parent.height;
                                         border-radius: Theme.radius;
                                         background: transparent;
+                                        FocusHalo {
+                                            glowing: AppState.bonfire-admin-cursor == i && AppState.bonfire-admin-col == 0;
+                                            radius: Theme.radius;
+                                        }
+
                                         reset-pulse := PressPulse {
                                             trigger: AppState.kb-activate-pulse;
                                             active: AppState.bonfire-admin-cursor == i && AppState.bonfire-admin-col == 0;
@@ -377,6 +387,10 @@ export component BonfireAdminScreen inherits Rectangle {
                         duration: 90ms * AppState.settings-animation-speed;
                         easing: ease-out-expo;
                     }
+                    FocusHalo {
+                        glowing: audit-pulse.active;
+                    }
+
                     audit-pulse := PressPulse {
                         trigger: AppState.kb-activate-pulse;
                         active: AppState.bonfire-admin-cursor == i;

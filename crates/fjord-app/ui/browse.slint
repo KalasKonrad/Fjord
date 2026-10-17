@@ -4,7 +4,12 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
-import { FjordButton, BrowseItem, QwertyKeyboard } from "widgets.slint";
+import {
+    FocusHalo,
+    FjordButton,
+    BrowseItem,
+    QwertyKeyboard,
+} from "widgets.slint";
 
 export component BrowseScreen inherits Rectangle {
     background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg;
@@ -47,6 +52,11 @@ export component BrowseScreen inherits Rectangle {
                     animate border-width {
                         duration: 90ms * AppState.settings-animation-speed;
                         easing: ease-out-expo;
+                    }
+
+                    FocusHalo {
+                        glowing: AppState.browse-header-focused;
+                        radius: Theme.radius;
                     }
 
                     search-ta := TouchArea {
