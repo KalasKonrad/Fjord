@@ -7,8 +7,8 @@
 //   open_queue_panel          q: the queue panel (audio playing or a non-empty queue)
 //   toggle_now_playing        m: Now Playing while audio plays
 //   music_controls            prev/next/shuffle/repeat/lyrics while audio plays
-//   music_bar_keys            arrows/Enter on a focused music-bar button
-//   mini_player_keys          arrows/Enter on the focused mini-player bar
+//   music_bar_keys            arrows/Enter on a focused music-bar button (while AppState.music-bar-active)
+//   mini_player_keys          arrows/Enter on the focused mini-player bar (AppState.float-card-active)
 //   music_play_pause          Space/K/P pause/play while audio plays (looked up in the player map)
 //   KeyCtx                    what each shortcut sees (action, mode, combo, window, state)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -236,220 +236,175 @@ fn music_controls(c: &KeyCtx) -> Option<bool> {
 }
 
 fn music_bar_keys(c: &KeyCtx) -> Option<bool> {
-    let KeyCtx {
-        action,
-        mode,
-        window,
-        ..
-    } = c.clone();
+    let KeyCtx { action, window, .. } = c.clone();
     // Music bar keyboard focus: intercept nav keys when a button is focused.
     // Layout: [art (0)] | [⏸/▶ (1)] [⏹ (2)] | [timeline (3)] | [⏮ (4)] [⏭ (5)] [⇌ (6)] [↺ (7)] [⋮ (8)] [♪ (9)] [🔉 (10)] [🔊 (11)]
     //         Left zone   Centre zone            Below buttons   Right zone (9 only when lyrics-available; 10/11 always)
     // Left/Right: 0↔1↔2 → 4↔5↔6↔7↔8↔(9)↔10↔11 (skip over 3, and over 9 when lyrics unavailable); Down from any button→3; Up from 3→1.
-    // Excluded screens: a stale music-bar-focused from earlier keyboard use survives a
-    // mouse-driven screen switch and would hijack that screen's arrows/Enter.
-    if !matches!(
-        mode,
-        AppMode::Player
-            | AppMode::ContextMenu
-            | AppMode::QueuePanel
-            | AppMode::NowPlaying
-            | AppMode::RequestDetail
-            | AppMode::RequestOptions
-            | AppMode::Calendar
-            | AppMode::CalendarDayPopup
-            | AppMode::Blocklist
-            | AppMode::BonfireAdmin
-    ) {
-        let mf = crate::AppState::get(window).get_music_bar_focused();
-        if mf >= 0 {
-            let g = crate::AppState::get(window);
-            if g.get_is_audio_playing() {
-                let Some(ref action) = action else {
-                    return Some(false);
-                };
-                match action {
-                    Action::Left => {
-                        match mf {
-                            3 => {
-                                g.invoke_music_bar_seek_rel(-10.0);
-                            }
-                            4 => {
-                                g.set_music_bar_focused(2);
-                            } // ⏮ ← ⏹ (skip timeline)
-                            // Slot 10 (🔉) steps back to 9 (♪) only when lyrics are available.
-                            10 => {
-                                g.set_music_bar_focused(if g.get_lyrics_available() {
-                                    9
-                                } else {
-                                    8
-                                });
-                            }
-                            1 | 2 | 5 | 6 | 7 | 8 | 9 | 11 => {
-                                g.set_music_bar_focused(mf - 1);
-                            }
-                            _ => {} // 0: absorbed
-                        }
-                        return Some(true);
-                    }
-                    Action::Right => {
-                        match mf {
-                            3 => {
-                                g.invoke_music_bar_seek_rel(10.0);
-                            }
-                            2 => {
-                                g.set_music_bar_focused(4);
-                            } // ⏹ → ⏮ (skip timeline)
-                            // Slot 8 (⋮) advances to 9 (♪) when available, else straight to 10 (🔉).
-                            8 => {
-                                g.set_music_bar_focused(if g.get_lyrics_available() {
-                                    9
-                                } else {
-                                    10
-                                });
-                            }
-                            0 | 1 | 4 | 5 | 6 | 7 | 9 | 10 => {
-                                g.set_music_bar_focused(mf + 1);
-                            }
-                            _ => {} // 11: absorbed
-                        }
-                        return Some(true);
-                    }
-                    Action::Down => {
-                        if mf != 3 {
-                            g.set_music_bar_focused(3);
-                        }
-                        return Some(true);
-                    }
-                    Action::Up => {
-                        if mf == 3 {
-                            g.set_music_bar_focused(1);
-                        } else {
-                            g.set_music_bar_focused(-1);
-                        }
-                        return Some(true);
-                    }
-                    Action::Confirm => {
-                        match mf {
-                            0 => {
-                                g.invoke_open_now_playing();
-                            }
-                            2 => {
-                                g.set_music_bar_focused(-1);
-                                g.invoke_music_bar_stop();
-                            }
-                            4 => {
-                                g.invoke_queue_prev_track();
-                            }
-                            5 => {
-                                g.invoke_queue_next_track();
-                            }
-                            6 => {
-                                g.invoke_toggle_shuffle();
-                            }
-                            7 => {
-                                g.invoke_cycle_repeat();
-                            }
-                            8 => {
-                                // ⋮ Queue button: open queue panel
-                                g.invoke_refresh_queue_display();
-                                let items = g.get_queue_items();
-                                for i in 0..items.row_count() {
-                                    if let Some(e) = items.row_data(i)
-                                        && e.is_current
-                                    {
-                                        g.set_queue_panel_cursor(i as i32);
-                                        break;
-                                    }
-                                }
-                                g.set_show_queue_panel(true);
-                            }
-                            9 => {
-                                g.invoke_toggle_lyrics();
-                            } // ♪ Lyrics
-                            10 => {
-                                g.invoke_volume_down();
-                            } // 🔉
-                            11 => {
-                                g.invoke_volume_up();
-                            } // 🔊
-                            _ => {
-                                g.invoke_music_bar_play_pause();
-                            } // 1 or 3
-                        }
-                        return Some(true);
-                    }
-                    Action::Back => {
-                        g.set_music_bar_focused(-1);
-                        return Some(true);
-                    }
-                    _ => {}
+    // Only while AppState.music-bar-active: not under an overlay that takes the bar's keys (a
+    // stale music-bar-focused from earlier keyboard use survives a mouse-driven screen switch and
+    // would hijack that screen's arrows/Enter) — the same property draws the bar's focus and hides
+    // the page's (bar-focus), so keys and highlight agree.
+    let g = crate::AppState::get(window);
+    let mf = g.get_music_bar_focused();
+    if mf >= 0 && !g.get_is_audio_playing() {
+        g.set_music_bar_focused(-1);
+    }
+    if !g.get_music_bar_active() {
+        return None;
+    }
+    let Some(ref action) = action else {
+        return Some(false);
+    };
+    match action {
+        Action::Left => {
+            match mf {
+                3 => {
+                    g.invoke_music_bar_seek_rel(-10.0);
                 }
-            } else {
-                crate::AppState::get(window).set_music_bar_focused(-1);
+                4 => {
+                    g.set_music_bar_focused(2);
+                } // ⏮ ← ⏹ (skip timeline)
+                // Slot 10 (🔉) steps back to 9 (♪) only when lyrics are available.
+                10 => {
+                    g.set_music_bar_focused(if g.get_lyrics_available() { 9 } else { 8 });
+                }
+                1 | 2 | 5 | 6 | 7 | 8 | 9 | 11 => {
+                    g.set_music_bar_focused(mf - 1);
+                }
+                _ => {} // 0: absorbed
             }
+            return Some(true);
         }
+        Action::Right => {
+            match mf {
+                3 => {
+                    g.invoke_music_bar_seek_rel(10.0);
+                }
+                2 => {
+                    g.set_music_bar_focused(4);
+                } // ⏹ → ⏮ (skip timeline)
+                // Slot 8 (⋮) advances to 9 (♪) when available, else straight to 10 (🔉).
+                8 => {
+                    g.set_music_bar_focused(if g.get_lyrics_available() { 9 } else { 10 });
+                }
+                0 | 1 | 4 | 5 | 6 | 7 | 9 | 10 => {
+                    g.set_music_bar_focused(mf + 1);
+                }
+                _ => {} // 11: absorbed
+            }
+            return Some(true);
+        }
+        Action::Down => {
+            if mf != 3 {
+                g.set_music_bar_focused(3);
+            }
+            return Some(true);
+        }
+        Action::Up => {
+            if mf == 3 {
+                g.set_music_bar_focused(1);
+            } else {
+                g.set_music_bar_focused(-1);
+            }
+            return Some(true);
+        }
+        Action::Confirm => {
+            match mf {
+                0 => {
+                    g.invoke_open_now_playing();
+                }
+                2 => {
+                    g.set_music_bar_focused(-1);
+                    g.invoke_music_bar_stop();
+                }
+                4 => {
+                    g.invoke_queue_prev_track();
+                }
+                5 => {
+                    g.invoke_queue_next_track();
+                }
+                6 => {
+                    g.invoke_toggle_shuffle();
+                }
+                7 => {
+                    g.invoke_cycle_repeat();
+                }
+                8 => {
+                    // ⋮ Queue button: open queue panel
+                    g.invoke_refresh_queue_display();
+                    let items = g.get_queue_items();
+                    for i in 0..items.row_count() {
+                        if let Some(e) = items.row_data(i)
+                            && e.is_current
+                        {
+                            g.set_queue_panel_cursor(i as i32);
+                            break;
+                        }
+                    }
+                    g.set_show_queue_panel(true);
+                }
+                9 => {
+                    g.invoke_toggle_lyrics();
+                } // ♪ Lyrics
+                10 => {
+                    g.invoke_volume_down();
+                } // 🔉
+                11 => {
+                    g.invoke_volume_up();
+                } // 🔊
+                _ => {
+                    g.invoke_music_bar_play_pause();
+                } // 1 or 3
+            }
+            return Some(true);
+        }
+        Action::Back => {
+            g.set_music_bar_focused(-1);
+            return Some(true);
+        }
+        _ => {}
     }
     None
 }
 
 fn mini_player_keys(c: &KeyCtx) -> Option<bool> {
-    let KeyCtx {
-        action,
-        mode,
-        window,
-        ..
-    } = c.clone();
-    // Mini-player bar focused: intercept nav keys before the underlying screen sees them.
-    // RequestDetail/RequestOptions added 2026-07-18 — same stale-focus-survives-
-    // a-mouse-click reasoning as the music-bar block above.
-    if !matches!(
-        mode,
-        AppMode::Player
-            | AppMode::ContextMenu
-            | AppMode::NowPlaying
-            | AppMode::QueuePanel
-            | AppMode::RequestDetail
-            | AppMode::RequestOptions
-            | AppMode::Calendar
-            | AppMode::CalendarDayPopup
-            | AppMode::Blocklist
-            | AppMode::BonfireAdmin
-    ) {
-        let fc = crate::AppState::get(window).get_float_card_focused();
-        if fc >= 0 {
-            let g = crate::AppState::get(window);
-            if g.get_has_background_player() && !g.get_is_playing() {
-                let Some(ref action) = action else {
-                    return Some(false);
-                };
-                match action {
-                    Action::Left | Action::Right => {
-                        g.set_float_card_focused(1 - fc);
-                        return Some(true);
-                    }
-                    Action::Confirm => {
-                        g.set_float_card_focused(-1);
-                        if fc == 0 {
-                            g.invoke_resume_player();
-                        } else {
-                            g.invoke_stop_playback();
-                        }
-                        return Some(true);
-                    }
-                    Action::Up | Action::Back => {
-                        g.set_float_card_focused(-1);
-                        return Some(true);
-                    }
-                    Action::Down => {
-                        return Some(true); // already at bottom, absorb
-                    }
-                    _ => {}
-                }
-            } else {
-                crate::AppState::get(window).set_float_card_focused(-1);
-            }
+    let KeyCtx { action, window, .. } = c.clone();
+    // Mini-player bar focused: intercept nav keys before the underlying screen sees them —
+    // only while AppState.float-card-active (same overlays as the music bar above).
+    let g = crate::AppState::get(window);
+    let fc = g.get_float_card_focused();
+    if fc >= 0 && !g.get_has_background_player() {
+        g.set_float_card_focused(-1);
+    }
+    if !g.get_float_card_active() {
+        return None;
+    }
+    let Some(ref action) = action else {
+        return Some(false);
+    };
+    match action {
+        Action::Left | Action::Right => {
+            g.set_float_card_focused(1 - fc);
+            return Some(true);
         }
+        Action::Confirm => {
+            g.set_float_card_focused(-1);
+            if fc == 0 {
+                g.invoke_resume_player();
+            } else {
+                g.invoke_stop_playback();
+            }
+            return Some(true);
+        }
+        Action::Up | Action::Back => {
+            g.set_float_card_focused(-1);
+            return Some(true);
+        }
+        Action::Down => {
+            return Some(true); // already at bottom, absorb
+        }
+        _ => {}
     }
     None
 }

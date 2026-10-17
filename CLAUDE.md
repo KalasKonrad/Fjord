@@ -197,6 +197,9 @@ Needs `mpv`/libmpv (`pacman -S mpv`). Optional at runtime: `yt-dlp` (trailers), 
   opaque pictures/tiles/buttons/pills are a `FocusGlow` (widgets.slint): `fill`/`ring-width: glow-ring-width(…)`/
   `ring-color`/`radius`/`glowing` instead of background/border-*/border-radius/drop shadow (a drop shadow is the whole
   shape blurred, so it floods anything see-through drawn over it); a clipped picture goes inside a FocusGlow holder.
+  These helpers hide every focus while a bottom bar has the keys (`AppState.bar-focus`); the music bar's and mini
+  player's own elements use `bar-focused(n)`/`float-focused(n)` + `bar-ring-width`/`in-bar: true`, and keys/global.rs
+  hands them keys only while `music-bar-active`/`float-card-active` — one condition for keys and highlight.
 - Backdrops, OSD panels, shadows and text over images use their `Theme` tokens (`scrim*`, `osd-panel*`, `shadow*`,
   `hero-fade-*`, `text-bright`/`text-soft`) — no hand-picked colours or alphas in screens.
 

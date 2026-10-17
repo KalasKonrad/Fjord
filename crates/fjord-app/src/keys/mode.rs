@@ -261,4 +261,43 @@ mod tests {
         g.set_is_playing(true);
         assert_eq!(active_mode(&g), AppMode::Player);
     }
+
+    #[test]
+    fn a_focused_bottom_bar_hides_the_page_focus() {
+        i_slint_backend_testing::init_no_event_loop();
+        let w = crate::MainWindow::new().unwrap();
+        let g = crate::AppState::get(&w);
+        g.set_settings_focus_width("3".into());
+        g.set_settings_focus_style("line".into());
+        // A page element's ring while nothing else has the keys.
+        assert_eq!(g.invoke_ring_width(true, false), 3.0);
+
+        // Music plays and the music bar has the keys: the card/row you came from shows no ring,
+        // the bar's own button does.
+        g.set_is_audio_playing(true);
+        g.set_music_bar_focused(1);
+        assert!(g.get_music_bar_active() && g.get_bar_focus());
+        assert_eq!(g.invoke_ring_width(true, false), 0.0);
+        assert_eq!(g.invoke_glow_ring_width(true, false), 0.0);
+        assert_eq!(g.invoke_bar_ring_width(g.invoke_bar_focused(1), false), 3.0);
+
+        // The queue panel opened from the bar takes the keys: the bar's highlight goes, the
+        // remembered slot stays for when it closes.
+        g.set_show_queue_panel(true);
+        assert!(!g.get_music_bar_active() && !g.get_bar_focus());
+        assert!(!g.invoke_bar_focused(1));
+        assert_eq!(g.get_music_bar_focused(), 1);
+        g.set_show_queue_panel(false);
+        assert!(g.invoke_bar_focused(1));
+
+        // Mini player (background video), same rule.
+        g.set_is_audio_playing(false);
+        g.set_music_bar_focused(-1);
+        g.set_has_background_player(true);
+        g.set_float_card_focused(0);
+        assert!(g.get_float_card_active() && g.get_bar_focus());
+        assert_eq!(g.invoke_ring_width(true, false), 0.0);
+        g.set_is_playing(true);
+        assert!(!g.get_float_card_active());
+    }
 }
