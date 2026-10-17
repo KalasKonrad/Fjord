@@ -20,6 +20,7 @@
 import { Theme, CastMember } from "theme.slint";
 import { AppState } from "app_state.slint";
 import {
+    StackPage,
     FjordButton,
     IconCircleButton,
     PosterBlock,
@@ -29,8 +30,7 @@ import {
 } from "widgets.slint";
 import { SectionRow } from "home.slint";
 
-export component DetailPage inherits Rectangle {
-    background: Theme.bg;
+export component DetailPage inherits StackPage {
     // Keyboard scroll: a focused row (cast / collection / similar / recommended) is brought to the
     // middle from its real position — the 0-height anchors before each section, as on the series
     // page; the header (buttons, overview) uses detail-scroll (0, or detail.rs's small nudge when
