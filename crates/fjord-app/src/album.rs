@@ -18,7 +18,8 @@
 //                         play-album-track; Down at the last track → false
 //   play_tracks           Enter on a track: the whole list becomes the playlist from that track (album/
 //                         playlist page, the artist page's Tracks)
-//   wire_album            callbacks moved from main() (0.5.0 step 3): album / playlist screen
+//   wire_album            callbacks moved from main() (0.5.0 step 3): album / playlist screen (the
+//                         page is opened through open_item.rs's router — no open-album callback)
 //   wire_album_play_all   callbacks moved from main() (0.5.0 step 3): Play all on the album screen
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
@@ -629,7 +630,7 @@ pub(crate) fn play_tracks(
 }
 
 // ── wire_album (moved from main(), 0.5.0 step 3) ─────────────────────────
-/// Wires album / playlist screen: open_album, close_album, play_album_track, playlist_remove_entry,
+/// Wires album / playlist screen (opened through open_item.rs): close_album, play_album_track, playlist_remove_entry,
 /// toggle_album_fav, toggle_album_played.
 pub(crate) fn wire_album(
     window: &crate::MainWindow,
@@ -643,20 +644,6 @@ pub(crate) fn wire_album(
     let state = std::sync::Arc::clone(state);
     let video = std::sync::Arc::clone(video);
     // ── album screen ──────────────────────────────────────────────────────────
-    {
-        let state_alb = Arc::clone(&state);
-        let ww = window.as_weak();
-        let rt_handle = rt.handle().clone();
-        AppState::get(&window).on_open_album(move |id, title| {
-            album::open_album_screen(
-                id.to_string(),
-                title.to_string(),
-                Arc::clone(&state_alb),
-                ww.clone(),
-                rt_handle.clone(),
-            );
-        });
-    }
     {
         let ww_ca = window.as_weak();
         AppState::get(&window).on_close_album(move || {

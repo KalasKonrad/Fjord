@@ -10,7 +10,7 @@
 //   handle_key           keyboard dispatch: header (← Back / ▶ + ♥ / bio: keys::header_keys, shared
 //                        with the album page) / album grid / Tracks; Up from row 0 →
 //                        keys::list_up_to_header; Down from the last row → Tracks (a shorter last row
-//                        below → its last card); Enter on album → open-album, on a track → plays from
+//                        below → its last card); Enter on album → open-detail (open_item.rs), on a track → plays from
 //                        it; C → context menu
 //   wire_artist            callbacks moved from main() (0.5.0 step 3): artist screen, play-artist-track
 //                          (album::play_tracks over the Tracks)
@@ -572,7 +572,7 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
             if f < total
                 && let Some(card) = g.get_artist_albums().row_data(f as usize)
             {
-                g.invoke_open_album(card.id, card.title);
+                g.invoke_open_detail(card.id, card.item_type);
             }
             true
         }

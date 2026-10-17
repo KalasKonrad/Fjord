@@ -6,7 +6,7 @@
 //                 artist-back-focused: bool (Back button has focus)
 //                 artist-btn-focused: int (-1=none, 0=▶ Play All, 1=♥, 2=bio)
 //                 artist-overview-expanded: bool (collapsible bio below header)
-//                 Enter on card → open-album; C → context menu; Back → close-artist
+//                 Enter on card → open-detail (open_item.rs); C → context menu; Back → close-artist
 //                 ▶ Play All → play-artist-all; ♥ → toggle-artist-fav
 //                 Title column: a plain Rectangle fixed at the portrait's 160px, width from
 //                 root.width (not parent.width — binding loop), the button row pinned at
@@ -200,7 +200,7 @@ export component ArtistScreen inherits StackPage {
                                 AppState.artist-btn-focused = -1;
                                 AppState.artist-in-tracks = false;
                                 let c = AppState.artist-albums[idx];
-                                AppState.open-album(c.id, c.title);
+                                AppState.open-detail(c.id, c.item-type);
                             }
                             right-clicked => {
                                 let c = AppState.artist-albums[idx];

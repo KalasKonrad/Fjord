@@ -46,7 +46,7 @@ Needs `mpv`/libmpv (`pacman -S mpv`). Optional at runtime: `yt-dlp` (trailers), 
 
 `fjord-app/src` at a glance:
 - `main.rs` — entry point: setup, apply saved config, then one `wire_*` call per area — each area's `AppState`
-  callbacks live in its own module (`detail::wire_detail`, `music::wire_queue`, …; add new callbacks there, not in
+  callbacks live in its own module (`detail::wire_detail_play`, `music::wire_queue`, …; add new callbacks there, not in
   `main()`). Shared helpers: `show_toast`,
   `session_current`/`seerr_session_current`, `close_login_screen`,
   `apply_cards_preserving_identity`, `item_to_card_item`/`items_to_model`, `strip_html_to_text`,
@@ -74,6 +74,7 @@ Needs `mpv`/libmpv (`pacman -S mpv`). Optional at runtime: `yt-dlp` (trailers), 
   `dashboard_rows` (per-profile row order/visibility + its editor), `hero` (the dashboards' hero band).
 - Accounts/profiles: `auth.rs` (login, `finish_session_setup`), `profile.rs` (pickers, `switch_to_profile`,
   Bonfire sync, idle lock), `profile_edit.rs`, `bonfire_admin.rs`, `secrets.rs` (secrets encrypted at rest).
+- `open_item.rs` — the item router (type → page) behind `AppState.open-detail`.
 - `ui_watch.rs` — debug log of UI-thread stalls and slow frames (`ui: event loop busy …`, `ui: slow frame …`).
 - `screensaver.rs` — black overlay while music plays after N minutes without real input (`ActivityClock::input_idle_for`;
   playback only refreshes the idle lock's `idle_for`). Never turns the screen off; playback keeps the inhibits.
@@ -212,6 +213,9 @@ Needs `mpv`/libmpv (`pacman -S mpv`). Optional at runtime: `yt-dlp` (trailers), 
   open order), never `set_show_x(true)` alone (a restore after playback is the exception). main.slint's `stack` draws
   them by `AppState.*-z` and `active_mode` gives the keys to the top one; a new page = a `StackScreen` entry + a component
   that `inherits StackPage` (size, page background, fade) mounted there by a FadeGate with `z:` and `fade:`.
+- A Jellyfin item's page is opened only through the router: `AppState.open-detail(id, type)` / `open_item::open_item`
+  (open_item.rs — one type → page table, unit-tested). Every page takes its title from the server's detail, never only
+  from the caller (callers may know just the id).
 - Free-floating overlays mount via `FadeGate` (fades in and out). Screens sharing AppShell's
   `HorizontalLayout` content slot must never be mounted two at once — dashboards switch via the sequential
   `shown-nav`/`nav-fade` mechanism in `main.slint`.

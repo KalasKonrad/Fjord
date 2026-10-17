@@ -526,13 +526,8 @@ export component LibraryGrid inherits Rectangle {
                                 AppState.library-focused = idx;
                                 AppState.library-focused-row = row-idx;
                                 let c = AppState.library-display[idx];
-                                // Collections (nav 3) open CollectionScreen for a BoxSet, like keyboard Enter in
-                                // keys.rs's dispatch_library.
-                                if AppState.active-nav == 3 {
-                                    AppState.open-collection(c.id, c.title);
-                                } else {
-                                    AppState.open-detail(c.id, c.item-type);
-                                }
+                                // The item's page by its type (open_item.rs) — a BoxSet opens CollectionScreen.
+                                AppState.open-detail(c.id, c.item-type);
                             }
                             right-clicked => { let c = AppState.library-display[idx]; AppState.context-menu-title = c.title; AppState.open-context-menu(c.id, c.has-played, c.is-favorite, c.resume-pct, c.item-type, c.series-id); }
                         }

@@ -50,6 +50,7 @@ mod home;
 mod keys;
 mod movies;
 mod music;
+mod open_item;
 mod person;
 mod pipewire_fix;
 mod playback;
@@ -1074,8 +1075,7 @@ fn main() -> Result<()> {
 
     movies::wire_library(&window, &state, &rt);
 
-    detail::wire_detail(&window, &state, &rt);
-    collection::wire_collection(&window, &state, &rt);
+    open_item::wire(&window, &state, &rt);
     artist::wire_artist(&window, &state, &video, &rt);
     album::wire_album(&window, &state, &video, &rt);
     music::wire_music_bar(&window, &state, &video, &rt);

@@ -129,7 +129,7 @@
 //                         (walk nav-row-order; a hidden focused row restarts at the first)
 //   Callbacks — auth      do-login, sign-out, quit, toggle-fullscreen
 //   Callbacks — browse    nav-selected, filter-changed, browse-search-*, library-search-*
-//   Callbacks — play      item-play, play/resume-detail, open-detail/series, open-album, play-album-track
+//   Callbacks — play      item-play, play/resume-detail, open-detail (any item's page — open_item.rs), play-album-track
 //   Callbacks — player    pause-play-toggle, seek-*, volume-*, mute, select-*, stop
 //   Queue                 queue-count/-repeat-mode/-shuffle, playlist callbacks; show-queue-panel, queue-items,
 //                         queue-panel-cursor; open-queue-panel (mouse entry, like the 'q' key)
@@ -2092,12 +2092,12 @@ export global AppState {
 
     // ── Callbacks — item play / detail / series ───────────────────────────────
     callback item-play(string);
+    // Opens any Jellyfin item's page by its type — the one router (open_item.rs); the page takes its
+    // title from the server.
     callback open-detail(/* id */ string, /* item-type */ string);
     callback play-detail;
     callback resume-detail;
     callback close-detail;
-    callback open-collection(/* id */ string, /* title */ string);
-    callback open-album(/* id */ string, /* title */ string);
     callback play-album-track(/* track-id */ string);
     callback close-album;
     callback toggle-album-fav;
