@@ -23,6 +23,9 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Fixed: a playlist, album or artist page could show a long code instead of
+  its name** — e.g. View Details on a Music dashboard card before the library
+  list was opened. The page now always takes the name from the server.
 - **New: a song's format and quality.** Track lists (albums, playlists, an
   artist's Tracks) show it next to the length — "FLAC 16/44.1" for lossless
   (bit depth / kHz), "MP3 256 kbps" for compressed — the music bar shows it

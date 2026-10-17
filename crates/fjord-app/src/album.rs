@@ -8,6 +8,7 @@
 //                         get_playlist_items, position numbering, entry-id per row, artist line
 //                         "Playlist", non-audio entries filtered out
 //   open_music_screen     reset the album props, bump album-open-gen, check container_tracks_cache
+//                         (the title comes from the fetched detail's Name — callers may only know the id)
 //                         + item_detail_cache (loading overlay only on a miss); tracks + cover in
 //                         parallel; generation- and session-guarded commit shows the page; a cache
 //                         hit revalidates
@@ -296,6 +297,11 @@ fn open_music_screen(
             }
 
             if let Ok(d) = &detail_res {
+                // The server's name: a caller that only knew the id (e.g. View Details on a
+                // dashboard card before the library list was loaded) passed the id as title.
+                if !d.name.is_empty() {
+                    g.set_album_title(d.name.as_str().into());
+                }
                 // Metadata line: year · N tracks · duration (playlists have no year)
                 let year = if is_playlist {
                     String::new()
@@ -449,6 +455,9 @@ fn spawn_album_revalidate(
             let g = AppState::get(&w);
             if g.get_album_open_gen() != generation {
                 return;
+            }
+            if !detail.name.is_empty() {
+                g.set_album_title(detail.name.as_str().into());
             }
             g.set_album_meta(meta.as_str().into());
             g.set_album_artist(artist.as_str().into());

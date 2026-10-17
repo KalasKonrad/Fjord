@@ -252,6 +252,10 @@ pub(crate) fn open_artist_screen(
             g.set_artist_meta(meta2.as_str().into());
 
             if let Ok(d) = &detail_res {
+                // The server's name (a caller that only knew the id passed it as title).
+                if !d.name.is_empty() {
+                    g.set_artist_title(d.name.as_str().into());
+                }
                 g.set_artist_overview(
                     crate::strip_html_to_text(d.overview.clone().unwrap_or_default().trim()).into(),
                 );
@@ -404,6 +408,9 @@ fn spawn_artist_revalidate(
             let g = AppState::get(&w);
             if g.get_artist_open_gen() != generation {
                 return;
+            }
+            if !detail.name.is_empty() {
+                g.set_artist_title(detail.name.as_str().into());
             }
             g.set_artist_meta(artist_meta(album_count, g.get_artist_tracks().row_count()).into());
             g.set_artist_overview(
