@@ -238,9 +238,9 @@ fn music_controls(c: &KeyCtx) -> Option<bool> {
 fn music_bar_keys(c: &KeyCtx) -> Option<bool> {
     let KeyCtx { action, window, .. } = c.clone();
     // Music bar keyboard focus: intercept nav keys when a button is focused.
-    // Layout: [art (0)] | [⏸/▶ (1)] [⏹ (2)] | [timeline (3)] | [⏮ (4)] [⏭ (5)] [⇌ (6)] [↺ (7)] [⋮ (8)] [♪ (9)] [🔉 (10)] [🔊 (11)]
-    //         Left zone   Centre zone            Below buttons   Right zone (9 only when lyrics-available; 10/11 always)
-    // Left/Right: 0↔1↔2 → 4↔5↔6↔7↔8↔(9)↔10↔11 (skip over 3, and over 9 when lyrics unavailable); Down from any button→3; Up from 3→1.
+    // Layout: [art (0)] | [⏸/▶ (1)] [⏹ (2)] | [timeline (3)] | [⏮ (4)] [⏭ (5)] [⇌ (6)] [↺ (7)] [⋮ (8)] [♪ (9)] [🔉 (10)] [🔊 (11)] [☾ (12)]
+    //         Left zone   Centre zone            Below buttons   Right zone (9 only when lyrics-available; 12 only when the screensaver has a time; 10/11 always)
+    // Left/Right: 0↔1↔2 → 4↔5↔6↔7↔8↔(9)↔10↔11↔(12) (skip over 3, and over 9 when lyrics unavailable); Down from any button→3; Up from 3→1.
     // Only while AppState.music-bar-active: not under an overlay that takes the bar's keys (a
     // stale music-bar-focused from earlier keyboard use survives a mouse-driven screen switch and
     // would hijack that screen's arrows/Enter) — the same property draws the bar's focus and hides
@@ -269,7 +269,7 @@ fn music_bar_keys(c: &KeyCtx) -> Option<bool> {
                 10 => {
                     g.set_music_bar_focused(if g.get_lyrics_available() { 9 } else { 8 });
                 }
-                1 | 2 | 5 | 6 | 7 | 8 | 9 | 11 => {
+                1 | 2 | 5 | 6 | 7 | 8 | 9 | 11 | 12 => {
                     g.set_music_bar_focused(mf - 1);
                 }
                 _ => {} // 0: absorbed
@@ -291,7 +291,11 @@ fn music_bar_keys(c: &KeyCtx) -> Option<bool> {
                 0 | 1 | 4 | 5 | 6 | 7 | 9 | 10 => {
                     g.set_music_bar_focused(mf + 1);
                 }
-                _ => {} // 11: absorbed
+                // Slot 12 (☾ screensaver) exists only when Settings → Audio has a time set.
+                11 if g.get_screensaver_enabled() => {
+                    g.set_music_bar_focused(12);
+                }
+                _ => {} // 11/12: absorbed
             }
             return Some(true);
         }
@@ -353,6 +357,9 @@ fn music_bar_keys(c: &KeyCtx) -> Option<bool> {
                 11 => {
                     g.invoke_volume_up();
                 } // 🔊
+                12 => {
+                    g.invoke_toggle_screensaver();
+                } // ☾
                 _ => {
                     g.invoke_music_bar_play_pause();
                 } // 1 or 3

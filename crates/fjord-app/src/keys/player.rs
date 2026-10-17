@@ -2,6 +2,7 @@
 //   dispatch_player    ask-timed overlay; ask overlay; Up Next banner; panel nav; player controls;
 //                      chapter-prev/next (,/.); sub/audio delay (z/Z/x/X)
 //   handle_key_queue_panel / handle_key_now_playing  queue panel and Now Playing screen keys
+//                      (transport row 0-7, 8 = ☾ screensaver when it has a time)
 // ─────────────────────────────────────────────────────────────────────────────
 use super::*;
 
@@ -383,7 +384,9 @@ pub(crate) fn handle_key_now_playing(action: &Action, g: &crate::AppState) -> bo
                 }
             } else {
                 let c = g.get_now_playing_ctrl_focused();
-                if c < 7 {
+                // 8 = ☾ screensaver, shown only when Settings → Audio has a time set.
+                let last = if g.get_screensaver_enabled() { 8 } else { 7 };
+                if c < last {
                     g.set_now_playing_ctrl_focused(c + 1);
                 }
             }
@@ -407,6 +410,7 @@ pub(crate) fn handle_key_now_playing(action: &Action, g: &crate::AppState) -> bo
                     4 => g.invoke_toggle_shuffle(),
                     5 => g.invoke_cycle_repeat(),
                     6 => g.invoke_volume_down(),
+                    8 => g.invoke_toggle_screensaver(),
                     _ => g.invoke_volume_up(),
                 }
             }

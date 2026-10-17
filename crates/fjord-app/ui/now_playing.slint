@@ -3,7 +3,8 @@
 //                      controls (left), synced lyrics (right), "Up Next" strip
 //                      (bottom). Keyboard state: now-playing-back-focused (top bar),
 //                      now-playing-in-strip (row toggle), now-playing-ctrl-focused
-//                      (0-7: Album/Prev/Play-Pause/Next/Shuffle/Repeat/VolDown/VolUp),
+//                      (0-8: Album/Prev/Play-Pause/Next/Shuffle/Repeat/VolDown/VolUp/
+//                      ☾ Screensaver — 8 only when Settings → Audio has a time set),
 //                      now-playing-strip-focused (index into queue-items) —
 //                      all driven from keys.rs.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -217,6 +218,14 @@ export component NowPlayingScreen inherits Rectangle {
                         icon: "🔊";
                         kbd-focused: !AppState.now-playing-back-focused && !AppState.now-playing-in-strip && AppState.now-playing-ctrl-focused == 7;
                         clicked => { AppState.volume-up(); }
+                    }
+
+                    // Screensaver: lit while it will come on; turns it off for this playback.
+                    if AppState.screensaver-enabled: IconCircleButton {
+                        icon: "☾";
+                        active: !AppState.screensaver-paused;
+                        kbd-focused: !AppState.now-playing-back-focused && !AppState.now-playing-in-strip && AppState.now-playing-ctrl-focused == 8;
+                        clicked => { AppState.toggle-screensaver(); }
                     }
                 }
             }

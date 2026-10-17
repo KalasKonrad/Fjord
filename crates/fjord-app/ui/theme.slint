@@ -1,5 +1,5 @@
 // ── fjord-app · theme.slint ──────────────────────────────────────────────────
-//   Theme           global design tokens: colors (incl. focus-white/-gold/-green/-red, master-ring), spacing,
+//   Theme           global design tokens: colors (incl. focus-white/-gold/-green/-red, master-ring, blackout), spacing,
 //                   radius, font sizes
 //   Structs shared between Rust and Slint (one line each; details on the struct):
 //   DashRow         one dashboard row (title, cards, discover) — AppState.*-rows
@@ -71,6 +71,7 @@ export global Theme {
     out property <color> scrim:           #00000088; // dim backdrop behind dialogs and popups
     out property <color> scrim-strong:    #000000aa; // behind full-screen overlay screens
     out property <color> scrim-solid:     #000000cc; // overlays that hide what's behind (lyrics)
+    out property <color> blackout:        #000000;   // the screensaver: nothing shows
     out property <color> osd-panel:       #0d0d0dcc; // player OSD pills and panels
     out property <color> osd-panel-solid: #0d0d0ddd; // larger OSD panels (track lists)
     out property <color> hero-fade-top:   #00000080; // detail-page backdrop gradient

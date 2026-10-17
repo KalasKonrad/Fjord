@@ -23,6 +23,13 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **New: screensaver while music plays.** After a set time without a key
+  press or mouse movement the picture turns black — the TV stays on, so the
+  HDMI connection isn't lost. Any key or the mouse brings the picture back
+  (that key does nothing else). Settings → Audio → Screensaver while music
+  plays: Off, 1, 2, 5 (default), 10, 15 or 30 minutes, saved per profile. A ☾
+  button in the music bar and on Now Playing turns it off until the music
+  stops (and back on).
 - **Fixed: the screen could go dark during playback.** Fjord's request to
   keep the screen on never reached the desktop (only sleep was blocked), so
   KDE's screen energy saving could turn the TV off during long music

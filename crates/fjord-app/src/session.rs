@@ -1,5 +1,6 @@
 // ── fjord-app · session.rs ───────────────────────────────────────────────────
-//   reset_session_state  the one teardown for sign-out and profile switch (moved from main.rs,
+//   reset_session_state  the one teardown for sign-out and profile switch (also closes the screen
+//                        stack and ends the screensaver; moved from main.rs,
 //                        0.5.0 step 3) — every new transient flag/cache/overlay is reset here
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
@@ -138,6 +139,9 @@ pub(crate) fn reset_session_state(
             screen.set_z(&g, 0);
         }
         g.set_screen_seq(0);
+        // The screensaver ends with the session (its ☾ pause too).
+        g.set_screensaver_active(false);
+        g.set_screensaver_paused(false);
         // Clear every screen's id too: in-flight fetch commits only check "is this id still
         // open", so a stale one landing after the switch would re-open its screen with the old
         // profile's data. (The worst sites also check session_current.)

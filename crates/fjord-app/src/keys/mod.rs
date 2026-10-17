@@ -512,6 +512,14 @@ pub(crate) fn wire_key_dispatch(
             // 2026-08-29) — the single choke point every keypress already
             // passes through, same one music_idle_ticks resets from above.
             clock2.touch();
+            // A key that ends the screensaver does nothing else (screensaver.rs).
+            {
+                let g = AppState::get(&w);
+                if g.get_screensaver_active() {
+                    crate::screensaver::wake(&g, "key");
+                    return true;
+                }
+            }
             keys::handle_key(key.as_str(), shift, ctrl, repeat, &state2, &w, &rt2)
         });
     }

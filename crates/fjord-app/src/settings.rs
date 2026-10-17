@@ -169,6 +169,7 @@ const AUD_SKIP_FADE_MUTE: &str = "audio.skip_fade_mute"; // virtual — hidden w
 const AUD_AUDIO_LANG: &str = "audio.lang";
 const AUD_GAPLESS: &str = "audio.gapless";
 const AUD_NOW_PLAYING_AUTO_OPEN: &str = "audio.now_playing_auto_open";
+const AUD_SCREENSAVER: &str = "audio.screensaver_mins"; // per profile; screensaver.rs
 
 // ── Player (config) section rows ──────────────────────────────────────────────
 const PLY_SUB_ENABLED: &str = "player.sub_enabled";
@@ -301,6 +302,7 @@ const SECTION_ROWS: &[(&str, &[&str])] = &[
             AUD_SKIP_FADE_MUTE,
             AUD_GAPLESS,
             AUD_NOW_PLAYING_AUTO_OPEN,
+            AUD_SCREENSAVER,
         ],
     ),
     (
@@ -754,6 +756,15 @@ const SKIP_MODE_3_OPTIONS: &[(&str, &str)] = &[
     ("ask", "Ask"),
     ("never-skip", "Never skip"),
 ];
+const SCREENSAVER_MINS_OPTIONS: &[(&str, &str)] = &[
+    ("0", "Off"),
+    ("1", "1 min"),
+    ("2", "2 min"),
+    ("5", "5 min"),
+    ("10", "10 min"),
+    ("15", "15 min"),
+    ("30", "30 min"),
+];
 const CREDITS_SECS_OPTIONS: &[(&str, &str)] = &[
     ("10", "10"),
     ("15", "15"),
@@ -1093,6 +1104,14 @@ static CHOICES: &[Choice] = &[
         field: Field::Str(
             |g| g.get_settings_skip_credits_mode(),
             |g, v| g.set_settings_skip_credits_mode(v),
+        ),
+    },
+    Choice {
+        key: AUD_SCREENSAVER,
+        options: SCREENSAVER_MINS_OPTIONS,
+        field: Field::Int(
+            |g| g.get_settings_screensaver_mins(),
+            |g, v| g.set_settings_screensaver_mins(v),
         ),
     },
     Choice {
@@ -2293,6 +2312,13 @@ pub(crate) static PROFILE_BINDS: &[ProfileBind] = &[
         skip_credits_secs,
         get_settings_skip_credits_secs,
         set_settings_skip_credits_secs,
+        u32
+    ),
+    bind!(
+        Profile,
+        screensaver_mins,
+        get_settings_screensaver_mins,
+        set_settings_screensaver_mins,
         u32
     ),
     bind!(
