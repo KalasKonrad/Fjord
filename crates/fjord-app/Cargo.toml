@@ -36,6 +36,11 @@ base64.workspace = true
 # Cargo.lock at 1.13.3 before this was added, so this costs nothing new to
 # compile — just makes an existing transitive dependency a direct one.
 unicode-segmentation = "1"
+# Screen-saver / power-management inhibit during playback (2026-10-17): the inhibition lives as long
+# as the D-Bus connection that asked for it, so Fjord holds one instead of running busctl (which
+# exited at once — and was called with a `--session` option it doesn't have). Already built via
+# Slint (ksni); this adds only zbus's own blocking API (no new crates).
+zbus = { version = "5.16", default-features = false, features = ["async-io", "blocking-api"] }
 # hdr branch (2026-09-10) — real HDR passthrough Stage 1+2: a live capability
 # diagnostic against the Wayland color-management-v1 protocol, run on Fjord's
 # own second wayland-client connection (see hdr.rs). All three versions are
