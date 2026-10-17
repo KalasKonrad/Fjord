@@ -12,7 +12,8 @@
 //   fetch_new_in_theaters      canned filter preset (primary release date in the last ~45 days,
 //                              popularity) — an approximation, Seerr can't filter by release type
 //   ensure_discover_landing    all landing rows in parallel, once per session; text first, then
-//                              posters; dedups the discovery rows against Requested; fills
+//                              posters (patched in batches ~150 ms apart, `timing:` logged);
+//                              dedups the discovery rows against Requested; fills
 //                              discover_known_requests and then rebuilds the calendar
 // ─────────────────────────────────────────────────────────────────────────────
 use super::*;
@@ -632,21 +633,38 @@ pub(crate) fn ensure_discover_landing(
                 Some((row, idx, item_type, tmdb_id, buf))
             });
         }
+        // Patched in batches (~150 ms apart), not one UI task per poster: the posters come from the
+        // disk cache almost at once, and ~120 single patches right as Discover opened for the first
+        // time were the suspect for a ~1.4 s UI freeze on the HTPC (ui_watch logs it now).
+        let started = std::time::Instant::now();
+        let (mut batch, mut pushes, mut total) = (Vec::new(), 0u32, 0usize);
+        let mut last_push = std::time::Instant::now();
         while let Some(res) = set.join_next().await {
-            let Ok(Some((row, idx, item_type, tmdb_id, buf))) = res else { continue };
-            let ww2 = ww.clone();
-            let _ = slint::invoke_from_event_loop(move || {
-                let Some(w) = ww2.upgrade() else { return };
-                let g = AppState::get(&w);
-                let model = landing_row_get(&g, row);
-                let Some(mut card) = model.row_data(idx) else { return };
-                if card.id.as_str() != tmdb_id || card.item_type.as_str() != item_type {
-                    return; // row reshuffled since the fetch started — skip rather than mispatch
-                }
-                card.poster = slint::Image::from_rgba8(buf);
-                card.has_poster = true;
-                model.set_row_data(idx, card);
-            });
+            if let Ok(Some(patch)) = res {
+                batch.push(patch);
+            }
+            if !batch.is_empty() && (set.is_empty() || last_push.elapsed() >= Duration::from_millis(150)) {
+                total += batch.len();
+                pushes += 1;
+                last_push = std::time::Instant::now();
+                let patches = std::mem::take(&mut batch);
+                let ww2 = ww.clone();
+                let _ = slint::invoke_from_event_loop(move || {
+                    let Some(w) = ww2.upgrade() else { return };
+                    let g = AppState::get(&w);
+                    for (row, idx, item_type, tmdb_id, buf) in patches {
+                        let model = landing_row_get(&g, row);
+                        let Some(mut card) = model.row_data(idx) else { continue };
+                        if card.id.as_str() != tmdb_id || card.item_type.as_str() != item_type {
+                            continue; // row reshuffled since the fetch started — skip rather than mispatch
+                        }
+                        card.poster = slint::Image::from_rgba8(buf);
+                        card.has_poster = true;
+                        model.set_row_data(idx, card);
+                    }
+                });
+            }
         }
+        debug!("timing: Discover landing posters — {total} in {:.3}s, {pushes} push(es)", started.elapsed().as_secs_f64());
     });
 }

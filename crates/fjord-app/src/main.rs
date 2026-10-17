@@ -67,6 +67,7 @@ mod startup;
 mod stats;
 mod text_field;
 mod trickplay;
+mod ui_watch;
 mod video_surface;
 mod ws;
 
@@ -1135,6 +1136,7 @@ fn main() -> Result<()> {
     settings::wire_copy_settings(&window, &state);
     settings::wire_choice_rows(&window);
     halo::wire(&window);
+    ui_watch::wire_ui_watch(&window);
     dashboard_rows::wire(&window, &state);
     hero::wire(&window, &state, &rt);
 

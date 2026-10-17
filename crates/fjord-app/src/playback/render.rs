@@ -10,7 +10,8 @@
 //                           once. 2026-10-08: passes Settings → "Use Fjord's own 10-bit buffers" (opt-in)
 //                           to ensure_ready; the path line names the plane's mode + mpv depth; mpv gets
 //                           the Target's flip/format/depth (in-window path: depth 0 = 8); a frame the
-//                           own buffers skipped (none free) requests another redraw
+//                           own buffers skipped (none free) requests another redraw; times each frame
+//                           for ui_watch::note_frame (slow frames → debug log)
 // ─────────────────────────────────────────────────────────────────────────────
 use super::*;
 
@@ -106,6 +107,8 @@ pub(crate) fn wire_rendering_notifier(window: &MainWindow, video: Arc<Mutex<Vide
     window.window().set_rendering_notifier({
         let mut gl_loaded = false;
         let mut wayland_flag_set = false;
+        // ui_watch: how long each frame takes (BeforeRendering → AfterRendering).
+        let mut frame_start: Option<std::time::Instant> = None;
 
         move |state_rn, api| {
             match state_rn {
@@ -121,6 +124,7 @@ pub(crate) fn wire_rendering_notifier(window: &MainWindow, video: Arc<Mutex<Vide
                 }
 
                 slint::RenderingState::BeforeRendering => {
+                    frame_start = Some(std::time::Instant::now());
                     let Some(win) = window_rn.upgrade() else { return; };
                     let slint::GraphicsAPI::NativeOpenGL { get_proc_address } = api else { return; };
 
@@ -380,9 +384,16 @@ pub(crate) fn wire_rendering_notifier(window: &MainWindow, video: Arc<Mutex<Vide
                 }
 
                 slint::RenderingState::AfterRendering => {
-                    let vs = video_rn.lock().unwrap();
-                    if vs.did_render && let Some(ctx) = vs.render_ctx.as_ref() {
-                        ctx.report_swap();
+                    {
+                        let vs = video_rn.lock().unwrap();
+                        if vs.did_render && let Some(ctx) = vs.render_ctx.as_ref() {
+                            ctx.report_swap();
+                        }
+                    }
+                    if let Some(start) = frame_start.take()
+                        && let Some(win) = window_rn.upgrade()
+                    {
+                        crate::ui_watch::note_frame(&win, start.elapsed());
                     }
                 }
 
