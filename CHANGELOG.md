@@ -23,6 +23,11 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Fixed: the screen could go dark during playback.** Fjord's request to
+  keep the screen on never reached the desktop (only sleep was blocked), so
+  KDE's screen energy saving could turn the TV off during long music
+  sessions. Fjord now holds the screen-saver and power-management blocks for
+  as long as something plays.
 - **Improved: opening Discover the first time does less at once** — its
   posters are put in place in a few batches instead of one by one (the HTPC
   froze for about a second there and ran the keys pressed meanwhile all at

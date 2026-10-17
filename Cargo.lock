@@ -1377,6 +1377,7 @@ dependencies = [
  "wayland-client",
  "wayland-protocols",
  "wayland-sys",
+ "zbus",
 ]
 
 [[package]]
