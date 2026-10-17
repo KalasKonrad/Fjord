@@ -48,8 +48,9 @@ are bumped together as one step, not separately.
 - **New: choose how the selection looks.** Settings → Interface has a focus
   ring color (white, accent blue, gold, green, red), thickness (2–6px), style
   (line, glow, or both — the glow is on posters, tiles and buttons; rows and
-  menus keep the line), glow strength (Soft, Medium, Strong — the default —
-  or Very strong; with line and glow, the glow starts where the line ends),
+  menus keep the line), glow strength (Faint, Very soft, Subtle, Soft — the default —
+  Medium, Strong or Very strong; with line and glow, the glow starts where the
+  line ends),
   what glows (pictures and buttons; also the sidebar; or everything — the
   default — rows, fields, menus and lists too), and transparency. Every highlighted thing — cards,
   buttons, menus, Settings rows, lists, the sidebar — now shows the same ring,

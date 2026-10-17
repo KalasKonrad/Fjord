@@ -139,7 +139,7 @@ export component FocusGlow inherits Rectangle {
     border-radius: root.radius;
     background: root.lit ? root.fill : transparent;
     drop-shadow-blur: root.lit ? AppState.glow-3 : 0px;
-    drop-shadow-color: AppState.focus-color;
+    drop-shadow-color: AppState.glow-color;
     animate background {
         duration: root.fill-ms;
         easing: ease-out-expo;
@@ -149,7 +149,7 @@ export component FocusGlow inherits Rectangle {
         border-radius: root.radius;
         background: root.lit ? root.fill : transparent;
         drop-shadow-blur: root.lit ? AppState.glow-2 : 0px;
-        drop-shadow-color: AppState.focus-color;
+        drop-shadow-color: AppState.glow-color;
         animate background {
             duration: root.fill-ms;
             easing: ease-out-expo;
@@ -161,7 +161,7 @@ export component FocusGlow inherits Rectangle {
             border-width: root.ring-width;
             border-color: root.ring-color;
             drop-shadow-blur: root.lit ? AppState.glow-1 : 0px;
-            drop-shadow-color: AppState.focus-color;
+            drop-shadow-color: AppState.glow-color;
             animate background {
                 duration: root.fill-ms;
                 easing: ease-out-expo;
@@ -202,7 +202,7 @@ export component FocusHalo inherits Rectangle {
         width: root.width + 2 * root.pad;
         height: root.height + 2 * root.pad;
         source: AppState.focus-halo(root.radius, AppState.glow-1, AppState.glow-2, AppState.glow-3);
-        colorize: AppState.focus-color;
+        colorize: AppState.glow-color;
     }
 }
 

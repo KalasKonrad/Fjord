@@ -123,7 +123,7 @@ fn default_focus_style() -> String {
     "line".into()
 }
 fn default_focus_glow() -> String {
-    "strong".into()
+    "soft".into()
 }
 fn default_focus_glow_on() -> String {
     "everything".into()
@@ -735,10 +735,11 @@ pub(crate) struct ProfileSettings {
     pub dashboard_hero: String,
     // ── Focus highlight (Settings → Interface): the ring around whatever has keyboard focus and
     // the zoom of a focused picture. color "white" | "blue" | "gold" | "green" | "red"; width
-    // "2" | "3" | "4" | "6" (px); style "line" | "glow" | "both"; glow "soft" | "medium" | "strong" |
-    // "very-strong" (the glow's reach) and glow_on "pictures" | "sidebar" | "everything" (what
-    // glows), both Glow styles only; opacity "solid" | "see-through"; zoom "0" | "5" … "30" (%).
-    // AppState.focus-* / glow-* turn them into the values every ring reads.
+    // "2" | "3" | "4" | "6" (px); style "line" | "glow" | "both"; glow "faint" | "very-soft" |
+    // "subtle" | "soft" | "medium" | "strong" | "very-strong" (the glow's reach) and glow_on
+    // "pictures" | "sidebar" | "everything" (what glows), both Glow styles only; opacity "solid" |
+    // "see-through"; zoom "0" | "5" … "30" (%). AppState.focus-* / glow-* turn them into the
+    // values every ring reads.
     #[serde(default = "default_focus_color")]
     pub focus_color: String,
     #[serde(default = "default_focus_width")]
