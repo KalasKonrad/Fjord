@@ -23,6 +23,11 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Improved: opening Discover the first time does less at once** — its
+  posters are put in place in a few batches instead of one by one (the HTPC
+  froze for about a second there and ran the keys pressed meanwhile all at
+  once). With Log level = Debug, Fjord now also logs when the screen was
+  busy, so a remaining hiccup can be traced.
 - **Fixed: two things looked selected at once.** Moving down into the music
   bar (or the mini player) left the card, track or row you came from looking
   selected; it now shows its highlight again when you go back up. And a music
