@@ -1019,10 +1019,11 @@ export component MainWindow inherits Window {
     }
 
     // Toast: highest z-order, always on top.
-    // Local mirror triggers changed callback; timer auto-dismisses after 4 s.
+    // Local mirror triggers changed callback; timer auto-dismisses after Settings → Interface
+    // "Message duration" (default 4 s).
     property <bool> _toast-vis: AppState.toast-visible;
     toast-timer := Timer {
-        interval: 4000ms;
+        interval: AppState.settings-toast-secs * 1s;
         running: false;
         triggered => {
             AppState.toast-visible = false;

@@ -17,7 +17,8 @@
 //   skip_segments           always-skip / ask / ask-timed / never-skip (the ask-timed countdown
 //                           freezes while paused) + arming the fade-to-black seek
 //   up_next_and_credits     Up Next trigger (credits mode), credits mark-played and its rewind revert
-//   seek_and_controls       seek accumulation debounce, OSD controls idle hide
+//   seek_and_controls       seek accumulation debounce, OSD controls idle hide (Settings → Player
+//                           "Hide controls after", per profile)
 //   music_auto_open         Settings' seconds without input (ActivityClock — keys and the mouse)
 //                           while music plays with Now Playing closed → open it (acted on after the
 //                           lock); auto_open_due is the pure check (unit-tested)
@@ -48,6 +49,8 @@ struct Tick<'a> {
     gapless_enabled: bool,
     /// Settings → Audio "Auto-open Now Playing" (0 = off).
     now_playing_auto_open_secs: u32,
+    /// Settings → Player "Hide controls after".
+    controls_hide_secs: u32,
     /// How long ago the last key press or mouse movement was (ActivityClock::input_idle_for).
     input_idle: Duration,
     connection_likely_healthy: bool,
@@ -109,7 +112,12 @@ pub(crate) fn wire_mpv_timer(
         slint::TimerMode::Repeated,
         Duration::from_millis(16),
         move || {
-            let (gapless_enabled, now_playing_auto_open_secs, connection_likely_healthy) = {
+            let (
+                gapless_enabled,
+                now_playing_auto_open_secs,
+                controls_hide_secs,
+                connection_likely_healthy,
+            ) = {
                 let s = state_timer.lock().unwrap();
                 // See MAX_STALL_RELOAD_ATTEMPTS_HEALTHY/_UNHEALTHY's own doc
                 // comment for the full reasoning. 45s (vs. the WS's own 30s
@@ -122,6 +130,7 @@ pub(crate) fn wire_mpv_timer(
                 (
                     s.config.device.gapless_audio,
                     s.config.active().now_playing_auto_open_secs,
+                    s.config.active().controls_hide_secs,
                     healthy,
                 )
             };
@@ -156,6 +165,7 @@ pub(crate) fn wire_mpv_timer(
                     seek_suppress: &seek_suppress,
                     gapless_enabled,
                     now_playing_auto_open_secs,
+                    controls_hide_secs,
                     input_idle: activity.input_idle_for(),
                     connection_likely_healthy,
                     live_pos,
@@ -1348,6 +1358,7 @@ fn seek_and_controls(vs: &mut VideoState, t: &Tick) {
     let Tick {
         window_timer,
         controls_show,
+        controls_hide_secs,
         ..
     } = *t;
     // Seek accumulation debounce (~480 ms = 30 × 16 ms)
@@ -1387,7 +1398,8 @@ fn seek_and_controls(vs: &mut VideoState, t: &Tick) {
     } else {
         vs.controls_idle_ticks = vs.controls_idle_ticks.saturating_add(1);
     }
-    if vs.controls_idle_ticks == 187
+    // Settings → Player "Hide controls after", in 16 ms ticks (3 s = 187).
+    if vs.controls_idle_ticks == controls_hide_secs.max(1) * 1000 / 16
         && let Some(w) = window_timer.upgrade()
     {
         let g = AppState::get(&w);

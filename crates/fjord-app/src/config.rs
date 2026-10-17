@@ -22,7 +22,8 @@
 //                   dashboard_hero ("off" | "band" (default) | "background"; reads the old bool),
 //                   focus_color/_width/_style/_glow/_glow_on/_opacity/_zoom (focus ring, glow
 //                   strength and scope, picture zoom), screensaver_mins (0 = off),
-//                   now_playing_auto_open_secs (0 = off; reads the old bool),
+//                   now_playing_auto_open_secs (0 = off; reads the old bool), controls_hide_secs,
+//                   toast_secs,
 //                   Seerr connection (seerr_enabled/_url/_auth_method/_api_key/
 //                   _session_cookie), Discover filters (genres by name, providers by id), Request
 //                   Options' remembered choices; remember_login (false → never resumed silently,
@@ -131,6 +132,12 @@ fn de_now_playing_auto_open_secs<'de, D: serde::Deserializer<'de>>(d: D) -> Resu
 }
 fn default_screensaver_mins() -> u32 {
     5
+}
+fn default_controls_hide_secs() -> u32 {
+    3
+}
+fn default_toast_secs() -> u32 {
+    4
 }
 fn default_focus_color() -> String {
     "white".into()
@@ -695,6 +702,13 @@ pub(crate) struct ProfileSettings {
     // playback keeps inhibiting power saving (HDMI must keep its signal). screensaver.rs.
     #[serde(default = "default_screensaver_mins")]
     pub screensaver_mins: u32,
+    // Settings → Player "Hide controls after": seconds the player controls (and the mouse pointer)
+    // stay up after the last input (playback/timer.rs seek_and_controls). Default 3 s.
+    #[serde(default = "default_controls_hide_secs")]
+    pub controls_hide_secs: u32,
+    // Settings → Interface "Message duration": seconds a toast stays up (main.slint). Default 4 s.
+    #[serde(default = "default_toast_secs")]
+    pub toast_secs: u32,
 
     // ── Intro Skipper skip modes ─────────────────────────────────────────────
     // "always-skip" | "ask" | "ask-timed" | "never-skip"  (Intro/Recap/Preview/Commercial)
@@ -933,6 +947,8 @@ impl Default for ProfileSettings {
             focus_glow: default_focus_glow(),
             focus_glow_on: default_focus_glow_on(),
             screensaver_mins: default_screensaver_mins(),
+            controls_hide_secs: default_controls_hide_secs(),
+            toast_secs: default_toast_secs(),
             focus_opacity: default_focus_opacity(),
             focus_zoom: default_focus_zoom(),
             seerr_enabled: false,
@@ -1334,6 +1350,8 @@ fn migrate_legacy_config(l: LegacyConfig) -> Config {
         focus_glow: default_focus_glow(),
         focus_glow_on: default_focus_glow_on(),
         screensaver_mins: default_screensaver_mins(),
+        controls_hide_secs: default_controls_hide_secs(),
+        toast_secs: default_toast_secs(),
         focus_opacity: default_focus_opacity(),
         focus_zoom: default_focus_zoom(),
     };
@@ -2511,6 +2529,8 @@ mod tests {
         src.focus_glow = "very-strong".into();
         src.focus_glow_on = "sidebar".into();
         src.screensaver_mins = 15;
+        src.controls_hide_secs = 10;
+        src.toast_secs = 6;
         src.dashboard_rows.insert(
             "music".into(),
             vec![
@@ -2542,6 +2562,7 @@ mod tests {
         assert_eq!(dst.dashboard_rows, src.dashboard_rows);
         assert_eq!(dst.dashboard_hero, "background");
         assert_eq!(dst.screensaver_mins, 15);
+        assert_eq!((dst.controls_hide_secs, dst.toast_secs), (10, 6));
         assert_eq!(
             (
                 dst.focus_color.as_str(),

@@ -8,7 +8,7 @@
 //                    carry `per-profile: true` (the "Profile" tag); fixed-choice dropdowns are
 //                    `choice: true; value: AppState.settings-…;` (options/labels: settings.rs CHOICES):
 //       Playback     intro/recap/preview/commercial modes (+ secs for ask-timed), credits mode
-//                    (+ secs), skip-fade ms; seek steps; trailer quality
+//                    (+ secs), skip-fade ms; seek steps; hide controls after; trailer quality
 //       Subtitles &  audio language; subtitles (+ languages, type, scale, position, ASS styling,
 //        language    color, background)
 //       Display      launch fullscreen; HDR passthrough, separate video surface (Wayland), tone
@@ -18,8 +18,8 @@
 //       Audio        device, channels, SPDIF (+ AC3/EAC3/DTS/DTS-HD/TrueHD, passthrough device,
 //                    ALSA IRQ scheduling on PipeWire, skip-fade mute); gapless, Now Playing
 //                    auto-open (off / 15 s … 5 min), screensaver while music plays
-//       Interface    ("ui") card size, video behind UI, text font, on-screen keyboard, scroll and
-//                    animation speed; focus ring color/thickness/style, glow strength + Glow on (only
+//       Interface    ("ui") card size, video behind UI, text font, on-screen keyboard, message
+//                    duration, scroll and animation speed; focus ring color/thickness/style, glow strength + Glow on (only
 //                    when the style isn't Line), transparency, zoom
 //       Profiles     launch policy (+ default profile), Manage Profiles (master account), Copy
 //                    settings from… (when other profiles exist), account launch policy (+ default account), Add Account, remember login,
@@ -469,6 +469,19 @@ export component SettingsScreen inherits Rectangle {
                             value: AppState.settings-seek-step-long-secs;
                             title: "Long seek step";
                             subtitle: "Shift+Left/Right arrow seek amount during playback";
+                        }
+
+                        SectionHeader {
+                            text: "CONTROLS";
+                        }
+
+                        SettingsRow {
+                            key: "player.controls_hide_secs";
+                            choice: true;
+                            value: AppState.settings-controls-hide-secs;
+                            per-profile: true;
+                            title: "Hide controls after";
+                            subtitle: "How long the player controls and the mouse pointer stay up after the last key press or mouse movement";
                         }
 
                         SectionHeader {
@@ -1136,6 +1149,15 @@ export component SettingsScreen inherits Rectangle {
                                 checked <=> AppState.settings-onscreen-keyboard-enabled;
                                 toggled => { AppState.settings-changed(); AppState.refocus(); }
                             }
+                        }
+
+                        SettingsRow {
+                            key: "ui.toast_secs";
+                            choice: true;
+                            value: AppState.settings-toast-secs;
+                            per-profile: true;
+                            title: "Message duration";
+                            subtitle: "How long short messages — confirmations and errors — stay on screen";
                         }
 
                         // Scroll speed. The value is a DURATION multiplier, not a

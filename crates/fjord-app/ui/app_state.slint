@@ -24,7 +24,7 @@
 //                         show-bonfire-admin, bonfire-admin-tab (0=Mappings 1=Audit Logs)/-cursor
 //                         (-1 = tab switcher)/-col, bonfire-admin-rows / -audit-rows (lazy), Reset PIN
 //                         confirm (stashes its target) — bonfire_admin.rs::open_bonfire_admin_screen
-//   Toast notification    toast-message, toast-visible (auto-dismissed after 4 s)
+//   Toast notification    toast-message, toast-visible (auto-dismissed after settings-toast-secs)
 //   Press animation       kb-activate-pulse; sidebar-kb-active (the sidebar holds the keyboard focus:
 //                         dashboards/Discover, Browse All before its list, Settings before its sections)
 //   Screen stack          screen-seq + series-/season-/artist-/collection-/album-/detail-/request-detail-/
@@ -1562,6 +1562,10 @@ export global AppState {
     // ends it. screensaver-paused: the ☾ button in the music bar / Now Playing turned it off until
     // the music stops. The screen never turns off — playback keeps inhibiting power saving.
     in-out property <int> settings-screensaver-mins: 5;
+    // Settings → Player "Hide controls after" (seconds; playback/timer.rs) and Settings →
+    // Interface "Message duration" (seconds a toast stays up; main.slint). Per profile.
+    in-out property <int> settings-controls-hide-secs: 3;
+    in-out property <int> settings-toast-secs: 4;
     in-out property <bool> screensaver-active: false;
     in-out property <bool> screensaver-paused: false;
     out property <bool> screensaver-enabled: settings-screensaver-mins > 0;
