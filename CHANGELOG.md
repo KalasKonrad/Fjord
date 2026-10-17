@@ -23,6 +23,14 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **New: an artist's tracks without an album.** Music files lying directly in
+  an artist's folder with no album (e.g. untagged files in "Various Artists")
+  now show as "Tracks" under the albums on that artist's page; Enter plays
+  from that track on. The page's line under the name counts them ("7 albums
+  · 4 tracks").
+- **Fixed: artist pages with many albums didn't scroll with the remote** —
+  the page now follows the selected album or track. An album card no longer
+  looks selected while the Play/♥ buttons above it have the focus.
 - **New: screensaver while music plays.** After a set time without a key
   press or mouse movement the picture turns black — the TV stays on, so the
   HDMI connection isn't lost. Any key or the mouse brings the picture back

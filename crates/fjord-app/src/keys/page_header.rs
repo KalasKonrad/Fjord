@@ -81,10 +81,17 @@ impl MusicPage {
     }
 
     /// Down out of the header into the list: the album starts at its first track; the artist
-    /// grid keeps the card it had.
+    /// grid keeps the card it had — or, with no albums, the artist's Tracks start at the first.
     fn enter_list(self, g: &AppState) {
-        if self == MusicPage::Album {
-            g.set_album_focused_track(0);
+        match self {
+            MusicPage::Album => g.set_album_focused_track(0),
+            MusicPage::Artist => {
+                use slint::Model;
+                if g.get_artist_albums().row_count() == 0 && g.get_artist_tracks().row_count() > 0 {
+                    g.set_artist_in_tracks(true);
+                    g.set_artist_track_focused(0);
+                }
+            }
         }
     }
 }

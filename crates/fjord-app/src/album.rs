@@ -1,5 +1,5 @@
 // ── fjord-app · album.rs ──────────────────────────────────────────────────────
-//   media_items_to_tracks  MediaItem → TrackItem incl. multi-disc separators: disc_header ("" or
+//   media_items_to_tracks  MediaItem → TrackItem (also the artist page's Tracks) incl. multi-disc separators: disc_header ("" or
 //                         "Disc N" on a disc's first track) and precomputed row_y_px (album.slint's
 //                         scroll math reads them by index)
 //   open_album_screen     → open_music_screen(is_playlist=false)
@@ -14,6 +14,8 @@
 //                         page) / track list; Up from track 0 → keys::list_up_to_header; C →
 //                         context menu; Delete → playlist-remove-entry (playlists); Enter →
 //                         play-album-track; Down at the last track → false
+//   play_tracks           Enter on a track: the whole list becomes the playlist from that track (album/
+//                         playlist page, the artist page's Tracks)
 //   wire_album            callbacks moved from main() (0.5.0 step 3): album / playlist screen
 //   wire_album_play_all   callbacks moved from main() (0.5.0 step 3): Play all on the album screen
 // ─────────────────────────────────────────────────────────────────────────────
@@ -42,7 +44,7 @@ const DISC_SEP_H_PX: f32 = 28.0;
 /// items (get_album_tracks), each row's `disc_header` (first track of a disc only) and
 /// absolute `row_y_px` (including every header above it) — computed here so album.slint's
 /// kb-track-y reads one indexed value instead of summing separators per keystroke.
-fn media_items_to_tracks(
+pub(crate) fn media_items_to_tracks(
     items: &[fjord_api::models::MediaItem],
     is_playlist: bool,
 ) -> Vec<crate::TrackItem> {
@@ -525,6 +527,92 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
     }
 }
 
+// ── play_tracks ───────────────────────────────────────────────────────────────
+
+/// Spotify-style: Enter on a track plays the WHOLE list from that track — the visible track list
+/// becomes the playlist and the rest follows (gapless applies); the queue is kept. Rows with no
+/// artist / album of their own take `fallback_artist` / `fallback_album_id` (the music bar's
+/// artist line and art). The album/playlist page and the artist page's Tracks.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn play_tracks(
+    g: &AppState,
+    tracks: ModelRc<crate::TrackItem>,
+    track_id: &str,
+    fallback_artist: String,
+    fallback_album_id: String,
+    state: &Arc<Mutex<FjordState>>,
+    video: &Arc<Mutex<crate::playback::VideoState>>,
+    ww: &slint::Weak<MainWindow>,
+    rt: &tokio::runtime::Handle,
+) {
+    let count = tracks.row_count();
+    if count == 0 {
+        return;
+    }
+    let s = state.lock().unwrap();
+    let Some(client) = s.client.as_ref().map(Arc::clone) else {
+        return;
+    };
+    let mut config = s.player_config();
+    drop(s);
+    config.start_position_secs = None;
+    let meta = |t: &crate::TrackItem| {
+        let artist = if t.artist.is_empty() {
+            fallback_artist.clone()
+        } else {
+            t.artist.to_string()
+        };
+        let album = if t.album_id.is_empty() {
+            fallback_album_id.clone()
+        } else {
+            t.album_id.to_string()
+        };
+        (artist, album)
+    };
+    let mut start_idx = 0usize;
+    {
+        let mut vs = video.lock().unwrap();
+        // Rebuild the playlist but keep vs.queue (Phase 56).
+        vs.playlist.clear();
+        vs.shuffle_order.clear();
+        for i in 0..count {
+            if let Some(t) = tracks.row_data(i) {
+                if t.id.as_str() == track_id {
+                    start_idx = i;
+                }
+                vs.playlist.push(crate::playback::QueueItem {
+                    id: t.id.to_string(),
+                    item_type: "Audio".into(),
+                    series_id: None,
+                    title: t.title.to_string(),
+                    audio_meta: Some(meta(&t)),
+                });
+            }
+        }
+        vs.playlist_index = start_idx;
+        crate::playback::rebuild_shuffle_order(&mut vs);
+        crate::push_queue_display(&vs, g);
+    }
+    if let Some(t) = tracks.row_data(start_idx) {
+        let url = client.direct_play_url(track_id);
+        crate::playback::start_playback(
+            url,
+            track_id.to_string(),
+            "Audio",
+            t.title.to_string(),
+            config,
+            client,
+            None,
+            Some(meta(&t)),
+            video,
+            ww,
+            rt,
+            state,
+            None,
+        );
+    }
+}
+
 // ── wire_album (moved from main(), 0.5.0 step 3) ─────────────────────────
 /// Wires album / playlist screen: open_album, close_album, play_album_track, playlist_remove_entry,
 /// toggle_album_fav, toggle_album_played.
@@ -568,88 +656,19 @@ pub(crate) fn wire_album(
         let ww = window.as_weak();
         let rt_handle = rt.handle().clone();
         AppState::get(&window).on_play_album_track(move |track_id| {
-            // Spotify-style: Enter on a track plays the WHOLE album/playlist
-            // from that track — the visible tracklist becomes the playlist and
-            // the rest follows (gapless applies). Was: single track only.
-            let track_id = track_id.to_string();
             let Some(w) = ww.upgrade() else { return };
             let g = AppState::get(&w);
-            let tracks = g.get_album_tracks();
-            let count = tracks.row_count();
-            if count == 0 {
-                return;
-            }
-            let s = state_pt.lock().unwrap();
-            let Some(client) = s.client.as_ref().map(Arc::clone) else {
-                return;
-            };
-            let mut config = s.player_config();
-            drop(s);
-            config.start_position_secs = None;
-            let album_id = g.get_album_id().to_string();
-            let artist = g.get_album_artist().to_string();
-            let mut start_idx = 0usize;
-            {
-                let mut vs = video_pt.lock().unwrap();
-                // Rebuild the playlist but keep vs.queue (Phase 56).
-                vs.playlist.clear();
-                vs.shuffle_order.clear();
-                for i in 0..count {
-                    if let Some(t) = tracks.row_data(i) {
-                        if t.id.as_str() == track_id {
-                            start_idx = i;
-                        }
-                        let t_art = if t.artist.is_empty() {
-                            artist.clone()
-                        } else {
-                            t.artist.to_string()
-                        };
-                        let t_alb = if t.album_id.is_empty() {
-                            album_id.clone()
-                        } else {
-                            t.album_id.to_string()
-                        };
-                        vs.playlist.push(crate::playback::QueueItem {
-                            id: t.id.to_string(),
-                            item_type: "Audio".into(),
-                            series_id: None,
-                            title: t.title.to_string(),
-                            audio_meta: Some((t_art, t_alb)),
-                        });
-                    }
-                }
-                vs.playlist_index = start_idx;
-                crate::playback::rebuild_shuffle_order(&mut vs);
-                push_queue_display(&vs, &g);
-            }
-            if let Some(t) = tracks.row_data(start_idx) {
-                let url = client.direct_play_url(&track_id);
-                let t_art = if t.artist.is_empty() {
-                    artist
-                } else {
-                    t.artist.to_string()
-                };
-                let t_alb = if t.album_id.is_empty() {
-                    album_id
-                } else {
-                    t.album_id.to_string()
-                };
-                start_playback(
-                    url,
-                    track_id,
-                    "Audio",
-                    t.title.to_string(),
-                    config,
-                    client,
-                    None,
-                    Some((t_art, t_alb)),
-                    &video_pt,
-                    &ww,
-                    &rt_handle,
-                    &state_pt,
-                    None,
-                );
-            }
+            play_tracks(
+                &g,
+                g.get_album_tracks(),
+                &track_id,
+                g.get_album_artist().to_string(),
+                g.get_album_id().to_string(),
+                &state_pt,
+                &video_pt,
+                &ww,
+                &rt_handle,
+            );
         });
     }
     {

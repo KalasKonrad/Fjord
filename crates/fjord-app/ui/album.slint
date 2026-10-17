@@ -17,11 +17,10 @@ import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
 import {
     StackPage,
-    FocusHalo,
+    TrackRow,
     FjordButton,
     IconCircleButton,
     StorylineSection,
-    PressPulse,
 } from "widgets.slint";
 
 export component AlbumScreen inherits StackPage {
@@ -226,159 +225,24 @@ export component AlbumScreen inherits StackPage {
 
                     // Positioned by each row's precomputed row-y-px, not a VerticalLayout: rows differ in height
                     // once a disc header is involved (album.rs does the math).
-                    for trk[i] in AppState.album-tracks: Rectangle {
-                        property <bool> focused: !AppState.album-back-focused && AppState.album-btn-focused < 0 && i == AppState.album-focused-track;
+                    for trk[i] in AppState.album-tracks: TrackRow {
                         x: 0px;
                         y: trk.row-y-px * 1px;
                         width: parent.width;
                         height: track-h;
-                        background: focused ? Theme.accent-muted : (ta.has-hover ? Theme.surface : transparent);
-                        border-width: AppState.ring-width(track-pulse.active, ta.pressed || track-pulse.pulsing);
-                        border-color: AppState.focus-color;
-                        animate border-width {
-                            duration: 90ms * AppState.settings-animation-speed;
-                            easing: ease-out-expo;
+                        sep-h: sep-h;
+                        track: trk;
+                        index: i;
+                        focused: !AppState.album-back-focused && AppState.album-btn-focused < 0 && i == AppState.album-focused-track;
+                        page-artist: AppState.album-artist;
+                        removable: AppState.album-is-playlist;
+                        clicked => {
+                            AppState.album-focused-track = i;
+                            AppState.album-back-focused = false;
+                            AppState.album-btn-focused = -1;
                         }
-                        FocusHalo {
-                            glowing: track-pulse.active;
-                        }
-
-                        track-pulse := PressPulse {
-                            trigger: AppState.kb-activate-pulse;
-                            active: focused;
-                        }
-
-                        ta := TouchArea {
-                            double-clicked => { AppState.play-album-track(trk.id); }
-                            clicked => {
-                                AppState.album-focused-track = i;
-                                AppState.album-back-focused = false;
-                                AppState.album-btn-focused = -1;
-                            }
-                        }
-
-                        // Disc separator — positioned relative to this
-                            // row's own (already-correct) y, in the gap
-                            // album.rs's own row-y-px math reserved for it.
-                            if trk.disc-header != "": Rectangle {
-                            x: 0px;
-                            y: -sep-h;
-                            width: parent.width;
-                                // Deliberately transparent, not a solid fill
-                                // — matches the ambient (unfocused/unhovered)
-                                // track row background right below it, since
-                                // AlbumScreen's own root has no explicit
-                                // background of its own either.
-                                height: sep-h;
-                            Text {
-                                x: 16px;
-                                text: trk.disc-header;
-                                color: Theme.accent;
-                                font-size: 11px * AppState.text-scale;
-                                font-weight: 700;
-                                vertical-alignment: center;
-                                height: parent.height;
-                            }
-                        }
-
-                        // left accent bar (focused indicator)
-                            if focused: Rectangle {
-                            x: 0;
-                            y: 0;
-                            width: 3px;
-                            height: parent.height;
-                            background: Theme.accent;
-                        }
-                            // bottom separator
-                            Rectangle {
-                            x: 0;
-                            y: parent.height - 1px;
-                            height: 1px;
-                            background: Theme.border;
-                        }
-
-                        HorizontalLayout {
-                            padding-left: 16px;
-                            padding-right: 20px;
-                            spacing: 14px;
-                            alignment: start;
-
-                            // Track number
-                                Text {
-                                text: trk.track-number > 0 ? trk.track-number : i + 1;
-                                color: trk.has-played ? Theme.accent : Theme.text-muted;
-                                font-size: 13px * AppState.text-scale;
-                                width: 24px * AppState.text-scale;
-                                vertical-alignment: center;
-                                horizontal-alignment: right;
-                            }
-
-                            // Title + artist
-                                VerticalLayout {
-                                alignment: center;
-                                horizontal-stretch: 1;
-                                spacing: 2px;
-                                Text {
-                                    text: trk.title;
-                                    color: trk.has-played ? Theme.text-muted : Theme.text;
-                                    font-size: 14px * AppState.text-scale;
-                                    overflow: elide;
-                                }
-
-                                if trk.artist != "" && trk.artist != AppState.album-artist: Text {
-                                    text: trk.artist;
-                                    color: Theme.text-subtle;
-                                    font-size: 11px * AppState.text-scale;
-                                    overflow: elide;
-                                }
-                            }
-
-                            // Duration
-                                Text {
-                                text: trk.duration;
-                                color: Theme.text-muted;
-                                font-size: 13px * AppState.text-scale;
-                                vertical-alignment: center;
-                                width: 44px * AppState.text-scale;
-                                horizontal-alignment: right;
-                            }
-
-                            // Favorite indicator
-                                if trk.is-favorite: Text {
-                                text: "♥";
-                                font-family: "Adwaita Sans";
-                                color: Theme.accent;
-                                font-size: 12px * AppState.text-scale;
-                                vertical-alignment: center;
-                                width: 16px * AppState.text-scale;
-                            }
-
-                            // ✕ remove entry — playlists only
-                                if AppState.album-is-playlist: Rectangle {
-                                width: 26px;
-                                border-width: x-ta.pressed ? 3px : 0px;
-                                border-color: Theme.error;
-                                border-radius: Theme.radius;
-                                animate border-width {
-                                    duration: 90ms * AppState.settings-animation-speed;
-                                    easing: ease-out-expo;
-                                }
-                                x-ta := TouchArea {
-                                    clicked => { AppState.playlist-remove-entry(i); }
-                                }
-
-                                Text {
-                                    text: "✕";
-                                    font-family: "Noto Sans Symbols 2";
-                                    color: x-ta.has-hover ? Theme.error : Theme.text-subtle;
-                                    font-size: 13px * AppState.text-scale;
-                                    vertical-alignment: center;
-                                    horizontal-alignment: center;
-                                    width: parent.width;
-                                    height: parent.height;
-                                }
-                            }
-                        }
+                        double-clicked => { AppState.play-album-track(trk.id); }
+                        remove => { AppState.playlist-remove-entry(i); }
                     }
                 }
             }

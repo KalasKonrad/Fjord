@@ -34,6 +34,8 @@
 //                      flush focus ring; a FocusGlow under the poster while focused (from the card's
 //                      edge with the line, the poster's in the Glow style); focus zoom via AppState.zoom from
 //                      zoom-anchor-x/-y (edge cards grow inward), raised with z; no poster fade
+//   TrackRow           one track of a track list (album/playlist page, the artist page's Tracks):
+//                      number, title (+ artist if not the page's), duration, ♥, ✕ (playlists), disc label
 //   LoadingSpinner     animated ring (speed-scaled dot rhythm)
 //   StatRow / ToggleSwitch / SectionHeader / SettingsDropdown / SettingsRow (key = settings.rs row key;
 //                      `choice: true` + `value` = a fixed-choice row: its dropdown comes from
@@ -60,6 +62,7 @@
 import {
     Theme,
     CardItem,
+    TrackItem,
     CastMember,
     QueueEntry,
     LyricEntry,
@@ -1188,6 +1191,163 @@ export component MediaCard inherits Rectangle {
         animate border-width {
             duration: 90ms * AppState.settings-animation-speed;
             easing: ease-out-expo;
+        }
+    }
+}
+
+// ── Track row ─────────────────────────────────────────────────────────────────
+// One track of a track list — the album/playlist page and the artist page's Tracks: number (the
+// track's own, else its position), title + the track's artist when it differs from `page-artist`,
+// duration, ♥, a ✕ remove button when `removable` (playlists), and the "Disc N" label above a disc's
+// first track (drawn in the `sep-h` gap the caller's row-y math leaves). The page owns the focus
+// (`focused`) and what a click / double click / ✕ does.
+export component TrackRow inherits Rectangle {
+    in property <TrackItem> track;
+    in property <int> index;
+    in property <bool> focused;
+    in property <string> page-artist;
+    in property <bool> removable: false;
+    in property <length> sep-h: 28px;
+    callback clicked();
+    callback double-clicked();
+    callback remove();
+
+    background: root.focused ? Theme.accent-muted : (ta.has-hover ? Theme.surface : transparent);
+    border-width: AppState.ring-width(track-pulse.active, ta.pressed || track-pulse.pulsing);
+    border-color: AppState.focus-color;
+    animate border-width {
+        duration: 90ms * AppState.settings-animation-speed;
+        easing: ease-out-expo;
+    }
+    FocusHalo {
+        glowing: track-pulse.active;
+    }
+
+    track-pulse := PressPulse {
+        trigger: AppState.kb-activate-pulse;
+        active: root.focused;
+    }
+
+    ta := TouchArea {
+        mouse-cursor: MouseCursor.pointer;
+        double-clicked => { root.double-clicked(); }
+        clicked => { root.clicked(); }
+    }
+
+    // Disc separator, in the gap above this row that the caller's row-y math reserves. Transparent:
+    // it matches the unfocused row background below it.
+    if root.track.disc-header != "": Rectangle {
+        x: 0px;
+        y: -root.sep-h;
+        width: parent.width;
+        height: root.sep-h;
+        Text {
+            x: 16px;
+            text: root.track.disc-header;
+            color: Theme.accent;
+            font-size: 11px * AppState.text-scale;
+            font-weight: 700;
+            vertical-alignment: center;
+            height: parent.height;
+        }
+    }
+
+    // Left accent bar (focused indicator)
+    if root.focused: Rectangle {
+        x: 0;
+        y: 0;
+        width: 3px;
+        height: parent.height;
+        background: Theme.accent;
+    }
+    // Bottom separator
+    Rectangle {
+        x: 0;
+        y: parent.height - 1px;
+        height: 1px;
+        background: Theme.border;
+    }
+
+    HorizontalLayout {
+        padding-left: 16px;
+        padding-right: 20px;
+        spacing: 14px;
+        alignment: start;
+
+        // Track number
+        Text {
+            text: root.track.track-number > 0 ? root.track.track-number : root.index + 1;
+            color: root.track.has-played ? Theme.accent : Theme.text-muted;
+            font-size: 13px * AppState.text-scale;
+            width: 24px * AppState.text-scale;
+            vertical-alignment: center;
+            horizontal-alignment: right;
+        }
+
+        // Title + artist
+        VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 1;
+            spacing: 2px;
+            Text {
+                text: root.track.title;
+                color: root.track.has-played ? Theme.text-muted : Theme.text;
+                font-size: 14px * AppState.text-scale;
+                overflow: elide;
+            }
+
+            if root.track.artist != "" && root.track.artist != root.page-artist: Text {
+                text: root.track.artist;
+                color: Theme.text-subtle;
+                font-size: 11px * AppState.text-scale;
+                overflow: elide;
+            }
+        }
+
+        // Duration
+        Text {
+            text: root.track.duration;
+            color: Theme.text-muted;
+            font-size: 13px * AppState.text-scale;
+            vertical-alignment: center;
+            width: 44px * AppState.text-scale;
+            horizontal-alignment: right;
+        }
+
+        // Favorite indicator
+        if root.track.is-favorite: Text {
+            text: "♥";
+            font-family: "Adwaita Sans";
+            color: Theme.accent;
+            font-size: 12px * AppState.text-scale;
+            vertical-alignment: center;
+            width: 16px * AppState.text-scale;
+        }
+
+        // ✕ remove entry — playlists only
+        if root.removable: Rectangle {
+            width: 26px;
+            border-width: x-ta.pressed ? 3px : 0px;
+            border-color: Theme.error;
+            border-radius: Theme.radius;
+            animate border-width {
+                duration: 90ms * AppState.settings-animation-speed;
+                easing: ease-out-expo;
+            }
+            x-ta := TouchArea {
+                clicked => { root.remove(); }
+            }
+
+            Text {
+                text: "✕";
+                font-family: "Noto Sans Symbols 2";
+                color: x-ta.has-hover ? Theme.error : Theme.text-subtle;
+                font-size: 13px * AppState.text-scale;
+                vertical-alignment: center;
+                horizontal-alignment: center;
+                width: parent.width;
+                height: parent.height;
+            }
         }
     }
 }

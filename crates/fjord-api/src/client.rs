@@ -14,7 +14,8 @@
 //                   get_unwatched_collections
 //     music         get_latest_music (Views → music ParentId; Latest ignores
 //                   IncludeItemTypes=Audio), get_recently_played_albums, get_album_tracks (disc,
-//                   then track), get_album_artists, get_artist_albums, get_all_albums, get_lyrics
+//                   then track), get_album_artists, get_artist_albums, get_folder_tracks (an
+//                   artist folder's loose tracks), get_all_albums, get_lyrics
 //     playlists     get_all_playlists (audio only), get_playlist_items (with PlaylistItemId),
 //                   create_playlist, add_to_playlist, remove_from_playlist (EntryIds)
 //     favorites     get_favorites(item_types)
@@ -1300,6 +1301,36 @@ impl JellyfinClient {
                 "RunTimeTicks,UserData,IndexNumber,ParentIndexNumber,AlbumArtist,Album",
             )
             .append_pair("SortBy", "ParentIndexNumber,IndexNumber")
+            .append_pair("SortOrder", "Ascending");
+        Ok(self
+            .http
+            .get(url)
+            .header("Authorization", self.auth_header())
+            .send()
+            .await?
+            .error_for_status()?
+            .json::<ItemsResponse>()
+            .await?
+            .items)
+    }
+
+    /// The audio files lying directly in a library folder, not in an album folder below it — for an
+    /// artist folder, its tracks without an album (untagged files): `ParentId` = the folder, not
+    /// recursive, sorted by name. Verified live (2026-10-17): a "Various Artists" folder's loose
+    /// files come back as `Audio` with `ParentId` = the artist and no Album/AlbumArtist/Artists, so
+    /// no artist-based query (`ArtistIds`, `AlbumArtistIds`) returns them. An artist known only
+    /// from tags has no such children: empty.
+    pub async fn get_folder_tracks(&self, folder_id: &str) -> Result<Vec<MediaItem>> {
+        let mut url = self.api_url(&format!("/Users/{}/Items", self.user_id))?;
+        url.query_pairs_mut()
+            .append_pair("ParentId", folder_id)
+            .append_pair("IncludeItemTypes", "Audio")
+            .append_pair("Recursive", "false")
+            .append_pair(
+                "Fields",
+                "RunTimeTicks,UserData,IndexNumber,ParentIndexNumber,AlbumArtist,Album",
+            )
+            .append_pair("SortBy", "SortName")
             .append_pair("SortOrder", "Ascending");
         Ok(self
             .http

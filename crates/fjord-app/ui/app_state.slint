@@ -71,7 +71,8 @@
 //                         album-focused-track/-back-focused/-is-favorite/-has-played/-open-gen/-btn-focused/
 //                         -overview-expanded; show-artist, artist-id/title/overview/meta, portrait, albums,
 //                         artist-focused/-back-focused/-open-gen/-is-favorite/-btn-focused (-1/0=▶/1=♥)/
-//                         -overview-expanded; play-artist-all, toggle-artist-fav
+//                         -overview-expanded; artist-tracks ([TrackItem], the folder's loose tracks) +
+//                         artist-in-tracks / -track-focused; play-artist-all, play-artist-track, toggle-artist-fav
 //   Seerr integration     settings-seerr-enabled, seerr-connected/-label (connected implies enabled),
 //                         seerr-unencrypted, open-connect-seerr, seerr-disconnect; streaming/discover region,
 //                         display/discover language dropdowns (dynamic, Settings → Integrations, shown while
@@ -1058,7 +1059,7 @@ export global AppState {
     in-out property <string> artist-id:           "";
     in-out property <string> artist-title:        "";
     in-out property <string> artist-overview:     "";
-    in-out property <string> artist-meta:         "";   // "5 albums"
+    in-out property <string> artist-meta:         "";   // "5 albums" (+ " · 4 tracks")
     in-out property <image> artist-portrait;
     in-out property <bool> artist-has-portrait: false;
     in-out property <[CardItem]> artist-albums:       [];
@@ -1068,9 +1069,17 @@ export global AppState {
     in-out property <bool> artist-is-favorite:  false;
     in-out property <int> artist-btn-focused:  -1;  // -1=none, 0=▶ Play All, 1=♥
     in-out property <bool> artist-overview-expanded: false;
+    // Tracks: audio files lying directly in the artist's folder, in no album (untagged files —
+    // Jellyfin links them to the folder, not to the artist; artist.rs, client get_folder_tracks).
+    // artist-in-tracks = the keyboard is in that list (below the album grid), at artist-track-focused.
+    in-out property <[TrackItem]> artist-tracks: [];
+    in-out property <bool> artist-in-tracks: false;
+    in-out property <int> artist-track-focused: 0;
 
     callback toggle-artist-fav;
     callback play-artist-all;
+    // Plays the artist's Tracks from this one on (the rest follow, like an album).
+    callback play-artist-track(/* track-id */ string);
 
     // ── Discover screen state (Seerr search + results grid, discover.rs) ─────
     // No show-discover flag — this screen is driven by active-nav == 6

@@ -2,13 +2,18 @@
 //   open_artist_screen   reset AppState artist props; increment artist-open-gen; checks
 //                        artist_albums_cache + item_detail_cache — only sets
 //                        app-content-loading=true when either is a miss (a hit revalidates);
-//                        artist albums + portrait + detail in parallel (cached parts skip the
+//                        artist albums + portrait + detail + the folder's loose tracks
+//                        (get_folder_tracks → artist-tracks) in parallel (cached parts skip the
 //                        network); CardItem model with posters via apply_cards_preserving_identity;
 //                        a generation- and session-guarded commit shows the page
+//   artist_meta          "7 albums" (+ " · 4 tracks")
 //   handle_key           keyboard dispatch: header (← Back / ▶ + ♥ / bio: keys::header_keys, shared
-//                        with the album page) / album grid; Up from row 0 →
-//                        keys::list_up_to_header; Enter on album → open-album; C → context menu
-//   wire_artist            callbacks moved from main() (0.5.0 step 3): artist screen
+//                        with the album page) / album grid / Tracks; Up from row 0 →
+//                        keys::list_up_to_header; Down from the last row → Tracks (a shorter last row
+//                        below → its last card); Enter on album → open-album, on a track → plays from
+//                        it; C → context menu
+//   wire_artist            callbacks moved from main() (0.5.0 step 3): artist screen, play-artist-track
+//                          (album::play_tracks over the Tracks)
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
 
@@ -18,6 +23,16 @@ use tracing::warn;
 use crate::config::FjordState;
 use crate::poster::{decode_poster_buffer, fetch_poster_cached, fetch_poster_cached_tagged};
 use crate::{AppState, CardItem, MainWindow};
+
+/// The artist page's meta line: "7 albums", plus " · 4 tracks" when the folder has loose tracks.
+fn artist_meta(albums: usize, tracks: usize) -> String {
+    let mut meta = crate::plural(albums as u64, "album", "albums");
+    if tracks > 0 {
+        meta.push_str(" · ");
+        meta.push_str(&crate::plural(tracks as u64, "track", "tracks"));
+    }
+    meta
+}
 
 // ── open_artist_screen ────────────────────────────────────────────────────────
 
@@ -53,6 +68,9 @@ pub(crate) fn open_artist_screen(
         g.set_artist_meta("".into());
         g.set_artist_has_portrait(false);
         g.set_artist_albums(ModelRc::new(VecModel::default()));
+        g.set_artist_tracks(ModelRc::new(VecModel::default()));
+        g.set_artist_in_tracks(false);
+        g.set_artist_track_focused(0);
         g.set_artist_focused(0);
         g.set_artist_back_focused(false);
         g.set_artist_btn_focused(-1);
@@ -89,8 +107,18 @@ pub(crate) fn open_artist_screen(
             }
             client.get_item_detail(&id2).await
         };
-        let (albums_res, portrait_bytes, detail_res) =
-            tokio::join!(albums_fut, fetch_poster_cached(&client, &id2), detail_fut,);
+        // The folder's loose tracks (no album, untagged): only a ParentId query finds them.
+        let (albums_res, portrait_bytes, detail_res, loose_res) = tokio::join!(
+            albums_fut,
+            fetch_poster_cached(&client, &id2),
+            detail_fut,
+            client.get_folder_tracks(&id2),
+        );
+        let loose = loose_res.unwrap_or_else(|e| {
+            tracing::debug!("open_artist_screen({id2}): no loose tracks ({e:#})");
+            Vec::new()
+        });
+        tracing::debug!("open_artist_screen({id2}): {} loose track(s)", loose.len());
         if let Ok(d) = &detail_res {
             state_task
                 .lock()
@@ -142,12 +170,8 @@ pub(crate) fn open_artist_screen(
             .artist_albums_cache
             .insert(id2.clone(), albums.clone());
 
-        let album_count = albums.len();
-        let meta = format!(
-            "{} album{}",
-            album_count,
-            if album_count == 1 { "" } else { "s" }
-        );
+        let meta = artist_meta(albums.len(), loose.len());
+        let loose_tracks = crate::album::media_items_to_tracks(&loose, false);
 
         // Fetch album posters in parallel (semaphore 8)
         use std::sync::Arc as SArc;
@@ -268,6 +292,7 @@ pub(crate) fn open_artist_screen(
                 &g.get_artist_albums(),
                 items,
             ));
+            g.set_artist_tracks(ModelRc::new(VecModel::from(loose_tracks)));
             g.set_artist_focused(0);
             g.set_artist_back_focused(false);
             g.set_app_content_loading(false);
@@ -319,11 +344,7 @@ fn spawn_artist_revalidate(
             s.artist_albums_cache.insert(id.clone(), albums.clone());
             s.item_detail_cache.insert(id.clone(), detail.clone());
         }
-        let meta = format!(
-            "{} album{}",
-            albums.len(),
-            if albums.len() == 1 { "" } else { "s" }
-        );
+        let album_count = albums.len();
         let sem = Arc::new(tokio::sync::Semaphore::new(8));
         let mut fetch_set: tokio::task::JoinSet<(String, Option<Arc<Vec<u8>>>)> =
             tokio::task::JoinSet::new();
@@ -384,7 +405,7 @@ fn spawn_artist_revalidate(
             if g.get_artist_open_gen() != generation {
                 return;
             }
-            g.set_artist_meta(meta.as_str().into());
+            g.set_artist_meta(artist_meta(album_count, g.get_artist_tracks().row_count()).into());
             g.set_artist_overview(
                 crate::strip_html_to_text(detail.overview.clone().unwrap_or_default().trim())
                     .into(),
@@ -432,9 +453,68 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
         return handled;
     }
 
-    // ── Album grid ─────────────────────────────────────────────────────────────
     let cols = g.get_library_cols();
     let total = g.get_artist_albums().row_count() as i32;
+
+    // ── Tracks (the folder's loose tracks, below the grid) ──────────────────────
+    if g.get_artist_in_tracks() {
+        let tracks = g.get_artist_tracks();
+        let len = tracks.row_count() as i32;
+        let t = g.get_artist_track_focused();
+        return match action {
+            Action::Back => {
+                g.invoke_close_artist();
+                true
+            }
+            Action::Up => {
+                if t > 0 {
+                    g.set_artist_track_focused(t - 1);
+                } else if total > 0 {
+                    // Back into the grid's last row, same column where there's a card.
+                    g.set_artist_in_tracks(false);
+                    let last_row_start = (total - 1) / cols * cols;
+                    let col = g.get_artist_focused() % cols;
+                    g.set_artist_focused((last_row_start + col).min(total - 1));
+                } else {
+                    g.set_artist_in_tracks(false);
+                    crate::keys::list_up_to_header(crate::keys::MusicPage::Artist, g);
+                }
+                true
+            }
+            Action::Down => {
+                if t + 1 < len {
+                    g.set_artist_track_focused(t + 1);
+                    true
+                } else {
+                    false // last track — let focus_bar_on_down have it
+                }
+            }
+            Action::Left | Action::Right => true,
+            Action::Confirm => {
+                if let Some(track) = tracks.row_data(t.max(0) as usize) {
+                    g.invoke_play_artist_track(track.id);
+                }
+                true
+            }
+            Action::OpenContextMenu => {
+                if let Some(track) = tracks.row_data(t.max(0) as usize) {
+                    g.set_context_menu_title(track.title.clone());
+                    g.invoke_open_context_menu(
+                        track.id,
+                        track.has_played,
+                        track.is_favorite,
+                        track.resume_pct,
+                        "Audio".into(),
+                        "".into(),
+                    );
+                }
+                true
+            }
+            _ => false,
+        };
+    }
+
+    // ── Album grid ─────────────────────────────────────────────────────────────
     let f = g.get_artist_focused();
 
     match action {
@@ -456,12 +536,21 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
         }
         Action::Down => {
             let next = f + cols;
+            let last_row_start = (total - 1).max(0) / cols * cols;
             if next < total {
                 g.set_artist_focused(next);
                 true
+            } else if f < last_row_start {
+                // A shorter last row below: its last card.
+                g.set_artist_focused(total - 1);
+                true
+            } else if g.get_artist_tracks().row_count() > 0 {
+                g.set_artist_in_tracks(true);
+                g.set_artist_track_focused(0);
+                true
             } else {
-                false
-            } // at last row — let focus_bar_on_down handle it
+                false // last row — let focus_bar_on_down handle it
+            }
         }
         Action::Up => {
             if f < cols {
@@ -525,6 +614,28 @@ pub(crate) fn wire_artist(
                 Arc::clone(&state_art),
                 ww.clone(),
                 rt_handle.clone(),
+            );
+        });
+    }
+    {
+        // The folder's loose tracks: like an album, Enter plays from that track on (album.rs).
+        let state_pt = Arc::clone(&state);
+        let video_pt = Arc::clone(&video);
+        let ww = window.as_weak();
+        let rt_handle = rt.handle().clone();
+        AppState::get(&window).on_play_artist_track(move |track_id| {
+            let Some(w) = ww.upgrade() else { return };
+            let g = AppState::get(&w);
+            album::play_tracks(
+                &g,
+                g.get_artist_tracks(),
+                &track_id,
+                g.get_artist_title().to_string(),
+                String::new(),
+                &state_pt,
+                &video_pt,
+                &ww,
+                &rt_handle,
             );
         });
     }
@@ -675,5 +786,76 @@ pub(crate) fn wire_artist(
                 });
             });
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::keys::Action;
+
+    fn cards(n: usize) -> ModelRc<CardItem> {
+        ModelRc::new(VecModel::from(
+            (0..n)
+                .map(|i| CardItem {
+                    id: format!("a{i}").into(),
+                    ..Default::default()
+                })
+                .collect::<Vec<_>>(),
+        ))
+    }
+
+    fn tracks(n: usize) -> ModelRc<crate::TrackItem> {
+        ModelRc::new(VecModel::from(
+            (0..n)
+                .map(|i| crate::TrackItem {
+                    id: format!("t{i}").into(),
+                    ..Default::default()
+                })
+                .collect::<Vec<_>>(),
+        ))
+    }
+
+    #[test]
+    fn tracks_below_the_album_grid() {
+        i_slint_backend_testing::init_no_event_loop();
+        let w = crate::MainWindow::new().unwrap();
+        let g = AppState::get(&w);
+        g.set_library_cols(4);
+        // 6 albums (rows of 4 + 2), 3 loose tracks.
+        g.set_artist_albums(cards(6));
+        g.set_artist_tracks(tracks(3));
+        g.set_artist_btn_focused(-1);
+        g.set_artist_focused(1);
+        // Row 0 col 1 → Down → the shorter last row's last card (5) → Down → Tracks.
+        assert!(handle_key(&Action::Down, &g));
+        assert_eq!(g.get_artist_focused(), 5);
+        assert!(handle_key(&Action::Down, &g));
+        assert!(g.get_artist_in_tracks());
+        assert_eq!(g.get_artist_track_focused(), 0);
+        assert!(handle_key(&Action::Down, &g));
+        assert!(handle_key(&Action::Down, &g));
+        assert!(
+            !handle_key(&Action::Down, &g),
+            "last track: the bar below gets it"
+        );
+        assert_eq!(g.get_artist_track_focused(), 2);
+        // Up through the tracks, then back into the grid's last row.
+        for _ in 0..3 {
+            assert!(handle_key(&Action::Up, &g));
+        }
+        assert!(!g.get_artist_in_tracks());
+        assert_eq!(g.get_artist_focused(), 5);
+
+        // No albums: Down from the header goes straight into the Tracks.
+        g.set_artist_albums(cards(0));
+        g.set_artist_in_tracks(false);
+        g.set_artist_btn_focused(0);
+        assert!(handle_key(&Action::Down, &g));
+        assert!(g.get_artist_in_tracks());
+        // …and Up from the first track returns to the header.
+        assert!(handle_key(&Action::Up, &g));
+        assert!(!g.get_artist_in_tracks());
+        assert_eq!(g.get_artist_btn_focused(), 0);
     }
 }

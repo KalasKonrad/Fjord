@@ -194,6 +194,22 @@ Server side (`Folder.FillUserDataDtoValues`): `PlayedPercentage = played / total
 played, so a series whose only activity is an in-progress episode still reports 0 — Fjord
 also excludes series that have an episode in Continue Watching or Next Up.
 
+### An artist folder's loose tracks **[used]** (verified live 2026-10-17)
+```
+GET /Users/{userId}/Items
+    ?ParentId={artistId}&IncludeItemTypes=Audio&Recursive=false
+    &Fields=RunTimeTicks,UserData,IndexNumber,ParentIndexNumber,AlbumArtist,Album
+    &SortBy=SortName&SortOrder=Ascending
+```
+Audio files lying directly in an artist's folder (`<library>/Various Artists/<file>.flac`, no
+album folder) are children of the MusicArtist item: `ParentId` = the artist. If their tags carry
+no Album/Artist/AlbumArtist (the server's case: `Album`/`AlbumId` null, `ArtistItems` and
+`AlbumArtists` empty), they're in no album, and `ArtistIds=` / `AlbumArtistIds=` queries for that
+artist leave them out — only `ParentId` finds them. Non-recursive: the artist folder's album
+folders come back as `MusicAlbum` children and are skipped by `IncludeItemTypes=Audio`. An artist
+known only from tags (no folder) has no children here. `get_folder_tracks`; the artist page's
+Tracks list.
+
 ### Similar / related items
 ```
 GET /Users/{userId}/Items/{itemId}/Similar
