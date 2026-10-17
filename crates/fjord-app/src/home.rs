@@ -31,7 +31,9 @@
 //   fetch_movie_collections  background: movie_id → (boxset_id, boxset_name) map
 //   run_poster_cache_cleanup  delete orphaned posters/ + backdrops/ files (24 h guard; known ids =
 //                   the six library lists + detail cache keys + credited person ids)
-//   wire_item_play  callbacks moved from main() (0.5.0 step 3): play from home / library rows
+//   wire_item_play  callbacks moved from main() (0.5.0 step 3): play from home / library rows; a
+//                   collection and every type without a stream (album, playlist, artist, person)
+//                   open their page through open_item::open_item
 // ─────────────────────────────────────────────────────────────────────────────
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -1003,37 +1005,33 @@ pub(crate) fn wire_item_play(
                 return;
             };
 
-            // BoxSet (collection) — open collection screen instead of playing.
+            // BoxSet (collection) — open its page (open_item.rs) instead of playing.
             // all_collections is only populated when the library grid is first opened; fall
             // back to the always-present dashboard models when it hasn't been opened yet.
-            let boxset_info = s
-                .all_collections
-                .iter()
-                .find(|i| i.id == item_id)
-                .map(|bs| (bs.id.clone(), bs.name.clone()))
-                .or_else(|| {
-                    let w = window_weak.upgrade()?;
+            let is_boxset = s.all_collections.iter().any(|i| i.id == item_id)
+                || window_weak.upgrade().is_some_and(|w| {
                     let g = AppState::get(&w);
-                    let find_boxset = |model: ModelRc<CardItem>| -> Option<(String, String)> {
-                        for idx in 0..model.row_count() {
-                            if let Some(c) = model.row_data(idx)
-                                && c.id.as_str() == item_id
-                                && c.item_type.as_str() == "BoxSet"
-                            {
-                                return Some((c.id.to_string(), c.title.to_string()));
-                            }
-                        }
-                        None
+                    let in_row = |model: ModelRc<CardItem>| {
+                        (0..model.row_count())
+                            .filter_map(|i| model.row_data(i))
+                            .any(|c| c.id.as_str() == item_id && c.item_type.as_str() == "BoxSet")
                     };
-                    find_boxset(g.get_recently_added_collections())
-                        .or_else(|| find_boxset(g.get_unwatched_collections()))
+                    in_row(g.get_recently_added_collections())
+                        || in_row(g.get_unwatched_collections())
                 });
-            if let Some((bs_id, bs_name)) = boxset_info {
+            if is_boxset {
                 let ww2 = window_weak.clone();
                 let state2 = state.clone();
                 let rt_handle2 = rt_handle.clone();
                 drop(s);
-                collection::open_collection_screen(bs_id, bs_name, state2, ww2, rt_handle2);
+                crate::open_item::open_item(
+                    item_id,
+                    "BoxSet",
+                    String::new(),
+                    &state2,
+                    &ww2,
+                    &rt_handle2,
+                );
                 return;
             }
 
@@ -1121,22 +1119,22 @@ pub(crate) fn wire_item_play(
                 let video_info = detail.as_ref().and_then(|i| i.video_stream_info());
                 config.start_position_secs = detail.and_then(|i| i.resume_position_secs());
 
-                if item_type == "MusicAlbum" {
+                // No stream of its own (an album, playlist, artist, collection, person id): open its
+                // page instead (open_item.rs) — handing mpv the id opened a dead video player.
+                use crate::open_item::Page;
+                if matches!(
+                    crate::open_item::page_for(&item_type),
+                    Page::Album | Page::Playlist | Page::Artist | Page::Collection | Page::Person
+                ) {
                     let _ = slint::invoke_from_event_loop(move || {
-                        album::open_album_screen(item_id, title, state_album, ww3, rth3);
-                    });
-                    return;
-                }
-                if item_type == "Playlist" {
-                    let _ = slint::invoke_from_event_loop(move || {
-                        album::open_playlist_screen(item_id, title, state_album, ww3, rth3);
-                    });
-                    return;
-                }
-                if item_type == "MusicArtist" {
-                    // Same class of bug as albums: an artist id has no stream.
-                    let _ = slint::invoke_from_event_loop(move || {
-                        artist::open_artist_screen(item_id, title, state_album, ww3, rth3);
+                        crate::open_item::open_item(
+                            item_id,
+                            &item_type,
+                            String::new(),
+                            &state_album,
+                            &ww3,
+                            &rth3,
+                        );
                     });
                     return;
                 }

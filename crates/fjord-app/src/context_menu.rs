@@ -25,7 +25,8 @@
 //   existing_jellyfin_menu_rows / existing_discover_menu_rows  which row ids exist, in on-screen
 //                                   order — Jellyfin: 0 Resume, 1–6 fixed, 7 Add to Playlist
 //                                   (music), 9 Remove from Playlist, 8 Watchlist, 6 View Details
-//                                   last (a Season: 4/5/6); Discover: 1 Request/Edit, 2 Cancel,
+//                                   last (a Season: 4/5/6; View Details = open-detail, the
+//                                   open_item.rs router); Discover: 1 Request/Edit, 2 Cancel,
 //                                   3 Approve, 4 Decline, 6 Watchlist, 7 Blocklist, 5 View
 //                                   Request, 0 View Details — gated by Seerr's real permissions
 //   menu_rows                       those ids as MenuRows (icon, font, label) — context_menu.slint
@@ -1316,14 +1317,8 @@ pub(crate) fn activate(g: &AppState, id: i32) {
         3 => g.invoke_queue_add_item(),
         4 => g.invoke_context_mark_played(id_s, g.get_context_menu_has_played()),
         5 => g.invoke_context_toggle_fav(id_s, g.get_context_menu_is_favorite()),
-        // A Season has no DetailPage: it opens its own screen (season id + series id).
-        6 => {
-            if itype.as_str() == "Season" {
-                g.invoke_open_season_detail(id_s, g.get_context_menu_series_id());
-            } else {
-                g.invoke_open_detail(id_s, itype);
-            }
-        }
+        // The item's page by its type (open_item.rs): a season, a collection… each its own.
+        6 => g.invoke_open_detail(id_s, itype),
         7 => g.invoke_open_playlist_picker(),
         8 => g.invoke_context_jf_toggle_watchlist(),
         9 => g.invoke_playlist_remove_entry(g.get_context_menu_playlist_index()),

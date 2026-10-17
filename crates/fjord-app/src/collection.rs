@@ -15,7 +15,7 @@
 //   handle_key              grid (arrows, Enter open-detail, C menu); Up from row 0 → Back; button
 //                           row ♥/✓/⛔ (⛔ only with seerr-can-manage-blocklist, opens a confirm
 //                           dialog — checked first); Down past the grid → the Missing Items row
-//   wire_collection         callbacks moved from main() (0.5.0 step 3): open the collection screen
+//   (opened through open_item.rs's router; the title comes from the server's detail)
 //   wire_collection_toggles callbacks moved from main() (0.5.0 step 3): collection favourite /
 //                           played / blocklist confirm
 // ─────────────────────────────────────────────────────────────────────────────
@@ -229,7 +229,15 @@ pub(crate) fn open_collection_screen(
             ));
             g.set_collection_focused(0);
             g.set_collection_back_focused(false);
-            g.set_collection_title(title2.as_str().into());
+            // The server's name; the caller's title only when the detail fetch failed (a caller
+            // may only know the id — open_item).
+            let name = detail_res
+                .as_ref()
+                .ok()
+                .map(|d| d.name.as_str())
+                .filter(|n| !n.is_empty())
+                .unwrap_or(title2.as_str());
+            g.set_collection_title(name.into());
             g.set_app_content_loading(false);
             crate::keys::open_screen(&g, crate::keys::StackScreen::Collection);
             w.invoke_grab_keyboard_focus();
@@ -291,6 +299,9 @@ fn spawn_collection_revalidate(
             let g = AppState::get(&w);
             if g.get_collection_open_gen() != generation {
                 return;
+            }
+            if !detail.name.is_empty() {
+                g.set_collection_title(detail.name.as_str().into());
             }
             g.set_collection_overview(
                 crate::strip_html_to_text(detail.overview.clone().unwrap_or_default().trim())
@@ -720,34 +731,6 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
             true
         }
         _ => false,
-    }
-}
-
-// ── wire_collection (moved from main(), 0.5.0 step 3) ────────────────────
-/// Wires open the collection screen: open_collection.
-pub(crate) fn wire_collection(
-    window: &crate::MainWindow,
-    state: &std::sync::Arc<std::sync::Mutex<crate::config::FjordState>>,
-    rt: &tokio::runtime::Runtime,
-) {
-    // Moved verbatim from main(): names resolve as they did there.
-    use crate::*;
-    let window = slint::ComponentHandle::clone_strong(window);
-    let state = std::sync::Arc::clone(state);
-    // ── collection screen ─────────────────────────────────────────────────────
-    {
-        let state_col = Arc::clone(&state);
-        let ww = window.as_weak();
-        let rt_handle = rt.handle().clone();
-        AppState::get(&window).on_open_collection(move |id, title| {
-            collection::open_collection_screen(
-                id.to_string(),
-                title.to_string(),
-                Arc::clone(&state_col),
-                ww.clone(),
-                rt_handle.clone(),
-            );
-        });
     }
 }
 

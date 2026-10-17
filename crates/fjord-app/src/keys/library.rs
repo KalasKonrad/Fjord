@@ -1,5 +1,6 @@
 // ── fjord-app · keys/library.rs ──────────────────────────────────────────────
-//   dispatch_library   keyboard nav for the library grid (4 focus states: grid → search → sort → back)
+//   dispatch_library   keyboard nav for the library grid (4 focus states: grid → search → sort → back);
+//                      Enter on a card → open-detail (open_item.rs picks the page)
 // ─────────────────────────────────────────────────────────────────────────────
 use super::*;
 
@@ -220,11 +221,8 @@ pub(crate) fn dispatch_library(action: &Action, g: &crate::AppState) -> bool {
             let f = g.get_library_focused();
             if f < g.get_library_display().row_count() as i32 {
                 let card = g.get_library_display().row_data(f as usize).unwrap();
-                if g.get_active_nav() == 3 {
-                    g.invoke_open_collection(card.id, card.title);
-                } else {
-                    g.invoke_open_detail(card.id, card.item_type);
-                }
+                // The item's page by its type (open_item.rs) — a BoxSet opens the collection.
+                g.invoke_open_detail(card.id, card.item_type);
             }
             true
         }

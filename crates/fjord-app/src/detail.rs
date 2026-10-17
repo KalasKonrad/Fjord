@@ -19,7 +19,7 @@
 //                       which row has focus — detail.slint scrolls to it from its real position)
 //   fetch_card_posters  async: parallel poster fetch for a slice of MediaItems → pixel buffers
 //   items_to_cards      Vec<CardItem> from items + pre-fetched buffers (UI thread)
-//   wire_detail         callbacks moved from main() (0.5.0 step 3): open the detail page
+//   (open-detail is open_item.rs's router — it calls open_detail for movies, episodes, …)
 //   wire_detail_play    callbacks moved from main() (0.5.0 step 3): detail page play / resume /
 //                       close
 //   wire_detail_toggles callbacks moved from main() (0.5.0 step 3): detail page favourite / played
@@ -1111,87 +1111,6 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
             true
         }
         _ => false,
-    }
-}
-
-// ── wire_detail (moved from main(), 0.5.0 step 3) ────────────────────────
-/// Wires open the detail page: open_detail.
-pub(crate) fn wire_detail(
-    window: &crate::MainWindow,
-    state: &std::sync::Arc<std::sync::Mutex<crate::config::FjordState>>,
-    rt: &tokio::runtime::Runtime,
-) {
-    // Moved verbatim from main(): names resolve as they did there.
-    use crate::*;
-    let window = slint::ComponentHandle::clone_strong(window);
-    let state = std::sync::Arc::clone(state);
-    // ── detail page ───────────────────────────────────────────────────────────
-    {
-        let state2 = Arc::clone(&state);
-        let ww = window.as_weak();
-        let rt_handle = rt.handle().clone();
-        AppState::get(&window).on_open_detail(move |id, item_type| match item_type.as_str() {
-            "MusicArtist" => {
-                let title = {
-                    let s = state2.lock().unwrap();
-                    s.all_artists
-                        .iter()
-                        .find(|a| a.id == id.as_str())
-                        .map(|a| a.display_name())
-                        .unwrap_or_else(|| id.to_string())
-                };
-                artist::open_artist_screen(
-                    id.to_string(),
-                    title,
-                    Arc::clone(&state2),
-                    ww.clone(),
-                    rt_handle.clone(),
-                );
-            }
-            "MusicAlbum" => {
-                let title = {
-                    let s = state2.lock().unwrap();
-                    s.all_albums
-                        .iter()
-                        .find(|a| a.id == id.as_str())
-                        .map(|a| a.display_name())
-                        .unwrap_or_else(|| id.to_string())
-                };
-                album::open_album_screen(
-                    id.to_string(),
-                    title,
-                    Arc::clone(&state2),
-                    ww.clone(),
-                    rt_handle.clone(),
-                );
-            }
-            "Playlist" => {
-                let title = {
-                    let s = state2.lock().unwrap();
-                    s.all_playlists
-                        .iter()
-                        .find(|p| p.id == id.as_str())
-                        .map(|p| p.name.clone())
-                        .unwrap_or_else(|| id.to_string())
-                };
-                album::open_playlist_screen(
-                    id.to_string(),
-                    title,
-                    Arc::clone(&state2),
-                    ww.clone(),
-                    rt_handle.clone(),
-                );
-            }
-            _ => {
-                detail::open_detail(
-                    id.to_string(),
-                    item_type.to_string(),
-                    Arc::clone(&state2),
-                    ww.clone(),
-                    rt_handle.clone(),
-                );
-            }
-        });
     }
 }
 

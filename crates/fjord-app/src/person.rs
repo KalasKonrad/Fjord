@@ -2,7 +2,8 @@
 //   open_person_screen  reset the person props; portrait + bio + filmography in parallel (cached
 //                       parts from item_detail_cache/person_filmography_cache skip the network;
 //                       app-content-loading only on a miss), then show; spawns spawn_other_work;
-//                       a cache hit revalidates (spawn_person_revalidate). Session-guarded.
+//                       a cache hit revalidates (spawn_person_revalidate). Session-guarded. The name
+//                       comes from the server's detail (opened through open_item.rs's router)
 //   resolve_person_tmdb_id  Jellyfin person → TMDB person id (ProviderIds, else a Seerr name
 //                       search); cached incl. misses in person_tmdb_id_cache
 //   spawn_other_work    TMDB combined credits minus what's in the library
@@ -109,6 +110,8 @@ pub(crate) fn open_person_screen(
         if let Ok(d) = &detail_res {
             state.lock().unwrap().item_detail_cache.insert(id.clone(), d.clone());
         }
+        // The server's name (a caller may only know the id — open_item).
+        let detail_name = detail_res.as_ref().ok().map(|d| d.name.clone()).filter(|n| !n.is_empty());
         let bio = detail_res.ok()
             .and_then(|d| d.overview)
             .unwrap_or_default()
@@ -155,6 +158,7 @@ pub(crate) fn open_person_screen(
                 return;
             }
             let g = AppState::get(&w);
+            if let Some(n) = &detail_name { g.set_person_name(n.as_str().into()); }
             if !bio.is_empty() { g.set_person_bio(bio.as_str().into()); }
             if let Some(buf) = poster_buf {
                 g.set_person_portrait(slint::Image::from_rgba8(buf));
@@ -217,6 +221,7 @@ fn spawn_person_revalidate(
                 .insert(id.clone(), film_items.clone());
         }
         let bio = crate::strip_html_to_text(detail.overview.clone().unwrap_or_default().trim());
+        let detail_name = detail.name.clone();
         let film_bufs = fetch_card_posters(&client, &film_items).await;
         let id_guard = id.clone();
         let _ = slint::invoke_from_event_loop(move || {
@@ -225,6 +230,9 @@ fn spawn_person_revalidate(
                 return;
             }
             let g = AppState::get(&w);
+            if !detail_name.is_empty() {
+                g.set_person_name(detail_name.as_str().into());
+            }
             if !bio.is_empty() {
                 g.set_person_bio(bio.as_str().into());
             }
