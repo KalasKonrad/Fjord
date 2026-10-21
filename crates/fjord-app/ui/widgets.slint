@@ -53,8 +53,9 @@
 //   VideoSpot          reports its absolute rect into AppState.video-rect-* (separate video surface)
 //   MusicPlayerBar     72px bottom bar while audio plays: art + title/artist·quality (left zone
 //                      280px × text-scale; the quality follows the artist, or stands alone),
-//                      transport + progress, Prev/Next/Shuffle/Repeat/Queue/Lyrics/volume/☾
-//                      (vertically centred); focus from AppState.bar-focused(n)
+//                      ⏮ ⏯ ⏭ (⏯ filled) above the progress bar, then Shuffle/Repeat/Queue/Lyrics/
+//                      volume/⏹/☾ (vertically centred); focus from AppState.bar-focused(n)
+//                      (slots fixed per button; keys/global.rs BAR_ORDER = the visual order)
 //                      (the bars' elements are `in-bar` / bar-ring-width: they stay lit while the
 //                      rest of the window hides its focus, AppState.bar-focus)
 //   QueuePanel         right-side queue overlay ("Queue N of M", Clear All → ConfirmDialog)
@@ -2362,89 +2363,44 @@ export component MusicPlayerBar inherits Rectangle {
             spacing: 4px;
             alignment: center;
 
-            // Transport buttons
+            // Transport: ⏮ ⏯ ⏭ together, play/pause filled (bar slots 4, 1, 5 — keys/global.rs
+            // walks BAR_ORDER). 32/36/32px keep the bar at 72px; the small ones centred on ⏯.
             HorizontalLayout {
                 alignment: center;
-                spacing: 16px;
-
-                // Play / Pause
-                ta-pp := TouchArea {
-                    width: 36px;
-                    height: 36px;
-                    mouse-cursor: MouseCursor.pointer;
-                    clicked => { AppState.music-bar-play-pause(); }
-                    Rectangle {
-                        width: parent.width;
-                        height: parent.height;
-                        border-radius: 18px;
-                        border-width: AppState.bar-ring-width(AppState.bar-focused(1), ta-pp.pressed || pp-pulse.pulsing);
-                        border-color: AppState.focus-color;
-                        background: ta-pp.has-hover ? Theme.surface-overlay : transparent;
-                        animate border-width {
-                            duration: 90ms * AppState.settings-animation-speed;
-                            easing: ease-out-expo;
-                        }
-                        FocusHalo {
-                            glowing: AppState.bar-focused(1);
-                            in-bar: true;
-                            radius: 18px;
-                        }
-
-                        pp-pulse := PressPulse {
-                            trigger: AppState.kb-activate-pulse;
-                            active: AppState.bar-focused(1);
-                        }
-
-                        Text {
-                            text: AppState.music-bar-paused ? "▶" : "⏸";
-                            font-family: "Noto Sans Symbols 2";
-                            color: Theme.text;
-                            font-size: 16px * AppState.text-scale;
-                            vertical-alignment: center;
-                            horizontal-alignment: center;
-                            width: parent.width;
-                            height: parent.height;
+                spacing: 14px;
+                VerticalLayout {
+                    alignment: center;
+                    IconCircleButton {
+                        size: 32px;
+                        icon: "⏮";
+                        kbd-focused: AppState.bar-focused(4);
+                        in-bar: true;
+                        clicked => {
+                            AppState.queue-prev-track();
                         }
                     }
                 }
 
-                // Stop
-                ta-stop := TouchArea {
-                    width: 36px;
-                    height: 36px;
-                    mouse-cursor: MouseCursor.pointer;
-                    clicked => { AppState.music-bar-stop(); }
-                    Rectangle {
-                        width: parent.width;
-                        height: parent.height;
-                        border-radius: 18px;
-                        border-width: AppState.bar-ring-width(AppState.bar-focused(2), ta-stop.pressed || stop-pulse.pulsing);
-                        border-color: AppState.focus-color;
-                        background: ta-stop.has-hover ? Theme.surface-overlay : transparent;
-                        animate border-width {
-                            duration: 90ms * AppState.settings-animation-speed;
-                            easing: ease-out-expo;
-                        }
-                        FocusHalo {
-                            glowing: AppState.bar-focused(2);
-                            in-bar: true;
-                            radius: 18px;
-                        }
+                IconCircleButton {
+                    size: 36px;
+                    icon: AppState.music-bar-paused ? "▶" : "⏸";
+                    active: true;
+                    kbd-focused: AppState.bar-focused(1);
+                    in-bar: true;
+                    clicked => {
+                        AppState.music-bar-play-pause();
+                    }
+                }
 
-                        stop-pulse := PressPulse {
-                            trigger: AppState.kb-activate-pulse;
-                            active: AppState.bar-focused(2);
-                        }
-
-                        Text {
-                            text: "⏹";
-                            font-family: "Noto Sans Symbols 2";
-                            color: Theme.text-muted;
-                            font-size: 14px * AppState.text-scale;
-                            vertical-alignment: center;
-                            horizontal-alignment: center;
-                            width: parent.width;
-                            height: parent.height;
+                VerticalLayout {
+                    alignment: center;
+                    IconCircleButton {
+                        size: 32px;
+                        icon: "⏭";
+                        kbd-focused: AppState.bar-focused(5);
+                        in-bar: true;
+                        clicked => {
+                            AppState.queue-next-track();
                         }
                     }
                 }
@@ -2503,32 +2459,18 @@ export component MusicPlayerBar inherits Rectangle {
             }
         }
 
-        // ── Right zone: ⏮Prev/⏭Next/⇌Shuffle/↺Repeat/⋮Queue/♪Lyrics(cond.)/🔉/🔊/☾Screensaver(cond.) ──
-        // All use IconCircleButton (38px), the same as Now Playing's transport row. The width
-        // fits the worst case: 9 × 38px + 8 × 8px gaps = 406px — keep it in sync with the
-        // icon count, or the last buttons get clipped at the window edge. The VerticalLayout
+        // ── Right zone: ⇌Shuffle/↺Repeat/⋮Queue/♪Lyrics(cond.)/🔉/🔊/⏹Stop/☾Screensaver(cond.) ──
+        // All IconCircleButton (38px). The width fits the worst case: 8 × 38px + 7 × 8px gaps =
+        // 360px — keep it in sync with the icon count, or the last buttons get clipped at the
+        // window edge (⏮ ⏭ moved to the centre with ⏯, 2026-10-21). The VerticalLayout
         // centres the row: a HorizontalLayout puts fixed-height children at its top (they sat
         // on the bar's top edge, the focused one's glow cut off there).
         VerticalLayout {
-            width: 406px;
+            width: 360px;
             alignment: center;
             HorizontalLayout {
                 alignment: center;
                 spacing: 8px;
-
-                IconCircleButton {
-                    icon: "⏮";
-                    kbd-focused: AppState.bar-focused(4);
-                    in-bar: true;
-                    clicked => { AppState.queue-prev-track(); }
-                }
-
-                IconCircleButton {
-                    icon: "⏭";
-                    kbd-focused: AppState.bar-focused(5);
-                    in-bar: true;
-                    clicked => { AppState.queue-next-track(); }
-                }
 
                 IconCircleButton {
                     icon: "⇌";
@@ -2573,6 +2515,13 @@ export component MusicPlayerBar inherits Rectangle {
                     kbd-focused: AppState.bar-focused(11);
                     in-bar: true;
                     clicked => { AppState.volume-up(); }
+                }
+
+                IconCircleButton {
+                    icon: "⏹";
+                    kbd-focused: AppState.bar-focused(2);
+                    in-bar: true;
+                    clicked => { AppState.music-bar-stop(); }
                 }
 
                 // Screensaver (screensaver.rs): lit while it will come on; Enter/click turns it off for
