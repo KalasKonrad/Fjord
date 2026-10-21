@@ -23,6 +23,10 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Fixed: a song or video that took long to start began again from the
+  top** right after it finally started (when the server's disks were waking
+  up: Fjord waits up to 15 s for a first start, but then counted that wait as
+  a hang and reloaded).
 - **Fixed: the first visit to Discover froze for a moment** (about 0.7 s on a
   desktop, 1.4 s on the HTPC). The cause was the calendar card's 🗓 icon: the
   text font doesn't have it, so the first time it was drawn Fjord searched
