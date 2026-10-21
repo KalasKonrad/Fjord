@@ -2,6 +2,7 @@
 //   dispatch_player    ask-timed overlay; ask overlay; Up Next banner; panel nav; player controls;
 //                      chapter-prev/next (,/.); sub/audio delay (z/Z/x/X)
 //   handle_key_queue_panel / handle_key_now_playing  queue panel and Now Playing screen keys
+//                     (np_rows / np_step / np_down: Now Playing's two control rows, unit-tested)
 //                      (transport row 0-7, 8 = ☾ screensaver when it has a time)
 // ─────────────────────────────────────────────────────────────────────────────
 use super::*;
@@ -320,10 +321,39 @@ pub(crate) fn handle_key_queue_panel(action: &Action, g: &crate::AppState) -> bo
     }
 }
 
-// Cursor split: !now-playing-in-strip = transport row (0=Album 1=Prev 2=Play/
-// Pause 3=Next 4=Shuffle 5=Repeat); in-strip = index into queue-items. Global
-// pre-dispatch already handles PrevTrack/NextTrack/ToggleShuffle/CycleRepeat/
-// ToggleLyrics/Space-pause before this runs, so only navigation reaches here.
+/// Now Playing's two control rows, left to right (now_playing.slint): the transport ⏮ ⏯ ⏭
+/// (1, 2, 3), then ⇌ ↻ 🔉 🔊 ☾ Open Album (4, 5, 6, 7, 8, 0 — ☾ only with the screensaver on).
+fn np_rows(screensaver: bool) -> [Vec<i32>; 2] {
+    let mut second = vec![4, 5, 6, 7];
+    if screensaver {
+        second.push(8);
+    }
+    second.push(0);
+    [vec![1, 2, 3], second]
+}
+
+/// Left (-1) / Right (+1) within the focused control's row; stays at the row's ends.
+fn np_step(c: i32, dir: i32, screensaver: bool) -> i32 {
+    let rows = np_rows(screensaver);
+    let row = rows.iter().find(|r| r.contains(&c)).unwrap_or(&rows[0]);
+    let at = row.iter().position(|&x| x == c).unwrap_or(0) as i32;
+    row[(at + dir).clamp(0, row.len() as i32 - 1) as usize]
+}
+
+/// Down from the transport row: the control below (⏮ → ↻, ⏯ → 🔉, ⏭ → 🔊); None from the
+/// second row (→ the Up Next strip).
+fn np_down(c: i32) -> Option<i32> {
+    match c {
+        1 => Some(5),
+        2 => Some(6),
+        3 => Some(7),
+        _ => None,
+    }
+}
+
+// Cursor split: !now-playing-in-strip = the two control rows (np_rows); in-strip = index into
+// queue-items. Global pre-dispatch already handles PrevTrack/NextTrack/ToggleShuffle/
+// CycleRepeat/ToggleLyrics/Space-pause before this runs, so only navigation reaches here.
 pub(crate) fn handle_key_now_playing(action: &Action, g: &crate::AppState) -> bool {
     use slint::Model;
 
@@ -348,16 +378,29 @@ pub(crate) fn handle_key_now_playing(action: &Action, g: &crate::AppState) -> bo
             true
         }
         Action::Up => {
+            let c = g.get_now_playing_ctrl_focused();
             if g.get_now_playing_in_strip() {
-                g.set_now_playing_in_strip(false); // strip → transport row
+                // strip → the second row (where it was, else its first control)
+                g.set_now_playing_in_strip(false);
+                if np_down(c).is_some() {
+                    g.set_now_playing_ctrl_focused(4);
+                }
+            } else if np_down(c).is_none() {
+                g.set_now_playing_ctrl_focused(2); // second row → ⏯
             } else {
                 g.set_now_playing_back_focused(true); // transport row → Back
             }
             true
         }
         Action::Down => {
-            if !g.get_now_playing_in_strip() && g.get_queue_items().row_count() > 0 {
-                g.set_now_playing_in_strip(true);
+            let c = g.get_now_playing_ctrl_focused();
+            if g.get_now_playing_in_strip() {
+                return true;
+            }
+            match np_down(c) {
+                Some(below) => g.set_now_playing_ctrl_focused(below),
+                None if g.get_queue_items().row_count() > 0 => g.set_now_playing_in_strip(true),
+                None => {}
             }
             true
         }
@@ -369,9 +412,7 @@ pub(crate) fn handle_key_now_playing(action: &Action, g: &crate::AppState) -> bo
                 }
             } else {
                 let c = g.get_now_playing_ctrl_focused();
-                if c > 0 {
-                    g.set_now_playing_ctrl_focused(c - 1);
-                }
+                g.set_now_playing_ctrl_focused(np_step(c, -1, g.get_screensaver_enabled()));
             }
             true
         }
@@ -384,11 +425,7 @@ pub(crate) fn handle_key_now_playing(action: &Action, g: &crate::AppState) -> bo
                 }
             } else {
                 let c = g.get_now_playing_ctrl_focused();
-                // 8 = ☾ screensaver, shown only when Settings → Audio has a time set.
-                let last = if g.get_screensaver_enabled() { 8 } else { 7 };
-                if c < last {
-                    g.set_now_playing_ctrl_focused(c + 1);
-                }
+                g.set_now_playing_ctrl_focused(np_step(c, 1, g.get_screensaver_enabled()));
             }
             true
         }
@@ -417,5 +454,28 @@ pub(crate) fn handle_key_now_playing(action: &Action, g: &crate::AppState) -> bo
             true
         }
         _ => true, // absorb all other keys while the screen is open
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn now_playing_controls_move_in_two_rows() {
+        // Transport row: ⏮ ⏯ ⏭, stops at its ends.
+        assert_eq!(np_step(2, 1, true), 3);
+        assert_eq!(np_step(3, 1, true), 3);
+        assert_eq!(np_step(1, -1, true), 1);
+        // Second row: ⇌ ↻ 🔉 🔊 (☾) Open Album.
+        assert_eq!(np_step(7, 1, true), 8);
+        assert_eq!(np_step(7, 1, false), 0, "no ☾ without the screensaver");
+        assert_eq!(np_step(0, 1, true), 0);
+        assert_eq!(np_step(0, -1, true), 8);
+        assert_eq!(np_step(4, -1, true), 4);
+        // Down: transport → the control below; the second row → the strip.
+        assert_eq!(np_down(2), Some(6));
+        assert_eq!(np_down(0), None);
+        assert_eq!(np_down(8), None);
     }
 }

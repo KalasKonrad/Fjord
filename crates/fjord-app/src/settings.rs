@@ -44,7 +44,7 @@
 //   apply_profile_settings_to_window  PROFILE_BINDS → window + dashboard row orders; font_desc =
 //                   the Text font dropdown's label (launch, profile switch, Copy settings from…)
 //   apply_settings_to_window ↔ read_settings_from_window  the binds + the special cases
-//                (device descriptions, speed floats, audio channels, seerr_enabled)
+//                (device descriptions, audio channels, seerr_enabled)
 //   settings_snapshot / settings_diff  the settings-changed handler logs which settings changed
 //                (text values by name only)
 //   fetch_audio_devices / fetch_system_fonts  startup fetches for the device and font dropdowns
@@ -170,6 +170,7 @@ const AUD_SKIP_FADE_MUTE: &str = "audio.skip_fade_mute"; // virtual — hidden w
 const AUD_AUDIO_LANG: &str = "audio.lang";
 const AUD_GAPLESS: &str = "audio.gapless";
 const AUD_NOW_PLAYING_AUTO_OPEN: &str = "audio.now_playing_auto_open_secs"; // per profile; timer.rs
+const AUD_NOW_PLAYING_BG: &str = "audio.now_playing_background"; // per profile; now_playing.slint
 const AUD_SCREENSAVER: &str = "audio.screensaver_mins"; // per profile; screensaver.rs
 
 // ── Player (config) section rows ──────────────────────────────────────────────
@@ -306,6 +307,7 @@ const SECTION_ROWS: &[(&str, &[&str])] = &[
             AUD_SKIP_FADE_MUTE,
             AUD_GAPLESS,
             AUD_NOW_PLAYING_AUTO_OPEN,
+            AUD_NOW_PLAYING_BG,
             AUD_SCREENSAVER,
         ],
     ),
@@ -769,6 +771,8 @@ const NOW_PLAYING_SECS_OPTIONS: &[(&str, &str)] = &[
     ("120", "2 min"),
     ("300", "5 min"),
 ];
+const NOW_PLAYING_BG_OPTIONS: &[(&str, &str)] =
+    &[("plain", "Plain"), ("soft", "Soft"), ("strong", "Strong")];
 const SUB_BACKGROUND_OPTIONS: &[(&str, &str)] = &[
     ("0", "Off"),
     ("25", "Light"),
@@ -1160,6 +1164,14 @@ static CHOICES: &[Choice] = &[
         field: Field::Int(
             |g| g.get_settings_toast_secs(),
             |g, v| g.set_settings_toast_secs(v),
+        ),
+    },
+    Choice {
+        key: AUD_NOW_PLAYING_BG,
+        options: NOW_PLAYING_BG_OPTIONS,
+        field: Field::Str(
+            |g| g.get_settings_now_playing_background(),
+            |g, v| g.set_settings_now_playing_background(v),
         ),
     },
     Choice {
@@ -2328,6 +2340,13 @@ pub(crate) static PROFILE_BINDS: &[ProfileBind] = &[
         get_settings_toast_secs,
         set_settings_toast_secs,
         u32
+    ),
+    bind!(
+        Profile,
+        now_playing_background,
+        get_settings_now_playing_background,
+        set_settings_now_playing_background,
+        str
     ),
     bind!(
         Profile,

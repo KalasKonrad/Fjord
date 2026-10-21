@@ -1,12 +1,16 @@
 // ── fjord-app · now_playing.slint ────────────────────────────────────────────
-//   NowPlayingScreen   fullscreen music view: ← Back top bar, big art + transport
-//                      controls (left), synced lyrics (right), "Up Next" strip
-//                      (bottom). Keyboard state: now-playing-back-focused (top bar),
-//                      now-playing-in-strip (row toggle), now-playing-ctrl-focused
-//                      (0-8: Album/Prev/Play-Pause/Next/Shuffle/Repeat/VolDown/VolUp/
-//                      ☾ Screensaver — 8 only when Settings → Audio has a time set),
-//                      now-playing-strip-focused (index into queue-items) —
-//                      all driven from keys.rs.
+//   NowPlayingScreen   fullscreen music view: 70px top bar (← Back at x/y 16 like every
+//                      screen's), the cover (sized from the window: what's left after the
+//                      bar, the strip and the column's text/controls, 240–640px) + the whole
+//                      title (wraps), artist (only when there is one), format, progress, then
+//                      two control rows — ⏮ ⏯ ⏭ (⏯ 68px, filled) / ⇌ ↻ 🔉 🔊 ☾ Open Album —
+//                      (left), synced lyrics (right), "Up Next" strip (bottom: 104px covers,
+//                      title + artist). Settings → Audio "Now Playing background": the cover
+//                      blurred (music-bar-art-blur) under a Soft/Strong scrim, the bars see-
+//                      through over it. Keys (keys/player.rs): now-playing-back-focused (top
+//                      bar), now-playing-in-strip, now-playing-ctrl-focused (1-3 ⏮⏯⏭ / 4 ⇌ 5 ↻
+//                      6 🔉 7 🔊 8 ☾ (only with the screensaver on) 0 Open Album),
+//                      now-playing-strip-focused (index into queue-items).
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
@@ -20,37 +24,65 @@ import {
 export component NowPlayingScreen inherits Rectangle {
     background: Theme.bg;
 
-    // 72px art + 4px spacing + a 2-line-tall title box (word-wrapped instead
-    // of elided so a long track title is fully readable, not just its start),
-    // plus the "Up Next" label row and padding above it.
-    property <length> strip-h: 172px;
+    // Sizes come from the window (and Settings → Interface → Text size), so the screen fills a TV.
+    property <length> bar-h: 70px; // the top bar: Back at x/y 16 like every other screen's
+    property <length> pad: 32px;
+    // Up Next: the label, 104px covers, then title + artist.
+    property <length> strip-card: 104px;
+    property <length> strip-step: 138px; // a card's width (124) + the gap between cards (14)
+    property <length> strip-h: 148px + 49px * AppState.text-scale;
+    // The left column without the cover: title (up to two lines) + artist + format, the
+    // progress bar + times, the two control rows (68 + 12 + 38), the gaps between them.
+    property <length> info-h: 117px * AppState.text-scale + 198px;
+    property <length> cover-size: clamp(root.height - root.bar-h - root.strip-h - 2 * root.pad - root.info-h, 240px, 640px);
+    property <length> col-w: max(root.cover-size, 440px * AppState.text-scale);
+    // Settings → Audio "Now Playing background": the cover blurred behind everything.
+    property <bool> blur-on: AppState.settings-now-playing-background != "plain" && AppState.music-bar-has-art;
+    property <bool> np-ctrl: !AppState.now-playing-back-focused && !AppState.now-playing-in-strip;
+
+    // The song's cover as a 24px image stretched over the screen (reads as a blur — the Music
+    // hero's way), under a scrim: Soft darker (colours only hinted), Strong brighter.
+    if root.blur-on: Image {
+        x: 0;
+        y: 0;
+        width: parent.width;
+        height: parent.height;
+        source: AppState.music-bar-art-blur;
+        image-fit: cover;
+    }
+    if root.blur-on: Rectangle {
+        x: 0;
+        y: 0;
+        width: parent.width;
+        height: parent.height;
+        background: AppState.settings-now-playing-background == "strong" ? Theme.scrim : Theme.scrim-solid;
+    }
 
     VerticalLayout {
         spacing: 0px;
 
-        // ── Top bar: Back button ────────────────────────────────────────────
+        // ── Top bar: Back ───────────────────────────────────────────────────
         Rectangle {
-            height: 54px;
-            background: Theme.surface;
-            HorizontalLayout {
-                padding-left: Theme.sp-sm;
-                padding-right: Theme.sp;
-                spacing: Theme.sp-sm;
-                alignment: start;
-                FjordButton {
-                    text: "← Back";
-                    width: 80px * AppState.text-scale;
-                    kbd-focused: AppState.now-playing-back-focused;
-                    clicked => { AppState.show-now-playing = false; }
+            height: root.bar-h;
+            background: root.blur-on ? Theme.osd-panel : Theme.surface;
+            FjordButton {
+                x: 16px;
+                y: 16px;
+                text: "← Back";
+                width: 88px * AppState.text-scale;
+                kbd-focused: AppState.now-playing-back-focused;
+                clicked => {
+                    AppState.show-now-playing = false;
                 }
+            }
 
-                Text {
-                    text: "Now Playing";
-                    color: Theme.text;
-                    font-size: 17px * AppState.text-scale;
-                    font-weight: 700;
-                    vertical-alignment: center;
-                }
+            Text {
+                x: 16px + 88px * AppState.text-scale + Theme.sp;
+                y: (parent.height - self.height) / 2;
+                text: "Now Playing";
+                color: Theme.text;
+                font-size: 17px * AppState.text-scale;
+                font-weight: 700;
             }
 
             Rectangle {
@@ -63,57 +95,61 @@ export component NowPlayingScreen inherits Rectangle {
 
         HorizontalLayout {
             vertical-stretch: 1;
-            padding: 48px;
+            padding: root.pad;
+            padding-left: 48px;
+            padding-right: 48px;
             spacing: 48px;
 
-            // ── Left: art + info + transport ────────────────────────────────
+            // ── Left: cover + title/artist/format + progress + controls ──────
             VerticalLayout {
-                horizontal-stretch: 1;
+                width: root.col-w;
                 alignment: center;
-                spacing: 24px;
+                spacing: 20px;
 
-                art := Rectangle {
-                    width: 380px;
-                    height: 380px;
-                    x: (parent.width - self.width) / 2;
-                    border-radius: Theme.radius-lg;
-                    background: Theme.surface-raised;
-                    clip: true;
-                    if AppState.music-bar-has-art: Image {
-                        width: parent.width;
-                        height: parent.height;
-                        image-fit: cover;
-                        source: AppState.music-bar-art;
-                    }
-                    if !AppState.music-bar-has-art: Text {
-                        text: "♫";
-                        font-family: "Noto Sans Symbols 2";
-                        color: Theme.text-subtle;
-                        font-size: 96px;
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
-                        width: parent.width;
-                        height: parent.height;
+                Rectangle {
+                    height: root.cover-size;
+                    art := Rectangle {
+                        x: (parent.width - self.width) / 2;
+                        width: root.cover-size;
+                        height: root.cover-size;
+                        border-radius: Theme.radius-lg;
+                        background: Theme.surface-raised;
+                        clip: true;
+                        if AppState.music-bar-has-art: Image {
+                            width: parent.width;
+                            height: parent.height;
+                            image-fit: cover;
+                            source: AppState.music-bar-art;
+                        }
+                        if !AppState.music-bar-has-art: Text {
+                            text: "♫";
+                            font-family: "Noto Sans Symbols 2";
+                            color: Theme.text-subtle;
+                            font-size: root.cover-size / 4;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                            width: parent.width;
+                            height: parent.height;
+                        }
                     }
                 }
 
+                // The whole title (it wraps), the artist only when there is one, the format.
                 VerticalLayout {
-                    width: 380px;
-                    x: (parent.width - self.width) / 2;
                     spacing: 4px;
                     Text {
                         text: AppState.music-bar-title;
                         color: Theme.text;
-                        font-size: 22px * AppState.text-scale;
+                        font-size: 26px * AppState.text-scale;
                         font-weight: 700;
                         horizontal-alignment: center;
-                        overflow: elide;
+                        wrap: word-wrap;
                     }
 
-                    Text {
+                    if AppState.music-bar-artist != "": Text {
                         text: AppState.music-bar-artist;
                         color: Theme.text-muted;
-                        font-size: 15px * AppState.text-scale;
+                        font-size: 16px * AppState.text-scale;
                         horizontal-alignment: center;
                         overflow: elide;
                     }
@@ -129,8 +165,6 @@ export component NowPlayingScreen inherits Rectangle {
                 }
 
                 VerticalLayout {
-                    width: 380px;
-                    x: (parent.width - self.width) / 2;
                     spacing: 6px;
                     prog-ta := TouchArea {
                         mouse-cursor: MouseCursor.pointer;
@@ -156,7 +190,7 @@ export component NowPlayingScreen inherits Rectangle {
                         Text {
                             text: AppState.music-bar-elapsed;
                             color: Theme.text-muted;
-                            font-size: 12px * AppState.text-scale;
+                            font-size: 13px * AppState.text-scale;
                         }
 
                         Rectangle {
@@ -166,75 +200,112 @@ export component NowPlayingScreen inherits Rectangle {
                         Text {
                             text: AppState.music-bar-total;
                             color: Theme.text-muted;
-                            font-size: 12px * AppState.text-scale;
+                            font-size: 13px * AppState.text-scale;
                         }
                     }
                 }
 
-                HorizontalLayout {
-                    x: (parent.width - self.width) / 2;
-                    spacing: 14px;
-                    alignment: center;
-                    FjordButton {
-                        text: "Open Album";
-                        width: 130px * AppState.text-scale;
-                        kbd-focused: !AppState.now-playing-back-focused && !AppState.now-playing-in-strip && AppState.now-playing-ctrl-focused == 0;
-                        clicked => {
-                            AppState.music-bar-open-album();
-                            AppState.show-now-playing = false;
+                // Two rows (keys/player.rs: Up/Down between them): the transport — ⏮ ⏯ ⏭, play/pause
+                // the largest and filled — then ⇌ ↻ 🔉 🔊 ☾ Open Album. Indices
+                // (now-playing-ctrl-focused): 1 ⏮, 2 ⏯, 3 ⏭ / 4 ⇌, 5 ↻, 6 🔉, 7 🔊, 8 ☾, 0 Open Album.
+                VerticalLayout {
+                    spacing: 12px;
+                    HorizontalLayout {
+                        alignment: center;
+                        spacing: 28px;
+                        // A HorizontalLayout puts fixed-height children at its top — centre the
+                        // smaller ones on the big one.
+                        VerticalLayout {
+                            alignment: center;
+                            IconCircleButton {
+                                size: 52px;
+                                icon: "⏮";
+                                kbd-focused: root.np-ctrl && AppState.now-playing-ctrl-focused == 1;
+                                clicked => {
+                                    AppState.queue-prev-track();
+                                }
+                            }
+                        }
+
+                        IconCircleButton {
+                            size: 68px;
+                            icon: AppState.music-bar-paused ? "▶" : "⏸";
+                            active: true;
+                            kbd-focused: root.np-ctrl && AppState.now-playing-ctrl-focused == 2;
+                            clicked => {
+                                AppState.music-bar-play-pause();
+                            }
+                        }
+
+                        VerticalLayout {
+                            alignment: center;
+                            IconCircleButton {
+                                size: 52px;
+                                icon: "⏭";
+                                kbd-focused: root.np-ctrl && AppState.now-playing-ctrl-focused == 3;
+                                clicked => {
+                                    AppState.queue-next-track();
+                                }
+                            }
                         }
                     }
 
-                    IconCircleButton {
-                        icon: "⏮";
-                        kbd-focused: !AppState.now-playing-back-focused && !AppState.now-playing-in-strip && AppState.now-playing-ctrl-focused == 1;
-                        clicked => { AppState.queue-prev-track(); }
-                    }
+                    HorizontalLayout {
+                        alignment: center;
+                        spacing: 12px;
+                        IconCircleButton {
+                            icon: "⇌";
+                            active: AppState.queue-shuffle;
+                            kbd-focused: root.np-ctrl && AppState.now-playing-ctrl-focused == 4;
+                            clicked => {
+                                AppState.toggle-shuffle();
+                            }
+                        }
 
-                    IconCircleButton {
-                        icon: AppState.music-bar-paused ? "▶" : "⏸";
-                        kbd-focused: !AppState.now-playing-back-focused && !AppState.now-playing-in-strip && AppState.now-playing-ctrl-focused == 2;
-                        clicked => { AppState.music-bar-play-pause(); }
-                    }
+                        IconCircleButton {
+                            icon: AppState.queue-repeat-mode == 2 ? "↺¹" : "↺";
+                            active: AppState.queue-repeat-mode > 0;
+                            kbd-focused: root.np-ctrl && AppState.now-playing-ctrl-focused == 5;
+                            clicked => {
+                                AppState.cycle-repeat();
+                            }
+                        }
 
-                    IconCircleButton {
-                        icon: "⏭";
-                        kbd-focused: !AppState.now-playing-back-focused && !AppState.now-playing-in-strip && AppState.now-playing-ctrl-focused == 3;
-                        clicked => { AppState.queue-next-track(); }
-                    }
+                        IconCircleButton {
+                            icon: "🔉";
+                            kbd-focused: root.np-ctrl && AppState.now-playing-ctrl-focused == 6;
+                            clicked => {
+                                AppState.volume-down();
+                            }
+                        }
 
-                    IconCircleButton {
-                        icon: "⇌";
-                        active: AppState.queue-shuffle;
-                        kbd-focused: !AppState.now-playing-back-focused && !AppState.now-playing-in-strip && AppState.now-playing-ctrl-focused == 4;
-                        clicked => { AppState.toggle-shuffle(); }
-                    }
+                        IconCircleButton {
+                            icon: "🔊";
+                            kbd-focused: root.np-ctrl && AppState.now-playing-ctrl-focused == 7;
+                            clicked => {
+                                AppState.volume-up();
+                            }
+                        }
 
-                    IconCircleButton {
-                        icon: AppState.queue-repeat-mode == 2 ? "↺¹" : "↺";
-                        active: AppState.queue-repeat-mode > 0;
-                        kbd-focused: !AppState.now-playing-back-focused && !AppState.now-playing-in-strip && AppState.now-playing-ctrl-focused == 5;
-                        clicked => { AppState.cycle-repeat(); }
-                    }
+                        // Screensaver: lit while it will come on; turns it off for this playback.
+                        if AppState.screensaver-enabled: IconCircleButton {
+                            icon: "☾";
+                            active: !AppState.screensaver-paused;
+                            kbd-focused: root.np-ctrl && AppState.now-playing-ctrl-focused == 8;
+                            clicked => {
+                                AppState.toggle-screensaver();
+                            }
+                        }
 
-                    IconCircleButton {
-                        icon: "🔉";
-                        kbd-focused: !AppState.now-playing-back-focused && !AppState.now-playing-in-strip && AppState.now-playing-ctrl-focused == 6;
-                        clicked => { AppState.volume-down(); }
-                    }
-
-                    IconCircleButton {
-                        icon: "🔊";
-                        kbd-focused: !AppState.now-playing-back-focused && !AppState.now-playing-in-strip && AppState.now-playing-ctrl-focused == 7;
-                        clicked => { AppState.volume-up(); }
-                    }
-
-                    // Screensaver: lit while it will come on; turns it off for this playback.
-                    if AppState.screensaver-enabled: IconCircleButton {
-                        icon: "☾";
-                        active: !AppState.screensaver-paused;
-                        kbd-focused: !AppState.now-playing-back-focused && !AppState.now-playing-in-strip && AppState.now-playing-ctrl-focused == 8;
-                        clicked => { AppState.toggle-screensaver(); }
+                        FjordButton {
+                            text: "Open Album";
+                            width: 130px * AppState.text-scale;
+                            kbd-focused: root.np-ctrl && AppState.now-playing-ctrl-focused == 0;
+                            clicked => {
+                                AppState.music-bar-open-album();
+                                AppState.show-now-playing = false;
+                            }
+                        }
                     }
                 }
             }
@@ -331,8 +402,8 @@ export component NowPlayingScreen inherits Rectangle {
 
         // ── Up Next strip ────────────────────────────────────────────────────
         Rectangle {
-            height: strip-h;
-            background: Theme.surface;
+            height: root.strip-h;
+            background: root.blur-on ? Theme.osd-panel : Theme.surface;
             Rectangle {
                 y: 0;
                 height: 1px;
@@ -347,40 +418,44 @@ export component NowPlayingScreen inherits Rectangle {
                 Text {
                     text: "Up Next";
                     color: Theme.text-muted;
-                    font-size: 12px * AppState.text-scale;
+                    font-size: 13px * AppState.text-scale;
                     font-weight: 600;
                 }
 
                 strip-fl := Flickable {
-                    height: strip-h - 16px * 2 - 12px - 8px;
+                    height: root.strip-card + 4px + 34px * AppState.text-scale;
                     content-width: max(self.width, strip-row.preferred-width);
                     content-height: self.height;
 
                     property <length> kb-x: clamp(
-                        -(AppState.now-playing-strip-focused * 104px) + parent.width / 2 - 52px,
+                        -(AppState.now-playing-strip-focused * root.strip-step) + parent.width / 2 - root.strip-step / 2,
                         min(0px, parent.width - strip-row.preferred-width),
                         0px);
-                    changed kb-x => { strip-fl.content-x = kb-x; }
+                    changed kb-x => {
+                        strip-fl.content-x = kb-x;
+                    }
                     animate content-x {
                         duration: 150ms * AppState.settings-scroll-speed;
                         easing: ease-out-expo;
                     }
 
                     strip-row := HorizontalLayout {
-                        spacing: 12px;
+                        spacing: root.strip-step - 124px;
                         alignment: start;
 
                         for entry[i] in AppState.queue-items: chip-ta := TouchArea {
                             mouse-cursor: MouseCursor.pointer;
-                            width: 92px;
-                            clicked => { AppState.queue-jump(entry.index); }
+                            width: 124px;
+                            clicked => {
+                                AppState.queue-jump(entry.index);
+                            }
 
                             VerticalLayout {
                                 spacing: 4px;
                                 // The glow holder (FocusGlow); the cover inside it is clipped, its ring over the picture.
                                 FocusGlow {
-                                    width: 72px;
-                                    height: 72px;
+                                    width: root.strip-card;
+                                    height: root.strip-card;
                                     x: (parent.width - self.width) / 2;
                                     chip-pulse := PressPulse {
                                         trigger: AppState.kb-activate-pulse;
@@ -411,7 +486,7 @@ export component NowPlayingScreen inherits Rectangle {
                                             text: "♫";
                                             font-family: "Noto Sans Symbols 2";
                                             color: Theme.text-subtle;
-                                            font-size: 22px * AppState.text-scale;
+                                            font-size: 30px * AppState.text-scale;
                                             horizontal-alignment: center;
                                             vertical-alignment: center;
                                             width: parent.width;
@@ -420,17 +495,22 @@ export component NowPlayingScreen inherits Rectangle {
                                     }
                                 }
 
+                                // Title, then the artist (the playing one in the accent colour).
                                 Text {
                                     text: entry.title;
                                     color: entry.is-current ? Theme.accent : Theme.text;
-                                    font-size: 11px * AppState.text-scale;
-                                    font-weight: entry.is-current ? 700 : 400;
+                                    font-size: 13px * AppState.text-scale;
+                                    font-weight: entry.is-current ? 700 : 600;
                                     horizontal-alignment: center;
-                                    vertical-alignment: center;
-                                    wrap: word-wrap;
                                     overflow: elide;
-                                    width: 92px;
-                                    height: 32px;
+                                }
+
+                                Text {
+                                    text: entry.artist;
+                                    color: Theme.text-muted;
+                                    font-size: 12px * AppState.text-scale;
+                                    horizontal-alignment: center;
+                                    overflow: elide;
                                 }
                             }
                         }

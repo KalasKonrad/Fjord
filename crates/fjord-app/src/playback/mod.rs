@@ -1303,6 +1303,8 @@ pub(crate) fn start_playback(
                         crate::poster::fetch_poster_cached(&client_art, &art_id).await
                         && let Some(spb) = crate::poster::decode_poster_buffer(&bytes)
                     {
+                        // Now Playing's blurred background (Settings → Audio), from the same bytes.
+                        let blur = crate::poster::decode_blur_buffer(&bytes);
                         let _ = slint::invoke_from_event_loop(move || {
                             // Generation guard: on fast track skips the previous
                             // track's cover could land on the new track's bar.
@@ -1313,6 +1315,9 @@ pub(crate) fn start_playback(
                                 let g = AppState::get(&w);
                                 if g.get_is_audio_playing() {
                                     g.set_music_bar_art(slint::Image::from_rgba8(spb));
+                                    if let Some(b) = blur {
+                                        g.set_music_bar_art_blur(slint::Image::from_rgba8(b));
+                                    }
                                     g.set_music_bar_has_art(true);
                                 }
                             }

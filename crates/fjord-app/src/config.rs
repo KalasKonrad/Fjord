@@ -27,7 +27,7 @@
 //                   focus_color/_width/_style/_glow/_glow_on/_opacity/_zoom (focus ring, glow
 //                   strength and scope, picture zoom), screensaver_mins (0 = off),
 //                   now_playing_auto_open_secs (0 = off; reads the old bool), controls_hide_secs,
-//                   toast_secs, video_behind, seek_step_secs/_long_secs, skip_fade_ms,
+//                   toast_secs, now_playing_background ("plain"|"soft"|"strong"), video_behind, seek_step_secs/_long_secs, skip_fade_ms,
 //                   scroll/animation_speed_pct, ui_font_family, onscreen_keyboard_enabled,
 //                   Seerr connection (seerr_enabled/_url/_auth_method/_api_key/
 //                   _session_cookie), Discover filters (genres by name, providers by id), Request
@@ -154,6 +154,9 @@ fn de_sub_background_pct<'de, D: serde::Deserializer<'de>>(d: D) -> Result<u32, 
 }
 fn default_controls_hide_secs() -> u32 {
     3
+}
+fn default_now_playing_background() -> String {
+    "soft".into()
 }
 fn default_toast_secs() -> u32 {
     4
@@ -746,6 +749,10 @@ pub(crate) struct ProfileSettings {
     // Settings → Interface "Message duration": seconds a toast stays up (main.slint). Default 4 s.
     #[serde(default = "default_toast_secs")]
     pub toast_secs: u32,
+    // Settings → Audio "Now Playing background": "plain" | "soft" (default) | "strong" — the
+    // song's cover blurred behind Now Playing, darker or brighter (now_playing.slint).
+    #[serde(default = "default_now_playing_background")]
+    pub now_playing_background: String,
     // ── Per profile since 2026-10-21 (were DeviceConfig; MovedToProfiles migrates) ────────
     // Settings → General "Video in background".
     #[serde(default)]
@@ -1012,6 +1019,7 @@ impl Default for ProfileSettings {
             screensaver_mins: default_screensaver_mins(),
             controls_hide_secs: default_controls_hide_secs(),
             toast_secs: default_toast_secs(),
+            now_playing_background: default_now_playing_background(),
             video_behind: false,
             seek_step_secs: default_seek_step(),
             seek_step_long_secs: default_seek_step_long(),
@@ -1419,6 +1427,7 @@ fn migrate_legacy_config(l: LegacyConfig) -> Config {
         screensaver_mins: default_screensaver_mins(),
         controls_hide_secs: default_controls_hide_secs(),
         toast_secs: default_toast_secs(),
+        now_playing_background: default_now_playing_background(),
         // Filled from the legacy values by move_device_settings_to_profiles (load_config).
         video_behind: false,
         seek_step_secs: default_seek_step(),
@@ -2669,6 +2678,7 @@ mod tests {
         src.screensaver_mins = 15;
         src.controls_hide_secs = 10;
         src.toast_secs = 6;
+        src.now_playing_background = "strong".into();
         src.dashboard_rows.insert(
             "music".into(),
             vec![
@@ -2701,6 +2711,7 @@ mod tests {
         assert_eq!(dst.dashboard_hero, "background");
         assert_eq!(dst.screensaver_mins, 15);
         assert_eq!((dst.controls_hide_secs, dst.toast_secs), (10, 6));
+        assert_eq!(dst.now_playing_background, "strong");
         assert_eq!(
             (
                 dst.focus_color.as_str(),
