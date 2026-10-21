@@ -23,6 +23,15 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Improved: a bigger Now Playing screen.** The cover grows with the screen
+  (about 430 px on a 1080p TV, was 380), the whole title shows (it wraps
+  instead of being cut), an empty artist line no longer leaves a gap, and the
+  controls sit in two rows under the cover: ⏮ ⏯ ⏭ large (play/pause the
+  biggest), then ⇌ ↻ 🔉 🔊 ☾ and Open Album. Up Next shows bigger covers with
+  the title and artist. Back sits where it does on every other page.
+- **New: Now Playing background.** Settings → Audio → "Now Playing
+  background": the song's cover, blurred, behind the screen — Soft (default,
+  darker), Strong (brighter) or Plain. Per profile.
 - **Changed: more settings are per profile.** Text font, Scroll speed,
   Animation speed, On-screen keyboard, Video in background, the two seek
   steps and Skip fade duration now belong to each profile (they carry the

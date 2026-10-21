@@ -763,6 +763,8 @@ export global AppState {
     in-out property <string> music-bar-quality-long: "";
     in-out property <string> music-bar-album-id:  "";   // for album art fetch + open-album nav
     in-out property <image> music-bar-art;
+    // The same cover decoded at 24px — Now Playing stretches it as its blurred background.
+    in-out property <image> music-bar-art-blur;
     in-out property <bool> music-bar-has-art:   false;
     in-out property <float> music-bar-pos:       0;    // 0–1 playback position
     in-out property <string> music-bar-elapsed:   "0:00";
@@ -1566,6 +1568,9 @@ export global AppState {
     // Settings → Player "Hide controls after" (seconds; playback/timer.rs) and Settings →
     // Interface "Message duration" (seconds a toast stays up; main.slint). Per profile.
     in-out property <int> settings-controls-hide-secs: 3;
+    // Settings → Audio "Now Playing background": "plain" | "soft" | "strong" (the cover blurred,
+    // darker or brighter; now_playing.slint). Per profile.
+    in-out property <string> settings-now-playing-background: "soft";
     in-out property <int> settings-toast-secs: 4;
     // Discover's staggered CardRows: how many rows it has built (home.slint) — read only by
     // ui_watch's debug frame trace.

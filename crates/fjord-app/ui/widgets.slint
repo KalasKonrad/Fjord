@@ -1,7 +1,7 @@
 // ── fjord-app · widgets.slint ────────────────────────────────────────────────
 //   FjordButton        accent / danger push button; kbd-focused ring; optional icon-left/-right
 //                      (pinned to Noto Sans Symbols 2, so the label keeps the chosen text font)
-//   IconCircleButton   38px circle button, accent when active; per-icon pinned fonts (Adwaita Sans
+//   IconCircleButton   circle button (`size`, 38px default; the glyph scales), accent when active; per-icon pinned fonts (Adwaita Sans
 //                      for ♥/✓, Noto Sans Math for ⇌ ⋮ ≡ ☾, Noto Sans Symbols 2 otherwise); also Now
 //                      Playing's transport row
 //   TabButton          tab pill (Bonfire admin, Dashboard rows editor); ring only on the active tab
@@ -650,11 +650,13 @@ export component IconCircleButton inherits FocusGlow {
     in property <string> icon;
     in property <bool> active:      false;
     in property <bool> kbd-focused: false;
+    // Diameter; the glyph scales with it (Now Playing's transport row is bigger).
+    in property <length> size: 38px;
     callback clicked;
 
-    width: 38px;
-    height: 38px;
-    radius: 19px;
+    width: root.size;
+    height: root.size;
+    radius: root.size / 2;
     ring-width: root.in-bar ? AppState.bar-glow-ring-width(kbd-focused, ta.pressed || pulse.pulsing)
         : AppState.glow-ring-width(kbd-focused, ta.pressed || pulse.pulsing);
     glowing: kbd-focused;
@@ -673,7 +675,7 @@ export component IconCircleButton inherits FocusGlow {
         height: parent.height;
         text: root.icon;
         color: Theme.text-bright;
-        font-size: 20px * AppState.text-scale;
+        font-size: 20px * AppState.text-scale * root.size / 38px;
         font-weight: 600;
         // Hard-pinned regardless of Settings → Interface → Text font: ♥/✓ always
         // render via Adwaita Sans specifically (the deliberately-chosen

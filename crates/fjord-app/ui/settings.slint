@@ -17,7 +17,8 @@
 //                    modes, trailers)
 //       Audio        device, channels, SPDIF (+ AC3/EAC3/DTS/DTS-HD/TrueHD, passthrough device,
 //                    ALSA IRQ scheduling on PipeWire, skip-fade mute); gapless, Now Playing
-//                    auto-open (off / 15 s … 5 min), screensaver while music plays
+//                    auto-open (off / 15 s … 5 min), Now Playing background (plain / soft /
+//                    strong), screensaver while music plays
 //       Interface    ("ui") card size, video behind UI, text font, on-screen keyboard, message
 //                    duration, scroll and animation speed; focus ring color/thickness/style, glow strength + Glow on (only
 //                    when the style isn't Line), transparency, zoom
@@ -993,6 +994,15 @@ export component SettingsScreen inherits Rectangle {
                             per-profile: true;
                             title: "Auto-open Now Playing";
                             subtitle: "Show the fullscreen music screen after this long without a key press or mouse movement while music plays";
+                        }
+
+                        SettingsRow {
+                            key: "audio.now_playing_background";
+                            choice: true;
+                            value: AppState.settings-now-playing-background;
+                            per-profile: true;
+                            title: "Now Playing background";
+                            subtitle: "The song's cover, blurred, behind the Now Playing screen — Soft keeps it dark, Strong shows its colors";
                         }
 
                         SettingsRow {
