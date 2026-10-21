@@ -23,6 +23,10 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Improved: opening Discover the first time no longer freezes as long.**
+  Its rows now appear one after another, top first, instead of all in one go
+  (on the HTPC the screen stopped for 1.4–1.7 s, and Down presses made
+  meanwhile all ran at once and landed in Settings).
 - **Fixed: Fjord could take a long time to appear at startup** when its log
   folder is on a network drive that isn't connected yet (e.g. right after the
   computer starts). The window now shows at once; the log is written as soon

@@ -13,7 +13,8 @@
 //                     Movies/TV, Requested, New in Theaters (release-date window), Coming Up (last
 //                     card: a "📅 Full Calendar" sentinel, id "" → open-calendar), Watchlist —
 //                     home.slint's CardRows over AppState.discover-rows (the dashboards' rows
-//                     component); a click syncs keyboard focus (card-clicked)
+//                     component), built one row per frame (stagger); a click syncs keyboard
+//                     focus (card-clicked)
 //                   - the results grid (search, or filtered browse — both write discover-results),
 //                     MediaCards with the Flickable + kb-y idiom
 //                   Empty states: not connected / loading (spinner) / no results. Right-click →
@@ -407,6 +408,8 @@ export component DiscoverScreen inherits Rectangle {
             horizontal-stretch: 1;
             rows: AppState.discover-rows;
             row-order: [0, 1, 2, 3, 4, 5, 6, 7, 8];
+            // One row per frame: the screen and all its rows are built on the first visit.
+            stagger: true;
             focused-card: AppState.discover-landing-card;
             view-h: root.content-h;
             // A click moves keyboard focus there (and out of the search field / filter bar).
