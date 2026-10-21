@@ -26,7 +26,8 @@
 //   do_stop_playback        user stop: tear down, keep playlist + queue (idle queue panel), reset the
 //                           UI, stop report, home refresh
 //   reset_video_state_for_playback  the shared "fresh playback" reset for start_playback/play_trailer
-//   start_playback          stop-report the previous item first, then open the URL; Audio → music bar,
+//   start_playback          stop-report the previous item first, then open the URL; Audio → music bar
+//                           (cover + its 24px blur for Now Playing's background),
 //                           no fullscreen player; playing music inserts at the top of the queue; with
 //                           display sync on (video), holds back pending_load_url/play_start while a task
 //                           switches the display first (display_sync::sync_before_load, 20 s cap;
