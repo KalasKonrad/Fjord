@@ -1733,8 +1733,10 @@ export global AppState {
     // multiply its duration directly without a /100 at each of ~119 sites.
     in-out property <int> settings-scroll-speed-pct:     100;
     in-out property <int> settings-animation-speed-pct:  100;
-    in property <float> settings-scroll-speed:         1.0;
-    in property <float> settings-animation-speed:      1.0;
+    // The multipliers every animate/scroll duration uses — derived from the % settings, so loading
+    // a profile's settings (switch, "Copy settings from…") moves them too.
+    out property <float> settings-scroll-speed: settings-scroll-speed-pct / 100;
+    out property <float> settings-animation-speed: settings-animation-speed-pct / 100;
 
     // ── Text font (Settings → Interface) — same dynamic-dropdown shape as the audio
     // device rows above, fetched via fc-list instead of mpv. settings-font-family

@@ -23,6 +23,12 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Changed: more settings are per profile.** Text font, Scroll speed,
+  Animation speed, On-screen keyboard, Video in background, the two seek
+  steps and Skip fade duration now belong to each profile (they carry the
+  "Profile" tag and are copied by "Copy settings from…"). Every profile
+  starts with what the device had, so nothing changes until someone picks
+  something else.
 - **Fixed: a song or video that took long to start began again from the
   top** right after it finally started (when the server's disks were waking
   up: Fjord waits up to 15 s for a first start, but then counted that wait as
