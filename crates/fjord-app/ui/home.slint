@@ -8,6 +8,8 @@
 //                         inward, the focused card's row is raised (z) — as in the Discover/artist/collection grids
 //   Card sizes            SectionRow's default and the grid's cards scale with AppState.card-scale
 //                         (Settings → Interface → Card size); the dashboards pass dash-cw/-ch (scaled too)
+//   CardRows              the rows of a [DashRow] in row-order, scrolled by kb-y; `stagger` builds
+//                         them one row per frame (Discover — its first frame built every row at once)
 //   DashboardView         Home, TV Shows, Movies, Collections and Music — one component: title bar,
 //                         the hero (HeroBand between title bar and rows when AppState.hero-active;
 //                         in the Background style HeroBackdrop behind everything below the title
@@ -674,6 +676,20 @@ export component CardRows inherits Rectangle {
     in property <int> focused-card;
     in property <length> view-h;
     in property <bool> loading;
+    // Build the rows' cards one row per frame instead of all in the first frame (Discover's first
+    // visit: every visible row's cards — a row creates all of its ~20 for its width — plus the
+    // screen itself in one frame froze the HTPC 1.4–1.7 s, and keys pressed meanwhile ran
+    // together afterwards). Rows keep their height while they wait, so positions and keys
+    // don't change.
+    in property <bool> stagger: false;
+    property <int> mounted: root.stagger ? 1 : 99;
+    Timer {
+        interval: 16ms; // ~one row per frame; a slow frame just delays the next row
+        running: root.stagger && root.mounted < root.row-order.length;
+        triggered => {
+            root.mounted += 1;
+        }
+    }
     // Mouse click/right-click on a card (row number, card index) — before it opens.
     callback card-clicked(int, int);
 
@@ -717,9 +733,9 @@ export component CardRows inherits Rectangle {
             padding-bottom: 0px;
             spacing: 0px;
 
-            for s in root.row-order: Rectangle {
+            for s[k] in root.row-order: Rectangle {
                 height: row-items(s).length > 0 ? AppState.row-h(AppState.dash-ch) + Theme.sp-lg : 0px;
-                if row-items(s).length > 0: SectionRow {
+                if row-items(s).length > 0 && k < root.mounted: SectionRow {
                     x: 0;
                     y: 0;
                     width: parent.width;
