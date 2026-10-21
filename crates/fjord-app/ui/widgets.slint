@@ -33,7 +33,8 @@
 //                      count / Seerr availability / cross-tier pill (top-right), progress strip;
 //                      flush focus ring; a FocusGlow under the poster while focused (from the card's
 //                      edge with the line, the poster's in the Glow style); focus zoom via AppState.zoom from
-//                      zoom-anchor-x/-y (edge cards grow inward), raised with z; no poster fade
+//                      zoom-anchor-x/-y (edge cards grow inward), raised with z; no poster fade;
+//                      the calendar card's (id "") 🗓 title pinned to Noto Sans Symbols 2
 //   TrackRow           one track of a track list (album/playlist page, the artist page's Tracks):
 //                      number, title (+ artist if not the page's), format/quality, duration, ♥, ✕
 //                      (playlists), disc label
@@ -996,6 +997,11 @@ export component MediaCard inherits Rectangle {
                 height: self.preferred-height;
                 y: subtitle-text.y - (item.subtitle != "" ? 2px : 0px) - self.height;
                 text: item.title;
+                // The Coming Up row's calendar card (id "") has 🗓 as its title — pinned to the
+                // bundled font that has it. Unpinned, the text font lacks it and the first draw
+                // searched the system fonts inside the frame: 660 ms on dev, ~1.4 s on the HTPC
+                // (Discover's first visit). "" = the window's default font for every other card.
+                font-family: item.id == "" && item.item-type == "" ? "Noto Sans Symbols 2" : "";
                 color: Theme.text;
                 font-size: 12px * AppState.text-scale;
                 font-weight: 600;

@@ -29,7 +29,8 @@
 //                                   open_item.rs router); Discover: 1 Request/Edit, 2 Cancel,
 //                                   3 Approve, 4 Decline, 6 Watchlist, 7 Blocklist, 5 View
 //                                   Request, 0 View Details — gated by Seerr's real permissions
-//   menu_rows                       those ids as MenuRows (icon, font, label) — context_menu.slint
+//   menu_rows                       those ids as MenuRows (icon, font, label; every symbol icon
+//                                   pinned to SYMBOLS — INFO 🛈 replaced ℹ) — context_menu.slint
 //                                   draws them (pure context-menu-rows: follows changes while
 //                                   open), handle_key walks them
 //   activate                        run a row (Enter and click): the Jellyfin actions (then close)
@@ -1214,6 +1215,10 @@ fn existing_jellyfin_menu_rows(g: &AppState) -> Vec<i32> {
 }
 
 const SYMBOLS: &str = "Noto Sans Symbols 2";
+/// View Details / View Request. U+1F6C8 is in Noto Sans Symbols 2; the ℹ (U+2139) it replaces is
+/// in no bundled font, so the first menu searched the system fonts inside a frame (the 🗓 card's
+/// 660 ms on Discover was the same thing).
+const INFO: &str = "🛈";
 
 fn menu_row(id: i32, icon: &str, icon_font: &str, label: &str) -> MenuRow {
     MenuRow {
@@ -1255,8 +1260,8 @@ pub(crate) fn menu_rows(g: &AppState) -> Vec<MenuRow> {
                 6 => menu_row(6, star(on), SYMBOLS, watch_label(on)),
                 7 if blocklisted => menu_row(7, "✕", SYMBOLS, "Remove from Blocklist"),
                 7 => menu_row(7, "⛔", SYMBOLS, "Add to Blocklist"),
-                5 => menu_row(5, "ℹ", "", "View Request"),
-                _ => menu_row(0, "ℹ", "", "View Details"),
+                5 => menu_row(5, INFO, SYMBOLS, "View Request"),
+                _ => menu_row(0, INFO, SYMBOLS, "View Details"),
             })
             .collect()
     } else {
@@ -1276,8 +1281,8 @@ pub(crate) fn menu_rows(g: &AppState) -> Vec<MenuRow> {
                 5 => menu_row(5, "♡", SYMBOLS, "Add to Favorites"),
                 7 => menu_row(7, "≡", "Noto Sans Math", "Add to Playlist"),
                 9 => menu_row(9, "✕", SYMBOLS, "Remove from Playlist"),
-                8 => menu_row(8, star(on), "", watch_label(on)),
-                _ => menu_row(6, "ℹ", "", "View Details"),
+                8 => menu_row(8, star(on), SYMBOLS, watch_label(on)),
+                _ => menu_row(6, INFO, SYMBOLS, "View Details"),
             })
             .collect()
     }
