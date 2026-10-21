@@ -10,12 +10,17 @@
 //                   the --vf chain (video-out-params)
 //   SourceHdrMetadata  one-shot per-file HDR10 metadata for hdr.rs (Option<f64> luma/CLL/FALL —
 //                   None = unavailable, not 0)
+//   Observed        time-pos, duration, pause, paused-for-cache, buffering %, cache seconds,
+//                   passthrough — kept current from observed-property events by poll(); reading
+//                   it never waits for mpv's core (a get_property does — 300–400 ms at a song
+//                   change; fjord-app's tick runs on the render thread). buffer_end_fraction
 //   Player          libmpv2 wrapper:
-//                   new(config) builds the core only; load(url) issues the loadfile once a render
-//                     context is attached (vo=libmpv's init without one fails for good)
-//                   playback state: get_buffering, get_buffer_end_fraction, is_paused,
-//                     poll_passthrough, get_drop_counts, startup_snapshot, file_loaded_at,
-//                     has_seen_video_reconfig (diagnostic), log_decoder_info
+//                   new(config) builds the core only (+ observes OBSERVED); load(url) issues the
+//                     loadfile once a render context is attached (vo=libmpv's init without one
+//                     fails for good)
+//                   playback state: observed() (per-tick reads), is_paused, get_drop_counts,
+//                     startup_snapshot, file_loaded_at, has_seen_video_reconfig (diagnostic),
+//                     log_decoder_info
 //                   query_source_hdr_metadata (after VideoReconfig), query_video_dimensions
 //                     (width/height/fps for display sync; fps 0.0 = unknown), apply_hdr_output
 //                   tracks: set_track_preferences (before load), get_tracks, set_sub_track /
@@ -30,7 +35,8 @@
 //                     toggle_mute / set_mute
 //                     (set_mute is the passthrough fallback; volume changes skip passthrough audio)
 //                   append_gapless / cancel_pending (skips an entry mpv already made active)
-//                   poll: EndFile → TrackChanged only for EOF; an abnormal end drops a pending
+//                   poll: PropertyChange → Observed; StartFile/EndFile clear its per-file values;
+//                     EndFile → TrackChanged only for EOF; an abnormal end drops a pending
 //                     append; END_FILE error codes (-13…-20) → Failed(code); Event::LogMessage
 //                     (mpv's own log at warn+) → tracing
 //   TrackInfo       audio / video / subtitle track; external_filename for external subs
@@ -39,7 +45,11 @@
 //                   set_update_callback
 // ─────────────────────────────────────────────────────────────────────────────
 use anyhow::{Result, ensure};
-use libmpv2::{FileState, Format, Mpv, events::Event, mpv_end_file_reason};
+use libmpv2::{
+    FileState, Format, Mpv,
+    events::{Event, PropertyData},
+    mpv_end_file_reason,
+};
 use std::ffi::{CStr, c_void};
 use tracing::{debug, error, info, warn};
 
@@ -247,6 +257,74 @@ pub struct SourceHdrMetadata {
     pub max_fall: Option<f64>, // video-params/max-fall (cd/m²)
 }
 
+// ── Observed ──────────────────────────────────────────────────────────────────
+
+/// mpv's playback state as of the last `Player::poll`, kept current from observed-property
+/// change events. Reading it never waits for mpv's core — a `get_property` does, for as long
+/// as the core is busy (300–400 ms on the HTPC while it reopens the audio output at a song
+/// change), and fjord-app reads these from the thread that also renders the video, which
+/// libmpv's render.h says must not wait for the core.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Observed {
+    pub time_pos: f64,
+    pub duration: f64,
+    pub paused: bool,
+    pub paused_for_cache: bool,
+    /// cache-buffering-state, 0–100.
+    pub buffering_pct: i64,
+    /// demuxer-cache-duration: seconds buffered ahead.
+    pub cache_secs: f64,
+    /// audio-out-params/format is iec61937: bitstream (SPDIF/HDMI) passthrough.
+    pub passthrough: bool,
+}
+
+/// (property, format) pairs `Player::new` observes; `Observed::apply` reads their changes.
+const OBSERVED: &[(&str, Format)] = &[
+    ("time-pos", Format::Double),
+    ("duration", Format::Double),
+    ("pause", Format::Flag),
+    ("paused-for-cache", Format::Flag),
+    ("cache-buffering-state", Format::Int64),
+    ("demuxer-cache-duration", Format::Double),
+    ("audio-out-params/format", Format::String),
+];
+
+impl Observed {
+    fn apply(&mut self, name: &str, change: &PropertyData) {
+        match (name, change) {
+            ("time-pos", PropertyData::Double(v)) => self.time_pos = *v,
+            ("duration", PropertyData::Double(v)) => self.duration = *v,
+            ("pause", PropertyData::Flag(b)) => self.paused = *b,
+            ("paused-for-cache", PropertyData::Flag(b)) => self.paused_for_cache = *b,
+            ("cache-buffering-state", PropertyData::Int64(v)) => self.buffering_pct = *v,
+            ("demuxer-cache-duration", PropertyData::Double(v)) => self.cache_secs = *v,
+            ("audio-out-params/format", PropertyData::Str(s)) => {
+                self.passthrough = s.starts_with("iec61937")
+            }
+            _ => {}
+        }
+    }
+
+    /// A file starts or ends: its values no longer apply. Needed because libmpv2 turns a
+    /// property becoming unavailable (time-pos at the end of a file) into no event at all.
+    /// `paused` and `passthrough` belong to the player, not the file — kept.
+    fn clear_file(&mut self) {
+        *self = Observed {
+            paused: self.paused,
+            passthrough: self.passthrough,
+            ..Observed::default()
+        };
+    }
+
+    /// How far the buffer reaches, as a fraction of the duration (the seek bar's buffered part).
+    pub fn buffer_end_fraction(&self) -> f32 {
+        if self.duration <= 0.0 {
+            return 0.0;
+        }
+        ((self.time_pos + self.cache_secs) / self.duration).min(1.0) as f32
+    }
+}
+
 // ── Player ────────────────────────────────────────────────────────────────────
 
 pub struct Player {
@@ -269,6 +347,7 @@ pub struct Player {
     // whole PlayerConfig.
     startup_log_suffix: String,
     resume_secs: Option<f64>,
+    observed: Observed,
 }
 
 // "Unlimited" for PlayerConfig.cache_max_mb (Settings' 0 sentinel) — a fixed,
@@ -390,6 +469,11 @@ impl Player {
         mpv.event_context_mut()
             .observe_property("vsync-ratio", Format::Double, 1)
             .map_err(|e| anyhow::anyhow!("observe vsync-ratio: {}", e))?;
+        for (id, (name, format)) in (2..).zip(OBSERVED) {
+            mpv.event_context_mut()
+                .observe_property(name, *format, id)
+                .map_err(|e| anyhow::anyhow!("observe {name}: {e}"))?;
+        }
 
         // Forward mpv's OWN internal log at warn and above (hwdec/vo/decoder failures that
         // never become an Event) — the "why" behind e.g. a video that never initialized.
@@ -425,6 +509,7 @@ impl Player {
             file_loaded_at: None,
             startup_log_suffix,
             resume_secs: config.start_position_secs,
+            observed: Observed::default(),
         })
     }
 
@@ -501,7 +586,15 @@ impl Player {
                     info!("mpv: shutdown");
                     return PollResult::Finished;
                 }
+                Some(Ok(Event::PropertyChange { name, change, .. })) => {
+                    self.observed.apply(name, &change);
+                }
+                Some(Ok(Event::StartFile)) => {
+                    self.observed.clear_file();
+                    debug!("mpv event: StartFile");
+                }
                 Some(Ok(Event::EndFile(reason))) => {
+                    self.observed.clear_file();
                     if self.pending_appends > 0 {
                         self.pending_appends -= 1;
                         if reason == mpv_end_file_reason::Eof {
@@ -579,6 +672,13 @@ impl Player {
         }
     }
 
+    /// Playback state as of the last `poll` — never waits for mpv's core (see `Observed`). For
+    /// the per-tick reads; right after a command of its own (a seek, a pause) a caller that
+    /// needs the new value at once uses the direct getters instead.
+    pub fn observed(&self) -> Observed {
+        self.observed
+    }
+
     pub fn poll_stats(&self) -> StatsData {
         let g_s = |k: &str| self.mpv.get_property::<String>(k).unwrap_or_default();
         let g_i = |k: &str| self.mpv.get_property::<i64>(k).unwrap_or(0);
@@ -628,16 +728,6 @@ impl Player {
             cache_state: g_i("cache-buffering-state"),
             cache_duration_secs: g_f("demuxer-cache-duration"),
         }
-    }
-
-    /// Returns true when audio is bitstream passthrough (iec61937). Single IPC read —
-    /// used by the 16 ms timer when the stats overlay is hidden to keep the passthrough
-    /// flag current without running the full 31-read poll_stats.
-    pub fn poll_passthrough(&self) -> bool {
-        self.mpv
-            .get_property::<String>("audio-out-params/format")
-            .unwrap_or_default()
-            .starts_with("iec61937")
     }
 
     /// Returns (frame-drop-count, decoder-frame-drop-count). Two IPC reads.
@@ -921,29 +1011,6 @@ impl Player {
         )
     }
 
-    pub fn get_buffering(&self) -> (bool, i32) {
-        let stalled = self
-            .mpv
-            .get_property::<bool>("paused-for-cache")
-            .unwrap_or(false);
-        let pct = self
-            .mpv
-            .get_property::<i64>("cache-buffering-state")
-            .unwrap_or(0);
-        (stalled, pct as i32)
-    }
-    pub fn get_buffer_end_fraction(&self) -> f32 {
-        let dur = self.get_duration();
-        if dur <= 0.0 {
-            return 0.0;
-        }
-        let pos = self.mpv.get_property::<f64>("time-pos").unwrap_or(0.0);
-        let buf = self
-            .mpv
-            .get_property::<f64>("demuxer-cache-duration")
-            .unwrap_or(0.0);
-        ((pos + buf) / dur).min(1.0) as f32
-    }
     pub fn seek_to(&self, secs: f64) {
         if let Err(e) = self.mpv.set_property("time-pos", secs) {
             warn!("seek_to {:.1}s failed: {}", secs, e);
@@ -1333,7 +1400,43 @@ pub fn sub_back_color(pct: u32) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{redact_api_key, sub_back_color};
+    use super::{Observed, PropertyData, redact_api_key, sub_back_color};
+
+    #[test]
+    fn observed_follows_change_events_and_clears_per_file() {
+        let mut o = Observed::default();
+        o.apply("time-pos", &PropertyData::Double(12.5));
+        o.apply("duration", &PropertyData::Double(100.0));
+        o.apply("pause", &PropertyData::Flag(true));
+        o.apply("paused-for-cache", &PropertyData::Flag(true));
+        o.apply("cache-buffering-state", &PropertyData::Int64(40));
+        o.apply("demuxer-cache-duration", &PropertyData::Double(37.5));
+        o.apply("audio-out-params/format", &PropertyData::Str("iec61937"));
+        o.apply("time-pos", &PropertyData::Str("ignored: wrong format"));
+        assert_eq!(
+            o,
+            Observed {
+                time_pos: 12.5,
+                duration: 100.0,
+                paused: true,
+                paused_for_cache: true,
+                buffering_pct: 40,
+                cache_secs: 37.5,
+                passthrough: true,
+            }
+        );
+        assert_eq!(o.buffer_end_fraction(), 0.5);
+        o.clear_file();
+        assert_eq!(
+            o,
+            Observed {
+                paused: true,
+                passthrough: true,
+                ..Observed::default()
+            }
+        );
+        assert_eq!(o.buffer_end_fraction(), 0.0);
+    }
 
     #[test]
     fn subtitle_box_levels() {

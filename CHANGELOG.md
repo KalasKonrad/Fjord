@@ -23,6 +23,11 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Fixed: a short freeze at every song change.** With a playlist or album
+  playing, the interface stopped for about a third of a second each time the
+  next song started (on the HTPC; animations and keys paused). Fjord no longer
+  waits for the player while it opens the next song. Starting a video should
+  hitch less for the same reason.
 - **Improved: the subtitle background box has levels.** Settings →
   Subtitles → "Subtitle background box" is Off / Light / Medium / Dark /
   Solid instead of on/off (a saved "on" is Dark, the same box as before).
