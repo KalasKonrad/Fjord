@@ -8,8 +8,9 @@
 //   Tick / TickOut          what every step shares / what the locked steps decide for dispatch
 //   skip_fade               the delayed skip-segment seek + the audio ramp/mute around it
 //   check_stall             stall recovery: no progress in STALL_SECS (FIRST_OPEN_STALL_SECS for a
-//                           first open before FileLoaded) → reload at the last good position, budget
-//                           by connection health (ws_connected/keep-alive)
+//                           first open before FileLoaded; after it only the time since FileLoaded
+//                           counts — stalled_since_load, unit-tested) → reload at the last good
+//                           position, budget by connection health (ws_connected/keep-alive)
 //   startup_diagnostics     mpv start-up snapshots, decoder info, the no-VideoReconfig warning
 //   hdr_and_display_sync    HDR Stage 3/4 (Branch A) and display sync (Branch B) — mutually exclusive
 //   chapters_and_osd        chapter list + current chapter, chapter/delay OSD countdowns
@@ -330,10 +331,11 @@ fn check_stall(vs: &mut VideoState, t: &Tick, out: &mut TickOut) {
             vs.stall_last_progress_pos = pos;
             vs.stall_last_progress_at = Some(Instant::now());
         }
-        let stalled_for = vs
-            .stall_last_progress_at
-            .map(|t| t.elapsed().as_secs_f64())
-            .unwrap_or(0.0);
+        // Once the file has opened, only the time since then counts: the first open's longer
+        // limit (FIRST_OPEN_STALL_SECS) ends at FileLoaded, and an open that took 5–15 s (server
+        // disks waking up) was otherwise reloaded on the very tick it finally loaded.
+        let stalled_for =
+            stalled_since_load(vs.stall_last_progress_at.map(|t| t.elapsed()), loaded_since);
         let first_open = loaded_since.is_none()
             && !vs
                 .stall_reload_attempts_for
@@ -1420,6 +1422,13 @@ fn seek_and_controls(vs: &mut VideoState, t: &Tick) {
     }
 }
 
+/// Seconds without progress as the stall check counts them: since the last progress checkpoint,
+/// but never longer than the file has been open (`loaded_since`, None while it's still opening).
+fn stalled_since_load(since_progress: Option<Duration>, loaded_since: Option<Duration>) -> f64 {
+    let d = since_progress.unwrap_or_default();
+    loaded_since.map_or(d, |l| d.min(l)).as_secs_f64()
+}
+
 /// Auto-open Now Playing is due: `secs` (0 = off) have passed both since music started playing
 /// with the screen closed (`closed_for`) and since the last key press or mouse movement.
 fn auto_open_due(closed_for: Duration, input_idle: Duration, secs: u32) -> bool {
@@ -2165,6 +2174,17 @@ fn on_natural_end(t: &Tick) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_slow_first_open_is_not_a_stall_once_it_loads() {
+        let s = Duration::from_secs_f64;
+        // Opening for 12.4 s (server disks waking up), loaded 16 ms ago: not 12.4 s of stall.
+        assert!(stalled_since_load(Some(s(12.4)), Some(s(0.016))) < 0.1);
+        // Still opening: the whole time counts (against the first-open limit).
+        assert_eq!(stalled_since_load(Some(s(12.4)), None), 12.4);
+        // Stuck 5 s after a quick load: a stall.
+        assert_eq!(stalled_since_load(Some(s(5.0)), Some(s(60.0))), 5.0);
+    }
 
     #[test]
     fn auto_open_waits_for_both_the_music_and_the_last_input() {
