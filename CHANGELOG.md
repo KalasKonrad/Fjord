@@ -23,6 +23,11 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Fixed: Fjord could take a long time to appear at startup** when its log
+  folder is on a network drive that isn't connected yet (e.g. right after the
+  computer starts). The window now shows at once; the log is written as soon
+  as the drive is there, with nothing lost. Starting Fjord again while waiting
+  used to open two copies.
 - **Fixed: a short freeze at every song change.** With a playlist or album
   playing, the interface stopped for about a third of a second each time the
   next song started (on the HTPC; animations and keys paused). Fjord no longer

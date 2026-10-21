@@ -18,7 +18,10 @@
 //   set_server_url_ui    server-url + server-unencrypted together
 //   close_login_screen   the one close path for the login screen (also closes the on-screen keyboard)
 //   logging              LocalTimer; LOG_GENERATIONS_KEPT, rotate_logs, restrict_log_permissions
-//                        (folder 0700, files 0600, best-effort; unit-tested)
+//                        (folder 0700, files 0600, best-effort; unit-tested); LazyLogFile —
+//                        the folder is created/rotated/opened on the log writer's thread at its
+//                        first write, never on the main thread (a network share at boot held up
+//                        the window); lines wait until it opens (unit-tested)
 //   main                 logging setup + panic hook (writes PANIC + backtrace to fjord.log), backend
 //                        with the activity tap (activity.rs), app_id, periodic timers, apply saved
 //                        config + the startup gate (profile picker or auto-login), then one wire_*
@@ -695,6 +698,100 @@ fn rotate_logs(log_dir: &std::path::Path, keep: usize) {
     }
 }
 
+/// fjord.log, opened on the log writer's own thread (tracing-appender's worker) at its first
+/// write — creating, rotating and tightening the folder happen there too, once. The folder can
+/// be a network share that isn't reachable yet at boot (the HTPC's is): done on the main thread
+/// before the window, every file call waited for the network, nothing showed, and a second
+/// launch started alongside the first. Lines written before the file opens wait in the
+/// writer's queue, or here while opening fails (retried at most every 2 s, kept up to 4 MB).
+struct LazyLogFile {
+    dir: std::path::PathBuf,
+    keep: usize,
+    file: Option<std::fs::File>,
+    rotated: bool,
+    pending: Vec<u8>,
+    last_try: Option<std::time::Instant>,
+    started: std::time::Instant,
+}
+
+impl LazyLogFile {
+    const RETRY: std::time::Duration = std::time::Duration::from_secs(2);
+    const PENDING_MAX: usize = 4 << 20;
+
+    fn new(dir: std::path::PathBuf, keep: usize) -> Self {
+        LazyLogFile {
+            dir,
+            keep,
+            file: None,
+            rotated: false,
+            pending: Vec::new(),
+            last_try: None,
+            started: std::time::Instant::now(),
+        }
+    }
+
+    /// Rotate (once per run) and open fjord.log; lines about the folder itself go straight
+    /// into the file — logging through tracing from the writer's own thread would loop.
+    fn open(&mut self) -> std::io::Result<std::fs::File> {
+        use std::io::Write;
+        std::fs::create_dir_all(&self.dir)?;
+        if !self.rotated {
+            rotate_logs(&self.dir, self.keep);
+            self.rotated = true;
+        }
+        let errors = restrict_log_permissions(&self.dir, self.keep);
+        let mut file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(self.dir.join("fjord.log"))?;
+        let now = chrono::Local::now().format("%Y-%m-%dT%H:%M:%S%.6f%:z");
+        let waited = self.started.elapsed();
+        if waited >= Self::RETRY {
+            let _ = writeln!(
+                file,
+                "{now}  INFO fjord_app: log folder reachable after {:.1} s — earlier lines follow",
+                waited.as_secs_f64()
+            );
+        }
+        if !errors.is_empty() {
+            let _ = writeln!(
+                file,
+                "{now}  WARN fjord_app: log permissions not tightened: {}",
+                errors.join("; ")
+            );
+        }
+        Ok(file)
+    }
+}
+
+impl std::io::Write for LazyLogFile {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        if self.file.is_none() && self.last_try.is_none_or(|t| t.elapsed() >= Self::RETRY) {
+            self.last_try = Some(std::time::Instant::now());
+            match self.open() {
+                Ok(mut f) => {
+                    f.write_all(&std::mem::take(&mut self.pending))?;
+                    self.file = Some(f);
+                }
+                Err(e) => eprintln!("fjord: log folder {} not ready: {e}", self.dir.display()),
+            }
+        }
+        match self.file.as_mut() {
+            Some(f) => f.write(buf),
+            None => {
+                if self.pending.len() + buf.len() <= Self::PENDING_MAX {
+                    self.pending.extend_from_slice(buf);
+                }
+                Ok(buf.len())
+            }
+        }
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.file.as_mut().map_or(Ok(()), |f| f.flush())
+    }
+}
+
 fn main() -> Result<()> {
     let cache_dir = std::env::var("XDG_CACHE_HOME")
         .map(std::path::PathBuf::from)
@@ -707,12 +804,10 @@ fn main() -> Result<()> {
     let _ = std::fs::remove_file(cache_dir.join("fjord.log"));
     let _ = std::fs::remove_file(cache_dir.join("fjord.log.old"));
     let log_dir = cache_dir.join("logs");
-    let _ = std::fs::create_dir_all(&log_dir);
-    rotate_logs(&log_dir, LOG_GENERATIONS_KEPT);
-    let log_permission_errors = restrict_log_permissions(&log_dir, LOG_GENERATIONS_KEPT);
     let log_path = log_dir.join("fjord.log");
-    let file_appender = tracing_appender::rolling::never(&log_dir, "fjord.log");
-    let (file_writer, _guard) = tracing_appender::non_blocking(file_appender);
+    // Nothing on this thread touches the log folder (LazyLogFile): it may be a network share.
+    let (file_writer, _guard) =
+        tracing_appender::non_blocking(LazyLogFile::new(log_dir.clone(), LOG_GENERATIONS_KEPT));
     use tracing_subscriber::{EnvFilter, Layer, layer::SubscriberExt, util::SubscriberInitExt};
     // Settings → Advanced log level (default "info"), read straight from disk before the
     // subscriber exists (the full config load comes later). Applies on the next launch;
@@ -753,12 +848,6 @@ fn main() -> Result<()> {
         env!("CARGO_PKG_VERSION"),
         env!("FJORD_BUILD_ID")
     );
-    if !log_permission_errors.is_empty() {
-        warn!(
-            "log permissions not tightened: {}",
-            log_permission_errors.join("; ")
-        );
-    }
 
     // Panic hook — writes directly to the log file so Slint "Recursion detected"
     // panics (which would otherwise SIGABRT silently) appear in fjord.log.
@@ -1206,6 +1295,35 @@ fn main() -> Result<()> {
     // Send stop report and release screensaver inhibitor if a video was playing when the user quit.
     quit_cleanup(&video, &rt, &state);
     Ok(())
+}
+
+#[cfg(test)]
+mod lazy_log_tests {
+    use super::LazyLogFile;
+    use std::io::Write;
+
+    #[test]
+    fn rotates_once_and_keeps_lines_until_the_folder_exists() {
+        let base = std::env::temp_dir().join(format!("fjord-lazylog-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        // The folder's parent is a file: opening fails, as on a share that isn't mounted yet.
+        std::fs::write(&base, b"not a folder").unwrap();
+        let dir = base.join("logs");
+        let mut log = LazyLogFile::new(dir.clone(), 3);
+        log.write_all(b"early\n").unwrap();
+        assert!(log.file.is_none() && log.pending == b"early\n");
+        // The share appears (with last run's log); the next try opens it.
+        std::fs::remove_file(&base).unwrap();
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("fjord.log"), b"last run\n").unwrap();
+        log.last_try = None;
+        log.write_all(b"late\n").unwrap();
+        log.write_all(b"later\n").unwrap();
+        let read = |n: &str| std::fs::read_to_string(dir.join(n)).unwrap();
+        assert_eq!(read("fjord.log.1"), "last run\n");
+        assert_eq!(read("fjord.log"), "early\nlate\nlater\n");
+        let _ = std::fs::remove_dir_all(&base);
+    }
 }
 
 #[cfg(all(test, unix))]
