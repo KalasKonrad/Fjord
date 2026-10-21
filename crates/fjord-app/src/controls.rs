@@ -442,7 +442,7 @@ fn wire_track_panels(
                         // only meaningful within this file's own track list).
                         if let Some(sid) = vs.playing_series_id.clone() {
                             let lang = p
-                                .get_tracks()
+                                .tracks()
                                 .into_iter()
                                 .find(|t| t.track_type == "sub" && t.id == id as i64)
                                 .map(|t| t.lang)
@@ -469,7 +469,7 @@ fn wire_track_panels(
                         AppState::get(&w).set_current_audio_id(id);
                         if let Some(sid) = vs.playing_series_id.clone() {
                             let lang = p
-                                .get_tracks()
+                                .tracks()
                                 .into_iter()
                                 .find(|t| t.track_type == "audio" && t.id == id as i64)
                                 .map(|t| t.lang)

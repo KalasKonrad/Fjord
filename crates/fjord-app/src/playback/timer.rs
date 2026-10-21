@@ -474,10 +474,13 @@ fn hdr_and_display_sync(vs: &mut VideoState, t: &Tick) {
         // borrow scope, then set the one-shot flag afterward —
         // `p` borrows vs.player immutably, so it can't still be
         // alive when vs.hdr_negotiation_attempted is mutated.
-        let source_meta = vs.player.as_ref().and_then(|p| {
-            p.has_seen_video_reconfig()
-                .then(|| p.query_source_hdr_metadata())
-        });
+        // video_info: after VideoReconfig AND once mpv reported the format (it sends that right
+        // after the event — at the bare event the gamma was still empty, i.e. "SDR").
+        let source_meta = vs
+            .player
+            .as_ref()
+            .and_then(|p| p.video_info())
+            .map(|v| v.hdr_metadata());
         if let Some(meta) = source_meta {
             vs.hdr_negotiation_attempted = true;
             if hdr_toggle_enabled {
@@ -501,12 +504,9 @@ fn hdr_and_display_sync(vs: &mut VideoState, t: &Tick) {
         && display_sync_enabled
         && vs.display_presynced
         && !vs.hdr_negotiation_attempted
-        && vs
-            .player
-            .as_ref()
-            .is_some_and(|p| p.has_seen_video_reconfig())
+        && let Some(video) = vs.player.as_ref().and_then(|p| p.video_info())
     {
-        let meta = vs.player.as_ref().unwrap().query_source_hdr_metadata();
+        let meta = video.hdr_metadata();
         vs.hdr_negotiation_attempted = true;
         debug!("hdr: display was switched before load — negotiating at the first VideoReconfig");
         if hdr_toggle_enabled {
@@ -516,16 +516,13 @@ fn hdr_and_display_sync(vs: &mut VideoState, t: &Tick) {
         }
     }
     if !vs.current_is_audio && !vs.display_sync_attempted && display_sync_enabled {
-        let ready = loaded_ok
-            && vs
-                .player
-                .as_ref()
-                .is_some_and(|p| p.has_seen_video_reconfig());
-        let (meta, dims) = if ready {
-            let p = vs.player.as_ref().unwrap();
-            (p.query_source_hdr_metadata(), p.query_video_dimensions())
-        } else {
-            (Default::default(), (0, 0, 0.0))
+        let video = loaded_ok
+            .then(|| vs.player.as_ref().and_then(|p| p.video_info()))
+            .flatten();
+        let ready = video.is_some();
+        let (meta, dims) = match &video {
+            Some(v) => (v.hdr_metadata(), v.dimensions()),
+            None => (Default::default(), (0, 0, 0.0)),
         };
         // Never pick a mode from an unknown frame rate (2026-10-06,
         // HTPC: fps 0 → "unusual rate" → a 4K HDR film switched to
@@ -594,18 +591,17 @@ fn chapters_and_osd(vs: &mut VideoState, t: &Tick) {
         ..
     } = *t;
     // ── Chapter list loading ──────────────────────────────────────
-    // Poll chapter-list/count after the 2 s decoder-logged gate.
-    // Retry up to 30 ticks (~480 ms) to handle containers where the
-    // chapter metadata appears slightly after the first track data.
-    // A count of 0 after 30 attempts is treated as "no chapters".
+    // Read the chapter list mpv reported (Player::chapters) after the 2 s
+    // decoder-logged gate. Retry up to 30 ticks (~480 ms) for containers
+    // whose chapter metadata appears slightly after the first track data.
+    // None after 30 attempts is treated as "no chapters".
     if loaded_ok
         && !vs.chapters_loaded
         && let Some(p) = vs.player.as_ref()
     {
-        let count = p.get_chapter_count();
-        if count > 0 {
-            let dur = p.get_duration();
-            let chapters = p.get_chapters();
+        let chapters = p.chapters();
+        if !chapters.is_empty() {
+            let dur = p.observed().duration;
             info!("loaded {} chapters", chapters.len());
             let marks: Vec<f32> = if dur > 0.0 {
                 chapters.iter().map(|(t, _)| (t / dur) as f32).collect()
@@ -700,7 +696,7 @@ fn select_tracks(vs: &mut VideoState, t: &Tick) {
         && !vs.tracks_loaded
         && let (Some(p), Some(w)) = (vs.player.as_ref(), window_timer.upgrade())
     {
-        let tracks = p.get_tracks();
+        let tracks = p.tracks();
         // Retry next tick if mpv hasn't parsed the track list yet.
         if !tracks.is_empty() {
             debug!("track-list ({} entries):", tracks.len());
@@ -1019,8 +1015,8 @@ fn stats_and_drops(vs: &mut VideoState, t: &Tick) {
         && vs.pos_tick.is_multiple_of(18750)
         && let Some(p) = vs.player.as_ref()
     {
-        let (drops, dec_drops) = p.get_drop_counts();
-        let pos = p.observed().time_pos;
+        let o = p.observed();
+        let (drops, dec_drops, pos) = (o.frame_drops, o.decoder_drops, o.time_pos);
         info!(
             "stats at {:.0}s: frame-drops={} decoder-drops={}",
             pos, drops, dec_drops

@@ -1387,6 +1387,8 @@ dependencies = [
  "anyhow",
  "libmpv2",
  "libmpv2-sys",
+ "serde",
+ "serde_json",
  "thiserror 2.0.18",
  "tracing",
 ]

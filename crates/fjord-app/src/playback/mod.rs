@@ -163,8 +163,8 @@ pub(crate) struct VideoState {
     // hwdec startup can itself take close to 2s and would false-positive here.
     pub video_init_checked: bool,
     // One-shot guard for hdr.rs's Wayland color-management negotiation
-    // (hdr branch, Stage 3) — fires the instant has_seen_video_reconfig()
-    // first goes true for this player, no artificial delay (unlike
+    // (hdr branch, Stage 3) — fires as soon as Player::video_info() is ready (the
+    // first VideoReconfig + mpv's report of the format), no artificial delay (unlike
     // video_init_checked above, which is watching for an absence).
     pub hdr_negotiation_attempted: bool,
     // Whether THIS item's FBO uses GL_RGB10_A2 instead of 8-bit RGBA. Set once in
