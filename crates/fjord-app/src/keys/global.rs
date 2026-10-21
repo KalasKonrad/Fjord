@@ -7,7 +7,8 @@
 //   open_queue_panel          q: the queue panel (audio playing or a non-empty queue)
 //   toggle_now_playing        m: Now Playing while audio plays
 //   music_controls            prev/next/shuffle/repeat/lyrics while audio plays
-//   music_bar_keys            arrows/Enter on a focused music-bar button (while AppState.music-bar-active)
+//   music_bar_keys            arrows/Enter on a focused music-bar button (while AppState.music-bar-active);
+//                             Left/Right walk bar_order / bar_step (the bar's visual order, unit-tested)
 //   mini_player_keys          arrows/Enter on the focused mini-player bar (AppState.float-card-active)
 //   music_play_pause          Space/K/P pause/play while audio plays (looked up in the player map)
 //   KeyCtx                    what each shortcut sees (action, mode, combo, window, state)
@@ -235,12 +236,35 @@ fn music_controls(c: &KeyCtx) -> Option<bool> {
     None
 }
 
+/// The music bar's buttons left to right (widgets.slint MusicPlayerBar), by their fixed slot
+/// (AppState.bar-focused(n)): art 0 | ⏮ 4, ⏯ 1, ⏭ 5 | ⇌ 6, ↺ 7, ⋮ 8, ♪ 9 (only with lyrics),
+/// 🔉 10, 🔊 11, ⏹ 2, ☾ 12 (only with the screensaver on). The seek bar (3) sits under ⏮ ⏯ ⏭.
+fn bar_order(lyrics: bool, screensaver: bool) -> Vec<i32> {
+    let mut order = vec![0, 4, 1, 5, 6, 7, 8];
+    if lyrics {
+        order.push(9);
+    }
+    order.extend([10, 11, 2]);
+    if screensaver {
+        order.push(12);
+    }
+    order
+}
+
+/// Left (-1) / Right (+1) from slot `mf` along bar_order; stays at the ends.
+fn bar_step(mf: i32, dir: i32, lyrics: bool, screensaver: bool) -> i32 {
+    let order = bar_order(lyrics, screensaver);
+    let Some(at) = order.iter().position(|&s| s == mf) else {
+        return 1; // a slot that's gone (♪ after the lyrics vanished) → ⏯
+    };
+    order[(at as i32 + dir).clamp(0, order.len() as i32 - 1) as usize]
+}
+
 fn music_bar_keys(c: &KeyCtx) -> Option<bool> {
     let KeyCtx { action, window, .. } = c.clone();
-    // Music bar keyboard focus: intercept nav keys when a button is focused.
-    // Layout: [art (0)] | [⏸/▶ (1)] [⏹ (2)] | [timeline (3)] | [⏮ (4)] [⏭ (5)] [⇌ (6)] [↺ (7)] [⋮ (8)] [♪ (9)] [🔉 (10)] [🔊 (11)] [☾ (12)]
-    //         Left zone   Centre zone            Below buttons   Right zone (9 only when lyrics-available; 12 only when the screensaver has a time; 10/11 always)
-    // Left/Right: 0↔1↔2 → 4↔5↔6↔7↔8↔(9)↔10↔11↔(12) (skip over 3, and over 9 when lyrics unavailable); Down from any button→3; Up from 3→1.
+    // Music bar keyboard focus: intercept nav keys when a button is focused. Left/Right walk
+    // bar_order (the visual order); on the seek bar (3) they seek ±10 s. Down from any button →
+    // the seek bar; Up from it → ⏯; Up from a button leaves the bar.
     // Only while AppState.music-bar-active: not under an overlay that takes the bar's keys (a
     // stale music-bar-focused from earlier keyboard use survives a mouse-driven screen switch and
     // would hijack that screen's arrows/Enter) — the same property draws the bar's focus and hides
@@ -257,45 +281,21 @@ fn music_bar_keys(c: &KeyCtx) -> Option<bool> {
         return Some(false);
     };
     match action {
-        Action::Left => {
-            match mf {
-                3 => {
-                    g.invoke_music_bar_seek_rel(-10.0);
-                }
-                4 => {
-                    g.set_music_bar_focused(2);
-                } // ⏮ ← ⏹ (skip timeline)
-                // Slot 10 (🔉) steps back to 9 (♪) only when lyrics are available.
-                10 => {
-                    g.set_music_bar_focused(if g.get_lyrics_available() { 9 } else { 8 });
-                }
-                1 | 2 | 5 | 6 | 7 | 8 | 9 | 11 | 12 => {
-                    g.set_music_bar_focused(mf - 1);
-                }
-                _ => {} // 0: absorbed
-            }
-            return Some(true);
-        }
-        Action::Right => {
-            match mf {
-                3 => {
-                    g.invoke_music_bar_seek_rel(10.0);
-                }
-                2 => {
-                    g.set_music_bar_focused(4);
-                } // ⏹ → ⏮ (skip timeline)
-                // Slot 8 (⋮) advances to 9 (♪) when available, else straight to 10 (🔉).
-                8 => {
-                    g.set_music_bar_focused(if g.get_lyrics_available() { 9 } else { 10 });
-                }
-                0 | 1 | 4 | 5 | 6 | 7 | 9 | 10 => {
-                    g.set_music_bar_focused(mf + 1);
-                }
-                // Slot 12 (☾ screensaver) exists only when Settings → Audio has a time set.
-                11 if g.get_screensaver_enabled() => {
-                    g.set_music_bar_focused(12);
-                }
-                _ => {} // 11/12: absorbed
+        Action::Left | Action::Right => {
+            let dir = if matches!(action, Action::Left) {
+                -1
+            } else {
+                1
+            };
+            if mf == 3 {
+                g.invoke_music_bar_seek_rel(10.0 * dir as f32);
+            } else {
+                g.set_music_bar_focused(bar_step(
+                    mf,
+                    dir,
+                    g.get_lyrics_available(),
+                    g.get_screensaver_enabled(),
+                ));
             }
             return Some(true);
         }
@@ -437,4 +437,27 @@ fn music_play_pause(c: &KeyCtx) -> Option<bool> {
         }
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn music_bar_buttons_follow_the_visual_order() {
+        // art → ⏮ → ⏯ → ⏭ → ⇌ …
+        assert_eq!(bar_step(0, 1, false, false), 4);
+        assert_eq!(bar_step(4, 1, false, false), 1);
+        assert_eq!(bar_step(1, 1, false, false), 5);
+        assert_eq!(bar_step(5, 1, false, false), 6);
+        // ⋮ → ♪ only with lyrics; 🔊 → ⏹ → ☾ only with the screensaver.
+        assert_eq!(bar_step(8, 1, true, false), 9);
+        assert_eq!(bar_step(8, 1, false, false), 10);
+        assert_eq!(bar_step(11, 1, false, false), 2);
+        assert_eq!(bar_step(2, 1, false, true), 12);
+        assert_eq!(bar_step(2, 1, false, false), 2, "⏹ is the last without ☾");
+        assert_eq!(bar_step(0, -1, true, true), 0, "art is the first");
+        assert_eq!(bar_step(1, -1, true, true), 4);
+        assert_eq!(bar_step(9, 1, false, false), 1, "♪ gone → ⏯");
+    }
 }

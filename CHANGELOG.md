@@ -23,6 +23,9 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Improved: the music bar's controls are grouped.** ⏮ ⏯ ⏭ now sit together
+  above the progress bar (play/pause filled); ⏹ joined the buttons on the
+  right. The remote's Left/Right follow the new order.
 - **Improved: a bigger Now Playing screen.** The cover grows with the screen
   (about 430 px on a 1080p TV, was 380), the whole title shows (it wraps
   instead of being cut), an empty artist line no longer leaves a gap, and the
