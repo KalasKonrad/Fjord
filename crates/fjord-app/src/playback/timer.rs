@@ -1,7 +1,10 @@
 // ── fjord-app · playback/timer.rs ─────────────────────────────────────────
 //   wire_mpv_timer          the 16 ms tick: reads the config flags, locks the video state, reads
 //                           position/duration/loaded_since once into a Tick, runs the steps below
-//                           in this order under the lock, then dispatch (after the lock)
+//                           in this order under the lock, then dispatch (after the lock). The
+//                           per-tick mpv state (position, pause, buffering, passthrough) comes from
+//                           Player::observed — never a get_property, which waits for mpv's core on
+//                           this render thread (a 300–400 ms freeze at every song change)
 //   Tick / TickOut          what every step shares / what the locked steps decide for dispatch
 //   skip_fade               the delayed skip-segment seek + the audio ramp/mute around it
 //   check_stall             stall recovery: no progress in STALL_SECS (FIRST_OPEN_STALL_SECS for a
@@ -137,10 +140,15 @@ pub(crate) fn wire_mpv_timer(
             let mut out = TickOut::default();
             let t = {
                 let mut vs = video_timer.lock().unwrap();
-                // One position/duration read per tick (an FFI round trip into libmpv), shared by
-                // chapter tracking, the skip-segment and Up Next checks and the gapless preload.
+                // One position/duration read per tick, shared by chapter tracking, the
+                // skip-segment and Up Next checks and the gapless preload — from mpv's change
+                // events (Player::observed), never a get_property: that waits for mpv's core,
+                // which froze this thread (and the UI) 300–400 ms at every song change.
                 let (live_pos, live_dur): (Option<f64>, Option<f64>) = match vs.player.as_ref() {
-                    Some(p) => (Some(p.get_position()), Some(p.get_duration())),
+                    Some(p) => {
+                        let o = p.observed();
+                        (Some(o.time_pos), Some(o.duration))
+                    }
                     None => (None, None),
                 };
                 // How long ago mpv finished opening the file (None while still
@@ -296,8 +304,8 @@ fn check_stall(vs: &mut VideoState, t: &Tick, out: &mut TickOut) {
     // stall_reload_attempts_for (keyed by item id, so it survives the reload), then it
     // stops cleanly. Background: DEVLOG → "Playback resilience".
     if let (Some(pos), Some(start), Some(p)) = (live_pos, vs.play_start, vs.player.as_ref()) {
-        let (buffering, _) = p.get_buffering();
-        let is_paused = p.is_paused();
+        let o = p.observed();
+        let (buffering, is_paused) = (o.paused_for_cache, o.paused);
         // p (borrows vs.player) not used past this point — safe to
         // mutate vs.stall_* below.
 
@@ -887,10 +895,10 @@ fn report_position(vs: &mut VideoState, t: &Tick) {
     if vs.pos_tick.is_multiple_of(30)
         && let (Some(p), Some(w)) = (vs.player.as_ref(), window_timer.upgrade())
     {
-        let pos = p.get_position();
-        let dur = p.get_duration();
-        let (buf_active, buf_pct) = p.get_buffering();
-        let buffered_pos = p.get_buffer_end_fraction();
+        let o = p.observed();
+        let (pos, dur) = (o.time_pos, o.duration);
+        let (buf_active, buf_pct) = (o.paused_for_cache, o.buffering_pct as i32);
+        let buffered_pos = o.buffer_end_fraction();
         // Done with p (releases immutable borrow on vs)
         let _ = p;
         // Also show buffering overlay during initial load: player alive but no
@@ -1002,7 +1010,7 @@ fn stats_and_drops(vs: &mut VideoState, t: &Tick) {
             let stats = p.poll_stats();
             update_stats_window(&w, &stats);
         } else {
-            AppState::get(&w).set_audio_passthrough_active(p.poll_passthrough());
+            AppState::get(&w).set_audio_passthrough_active(p.observed().passthrough);
         }
     }
 
@@ -1012,7 +1020,7 @@ fn stats_and_drops(vs: &mut VideoState, t: &Tick) {
         && let Some(p) = vs.player.as_ref()
     {
         let (drops, dec_drops) = p.get_drop_counts();
-        let pos = p.get_position();
+        let pos = p.observed().time_pos;
         info!(
             "stats at {:.0}s: frame-drops={} decoder-drops={}",
             pos, drops, dec_drops

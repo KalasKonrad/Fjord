@@ -109,6 +109,9 @@ Needs `mpv`/libmpv (`pacman -S mpv`). Optional at runtime: `yt-dlp` (trailers), 
   Fjord's own 10-bit buffers" — Fjord's own GBM/dmabuf 10-bit buffers (`dmabuf_plane.rs`). Own buffers: mpv `flip_y = false`
   (buffer row 0 is the top), spot rects top-origin, `glFinish` before attach, only format/modifier pairs KWin
   advertised, linux-dmabuf `create` (async) — never `create_immed` (a refusal is fatal on winit's display).
+- The UI thread is mpv's render thread: anything read from mpv every tick comes from `Player::observed()` (kept
+  current from observed-property events by `poll`), never a `get_property` — that waits for mpv's core, which froze
+  the UI 300–400 ms at every song change. Direct getters only for one-off reads (a key press, right after a command).
 - Always pass mpv the target's real depth (`MPV_RENDER_PARAM_DEPTH`, the `depth` arg of `MpvRenderCtx::render`;
   0 = omitted = 8) — it dithers to it.
 
