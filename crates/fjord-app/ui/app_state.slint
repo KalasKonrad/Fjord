@@ -48,6 +48,7 @@
 //   Player state          is-playing, is-paused, playing-artist, video-frame, playback-ends-at;
 //                         video-surface-active + video-rect-* + window-bg (separate video surface)
 //   Now Playing auto-open settings-now-playing-auto-open-secs (0 = off; playback/timer.rs)
+//   Diagnostics           discover-rows-mounted (Discover's staggered rows built; ui_watch's trace)
 //   Screensaver           settings-screensaver-mins, screensaver-active / -paused / -enabled,
 //                         toggle-screensaver() (the ☾ button + a toast saying what it did;
 //                         screensaver.rs runs it)
@@ -1566,6 +1567,9 @@ export global AppState {
     // Interface "Message duration" (seconds a toast stays up; main.slint). Per profile.
     in-out property <int> settings-controls-hide-secs: 3;
     in-out property <int> settings-toast-secs: 4;
+    // Discover's staggered CardRows: how many rows it has built (home.slint) — read only by
+    // ui_watch's debug frame trace.
+    in-out property <int> discover-rows-mounted: 0;
     in-out property <bool> screensaver-active: false;
     in-out property <bool> screensaver-paused: false;
     out property <bool> screensaver-enabled: settings-screensaver-mins > 0;
