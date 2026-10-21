@@ -23,6 +23,11 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Fixed: the first visit to Discover froze for a moment** (about 0.7 s on a
+  desktop, 1.4 s on the HTPC). The cause was the calendar card's 🗓 icon: the
+  text font doesn't have it, so the first time it was drawn Fjord searched
+  every installed font. It now uses Fjord's own symbol font. The same applied
+  to the "View Details" icon in the menu, now 🛈.
 - **Fixed: the music bar's buttons sat at its top edge** (the focused one's
   glow was cut off there) instead of in the middle. The song's format now
   follows the artist — or sits on its own at the left when a song has no

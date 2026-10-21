@@ -16,7 +16,7 @@ import { FocusHalo, PressPulse, QwertyKeyboard } from "widgets.slint";
 
 component MenuRowItem inherits Rectangle {
     in property <string> icon-text;
-    in property <string> icon-font-family: ""; // "" = system default (matches ASCII/ℹ rows below)
+    in property <string> icon-font-family: ""; // "" = the text font (ASCII and glyphs it covers)
     in property <string> label;
     in property <int> row-index;
     callback activated();

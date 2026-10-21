@@ -231,7 +231,9 @@ Needs `mpv`/libmpv (`pacman -S mpv`). Optional at runtime: `yt-dlp` (trailers), 
   `AppState.row-chrome-h`, not a literal 56px. A fixed width around text is `Npx * AppState.text-scale` (buttons,
   labels, menus, dialogs); fixed heights need room for +50% (badges/pills: `Npx * AppState.text-scale`).
 - Icons: only glyphs covered by the bundled fonts in `assets/fonts` (Noto Sans Symbols 2/Math; Adwaita Sans
-  for ♥ ✓). Pin `font-family` on icon `Text`; verify coverage with `fc-query --format='%{charset}'`.
+  for ♥ ✓). Pin `font-family` on icon `Text` — also when the glyph comes from Rust data into an ordinary text: a
+  glyph the text font lacks makes the first frame that draws it search the system fonts (660 ms dev, ~1.4 s HTPC).
+  Verify coverage with `fc-query --format='%{charset}'`.
   No U+FE0E variation selectors, no color emoji.
 
 ## Slint gotchas (full write-ups in SLINT.md)

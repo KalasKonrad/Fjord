@@ -291,8 +291,9 @@ fn push_coming_up_row(ww: &Weak<MainWindow>, entries: &[CalendarEntry]) {
         cards.push(CardItem {
             id: "".into(),
             item_type: "".into(),
-            // U+1F5D3 (🗓) is in Noto Sans Symbols 2; U+1F4C5 (📅) is in no bundled font, and this
-            // title has no font pin, so it rendered as tofu on systems without an emoji font.
+            // U+1F5D3 (🗓) is in Noto Sans Symbols 2 (U+1F4C5 📅 is in no bundled font); MediaCard
+            // pins this card's title (id "") to it — a glyph the text font lacks otherwise costs a
+            // system font search inside the frame that first draws it.
             title: "🗓".into(),
             subtitle: "Full Calendar".into(),
             ..Default::default()
