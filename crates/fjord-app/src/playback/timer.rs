@@ -209,7 +209,7 @@ pub(crate) fn wire_mpv_timer(
 
 fn skip_fade(vs: &mut VideoState, t: &Tick) {
     let Tick { window_timer, .. } = *t;
-    // Skip-fade duration: Config.device.skip_fade_ms × the live
+    // Skip-fade duration: the profile's skip_fade_ms × the live
     // settings-animation-speed multiplier, read once per tick — not
     // baked into a constant, so a live Settings change takes effect
     // immediately and the video half (pending_skip_seek, below) and

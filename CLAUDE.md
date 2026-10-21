@@ -146,7 +146,8 @@ Needs `mpv`/libmpv (`pacman -S mpv`). Optional at runtime: `yt-dlp` (trailers), 
 ### Config and sessions
 - Device-wide settings go in `DeviceConfig`, per-person settings in `ProfileSettings`. Access profile settings
   **only** via `Config::active()` / `active_mut()`. New fields get `#[serde(default)]`; `FjordState.config`
-  is the single in-memory copy.
+  is the single in-memory copy. A setting moving from device to profile becomes a `MovedToProfiles` field (read
+  from an old config.json, copied into every profile once by `move_device_settings_to_profiles`).
 - Caches live under `~/.cache/fjord/profiles/<user_id>/`; pass `user_id` explicitly (prefer `client.user_id`).
   Posters/backdrops are shared across profiles.
 - `reset_session_state` is the one teardown for sign-out and profile switch. **Every new transient flag,

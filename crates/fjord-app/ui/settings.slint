@@ -446,6 +446,7 @@ export component SettingsScreen inherits Rectangle {
                         SettingsRow {
                             key: "player.skip_fade_ms";
                             choice: true;
+                            per-profile: true;
                             value: AppState.settings-skip-fade-ms;
                             title: "Skip fade duration";
                             subtitle: "Fade to black around intro/recap/preview/commercial skips instead of cutting; audio fades with it";
@@ -458,6 +459,7 @@ export component SettingsScreen inherits Rectangle {
                         SettingsRow {
                             key: "player.seek_step";
                             choice: true;
+                            per-profile: true;
                             value: AppState.settings-seek-step-secs;
                             title: "Seek step";
                             subtitle: "Left/Right arrow seek amount during playback";
@@ -466,6 +468,7 @@ export component SettingsScreen inherits Rectangle {
                         SettingsRow {
                             key: "player.seek_step_long";
                             choice: true;
+                            per-profile: true;
                             value: AppState.settings-seek-step-long-secs;
                             title: "Long seek step";
                             subtitle: "Shift+Left/Right arrow seek amount during playback";
@@ -1115,6 +1118,7 @@ export component SettingsScreen inherits Rectangle {
 
                         SettingsRow {
                             key: "general.video_behind";
+                            per-profile: true;
                             title: "Video in background";
                             subtitle: "Show video behind the UI when you press Back during playback";
                             ToggleSwitch {
@@ -1127,6 +1131,7 @@ export component SettingsScreen inherits Rectangle {
                     // above — fetched at startup via fc-list, main.rs)
                     SettingsRow {
                             key: "ui.font_family";
+                            per-profile: true;
                             title: "Text font";
                             subtitle: "Inter is Fjord's own designed-around default — pick any font installed on this system to override it";
                             SettingsDropdown {
@@ -1141,6 +1146,7 @@ export component SettingsScreen inherits Rectangle {
                     // physical keyboard attached (remote/D-pad only).
                     SettingsRow {
                             key: "ui.onscreen_keyboard";
+                            per-profile: true;
                             title: "On-screen keyboard";
                             subtitle: "A remote-friendly keyboard for search, sign-in and name fields — turn off if you always use a real keyboard";
                             ToggleSwitch {
@@ -1165,6 +1171,7 @@ export component SettingsScreen inherits Rectangle {
                     SettingsRow {
                             key: "ui.scroll_speed";
                             choice: true;
+                            per-profile: true;
                             value: AppState.settings-scroll-speed-pct;
                             title: "Scroll speed";
                             subtitle: "Speed of list/page scrolling with the keyboard — lower % is faster, higher % is slower";
@@ -1174,6 +1181,7 @@ export component SettingsScreen inherits Rectangle {
                     SettingsRow {
                             key: "ui.animation_speed";
                             choice: true;
+                            per-profile: true;
                             value: AppState.settings-animation-speed-pct;
                             title: "Animation speed";
                             subtitle: "Speed of press feedback, fades, and other UI transitions — lower % is faster, higher % is slower, 0% = instant";

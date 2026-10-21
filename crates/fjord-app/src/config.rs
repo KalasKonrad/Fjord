@@ -10,12 +10,15 @@
 //   de_sub_background_pct  the subtitle box level (%) — reads the old on/off sub_background
 //   vf_mpv_value / deser_vf  DeviceConfig.vf display label → raw mpv sentinel ("" / "auto");
 //                   deser_vf migrates old raw values to the labels
-//   DeviceConfig    settings of THIS BOX, whoever is signed in: hwdec/vf/audio device/seek step/
-//                   animation speed/log_level/cache, launch_policy + default_profile_id (profile
+//   DeviceConfig    settings of THIS BOX, whoever is signed in: hwdec/vf/audio device/
+//                   log_level/cache, launch_policy + default_profile_id (profile
 //                   tier), account_launch_policy + default_account_id (account tier),
-//                   onscreen_keyboard_enabled, display_sync_* (opt-in; display_sync_trailers),
+//                   display_sync_* (opt-in; display_sync_trailers),
 //                   separate_video_surface (default on), video_own_buffers (opt-in, per run),
 //                   video_dither_off (test aid)
+//   MovedToProfiles / move_device_settings_to_profiles  settings that left DeviceConfig
+//                   (2026-10-21): an older config.json's device values, copied into every
+//                   profile once by load_config (unit-tested), never written again
 //   ProfileSettings settings that follow the PERSON, keyed by user_id (copy_settings_from: the
 //                   Settings rows tagged "Profile" = settings::PROFILE_BINDS + dashboard_rows): auth (server_url/user_id/
 //                   token), subtitle/audio language, library sort, skip_*_mode/_secs, trailer
@@ -24,7 +27,8 @@
 //                   focus_color/_width/_style/_glow/_glow_on/_opacity/_zoom (focus ring, glow
 //                   strength and scope, picture zoom), screensaver_mins (0 = off),
 //                   now_playing_auto_open_secs (0 = off; reads the old bool), controls_hide_secs,
-//                   toast_secs,
+//                   toast_secs, video_behind, seek_step_secs/_long_secs, skip_fade_ms,
+//                   scroll/animation_speed_pct, ui_font_family, onscreen_keyboard_enabled,
 //                   Seerr connection (seerr_enabled/_url/_auth_method/_api_key/
 //                   _session_cookie), Discover filters (genres by name, providers by id), Request
 //                   Options' remembered choices; remember_login (false → never resumed silently,
@@ -308,6 +312,54 @@ fn deser_vf<'de, D: serde::Deserializer<'de>>(d: D) -> Result<String, D::Error> 
 // `active_profile_id` select the active one; `Config::active()`/`active_mut()` are
 // the ONLY way other code reads/writes a profile-scoped field.
 
+/// Settings that were device-wide until 2026-10-21 and are per profile since (the person's
+/// taste, not the setup): DeviceConfig reads them from an older config.json only.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub(crate) struct MovedToProfiles {
+    #[serde(default)]
+    video_behind: Option<bool>,
+    #[serde(default)]
+    seek_step_secs: Option<u32>,
+    #[serde(default)]
+    seek_step_long_secs: Option<u32>,
+    #[serde(default)]
+    skip_fade_ms: Option<u32>,
+    #[serde(default)]
+    scroll_speed_pct: Option<u32>,
+    #[serde(default)]
+    animation_speed_pct: Option<u32>,
+    #[serde(default)]
+    ui_font_family: Option<String>,
+    #[serde(default)]
+    onscreen_keyboard_enabled: Option<bool>,
+}
+
+/// One-time: an older config.json's device-wide values for MovedToProfiles become every
+/// profile's own (nobody's setting changes). True when anything was moved (save then).
+fn move_device_settings_to_profiles(cfg: &mut Config) -> bool {
+    let m = std::mem::take(&mut cfg.device.moved);
+    let mut moved = false;
+    for p in cfg.profiles.iter_mut() {
+        macro_rules! take {
+            ($f:ident) => {
+                if let Some(v) = m.$f.clone() {
+                    p.$f = v;
+                    moved = true;
+                }
+            };
+        }
+        take!(video_behind);
+        take!(seek_step_secs);
+        take!(seek_step_long_secs);
+        take!(skip_fade_ms);
+        take!(scroll_speed_pct);
+        take!(animation_speed_pct);
+        take!(ui_font_family);
+        take!(onscreen_keyboard_enabled);
+    }
+    moved
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 pub(crate) struct DeviceConfig {
     #[serde(default)]
@@ -374,8 +426,6 @@ pub(crate) struct DeviceConfig {
     #[serde(default = "default_cache_max_mb")]
     pub cache_max_mb: u32,
     #[serde(default)]
-    pub video_behind: bool,
-    #[serde(default)]
     pub launch_fullscreen: bool,
     #[serde(default)]
     pub audio_device: String,
@@ -405,39 +455,12 @@ pub(crate) struct DeviceConfig {
     #[serde(default = "default_log_level")]
     pub log_level: String,
 
-    // ── Player seek step (Settings → Playback → Skipping) ──────────────────────
-    #[serde(default = "default_seek_step")]
-    pub seek_step_secs: u32,
-    #[serde(default = "default_seek_step_long")]
-    pub seek_step_long_secs: u32,
-
-    // ── Skip-segment fade-to-black duration (Settings → Playback → Skipping) ──────────
-    // Base ms before the settings-animation-speed multiplier; 0 = an instant cut.
-    // Device-scoped like seek_step_secs (about the setup, not personal taste).
-    #[serde(default = "default_skip_fade_ms")]
-    pub skip_fade_ms: u32,
-
-    // ── UI animation speed (Settings → Interface) — multiplier percentages, 100 = mpv/
-    // widgets.slint's original hand-tuned durations unchanged. Scroll is kept
-    // separate from general Animation since it's a throughput property (how
-    // fast you can move through content), not decoration.
-    #[serde(default = "default_speed_pct")]
-    pub scroll_speed_pct: u32,
-    #[serde(default = "default_speed_pct")]
-    pub animation_speed_pct: u32,
-
-    // ── Text font (Settings → Interface) — "Inter" (bundled default), "" (system
-    // default, no override), or any other font family installed on the host.
-    #[serde(default = "default_ui_font_family")]
-    pub ui_font_family: String,
-
-    // ── On-screen alphanumeric keyboard (Settings → Interface) ─────────────────────────
-    // Default ON: Fjord must be fully usable with no physical keyboard (remote/D-pad).
-    // Device-scoped — whether a keyboard is attached is a hardware fact. Checked by the
-    // openers (AppState.open-onscreen-keyboard / keys::open_onscreen_keyboard — nothing
-    // opens when off), every QwertyKeyboard mount, and keys.rs's keyboard gate.
-    #[serde(default = "default_true")]
-    pub onscreen_keyboard_enabled: bool,
+    // ── Moved to ProfileSettings (2026-10-21) ── video_behind, the seek steps, skip_fade_ms,
+    // the scroll/animation speeds, ui_font_family, onscreen_keyboard_enabled: read from an
+    // older config.json only, copied into every profile once (move_device_settings_to_profiles),
+    // never written again.
+    #[serde(flatten, skip_serializing)]
+    pub(crate) moved: MovedToProfiles,
 
     // ── Profile-picker launch policy (Settings → Profiles) ──────────────────────
     // "always_ask" | "remember_last" | "default"; default_profile_id is that profile's
@@ -538,7 +561,6 @@ impl Default for DeviceConfig {
             deinterlace: "no".into(),
             cache_secs: default_cache_secs(),
             cache_max_mb: default_cache_max_mb(),
-            video_behind: false,
             launch_fullscreen: false,
             audio_device: String::new(),
             audio_device_passthrough: String::new(),
@@ -547,13 +569,7 @@ impl Default for DeviceConfig {
             alsa_irq_scheduling: false,
             skip_fade_mute_passthrough: default_skip_fade_mute_passthrough(),
             log_level: default_log_level(),
-            seek_step_secs: default_seek_step(),
-            seek_step_long_secs: default_seek_step_long(),
-            skip_fade_ms: default_skip_fade_ms(),
-            scroll_speed_pct: 100,
-            animation_speed_pct: 100,
-            ui_font_family: default_ui_font_family(),
-            onscreen_keyboard_enabled: true,
+            moved: MovedToProfiles::default(),
             launch_policy: default_launch_policy(),
             default_profile_id: String::new(),
             account_launch_policy: default_launch_policy(),
@@ -730,6 +746,32 @@ pub(crate) struct ProfileSettings {
     // Settings → Interface "Message duration": seconds a toast stays up (main.slint). Default 4 s.
     #[serde(default = "default_toast_secs")]
     pub toast_secs: u32,
+    // ── Per profile since 2026-10-21 (were DeviceConfig; MovedToProfiles migrates) ────────
+    // Settings → General "Video in background".
+    #[serde(default)]
+    pub video_behind: bool,
+    // Settings → Player → Seeking.
+    #[serde(default = "default_seek_step")]
+    pub seek_step_secs: u32,
+    #[serde(default = "default_seek_step_long")]
+    pub seek_step_long_secs: u32,
+    // Skip-segment fade-to-black, base ms before the animation-speed multiplier; 0 = a cut.
+    #[serde(default = "default_skip_fade_ms")]
+    pub skip_fade_ms: u32,
+    // Settings → Interface: duration multipliers in %, 100 = the hand-tuned durations. Scroll
+    // separate from Animation (throughput, not decoration).
+    #[serde(default = "default_speed_pct")]
+    pub scroll_speed_pct: u32,
+    #[serde(default = "default_speed_pct")]
+    pub animation_speed_pct: u32,
+    // "Inter" (bundled default), "" (system default), or any installed family.
+    #[serde(default = "default_ui_font_family")]
+    pub ui_font_family: String,
+    // The on-screen keyboard (default on: Fjord must work with only a remote). Checked by the
+    // openers (AppState.open-onscreen-keyboard / keys::open_onscreen_keyboard), every
+    // QwertyKeyboard mount and keys.rs's keyboard gate.
+    #[serde(default = "default_true")]
+    pub onscreen_keyboard_enabled: bool,
 
     // ── Intro Skipper skip modes ─────────────────────────────────────────────
     // "always-skip" | "ask" | "ask-timed" | "never-skip"  (Intro/Recap/Preview/Commercial)
@@ -970,6 +1012,14 @@ impl Default for ProfileSettings {
             screensaver_mins: default_screensaver_mins(),
             controls_hide_secs: default_controls_hide_secs(),
             toast_secs: default_toast_secs(),
+            video_behind: false,
+            seek_step_secs: default_seek_step(),
+            seek_step_long_secs: default_seek_step_long(),
+            skip_fade_ms: default_skip_fade_ms(),
+            scroll_speed_pct: default_speed_pct(),
+            animation_speed_pct: default_speed_pct(),
+            ui_font_family: default_ui_font_family(),
+            onscreen_keyboard_enabled: true,
             focus_opacity: default_focus_opacity(),
             focus_zoom: default_focus_zoom(),
             seerr_enabled: false,
@@ -1237,7 +1287,6 @@ fn migrate_legacy_config(l: LegacyConfig) -> Config {
         // gets the new, actually-functional defaults instead.
         cache_secs: default_cache_secs(),
         cache_max_mb: default_cache_max_mb(),
-        video_behind: l.video_behind,
         launch_fullscreen: l.launch_fullscreen,
         audio_device: l.audio_device,
         audio_device_passthrough: l.audio_device_passthrough,
@@ -1247,20 +1296,17 @@ fn migrate_legacy_config(l: LegacyConfig) -> Config {
         // No legacy equivalent — same treatment as skip_fade_ms just below.
         skip_fade_mute_passthrough: default_skip_fade_mute_passthrough(),
         log_level: l.log_level,
-        seek_step_secs: l.seek_step_secs,
-        seek_step_long_secs: l.seek_step_long_secs,
-        // No legacy equivalent — skip-fade shipped after the last flat
-        // config.json shape, same treatment as launch_policy/
-        // default_profile_id just below.
-        skip_fade_ms: default_skip_fade_ms(),
-        scroll_speed_pct: l.scroll_speed_pct,
-        animation_speed_pct: l.animation_speed_pct,
-        ui_font_family: l.ui_font_family,
-        // No legacy equivalent — this feature shipped well after the last
-        // flat config.json shape, same treatment as skip_fade_ms/
-        // launch_policy above/below. Defaults on regardless of migration
-        // path, matching every fresh install.
-        onscreen_keyboard_enabled: true,
+        // Per profile now: handed to move_device_settings_to_profiles like a newer config's
+        // device values (skip_fade_ms / the on-screen keyboard have no legacy equivalent).
+        moved: MovedToProfiles {
+            video_behind: Some(l.video_behind),
+            seek_step_secs: Some(l.seek_step_secs),
+            seek_step_long_secs: Some(l.seek_step_long_secs),
+            scroll_speed_pct: Some(l.scroll_speed_pct),
+            animation_speed_pct: Some(l.animation_speed_pct),
+            ui_font_family: Some(l.ui_font_family),
+            ..MovedToProfiles::default()
+        },
         launch_policy: default_launch_policy(),
         default_profile_id: String::new(),
         account_launch_policy: default_launch_policy(),
@@ -1373,6 +1419,15 @@ fn migrate_legacy_config(l: LegacyConfig) -> Config {
         screensaver_mins: default_screensaver_mins(),
         controls_hide_secs: default_controls_hide_secs(),
         toast_secs: default_toast_secs(),
+        // Filled from the legacy values by move_device_settings_to_profiles (load_config).
+        video_behind: false,
+        seek_step_secs: default_seek_step(),
+        seek_step_long_secs: default_seek_step_long(),
+        skip_fade_ms: default_skip_fade_ms(),
+        scroll_speed_pct: default_speed_pct(),
+        animation_speed_pct: default_speed_pct(),
+        ui_font_family: default_ui_font_family(),
+        onscreen_keyboard_enabled: true,
         focus_opacity: default_focus_opacity(),
         focus_zoom: default_focus_zoom(),
     };
@@ -1633,13 +1688,20 @@ pub(crate) fn load_config() -> Option<Config> {
         }
     }
     let repaired = repair_bonfire_profile_corruption(&mut cfg.profiles);
+    let moved = move_device_settings_to_profiles(&mut cfg);
+    if moved {
+        tracing::info!(
+            "config.json: text font, speeds, seek steps, skip fade, on-screen keyboard and video \
+             in background moved from the device to every profile"
+        );
+    }
     // Persist the migrated shape now, AFTER decrypting — `save_config`
     // re-encrypts from what it's given, so saving before decrypting would
     // encrypt an already-encrypted string.
     if migrated {
         tracing::info!("config.json migrated to the device/profiles shape (Bonfire Phase 1)");
         save_config(&cfg);
-    } else if repaired {
+    } else if repaired || moved {
         save_config(&cfg);
     }
     Some(cfg)
@@ -2522,6 +2584,42 @@ mod tests {
         assert_eq!(read(r#"{"now_playing_auto_open":false}"#), 0);
         assert_eq!(read(r#"{"now_playing_auto_open_secs":120}"#), 120);
         assert_eq!(read("{}"), 30);
+    }
+
+    #[test]
+    fn device_settings_move_into_every_profile_once() {
+        // An older config.json: these eight under "device", two profiles.
+        let mut v = serde_json::to_value(Config::default()).unwrap();
+        let p = v["profiles"][0].clone();
+        v["profiles"] = serde_json::json!([p.clone(), p]);
+        let d = v["device"].as_object_mut().unwrap();
+        for (k, val) in [
+            ("video_behind", serde_json::json!(true)),
+            ("seek_step_secs", serde_json::json!(30)),
+            ("seek_step_long_secs", serde_json::json!(120)),
+            ("skip_fade_ms", serde_json::json!(0)),
+            ("scroll_speed_pct", serde_json::json!(50)),
+            ("animation_speed_pct", serde_json::json!(150)),
+            ("ui_font_family", serde_json::json!("Noto Serif")),
+            ("onscreen_keyboard_enabled", serde_json::json!(false)),
+        ] {
+            d.insert(k.into(), val);
+        }
+        let mut cfg: Config = serde_json::from_value(v).unwrap();
+        assert!(move_device_settings_to_profiles(&mut cfg));
+        for p in &cfg.profiles {
+            assert!(p.video_behind && !p.onscreen_keyboard_enabled);
+            assert_eq!((p.seek_step_secs, p.seek_step_long_secs), (30, 120));
+            assert_eq!(p.skip_fade_ms, 0);
+            assert_eq!((p.scroll_speed_pct, p.animation_speed_pct), (50, 150));
+            assert_eq!(p.ui_font_family, "Noto Serif");
+        }
+        // Saved without them under "device"; loading that again moves nothing.
+        let saved = serde_json::to_value(&cfg).unwrap();
+        assert!(saved["device"].get("ui_font_family").is_none());
+        let mut again: Config = serde_json::from_value(saved).unwrap();
+        assert!(!move_device_settings_to_profiles(&mut again));
+        assert_eq!(again.profiles[1].ui_font_family, "Noto Serif");
     }
 
     #[test]

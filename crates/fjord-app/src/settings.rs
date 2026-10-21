@@ -41,7 +41,8 @@
 //   DEVICE_BINDS / PROFILE_BINDS (bind!)  every setting mirrored config ↔ window, one line each
 //                (load / store, profile ones also copy — "Copy settings from…"); TOGGLES  the on/off
 //                rows (Enter/Right flips, only while shown)
-//   apply_profile_settings_to_window  PROFILE_BINDS → window + dashboard row orders
+//   apply_profile_settings_to_window  PROFILE_BINDS → window + dashboard row orders; font_desc =
+//                   the Text font dropdown's label (launch, profile switch, Copy settings from…)
 //   apply_settings_to_window ↔ read_settings_from_window  the binds + the special cases
 //                (device descriptions, speed floats, audio channels, seerr_enabled)
 //   settings_snapshot / settings_diff  the settings-changed handler logs which settings changed
@@ -1406,10 +1407,7 @@ static CHOICES: &[Choice] = &[
         options: SPEED_PCT_OPTIONS,
         field: Field::Int(
             |g| g.get_settings_scroll_speed_pct(),
-            |g, v| {
-                g.set_settings_scroll_speed_pct(v);
-                g.set_settings_scroll_speed(v as f32 / 100.0);
-            },
+            |g, v| g.set_settings_scroll_speed_pct(v),
         ),
     },
     Choice {
@@ -1417,10 +1415,7 @@ static CHOICES: &[Choice] = &[
         options: SPEED_PCT_OPTIONS,
         field: Field::Int(
             |g| g.get_settings_animation_speed_pct(),
-            |g, v| {
-                g.set_settings_animation_speed_pct(v);
-                g.set_settings_animation_speed(v as f32 / 100.0);
-            },
+            |g, v| g.set_settings_animation_speed_pct(v),
         ),
     },
     Choice {
@@ -1934,13 +1929,6 @@ static DEVICE_BINDS: &[DeviceBind] = &[
     ),
     bind!(
         Device,
-        video_behind,
-        get_settings_video_behind,
-        set_settings_video_behind,
-        bool
-    ),
-    bind!(
-        Device,
         launch_fullscreen,
         get_settings_launch_fullscreen,
         set_settings_launch_fullscreen,
@@ -1986,55 +1974,6 @@ static DEVICE_BINDS: &[DeviceBind] = &[
         skip_fade_mute_passthrough,
         get_settings_skip_fade_mute_passthrough,
         set_settings_skip_fade_mute_passthrough,
-        bool
-    ),
-    bind!(
-        Device,
-        seek_step_secs,
-        get_settings_seek_step_secs,
-        set_settings_seek_step_secs,
-        u32
-    ),
-    bind!(
-        Device,
-        seek_step_long_secs,
-        get_settings_seek_step_long_secs,
-        set_settings_seek_step_long_secs,
-        u32
-    ),
-    bind!(
-        Device,
-        skip_fade_ms,
-        get_settings_skip_fade_ms,
-        set_settings_skip_fade_ms,
-        u32
-    ),
-    bind!(
-        Device,
-        scroll_speed_pct,
-        get_settings_scroll_speed_pct,
-        set_settings_scroll_speed_pct,
-        u32
-    ),
-    bind!(
-        Device,
-        animation_speed_pct,
-        get_settings_animation_speed_pct,
-        set_settings_animation_speed_pct,
-        u32
-    ),
-    bind!(
-        Device,
-        ui_font_family,
-        get_settings_font_family,
-        set_settings_font_family,
-        str
-    ),
-    bind!(
-        Device,
-        onscreen_keyboard_enabled,
-        get_settings_onscreen_keyboard_enabled,
-        set_settings_onscreen_keyboard_enabled,
         bool
     ),
     bind!(
@@ -2396,6 +2335,62 @@ pub(crate) static PROFILE_BINDS: &[ProfileBind] = &[
         get_settings_trailer_quality,
         set_settings_trailer_quality,
         str
+    ),
+    bind!(
+        Profile,
+        video_behind,
+        get_settings_video_behind,
+        set_settings_video_behind,
+        bool
+    ),
+    bind!(
+        Profile,
+        seek_step_secs,
+        get_settings_seek_step_secs,
+        set_settings_seek_step_secs,
+        u32
+    ),
+    bind!(
+        Profile,
+        seek_step_long_secs,
+        get_settings_seek_step_long_secs,
+        set_settings_seek_step_long_secs,
+        u32
+    ),
+    bind!(
+        Profile,
+        skip_fade_ms,
+        get_settings_skip_fade_ms,
+        set_settings_skip_fade_ms,
+        u32
+    ),
+    bind!(
+        Profile,
+        scroll_speed_pct,
+        get_settings_scroll_speed_pct,
+        set_settings_scroll_speed_pct,
+        u32
+    ),
+    bind!(
+        Profile,
+        animation_speed_pct,
+        get_settings_animation_speed_pct,
+        set_settings_animation_speed_pct,
+        u32
+    ),
+    bind!(
+        Profile,
+        ui_font_family,
+        get_settings_font_family,
+        set_settings_font_family,
+        str
+    ),
+    bind!(
+        Profile,
+        onscreen_keyboard_enabled,
+        get_settings_onscreen_keyboard_enabled,
+        set_settings_onscreen_keyboard_enabled,
+        bool
     ),
 ];
 
@@ -2849,7 +2844,7 @@ pub(crate) fn wire_device_lists(
     {
         let state_fd = Arc::clone(&state);
         let ww_fd = window.as_weak();
-        let cfg_font = state.lock().unwrap().config.device.ui_font_family.clone();
+        let cfg_font = state.lock().unwrap().config.active().ui_font_family.clone();
         rt.spawn(async move {
             let fonts = tokio::task::spawn_blocking(fetch_system_fonts)
                 .await
@@ -3046,6 +3041,10 @@ pub(crate) fn wire_copy_settings(
                 // Not mirrored in a settings-* property, so read_settings_from_window (run by
                 // settings-changed below) wouldn't carry it: write it to the config directly.
                 s.config.active_mut().dashboard_rows = merged.dashboard_rows.clone();
+                g.set_settings_font_family_desc(ss(&font_desc(
+                    &s.system_fonts,
+                    &merged.ui_font_family,
+                )));
                 merged
             };
             apply_profile_settings_to_window(&g, &merged);
@@ -3435,6 +3434,17 @@ pub(crate) fn apply_profile_settings_to_window(
     crate::dashboard_rows::push_row_orders(g, cp);
 }
 
+/// The Text font dropdown's label for `family` — system_fonts (fc-list, fetched in the
+/// background) may still be empty at launch, so the common cases have their own labels.
+fn font_desc(system_fonts: &[(String, String)], family: &str) -> String {
+    match system_fonts.iter().find(|(v, _)| v == family) {
+        Some((_, d)) => d.clone(),
+        None if family == "Inter" => "Inter (Fjord default)".into(),
+        None if family.is_empty() => "System default".into(),
+        None => family.to_string(),
+    }
+}
+
 pub(crate) fn apply_settings_to_window(w: &MainWindow, s: &FjordState) {
     // Moved from main.rs: names resolve as they did there.
     use crate::*;
@@ -3480,28 +3490,10 @@ pub(crate) fn apply_settings_to_window(w: &MainWindow, s: &FjordState) {
     } else {
         &c.audio_channels
     }));
-    // The settings tagged "Profile" (also what "Copy settings from…" pushes).
+    // The settings tagged "Profile" (also what "Copy settings from…" pushes) — the text font
+    // among them, so MainWindow.font-family is right from the first frame.
     apply_profile_settings_to_window(&g, cp);
-    g.set_settings_scroll_speed(c.scroll_speed_pct as f32 / 100.0);
-    g.set_settings_animation_speed(c.animation_speed_pct as f32 / 100.0);
-    // Set synchronously from Config so MainWindow.font-family (bound to this)
-    // renders correctly from the very first frame — system_fonts (used only
-    // for the human-readable desc) is fetched asynchronously and may still be
-    // empty here; fall back to a sensible label rather than waiting on it.
-    let font_desc = s
-        .system_fonts
-        .iter()
-        .find(|(v, _)| v == &c.ui_font_family)
-        .map(|(_, d)| d.as_str())
-        .unwrap_or(if c.ui_font_family == "Inter" {
-            "Inter (Fjord default)"
-        } else if c.ui_font_family.is_empty() {
-            "System default"
-        } else {
-            c.ui_font_family.as_str()
-        })
-        .to_string();
-    g.set_settings_font_family_desc(ss(&font_desc));
+    g.set_settings_font_family_desc(ss(&font_desc(&s.system_fonts, &cp.ui_font_family)));
     profile::refresh_profile_settings_dropdown(&g, &s.config);
     profile::refresh_account_settings_dropdown(&g, &s.config);
     // is_true_master, not !is_bonfire: a session impersonating a foreign group account has
