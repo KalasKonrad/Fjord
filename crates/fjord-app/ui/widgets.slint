@@ -50,8 +50,10 @@
 //   MiniPlayerBar      bottom bar for background video: 108px with a live thumbnail (a VideoSpot on the
 //                      separate surface), 56px when the video is behind the UI; float-card-focused
 //   VideoSpot          reports its absolute rect into AppState.video-rect-* (separate video surface)
-//   MusicPlayerBar     72px bottom bar while audio plays: art + title/artist, transport + progress,
-//                      Prev/Next/Shuffle/Repeat/Queue/Lyrics/volume; focus from AppState.bar-focused(n)
+//   MusicPlayerBar     72px bottom bar while audio plays: art + title/artist·quality (left zone
+//                      280px × text-scale; the quality follows the artist, or stands alone),
+//                      transport + progress, Prev/Next/Shuffle/Repeat/Queue/Lyrics/volume/☾
+//                      (vertically centred); focus from AppState.bar-focused(n)
 //                      (the bars' elements are `in-bar` / bar-ring-width: they stay lit while the
 //                      rest of the window hides its focus, AppState.bar-focus)
 //   QueuePanel         right-side queue overlay ("Queue N of M", Clear All → ConfirmDialog)
@@ -2249,7 +2251,9 @@ export component MusicPlayerBar inherits Rectangle {
 
         // ── Left zone: album art + title + artist ─────────────────────────────
         ta-left := TouchArea {
-            width: 240px;
+            // Grows with Settings → Interface → Text size (at 240px fixed, Large cut a title
+            // after ~15 characters).
+            width: 280px * AppState.text-scale;
             mouse-cursor: MouseCursor.pointer;
             // Opens the fullscreen Now Playing screen — "Open Album" moved
             // inside it (Phase 66).
@@ -2280,7 +2284,7 @@ export component MusicPlayerBar inherits Rectangle {
                     spacing: 10px;
                     alignment: center;
 
-                    // Album art 60×60
+                    // Album art 56×56
                 Rectangle {
                         width: 56px;
                         height: 56px;
@@ -2317,15 +2321,17 @@ export component MusicPlayerBar inherits Rectangle {
                             overflow: elide;
                         }
 
-                        // Artist, then the song's format/quality (the artist elides first).
+                        // Artist, then the song's format/quality right after it — at the left
+                        // when there's no artist (a stretching empty artist pushed it to the far
+                        // right). Only the artist shortens (elides) when the line is too narrow.
                         HorizontalLayout {
                             spacing: 8px;
-                            Text {
+                            alignment: start;
+                            if AppState.music-bar-artist != "": Text {
                                 text: AppState.music-bar-artist;
                                 color: Theme.text-muted;
                                 font-size: 12px * AppState.text-scale;
                                 overflow: elide;
-                                horizontal-stretch: 1;
                             }
 
                             if AppState.music-bar-quality != "": Text {
@@ -2492,79 +2498,84 @@ export component MusicPlayerBar inherits Rectangle {
         // ── Right zone: ⏮Prev/⏭Next/⇌Shuffle/↺Repeat/⋮Queue/♪Lyrics(cond.)/🔉/🔊/☾Screensaver(cond.) ──
         // All use IconCircleButton (38px), the same as Now Playing's transport row. The width
         // fits the worst case: 9 × 38px + 8 × 8px gaps = 406px — keep it in sync with the
-        // icon count, or the last buttons get clipped at the window edge.
-        HorizontalLayout {
+        // icon count, or the last buttons get clipped at the window edge. The VerticalLayout
+        // centres the row: a HorizontalLayout puts fixed-height children at its top (they sat
+        // on the bar's top edge, the focused one's glow cut off there).
+        VerticalLayout {
             width: 406px;
             alignment: center;
-            spacing: 8px;
+            HorizontalLayout {
+                alignment: center;
+                spacing: 8px;
 
-            IconCircleButton {
-                icon: "⏮";
-                kbd-focused: AppState.bar-focused(4);
-                in-bar: true;
-                clicked => { AppState.queue-prev-track(); }
-            }
+                IconCircleButton {
+                    icon: "⏮";
+                    kbd-focused: AppState.bar-focused(4);
+                    in-bar: true;
+                    clicked => { AppState.queue-prev-track(); }
+                }
 
-            IconCircleButton {
-                icon: "⏭";
-                kbd-focused: AppState.bar-focused(5);
-                in-bar: true;
-                clicked => { AppState.queue-next-track(); }
-            }
+                IconCircleButton {
+                    icon: "⏭";
+                    kbd-focused: AppState.bar-focused(5);
+                    in-bar: true;
+                    clicked => { AppState.queue-next-track(); }
+                }
 
-            IconCircleButton {
-                icon: "⇌";
-                active: AppState.queue-shuffle;
-                kbd-focused: AppState.bar-focused(6);
-                in-bar: true;
-                clicked => { AppState.toggle-shuffle(); }
-            }
+                IconCircleButton {
+                    icon: "⇌";
+                    active: AppState.queue-shuffle;
+                    kbd-focused: AppState.bar-focused(6);
+                    in-bar: true;
+                    clicked => { AppState.toggle-shuffle(); }
+                }
 
-            IconCircleButton {
-                icon: AppState.queue-repeat-mode == 2 ? "↺¹" : "↺";
-                active: AppState.queue-repeat-mode > 0;
-                kbd-focused: AppState.bar-focused(7);
-                in-bar: true;
-                clicked => { AppState.cycle-repeat(); }
-            }
+                IconCircleButton {
+                    icon: AppState.queue-repeat-mode == 2 ? "↺¹" : "↺";
+                    active: AppState.queue-repeat-mode > 0;
+                    kbd-focused: AppState.bar-focused(7);
+                    in-bar: true;
+                    clicked => { AppState.cycle-repeat(); }
+                }
 
-            IconCircleButton {
-                icon: "⋮";
-                active: AppState.show-queue-panel;
-                kbd-focused: AppState.bar-focused(8);
-                in-bar: true;
-                clicked => { AppState.open-queue-panel(); }
-            }
+                IconCircleButton {
+                    icon: "⋮";
+                    active: AppState.show-queue-panel;
+                    kbd-focused: AppState.bar-focused(8);
+                    in-bar: true;
+                    clicked => { AppState.open-queue-panel(); }
+                }
 
-            if AppState.lyrics-available: IconCircleButton {
-                icon: "♪";
-                active: AppState.show-lyrics;
-                kbd-focused: AppState.bar-focused(9);
-                in-bar: true;
-                clicked => { AppState.toggle-lyrics(); }
-            }
-            IconCircleButton {
-                icon: "🔉";
-                kbd-focused: AppState.bar-focused(10);
-                in-bar: true;
-                clicked => { AppState.volume-down(); }
-            }
+                if AppState.lyrics-available: IconCircleButton {
+                    icon: "♪";
+                    active: AppState.show-lyrics;
+                    kbd-focused: AppState.bar-focused(9);
+                    in-bar: true;
+                    clicked => { AppState.toggle-lyrics(); }
+                }
+                IconCircleButton {
+                    icon: "🔉";
+                    kbd-focused: AppState.bar-focused(10);
+                    in-bar: true;
+                    clicked => { AppState.volume-down(); }
+                }
 
-            IconCircleButton {
-                icon: "🔊";
-                kbd-focused: AppState.bar-focused(11);
-                in-bar: true;
-                clicked => { AppState.volume-up(); }
-            }
+                IconCircleButton {
+                    icon: "🔊";
+                    kbd-focused: AppState.bar-focused(11);
+                    in-bar: true;
+                    clicked => { AppState.volume-up(); }
+                }
 
-            // Screensaver (screensaver.rs): lit while it will come on; Enter/click turns it off for
+                // Screensaver (screensaver.rs): lit while it will come on; Enter/click turns it off for
             // this playback (and back on). Only when Settings → Audio has a time set.
             if AppState.screensaver-enabled: IconCircleButton {
-                icon: "☾";
-                active: !AppState.screensaver-paused;
-                kbd-focused: AppState.bar-focused(12);
-                in-bar: true;
-                clicked => { AppState.toggle-screensaver(); }
+                    icon: "☾";
+                    active: !AppState.screensaver-paused;
+                    kbd-focused: AppState.bar-focused(12);
+                    in-bar: true;
+                    clicked => { AppState.toggle-screensaver(); }
+                }
             }
         }
     }

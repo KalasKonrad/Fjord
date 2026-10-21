@@ -12,7 +12,7 @@
 # fresh each time instead of a source=() entry (makepkg would reuse a cached
 # file with that name forever).
 pkgname=fjord-bin-nightly
-pkgver=r1237.d6ed96f
+pkgver=r1242.aefa2f8
 pkgrel=1
 pkgdesc="Jellyfin media frontend with smooth mpv playback on NVIDIA legacy hardware (pre-built development build)"
 arch=('x86_64')
