@@ -23,6 +23,10 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Improved: Back is in the same place on every page** — top left, the same
+  size. The album/playlist page lost its top bar (the title already sits next
+  to the cover), like the artist page; Browse, the library grids and Now
+  Playing moved their Back to match.
 - **Improved: the music bar's controls are grouped.** ⏮ ⏯ ⏭ now sit together
   above the progress bar (play/pause filled); ⏹ joined the buttons on the
   right. The remote's Left/Right follow the new order.
