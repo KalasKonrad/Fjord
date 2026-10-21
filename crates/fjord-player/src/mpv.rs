@@ -8,34 +8,45 @@
 //                   video_out_primaries/gamma/sig_peak = what goes to the display
 //                   (video-target-params — after tone-mapping), video_out_pix_fmt/w/h = after
 //                   the --vf chain (video-out-params)
-//   SourceHdrMetadata  one-shot per-file HDR10 metadata for hdr.rs (Option<f64> luma/CLL/FALL —
+//   SourceHdrMetadata  per-file HDR10 metadata for hdr.rs (Option<f64> luma/CLL/FALL —
 //                   None = unavailable, not 0)
-//   Observed        time-pos, duration, pause, paused-for-cache, buffering %, cache seconds,
-//                   passthrough — kept current from observed-property events by poll(); reading
-//                   it never waits for mpv's core (a get_property does — 300–400 ms at a song
-//                   change; fjord-app's tick runs on the render thread). buffer_end_fraction
+//   OBSERVED        every property mpv reports to us (observe_property) instead of being asked —
+//                   a get_property waits for mpv's core (300–400 ms at a song change) and
+//                   fjord-app calls the player from its render thread; lists come as JSON
+//                   (libmpv2's node iteration frees mpv-owned memory — unused)
+//   Observed        playback state: position, duration, pause, buffering, cache seconds,
+//                   passthrough, the start-up snapshot's core-idle/seeking/avsync, drop counts,
+//                   volume; buffer_end_fraction
+//   VideoInfo       decoder, size, frame rates, pixel format, gamma/primaries + HDR10 values;
+//                   hdr_metadata(), dimensions() (fps 0.0 = unknown)
+//   parse_track_list / parse_chapter_list  mpv's JSON lists (unit-tested)
 //   Player          libmpv2 wrapper:
 //                   new(config) builds the core only (+ observes OBSERVED); load(url) issues the
 //                     loadfile once a render context is attached (vo=libmpv's init without one
 //                     fails for good)
-//                   playback state: observed() (per-tick reads), is_paused, get_drop_counts,
-//                     startup_snapshot, file_loaded_at, has_seen_video_reconfig (diagnostic),
-//                     log_decoder_info
-//                   query_source_hdr_metadata (after VideoReconfig), query_video_dimensions
-//                     (width/height/fps for display sync; fps 0.0 = unknown), apply_hdr_output
-//                   tracks: set_track_preferences (before load), get_tracks, set_sub_track /
+//                   reported state (Reported, updated by poll — never waits): observed(),
+//                     video_info() (only once the format arrived after this file's VideoReconfig
+//                     — mpv sends it right after the event; VIDEO_INFO_GRACE), tracks(),
+//                     chapters(); startup_snapshot, log_decoder_info and get_volume read it too
+//                   direct (one-off, may wait): is_paused, get_drop_counts (teardown),
+//                     get_position / get_duration (right after Fjord's own command), poll_stats
+//                   file_loaded_at, has_seen_video_reconfig (diagnostic), apply_hdr_output
+//                   tracks: set_track_preferences (before load), set_sub_track /
 //                     set_audio_track / set_video_track, apply_auto_vf,
 //                     adjust_sub_delay / adjust_audio_delay, set_sub_style (live, same
 //                     conditional rules as PlayerConfig; a box level of 0 restores mpv's style)
 //   sub_back_color  the subtitle box's opacity % → mpv color (unit-tested)
-//                   chapters: get_chapter_count, get_chapters, chapter_step
+//                   chapters: chapter_step
 //                   transport: toggle_pause / set_paused, seek_forward / seek_backward / seek_to, stop,
-//                     get_position / get_duration, poll_stats, raw_handle_ptr
+//                     raw_handle_ptr
 //                   volume: adjust_volume, get_volume / set_volume (absolute — the skip-fade ramp),
-//                     toggle_mute / set_mute
-//                     (set_mute is the passthrough fallback; volume changes skip passthrough audio)
+//                     toggle_mute / set_mute; set_volume / set_mute are async (set_async —
+//                     mpv_set_property_async, safe on the render thread; they run every tick
+//                     of a skip fade). set_mute is the passthrough fallback (volume changes skip
+//                     passthrough audio)
 //                   append_gapless / cancel_pending (skips an entry mpv already made active)
-//                   poll: PropertyChange → Observed; StartFile/EndFile clear its per-file values;
+//                   poll: PropertyChange → Reported; StartFile/EndFile clear its per-file values;
+//                     SetPropertyReply ignored (failures arrive as error events);
 //                     EndFile → TrackChanged only for EOF; an abnormal end drops a pending
 //                     append; END_FILE error codes (-13…-20) → Failed(code); Event::LogMessage
 //                     (mpv's own log at warn+) → tracing
@@ -276,9 +287,21 @@ pub struct Observed {
     pub cache_secs: f64,
     /// audio-out-params/format is iec61937: bitstream (SPDIF/HDMI) passthrough.
     pub passthrough: bool,
+    /// The start-up snapshot's: not actually playing, seeking, A/V sync (None = not known).
+    pub core_idle: bool,
+    pub seeking: bool,
+    pub avsync: Option<f64>,
+    /// frame-drop-count / decoder-frame-drop-count for this file.
+    pub frame_drops: i64,
+    pub decoder_drops: i64,
+    /// 0–130; None until mpv reported it.
+    pub volume: Option<f64>,
 }
 
-/// (property, format) pairs `Player::new` observes; `Observed::apply` reads their changes.
+/// (property, format) pairs `Player::new` observes; `Player::apply_change` sorts their changes
+/// into `Observed`, `VideoInfo` and the track/chapter lists. The lists arrive as JSON (mpv
+/// prints a list property that way when it's observed as a string) — libmpv2's own node
+/// iteration frees mpv-owned memory, so it's not used.
 const OBSERVED: &[(&str, Format)] = &[
     ("time-pos", Format::Double),
     ("duration", Format::Double),
@@ -287,7 +310,33 @@ const OBSERVED: &[(&str, Format)] = &[
     ("cache-buffering-state", Format::Int64),
     ("demuxer-cache-duration", Format::Double),
     ("audio-out-params/format", Format::String),
+    ("core-idle", Format::Flag),
+    ("seeking", Format::Flag),
+    ("avsync", Format::Double),
+    ("frame-drop-count", Format::Int64),
+    ("decoder-frame-drop-count", Format::Int64),
+    ("volume", Format::Double),
+    ("width", Format::Int64),
+    ("height", Format::Int64),
+    ("estimated-vf-fps", Format::Double),
+    ("container-fps", Format::Double),
+    ("hwdec-current", Format::String),
+    ("video-codec", Format::String),
+    ("video-sync", Format::String),
+    ("video-params/pixelformat", Format::String),
+    ("video-params/gamma", Format::String),
+    ("video-params/primaries", Format::String),
+    ("video-params/min-luma", Format::Double),
+    ("video-params/max-luma", Format::Double),
+    ("video-params/max-cll", Format::Double),
+    ("video-params/max-fall", Format::Double),
+    ("track-list", Format::String),
+    ("chapter-list", Format::String),
 ];
+
+/// How long after VideoReconfig `Player::video_info` waits for the video's format to be
+/// reported (mpv sends it right after the event; this only covers a file that never does).
+const VIDEO_INFO_GRACE: std::time::Duration = std::time::Duration::from_secs(1);
 
 impl Observed {
     fn apply(&mut self, name: &str, change: &PropertyData) {
@@ -301,17 +350,24 @@ impl Observed {
             ("audio-out-params/format", PropertyData::Str(s)) => {
                 self.passthrough = s.starts_with("iec61937")
             }
+            ("core-idle", PropertyData::Flag(b)) => self.core_idle = *b,
+            ("seeking", PropertyData::Flag(b)) => self.seeking = *b,
+            ("avsync", PropertyData::Double(v)) => self.avsync = Some(*v),
+            ("frame-drop-count", PropertyData::Int64(v)) => self.frame_drops = *v,
+            ("decoder-frame-drop-count", PropertyData::Int64(v)) => self.decoder_drops = *v,
+            ("volume", PropertyData::Double(v)) => self.volume = Some(*v),
             _ => {}
         }
     }
 
     /// A file starts or ends: its values no longer apply. Needed because libmpv2 turns a
     /// property becoming unavailable (time-pos at the end of a file) into no event at all.
-    /// `paused` and `passthrough` belong to the player, not the file — kept.
+    /// `paused`, `passthrough` and `volume` belong to the player, not the file — kept.
     fn clear_file(&mut self) {
         *self = Observed {
             paused: self.paused,
             passthrough: self.passthrough,
+            volume: self.volume,
             ..Observed::default()
         };
     }
@@ -322,6 +378,137 @@ impl Observed {
             return 0.0;
         }
         ((self.time_pos + self.cache_secs) / self.duration).min(1.0) as f32
+    }
+}
+
+// ── VideoInfo ─────────────────────────────────────────────────────────────────
+
+/// The playing video's format as mpv reported it (observed, like `Observed`): decoder, size,
+/// frame rate and the HDR10 metadata. Empty/None until reported; see `Player::video_info`.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct VideoInfo {
+    pub width: i64,
+    pub height: i64,
+    pub estimated_fps: f64,
+    pub container_fps: f64,
+    pub hwdec_current: String,
+    pub codec: String,
+    pub video_sync: String,
+    pub pixelformat: String,
+    pub gamma: String,
+    pub primaries: String,
+    pub min_luma: Option<f64>,
+    pub max_luma: Option<f64>,
+    pub max_cll: Option<f64>,
+    pub max_fall: Option<f64>,
+}
+
+impl VideoInfo {
+    fn apply(&mut self, name: &str, change: &PropertyData) {
+        let s = |c: &PropertyData| match c {
+            PropertyData::Str(s) => Some(s.to_string()),
+            _ => None,
+        };
+        let f = |c: &PropertyData| match c {
+            PropertyData::Double(v) => Some(*v),
+            _ => None,
+        };
+        match (name, change) {
+            ("width", PropertyData::Int64(v)) => self.width = *v,
+            ("height", PropertyData::Int64(v)) => self.height = *v,
+            ("estimated-vf-fps", c) => self.estimated_fps = f(c).unwrap_or(self.estimated_fps),
+            ("container-fps", c) => self.container_fps = f(c).unwrap_or(self.container_fps),
+            ("hwdec-current", c) => self.hwdec_current = s(c).unwrap_or_default(),
+            ("video-codec", c) => self.codec = s(c).unwrap_or_default(),
+            ("video-sync", c) => self.video_sync = s(c).unwrap_or_default(),
+            ("video-params/pixelformat", c) => self.pixelformat = s(c).unwrap_or_default(),
+            ("video-params/gamma", c) => self.gamma = s(c).unwrap_or_default(),
+            ("video-params/primaries", c) => self.primaries = s(c).unwrap_or_default(),
+            ("video-params/min-luma", c) => self.min_luma = f(c),
+            ("video-params/max-luma", c) => self.max_luma = f(c),
+            ("video-params/max-cll", c) => self.max_cll = f(c),
+            ("video-params/max-fall", c) => self.max_fall = f(c),
+            _ => {}
+        }
+    }
+
+    /// For the Wayland colour-management worker (hdr.rs) and display sync.
+    pub fn hdr_metadata(&self) -> SourceHdrMetadata {
+        SourceHdrMetadata {
+            gamma: self.gamma.clone(),
+            primaries: self.primaries.clone(),
+            min_luma: self.min_luma,
+            max_luma: self.max_luma,
+            max_cll: self.max_cll,
+            max_fall: self.max_fall,
+        }
+    }
+
+    /// Width, height and frame rate for display sync's mode choice. The rate is mpv's estimate
+    /// once frames flow, else the container's declared rate; 0.0 = not known yet, and callers
+    /// must not act on it (an "unusual" 0 once switched a 4K film to 1080p59.94).
+    pub fn dimensions(&self) -> (i64, i64, f64) {
+        let fps = if self.estimated_fps > 0.0 {
+            self.estimated_fps
+        } else {
+            self.container_fps
+        };
+        (self.width, self.height, fps)
+    }
+}
+
+/// mpv's track-list (JSON, see OBSERVED) → TrackInfo; anything unreadable → no tracks.
+fn parse_track_list(json: &str) -> Vec<TrackInfo> {
+    #[derive(serde::Deserialize, Default)]
+    #[serde(default, rename_all = "kebab-case")]
+    struct Track {
+        id: i64,
+        #[serde(rename = "type")]
+        kind: String,
+        title: String,
+        lang: String,
+        selected: bool,
+        codec: String,
+        external_filename: String,
+        forced: bool,
+        hearing_impaired: bool,
+    }
+    match serde_json::from_str::<Vec<Track>>(json) {
+        Ok(tracks) => tracks
+            .into_iter()
+            .map(|t| TrackInfo {
+                id: t.id,
+                track_type: t.kind,
+                title: t.title,
+                lang: t.lang,
+                selected: t.selected,
+                codec: t.codec,
+                external_filename: t.external_filename,
+                forced: t.forced,
+                hearing_impaired: t.hearing_impaired,
+            })
+            .collect(),
+        Err(e) => {
+            warn!("mpv track-list unreadable: {e}");
+            Vec::new()
+        }
+    }
+}
+
+/// mpv's chapter-list (JSON) → (start seconds, title).
+fn parse_chapter_list(json: &str) -> Vec<(f64, String)> {
+    #[derive(serde::Deserialize, Default)]
+    #[serde(default)]
+    struct Chapter {
+        title: String,
+        time: f64,
+    }
+    match serde_json::from_str::<Vec<Chapter>>(json) {
+        Ok(chapters) => chapters.into_iter().map(|c| (c.time, c.title)).collect(),
+        Err(e) => {
+            warn!("mpv chapter-list unreadable: {e}");
+            Vec::new()
+        }
     }
 }
 
@@ -347,7 +534,45 @@ pub struct Player {
     // whole PlayerConfig.
     startup_log_suffix: String,
     resume_secs: Option<f64>,
+    // Everything mpv reported through observed properties (its own field, so poll can update
+    // it while the event still borrows `mpv`).
+    reported: Reported,
+}
+
+#[derive(Default)]
+struct Reported {
     observed: Observed,
+    video: VideoInfo,
+    tracks: Vec<TrackInfo>,
+    chapters: Vec<(f64, String)>,
+    // This file's first VideoReconfig — video_info waits for the format after it.
+    video_reconfig_at: Option<std::time::Instant>,
+}
+
+impl Reported {
+    fn apply(&mut self, name: &str, change: &PropertyData) {
+        match (name, change) {
+            ("track-list", PropertyData::Str(json)) => self.tracks = parse_track_list(json),
+            ("chapter-list", PropertyData::Str(json)) => self.chapters = parse_chapter_list(json),
+            _ => {
+                self.observed.apply(name, change);
+                self.video.apply(name, change);
+            }
+        }
+    }
+
+    /// A file starts or ends: its reported values no longer apply (see Observed::clear_file).
+    fn clear_file(&mut self) {
+        self.observed.clear_file();
+        let video_sync = std::mem::take(&mut self.video.video_sync);
+        self.video = VideoInfo {
+            video_sync,
+            ..VideoInfo::default()
+        };
+        self.tracks.clear();
+        self.chapters.clear();
+        self.video_reconfig_at = None;
+    }
 }
 
 // "Unlimited" for PlayerConfig.cache_max_mb (Settings' 0 sentinel) — a fixed,
@@ -509,7 +734,7 @@ impl Player {
             file_loaded_at: None,
             startup_log_suffix,
             resume_secs: config.start_position_secs,
-            observed: Observed::default(),
+            reported: Reported::default(),
         })
     }
 
@@ -587,14 +812,16 @@ impl Player {
                     return PollResult::Finished;
                 }
                 Some(Ok(Event::PropertyChange { name, change, .. })) => {
-                    self.observed.apply(name, &change);
+                    self.reported.apply(name, &change);
                 }
+                // set_volume/set_mute's async replies — failures arrive as Err below.
+                Some(Ok(Event::SetPropertyReply(_))) => {}
                 Some(Ok(Event::StartFile)) => {
-                    self.observed.clear_file();
+                    self.reported.clear_file();
                     debug!("mpv event: StartFile");
                 }
                 Some(Ok(Event::EndFile(reason))) => {
-                    self.observed.clear_file();
+                    self.reported.clear_file();
                     if self.pending_appends > 0 {
                         self.pending_appends -= 1;
                         if reason == mpv_end_file_reason::Eof {
@@ -617,6 +844,9 @@ impl Player {
                 }
                 Some(Ok(Event::VideoReconfig)) => {
                     self.saw_video_reconfig = true;
+                    self.reported
+                        .video_reconfig_at
+                        .get_or_insert_with(std::time::Instant::now);
                     debug!("mpv event: VideoReconfig");
                 }
                 Some(Ok(Event::FileLoaded)) => {
@@ -676,7 +906,49 @@ impl Player {
     /// the per-tick reads; right after a command of its own (a seek, a pause) a caller that
     /// needs the new value at once uses the direct getters instead.
     pub fn observed(&self) -> Observed {
-        self.observed
+        self.reported.observed
+    }
+
+    /// The video's format once mpv has reported it after this file's VideoReconfig (it sends
+    /// the event first and the format right after — acting at the bare event read an empty
+    /// gamma, i.e. SDR); after VIDEO_INFO_GRACE whatever arrived. None before that.
+    pub fn video_info(&self) -> Option<VideoInfo> {
+        let r = &self.reported;
+        let at = r.video_reconfig_at?;
+        (!r.video.gamma.is_empty() || at.elapsed() >= VIDEO_INFO_GRACE).then(|| r.video.clone())
+    }
+
+    /// All tracks as mpv last reported them (empty until it has parsed the file).
+    pub fn tracks(&self) -> Vec<TrackInfo> {
+        self.reported.tracks.clone()
+    }
+
+    /// (start seconds, title) per chapter, as mpv last reported them.
+    pub fn chapters(&self) -> Vec<(f64, String)> {
+        self.reported.chapters.clone()
+    }
+
+    /// Queue a property change and return at once — unlike set_property, it never waits for
+    /// mpv's core, so it's safe on the render thread (client.h). A failure comes back later as
+    /// an error event (poll logs it).
+    fn set_async<T>(&self, name: &str, format: sys::mpv_format, mut value: T) {
+        let Ok(name_c) = std::ffi::CString::new(name) else {
+            return;
+        };
+        // SAFETY: the handle is valid for as long as `self`; mpv copies the value before
+        // returning (mpv_set_property_async), so a pointer to the local is enough.
+        let rc = unsafe {
+            sys::mpv_set_property_async(
+                self.mpv.ctx.as_ptr(),
+                0,
+                name_c.as_ptr(),
+                format,
+                (&mut value as *mut T).cast::<c_void>(),
+            )
+        };
+        if rc < 0 {
+            warn!("set {name} (async) failed: {rc}");
+        }
     }
 
     pub fn poll_stats(&self) -> StatsData {
@@ -758,43 +1030,6 @@ impl Player {
         self.file_loaded_at
     }
 
-    /// The file's source colourspace/HDR10 metadata for the Wayland colour-management
-    /// worker. Call only after VideoReconfig (`has_seen_video_reconfig()`) — before that
-    /// the properties are unset/stale. The luma/CLL/FALL fields use `.ok()` so
-    /// "unavailable" differs from a real 0 (see SourceHdrMetadata).
-    pub fn query_source_hdr_metadata(&self) -> SourceHdrMetadata {
-        let g_s = |k: &str| self.mpv.get_property::<String>(k).unwrap_or_default();
-        let g_f = |k: &str| self.mpv.get_property::<f64>(k).ok();
-        SourceHdrMetadata {
-            gamma: g_s("video-params/gamma"),
-            primaries: g_s("video-params/primaries"),
-            min_luma: g_f("video-params/min-luma"),
-            max_luma: g_f("video-params/max-luma"),
-            max_cll: g_f("video-params/max-cll"),
-            max_fall: g_f("video-params/max-fall"),
-        }
-    }
-
-    /// Width, height and frame rate of the decoded video, for display sync's mode choice
-    /// (same properties log_decoder_info / poll_stats use). The rate is mpv's estimate
-    /// (estimated-vf-fps) once frames flow — not reliable at the instant VideoReconfig
-    /// fires — else the container's declared rate; 0.0 = not known yet, and callers must
-    /// not act on it (an "unusual" 0 once switched a 4K film to 1080p59.94).
-    pub fn query_video_dimensions(&self) -> (i64, i64, f64) {
-        let w = self.mpv.get_property::<i64>("width").unwrap_or(0);
-        let h = self.mpv.get_property::<i64>("height").unwrap_or(0);
-        let est = self
-            .mpv
-            .get_property::<f64>("estimated-vf-fps")
-            .unwrap_or(0.0);
-        let fps = if est > 0.0 {
-            est
-        } else {
-            self.mpv.get_property::<f64>("container-fps").unwrap_or(0.0)
-        };
-        (w, h, fps)
-    }
-
     /// Track preferences for the NEXT file, set before it loads: mpv then enables the
     /// right subtitle/audio tracks from the first byte. Switching a track after reading
     /// starts makes mpv drop and re-read its read-ahead (a ~1 s stop mid-film, slower
@@ -815,28 +1050,13 @@ impl Player {
         debug!("track preferences: slang={slang:?} alang={alang:?} subs={subs}");
     }
 
+    /// The active decoder line, from what mpv reported (never waits for the core).
     pub fn log_decoder_info(&self) {
-        let hwdec = self
-            .mpv
-            .get_property::<String>("hwdec-current")
-            .unwrap_or_default();
-        let codec = self
-            .mpv
-            .get_property::<String>("video-codec")
-            .unwrap_or_default();
-        let w: i64 = self.mpv.get_property("width").unwrap_or(0);
-        let h: i64 = self.mpv.get_property("height").unwrap_or(0);
-        let fps = self
-            .mpv
-            .get_property::<f64>("estimated-vf-fps")
-            .unwrap_or(0.0);
-        let video_sync = self
-            .mpv
-            .get_property::<String>("video-sync")
-            .unwrap_or_default();
+        let v = &self.reported.video;
+        let (w, h, fps) = v.dimensions();
         info!(
             "active decoder: hwdec-current={:?}, codec={}, {}x{} {:.2}fps, video-sync={}",
-            hwdec, codec, w, h, fps, video_sync,
+            v.hwdec_current, v.codec, w, h, fps, v.video_sync,
         );
     }
 
@@ -848,14 +1068,11 @@ impl Player {
             return;
         }
 
-        let hwdec = self
-            .mpv
-            .get_property::<String>("hwdec-current")
-            .unwrap_or_default();
-        let pix_fmt = self
-            .mpv
-            .get_property::<String>("video-params/pixelformat")
-            .unwrap_or_default();
+        // Reported values (VideoInfo) — the decision never waits for the core. The `vf set`
+        // itself stays a direct command: an async reply's error can't be told apart from a
+        // file that failed to open (poll's END_FILE codes).
+        let hwdec = self.reported.video.hwdec_current.clone();
+        let pix_fmt = self.reported.video.pixelformat.clone();
 
         if !hwdec.contains("nvdec") {
             info!("auto vf: no filter needed (hwdec={})", hwdec);
@@ -927,7 +1144,7 @@ impl Player {
     /// effect's own `set_volume` calls), not for display (that path already
     /// goes through `adjust_volume`'s own return value).
     pub fn get_volume(&self) -> f64 {
-        self.mpv.get_property::<f64>("volume").unwrap_or(100.0)
+        self.reported.observed.volume.unwrap_or(100.0)
     }
 
     /// Set volume to an absolute level (0–130) — distinct from
@@ -937,10 +1154,10 @@ impl Player {
     /// reason `adjust_volume` is already skipped there elsewhere in this
     /// app: touching sample values on a raw compressed bitstream would
     /// corrupt the encoded frames, so mpv's own volume filter doesn't apply.
+    ///
+    /// Async: the skip fade calls it every tick, around a seek that keeps mpv's core busy.
     pub fn set_volume(&self, vol: f64) {
-        if let Err(e) = self.mpv.set_property("volume", vol) {
-            warn!("set_volume {} failed: {}", vol, e);
-        }
+        self.set_async("volume", sys::mpv_format_MPV_FORMAT_DOUBLE, vol);
     }
 
     /// Set mute to an absolute state — distinct from `toggle_mute` (flips
@@ -949,10 +1166,13 @@ impl Player {
     /// where volume can't be ramped at all — see `set_volume`'s own doc
     /// comment) needs the exact state it asks for regardless of whatever
     /// the user last set manually.
+    /// Async, like set_volume.
     pub fn set_mute(&self, muted: bool) {
-        if let Err(e) = self.mpv.set_property("mute", muted) {
-            warn!("set_mute {} failed: {}", muted, e);
-        }
+        self.set_async(
+            "mute",
+            sys::mpv_format_MPV_FORMAT_FLAG,
+            std::os::raw::c_int::from(muted),
+        );
     }
 
     pub fn set_video_track(&self, id: i64) {
@@ -978,39 +1198,23 @@ impl Player {
     }
     /// One-line snapshot of mpv's playback state for diagnosing start-up hiccups:
     /// position, core-idle (not actually playing), seeking, paused-for-cache, A/V sync,
-    /// seconds demuxed ahead, dropped frames so far.
+    /// seconds demuxed ahead, dropped frames so far — from what mpv reported (Observed).
     pub fn startup_snapshot(&self) -> String {
-        let f = |p: &str| {
-            self.mpv
-                .get_property::<f64>(p)
-                .map(|v| format!("{v:.3}"))
-                .unwrap_or_else(|_| "-".into())
-        };
-        let b = |p: &str| {
-            self.mpv
-                .get_property::<bool>(p)
-                .map(|v| if v { "yes" } else { "no" })
-                .unwrap_or("-")
-        };
-        let i = |p: &str| {
-            self.mpv
-                .get_property::<i64>(p)
-                .map(|v| v.to_string())
-                .unwrap_or_else(|_| "-".into())
-        };
+        let o = &self.reported.observed;
+        let yn = |b: bool| if b { "yes" } else { "no" };
         format!(
-            "pos={} core-idle={} seeking={} paused-for-cache={} avsync={} cache-ahead={}s drops={}/{}",
-            f("time-pos"),
-            b("core-idle"),
-            b("seeking"),
-            b("paused-for-cache"),
-            f("avsync"),
-            f("demuxer-cache-duration"),
-            i("frame-drop-count"),
-            i("decoder-frame-drop-count"),
+            "pos={:.3} core-idle={} seeking={} paused-for-cache={} avsync={} cache-ahead={:.3}s drops={}/{}",
+            o.time_pos,
+            yn(o.core_idle),
+            yn(o.seeking),
+            yn(o.paused_for_cache),
+            o.avsync
+                .map_or_else(|| "-".to_string(), |v| format!("{v:.3}")),
+            o.cache_secs,
+            o.frame_drops,
+            o.decoder_drops,
         )
     }
-
     pub fn seek_to(&self, secs: f64) {
         if let Err(e) = self.mpv.set_property("time-pos", secs) {
             warn!("seek_to {:.1}s failed: {}", secs, e);
@@ -1092,31 +1296,6 @@ impl Player {
         }
     }
 
-    /// Cheap probe: number of chapters (0 if none or not yet loaded).
-    pub fn get_chapter_count(&self) -> i64 {
-        self.mpv
-            .get_property::<i64>("chapter-list/count")
-            .unwrap_or(0)
-    }
-
-    /// Return all chapters as (start_secs, title) pairs.
-    pub fn get_chapters(&self) -> Vec<(f64, String)> {
-        let count = self.get_chapter_count();
-        (0..count as usize)
-            .map(|i| {
-                let time = self
-                    .mpv
-                    .get_property::<f64>(&format!("chapter-list/{}/time", i))
-                    .unwrap_or(0.0);
-                let title = self
-                    .mpv
-                    .get_property::<String>(&format!("chapter-list/{}/title", i))
-                    .unwrap_or_default();
-                (time, title)
-            })
-            .collect()
-    }
-
     /// Step to the next (delta=1) or previous (delta=-1) chapter.
     pub fn chapter_step(&self, delta: i64) {
         let s = delta.to_string();
@@ -1141,46 +1320,6 @@ impl Player {
             warn!("adjust_audio_delay {} ms failed: {}", delta_ms, e);
         }
         self.mpv.get_property::<f64>("audio-delay").unwrap_or(0.0)
-    }
-
-    /// Returns all tracks from mpv's track-list property.
-    pub fn get_tracks(&self) -> Vec<TrackInfo> {
-        let count = self
-            .mpv
-            .get_property::<i64>("track-list/count")
-            .unwrap_or(0);
-        (0..count as usize)
-            .map(|i| {
-                let g = |k: &str| {
-                    self.mpv
-                        .get_property::<String>(&format!("track-list/{}/{}", i, k))
-                        .unwrap_or_default()
-                };
-                let gi = |k: &str| {
-                    self.mpv
-                        .get_property::<i64>(&format!("track-list/{}/{}", i, k))
-                        .unwrap_or(0)
-                };
-                // selected/forced/hearing-impaired are mpv FLAG properties — read as i64 they
-                // fail and come back 0 (every track read as unselected, forced/HI never matched).
-                let gb = |k: &str| {
-                    self.mpv
-                        .get_property::<bool>(&format!("track-list/{}/{}", i, k))
-                        .unwrap_or(false)
-                };
-                TrackInfo {
-                    id: gi("id"),
-                    track_type: g("type"),
-                    title: g("title"),
-                    lang: g("lang"),
-                    selected: gb("selected"),
-                    codec: g("codec"),
-                    external_filename: g("external-filename"),
-                    forced: gb("forced"),
-                    hearing_impaired: gb("hearing-impaired"),
-                }
-            })
-            .collect()
     }
 }
 
@@ -1400,7 +1539,55 @@ pub fn sub_back_color(pct: u32) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Observed, PropertyData, redact_api_key, sub_back_color};
+    use super::{
+        Observed, PropertyData, VideoInfo, parse_chapter_list, parse_track_list, redact_api_key,
+        sub_back_color,
+    };
+
+    #[test]
+    fn lists_parse_from_mpvs_json() {
+        // Shapes as libmpv prints them (checked against mpv with a generated mkv).
+        let tracks = parse_track_list(
+            r#"[{"id":1,"type":"video","selected":true,"codec":"hevc","forced":false},
+                {"id":2,"type":"audio","lang":"swe","title":"Svenska","selected":false,"codec":"aac"},
+                {"id":1,"type":"sub","lang":"eng","external":true,"external-filename":"/x.srt","forced":true,"hearing-impaired":true}]"#,
+        );
+        assert_eq!(tracks.len(), 3);
+        assert_eq!(
+            (tracks[0].track_type.as_str(), tracks[0].selected),
+            ("video", true)
+        );
+        assert_eq!(
+            (tracks[1].lang.as_str(), tracks[1].title.as_str()),
+            ("swe", "Svenska")
+        );
+        assert!(tracks[2].forced && tracks[2].hearing_impaired);
+        assert_eq!(tracks[2].external_filename, "/x.srt");
+        assert!(parse_track_list("not json").is_empty());
+        assert_eq!(
+            parse_chapter_list(
+                r#"[{"title":"Intro","time":0.000000},{"title":"Main","time":1.500000}]"#
+            ),
+            vec![(0.0, "Intro".to_string()), (1.5, "Main".to_string())]
+        );
+    }
+
+    #[test]
+    fn video_info_from_reported_values() {
+        let mut v = VideoInfo::default();
+        v.apply("width", &PropertyData::Int64(3840));
+        v.apply("height", &PropertyData::Int64(2160));
+        v.apply("container-fps", &PropertyData::Double(23.976));
+        assert_eq!(v.dimensions(), (3840, 2160, 23.976));
+        v.apply("estimated-vf-fps", &PropertyData::Double(24.0));
+        assert_eq!(v.dimensions().2, 24.0);
+        v.apply("video-params/gamma", &PropertyData::Str("pq"));
+        v.apply("video-params/primaries", &PropertyData::Str("bt.2020"));
+        v.apply("video-params/max-cll", &PropertyData::Double(1000.0));
+        let m = v.hdr_metadata();
+        assert_eq!((m.gamma.as_str(), m.primaries.as_str()), ("pq", "bt.2020"));
+        assert_eq!((m.max_cll, m.max_luma), (Some(1000.0), None));
+    }
 
     #[test]
     fn observed_follows_change_events_and_clears_per_file() {
@@ -1413,6 +1600,9 @@ mod tests {
         o.apply("demuxer-cache-duration", &PropertyData::Double(37.5));
         o.apply("audio-out-params/format", &PropertyData::Str("iec61937"));
         o.apply("time-pos", &PropertyData::Str("ignored: wrong format"));
+        o.apply("volume", &PropertyData::Double(80.0));
+        assert_eq!(o.volume, Some(80.0));
+        o.volume = None;
         assert_eq!(
             o,
             Observed {
@@ -1423,6 +1613,7 @@ mod tests {
                 buffering_pct: 40,
                 cache_secs: 37.5,
                 passthrough: true,
+                ..Observed::default()
             }
         );
         assert_eq!(o.buffer_end_fraction(), 0.5);
