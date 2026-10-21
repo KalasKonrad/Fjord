@@ -4,7 +4,8 @@
 //   build_track_model       Vec<TrackInfo> → ModelRc<TrackEntry>; title preferred, falls back to external filename base
 //   spawn_audio_quality     the playing song's format + quality (music-bar-quality / -long) from one
 //                           item-detail fetch, generation-guarded (start_playback + apply_audio_track)
-//   apply_audio_track       music bar + album art + lyrics + quality for an Audio track a GAPLESS
+//   apply_audio_track       music bar + album art (+ its 24px blur for Now Playing's background) +
+//                           lyrics + quality for an Audio track a GAPLESS
 //                           transition started (condensed mirror of start_playback's is_audio block)
 // ─────────────────────────────────────────────────────────────────────────────
 use super::*;
