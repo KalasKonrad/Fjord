@@ -1,5 +1,6 @@
 // ── fjord-app · browse.slint ─────────────────────────────────────────────────
-//   BrowseScreen  Browse All: keyboard-driven search bar (browse-query, caret at browse-query-cursor)
+//   BrowseScreen  Browse All: 70px top bar (Back at x/y 16 like every page) with the keyboard-driven
+//                 search bar (browse-query, caret at browse-query-cursor)
 //                 + scrollable list; on-screen keyboard window-centered, target-guarded
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
@@ -17,19 +18,20 @@ export component BrowseScreen inherits Rectangle {
     VerticalLayout {
         spacing: 0px;
 
+        // 70px with 16px padding: Back at x/y 16, 88px × text size — where every page has it.
         Rectangle {
-            height: 54px;
+            height: 70px;
             background: Theme.surface;
 
             HorizontalLayout {
-                padding-left: Theme.sp;
+                padding: 16px;
                 padding-right: Theme.sp;
                 spacing: Theme.sp-sm;
                 alignment: start;
 
                 FjordButton {
                     text: "← Back";
-                    width: 80px * AppState.text-scale;
+                    width: 88px * AppState.text-scale;
                     clicked => {
                         AppState.browse-header-focused = false;
                         AppState.current-item = -1;

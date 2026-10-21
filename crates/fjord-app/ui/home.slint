@@ -3,7 +3,8 @@
 //                         above/below the cards; the first card zooms from its left edge); item-context-full(CardItem) and
 //                         card-focused(int) callbacks for Discover-style rows (whole card for the
 //                         Discover menu; clicked index syncs keyboard focus)
-//   LibraryGrid           2-D poster grid for full library browse (Back button ring when
+//   LibraryGrid           2-D poster grid for full library browse (70px top bar, Back at x/y 16
+//                         like every page; Back button ring when
 //                         library-back-focused; search caret at library-query-cursor); edge cards zoom
 //                         inward, the focused card's row is raised (z) — as in the Discover/artist/collection grids
 //   Card sizes            SectionRow's default and the grid's cards scale with AppState.card-scale
@@ -126,18 +127,18 @@ export component LibraryGrid inherits Rectangle {
     VerticalLayout {
         spacing: 0px;
 
-        // ── Top bar ───────────────────────────────────────────────────────────
+        // ── Top bar: 70px with 16px padding — Back at x/y 16, 88px × text size, like every page ─
         Rectangle {
-            height: 54px;
+            height: 70px;
             background: Theme.surface;
             HorizontalLayout {
-                padding-left: Theme.sp;
+                padding: 16px;
                 padding-right: Theme.sp;
                 spacing: Theme.sp-sm;
                 alignment: start;
                 FjordButton {
                     text: "← Back";
-                    width: 80px * AppState.text-scale;
+                    width: 88px * AppState.text-scale;
                     kbd-focused: AppState.library-back-focused;
                     clicked => {
                         AppState.show-library = false;
