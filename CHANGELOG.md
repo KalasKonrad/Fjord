@@ -23,6 +23,11 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Fixed: the music bar's buttons sat at its top edge** (the focused one's
+  glow was cut off there) instead of in the middle. The song's format now
+  follows the artist — or sits on its own at the left when a song has no
+  artist, instead of at the far right — and the title gets more room,
+  growing with the Text size setting.
 - **Improved: opening Discover the first time no longer freezes as long.**
   Its rows now appear one after another, top first, instead of all in one go
   (on the HTPC the screen stopped for 1.4–1.7 s, and Down presses made
