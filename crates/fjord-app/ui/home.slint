@@ -9,7 +9,8 @@
 //   Card sizes            SectionRow's default and the grid's cards scale with AppState.card-scale
 //                         (Settings → Interface → Card size); the dashboards pass dash-cw/-ch (scaled too)
 //   CardRows              the rows of a [DashRow] in row-order, scrolled by kb-y; `stagger` builds
-//                         them one row per frame (Discover — its first frame built every row at once)
+//                         them one row per frame (Discover — its first frame built every row at once);
+//                         the count built is mirrored to AppState.discover-rows-mounted (ui_watch trace)
 //   DashboardView         Home, TV Shows, Movies, Collections and Music — one component: title bar,
 //                         the hero (HeroBand between title bar and rows when AppState.hero-active;
 //                         in the Background style HeroBackdrop behind everything below the title
@@ -683,6 +684,17 @@ export component CardRows inherits Rectangle {
     // don't change.
     in property <bool> stagger: false;
     property <int> mounted: root.stagger ? 1 : 99;
+    // Mirrored for ui_watch's frame trace (which frame built which row).
+    init => {
+        if root.stagger {
+            AppState.discover-rows-mounted = root.mounted;
+        }
+    }
+    changed mounted => {
+        if root.stagger {
+            AppState.discover-rows-mounted = root.mounted;
+        }
+    }
     Timer {
         interval: 16ms; // ~one row per frame; a slow frame just delays the next row
         running: root.stagger && root.mounted < root.row-order.length;
