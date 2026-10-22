@@ -23,6 +23,9 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Fixed: the remote did nothing on the account screen at startup.** When
+  Fjord started on the account (or profile) picker, keys went to the hidden
+  sign-in form until you clicked something. They now work right away.
 - **Changed: Fjord needs Jellyfin 10.9 or newer.** It now uses Jellyfin's
   current addresses for lists, item pages, watched and favorites; the old
   ones are only kept for compatibility in Jellyfin 12. Tested with 10.11

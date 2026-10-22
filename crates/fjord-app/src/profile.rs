@@ -2620,4 +2620,60 @@ mod tests {
         );
         assert_eq!(groups[0].profiles[1].user_id, "sub1");
     }
+
+    /// A cold start straight into the account picker: Login is mounted first (show-login defaults
+    /// to true) and closed by the startup gate — its focus timer must not pull the keys from `fs`.
+    #[test]
+    fn a_picker_at_startup_keeps_the_keys() {
+        use slint::platform::{Key, WindowEvent};
+        use std::cell::Cell;
+        use std::rc::Rc;
+        i_slint_backend_testing::init_no_event_loop();
+        let w = crate::MainWindow::new().unwrap();
+        w.show().unwrap();
+        let g = AppState::get(&w);
+        let keys = Rc::new(Cell::new(0));
+        g.on_handle_key({
+            let keys = Rc::clone(&keys);
+            move |_, _, _, _| {
+                keys.set(keys.get() + 1);
+                true
+            }
+        });
+        // open_account_picker at startup, then its deferred grab_focus_deferred.
+        crate::close_login_screen(&g);
+        g.set_show_account_picker(true);
+        w.invoke_grab_keyboard_focus();
+        let press = |w: &crate::MainWindow| {
+            let text: SharedString = Key::RightArrow.into();
+            w.window()
+                .dispatch_event(WindowEvent::KeyPressed { text: text.clone() });
+            w.window().dispatch_event(WindowEvent::KeyReleased { text });
+        };
+        // Login's 16 ms focus timer has run; the screen is still fading out.
+        i_slint_backend_testing::mock_elapsed_time(std::time::Duration::from_millis(50));
+        press(&w);
+        assert_eq!(keys.get(), 1, "a key while Login fades out");
+        // Login unmounted.
+        i_slint_backend_testing::mock_elapsed_time(std::time::Duration::from_secs(2));
+        press(&w);
+        assert_eq!(keys.get(), 2, "a key after Login unmounted");
+
+        // A cold start that stays on Login: its timer still puts the keys in the Server field.
+        let w = crate::MainWindow::new().unwrap();
+        w.show().unwrap();
+        let g = AppState::get(&w);
+        let keys = Rc::new(Cell::new(0));
+        g.on_handle_key({
+            let keys = Rc::clone(&keys);
+            move |_, _, _, _| {
+                keys.set(keys.get() + 1);
+                true
+            }
+        });
+        w.invoke_grab_keyboard_focus();
+        i_slint_backend_testing::mock_elapsed_time(std::time::Duration::from_millis(50));
+        press(&w);
+        assert_eq!(keys.get(), 0, "Login's field takes the key");
+    }
 }

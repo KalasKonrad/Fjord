@@ -5,7 +5,8 @@
 //                (Add Account — cancel-add-account() returns to where it was opened from).
 //                Server/username bind to login-server-prefill/-username-prefill (a known
 //                account re-login only needs the password); init focuses the first field that
-//                needs typing (deferred one tick, after main.rs's own focus grab).
+//                needs typing (deferred one tick, after main.rs's own focus grab) — skipped when
+//                Login was closed meanwhile (a cold start straight to a picker keeps `fs` focused).
 //   D-pad zones  (login-zone, see app_state.slint) 0 server, 1 username, 2 password (native
 //                LineEdit focus; Tab cycles them), 3 Remember, 4 Connect, 5 Back (append mode,
 //                Up from Server), 6 Quit (Down from Connect). Fields hand keys back to `fs` with
@@ -57,10 +58,15 @@ export component LoginScreen inherits Rectangle {
         running: false;
         triggered => {
             focus-kick-timer.running = false;
-            if AppState.login-zone == 2 {
-                pass-input.focus();
-            } else {
-                server-input.focus();
+            // A cold start that goes straight to the account/profile picker has closed Login by
+            // now (it stays mounted while it fades out): focusing its field would take the keys
+            // from `fs`, and the picker would ignore the remote until something refocused.
+            if AppState.show-login {
+                if AppState.login-zone == 2 {
+                    pass-input.focus();
+                } else {
+                    server-input.focus();
+                }
             }
         }
     }
