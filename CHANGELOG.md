@@ -23,6 +23,9 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Fixed: the mouse pointer stayed visible over the music screensaver.** It
+  is now hidden as soon as the screen goes black, and comes back when the
+  mouse moves.
 - **Improved: Up Next shows more of a song's name** — up to two lines before
   "…" (the artist line only when the song has one).
 - **Improved: the music bar's focus glow shows all round.** The art + title
