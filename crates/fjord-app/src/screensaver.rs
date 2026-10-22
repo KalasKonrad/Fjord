@@ -7,6 +7,9 @@
 //                      ends it on input (the mouse, through the clock; keys and clicks end it
 //                      directly) or when that stops being true; the ☾ pause lasts until the music
 //                      stops
+//   hide_pointer       re-sends the pointer's last position to Slint once the black overlay is up,
+//                      so its MouseCursor.none applies (Slint only looks at the pointer's shape on a
+//                      mouse event; not counted as input)
 //   wake               end it (keys::wire_key_dispatch: the waking key does nothing else)
 // ─────────────────────────────────────────────────────────────────────────────
 // The screen itself is never turned off: a TV losing its HDMI signal mid-session is what the user
@@ -46,6 +49,7 @@ pub(crate) fn wire_screensaver(window: &MainWindow, clock: ActivityClock) {
             Some(true) => {
                 debug!("screensaver: on after {} s without input", idle.as_secs());
                 g.set_screensaver_active(true);
+                hide_pointer(ww.clone(), clock.clone());
             }
             Some(false) if armed => wake(&g, "input"),
             Some(false) => wake(&g, "music stopped or screensaver turned off"),
@@ -53,6 +57,29 @@ pub(crate) fn wire_screensaver(window: &MainWindow, clock: ActivityClock) {
         }
     });
     TIMER.with(|t| *t.borrow_mut() = Some(timer));
+}
+
+/// The overlay asks for no pointer (MouseCursor.none), but Slint picks the pointer's shape only
+/// while it handles a mouse event — and the screensaver comes on without one (moving the mouse
+/// would end it), so the pointer stayed. Once the overlay is up, re-send the pointer's last
+/// position (the player's controls-hide trick). Dispatched into Slint directly, not through the
+/// winit tap, so it doesn't count as input.
+fn hide_pointer(ww: slint::Weak<MainWindow>, clock: ActivityClock) {
+    Timer::single_shot(Duration::from_millis(60), move || {
+        let Some(w) = ww.upgrade() else { return };
+        let scale = w.window().scale_factor();
+        let (x, y) = match clock.pointer() {
+            Some((x, y)) => (x / scale, y / scale),
+            None => {
+                let s = w.window().size().to_logical(scale);
+                (s.width / 2.0, s.height / 2.0)
+            }
+        };
+        w.window()
+            .dispatch_event(slint::platform::WindowEvent::PointerMoved {
+                position: slint::LogicalPosition::new(x, y),
+            });
+    });
 }
 
 /// One tick's decision: Some(true) turn it on, Some(false) end it, None leave it. `armed` = music

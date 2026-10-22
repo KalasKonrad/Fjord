@@ -3,7 +3,9 @@
 //                            key dispatch (keys::wire_key_dispatch) and the mouse tap below,
 //                            touch_playback() by profile::wire_idle_lock_timer (while media plays);
 //                            idle_for() for the idle lock, input_idle_for() (real input only) for
-//                            the screensaver and the Now Playing auto-open (playback/timer.rs)
+//                            the screensaver and the Now Playing auto-open (playback/timer.rs);
+//                            pointer() = the last CursorMoved position (the screensaver re-sends it
+//                            to Slint to hide the pointer)
 //   FjordApplicationHandler  the one CustomApplicationHandler Slint allows (registered via
 //                            slint::BackendSelector before MainWindow::new()), so it carries every
 //                            concern needing that hook: (1) the mouse-activity tap — sees every
@@ -38,6 +40,10 @@ pub(crate) struct ActivityClock {
     /// The last real input only (keys, mouse) — `touch_playback` doesn't move it. The
     /// screensaver reads it: playback keeps the idle lock's clock fresh, but not this.
     input_millis_since_start: Arc<AtomicU64>,
+    /// The pointer's last position over the window (physical px) from the same tap: two f32 bit
+    /// patterns in one u64, u64::MAX = not seen yet. The screensaver re-sends it to Slint so the
+    /// pointer's shape is looked at again without a real mouse event.
+    pointer: Arc<AtomicU64>,
 }
 
 impl ActivityClock {
@@ -49,6 +55,7 @@ impl ActivityClock {
             start: Instant::now(),
             millis_since_start: Arc::new(AtomicU64::new(0)),
             input_millis_since_start: Arc::new(AtomicU64::new(0)),
+            pointer: Arc::new(AtomicU64::new(u64::MAX)),
         }
     }
 
@@ -84,6 +91,18 @@ impl ActivityClock {
         let last_ms = self.input_millis_since_start.load(Ordering::Relaxed);
         Duration::from_millis(self.now_ms().saturating_sub(last_ms))
     }
+
+    /// Records where the pointer is (physical px) — the tap's CursorMoved.
+    pub(crate) fn note_pointer(&self, x: f64, y: f64) {
+        let packed = (u64::from((x as f32).to_bits()) << 32) | u64::from((y as f32).to_bits());
+        self.pointer.store(packed, Ordering::Relaxed);
+    }
+
+    /// The pointer's last position over the window (physical px); None before it ever moved.
+    pub(crate) fn pointer(&self) -> Option<(f32, f32)> {
+        let v = self.pointer.load(Ordering::Relaxed);
+        (v != u64::MAX).then(|| (f32::from_bits((v >> 32) as u32), f32::from_bits(v as u32)))
+    }
 }
 
 /// See this file's own header for the full rationale. Registered exactly
@@ -112,6 +131,9 @@ impl CustomApplicationHandler for FjordApplicationHandler {
                 | WindowEvent::MouseWheel { .. }
         ) {
             self.clock.touch();
+        }
+        if let WindowEvent::CursorMoved { position, .. } = event {
+            self.clock.note_pointer(position.x, position.y);
         }
 
         // The real winit Window (and its wl_surface/wl_display) only exists once the event loop has
@@ -146,6 +168,16 @@ impl CustomApplicationHandler for FjordApplicationHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn remembers_the_pointer() {
+        let clock = ActivityClock::new();
+        assert_eq!(clock.pointer(), None);
+        clock.note_pointer(812.5, 64.0);
+        assert_eq!(clock.pointer(), Some((812.5, 64.0)));
+        clock.note_pointer(0.0, 1079.0);
+        assert_eq!(clock.pointer(), Some((0.0, 1079.0)));
+    }
 
     #[test]
     fn playback_keeps_the_idle_lock_clock_fresh_but_not_the_input_clock() {
