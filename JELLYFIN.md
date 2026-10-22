@@ -320,12 +320,13 @@ is invalidated when the image changes on the server.
 ```
 GET /Videos/{itemId}/stream
     ?static=true
-    &api_key={token}
+    &ApiKey={token}
     &MediaSourceId={itemId}
 ```
 Streams the original file with no transcoding. Use for local network where
-bandwidth is not a constraint. The endpoint has no `[Authorize]` (10.11, 12.2): the key is ignored,
-which is why `api_key=` still plays on 12.x (see "Where the token may go").
+bandwidth is not a constraint. The endpoint has no `[Authorize]` (10.11, 12.2), so the key isn't
+checked today — Fjord sends it as `ApiKey=` (read on 10.8+ and 12.x; `api_key=` only with the legacy
+switch) in case a later version checks it. `redact_api_key` hides both forms in the log.
 
 ### HLS adaptive stream (transcoding)
 ```

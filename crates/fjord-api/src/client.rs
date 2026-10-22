@@ -19,7 +19,8 @@
 //     playlists     get_all_playlists (audio only), get_playlist_items (with PlaylistItemId),
 //                   create_playlist, add_to_playlist, remove_from_playlist (EntryIds)
 //     favorites     get_favorites(item_types)
-//     playback      direct_play_url, report_playback_start/progress/stopped
+//     playback      direct_play_url (token as ApiKey= — 12.x ignores api_key=; the endpoint
+//                   doesn't check it today), report_playback_start/progress/stopped
 //     trailers      get_local_trailers (GET /Items/{id}/LocalTrailers?userId=); RemoteTrailers +
 //                   LocalTrailerCount come with get_item_detail / get_items_by_ids_detailed
 //     trickplay     get_trickplay_info (Items?Ids=&Fields=Trickplay), get_trickplay_tile
@@ -483,7 +484,7 @@ impl JellyfinClient {
 
     pub fn direct_play_url(&self, item_id: &str) -> String {
         format!(
-            "{}/Videos/{}/stream?static=true&api_key={}",
+            "{}/Videos/{}/stream?static=true&ApiKey={}",
             self.server_url.as_str().trim_end_matches('/'),
             item_id,
             self.token

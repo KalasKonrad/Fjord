@@ -1521,7 +1521,7 @@ pub(crate) fn start_trailer(
                 vs.client = None;
                 vs.is_trailer = true;
                 // Only a YouTube link is remembered (to mark it unplayable on failure); a server
-                // stream URL carries the api_key and has nothing to mark.
+                // stream URL carries the token and has nothing to mark.
                 vs.trailer_url = (source == TrailerSource::YouTube).then(|| url.clone());
                 // Trailers have no video_info/Jellyfin item, so they never
                 // go through start_playback's own deferred-load path — stamp

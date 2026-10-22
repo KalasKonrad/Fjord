@@ -3,7 +3,8 @@
 //                   (sub_scale/sub_pos always applied; ass override/colour/background only when
 //                   non-default), ytdl_format (trailers only), dither_off (test aid), …
 //   PollResult      Running | Finished | TrackChanged (gapless, same instance) | Failed(code)
-//   redact_api_key  api_key= value → REDACTED, for every logged URL and forwarded mpv log line
+//   redact_api_key  ApiKey=/api_key= values (any case, every one) → REDACTED, for every logged
+//                   URL and forwarded mpv log line
 //   StatsData       mpv values for the stats overlay; video_* = the decoded source (video-params),
 //                   video_out_primaries/gamma/sig_peak = what goes to the display
 //                   (video-target-params — after tone-mapping), video_out_pix_fmt/w/h = after
@@ -171,20 +172,31 @@ pub enum PollResult {
     Failed(i32),
 }
 
-/// Replace the `api_key=` query value with `REDACTED` so stream URLs can be
-/// logged without writing the Jellyfin token to the log file.
-pub fn redact_api_key(url: &str) -> String {
-    match url.find("api_key=") {
-        Some(start) => {
-            let val_start = start + "api_key=".len();
-            let val_end = url[val_start..]
-                .find('&')
-                .map(|i| val_start + i)
-                .unwrap_or(url.len());
-            format!("{}REDACTED{}", &url[..val_start], &url[val_end..])
-        }
-        None => url.to_string(),
+/// Replace the Jellyfin token's query value (`ApiKey=`, or the legacy `api_key=`; any letter case —
+/// Jellyfin reads query names case-insensitively) with `REDACTED`, every occurrence, so stream URLs
+/// and mpv log lines can be logged without writing the token to the log file. A value runs to the
+/// next `&` or the end of the text.
+pub fn redact_api_key(text: &str) -> String {
+    const NAMES: [&str; 2] = ["api_key=", "apikey="];
+    // ASCII lowercasing keeps every byte offset, so positions found in `lower` index `text`.
+    let lower = text.to_ascii_lowercase();
+    let mut out = String::with_capacity(text.len());
+    let mut pos = 0;
+    while let Some((start, name_len)) = NAMES
+        .iter()
+        .filter_map(|n| lower[pos..].find(n).map(|i| (pos + i, n.len())))
+        .min()
+    {
+        let val_start = start + name_len;
+        let val_end = text[val_start..]
+            .find('&')
+            .map_or(text.len(), |i| val_start + i);
+        out.push_str(&text[pos..val_start]);
+        out.push_str("REDACTED");
+        pos = val_end;
     }
+    out.push_str(&text[pos..]);
+    out
 }
 
 // ── StatsData ─────────────────────────────────────────────────────────────────
@@ -863,7 +875,7 @@ impl Player {
                     text,
                     ..
                 })) => {
-                    // mpv can quote the stream URL (api_key=…) in its messages.
+                    // mpv can quote the stream URL (ApiKey=…) in its messages.
                     let msg =
                         redact_api_key(&format!("mpv[{}] {}: {}", prefix, level, text.trim_end()));
                     match level {
@@ -1653,5 +1665,14 @@ mod tests {
             "Unable to connect to http://h/Videos/1/stream?static=true&api_key=REDACTED"
         );
         assert_eq!(redact_api_key("no secrets here"), "no secrets here");
+        // The current form (any case), and every occurrence in one mpv line.
+        assert_eq!(
+            redact_api_key("http://h/Videos/1/stream?static=true&ApiKey=abc123"),
+            "http://h/Videos/1/stream?static=true&ApiKey=REDACTED"
+        );
+        assert_eq!(
+            redact_api_key("a ?apikey=x&b=1 then ?API_KEY=y"),
+            "a ?apikey=REDACTED&b=1 then ?API_KEY=REDACTED"
+        );
     }
 }
