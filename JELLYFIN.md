@@ -19,13 +19,28 @@ Authorization: MediaBrowser Client="Fjord", Device="Desktop", DeviceId="<uuid>",
 Returns `{ "AccessToken": "...", "User": { "Id": "..." } }`.
 
 ### Subsequent requests **[used]**
-Every request must carry:
+Every request carries:
 ```
-X-Emby-Token: <token>
 Authorization: MediaBrowser Client="Fjord", Device="Desktop", DeviceId="<uuid>", Version="1.0.0", Token="<token>"
 ```
-Both headers are required. `DeviceId` must be unique per install — two installs
-sharing a DeviceId will invalidate each other's session when either authenticates.
+`DeviceId` must be unique per install — two installs sharing a DeviceId will
+invalidate each other's session when either authenticates.
+
+### Where the token may go (verified 2026-10-22 in jellyfin/jellyfin `AuthorizationContext`, 10.7 → 12.2)
+| Token in | 10.8 – 10.11 | 12.x |
+|---|---|---|
+| `Authorization: MediaBrowser … Token="…"` header | ✓ | ✓ |
+| `ApiKey=` query parameter | ✓ | ✓ |
+| `api_key=` query, `X-Emby-Token` / `X-MediaBrowser-Token` headers, `X-Emby-Authorization`, the `Emby` scheme name | ✓ | only with `EnableLegacyAuthorization` (off by default since 12.0, [#15559](https://github.com/jellyfin/jellyfin/pull/15559)) |
+
+12.0 also removed the `/emby/…` and `/mediabrowser/…` route prefixes (#15669). Fjord sends only the
+`Authorization` header — the WebSocket included (see below). `GET /Videos/{id}/stream` has no
+`[Authorize]` at all (10.11 and 12.2), so the token in the direct-play URL is ignored there.
+
+The `/Users/{userId}/…` routes Fjord uses (Items, Items/{id}, Items/Latest, Views, PlayedItems,
+FavoriteItems) still answer on 12.2 but are `[Obsolete("Kept for backwards compatibility")]`; their
+replacements (`/Items?userId=`, `/Items/{id}?userId=`, `/Items/Latest`, `/UserViews`,
+`/UserPlayedItems/{id}`, `/UserFavoriteItems/{id}`) exist since 10.9 (not in 10.8).
 
 ### Token lifetime
 Tokens do not expire under normal use. They are invalidated if:
@@ -309,7 +324,8 @@ GET /Videos/{itemId}/stream
     &MediaSourceId={itemId}
 ```
 Streams the original file with no transcoding. Use for local network where
-bandwidth is not a constraint.
+bandwidth is not a constraint. The endpoint has no `[Authorize]` (10.11, 12.2): the key is ignored,
+which is why `api_key=` still plays on 12.x (see "Where the token may go").
 
 ### HLS adaptive stream (transcoding)
 ```
@@ -471,10 +487,17 @@ WebSocket connection alongside the REST calls.
 - `POST /Playlists/{playlistId}/Items?Ids=a,b,c&UserId=…` — append items.
 - `DELETE /Playlists/{playlistId}/Items?EntryIds=x,y` — remove entries (PlaylistItemIds, NOT item ids).
 
-## WebSocket connection
+## WebSocket connection **[used]** (verified live 2026-10-22, server 12.2.0)
 ```
-wss://{server}/socket?api_key={token}&deviceId={deviceId}
+GET wss://{server}/socket?deviceId={deviceId}
+Authorization: MediaBrowser … Token="<token>"
 ```
+On 12.x `?api_key=` gets **403** (legacy authorization off); the `Authorization` header on the
+upgrade request gets 101. Since 10.8 the socket is authorized by `AuthService.Authenticate`
+(`WebSocketManager`), so the header works on every 10.8+ server; 10.7 read only `api_key` there.
+Messages (`LibraryChanged` with `ItemsAdded/Updated/Removed`, `UserDataChanged` with `UserDataList`,
+`ForceKeepAlive`/`KeepAlive`) have the same shape in 10.11 and 12.2 — 12.x only batches them
+(a batch closes after its window or 2000 items).
 All SyncPlay real-time events (play/pause/seek/buffer from other clients) arrive
 as WebSocket messages with `MessageType: "SyncPlayGroupUpdate"`.
 
