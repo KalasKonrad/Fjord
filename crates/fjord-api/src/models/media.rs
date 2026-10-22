@@ -1,5 +1,5 @@
 // ── fjord-api · models/media.rs ──────────────────────────────────────────────
-//   ItemsResponse   envelope for GET /Users/{id}/Items responses
+//   ItemsResponse   envelope for GET /Items responses
 //   UserData        played status, resume position, unplayed count, is_favorite, played_percentage
 //                   (series; only with Fields=RecursiveItemCount)
 //   StudioInfo      studio name (from Studios array in item detail)
@@ -334,7 +334,7 @@ pub struct MediaItem {
     #[serde(rename = "ChildCount", default)]
     pub child_count: Option<u32>,
     // Library view type ("movies" / "tvshows" / "music" …) — only present on
-    // /Users/{id}/Views entries; used to resolve the music library id.
+    // /UserViews entries; used to resolve the music library id.
     #[serde(rename = "CollectionType", default)]
     pub collection_type: Option<String>,
     // ISO 8601 UTC timestamp ("...Z" suffixed) — Jellyfin always emits this

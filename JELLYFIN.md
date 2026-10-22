@@ -37,10 +37,13 @@ invalidate each other's session when either authenticates.
 `Authorization` header — the WebSocket included (see below). `GET /Videos/{id}/stream` has no
 `[Authorize]` at all (10.11 and 12.2), so the token in the direct-play URL is ignored there.
 
-The `/Users/{userId}/…` routes Fjord uses (Items, Items/{id}, Items/Latest, Views, PlayedItems,
-FavoriteItems) still answer on 12.2 but are `[Obsolete("Kept for backwards compatibility")]`; their
-replacements (`/Items?userId=`, `/Items/{id}?userId=`, `/Items/Latest`, `/UserViews`,
-`/UserPlayedItems/{id}`, `/UserFavoriteItems/{id}`) exist since 10.9 (not in 10.8).
+**Minimum server: 10.9.** Fjord uses the user-scoped routes `/Items?userId=`, `/Items/{id}?userId=`,
+`/Items/Latest?userId=`, `/UserViews?userId=`, `/UserPlayedItems/{id}?userId=`,
+`/UserFavoriteItems/{id}?userId=` (all added in 10.9, not in 10.8; `client.rs` `user_api_url`). The
+older `/Users/{userId}/…` forms still answer on 12.2 but only as `[Obsolete("Kept for backwards
+compatibility")]` aliases that forward to the same methods (moved 2026-10-22; a live comparison on
+12.2 gave identical counts). `userId` may be omitted (the token's user); another user's id needs an
+administrator token — the same rule the old routes had (`RequestHelpers.GetUserId`).
 
 ### Token lifetime
 Tokens do not expire under normal use. They are invalidated if:
@@ -106,8 +109,8 @@ Most fields are **omitted by default**. You must explicitly request them.
 
 ### Get items **[used]**
 ```
-GET /Users/{userId}/Items
-    ?Recursive=true
+GET /Items?userId={userId}
+    &Recursive=true
     &IncludeItemTypes=Movie,Series
     &Fields=Overview,Genres,People
     &EnableUserData=true
@@ -118,8 +121,8 @@ GET /Users/{userId}/Items
 
 ### Single item detail **[used]** (via `on_open_detail`)
 ```
-GET /Users/{userId}/Items/{itemId}
-    ?Fields=Overview,People,Chapters,MediaStreams,Genres,Studios,ExternalUrls
+GET /Items/{itemId}?userId={userId}
+    &Fields=Overview,People,Chapters,MediaStreams,Genres,Studios,ExternalUrls
     &EnableUserData=true
 ```
 Returns full item including `UserData`, `People[]`, `Chapters[]`, `MediaStreams[]`.
@@ -153,8 +156,8 @@ Returns full item including `UserData`, `People[]`, `Chapters[]`, `MediaStreams[
 
 ### Continue watching **[used]**
 ```
-GET /Users/{userId}/Items
-    ?Filters=IsResumable
+GET /Items?userId={userId}
+    &Filters=IsResumable
     &MediaTypes=Video
     &Recursive=true
     &Limit=15
@@ -177,8 +180,8 @@ series cards.
 
 ### Recently added **[used]**
 ```
-GET /Users/{userId}/Items
-    ?Filters=IsUnplayed
+GET /Items?userId={userId}
+    &Filters=IsUnplayed
     &SortBy=DateCreated
     &SortOrder=Descending
     &IncludeItemTypes=Movie   (or Series, Episode)
@@ -188,8 +191,8 @@ GET /Users/{userId}/Items
 
 ### Not watched (random selection)
 ```
-GET /Users/{userId}/Items
-    ?Filters=IsUnplayed
+GET /Items?userId={userId}
+    &Filters=IsUnplayed
     &SortBy=Random
     &IncludeItemTypes=Movie
     &Recursive=true
@@ -221,8 +224,8 @@ folder track lists; `get_item_detail` already includes MediaStreams.
 
 ### An artist folder's loose tracks **[used]** (verified live 2026-10-17)
 ```
-GET /Users/{userId}/Items
-    ?ParentId={artistId}&IncludeItemTypes=Audio&Recursive=false
+GET /Items?userId={userId}
+    &ParentId={artistId}&IncludeItemTypes=Audio&Recursive=false
     &Fields=RunTimeTicks,UserData,IndexNumber,ParentIndexNumber,AlbumArtist,Album
     &SortBy=SortName&SortOrder=Ascending
 ```
@@ -237,15 +240,15 @@ Tracks list.
 
 ### Similar / related items
 ```
-GET /Users/{userId}/Items/{itemId}/Similar
-    ?Limit=12
+GET /Items/{itemId}/Similar?userId={userId}
+    &Limit=12
     &Fields=Overview
 ```
 
 ### Server-side search
 ```
-GET /Users/{userId}/Items
-    ?searchTerm=<query>
+GET /Items?userId={userId}
+    &searchTerm=<query>
     &Recursive=true
     &IncludeItemTypes=Movie,Series,Episode
     &Fields=Overview
@@ -377,29 +380,29 @@ Jellyfin marks the item as fully played if position is within ~90% of runtime.
 
 ### Mark as played
 ```
-POST /Users/{userId}/PlayedItems/{itemId}
+POST /UserPlayedItems/{itemId}?userId={userId}
 ```
 Sets `UserData.Played = true` and records `UserData.LastPlayedDate`. Returns
 updated `UserData`.
 
 ### Mark as unplayed
 ```
-DELETE /Users/{userId}/PlayedItems/{itemId}
+DELETE /UserPlayedItems/{itemId}?userId={userId}
 ```
 
 ### Favorite
 ```
-POST /Users/{userId}/FavoriteItems/{itemId}
+POST /UserFavoriteItems/{itemId}?userId={userId}
 ```
 
 ### Unfavorite
 ```
-DELETE /Users/{userId}/FavoriteItems/{itemId}
+DELETE /UserFavoriteItems/{itemId}?userId={userId}
 ```
 
 ### Update user data directly
 ```
-POST /Users/{userId}/Items/{itemId}/UserData
+POST /UserItems/{itemId}/UserData?userId={userId}
 { "PlaybackPositionTicks": 12340000, "Played": false, "IsFavorite": false }
 ```
 
@@ -409,8 +412,8 @@ POST /Users/{userId}/Items/{itemId}/UserData
 
 ### Items featuring a person
 ```
-GET /Users/{userId}/Items
-    ?PersonIds={personId}
+GET /Items?userId={userId}
+    &PersonIds={personId}
     &IncludeItemTypes=Movie,Series
     &Recursive=true
     &SortBy=SortName
@@ -436,8 +439,8 @@ GET /Persons
     &Limit=8
 ```
 **Real bug, live-diagnosed 2026-08-19** — `Person` items are NOT part of the
-recursive library-folder tree `GET /Users/{userId}/Items` walks. The
-obvious-looking `GET /Users/{userId}/Items?IncludeItemTypes=Person&
+recursive library-folder tree `GET /Items` walks. The
+obvious-looking `GET /Items?IncludeItemTypes=Person&
 Recursive=true&SearchTerm=...` (what this project originally shipped, having
 never live-verified it) unconditionally returns zero results regardless of
 `SearchTerm`/`NameStartsWith`/anything else — there's nothing for
@@ -482,7 +485,7 @@ WebSocket connection alongside the REST calls.
 
 ### Playlists
 
-- `GET /Users/{userId}/Items?IncludeItemTypes=Playlist&Recursive=true&Fields=ChildCount` — all playlists. `MediaType` ("Audio"/"Video") distinguishes music playlists; filter client-side.
+- `GET /Items?userId=…&IncludeItemTypes=Playlist&Recursive=true&Fields=ChildCount` — all playlists. `MediaType` ("Audio"/"Video") distinguishes music playlists; filter client-side.
 - `GET /Playlists/{playlistId}/Items?UserId=…` — entries in playlist order. Each item carries `PlaylistItemId` — the *entry* id, required for removal (one track can appear twice).
 - `POST /Playlists` — JSON body `{ "Name", "Ids": [itemIds], "UserId", "MediaType": "Audio" }` → `{ "Id" }`.
 - `POST /Playlists/{playlistId}/Items?Ids=a,b,c&UserId=…` — append items.
@@ -630,7 +633,7 @@ much you should rely on it:
 **Recommendation:** Don't build the data model around WebSocket push. Use it
 as a lightweight enhancement on top of polling/manual refresh. The reliable
 baseline for Fjord is:
-1. Fresh `GET /Users/{userId}/Items/{itemId}` immediately before `start_playback`
+1. Fresh `GET /Items/{itemId}?userId=` immediately before `start_playback`
    for accurate `PlaybackPositionTicks`.
 2. Manual `fetch_home_data` after `on_stop_playback` to refresh Continue Watching.
 3. Polling timer for Not Watched rows.
@@ -653,7 +656,7 @@ baseline for Fjord is:
 
 - **`PlaybackPositionTicks` updates asynchronously.** After
   `POST /Sessions/Playing/Stopped`, the position may not immediately reflect in
-  a subsequent `GET /Users/{userId}/Items/{itemId}`. Add a short delay (~250 ms)
+  a subsequent `GET /Items/{itemId}?userId=`. Add a short delay (~250 ms)
   before re-fetching user data after stopping.
 
 - **`Played` is set automatically** when the reported stop position is within
