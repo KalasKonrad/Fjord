@@ -5,7 +5,7 @@
 //                      title (wraps), artist (only when there is one), format, progress, then
 //                      two control rows — ⏮ ⏯ ⏭ (⏯ 68px, filled) / ⇌ ↻ 🔉 🔊 ☾ Open Album —
 //                      (left), synced lyrics (right), "Up Next" strip (bottom: 104px covers,
-//                      title + artist). Settings → Audio "Now Playing background": the cover
+//                      the title on up to two lines, the artist when there is one). Settings → Audio "Now Playing background": the cover
 //                      blurred (music-bar-art-blur) under a Soft/Strong scrim, the bars see-
 //                      through over it. Keys (keys/player.rs): now-playing-back-focused (top
 //                      bar), now-playing-in-strip, now-playing-ctrl-focused (1-3 ⏮⏯⏭ / 4 ⇌ 5 ↻
@@ -30,7 +30,7 @@ export component NowPlayingScreen inherits Rectangle {
     // Up Next: the label, 104px covers, then title + artist.
     property <length> strip-card: 104px;
     property <length> strip-step: 138px; // a card's width (124) + the gap between cards (14)
-    property <length> strip-h: 148px + 49px * AppState.text-scale;
+    property <length> strip-h: 148px + 66px * AppState.text-scale; // the title up to two lines
     // The left column without the cover: title (up to two lines) + artist + format, the
     // progress bar + times, the two control rows (68 + 12 + 38), the gaps between them.
     property <length> info-h: 117px * AppState.text-scale + 198px;
@@ -423,7 +423,7 @@ export component NowPlayingScreen inherits Rectangle {
                 }
 
                 strip-fl := Flickable {
-                    height: root.strip-card + 4px + 34px * AppState.text-scale;
+                    height: root.strip-card + 4px + 51px * AppState.text-scale;
                     content-width: max(self.width, strip-row.preferred-width);
                     content-height: self.height;
 
@@ -495,17 +495,22 @@ export component NowPlayingScreen inherits Rectangle {
                                     }
                                 }
 
-                                // Title, then the artist (the playing one in the accent colour).
+                                // The title on up to two lines, then "…"; the artist only when there is
+                                // one (the playing one in the accent colour).
                                 Text {
                                     text: entry.title;
                                     color: entry.is-current ? Theme.accent : Theme.text;
                                     font-size: 13px * AppState.text-scale;
                                     font-weight: entry.is-current ? 700 : 600;
                                     horizontal-alignment: center;
+                                    wrap: word-wrap;
                                     overflow: elide;
+                                    // Two lines at most (max-height alone loses to a wrapped text's
+                                    // minimum height, which is all of it).
+                                    height: min(self.preferred-height, 34px * AppState.text-scale);
                                 }
 
-                                Text {
+                                if entry.artist != "": Text {
                                     text: entry.artist;
                                     color: Theme.text-muted;
                                     font-size: 12px * AppState.text-scale;

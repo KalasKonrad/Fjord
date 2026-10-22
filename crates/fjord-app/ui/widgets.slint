@@ -54,7 +54,9 @@
 //   MusicPlayerBar     72px bottom bar while audio plays: art + title/artist·quality (left zone
 //                      280px × text-scale; the quality follows the artist, or stands alone),
 //                      ⏮ ⏯ ⏭ (⏯ filled) above the progress bar, then Shuffle/Repeat/Queue/Lyrics/
-//                      volume/⏹/☾ (vertically centred); focus from AppState.bar-focused(n)
+//                      volume/⏹/☾ (vertically centred, the glow's reach of room at the right edge);
+//                      the art + title zone slides up-right by the glow's reach while focused (out of
+//                      the screen corner, so its glow shows all round); focus from AppState.bar-focused(n)
 //                      (slots fixed per button; keys/global.rs BAR_ORDER = the visual order)
 //                      (the bars' elements are `in-bar` / bar-ring-width: they stay lit while the
 //                      rest of the window hides its focus, AppState.bar-focus)
@@ -2264,11 +2266,22 @@ export component MusicPlayerBar inherits Rectangle {
             // after ~15 characters).
             width: 280px * AppState.text-scale;
             mouse-cursor: MouseCursor.pointer;
+            // Drawn over the centre zone while lifted (below).
+            z: AppState.bar-focused(0) ? 1 : 0;
             // Opens the fullscreen Now Playing screen — "Open Album" moved
             // inside it (Phase 66).
             clicked => { AppState.open-now-playing(); }
 
+            // The zone sits in the screen's bottom-left corner, where half its glow would fall off
+            // the screen: while it has keyboard focus it slides up and right by the glow's reach,
+            // so the glow shows on every side (no glow — the Line style — no move).
             Rectangle {
+                x: AppState.bar-focused(0) ? AppState.glow-reach : 0px;
+                y: AppState.bar-focused(0) ? -AppState.glow-reach : 0px;
+                animate x, y {
+                    duration: 150ms * AppState.settings-animation-speed;
+                    easing: ease-out-expo;
+                }
                 border-radius: Theme.radius;
                 border-width: AppState.bar-ring-width(AppState.bar-focused(0), ta-left.pressed || left-pulse.pulsing);
                 border-color: AppState.focus-color;
@@ -2465,8 +2478,11 @@ export component MusicPlayerBar inherits Rectangle {
         // window edge (⏮ ⏭ moved to the centre with ⏯, 2026-10-21). The VerticalLayout
         // centres the row: a HorizontalLayout puts fixed-height children at its top (they sat
         // on the bar's top edge, the focused one's glow cut off there).
+        // Plus the glow's reach of room at the screen's right edge, so the last button's glow
+        // shows on that side too.
         VerticalLayout {
-            width: 360px;
+            width: 360px + AppState.glow-reach;
+            padding-right: AppState.glow-reach;
             alignment: center;
             HorizontalLayout {
                 alignment: center;
