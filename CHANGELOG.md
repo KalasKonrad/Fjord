@@ -23,6 +23,10 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Fixed: live updates with Jellyfin 12.2.** The server refused Fjord's
+  live-update connection, so watched state, favorites and new library items
+  from other devices only showed after a manual refresh. Older servers
+  (10.8 and later) keep working.
 - **Fixed: the mouse pointer stayed visible over the music screensaver.** It
   is now hidden as soon as the screen goes black, and comes back when the
   mouse moves.

@@ -31,7 +31,8 @@
 //                   get_user_info (GET /Users/{id} — display name)
 //     server        get_system_info (/System/Info/Public), get_plugins (best-effort: empty on any
 //                   failure; a 403 for a non-admin logs at debug)
-//     websocket     ws_url() → ws[s]://host/socket?api_key=…&deviceId=…
+//     websocket     ws_url() → ws[s]://host/socket?deviceId=… — authorized by auth_header() as the
+//                   request's Authorization header (12.2 refuses api_key= there)
 //   Fields          ProviderIds on detail/boxset/filmography/by-ids fetches (TMDB resolution);
 //                   MediaStreams on the track lists (album, playlist, folder) — the songs' format/quality;
 //                   MediaStreams on get_item_detail, get_items_by_ids_detailed (keep in sync),
@@ -94,9 +95,9 @@ impl JellyfinClient {
         Ok(())
     }
 
-    // pub(crate), not private — bonfire.rs's own `impl JellyfinClient` block
-    // (a separate module, same crate) needs both of these.
-    pub(crate) fn auth_header(&self) -> String {
+    // pub: fjord-app's WebSocket connect sends it too (Jellyfin 12.2 refuses `api_key=` there);
+    // bonfire.rs's own `impl JellyfinClient` block uses it as well.
+    pub fn auth_header(&self) -> String {
         format!(
             r#"MediaBrowser Client="Fjord", Device="Linux", DeviceId="{}", Version="0.1.0", Token="{}""#,
             self.device_id, self.token
@@ -1507,8 +1508,9 @@ impl JellyfinClient {
         Ok(Some(lines))
     }
 
-    /// WebSocket URL for real-time events: http(s) → ws(s), path /socket.
-    /// Connect with: `tokio_tungstenite::connect_async(client.ws_url())`.
+    /// WebSocket URL for real-time events: http(s) → ws(s), path /socket. No token in it: send
+    /// `auth_header()` as the request's `Authorization` header — Jellyfin 12.2 answers 403 to an
+    /// `api_key=` query on /socket (verified live 2026-10-22; the header is accepted).
     pub fn ws_url(&self) -> String {
         let base = self.server_url.as_str().trim_end_matches('/');
         let scheme = if base.starts_with("https://") {
@@ -1520,8 +1522,8 @@ impl JellyfinClient {
             .trim_start_matches("https://")
             .trim_start_matches("http://");
         format!(
-            "{}://{}/socket?api_key={}&deviceId={}",
-            scheme, host_path, self.token, self.device_id
+            "{}://{}/socket?deviceId={}",
+            scheme, host_path, self.device_id
         )
     }
 }

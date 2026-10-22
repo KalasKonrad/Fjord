@@ -2,7 +2,8 @@
 //   start_websocket  spawn the reconnect loop; returns the AbortHandle for sign-out cleanup
 //   ws_loop          reconnect loop with exponential backoff (1 s → 60 s); owns pending_upsert_ids
 //                    (LibraryChanged added/updated ids + UserDataChanged favorite/resume
-//                    candidates); the URL carries api_key — logged only via redact_api_key
+//                    candidates); the token goes in the upgrade request's Authorization header
+//                    (Jellyfin 12 answers 403 to api_key= in the URL)
 //   row_has_id       found-by-id check on a CardItem model (transition gate)
 //   sync_open_episodes  an added/updated episode of the series+season on screen: upsert + re-sort
 //                    series_episode_items, rebuild series-episode-cards, re-anchor focus by id
@@ -36,6 +37,7 @@ use fjord_api::models::MediaItem;
 use futures_util::{SinkExt, StreamExt};
 use serde::Deserialize;
 use serde_json::json;
+use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 use tracing::{debug, info, warn};
 
@@ -126,10 +128,25 @@ async fn ws_loop(
     let mut backoff = Duration::from_secs(1);
 
     loop {
-        // The URL carries the Jellyfin token (api_key=…) — never log it raw
-        // (2026-10-08: it was, at every connect).
+        // The token goes in the Authorization header, not the URL: Jellyfin 12.2 answers 403 to
+        // `api_key=` on /socket (2026-10-22). Redacted anyway, in case a URL ever carries one.
         debug!("ws: connecting to {}", fjord_player::redact_api_key(&url));
-        match connect_async(url.as_str()).await {
+        let request = match url.as_str().into_client_request().map(|mut req| {
+            match client.auth_header().parse() {
+                Ok(value) => {
+                    req.headers_mut().insert("Authorization", value);
+                }
+                Err(e) => warn!("ws: Authorization header not sendable — {e}"),
+            }
+            req
+        }) {
+            Ok(req) => req,
+            Err(e) => {
+                warn!("ws: bad WebSocket URL — {e}; live updates off");
+                return;
+            }
+        };
+        match connect_async(request).await {
             Ok((ws, _)) => {
                 info!("ws: connected");
                 // Connection-health signal (see FjordState.ws_connected): stall recovery in
