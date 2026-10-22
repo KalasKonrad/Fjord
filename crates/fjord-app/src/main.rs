@@ -812,9 +812,9 @@ fn main() -> Result<()> {
     // Settings → Advanced log level (default "info"), read straight from disk before the
     // subscriber exists (the full config load comes later). Applies on the next launch;
     // RUST_LOG overrides it.
-    let user_level = load_config()
-        .map(|c| c.device.log_level)
-        .unwrap_or_default();
+    // Only the level — the full load_config (migrations, saves, its own log lines) runs below,
+    // once logging is up.
+    let user_level = config::peek_log_level();
     let level_str = match user_level.as_str() {
         "error" | "warn" | "debug" => user_level.as_str(),
         _ => "info",
