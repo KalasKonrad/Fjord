@@ -39,7 +39,7 @@ Fjord uses the mpv render API directly: mpv renders into an OpenGL FBO that Slin
 
 ## Requirements
 
-- [Jellyfin](https://jellyfin.org/) server
+- [Jellyfin](https://jellyfin.org/) server 10.9 or newer (tested with 10.11 and 12.2)
 - `mpv` / `libmpv`
 - Wayland compositor (X11 may work but is untested)
 - Optional: [Intro Skipper plugin](https://github.com/intro-skipper/intro-skipper) on your Jellyfin server for intro detection

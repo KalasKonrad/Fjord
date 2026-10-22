@@ -1,6 +1,8 @@
 // ── fjord-api · client.rs ────────────────────────────────────────────────────
 //   JellyfinClient  HTTP client wrapper (server URL, user_id, token, device_id); 30 s request
-//                   timeout; api_url keeps a reverse-proxy base path
+//                   timeout; api_url keeps a reverse-proxy base path; user_api_url adds ?userId= for
+//                   the user-scoped routes (/Items, /Items/{id}, /Items/Latest, /UserViews,
+//                   /UserPlayedItems, /UserFavoriteItems — Jellyfin 10.9+; no /Users/{id}/… aliases)
 //     library       get_all_items, get_all_movies, get_all_series (paginated), get_item_detail,
 //                   search_items, get_similar_items, get_all_boxsets, get_boxset_items,
 //                   get_person_filmography, search_persons_by_name (GET /Persons),
@@ -117,6 +119,15 @@ impl JellyfinClient {
         Ok(base.join(path.trim_start_matches('/'))?)
     }
 
+    /// `api_url` + `?userId=` — the user-scoped routes (`/Items`, `/Items/{id}`, `/Items/Latest`,
+    /// `/UserViews`, `/UserPlayedItems/{id}`, `/UserFavoriteItems/{id}`; Jellyfin 10.9+). They replace
+    /// the `/Users/{userId}/…` forms, which 12.x keeps only as obsolete aliases.
+    fn user_api_url(&self, path: &str) -> Result<Url> {
+        let mut url = self.api_url(path)?;
+        url.query_pairs_mut().append_pair("userId", &self.user_id);
+        Ok(url)
+    }
+
     /// Returns all movies and episodes across all libraries, sorted by name.
     /// Fetches the first page to get total count, then remaining pages in parallel.
     pub async fn get_all_items(
@@ -163,7 +174,7 @@ impl JellyfinClient {
     }
 
     async fn get_items_response(&self, start_index: usize, limit: usize) -> Result<ItemsResponse> {
-        let mut url = self.api_url(&format!("/Users/{}/Items", self.user_id))?;
+        let mut url = self.user_api_url("/Items")?;
         url.query_pairs_mut()
             .append_pair("Recursive", "true")
             .append_pair("IncludeItemTypes", "Movie,Episode")
@@ -237,7 +248,7 @@ impl JellyfinClient {
         include_types: &str,
         fields: &str,
     ) -> Result<ItemsResponse> {
-        let mut url = self.api_url(&format!("/Users/{}/Items", self.user_id))?;
+        let mut url = self.user_api_url("/Items")?;
         url.query_pairs_mut()
             .append_pair("Recursive", "true")
             .append_pair("IncludeItemTypes", include_types)
@@ -292,7 +303,7 @@ impl JellyfinClient {
 
     /// Full item details including genres, rating, cast, and backdrop tags.
     pub async fn get_item_detail(&self, item_id: &str) -> Result<MediaItem> {
-        let mut url = self.api_url(&format!("/Users/{}/Items/{}", self.user_id, item_id))?;
+        let mut url = self.user_api_url(&format!("/Items/{item_id}"))?;
         url.query_pairs_mut().append_pair(
             "Fields",
             "Overview,RunTimeTicks,SeriesName,SeasonName,IndexNumber,ParentIndexNumber,\
@@ -424,14 +435,14 @@ impl JellyfinClient {
         Ok(resp.json::<Vec<MediaItem>>().await?)
     }
 
-    /// An item's trickplay renditions (`GET /Users/{id}/Items?Ids=&Fields=Trickplay` — a slim
+    /// An item's trickplay renditions (`GET /Items?userId=&Ids=&Fields=Trickplay` — a slim
     /// item, verified on 10.11.11). Empty when the server has none for it.
     pub async fn get_trickplay_info(
         &self,
         item_id: &str,
     ) -> Result<std::collections::HashMap<String, std::collections::HashMap<String, TrickplayInfo>>>
     {
-        let mut url = self.api_url(&format!("/Users/{}/Items", self.user_id))?;
+        let mut url = self.user_api_url("/Items")?;
         url.query_pairs_mut()
             .append_pair("Ids", item_id)
             .append_pair("Fields", "Trickplay");
@@ -534,7 +545,7 @@ impl JellyfinClient {
 
     /// Items currently in progress (IsResumable) — for "Continue Watching" rows.
     pub async fn get_continue_watching(&self) -> Result<Vec<MediaItem>> {
-        let mut url = self.api_url(&format!("/Users/{}/Items", self.user_id))?;
+        let mut url = self.user_api_url("/Items")?;
         url.query_pairs_mut()
             .append_pair("Filters", "IsResumable")
             .append_pair("Recursive", "true")
@@ -636,7 +647,7 @@ impl JellyfinClient {
     /// for TV, "Movie" for movies, "Audio" for grouped album rows.
     /// NOTE: returns a bare JSON array, not the ItemsResponse envelope.
     pub async fn get_latest(&self, include_types: &str) -> Result<Vec<MediaItem>> {
-        let mut url = self.api_url(&format!("/Users/{}/Items/Latest", self.user_id))?;
+        let mut url = self.user_api_url("/Items/Latest")?;
         url.query_pairs_mut()
             .append_pair("IncludeItemTypes", include_types)
             .append_pair("GroupItems", "true")
@@ -714,7 +725,7 @@ impl JellyfinClient {
     /// UI on before showing anything (ConnectingScreen), so it needs to fail
     /// fast rather than hold that screen up for the full 30s on a dead server.
     pub async fn check_auth(&self) -> Result<()> {
-        let mut url = self.api_url(&format!("/Users/{}/Items", self.user_id))?;
+        let mut url = self.user_api_url("/Items")?;
         url.query_pairs_mut()
             .append_pair("Limit", "0")
             .append_pair("Recursive", "true");
@@ -736,7 +747,7 @@ impl JellyfinClient {
     /// 15 most recently added BoxSets (no IsUnplayed filter — shows newly added regardless of
     /// status).
     pub async fn get_recently_added_collections(&self) -> Result<Vec<MediaItem>> {
-        let mut url = self.api_url(&format!("/Users/{}/Items", self.user_id))?;
+        let mut url = self.user_api_url("/Items")?;
         url.query_pairs_mut()
             .append_pair("IncludeItemTypes", "BoxSet")
             .append_pair("Recursive", "true")
@@ -758,7 +769,7 @@ impl JellyfinClient {
 
     /// Up to 15 unwatched BoxSets in random order.
     pub async fn get_unwatched_collections(&self) -> Result<Vec<MediaItem>> {
-        let mut url = self.api_url(&format!("/Users/{}/Items", self.user_id))?;
+        let mut url = self.user_api_url("/Items")?;
         url.query_pairs_mut()
             .append_pair("IncludeItemTypes", "BoxSet")
             .append_pair("Recursive", "true")
@@ -780,7 +791,7 @@ impl JellyfinClient {
 
     /// All BoxSets in the library (Id + Name only — for building the collection membership map).
     pub async fn get_all_boxsets(&self) -> Result<Vec<MediaItem>> {
-        let mut url = self.api_url(&format!("/Users/{}/Items", self.user_id))?;
+        let mut url = self.user_api_url("/Items")?;
         url.query_pairs_mut()
             .append_pair("IncludeItemTypes", "BoxSet")
             .append_pair("Recursive", "true")
@@ -800,7 +811,7 @@ impl JellyfinClient {
 
     /// All items in a BoxSet with metadata for the collection SectionRow.
     pub async fn get_boxset_items(&self, boxset_id: &str) -> Result<Vec<MediaItem>> {
-        let mut url = self.api_url(&format!("/Users/{}/Items", self.user_id))?;
+        let mut url = self.user_api_url("/Items")?;
         url.query_pairs_mut()
             .append_pair("ParentId", boxset_id)
             .append_pair("Fields", "ProductionYear,UserData,ProviderIds")
@@ -854,7 +865,7 @@ impl JellyfinClient {
     // get_all_series: this is the WS delta upsert path, and leaving them out would wipe them on
     // every refresh of a cached movie/series.
     async fn get_items_by_ids_page(&self, ids: &[String]) -> Result<Vec<MediaItem>> {
-        let mut url = self.api_url(&format!("/Users/{}/Items", self.user_id))?;
+        let mut url = self.user_api_url("/Items")?;
         url.query_pairs_mut()
             .append_pair("Ids", &ids.join(","))
             .append_pair("Fields", "Overview,ProductionYear,UserData,AlbumArtist,ChildCount,DateCreated,SeasonId,SeriesId,IndexNumber,ParentIndexNumber,ProviderIds,RecursiveItemCount");
@@ -902,7 +913,7 @@ impl JellyfinClient {
     }
 
     async fn get_items_by_ids_detailed_page(&self, ids: &[String]) -> Result<Vec<MediaItem>> {
-        let mut url = self.api_url(&format!("/Users/{}/Items", self.user_id))?;
+        let mut url = self.user_api_url("/Items")?;
         url.query_pairs_mut()
             .append_pair("Ids", &ids.join(","))
             .append_pair(
@@ -948,7 +959,7 @@ impl JellyfinClient {
     /// TMDB id) to a local Person for the native person screen. Fields=ProviderIds lets the
     /// caller compare the candidate's Tmdb id.
     ///
-    /// `GET /Persons`, not `/Users/{id}/Items?IncludeItemTypes=Person&Recursive=true`: persons
+    /// `GET /Persons`, not `/Items?IncludeItemTypes=Person&Recursive=true`: persons
     /// aren't in the library folder tree, so that always returns nothing (verified against a live
     /// server). Same ItemsResponse envelope. `UserId=` scopes to what the profile can see
     /// (accepted live; its filtering wasn't tested with a restricted profile).
@@ -973,7 +984,7 @@ impl JellyfinClient {
 
     /// Movies and series a person appears in, newest first.
     pub async fn get_person_filmography(&self, person_id: &str) -> Result<Vec<MediaItem>> {
-        let mut url = self.api_url(&format!("/Users/{}/Items", self.user_id))?;
+        let mut url = self.user_api_url("/Items")?;
         url.query_pairs_mut()
             .append_pair("PersonIds", person_id)
             .append_pair("Recursive", "true")
@@ -996,7 +1007,7 @@ impl JellyfinClient {
 
     /// Server-side title search across movies, series, and episodes.
     pub async fn search_items(&self, query: &str, limit: usize) -> Result<Vec<MediaItem>> {
-        let mut url = self.api_url(&format!("/Users/{}/Items", self.user_id))?;
+        let mut url = self.user_api_url("/Items")?;
         url.query_pairs_mut()
             .append_pair("searchTerm", query)
             .append_pair("Recursive", "true")
@@ -1019,9 +1030,9 @@ impl JellyfinClient {
             .items)
     }
 
-    /// Mark an item as played: POST /Users/{userId}/PlayedItems/{itemId}
+    /// Mark an item as played: POST /UserPlayedItems/{itemId}?userId=
     pub async fn mark_played(&self, item_id: &str) -> Result<()> {
-        let url = self.api_url(&format!("/Users/{}/PlayedItems/{}", self.user_id, item_id))?;
+        let url = self.user_api_url(&format!("/UserPlayedItems/{item_id}"))?;
         self.http
             .post(url)
             .header("Authorization", self.auth_header())
@@ -1031,9 +1042,9 @@ impl JellyfinClient {
         Ok(())
     }
 
-    /// Mark an item as unplayed: DELETE /Users/{userId}/PlayedItems/{itemId}
+    /// Mark an item as unplayed: DELETE /UserPlayedItems/{itemId}?userId=
     pub async fn mark_unplayed(&self, item_id: &str) -> Result<()> {
-        let url = self.api_url(&format!("/Users/{}/PlayedItems/{}", self.user_id, item_id))?;
+        let url = self.user_api_url(&format!("/UserPlayedItems/{item_id}"))?;
         self.http
             .delete(url)
             .header("Authorization", self.auth_header())
@@ -1043,12 +1054,9 @@ impl JellyfinClient {
         Ok(())
     }
 
-    /// Add an item to favourites: POST /Users/{userId}/FavoriteItems/{itemId}
+    /// Add an item to favourites: POST /UserFavoriteItems/{itemId}?userId=
     pub async fn set_favorite(&self, item_id: &str) -> Result<()> {
-        let url = self.api_url(&format!(
-            "/Users/{}/FavoriteItems/{}",
-            self.user_id, item_id
-        ))?;
+        let url = self.user_api_url(&format!("/UserFavoriteItems/{item_id}"))?;
         self.http
             .post(url)
             .header("Authorization", self.auth_header())
@@ -1058,12 +1066,9 @@ impl JellyfinClient {
         Ok(())
     }
 
-    /// Remove an item from favourites: DELETE /Users/{userId}/FavoriteItems/{itemId}
+    /// Remove an item from favourites: DELETE /UserFavoriteItems/{itemId}?userId=
     pub async fn unset_favorite(&self, item_id: &str) -> Result<()> {
-        let url = self.api_url(&format!(
-            "/Users/{}/FavoriteItems/{}",
-            self.user_id, item_id
-        ))?;
+        let url = self.user_api_url(&format!("/UserFavoriteItems/{item_id}"))?;
         self.http
             .delete(url)
             .header("Authorization", self.auth_header())
@@ -1074,7 +1079,7 @@ impl JellyfinClient {
     }
 
     pub async fn get_unwatched(&self, item_type: Option<&str>) -> Result<Vec<MediaItem>> {
-        let mut url = self.api_url(&format!("/Users/{}/Items", self.user_id))?;
+        let mut url = self.user_api_url("/Items")?;
         let types = item_type.unwrap_or("Movie,Episode");
         url.query_pairs_mut()
             .append_pair("Filters", "IsUnplayed")
@@ -1105,7 +1110,7 @@ impl JellyfinClient {
         // filtering MusicAlbum directly returns nothing for most libraries.
         // Mirror jellyfin-web: recently played Audio tracks → their parent
         // albums, deduplicated with play-recency order preserved.
-        let mut url = self.api_url(&format!("/Users/{}/Items", self.user_id))?;
+        let mut url = self.user_api_url("/Items")?;
         url.query_pairs_mut()
             .append_pair("IncludeItemTypes", "Audio")
             .append_pair("Recursive", "true")
@@ -1140,7 +1145,7 @@ impl JellyfinClient {
             return Ok(vec![]);
         }
 
-        let mut url = self.api_url(&format!("/Users/{}/Items", self.user_id))?;
+        let mut url = self.user_api_url("/Items")?;
         url.query_pairs_mut()
             .append_pair("Ids", &album_ids.join(","))
             .append_pair("Fields", "ProductionYear,UserData,AlbumArtist");
@@ -1165,10 +1170,10 @@ impl JellyfinClient {
     /// Latest albums in the music library. /Items/Latest returns NOTHING for
     /// IncludeItemTypes=Audio without a ParentId (observed on Jellyfin 10.x) —
     /// jellyfin-web always scopes Latest to a library view. Resolve the music
-    /// view from /Users/{id}/Views and scope to it; grouped tracks come back
+    /// view from /UserViews and scope to it; grouped tracks come back
     /// as MusicAlbum items.
     pub async fn get_latest_music(&self) -> Result<Vec<MediaItem>> {
-        let views_url = self.api_url(&format!("/Users/{}/Views", self.user_id))?;
+        let views_url = self.user_api_url("/UserViews")?;
         let views = self
             .http
             .get(views_url)
@@ -1185,7 +1190,7 @@ impl JellyfinClient {
         else {
             return Ok(vec![]); // no music library on this server
         };
-        let mut url = self.api_url(&format!("/Users/{}/Items/Latest", self.user_id))?;
+        let mut url = self.user_api_url("/Items/Latest")?;
         url.query_pairs_mut()
             .append_pair("ParentId", &music.id)
             .append_pair("GroupItems", "true")
@@ -1205,7 +1210,7 @@ impl JellyfinClient {
     /// Items marked as favourite for the given item type(s) (e.g. "Movie", "Series", "MusicAlbum").
     /// Returns up to 30, sorted by name.
     pub async fn get_favorites(&self, item_types: &str) -> Result<Vec<MediaItem>> {
-        let mut url = self.api_url(&format!("/Users/{}/Items", self.user_id))?;
+        let mut url = self.user_api_url("/Items")?;
         url.query_pairs_mut()
             .append_pair("IncludeItemTypes", item_types)
             .append_pair("Recursive",        "true")
@@ -1249,7 +1254,7 @@ impl JellyfinClient {
 
     /// All MusicAlbum items for a given artist, sorted by year ascending.
     pub async fn get_artist_albums(&self, artist_id: &str) -> Result<Vec<MediaItem>> {
-        let mut url = self.api_url(&format!("/Users/{}/Items", self.user_id))?;
+        let mut url = self.user_api_url("/Items")?;
         url.query_pairs_mut()
             .append_pair("ArtistIds", artist_id)
             .append_pair("IncludeItemTypes", "MusicAlbum")
@@ -1271,7 +1276,7 @@ impl JellyfinClient {
 
     /// All MusicAlbum items in the library, sorted by SortName ascending.
     pub async fn get_all_albums(&self) -> Result<Vec<MediaItem>> {
-        let mut url = self.api_url(&format!("/Users/{}/Items", self.user_id))?;
+        let mut url = self.user_api_url("/Items")?;
         url.query_pairs_mut()
             .append_pair("IncludeItemTypes", "MusicAlbum")
             .append_pair("Recursive", "true")
@@ -1295,7 +1300,7 @@ impl JellyfinClient {
     /// ParentIndexNumber (the field episodes use for the season). IndexNumber alone interleaved
     /// the discs' track 1s, 2s, …
     pub async fn get_album_tracks(&self, album_id: &str) -> Result<Vec<MediaItem>> {
-        let mut url = self.api_url(&format!("/Users/{}/Items", self.user_id))?;
+        let mut url = self.user_api_url("/Items")?;
         url.query_pairs_mut()
             .append_pair("ParentId", album_id)
             .append_pair("IncludeItemTypes", "Audio")
@@ -1324,7 +1329,7 @@ impl JellyfinClient {
     /// no artist-based query (`ArtistIds`, `AlbumArtistIds`) returns them. An artist known only
     /// from tags has no such children: empty.
     pub async fn get_folder_tracks(&self, folder_id: &str) -> Result<Vec<MediaItem>> {
-        let mut url = self.api_url(&format!("/Users/{}/Items", self.user_id))?;
+        let mut url = self.user_api_url("/Items")?;
         url.query_pairs_mut()
             .append_pair("ParentId", folder_id)
             .append_pair("IncludeItemTypes", "Audio")
@@ -1351,7 +1356,7 @@ impl JellyfinClient {
     /// filtered out client-side (Fjord only handles music playlists); items
     /// with no MediaType (older servers) are kept.
     pub async fn get_all_playlists(&self) -> Result<Vec<MediaItem>> {
-        let mut url = self.api_url(&format!("/Users/{}/Items", self.user_id))?;
+        let mut url = self.user_api_url("/Items")?;
         url.query_pairs_mut()
             .append_pair("IncludeItemTypes", "Playlist")
             .append_pair("Recursive", "true")
