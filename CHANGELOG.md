@@ -23,6 +23,9 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Fixed: the Up Next cards' focus glow was cut off** at the top and on the
+  left of the first card. It now shows all round, also at the strongest glow
+  settings (the strip gets a little taller for those).
 - **Fixed: the remote did nothing on the account screen at startup.** When
   Fjord started on the account (or profile) picker, keys went to the hidden
   sign-in form until you clicked something. They now work right away.

@@ -5,7 +5,10 @@
 //                      title (wraps), artist (only when there is one), format, progress, then
 //                      two control rows — ⏮ ⏯ ⏭ (⏯ 68px, filled) / ⇌ ↻ 🔉 🔊 ☾ Open Album —
 //                      (left), synced lyrics (right), "Up Next" strip (bottom: 104px covers,
-//                      the title on up to two lines, the artist when there is one). Settings → Audio "Now Playing background": the cover
+//                      the title on up to two lines, the artist when there is one; its Flickable
+//                      spans the strip over the label so the focused cover's glow shows all
+//                      round — the strip grows for a glow wider than the label's room).
+//                      Settings → Audio "Now Playing background": the cover
 //                      blurred (music-bar-art-blur) under a Soft/Strong scrim, the bars see-
 //                      through over it. Keys (keys/player.rs): now-playing-back-focused (top
 //                      bar), now-playing-in-strip, now-playing-ctrl-focused (1-3 ⏮⏯⏭ / 4 ⇌ 5 ↻
@@ -30,7 +33,11 @@ export component NowPlayingScreen inherits Rectangle {
     // Up Next: the label, 104px covers, then title + artist.
     property <length> strip-card: 104px;
     property <length> strip-step: 138px; // a card's width (124) + the gap between cards (14)
-    property <length> strip-h: 148px + 66px * AppState.text-scale; // the title up to two lines
+    // Room above the covers: the label's (16px + its height + 8px, under the 1px top line), or the
+    // focus glow's reach where that is more (Strong/Very strong) — the strip grows by the difference.
+    property <length> strip-label-room: 23px + up-next-label.preferred-height;
+    property <length> strip-cover-top: max(root.strip-label-room, ceil(AppState.glow-reach / 1px) * 1px);
+    property <length> strip-h: 148px + 66px * AppState.text-scale + root.strip-cover-top - root.strip-label-room; // the title up to two lines
     // The left column without the cover: title (up to two lines) + artist + format, the
     // progress bar + times, the two control rows (68 + 12 + 38), the gaps between them.
     property <length> info-h: 117px * AppState.text-scale + 198px;
@@ -411,112 +418,127 @@ export component NowPlayingScreen inherits Rectangle {
                 background: Theme.border;
             }
 
-            VerticalLayout {
-                padding: 16px;
-                spacing: 8px;
+            up-next-label := Text {
+                x: 16px;
+                y: 16px;
+                width: self.preferred-width;
+                height: self.preferred-height;
+                text: "Up Next";
+                color: Theme.text-muted;
+                font-size: 13px * AppState.text-scale;
+                font-weight: 600;
+            }
 
-                Text {
-                    text: "Up Next";
-                    color: Theme.text-muted;
-                    font-size: 13px * AppState.text-scale;
-                    font-weight: 600;
+            // From just under the top line and edge to edge, over the label: a Flickable clips at
+            // its own bounds, so the focused cover's glow (AppState.glow-reach) needs room above
+            // and beside the covers inside it. The covers stay where the label's spacing puts them.
+            strip-fl := Flickable {
+                // Where the covers start: below the label (or lower for a wide glow), and far enough
+                // from the left for the glow (a cover sits 10px inside its 124px card).
+                property <length> cover-top: root.strip-cover-top;
+                property <length> side: max(16px, ceil(AppState.glow-reach / 1px) * 1px - (124px - root.strip-card) / 2);
+                x: 0;
+                y: 1px;
+                width: parent.width;
+                height: self.cover-top + root.strip-card + 4px + 51px * AppState.text-scale;
+                content-width: max(self.width, strip-row.preferred-width);
+                content-height: self.height;
+
+                // The focused card centered (a card is 124px wide), clamped to the row's ends.
+                property <length> kb-x: clamp(
+                    self.width / 2 - (self.side + AppState.now-playing-strip-focused * root.strip-step + 62px),
+                    min(0px, self.width - strip-row.preferred-width),
+                    0px);
+                changed kb-x => {
+                    strip-fl.content-x = kb-x;
+                }
+                animate content-x {
+                    duration: 150ms * AppState.settings-scroll-speed;
+                    easing: ease-out-expo;
                 }
 
-                strip-fl := Flickable {
-                    height: root.strip-card + 4px + 51px * AppState.text-scale;
-                    content-width: max(self.width, strip-row.preferred-width);
-                    content-height: self.height;
+                strip-row := HorizontalLayout {
+                    padding-left: strip-fl.side;
+                    padding-right: strip-fl.side;
+                    padding-top: strip-fl.cover-top;
+                    spacing: root.strip-step - 124px;
+                    alignment: start;
 
-                    property <length> kb-x: clamp(
-                        -(AppState.now-playing-strip-focused * root.strip-step) + parent.width / 2 - root.strip-step / 2,
-                        min(0px, parent.width - strip-row.preferred-width),
-                        0px);
-                    changed kb-x => {
-                        strip-fl.content-x = kb-x;
-                    }
-                    animate content-x {
-                        duration: 150ms * AppState.settings-scroll-speed;
-                        easing: ease-out-expo;
-                    }
+                    for entry[i] in AppState.queue-items: chip-ta := TouchArea {
+                        mouse-cursor: MouseCursor.pointer;
+                        width: 124px;
+                            // The focused card over its neighbours: a strong glow reaches past the gap.
+                            z: !AppState.now-playing-back-focused && AppState.now-playing-in-strip && i == AppState.now-playing-strip-focused ? 1 : 0;
+                        clicked => {
+                            AppState.queue-jump(entry.index);
+                        }
 
-                    strip-row := HorizontalLayout {
-                        spacing: root.strip-step - 124px;
-                        alignment: start;
-
-                        for entry[i] in AppState.queue-items: chip-ta := TouchArea {
-                            mouse-cursor: MouseCursor.pointer;
-                            width: 124px;
-                            clicked => {
-                                AppState.queue-jump(entry.index);
-                            }
-
-                            VerticalLayout {
-                                spacing: 4px;
+                        VerticalLayout {
+                            spacing: 4px;
                                 // The glow holder (FocusGlow); the cover inside it is clipped, its ring over the picture.
                                 FocusGlow {
-                                    width: root.strip-card;
-                                    height: root.strip-card;
-                                    x: (parent.width - self.width) / 2;
-                                    chip-pulse := PressPulse {
-                                        trigger: AppState.kb-activate-pulse;
-                                        active: !AppState.now-playing-back-focused && AppState.now-playing-in-strip && i == AppState.now-playing-strip-focused;
-                                    }
-
-                                    radius: Theme.radius;
-                                    glowing: !AppState.now-playing-back-focused && AppState.now-playing-in-strip && i == AppState.now-playing-strip-focused;
-
-                                    Rectangle {
-                                        border-radius: Theme.radius;
-                                        background: Theme.surface-overlay;
-                                        border-width: AppState.glow-ring-width(!AppState.now-playing-back-focused && AppState.now-playing-in-strip && i == AppState.now-playing-strip-focused, chip-ta.pressed || chip-pulse.pulsing);
-                                        border-color: AppState.focus-color;
-                                        clip: true;
-                                        animate border-width {
-                                            duration: 90ms * AppState.settings-animation-speed;
-                                            easing: ease-out-expo;
-                                        }
-
-                                        if entry.has-poster: Image {
-                                            width: parent.width;
-                                            height: parent.height;
-                                            image-fit: cover;
-                                            source: entry.poster;
-                                        }
-                                        if !entry.has-poster: Text {
-                                            text: "♫";
-                                            font-family: "Noto Sans Symbols 2";
-                                            color: Theme.text-subtle;
-                                            font-size: 30px * AppState.text-scale;
-                                            horizontal-alignment: center;
-                                            vertical-alignment: center;
-                                            width: parent.width;
-                                            height: parent.height;
-                                        }
-                                    }
+                                width: root.strip-card;
+                                height: root.strip-card;
+                                x: (parent.width - self.width) / 2;
+                                chip-pulse := PressPulse {
+                                    trigger: AppState.kb-activate-pulse;
+                                    active: !AppState.now-playing-back-focused && AppState.now-playing-in-strip && i == AppState.now-playing-strip-focused;
                                 }
 
-                                // The title on up to two lines, then "…"; the artist only when there is
+                                radius: Theme.radius;
+                                glowing: !AppState.now-playing-back-focused && AppState.now-playing-in-strip && i == AppState.now-playing-strip-focused;
+
+                                Rectangle {
+                                    border-radius: Theme.radius;
+                                    background: Theme.surface-overlay;
+                                    border-width: AppState.glow-ring-width(!AppState.now-playing-back-focused && AppState.now-playing-in-strip && i == AppState.now-playing-strip-focused, chip-ta.pressed || chip-pulse.pulsing);
+                                    border-color: AppState.focus-color;
+                                    clip: true;
+                                    animate border-width {
+                                        duration: 90ms * AppState.settings-animation-speed;
+                                        easing: ease-out-expo;
+                                    }
+
+                                    if entry.has-poster: Image {
+                                        width: parent.width;
+                                        height: parent.height;
+                                        image-fit: cover;
+                                        source: entry.poster;
+                                    }
+                                    if !entry.has-poster: Text {
+                                        text: "♫";
+                                        font-family: "Noto Sans Symbols 2";
+                                        color: Theme.text-subtle;
+                                        font-size: 30px * AppState.text-scale;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                        width: parent.width;
+                                        height: parent.height;
+                                    }
+                                }
+                            }
+
+                            // The title on up to two lines, then "…"; the artist only when there is
                                 // one (the playing one in the accent colour).
                                 Text {
-                                    text: entry.title;
-                                    color: entry.is-current ? Theme.accent : Theme.text;
-                                    font-size: 13px * AppState.text-scale;
-                                    font-weight: entry.is-current ? 700 : 600;
-                                    horizontal-alignment: center;
-                                    wrap: word-wrap;
-                                    overflow: elide;
+                                text: entry.title;
+                                color: entry.is-current ? Theme.accent : Theme.text;
+                                font-size: 13px * AppState.text-scale;
+                                font-weight: entry.is-current ? 700 : 600;
+                                horizontal-alignment: center;
+                                wrap: word-wrap;
+                                overflow: elide;
                                     // Two lines at most (max-height alone loses to a wrapped text's
                                     // minimum height, which is all of it).
                                     height: min(self.preferred-height, 34px * AppState.text-scale);
-                                }
+                            }
 
-                                if entry.artist != "": Text {
-                                    text: entry.artist;
-                                    color: Theme.text-muted;
-                                    font-size: 12px * AppState.text-scale;
-                                    horizontal-alignment: center;
-                                    overflow: elide;
-                                }
+                            if entry.artist != "": Text {
+                                text: entry.artist;
+                                color: Theme.text-muted;
+                                font-size: 12px * AppState.text-scale;
+                                horizontal-alignment: center;
+                                overflow: elide;
                             }
                         }
                     }
