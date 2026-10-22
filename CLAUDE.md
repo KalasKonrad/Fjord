@@ -294,8 +294,8 @@ Needs `mpv`/libmpv (`pacman -S mpv`). Optional at runtime: `yt-dlp` (trailers), 
    - `DEVLOG.md` — the technical narrative (root cause, what was tried, why), dated, under the relevant topic.
    - `CLAUDE.md` — **only** when a durable rule, command, convention, or module boundary changes. Keep it
      short; no dated narratives here.
-5. Commit each change on its own; push once the piece of work is done (the user's request finished, or they want a
-   build) — not after every commit: each push that touches `crates/`/`Cargo.*`/`assets/` builds the nightly that
+5. Commit each change on its own; push only when the user is ready to test (they say so, or confirm when asked at
+   the end of a piece of work) — each push that touches `crates/`/`Cargo.*`/`assets/` builds the nightly that
    `fjord-bin-nightly` installs (~8 min on the dev machine). Push to the current `release-X.Y.Z` branch, never to
    `main`. Large/risky work: a feature branch off the release branch.
 
