@@ -16,6 +16,8 @@
 //                   display_sync_* (opt-in; display_sync_trailers),
 //                   separate_video_surface (default on), video_own_buffers (opt-in, per run),
 //                   video_dither_off (test aid)
+//   peek_log_level  the log level from config.json for main() before logging exists — no
+//                   migration/decrypt/save (load_config's lines would be lost; unit-tested)
 //   MovedToProfiles / move_device_settings_to_profiles  settings that left DeviceConfig
 //                   (2026-10-21): an older config.json's device values, copied into every
 //                   profile once by load_config (unit-tested), never written again
@@ -1671,6 +1673,26 @@ fn repair_bonfire_profile_corruption(profiles: &mut [ProfileSettings]) -> bool {
 // seerr_api_key / seerr_session_cookie is decrypted here (encrypted at rest, see
 // secrets.rs), so the rest of the app reads plain strings. `device_id` stays
 // plaintext: it's the key material, not a bearer credential.
+/// Settings → Advanced log level, for main() before logging exists: read straight from
+/// config.json, nothing else — load_config migrates, decrypts and saves, and logs as it does,
+/// and those lines were lost when it ran this early (the 2026-10-21 settings move went unlogged).
+pub(crate) fn peek_log_level() -> String {
+    std::fs::read_to_string(config_path())
+        .map(|d| log_level_in(&d))
+        .unwrap_or_default()
+}
+
+/// The log level in a config.json's text: `device.log_level`, or the old flat shape's
+/// top-level `log_level`; "" when there's none.
+fn log_level_in(json: &str) -> String {
+    let v: serde_json::Value = serde_json::from_str(json).unwrap_or_default();
+    v["device"]["log_level"]
+        .as_str()
+        .or(v["log_level"].as_str())
+        .unwrap_or_default()
+        .to_string()
+}
+
 pub(crate) fn load_config() -> Option<Config> {
     let data = std::fs::read_to_string(config_path()).ok()?;
     let (mut cfg, migrated) = match serde_json::from_str::<Config>(&data) {
@@ -2593,6 +2615,18 @@ mod tests {
         assert_eq!(read(r#"{"now_playing_auto_open":false}"#), 0);
         assert_eq!(read(r#"{"now_playing_auto_open_secs":120}"#), 120);
         assert_eq!(read("{}"), 30);
+    }
+
+    #[test]
+    fn log_level_is_read_without_loading() {
+        assert_eq!(log_level_in(r#"{"device":{"log_level":"debug"}}"#), "debug");
+        assert_eq!(
+            log_level_in(r#"{"log_level":"warn"}"#),
+            "warn",
+            "old flat shape"
+        );
+        assert_eq!(log_level_in(r#"{"device":{}}"#), "");
+        assert_eq!(log_level_in("not json"), "");
     }
 
     #[test]
