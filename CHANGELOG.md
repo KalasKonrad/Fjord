@@ -23,6 +23,12 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Improved: Up Next shows more of a song's name** — up to two lines before
+  "…" (the artist line only when the song has one).
+- **Improved: the music bar's focus glow shows all round.** The art + title
+  zone sits in the screen's corner, so half of its glow was off screen: while
+  it has keyboard focus it now slides up and to the right out of the corner.
+  The buttons on the right keep a gap to the screen edge for the same reason.
 - **Improved: Back is in the same place on every page** — top left, the same
   size. The album/playlist page lost its top bar (the title already sits next
   to the cover), like the artist page; Browse, the library grids and Now
