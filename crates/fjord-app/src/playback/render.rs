@@ -11,7 +11,8 @@
 //                           to ensure_ready; the path line names the plane's mode + mpv depth; mpv gets
 //                           the Target's flip/format/depth (in-window path: depth 0 = 8); a frame the
 //                           own buffers skipped (none free) requests another redraw; times each frame
-//                           for ui_watch::note_frame (slow frames → debug log)
+//                           for ui_watch::note_frame (slow frames → debug log); tells render_frame whether
+//                           the player is paused (its frame stats count paused frames apart)
 // ─────────────────────────────────────────────────────────────────────────────
 use super::*;
 
@@ -281,9 +282,10 @@ pub(crate) fn wire_rendering_notifier(window: &MainWindow, video: Arc<Mutex<Vide
                         } else {
                             srgb
                         };
+                        let paused = vs.player.as_ref().is_some_and(|p| p.observed().paused);
                         let ctx = vs.render_ctx.as_ref().unwrap();
                         let result = crate::video_surface::render_frame(
-                            (w, h), scale, rect.unwrap_or([0, 0, w as i32, h as i32]), fill,
+                            (w, h), scale, rect.unwrap_or([0, 0, w as i32, h as i32]), fill, paused,
                             |t| match ctx.render(t.fbo, t.w, t.h, t.flip_y, t.format, t.depth) {
                                 Ok(()) => true,
                                 Err(e) => { warn!("mpv render: {:#}", e); false }
