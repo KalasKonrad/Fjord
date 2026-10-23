@@ -100,9 +100,11 @@
 //                         -rating/-overview-expanded/-poster/-backdrop, request-detail-status/-status-4k
 //                         (final display text per tier), -availability, -on-watchlist, -cast/-seasons/-tags/
 //                         -profiles (+ -focused / -alt tier), -zone, -btn-focused, -trailer-url/-state,
-//                         -open-gen, -requesting; play-trailer; Request Options modal: show-request-options,
+//                         -open-gen, -requesting, request-detail-btn-*/-zone-* + request-detail-buttons/-zones
+//                         (the page's one lists); play-trailer; Request Options modal: show-request-options,
 //                         request-options-zone (0=Quality 1=Profile 2=Tags 3=Seasons 4=Confirm, absent zones
-//                         skipped), -confirm-focused, -editing/-editing-request-id (Edit Request → PUT)
+//                         skipped; request-options-zone-* + request-options-zones), -confirm-focused,
+//                         -editing/-editing-request-id (Edit Request → PUT)
 //   Context menu          show-context-menu, context-menu-* state/-focused; Discover family:
 //                         context-menu-request-id/-availability/-request-pending/-request-mine +
 //                         open-context-menu-discover(CardItem); Jellyfin Watchlist row:
@@ -1370,6 +1372,29 @@ export global AppState {
     // 2=cast row, 3=tags row, 4=seasons row (TV) — each only when present. Up/Down step
     // to the nearest existing zone; discover.rs owns the "which zones exist" list.
     in-out property <int> request-detail-zone:          0;
+    // The page's lists, each condition once (like detail-buttons): request_detail.slint mounts by
+    // these, discover/keys.rs walks request-detail-buttons / -zones (on-screen order). The Trailer
+    // (only with yt-dlp) is shown greyed while checking / when none plays and a stop only "ok";
+    // Blocklist follows the Discover context menu's rule (untouched or blocklisted + permission).
+    out property <bool> request-detail-btn-request: request-detail-status == "" || request-detail-status-4k == "";
+    out property <bool> request-detail-btn-trailer-shown: request-detail-trailer-state != "" && yt-dlp-available;
+    out property <bool> request-detail-btn-trailer-stop: request-detail-trailer-state == "ok" && yt-dlp-available;
+    out property <bool> request-detail-btn-more: request-detail-request-id != "";
+    out property <bool> request-detail-btn-blocklist: seerr-can-manage-blocklist && (request-detail-availability == "" || request-detail-availability == "blocklisted");
+    out property <[ZoneSlot]> request-detail-buttons: [
+        { id: 0, stop: request-detail-btn-request },
+        { id: 1, stop: request-detail-btn-trailer-stop },
+        { id: 2, stop: request-detail-btn-more },
+        { id: 3, stop: true },
+        { id: 4, stop: request-detail-btn-blocklist },
+    ];
+    out property <bool> request-detail-zone-overview: request-detail-overview != "";
+    out property <bool> request-detail-zone-cast: request-detail-cast.length > 0;
+    out property <[ZoneSlot]> request-detail-zones: [
+        { id: 0, stop: true },
+        { id: 1, stop: request-detail-zone-overview },
+        { id: 2, stop: request-detail-zone-cast },
+    ];
     in-out property <int> request-detail-open-gen:      0;     // stale-async-response guard
     in-out property <bool> request-detail-requesting:    false;
     // want-4k maps to POST /request's `is4k` field — the only quality/
@@ -1433,6 +1458,18 @@ export global AppState {
     // existing_option_zones()/handle_key_request_options in discover.rs)
     // since it's a different, independent vertical flow inside the modal.
     in-out property <int> request-options-zone:               0;
+    // The modal's zones, each condition once (like request-detail-zones).
+    out property <bool> request-options-zone-quality: !request-options-editing;
+    out property <bool> request-options-zone-profiles: request-detail-profiles.length > 0;
+    out property <bool> request-options-zone-tags: request-detail-tags.length > 0;
+    out property <bool> request-options-zone-seasons: request-detail-media-type == "tv" && request-detail-seasons.length > 0;
+    out property <[ZoneSlot]> request-options-zones: [
+        { id: 0, stop: request-options-zone-quality },
+        { id: 1, stop: request-options-zone-profiles },
+        { id: 2, stop: request-options-zone-tags },
+        { id: 3, stop: request-options-zone-seasons },
+        { id: 4, stop: true },
+    ];
     in-out property <int> request-options-confirm-focused:    1; // 0=Cancel, 1=Request
 
     // ── Context menu state ────────────────────────────────────────────────────
