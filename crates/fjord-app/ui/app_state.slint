@@ -67,7 +67,8 @@
 //   Series / season       series-id, seasons, episode-cards, poster, backdrop, tagline, studio, is-favorite,
 //                         meta/genres/rating-label, next-up card, cast, similar, series-recommended,
 //                         series-missing-seasons (+ -focused), series-trailer-state/-url +
-//                         play-series-trailer; show-season, season-id/title/overview/meta,
+//                         play-series-trailer, series-btn-trailer-* + series-buttons (the header's one
+//                         list, like detail-buttons); show-season, season-id/title/overview/meta,
 //                         poster/backdrop, cast, focused-ep
 //   Person                show-person, person-id/name/bio, portrait, filmography, film-focused, in-film-row,
 //                         person-other-work (+ -focused), person-in-other-work-row
@@ -993,6 +994,16 @@ export global AppState {
     in-out property <string> series-trailer-state: "";
     in-out property <string> series-trailer-url:   "";
     callback play-series-trailer();
+    // The header buttons, each condition once (like detail-buttons): series.slint mounts the Trailer
+    // by these, series.rs's keys walk series-buttons (on-screen order: Back, Trailer, ♥, ✓).
+    out property <bool> series-btn-trailer-shown: series-trailer-state != "" && (yt-dlp-available || series-trailer-state == "ok");
+    out property <bool> series-btn-trailer-stop: series-trailer-state == "ok";
+    out property <[ZoneSlot]> series-buttons: [
+        { id: 0, stop: true },
+        { id: 4, stop: series-btn-trailer-stop },
+        { id: 1, stop: true },
+        { id: 2, stop: true },
+    ];
     in-out property <bool> series-overview-expanded:  false;
 
     // ── Season detail state ───────────────────────────────────────────────────
