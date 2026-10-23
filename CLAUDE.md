@@ -169,11 +169,13 @@ Needs `mpv`/libmpv (`pacman -S mpv`). Optional at runtime: `yt-dlp` (trailers), 
 - Reuse an existing row's `poster` handle; carry every `CardItem` field (poster, `on_watchlist`, counts…)
   through every code path that writes the same model.
 - Every model holding `CardItem`s must be listed in `context_menu::update_card_in_all_models`.
-- These lists exist twice, in Rust and as Slint `if` conditions, with no shared source of truth —
-  **change both sides together**: settings row visibility (`settings::row_shown` ↔ settings.slint's `if`s; the rows
-  and their order are `settings::SECTION_ROWS`, checked against settings.slint by a test), D-pad zone lists
-  (`existing_*_zones`). The context menu is built in Rust only (`context_menu::menu_rows` → a `for` in
-  context_menu.slint; Enter and click both run `activate`).
+- Which buttons/sections/rows exist is decided once, in app_state.slint, and both sides read it: a page's D-pad
+  list is an `out property <[ZoneSlot]>` (`detail-buttons`, `request-detail-zones`…) built from named conditions
+  (`detail-btn-resume`…) — the page mounts its elements by those names, Rust's `existing_*` is `keys::stops(…)`;
+  Settings rows are gated only by `AppState.settings-row-shown(key)` (Rust's `row_shown` calls it; rows/order are
+  `settings::SECTION_ROWS`; tests check both). A new conditional element: name its condition there, never a
+  second copy in Rust or the page. The context menu is built in Rust only (`context_menu::menu_rows` → a `for`
+  in context_menu.slint; Enter and click both run `activate`).
 - A card row's height is `AppState.row-h(card-h)` (title + cards + zoom room) — never `card-h + row-chrome-h` by hand;
   a focusable picture zooms with `transform-scale-x/-y: AppState.zoom(focused)` (+ `z`), and whatever scrolls it keeps
   `AppState.zoom-pad(size)` of room or anchors edge items inward (`MediaCard.zoom-anchor-x/-y`).
