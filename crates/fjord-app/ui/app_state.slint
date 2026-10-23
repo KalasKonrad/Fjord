@@ -18,7 +18,8 @@
 //   Bonfire Group         show-bonfire-group, bonfire-group-is-owner/-is-member/-owned-code/-owned-members/
 //                         -joined-owner-name/-has-pin/-is-administrator, the 3 settings toggles (LAN
 //                         bypass OFF→ON confirmed first), join-code entry (append/backspace/submit),
-//                         bonfire-group-zone (profile.rs::existing_bonfire_group_zones), Kick/Leave/
+//                         bonfire-group-zone + its numbers (-host-count/-join-base/-join-count/
+//                         -toggle-base/-zone-count, computed once), Kick/Leave/
 //                         Delete/LAN-bypass ConfirmDialogs — profile.rs::open_bonfire_group_screen
 //   Bonfire Admin         jellyfin-is-server-admin (Jellyfin's admin flag; gates the Settings row),
 //                         show-bonfire-admin, bonfire-admin-tab (0=Mappings 1=Audit Logs)/-cursor
@@ -84,7 +85,8 @@
 //                         connected); settings-trailer-quality (static, Settings → Playback); yt-dlp-available; seerr-is-admin
 //                         (MANAGE_REQUESTS), seerr-can-manage-blocklist; ConnectSeerrScreen: show-connect-seerr,
 //                         connect-seerr-zone/-method (0-3)/-error/-busy/-qc-code/-qc-secret/-qc-polling +
-//                         connect-seerr-api-key/-jellyfin/-local/-quickconnect-start/-poll
+//                         connect-seerr-api-key/-jellyfin/-local/-quickconnect-start/-poll,
+//                         connect-seerr-qc-get-code + connect-seerr-zones (the tab's one zone list)
 //   Discover screen       discover-query (+ -cursor), discover-searching, discover-results, discover-focused/
 //                         -focused-row/-header-focused, discover-search-*, open-discover-item (redirects to
 //                         the Jellyfin item when the library has it); landing rows (query ""):
@@ -1940,7 +1942,7 @@ export global AppState {
     // the Timer).
     //
     // connect-seerr-zone: "gaps are fine" zones recomputed from state
-    // (seerr_auth::existing_connect_seerr_zones), dispatched in keys.rs's Connect Seerr
+    // (connect-seerr-zones below), dispatched in keys.rs's Connect Seerr
     // tier (keys/overlays.rs). -1 = ✕ (Up from 0), 0 = URL field (shared by all tabs),
     // 1 = tab row (Left/Right switch method and clear the error, like a click), 2+ =
     // the method's fields and button (a polling Quick Connect tab has none). Text-field
@@ -1955,6 +1957,26 @@ export global AppState {
     in-out property <string> connect-seerr-qc-code:    "";
     in-out property <string> connect-seerr-qc-secret:  "";
     in-out property <bool> connect-seerr-qc-polling: false;
+    // The open tab's zones, in one list (like detail-buttons; seerr_auth reads it): -1 ✕, 0 URL,
+    // 1 tabs, then what connect_seerr.slint's tab block holds — API key (0): key, Connect;
+    // Jellyfin (1) / Local (3): user or email, password, Connect; Quick Connect (2): Get Code,
+    // only while not waiting for approval (connect-seerr-qc-get-code, which also mounts it).
+    out property <bool> connect-seerr-qc-get-code: !connect-seerr-qc-polling;
+    out property <[ZoneSlot]> connect-seerr-zones: [
+        { id: -1, stop: true },
+        { id: 0, stop: true },
+        { id: 1, stop: true },
+        {
+            id: 2,
+            stop: connect-seerr-method == 0 || connect-seerr-method == 1 || connect-seerr-method == 3
+                || (connect-seerr-method == 2 && connect-seerr-qc-get-code)
+        },
+        {
+            id: 3,
+            stop: connect-seerr-method == 0 || connect-seerr-method == 1 || connect-seerr-method == 3
+        },
+        { id: 4, stop: connect-seerr-method == 1 || connect-seerr-method == 3 },
+    ];
     callback connect-seerr-api-key(string, string);              // url, key
     callback connect-seerr-jellyfin(string, string, string);     // url, username, password
     callback connect-seerr-local(string, string, string);        // url, email, password
@@ -2452,12 +2474,19 @@ export global AppState {
     callback bonfire-group-join-code-submit();
 
     // D-pad zone — the zone SET differs by state (neither/owner/member), so
-    // this is resolved live via profile.rs::existing_bonfire_group_zones,
-    // the same "gaps are fine, recomputed live" idiom as
-    // existing-profile-edit-zones/existing-discover-menu-rows, not a fixed
-    // enum. -1 = the floating "← Back" button (Up from zone 0 reaches it,
+    // this is resolved live from the numbers below (profile.rs::existing_bonfire_group_zones),
+    // not a fixed enum. -1 = the floating "← Back" button (Up from zone 0 reaches it,
     // matching every other master-only screen's own Back-button convention).
     in-out property <int> bonfire-group-zone: 0;
+    // The zone numbers, computed once: hosting (owner: the code, one per member (Kick), Delete
+    // Group — members + 2; else Generate Join Code — 1), joining from join-base (member: Leave —
+    // 1; else the code field and Join — 2), then the 3 toggles from toggle-base. bonfire_group.slint
+    // places its elements by these; keys/overlays.rs and profile.rs read them.
+    out property <int> bonfire-group-host-count: bonfire-group-is-owner ? bonfire-group-owned-members.length + 2 : 1;
+    out property <int> bonfire-group-join-base: bonfire-group-host-count;
+    out property <int> bonfire-group-join-count: bonfire-group-is-member ? 1 : 2;
+    out property <int> bonfire-group-toggle-base: bonfire-group-join-base + bonfire-group-join-count;
+    out property <int> bonfire-group-zone-count: bonfire-group-toggle-base + 3;
 
     // Kick (owner only, per-member) / Leave (member only) / Delete Group
     // (owner only) all reuse the existing ConfirmDialog component, same

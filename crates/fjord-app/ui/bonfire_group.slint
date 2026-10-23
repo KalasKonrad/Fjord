@@ -9,7 +9,7 @@
 //                       Join, or "Joined X's group" + Leave). The 3 group toggles (hide my/others'
 //                       sub-profiles, allow LAN bypass) sit below both (a per-account setting).
 //                       D-pad zones vary with owner/member/member count: host-count/join-base/
-//                       toggle-base mirror profile.rs's existing_bonfire_group_zones. The join code
+//                       toggle-base from AppState (computed once; the keys read them too). The join code
 //                       is a hand-drawn field (caret at bonfire-group-join-code-cursor) with the
 //                       alphanumeric on-screen keyboard. Keys, incl. the 4 ConfirmDialogs (Kick/
 //                       Leave/Delete Group/LAN-bypass warning): keys/overlays.rs's
@@ -181,15 +181,13 @@ export component BonfireGroupScreen inherits Rectangle {
                 }
 
                 // Two independent sections, always shown — hosting and joining — since an account can host
-                // its own group AND be a member of another. The zone bases mirror
-                // profile.rs's existing_bonfire_group_zones (and keys.rs) by hand.
+                // its own group AND be a member of another. The zone numbers come from AppState
+                // (bonfire-group-host-count/-join-base/-toggle-base), which the keys read too.
                 if !AppState.bonfire-group-loading: VerticalLayout {
                     spacing: Theme.sp-lg;
-                    property <int> n-members: AppState.bonfire-group-owned-members.length;
-                    property <int> host-count: AppState.bonfire-group-is-owner ? n-members + 2 : 1;
-                    property <int> join-base: host-count;
-                    property <int> join-count: AppState.bonfire-group-is-member ? 1 : 2;
-                    property <int> toggle-base: join-base + join-count;
+                    property <int> host-count: AppState.bonfire-group-host-count;
+                    property <int> join-base: AppState.bonfire-group-join-base;
+                    property <int> toggle-base: AppState.bonfire-group-toggle-base;
 
                     // ── Hosting section ──────────────────────────────────
                     VerticalLayout {

@@ -732,11 +732,9 @@ pub(crate) fn handle_bonfire_group_keys(
     // typing fallback all need it.
     let is_owner = g.get_bonfire_group_is_owner();
     let is_member = g.get_bonfire_group_is_member();
-    let n_members = g.get_bonfire_group_owned_members().row_count() as i32;
-    let host_count = if is_owner { n_members + 2 } else { 1 };
-    let join_base = host_count;
-    let join_count = if is_member { 1 } else { 2 };
-    let toggle_base = join_base + join_count;
+    let host_count = g.get_bonfire_group_host_count();
+    let join_base = g.get_bonfire_group_join_base();
+    let toggle_base = g.get_bonfire_group_toggle_base();
 
     if key == key::BACKSPACE {
         // The join-code field only exists at all while !is_member (once
@@ -789,7 +787,7 @@ pub(crate) fn handle_bonfire_group_keys(
                 if is_owner {
                     if zone == 0 {
                         // Code display — purely informational.
-                    } else if zone <= n_members {
+                    } else if zone < host_count - 1 {
                         if let Some(m) = g
                             .get_bonfire_group_owned_members()
                             .row_data((zone - 1) as usize)

@@ -2128,20 +2128,11 @@ pub(crate) fn on_bonfire_group_settings_changed(
 /// - **Toggles**, from `toggle_base = join_base + join_count`, always 3:
 ///   hide-my-sub-profiles, hide-others, allow-lan-bypass.
 ///
-/// Kept in sync by hand with bonfire_group.slint's `host-count`/`join-base`/
-/// `toggle-base` and keys.rs's RETURN dispatch — there's no shared source of truth.
+/// The numbers are AppState's `bonfire-group-host-count`/`-join-base`/`-toggle-base`/`-zone-count`,
+/// computed once in app_state.slint — bonfire_group.slint places its elements by them and
+/// keys/overlays.rs's dispatch reads them.
 pub(crate) fn existing_bonfire_group_zones(g: &AppState<'_>) -> Vec<i32> {
-    let host_count = if g.get_bonfire_group_is_owner() {
-        g.get_bonfire_group_owned_members().row_count() as i32 + 2
-    } else {
-        1
-    };
-    let join_count = if g.get_bonfire_group_is_member() {
-        1
-    } else {
-        2
-    };
-    (0..host_count + join_count + 3).collect()
+    (0..g.get_bonfire_group_zone_count()).collect()
 }
 
 // ── "Remember this login" toggle ─────────────────────────────────────────────
@@ -2675,5 +2666,30 @@ mod tests {
         i_slint_backend_testing::mock_elapsed_time(std::time::Duration::from_millis(50));
         press(&w);
         assert_eq!(keys.get(), 0, "Login's field takes the key");
+    }
+
+    /// Hosting, joining and the 3 toggles number the zones the same way for the screen and the
+    /// keys (AppState's bonfire-group-* numbers).
+    #[test]
+    fn bonfire_group_zones_by_role() {
+        use slint::{ModelRc, VecModel};
+        i_slint_backend_testing::init_no_event_loop();
+        let w = crate::MainWindow::new().unwrap();
+        let g = AppState::get(&w);
+        // Neither owner nor member: Generate Join Code; code field + Join; 3 toggles.
+        assert_eq!(g.get_bonfire_group_host_count(), 1);
+        assert_eq!(g.get_bonfire_group_toggle_base(), 3);
+        assert_eq!(existing_bonfire_group_zones(&g), (0..6).collect::<Vec<_>>());
+        // An owner with two members who is also in another group: code, 2 × Kick, Delete Group;
+        // Leave; 3 toggles.
+        g.set_bonfire_group_is_owner(true);
+        g.set_bonfire_group_is_member(true);
+        g.set_bonfire_group_owned_members(ModelRc::new(VecModel::from(vec![
+            crate::BonfireGroupMemberTile::default(),
+            crate::BonfireGroupMemberTile::default(),
+        ])));
+        assert_eq!(g.get_bonfire_group_join_base(), 4);
+        assert_eq!(g.get_bonfire_group_toggle_base(), 5);
+        assert_eq!(existing_bonfire_group_zones(&g), (0..8).collect::<Vec<_>>());
     }
 }
