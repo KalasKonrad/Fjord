@@ -9,21 +9,22 @@
 //                          FadeGate in main.slint. Title column: a plain Rectangle fixed at
 //                          PosterBlock's 240px, width from root.width (not parent.width — binding
 //                          loop), button row pinned at a fixed y.
-//                          Button row slots (request-detail-btn-focused, gaps allowed —
-//                          discover/keys.rs existing_detail_btn_slots): 0 Request (a tier still
+//                          Button row slots (request-detail-btn-focused, gaps allowed — mounted by
+//                          AppState.request-detail-btn-*, the request-detail-buttons list
+//                          discover/keys.rs walks): 0 Request (a tier still
 //                          requestable; 2K and 4K tracked independently, one pill per requested
 //                          tier), 1 Trailer (greyed "Checking…"/"No trailer" until
 //                          request-detail-trailer-state == "ok"), 2 ⋮ More (a request exists),
 //                          3 Watchlist ★/☆ (always), 4 Blocklist.
 //                          Keyboard: opens on the button row; Up reaches Back; request-detail-
-//                          zone 0 = buttons, 1 = storyline, 2 = cast (existing_zones/
+//                          zone 0 = buttons, 1 = storyline, 2 = cast (AppState.request-detail-zones;
 //                          handle_key_request_detail). Mouse clicks sync zone/back-focused.
 //   RequestOptionsOverlay  modal from the Request button or the Discover context menu's
 //                          Request/Edit Request: Quality 2K/4K pair (hidden while editing —
 //                          Seerr can't change the tier), quality profile (radio chips, "Default"
 //                          first), tag chips, season cards, Cancel/Request. Keyboard:
 //                          request-options-zone 0 quality, 1 profile, 2 tags, 3 seasons,
-//                          4 confirm (existing_option_zones/handle_key_request_options).
+//                          4 confirm (AppState.request-options-zones; handle_key_request_options).
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
@@ -71,7 +72,7 @@ component MetaRow inherits HorizontalLayout {
 
 export component RequestDetailScreen inherits StackPage {
 
-    property <bool> has-cast: AppState.request-detail-cast.length > 0;
+    property <bool> has-cast: AppState.request-detail-zone-cast;
     // Purely-display metadata panel (Status/dates/language/countries/
     // network/streaming) — no keyboard zone of its own, reached by
     // scrolling the page's existing Flickable like MetaLine's genre text
@@ -203,7 +204,7 @@ export component RequestDetailScreen inherits StackPage {
                             // bare text with no breathing room. 130px fits the
                             // longer "Requesting…" label too, so the button
                             // doesn't resize when a request starts.
-                            if AppState.request-detail-status == "" || AppState.request-detail-status-4k == "": FjordButton {
+                            if AppState.request-detail-btn-request: FjordButton {
                                         text: AppState.request-detail-requesting ? "Requesting…" : "Request";
                                         enabled: !AppState.request-detail-requesting;
                                         width: 130px * AppState.text-scale;
@@ -252,14 +253,14 @@ export component RequestDetailScreen inherits StackPage {
                             // Watch Trailer: shown once the title has loaded if yt-dlp is installed; greyed while the
                             // background check runs ("Checking…") or when no listed trailer plays ("No trailer") — see
                             // discover::start_trailer_check. Only "ok" is pressable and a D-pad stop.
-                            if AppState.request-detail-trailer-state != "" && AppState.yt-dlp-available: FjordButton {
+                            if AppState.request-detail-btn-trailer-shown: FjordButton {
                                 // icon-left/text as separate properties, not one
                                 // combined string — Noto Sans Symbols2 (every
                                 // icon glyph's pinned font) has zero Latin-
                                 // alphabet coverage, so "▶ Trailer" in one
                                 // `text` would leave the word falling through
                                 // to an uncontrolled system font.
-                                enabled: AppState.request-detail-trailer-state == "ok";
+                                enabled: AppState.request-detail-btn-trailer-stop;
                                         icon-left: AppState.request-detail-trailer-state == "ok" ? "▶" : "";
                                         text: AppState.request-detail-trailer-state == "ok" ? "Trailer"
                                             : AppState.request-detail-trailer-state == "checking" ? "Checking…"
@@ -276,7 +277,7 @@ export component RequestDetailScreen inherits StackPage {
                             // ⋮ More: the Discover context menu (View Request/Edit/Cancel/Approve/Decline, gated by
                             // mine/admin/pending) sourced from request-detail-request-id/-pending/-mine. Only once a
                             // request exists. "☰" because ⋮ is only in the Math fallback font.
-                            if AppState.request-detail-request-id != "": FjordButton {
+                            if AppState.request-detail-btn-more: FjordButton {
                                         icon-left: "☰";
                                         text: "";
                                         width: 44px * AppState.text-scale;
@@ -305,9 +306,7 @@ export component RequestDetailScreen inherits StackPage {
                             // Blocklist (slot 4): icon-only 44px; seerr-can-manage-blocklist and the item untouched or
                             // already blocklisted (same rule as the Discover context menu's row 7). "⛔"/"✕" (Noto
                             // Sans Symbols2).
-                            if AppState.seerr-can-manage-blocklist
-                                        && (AppState.request-detail-availability == "" || AppState.request-detail-availability == "blocklisted"):
-                                FjordButton {
+                            if AppState.request-detail-btn-blocklist: FjordButton {
                                         icon-left: AppState.request-detail-availability == "blocklisted" ? "✕" : "⛔";
                                         text: "";
                                         width: 44px * AppState.text-scale;
@@ -420,7 +419,7 @@ export component RequestDetailScreen inherits StackPage {
                         }
                     }
 
-                    if AppState.request-detail-overview != "": StorylineSection {
+                    if AppState.request-detail-zone-overview: StorylineSection {
                         text: AppState.request-detail-overview;
                         expanded <=> AppState.request-detail-overview-expanded;
                         kbd-focused: AppState.request-detail-zone == 1 && !AppState.request-detail-back-focused;
@@ -485,9 +484,9 @@ export component RequestDetailScreen inherits StackPage {
 export component RequestOptionsOverlay inherits StackPage {
     background: Theme.scrim;
 
-    property <bool> has-profiles: AppState.request-detail-profiles.length > 0;
-    property <bool> has-tags:     AppState.request-detail-tags.length > 0;
-    property <bool> has-seasons:  AppState.request-detail-media-type == "tv" && AppState.request-detail-seasons.length > 0;
+    property <bool> has-profiles: AppState.request-options-zone-profiles;
+    property <bool> has-tags:     AppState.request-options-zone-tags;
+    property <bool> has-seasons:  AppState.request-options-zone-seasons;
     // Fixed width for the dialog content, read by the Flickables below instead of a
     // layout-derived width ("Recursion detected" avoidance, see SLINT.md).
     property <length> dialog-w: 480px;
@@ -542,7 +541,7 @@ export component RequestOptionsOverlay inherits StackPage {
             // directly — the selected button is the keyboard position. Hidden while editing an existing
             // request: Seerr's PUT /request/{id} can't change the tier (see
             // SeerrClient::update_request).
-            if !AppState.request-options-editing: VerticalLayout {
+            if AppState.request-options-zone-quality: VerticalLayout {
                 spacing: 8px;
                 Text {
                     text: "Quality";

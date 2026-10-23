@@ -9,11 +9,12 @@
 //                              LibraryGrid's 2D math; Left at col 0 / Back → sidebar; C → context menu
 //   handle_key_landing         landing rows; the Coming Up sentinel opens the calendar
 //   existing_zones / zone_focus_reset / handle_key_request_detail  RequestDetailScreen: back → button row
-//                              → storyline → cast → tags → seasons (existing zones only)
+//                              → storyline → cast (existing zones only — AppState.request-detail-zones)
 //   existing_detail_btn_slots  button-row slots: 0=Request 1=Trailer 2=⋮ More 3=Watchlist 4=Blocklist;
-//                              Left/Right within existing slots
+//                              Left/Right within existing slots (AppState.request-detail-buttons)
 //   existing_option_zones / option_zone_focus_reset / handle_key_request_options  Request Options modal:
 //                              Quality → profile → tags → seasons → Cancel/Request
+//                              (AppState.request-options-zones)
 //   set_quality                swap in the other tier's pre-fetched tags/profiles (keyboard and the 2K/4K
 //                              buttons both use it)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -481,49 +482,19 @@ fn handle_key_landing(action: &Action, g: &AppState, fs: i32) -> bool {
 /// used to be zones here too, but moved into the Request Options modal
 /// (`existing_option_zones`/`handle_key_request_options` below) — the
 /// Request button opens that modal instead of exposing every picker inline.
+/// AppState.request-detail-zones, built from the conditions request_detail.slint mounts by.
 fn existing_zones(g: &AppState) -> Vec<i32> {
-    let mut zones = vec![0]; // button row always exists
-    if !g.get_request_detail_overview().as_str().is_empty() {
-        zones.push(1);
-    }
-    if g.get_request_detail_cast().row_count() > 0 {
-        zones.push(2);
-    }
-    zones
+    crate::keys::stops(&g.get_request_detail_zones())
 }
 
 /// Which of the button row's slots exist for the current item ("gaps are fine",
 /// like `existing_zones`/`existing_discover_menu_rows`): 0=Request (a tier still
 /// requestable), 1=Trailer (one known to play + yt-dlp), 2=⋮ More (a request
 /// exists), 3=Watchlist (always), 4=Blocklist (untouched or blocklisted item +
-/// MANAGE_BLOCKLIST). Values are `request-detail-btn-focused` ids, rendered in this
-/// order by request_detail.slint.
+/// MANAGE_BLOCKLIST). Values are `request-detail-btn-focused` ids — AppState.request-detail-buttons,
+/// built from the conditions request_detail.slint mounts the buttons by.
 pub(crate) fn existing_detail_btn_slots(g: &AppState) -> Vec<i32> {
-    let mut slots = Vec::new();
-    if g.get_request_detail_status().as_str() == ""
-        || g.get_request_detail_status_4k().as_str() == ""
-    {
-        slots.push(0);
-    }
-    // Only once a trailer is known to play — while checking (or with none
-    // playable) the button is shown greyed out and isn't a D-pad stop.
-    if g.get_request_detail_trailer_state().as_str() == "ok" && g.get_yt_dlp_available() {
-        slots.push(1);
-    }
-    if !g.get_request_detail_request_id().as_str().is_empty() {
-        slots.push(2);
-    }
-    slots.push(3); // Watchlist (2026-07-18) — always visible, unlike Request
-    // Blocklist (2026-08-06) — mirrors the Discover context menu's row 7
-    // eligibility exactly: never-touched or already-blocklisted, and the
-    // connected account actually has MANAGE_BLOCKLIST.
-    let availability = g.get_request_detail_availability();
-    if g.get_seerr_can_manage_blocklist()
-        && (availability.as_str() == "" || availability.as_str() == "blocklisted")
-    {
-        slots.push(4);
-    }
-    slots
+    crate::keys::stops(&g.get_request_detail_buttons())
 }
 
 fn zone_focus_reset(g: &AppState, zone: i32) {
@@ -704,31 +675,13 @@ pub(crate) fn handle_key_request_detail(action: &Action, g: &AppState) -> bool {
 /// Zones inside the modal, in vertical order, that exist for the current
 /// item: 0=Quality (2K/4K, always — every requestable item can ask for 4K),
 /// 1=profile row (if any configured), 2=tags row (if any configured),
-/// 3=seasons row (if any, TV only), 4=confirm row (always, Cancel/Request).
+/// 3=seasons row (if any, TV only), 4=confirm row (always, Cancel/Request) —
+/// AppState.request-options-zones (Quality is hidden while editing).
 /// Same skip-absent-zones array-position navigation idiom as `existing_zones`
 /// above — a distinct numbering scheme, not a continuation of it, since this
 /// is an independent vertical flow inside its own modal.
 pub(crate) fn existing_option_zones(g: &AppState) -> Vec<i32> {
-    // Zone 0 (Quality) is hidden entirely while editing — see
-    // request_detail.slint's own comment on the Quality section for why.
-    let mut zones = if g.get_request_options_editing() {
-        Vec::new()
-    } else {
-        vec![0]
-    };
-    if g.get_request_detail_profiles().row_count() > 0 {
-        zones.push(1);
-    }
-    if g.get_request_detail_tags().row_count() > 0 {
-        zones.push(2);
-    }
-    if g.get_request_detail_media_type().as_str() == "tv"
-        && g.get_request_detail_seasons().row_count() > 0
-    {
-        zones.push(3);
-    }
-    zones.push(4);
-    zones
+    crate::keys::stops(&g.get_request_options_zones())
 }
 
 fn option_zone_focus_reset(g: &AppState, zone: i32) {
@@ -951,5 +904,52 @@ pub(crate) fn handle_key_request_options(action: &Action, g: &AppState) -> bool 
             }
             _ => true,
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The request page's lists follow the conditions request_detail.slint shows things by.
+    #[test]
+    fn request_lists_follow_the_shown_elements() {
+        i_slint_backend_testing::init_no_event_loop();
+        let w = crate::MainWindow::new().unwrap();
+        let g = AppState::get(&w);
+        // Nothing requested, no trailer yet: Request + Watchlist; only the button row.
+        assert_eq!(existing_detail_btn_slots(&g), vec![0, 3]);
+        assert_eq!(existing_zones(&g), vec![0]);
+        g.set_request_detail_overview("o".into());
+        g.set_request_detail_cast(ModelRc::new(VecModel::from(vec![
+            crate::CastMember::default(),
+        ])));
+        assert_eq!(existing_zones(&g), vec![0, 1, 2]);
+        // Both tiers requested: no Request; a request exists: ⋮ More; blocklist needs the
+        // permission and an untouched item.
+        g.set_request_detail_status("Requested".into());
+        g.set_request_detail_status_4k("Requested".into());
+        g.set_request_detail_request_id("7".into());
+        g.set_seerr_can_manage_blocklist(true);
+        g.set_request_detail_availability("".into());
+        assert_eq!(existing_detail_btn_slots(&g), vec![2, 3, 4]);
+        // A trailer: shown greyed while checking (with yt-dlp), a stop only once "ok".
+        g.set_yt_dlp_available(true);
+        g.set_request_detail_trailer_state("checking".into());
+        assert!(g.get_request_detail_btn_trailer_shown());
+        assert_eq!(existing_detail_btn_slots(&g), vec![2, 3, 4]);
+        g.set_request_detail_trailer_state("ok".into());
+        assert_eq!(existing_detail_btn_slots(&g), vec![1, 2, 3, 4]);
+        // Request Options: Quality unless editing; profiles/tags/seasons when there are any.
+        assert_eq!(existing_option_zones(&g), vec![0, 4]);
+        g.set_request_options_editing(true);
+        g.set_request_detail_media_type("tv".into());
+        g.set_request_detail_seasons(ModelRc::new(VecModel::from(vec![
+            crate::SeasonItem::default(),
+        ])));
+        g.set_request_detail_tags(ModelRc::new(VecModel::from(
+            vec![crate::TagItem::default()],
+        )));
+        assert_eq!(existing_option_zones(&g), vec![2, 3, 4]);
     }
 }
