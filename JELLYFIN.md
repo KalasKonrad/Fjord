@@ -559,8 +559,21 @@ POST /SyncPlay/Ping
 Plugins extend the Jellyfin server API. Check `GET /Plugins` to see what's
 installed on the server before calling plugin-specific endpoints.
 
-### Intro Skipper **[used]**
+### Media segments **[used]** (verified 2026-10-23: source 10.10 / 10.11 / 12.2, live on 12.2.0)
+Jellyfin's own skippable segments, filled by providers such as Intro Skipper. Fjord asks this first.
+```
+GET /MediaSegments/{itemId}            [Authorize]; optional ?includeSegmentTypes=
+```
+Returns a QueryResult: `{"Items":[{"Id","ItemId","Type":"Intro","StartTicks":682357067,"EndTicks":1289618292}, …]}`.
+`Type`: Unknown, Commercial, Preview, Recap, Outro, Intro (strings); ticks are 100 ns. 404 when the
+item doesn't exist — and on 10.9, which has no such route. Fjord maps Intro → intro, Outro → credits
+(`EpisodeTimestamps::from_media_segments`) and falls back to the plugin's own endpoint below when this
+has nothing usable.
+
+### Intro Skipper **[used — fallback]**
 Detects intro and credits segments in TV episodes. Plugin v2+ uses a single combined endpoint.
+**Intro Skipper 12.0.5 (for Jellyfin 12) no longer has it** — 404 for every episode, while
+`/MediaSegments/{id}` returns the same times (the user's Skip Intro disappeared with the 12.2 update).
 ```
 GET /Episode/{itemId}/Timestamps
 ```

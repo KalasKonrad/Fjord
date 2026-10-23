@@ -23,6 +23,9 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Fixed: Skip Intro and Skip Credits were gone with Jellyfin 12.** The Intro
+  Skipper version for Jellyfin 12 only hands out its times through Jellyfin's
+  own media segments, which Fjord now reads (older servers keep working).
 - **Fixed: the Up Next cards' focus glow was cut off** at the top and on the
   left of the first card. It now shows all round, also at the strongest glow
   settings (the strip gets a little taller for those).
