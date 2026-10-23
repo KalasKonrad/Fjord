@@ -22,7 +22,8 @@
 //                           miss), claim series_open_id, spawn the tasks (show-series waits for
 //                           spawn_main)
 //   existing_series_buttons / fix_trailer_focus  header buttons Left/Right step through (Back,
-//                           Trailer when "ok", ♥, ✓ — must match series.slint)
+//                           Trailer when "ok", ♥, ✓) — read from AppState.series-buttons, the list
+//                           series.slint mounts them by
 //   handle_key              rows top to bottom: season tabs/episodes → missing seasons → cast →
 //                           similar → recommended; C on a season tab opens its context menu
 //   wire_series             callbacks moved from main() (0.5.0 step 3): series drill-down
@@ -1283,15 +1284,10 @@ pub(crate) fn activate_missing_season(
 // ── Keyboard dispatch ─────────────────────────────────────────────────────────
 
 /// The header buttons Left/Right step through, in on-screen order (series-focused-btn ids):
-/// 0 Back, 4 Trailer (only when "ok" — greyed isn't a stop), 1 ♥, 2 ✓. Must match
-/// series.slint's `if` conditions.
+/// 0 Back, 4 Trailer (only when "ok" — greyed isn't a stop), 1 ♥, 2 ✓ — AppState.series-buttons,
+/// built from the conditions series.slint mounts them by.
 fn existing_series_buttons(g: &crate::AppState) -> Vec<i32> {
-    let mut v = vec![0];
-    if g.get_series_trailer_state() == "ok" {
-        v.push(4);
-    }
-    v.extend([1, 2]);
-    v
+    crate::keys::stops(&g.get_series_buttons())
 }
 
 /// The Trailer button stopped being a D-pad stop (checking again / none): focus ♥ instead.
@@ -1398,7 +1394,7 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &crate::AppState) -> b
                     1 => g.invoke_toggle_series_fav(),
                     2 => g.invoke_toggle_series_played(),
                     3 => g.set_series_overview_expanded(!g.get_series_overview_expanded()),
-                    4 if g.get_series_trailer_state() == "ok" => g.invoke_play_series_trailer(),
+                    4 if g.get_series_btn_trailer_stop() => g.invoke_play_series_trailer(),
                     _ => {}
                 }
                 true
@@ -2165,5 +2161,29 @@ pub(crate) fn wire_series_toggles(
                 crate::home::refresh_favorites(client, ww3, rt3, state3);
             });
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The header's D-pad stops follow the same conditions series.slint shows the Trailer by.
+    #[test]
+    fn header_stops_follow_the_shown_buttons() {
+        i_slint_backend_testing::init_no_event_loop();
+        let w = crate::MainWindow::new().unwrap();
+        let g = crate::AppState::get(&w);
+        assert_eq!(existing_series_buttons(&g), vec![0, 1, 2]);
+        g.set_yt_dlp_available(true);
+        g.set_series_trailer_state("checking".into());
+        assert!(g.get_series_btn_trailer_shown());
+        assert_eq!(existing_series_buttons(&g), vec![0, 1, 2]);
+        g.set_series_trailer_state("ok".into());
+        assert_eq!(existing_series_buttons(&g), vec![0, 4, 1, 2]);
+        // No yt-dlp: a YouTube trailer can't play — hidden; a server file ("ok") still shows.
+        g.set_yt_dlp_available(false);
+        g.set_series_trailer_state("none".into());
+        assert!(!g.get_series_btn_trailer_shown());
     }
 }

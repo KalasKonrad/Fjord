@@ -2945,6 +2945,7 @@ The last "change both sides together" lists (CLAUDE.md): each page decided twice
 Pattern: in app_state.slint, a named `out property <bool>` per conditional element (`detail-btn-resume: detail-can-resume`, …), and the page's list `out property <[ZoneSlot]> detail-buttons: [{ id: 0, stop: true }, { id: 1, stop: detail-btn-resume }, …]` in on-screen order (`ZoneSlot { id, stop }`, theme.slint). The page mounts each element by the same named property; Rust's `existing_*` is `keys::stops(&g.get_…())` (the ids with `stop`), and Enter's guards read the named properties too. Where shown ≠ stop (a greyed Trailer while checking), both are named (`detail-btn-trailer-shown` / `-stop`). Labels may still read the state (presentation, not existence).
 
 - **Detail page:** `detail-buttons` (Play, Resume?, Series?, Trailer when ok, ♥, ✓). Test `detail::tests::header_stops_follow_the_shown_buttons` (real window): defaults, resume + series, a checking trailer shown but not a stop, "ok" a stop, fix_trailer_focus.
+- **Series page:** `series-buttons` (Back, Trailer when ok, ♥, ✓); series.slint mounts the Trailer by `series-btn-trailer-shown`/`-stop`. Test `series::tests::header_stops_follow_the_shown_buttons`.
 
 ### Skip Intro gone with Jellyfin 12: read the media segments (2026-10-23, branch `release-0.5.1`)
 
