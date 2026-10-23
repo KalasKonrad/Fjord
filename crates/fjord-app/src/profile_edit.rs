@@ -24,8 +24,9 @@
 //   on_profile_edit_cancel  close without saving, back to the already-fetched list
 //   close_profile_edit_screen  the one close path; also closes the on-screen keyboard
 //   handle_key_profile_edit  raw-key D-pad dispatch (from keys.rs's show_profile_edit tier):
-//                       existing_profile_edit_zones (checklists skipped when empty — must match
-//                       profile_edit.slint), dropdown popup (open_profile_edit_dropdown /
+//                       existing_profile_edit_zones (checklists skipped when empty — read from
+//                       AppState.profile-edit-zones, the list profile_edit.slint mounts them by),
+//                       dropdown popup (open_profile_edit_dropdown /
 //                       apply_profile_edit_dropdown_selection), PIN pads, on-screen keyboard
 //   wire_profile_edit   callbacks moved from main() (0.5.0 step 3): Manage Profiles +
 //                       ProfileEditScreen
@@ -774,19 +775,10 @@ pub(crate) fn on_profile_edit_save(
 // app_state.slint.
 
 /// The zone list with gaps (like discover's existing_option_zones): zones 4/9 (libraries/
-/// devices checklists) are skipped when empty. Must match profile_edit.slint's
-/// `if AppState.profile-edit-libraries/-devices.length > 0` gates.
+/// devices checklists) are skipped when empty — AppState.profile-edit-zones, built from the
+/// conditions profile_edit.slint mounts the checklists by.
 fn existing_profile_edit_zones(g: &AppState) -> Vec<i32> {
-    let mut zones = vec![0, 1, 2, 3];
-    if g.get_profile_edit_libraries().row_count() > 0 {
-        zones.push(4);
-    }
-    zones.extend([5, 6, 7, 8]);
-    if g.get_profile_edit_devices().row_count() > 0 {
-        zones.push(9);
-    }
-    zones.extend([10, 11]);
-    zones
+    crate::keys::stops(&g.get_profile_edit_zones())
 }
 
 /// Resets the entered zone's own sub-cursor to 0 — called on every zone
@@ -1329,5 +1321,33 @@ pub(crate) fn wire_profile_edit(
                 rt_handle.clone(),
             );
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The checklist zones exist exactly when profile_edit.slint shows the checklists.
+    #[test]
+    fn checklist_zones_follow_the_shown_lists() {
+        i_slint_backend_testing::init_no_event_loop();
+        let w = crate::MainWindow::new().unwrap();
+        let g = AppState::get(&w);
+        assert_eq!(
+            existing_profile_edit_zones(&g),
+            vec![0, 1, 2, 3, 5, 6, 7, 8, 10, 11]
+        );
+        let one = || ModelRc::new(VecModel::from(vec![ToggleListItem::default()]));
+        g.set_profile_edit_libraries(one());
+        assert_eq!(
+            existing_profile_edit_zones(&g),
+            vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 11]
+        );
+        g.set_profile_edit_devices(one());
+        assert_eq!(
+            existing_profile_edit_zones(&g),
+            (0..=11).collect::<Vec<_>>()
+        );
     }
 }
