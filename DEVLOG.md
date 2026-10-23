@@ -2946,6 +2946,7 @@ Pattern: in app_state.slint, a named `out property <bool>` per conditional eleme
 
 - **Detail page:** `detail-buttons` (Play, Resume?, Series?, Trailer when ok, ♥, ✓). Test `detail::tests::header_stops_follow_the_shown_buttons` (real window): defaults, resume + series, a checking trailer shown but not a stop, "ok" a stop, fix_trailer_focus.
 - **Series page:** `series-buttons` (Back, Trailer when ok, ♥, ✓); series.slint mounts the Trailer by `series-btn-trailer-shown`/`-stop`. Test `series::tests::header_stops_follow_the_shown_buttons`.
+- **Profile edit:** `profile-edit-zones` (12 zones; 4 libraries / 9 devices only when not empty — `profile-edit-zone-libraries`/`-devices`). profile_edit.slint also moved between fields by the same condition inside a LineEdit's key handler (Blocked tags' Up → libraries or the rating), now reading the named property. Test `profile_edit::tests::checklist_zones_follow_the_shown_lists`.
 
 ### Skip Intro gone with Jellyfin 12: read the media segments (2026-10-23, branch `release-0.5.1`)
 

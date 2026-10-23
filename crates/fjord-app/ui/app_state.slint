@@ -440,6 +440,25 @@ export global AppState {
     in-out property <string> profile-edit-parental-rating: "";
     in-out property <[ToggleListItem]> profile-edit-libraries: [];
     in-out property <[ToggleListItem]> profile-edit-devices: [];
+    // The zones, each condition once (like detail-buttons): the two checklists exist only when not
+    // empty; profile_edit.slint mounts them (and moves between fields) by these, profile_edit.rs's
+    // keys walk profile-edit-zones (visual order — see profile-edit-zone).
+    out property <bool> profile-edit-zone-libraries: profile-edit-libraries.length > 0;
+    out property <bool> profile-edit-zone-devices: profile-edit-devices.length > 0;
+    out property <[ZoneSlot]> profile-edit-zones: [
+        { id: 0, stop: true },
+        { id: 1, stop: true },
+        { id: 2, stop: true },
+        { id: 3, stop: true },
+        { id: 4, stop: profile-edit-zone-libraries },
+        { id: 5, stop: true },
+        { id: 6, stop: true },
+        { id: 7, stop: true },
+        { id: 8, stop: true },
+        { id: 9, stop: profile-edit-zone-devices },
+        { id: 10, stop: true },
+        { id: 11, stop: true },
+    ];
     callback profile-edit-toggle-library(int);
     callback profile-edit-toggle-device(int);
     in-out property <string> profile-edit-lockout-minutes: "0";

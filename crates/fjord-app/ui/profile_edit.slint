@@ -448,7 +448,7 @@ export component ProfileEditScreen inherits Rectangle {
                     }
                 }
 
-                if AppState.profile-edit-libraries.length > 0: VerticalLayout {
+                if AppState.profile-edit-zone-libraries: VerticalLayout {
                     spacing: 4px;
                     FieldLabel {
                         text: "Enabled libraries";
@@ -506,10 +506,10 @@ export component ProfileEditScreen inherits Rectangle {
                                 return accept;
                             }
                             // Up/Down leave the field (see name-field). Up's target depends on whether zone 4
-                            // (libraries) exists — mirrors existing_profile_edit_zones (profile_edit.rs) by hand.
+                            // (libraries) exists (AppState.profile-edit-zone-libraries, as in profile-edit-zones).
                             // Down (zone 6) is unconditional.
                             if event.text == "\u{F700}" {
-                                if AppState.profile-edit-libraries.length > 0 {
+                                if AppState.profile-edit-zone-libraries {
                                     AppState.profile-edit-zone = 4;
                                     AppState.profile-edit-libraries-cursor = 0;
                                 } else {
@@ -679,7 +679,7 @@ export component ProfileEditScreen inherits Rectangle {
                     }
                 }
 
-                if AppState.profile-edit-devices.length > 0: VerticalLayout {
+                if AppState.profile-edit-zone-devices: VerticalLayout {
                     spacing: 4px;
                     FieldLabel {
                         text: "Allowed devices (none checked = all devices)";
