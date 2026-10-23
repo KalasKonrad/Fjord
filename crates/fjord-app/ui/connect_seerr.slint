@@ -9,7 +9,8 @@
 //                       sites do the same in Rust (keep in sync).
 //   D-pad zones         connect-seerr-zone (see app_state.slint): -1 ✕, 0 url-input, 1 tab row
 //                       (Left/Right switch the method), 2+ the method's fields, the last zone is
-//                       always its submit/"Get Code" button (seerr_auth::existing_connect_seerr_zones);
+//                       always its submit/"Get Code" button (AppState.connect-seerr-zones — the tab
+//                       blocks below hold exactly those fields);
 //                       dispatched inline in keys.rs's show_connect_seerr tier. init focuses url-input.
 //   Text entry          Enter in a field opens the on-screen keyboard (QwertyKeyboard, clamped to the
 //                       window bottom); keys edit at its caret (onscreen-keyboard-edit). With the
@@ -518,7 +519,7 @@ export component ConnectSeerrScreen inherits Rectangle {
             // ── Method 2: Jellyfin Quick Connect ──────────────────────────
             if AppState.connect-seerr-method == 2: VerticalLayout {
                 spacing: Theme.sp;
-                if !AppState.connect-seerr-qc-polling: VerticalLayout {
+                if AppState.connect-seerr-qc-get-code: VerticalLayout {
                     spacing: Theme.sp;
                     Text {
                         text: "Passwordless — approve a code from inside your Jellyfin app or web UI.";
@@ -782,7 +783,7 @@ export component ConnectSeerrScreen inherits Rectangle {
         // !connect-seerr-busy too: busy is set at once, qc-polling only after quickconnect-start
         // succeeds — a second Enter in between started a second request.
         if AppState.show-connect-seerr && AppState.connect-seerr-method == 2
-            && AppState.connect-seerr-zone == 2 && !AppState.connect-seerr-qc-polling
+            && AppState.connect-seerr-zone == 2 && AppState.connect-seerr-qc-get-code
             && !AppState.connect-seerr-busy {
             AppState.connect-seerr-quickconnect-start(url-input.text);
         }

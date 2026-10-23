@@ -8,7 +8,8 @@
 //                        (only on auth::is_connectivity_failure); its StatusInfo supplies the
 //                        version too
 //   existing_connect_seerr_zones  ConnectSeerrScreen's D-pad zones (-1 ✕, 0 URL, 1 tabs, 2+ by
-//                        method/polling), dispatched inline in keys.rs's show_connect_seerr tier
+//                        method/polling — AppState.connect-seerr-zones), dispatched inline in keys.rs's
+//                        show_connect_seerr tier
 //   clear_connection / commit_connection  connection-scoped resets (Calendar/filter caches,
 //                        person caches, hero_discover_cache, the 3 watchlist models); commit also starts
 //                        ensure_discover_watchlist
@@ -99,22 +100,10 @@ async fn resolve_seerr_url(url: &str) -> anyhow::Result<(Url, StatusInfo)> {
 /// The ordered zone list for the current ConnectSeerrScreen tab/polling state (gaps allowed,
 /// recomputed live — like profile_edit::existing_profile_edit_zones). -1 = close ✕ (Up from
 /// zone 0), 0 = url-input, 1 = tab row, 2+ depend on connect-seerr-method; a polling Quick
-/// Connect tab has nothing focusable below the URL. Order must match the visual top-to-bottom
-/// order (next_zone/prev_zone are positional).
+/// Connect tab has nothing focusable below the URL. AppState.connect-seerr-zones, in visual
+/// top-to-bottom order (next_zone/prev_zone are positional).
 pub(crate) fn existing_connect_seerr_zones(g: &AppState) -> Vec<i32> {
-    let mut zones = vec![-1, 0, 1];
-    match g.get_connect_seerr_method() {
-        0 => zones.extend([2, 3]),    // API key: key-input, submit
-        1 => zones.extend([2, 3, 4]), // Jellyfin: username, password, submit
-        2 => {
-            if !g.get_connect_seerr_qc_polling() {
-                zones.push(2);
-            } // "Get Code" — nothing while polling
-        }
-        3 => zones.extend([2, 3, 4]), // Local account: email, password, submit
-        _ => {}
-    }
-    zones
+    crate::keys::stops(&g.get_connect_seerr_zones())
 }
 
 pub(crate) fn connected_label(method: &str) -> &'static str {
@@ -830,4 +819,30 @@ pub(crate) fn spawn_seerr_settings_fetch(
             }
         });
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The zones follow the open tab: its fields and button; Quick Connect's Get Code only
+    /// while not waiting for approval (the same condition that shows it).
+    #[test]
+    fn connect_seerr_zones_follow_the_tab() {
+        i_slint_backend_testing::init_no_event_loop();
+        let w = crate::MainWindow::new().unwrap();
+        let g = AppState::get(&w);
+        for (method, polling, want) in [
+            (0, false, vec![-1, 0, 1, 2, 3]),
+            (1, false, vec![-1, 0, 1, 2, 3, 4]),
+            (2, false, vec![-1, 0, 1, 2]),
+            (2, true, vec![-1, 0, 1]),
+            (3, false, vec![-1, 0, 1, 2, 3, 4]),
+        ] {
+            g.set_connect_seerr_method(method);
+            g.set_connect_seerr_qc_polling(polling);
+            assert_eq!(existing_connect_seerr_zones(&g), want, "method {method}");
+            assert_eq!(g.get_connect_seerr_qc_get_code(), !polling);
+        }
+    }
 }
