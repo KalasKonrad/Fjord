@@ -11,8 +11,9 @@
 //               its 0-height anchor (cast-/collection-/similar-/recommended-anchor), as on the series
 //               page; the header area uses detail-scroll.
 //               Button focus: detail-focused-btn (-1 Back, 0 Play, 1 Resume, 2 Series, 6 Trailer,
-//               3 Fav, 4 Watched — Left/Right order in detail.rs's existing_detail_buttons; 5 =
-//               Overview, below); cast focus: detail-cast-focused.
+//               3 Fav, 4 Watched — mounted by AppState.detail-btn-*, the conditions of the
+//               detail-buttons list detail.rs's keys walk; 5 = Overview, below); cast focus:
+//               detail-cast-focused.
 //               Shown only once metadata + poster + backdrop have loaded (detail.rs spawn_main;
 //               app-content-loading covers the previous screen meanwhile). Back with a minimized
 //               background player clears playback-from-detail, so stopping won't reopen this.
@@ -174,13 +175,13 @@ export component DetailPage inherits StackPage {
                                         clicked => { AppState.play-detail(); }
                                     }
 
-                                    if AppState.detail-can-resume: FjordButton {
+                                    if AppState.detail-btn-resume: FjordButton {
                                         icon-left: "⏩";
                                         text: AppState.detail-resume-label;
                                         kbd-focused: AppState.detail-focused-btn == 1 && AppState.detail-cast-focused < 0;
                                         clicked => { AppState.resume-detail(); }
                                     }
-                                    if AppState.detail-series-id != "": FjordButton {
+                                    if AppState.detail-btn-series: FjordButton {
                                         text: "Series →";
                                         width: 100px * AppState.text-scale;
                                         kbd-focused: AppState.detail-focused-btn == 2 && AppState.detail-cast-focused < 0;
@@ -191,10 +192,9 @@ export component DetailPage inherits StackPage {
                                             AppState.open-series(AppState.detail-series-id);
                                         }
                                     }
-                                    // Trailer (movies): greyed while checking / when none plays; hidden
-                                    // without yt-dlp unless a trailer file on the server is "ok".
-                                    if AppState.detail-trailer-state != "" && (AppState.yt-dlp-available || AppState.detail-trailer-state == "ok"): FjordButton {
-                                        enabled: AppState.detail-trailer-state == "ok";
+                                    // Trailer (movies): greyed while checking / when none plays (AppState.detail-btn-*).
+                                    if AppState.detail-btn-trailer-shown: FjordButton {
+                                        enabled: AppState.detail-btn-trailer-stop;
                                         icon-left: AppState.detail-trailer-state == "ok" ? "▶" : "";
                                         text: AppState.detail-trailer-state == "ok" ? "Trailer"
                                             : AppState.detail-trailer-state == "checking" ? "Checking…"
