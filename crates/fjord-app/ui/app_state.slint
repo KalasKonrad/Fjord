@@ -113,6 +113,7 @@
 //                         context-menu-jf-tmdb-id/-jf-media-type + context-jf-toggle-watchlist
 //   Calendar / blocklist  show-calendar + calendar-days/-leading-blanks/-total-days/…; show-blocklist + rows
 //   Settings state        hwdec, interpolation, audio-spdif, sub-lang, skip-*-mode/secs, display-sync-*, …;
+//                         settings-row-shown(key) — every row condition once (settings.slint + row_shown);
 //                         setting-options/-label/-choose (fixed-choice rows ↔ settings.rs CHOICES);
 //                         settings-card-size → card-scale (0.8/1/1.25/1.5/2) for every poster card;
 //                         settings-copy-sources-display + the Copy settings confirm (show-/-focused,
@@ -667,6 +668,100 @@ export global AppState {
     // doc. "" = nothing focused.
     in-out property <string> settings-focused: "";   // "" = left pane focus, else the focused row's stable key
     in-out property <string> settings-section: "";   // "" = sidebar, else the selected section's stable key
+    // Whether a Settings row is shown — every row condition, once: settings.slint mounts each
+    // conditional row (and the S/PDIF group, by its first row) with this, settings.rs's keyboard
+    // list asks it too (row_shown). A key not named here is always shown. A test checks that the
+    // keys named here are exactly the rows settings.slint gates.
+    public pure function settings-row-shown(key: string) -> bool {
+        if key == "player.intro_secs" {
+            return settings-skip-intro-mode == "ask-timed";
+        }
+        if key == "player.recap_secs" {
+            return settings-skip-recap-mode == "ask-timed";
+        }
+        if key == "player.preview_secs" {
+            return settings-skip-preview-mode == "ask-timed";
+        }
+        if key == "player.commercial_secs" {
+            return settings-skip-commercial-mode == "ask-timed";
+        }
+        if key == "player.credits_secs" {
+            return settings-skip-credits-mode == "ask";
+        }
+        if key == "player.sub_lang" || key == "player.sub_lang2" || key == "player.sub_type"
+            || key == "player.sub_scale" || key == "player.sub_pos" || key == "player.sub_respect_ass" {
+            return settings-sub-enabled;
+        }
+        if key == "player.sub_color" || key == "player.sub_background_pct" {
+            return settings-sub-enabled && !settings-sub-respect-ass-styling;
+        }
+        // HDR Stage 5: only on Wayland, where it does anything.
+        if key == "video.separate_video_surface" {
+            return is-wayland;
+        }
+        if key == "ui.focus_glow" || key == "ui.focus_glow_on" {
+            return settings-focus-style != "line";
+        }
+        if key == "video.display_sync_screen" || key == "video.display_sync_sync_resolution"
+            || key == "video.display_sync_sync_refresh_rate" || key == "video.display_sync_default_resolution"
+            || key == "video.display_sync_default_hz" || key == "video.display_sync_scale_4k"
+            || key == "video.display_sync_scale_1080p" || key == "video.display_sync_hdr_mode"
+            || key == "video.display_sync_wcg_mode" || key == "video.display_sync_trailers" {
+            return settings-display-sync-enabled;
+        }
+        if key == "video.display_sync_4k_odd_fps_mode" {
+            return settings-display-sync-enabled && settings-display-sync-sync-resolution;
+        }
+        if key == "audio.spdif_ac3" || key == "audio.spdif_eac3" || key == "audio.spdif_dts"
+            || key == "audio.spdif_dts_hd" || key == "audio.spdif_truehd" || key == "audio.passthrough_device"
+            || key == "audio.skip_fade_mute" {
+            return settings-audio-spdif;
+        }
+        if key == "audio.alsa_irq" {
+            return settings-audio-spdif && settings-device-is-pipewire;
+        }
+        if key == "profiles.default_profile" {
+            return settings-launch-policy == "default";
+        }
+        if key == "profiles.manage_profiles" || key == "profiles.bonfire_group" {
+            return settings-is-master-profile;
+        }
+        if key == "profiles.copy_settings" {
+            return settings-copy-sources-display.length > 0;
+        }
+        if key == "profiles.default_account" {
+            return settings-account-launch-policy == "default";
+        }
+        if key == "profiles.bonfire_admin" {
+            return jellyfin-is-server-admin;
+        }
+        if key == "integrations.seerr_connect" {
+            return settings-seerr-enabled;
+        }
+        if key == "integrations.streaming_region" || key == "integrations.display_language"
+            || key == "integrations.discover_language" || key == "integrations.discover_region" {
+            return settings-seerr-enabled && seerr-connected;
+        }
+        if key == "integrations.manage_blocklist" {
+            return settings-seerr-enabled && seerr-connected && seerr-can-manage-blocklist;
+        }
+        // vf only works around NVDEC's stride corruption (CLAUDE.md): only with NVDEC chosen
+        // explicitly — "auto" counts as not NVDEC.
+        if key == "video.vf" {
+            return settings-hwdec == "nvdec" || settings-hwdec == "nvdec-copy";
+        }
+        if key == "video.tscale" {
+            return settings-interpolation;
+        }
+        if key == "video.video_latency_hacks" {
+            return settings-video-sync == "display-resample";
+        }
+        // 10-bit video plane: only with the separate video surface (Wayland).
+        if key == "video.video_own_buffers" {
+            return is-wayland && settings-separate-video-surface;
+        }
+        true
+    }
     // Approximate scroll-target index for the focused row within the
     // current section's visible list (see settings.slint's kb-y) — Rust
     // recomputes this alongside settings-focused on every focus change

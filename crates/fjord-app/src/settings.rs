@@ -2,9 +2,9 @@
 //   Design       every section and row has a stable string key ("video",
 //                "general.launch_fullscreen"); AppState.settings-section/settings-focused are
 //                strings ("" = nothing selected).
-//                Which rows exist is decided twice — by settings.slint's `if` conditions and by
-//                section_row_keys() here — and the two must be kept in sync by hand; a mismatch
-//                only hides or skips that one row (identity doesn't depend on position).
+//                Which rows exist is decided once, by AppState's settings-row-shown(key)
+//                (app_state.slint): settings.slint mounts its conditional rows by it and
+//                row_shown() asks it (a test checks settings.slint gates rows only that way).
 //   Sections     SECTION_PLAYBACK, SECTION_LANGUAGE, SECTION_DISPLAY, SECTION_AUDIO, SECTION_UI
 //                ("Interface"), SECTION_PROFILES, SECTION_INTEGRATIONS, SECTION_KEYBINDINGS,
 //                SECTION_ADVANCED (expert switches); ALL_SECTIONS is the sidebar order (0.5.1
@@ -13,9 +13,9 @@
 //                rows — Sign Out, Add Account, Connect/Disconnect, Manage Blocklist, Prewarm —
 //                use the same shape)
 //   SECTION_ROWS / row_shown / section_row_keys  every row per section in on-screen order (a
-//                test checks it against settings.slint), the visibility conditions, and the
-//                rows on screen now — the source of truth for Up/Down stepping
-//                for Up/Down stepping
+//                test checks it against settings.slint), whether a row is shown (AppState's
+//                settings-row-shown), and the rows on screen now — the source of truth for Up/Down
+//                stepping
 //   set_focused / set_section / row_focused  focus helpers (row_focused = mouse click path)
 //   dispatch_settings  keyboard: section list → rows / key bindings; Enter opens a dropdown
 //                popup (Up/Down/Enter/Esc inside it); confirm dialogs checked first
@@ -232,8 +232,9 @@ const INT_MANAGE_BLOCKLIST: &str = "integrations.manage_blocklist";
 // ── Row existence per section (replaces the old duplicated skip-logic) ────────
 
 /// Every Settings row, per section, in on-screen order (Up/Down follow it); `row_shown` hides the
-/// conditional ones. settings.slint draws the same rows in the same order with the same
-/// conditions — the test `section_rows_match_settings_slint` checks rows and order.
+/// conditional ones. settings.slint draws the same rows in the same order, gated by the same
+/// function — the tests `section_rows_match_settings_slint` (rows, order) and
+/// `settings_rows_are_gated_only_by_settings_row_shown` (conditions) check it.
 const SECTION_ROWS: &[(&str, &[&str])] = &[
     (
         SECTION_PLAYBACK,
@@ -383,64 +384,10 @@ const SECTION_ROWS: &[(&str, &[&str])] = &[
     ),
 ];
 
-/// Whether a row is on screen right now — the same conditions as settings.slint's `if`s.
+/// Whether a row is on screen right now — AppState's `settings-row-shown`, the function
+/// settings.slint mounts its conditional rows by (every row condition lives there, once).
 fn row_shown(key: &str, g: &crate::AppState<'_>) -> bool {
-    let subs = g.get_settings_sub_enabled();
-    let sync = g.get_settings_display_sync_enabled();
-    let spdif = g.get_settings_audio_spdif();
-    let seerr = g.get_settings_seerr_enabled();
-    let seerr_connected = seerr && g.get_seerr_connected();
-    match key {
-        PLY_INTRO_SECS => g.get_settings_skip_intro_mode().as_str() == "ask-timed",
-        PLY_RECAP_SECS => g.get_settings_skip_recap_mode().as_str() == "ask-timed",
-        PLY_PREVIEW_SECS => g.get_settings_skip_preview_mode().as_str() == "ask-timed",
-        PLY_COMMERCIAL_SECS => g.get_settings_skip_commercial_mode().as_str() == "ask-timed",
-        PLY_CREDITS_SECS => g.get_settings_skip_credits_mode().as_str() == "ask",
-        PLY_SUB_LANG | PLY_SUB_LANG2 | PLY_SUB_TYPE | PLY_SUB_SCALE | PLY_SUB_POS
-        | PLY_SUB_RESPECT_ASS => subs,
-        PLY_SUB_COLOR | PLY_SUB_BACKGROUND => subs && !g.get_settings_sub_respect_ass_styling(),
-        // HDR Stage 5: only on Wayland, where it does anything.
-        VID_SEPARATE_VIDEO_SURFACE => g.get_is_wayland(),
-        UI_FOCUS_GLOW | UI_FOCUS_GLOW_ON => g.get_settings_focus_style().as_str() != "line",
-        VID_DISPLAY_SYNC_SCREEN
-        | VID_DISPLAY_SYNC_SYNC_RESOLUTION
-        | VID_DISPLAY_SYNC_SYNC_REFRESH_RATE
-        | VID_DISPLAY_SYNC_DEFAULT_RESOLUTION
-        | VID_DISPLAY_SYNC_DEFAULT_HZ
-        | VID_DISPLAY_SYNC_SCALE_4K
-        | VID_DISPLAY_SYNC_SCALE_1080P
-        | VID_DISPLAY_SYNC_HDR_MODE
-        | VID_DISPLAY_SYNC_WCG_MODE
-        | VID_DISPLAY_SYNC_TRAILERS => sync,
-        VID_DISPLAY_SYNC_4K_ODD_FPS_MODE => sync && g.get_settings_display_sync_sync_resolution(),
-        AUD_SPDIF_AC3
-        | AUD_SPDIF_EAC3
-        | AUD_SPDIF_DTS
-        | AUD_SPDIF_DTS_HD
-        | AUD_SPDIF_TRUEHD
-        | AUD_PASSTHROUGH_DEVICE
-        | AUD_SKIP_FADE_MUTE => spdif,
-        AUD_ALSA_IRQ => spdif && g.get_settings_device_is_pipewire(),
-        PROF_DEFAULT_PROFILE => g.get_settings_launch_policy().as_str() == "default",
-        PROF_MANAGE_PROFILES | PROF_BONFIRE_GROUP => g.get_settings_is_master_profile(),
-        PROF_COPY_SETTINGS => g.get_settings_copy_sources_display().row_count() > 0,
-        PROF_DEFAULT_ACCOUNT => g.get_settings_account_launch_policy().as_str() == "default",
-        PROF_BONFIRE_ADMIN => g.get_jellyfin_is_server_admin(),
-        INT_SEERR_CONNECT => seerr,
-        INT_STREAMING_REGION
-        | INT_DISPLAY_LANGUAGE
-        | INT_DISCOVER_LANGUAGE
-        | INT_DISCOVER_REGION => seerr_connected,
-        INT_MANAGE_BLOCKLIST => seerr_connected && g.get_seerr_can_manage_blocklist(),
-        // vf only works around NVDEC's stride corruption (see CLAUDE.md): only with NVDEC chosen
-        // explicitly — "auto" counts as not NVDEC.
-        VID_VF => matches!(g.get_settings_hwdec().as_str(), "nvdec" | "nvdec-copy"),
-        VID_TSCALE => g.get_settings_interpolation(),
-        VID_VIDEO_LATENCY_HACKS => g.get_settings_video_sync().as_str() == "display-resample",
-        // 10-bit video plane: only with the separate video surface (Wayland).
-        VID_OWN_BUFFERS => g.get_is_wayland() && g.get_settings_separate_video_surface(),
-        _ => true,
-    }
+    g.invoke_settings_row_shown(key.into())
 }
 
 fn section_row_keys(section: &str, g: &crate::AppState<'_>) -> Vec<&'static str> {
@@ -3883,6 +3830,89 @@ mod tests {
                 "section {section}: settings.slint rows differ"
             );
         }
+    }
+
+    #[test]
+    fn settings_rows_are_gated_only_by_settings_row_shown() {
+        // Every conditional row (or row group) in settings.slint is mounted by
+        // `AppState.settings-row-shown("<its first row>")` — no condition of its own — and the
+        // keys AppState's function names are exactly the rows gated that way, so the keyboard
+        // (row_shown) and the screen can't disagree about which rows exist.
+        let slint = include_str!("../ui/settings.slint");
+        let app = include_str!("../ui/app_state.slint");
+        let lines: Vec<&str> = slint.lines().collect();
+        let row_keys = |line: &str| -> Vec<String> {
+            ["key: \"", "settings-focused == \""]
+                .iter()
+                .filter_map(|pat| {
+                    let from = line.find(pat)? + pat.len();
+                    let end = from + line[from..].find('"')?;
+                    let k = &line[from..end];
+                    k.contains('.').then(|| k.to_string())
+                })
+                .collect()
+        };
+        let mut gated = std::collections::BTreeSet::new();
+        for (i, line) in lines.iter().enumerate() {
+            let t = line.trim_start();
+            let Some(cond) = t
+                .strip_prefix("if ")
+                .and_then(|c| c.split_once(": "))
+                .map(|c| c.0)
+            else {
+                continue;
+            };
+            if cond.contains("settings-section ==") {
+                continue;
+            }
+            // The block's row keys (until its braces close).
+            let (mut depth, mut keys) = (0i32, Vec::new());
+            for (j, l) in lines.iter().enumerate().skip(i) {
+                depth += l.matches('{').count() as i32 - l.matches('}').count() as i32;
+                keys.extend(row_keys(l));
+                if j > i && depth <= 0 {
+                    break;
+                }
+            }
+            if keys.is_empty() {
+                continue; // not a row: a hint box, a dialog, a label inside a row
+            }
+            assert_eq!(
+                cond,
+                format!("AppState.settings-row-shown(\"{}\")", keys[0]),
+                "settings.slint line {}: a row gated by its own condition",
+                i + 1
+            );
+            gated.extend(keys);
+        }
+        let start = app.find("public pure function settings-row-shown").unwrap();
+        let body = &app[start..start + app[start..].find("\n    }\n").unwrap()];
+        let named: std::collections::BTreeSet<String> = body
+            .split("key == \"")
+            .skip(1)
+            .map(|p| p[..p.find('"').unwrap()].to_string())
+            .collect();
+        assert_eq!(
+            named, gated,
+            "settings-row-shown's keys vs the rows settings.slint gates"
+        );
+    }
+
+    #[test]
+    fn row_shown_follows_the_window_state() {
+        i_slint_backend_testing::init_no_event_loop();
+        let w = crate::MainWindow::new().unwrap();
+        let g = crate::AppState::get(&w);
+        assert!(!row_shown(VID_TSCALE, &g));
+        g.set_settings_interpolation(true);
+        assert!(row_shown(VID_TSCALE, &g));
+        // S/PDIF's IRQ row needs both S/PDIF and a PipeWire device; an unlisted row always shows.
+        g.set_settings_device_is_pipewire(false);
+        g.set_settings_audio_spdif(true);
+        assert!(row_shown(AUD_SPDIF_AC3, &g) && !row_shown(AUD_ALSA_IRQ, &g));
+        g.set_settings_device_is_pipewire(true);
+        assert!(row_shown(AUD_ALSA_IRQ, &g));
+        assert!(row_shown(VID_HWDEC, &g));
     }
 
     #[test]

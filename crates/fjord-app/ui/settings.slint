@@ -3,7 +3,8 @@
 //     Left pane      sections from the parallel sect-keys/sect-labels arrays, keyed on
 //                    AppState.settings-section (a string); a SERVER/CLIENT/SEERR info block
 //                    pinned to the bottom ("Not encrypted (http://)" for plain-HTTP connections)
-//     Right pane     Flickable; one `if` block per section (virtual rows are `if`-gated), grouped
+//     Right pane     Flickable; one `if` block per section (conditional rows are gated only by
+//                    AppState.settings-row-shown("<key>"), the S/PDIF group by its first row), grouped
 //                    by task since 0.5.1 (row keys keep their old prefixes); rows saved per profile
 //                    carry `per-profile: true` (the "Profile" tag); fixed-choice dropdowns are
 //                    `choice: true; value: AppState.settings-…;` (options/labels: settings.rs CHOICES):
@@ -358,7 +359,7 @@ export component SettingsScreen inherits Rectangle {
                             subtitle: "What to do when an intro segment is detected";
                         }
 
-                        if AppState.settings-skip-intro-mode == "ask-timed": SettingsRow {
+                        if AppState.settings-row-shown("player.intro_secs"): SettingsRow {
                             key: "player.intro_secs";
                             choice: true;
                             value: AppState.settings-skip-intro-secs;
@@ -377,7 +378,7 @@ export component SettingsScreen inherits Rectangle {
                             subtitle: "What to do when a recap segment is detected";
                         }
 
-                        if AppState.settings-skip-recap-mode == "ask-timed": SettingsRow {
+                        if AppState.settings-row-shown("player.recap_secs"): SettingsRow {
                             key: "player.recap_secs";
                             choice: true;
                             value: AppState.settings-skip-recap-secs;
@@ -396,7 +397,7 @@ export component SettingsScreen inherits Rectangle {
                             subtitle: "What to do when a preview segment is detected";
                         }
 
-                        if AppState.settings-skip-preview-mode == "ask-timed": SettingsRow {
+                        if AppState.settings-row-shown("player.preview_secs"): SettingsRow {
                             key: "player.preview_secs";
                             choice: true;
                             value: AppState.settings-skip-preview-secs;
@@ -415,7 +416,7 @@ export component SettingsScreen inherits Rectangle {
                             subtitle: "What to do when a commercial segment is detected";
                         }
 
-                        if AppState.settings-skip-commercial-mode == "ask-timed": SettingsRow {
+                        if AppState.settings-row-shown("player.commercial_secs"): SettingsRow {
                             key: "player.commercial_secs";
                             choice: true;
                             value: AppState.settings-skip-commercial-secs;
@@ -434,7 +435,7 @@ export component SettingsScreen inherits Rectangle {
                             subtitle: "What to do when credits start; controls the Up Next auto-advance banner";
                         }
 
-                        if AppState.settings-skip-credits-mode == "ask": SettingsRow {
+                        if AppState.settings-row-shown("player.credits_secs"): SettingsRow {
                             key: "player.credits_secs";
                             choice: true;
                             value: AppState.settings-skip-credits-secs;
@@ -537,7 +538,7 @@ export component SettingsScreen inherits Rectangle {
                             }
                         }
 
-                        if AppState.settings-sub-enabled: SettingsRow {
+                        if AppState.settings-row-shown("player.sub_lang"): SettingsRow {
                             key: "player.sub_lang";
                             choice: true;
                             value: AppState.settings-sub-lang;
@@ -547,7 +548,7 @@ export component SettingsScreen inherits Rectangle {
                             subtitle: "Auto-select first matching track; no preference = use video default";
                         }
 
-                        if AppState.settings-sub-enabled: SettingsRow {
+                        if AppState.settings-row-shown("player.sub_lang2"): SettingsRow {
                             key: "player.sub_lang2";
                             choice: true;
                             value: AppState.settings-sub-lang2;
@@ -557,7 +558,7 @@ export component SettingsScreen inherits Rectangle {
                             subtitle: "Tried if the primary language isn't found; if this isn't found either, falls back to video default";
                         }
 
-                        if AppState.settings-sub-enabled: SettingsRow {
+                        if AppState.settings-row-shown("player.sub_type"): SettingsRow {
                             key: "player.sub_type";
                             choice: true;
                             value: AppState.settings-sub-type;
@@ -567,7 +568,7 @@ export component SettingsScreen inherits Rectangle {
                             subtitle: "Prefer Normal (no tags), Forced (foreign lines only), or Hearing Impaired (SDH)";
                         }
 
-                        if AppState.settings-sub-enabled: SettingsRow {
+                        if AppState.settings-row-shown("player.sub_scale"): SettingsRow {
                             key: "player.sub_scale";
                             choice: true;
                             value: AppState.settings-sub-scale-pct;
@@ -577,7 +578,7 @@ export component SettingsScreen inherits Rectangle {
                             subtitle: "Applies to both plain and styled (ASS) subtitles";
                         }
 
-                        if AppState.settings-sub-enabled: SettingsRow {
+                        if AppState.settings-row-shown("player.sub_pos"): SettingsRow {
                             key: "player.sub_pos";
                             choice: true;
                             value: AppState.settings-sub-pos-pct;
@@ -587,7 +588,7 @@ export component SettingsScreen inherits Rectangle {
                             subtitle: "100 = mpv's default bottom position; higher pushes it lower still (may clip text/ASS subs)";
                         }
 
-                        if AppState.settings-sub-enabled: SettingsRow {
+                        if AppState.settings-row-shown("player.sub_respect_ass"): SettingsRow {
                             key: "player.sub_respect_ass";
                             per-profile: true;
                             indent: true;
@@ -599,7 +600,7 @@ export component SettingsScreen inherits Rectangle {
                             }
                         }
 
-                        if AppState.settings-sub-enabled && !AppState.settings-sub-respect-ass-styling: SettingsRow {
+                        if AppState.settings-row-shown("player.sub_color"): SettingsRow {
                             key: "player.sub_color";
                             choice: true;
                             value: AppState.settings-sub-color;
@@ -609,7 +610,7 @@ export component SettingsScreen inherits Rectangle {
                             subtitle: "Only affects plain subtitles unless styling above is not respected";
                         }
 
-                        if AppState.settings-sub-enabled && !AppState.settings-sub-respect-ass-styling: SettingsRow {
+                        if AppState.settings-row-shown("player.sub_background_pct"): SettingsRow {
                             key: "player.sub_background_pct";
                             choice: true;
                             value: AppState.settings-sub-background-pct;
@@ -653,7 +654,7 @@ export component SettingsScreen inherits Rectangle {
                         }
 
                         // HDR Stage 5 (2026-10-05) — Wayland only (settings::section_row_keys mirrors this).
-                    if AppState.is-wayland: SettingsRow {
+                    if AppState.settings-row-shown("video.separate_video_surface"): SettingsRow {
                             key: "video.separate_video_surface";
                             title: "Separate video surface";
                             subtitle: "Keeps menus in the right colors during HDR. Turn off if video stutters. Applies from the next video";
@@ -702,7 +703,7 @@ export component SettingsScreen inherits Rectangle {
                             }
                         }
 
-                        if AppState.settings-display-sync-enabled: SettingsRow {
+                        if AppState.settings-row-shown("video.display_sync_screen"): SettingsRow {
                             key: "video.display_sync_screen";
                             title: "Output";
                             subtitle: "The output to switch (kscreen-doctor name), pre-filled when only one is connected; KDE's primary is marked";
@@ -714,7 +715,7 @@ export component SettingsScreen inherits Rectangle {
                             }
                         }
 
-                        if AppState.settings-display-sync-enabled: SettingsRow {
+                        if AppState.settings-row-shown("video.display_sync_sync_resolution"): SettingsRow {
                             key: "video.display_sync_sync_resolution";
                             title: "Sync resolution";
                             subtitle: "Off = resolution always stays pinned to the default below, only refresh rate varies by source";
@@ -725,7 +726,7 @@ export component SettingsScreen inherits Rectangle {
                             }
                         }
 
-                        if AppState.settings-display-sync-enabled: SettingsRow {
+                        if AppState.settings-row-shown("video.display_sync_sync_refresh_rate"): SettingsRow {
                             key: "video.display_sync_sync_refresh_rate";
                             title: "Sync refresh rate";
                             subtitle: "Off = refresh rate always stays pinned to the default Hz below, only resolution varies by source";
@@ -736,7 +737,7 @@ export component SettingsScreen inherits Rectangle {
                             }
                         }
 
-                        if AppState.settings-display-sync-enabled: SettingsRow {
+                        if AppState.settings-row-shown("video.display_sync_default_resolution"): SettingsRow {
                             key: "video.display_sync_default_resolution";
                             title: "Default resolution";
                             subtitle: "Used for non-4K video and when a target mode isn't supported — the modes this output really has";
@@ -748,7 +749,7 @@ export component SettingsScreen inherits Rectangle {
                             }
                         }
 
-                        if AppState.settings-display-sync-enabled: SettingsRow {
+                        if AppState.settings-row-shown("video.display_sync_default_hz"): SettingsRow {
                             key: "video.display_sync_default_hz";
                             title: "Default refresh rate";
                             subtitle: "Used when the video's frame rate isn't a known cadence — the rates this output really has";
@@ -760,7 +761,7 @@ export component SettingsScreen inherits Rectangle {
                             }
                         }
 
-                        if AppState.settings-display-sync-enabled: SettingsRow {
+                        if AppState.settings-row-shown("video.display_sync_scale_4k"): SettingsRow {
                             key: "video.display_sync_scale_4k";
                             choice: true;
                             value: AppState.settings-display-sync-scale-4k;
@@ -769,7 +770,7 @@ export component SettingsScreen inherits Rectangle {
                             indent: true;
                         }
 
-                        if AppState.settings-display-sync-enabled: SettingsRow {
+                        if AppState.settings-row-shown("video.display_sync_scale_1080p"): SettingsRow {
                             key: "video.display_sync_scale_1080p";
                             choice: true;
                             value: AppState.settings-display-sync-scale-1080p;
@@ -778,7 +779,7 @@ export component SettingsScreen inherits Rectangle {
                             indent: true;
                         }
 
-                        if AppState.settings-display-sync-enabled && AppState.settings-display-sync-sync-resolution: SettingsRow {
+                        if AppState.settings-row-shown("video.display_sync_4k_odd_fps_mode"): SettingsRow {
                             key: "video.display_sync_4k_odd_fps_mode";
                             choice: true;
                             value: AppState.settings-display-sync-4k-odd-fps-mode;
@@ -787,7 +788,7 @@ export component SettingsScreen inherits Rectangle {
                             indent: true;
                         }
 
-                        if AppState.settings-display-sync-enabled: SettingsRow {
+                        if AppState.settings-row-shown("video.display_sync_hdr_mode"): SettingsRow {
                             key: "video.display_sync_hdr_mode";
                             choice: true;
                             value: AppState.settings-display-sync-hdr-mode;
@@ -796,7 +797,7 @@ export component SettingsScreen inherits Rectangle {
                             indent: true;
                         }
 
-                        if AppState.settings-display-sync-enabled: SettingsRow {
+                        if AppState.settings-row-shown("video.display_sync_wcg_mode"): SettingsRow {
                             key: "video.display_sync_wcg_mode";
                             choice: true;
                             value: AppState.settings-display-sync-wcg-mode;
@@ -805,7 +806,7 @@ export component SettingsScreen inherits Rectangle {
                             indent: true;
                         }
 
-                        if AppState.settings-display-sync-enabled: SettingsRow {
+                        if AppState.settings-row-shown("video.display_sync_trailers"): SettingsRow {
                             key: "video.display_sync_trailers";
                             title: "Sync display for trailers";
                             subtitle: "Off = Watch Trailer plays in whatever mode the display is already in, no resolution/refresh-rate switch";
@@ -858,7 +859,7 @@ export component SettingsScreen inherits Rectangle {
                             }
                         }
 
-                        if AppState.settings-audio-spdif: VerticalLayout {
+                        if AppState.settings-row-shown("audio.spdif_ac3"): VerticalLayout {
                             SettingsRow {
                                 key: "audio.spdif_ac3";
                                 title: "AC3 (Dolby Digital)";
@@ -926,7 +927,7 @@ export component SettingsScreen inherits Rectangle {
                                 }
                             }
 
-                            if AppState.settings-device-is-pipewire: SettingsRow {
+                            if AppState.settings-row-shown("audio.alsa_irq"): SettingsRow {
                                 key: "audio.alsa_irq";
                                 indent: true;
                                 title: "PipeWire IRQ scheduling";
@@ -1090,7 +1091,7 @@ export component SettingsScreen inherits Rectangle {
                             subtitle: "A line around the selected item, a soft glow, or both — saved for this profile";
                         }
 
-                        if AppState.settings-focus-style != "line": SettingsRow {
+                        if AppState.settings-row-shown("ui.focus_glow"): SettingsRow {
                             key: "ui.focus_glow";
                             choice: true;
                             value: AppState.settings-focus-glow;
@@ -1099,7 +1100,7 @@ export component SettingsScreen inherits Rectangle {
                             subtitle: "How far the glow reaches around the selected item — saved for this profile";
                         }
 
-                        if AppState.settings-focus-style != "line": SettingsRow {
+                        if AppState.settings-row-shown("ui.focus_glow_on"): SettingsRow {
                             key: "ui.focus_glow_on";
                             choice: true;
                             value: AppState.settings-focus-glow-on;
@@ -1218,7 +1219,7 @@ export component SettingsScreen inherits Rectangle {
                         // Virtual — only meaningful (and only reachable, matching
                     // section_row_keys' own condition) while Launch behavior
                     // is Default Profile.
-                    if AppState.settings-launch-policy == "default": SettingsRow {
+                    if AppState.settings-row-shown("profiles.default_profile"): SettingsRow {
                             key: "profiles.default_profile";
                             indent: true;
                             title: "Default profile";
@@ -1231,7 +1232,7 @@ export component SettingsScreen inherits Rectangle {
                         }
 
                         // Manage Profiles: only for a master account (a sub-profile has no siblings to manage).
-                    if AppState.settings-is-master-profile: Rectangle {
+                    if AppState.settings-row-shown("profiles.manage_profiles"): Rectangle {
                             border-radius: Theme.radius;
                             background: AppState.settings-focused == "profiles.manage_profiles" ? Theme.accent-muted
                                 : (manage-ta.has-hover ? Theme.surface : transparent);
@@ -1276,7 +1277,7 @@ export component SettingsScreen inherits Rectangle {
                         // Copy settings from another profile on this device: only the rows tagged "Profile"
                         // (ProfileSettings::copy_settings_from); no PIN — these are local preferences. Picking a
                         // profile opens the confirm dialog at the bottom of this file.
-                    if AppState.settings-copy-sources-display.length > 0: SettingsRow {
+                    if AppState.settings-row-shown("profiles.copy_settings"): SettingsRow {
                             key: "profiles.copy_settings";
                             title: "Copy settings from…";
                             subtitle: "Replace this profile's settings tagged Profile with another profile's — sign-in and Seerr stay";
@@ -1300,7 +1301,7 @@ export component SettingsScreen inherits Rectangle {
                             subtitle: "What to do at startup when more than one ACCOUNT is known on this device (a plain login, or a whole Bonfire household)";
                         }
 
-                        if AppState.settings-account-launch-policy == "default": SettingsRow {
+                        if AppState.settings-row-shown("profiles.default_account"): SettingsRow {
                             key: "profiles.default_account";
                             indent: true;
                             title: "Default account";
@@ -1407,7 +1408,7 @@ export component SettingsScreen inherits Rectangle {
                         }
 
                         // Bonfire Group: master accounts only, like Manage Profiles.
-                    if AppState.settings-is-master-profile: Rectangle {
+                    if AppState.settings-row-shown("profiles.bonfire_group"): Rectangle {
                             border-radius: Theme.radius;
                             background: AppState.settings-focused == "profiles.bonfire_group" ? Theme.accent-muted
                                 : (bonfire-group-ta.has-hover ? Theme.surface : transparent);
@@ -1451,7 +1452,7 @@ export component SettingsScreen inherits Rectangle {
                         // Bonfire Admin: gated on jellyfin-is-server-admin, not settings-is-master-profile — the
                         // plugin's admin endpoints authorize against Jellyfin's Policy.IsAdministrator (see
                         // settings.rs's PROF_BONFIRE_ADMIN).
-                    if AppState.jellyfin-is-server-admin: Rectangle {
+                    if AppState.settings-row-shown("profiles.bonfire_admin"): Rectangle {
                             border-radius: Theme.radius;
                             background: AppState.settings-focused == "profiles.bonfire_admin" ? Theme.accent-muted
                                 : (bonfire-admin-ta.has-hover ? Theme.surface : transparent);
@@ -1669,7 +1670,7 @@ export component SettingsScreen inherits Rectangle {
                     // the Profiles section's Sign Out row — a plain action
                     // row, not a SettingsRow + control pair). Only rendered
                     // while seerr-enabled.
-                    if AppState.settings-seerr-enabled: Rectangle {
+                    if AppState.settings-row-shown("integrations.seerr_connect"): Rectangle {
                             border-radius: Theme.radius;
                             background: AppState.settings-focused == "integrations.seerr_connect" ? Theme.accent-muted
                                 : (int-connect-ta.has-hover ? Theme.surface : transparent);
@@ -1731,7 +1732,7 @@ export component SettingsScreen inherits Rectangle {
                     // font above — fetched from Seerr instead of fc-list,
                     // once per connection rather than at startup; only
                     // reachable/rendered while connected)
-                    if AppState.seerr-connected: SettingsRow {
+                    if AppState.settings-row-shown("integrations.streaming_region"): SettingsRow {
                             key: "integrations.streaming_region";
                             title: "Streaming region";
                             subtitle: "Which region's providers show in \"Currently Streaming On\" on Discover";
@@ -1744,7 +1745,7 @@ export component SettingsScreen inherits Rectangle {
 
                         // Display Language: Seerr's default TMDB `language` for every Discover call (translated
                         // titles/overviews); Jellyfin library metadata follows Jellyfin's own library settings.
-                    if AppState.seerr-connected: SettingsRow {
+                    if AppState.settings-row-shown("integrations.display_language"): SettingsRow {
                             key: "integrations.display_language";
                             title: "Display language";
                             subtitle: "Language for Discover titles/overviews (independent of Jellyfin's own library language)";
@@ -1758,7 +1759,7 @@ export component SettingsScreen inherits Rectangle {
                         // Discover Language (dynamic dropdown, same shape) —
                     // filters Discover/trending/search results by TMDB
                     // original language.
-                    if AppState.seerr-connected: SettingsRow {
+                    if AppState.settings-row-shown("integrations.discover_language"): SettingsRow {
                             key: "integrations.discover_language";
                             title: "Discover language";
                             subtitle: "Filter Discover results by original language";
@@ -1774,7 +1775,7 @@ export component SettingsScreen inherits Rectangle {
                     // region list (settings-streaming-region-display) since
                     // both settings share one region catalog, just a
                     // different desc value.
-                    if AppState.seerr-connected: SettingsRow {
+                    if AppState.settings-row-shown("integrations.discover_region"): SettingsRow {
                             key: "integrations.discover_region";
                             title: "Discover region";
                             subtitle: "Which region's theatrical/digital/physical release dates show on Discover items";
@@ -1793,7 +1794,7 @@ export component SettingsScreen inherits Rectangle {
                     // separate from admin/MANAGE_REQUESTS, see
                     // seerr-can-manage-blocklist's own doc comment in
                     // app_state.slint.
-                    if AppState.seerr-connected && AppState.seerr-can-manage-blocklist: Rectangle {
+                    if AppState.settings-row-shown("integrations.manage_blocklist"): Rectangle {
                             border-radius: Theme.radius;
                             background: AppState.settings-focused == "integrations.manage_blocklist" ? Theme.accent-muted
                                 : (int-blocklist-ta.has-hover ? Theme.surface : transparent);
@@ -1860,7 +1861,7 @@ export component SettingsScreen inherits Rectangle {
 
                         // Only with NVDEC selected explicitly (works around NVDEC's stride corruption, see
                         // CLAUDE.md) — hidden for every other hwdec, including "auto".
-                    if AppState.settings-hwdec == "nvdec" || AppState.settings-hwdec == "nvdec-copy": SettingsRow {
+                    if AppState.settings-row-shown("video.vf"): SettingsRow {
                             key: "video.vf";
                             choice: true;
                             value: AppState.settings-vf;
@@ -1923,7 +1924,7 @@ export component SettingsScreen inherits Rectangle {
                             }
                         }
 
-                        if AppState.settings-interpolation: SettingsRow {
+                        if AppState.settings-row-shown("video.tscale"): SettingsRow {
                             key: "video.tscale";
                             choice: true;
                             value: AppState.settings-tscale;
@@ -1945,7 +1946,7 @@ export component SettingsScreen inherits Rectangle {
                             }
                         }
 
-                        if AppState.settings-video-sync == "display-resample": SettingsRow {
+                        if AppState.settings-row-shown("video.video_latency_hacks"): SettingsRow {
                             key: "video.video_latency_hacks";
                             title: "Video latency hacks";
                             subtitle: "Works around imprecise vsync timestamps (NVIDIA legacy on Wayland); breaks interpolation — only if you need it";
@@ -1961,7 +1962,7 @@ export component SettingsScreen inherits Rectangle {
                         }
 
                         // 10-bit video plane (2026-10-08) — same gate in settings::section_row_keys.
-                    if AppState.is-wayland && AppState.settings-separate-video-surface: SettingsRow {
+                    if AppState.settings-row-shown("video.video_own_buffers"): SettingsRow {
                             key: "video.video_own_buffers";
                             title: "Use Fjord's own 10-bit buffers";
                             subtitle: "10-bit video where the driver only offers 8-bit windows (e.g. NVIDIA); only helps if it then sends 10-bit. Applies after a restart";
