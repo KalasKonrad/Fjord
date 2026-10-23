@@ -28,7 +28,8 @@
 //     trickplay     get_trickplay_info (Items?Ids=&Fields=Trickplay), get_trickplay_tile
 //                   (GET /Videos/{id}/Trickplay/{width}/{index}.jpg?mediaSourceId=)
 //     user actions  mark_played, mark_unplayed, set_favorite, unset_favorite
-//     plugins       get_episode_timestamps (Intro Skipper v2+: intro + credits),
+//     plugins       get_episode_timestamps (GET /MediaSegments/{id}, 10.10+; else Intro Skipper's
+//                   /Episode/{id}/Timestamps — intro, credits, recap, preview, commercial),
 //                   get_next_up_for_series
 //     auth          logout (POST /Sessions/Logout — revokes this client's token), check_auth,
 //                   get_user_info (GET /Users/{id} — display name)
@@ -50,7 +51,8 @@ use tracing::{debug, warn};
 use url::Url;
 
 use crate::models::{
-    EpisodeTimestamps, ItemsResponse, MediaItem, PluginInfo, SystemInfo, TrickplayInfo, UserDto,
+    EpisodeTimestamps, ItemsResponse, MediaItem, MediaSegmentsResponse, PluginInfo, SystemInfo,
+    TrickplayInfo, UserDto,
 };
 
 #[derive(Clone)]
@@ -591,11 +593,15 @@ impl JellyfinClient {
         Ok(resp.items)
     }
 
-    /// All skippable-segment timestamps from the Intro Skipper v2+ plugin.
-    /// Single call to `GET /Episode/{id}/Timestamps`. Returns Ok(None) on 404
-    /// (plugin absent / episode not analyzed) AND on any other non-success
-    /// status (logged at warn level) — only transport errors bubble up.
+    /// An episode's skippable segments: Jellyfin's `GET /MediaSegments/{id}` first (10.10+ — where
+    /// Intro Skipper and other providers put them; Intro Skipper for Jellyfin 12 offers nothing
+    /// else), then Intro Skipper's own `GET /Episode/{id}/Timestamps` (Jellyfin 10.9, older plugin
+    /// versions). Ok(None) when neither has any: 404 (plugin absent / episode not analyzed) or
+    /// another non-success status (logged at warn) — only transport errors bubble up.
     pub async fn get_episode_timestamps(&self, item_id: &str) -> Result<Option<EpisodeTimestamps>> {
+        if let Some(ts) = self.get_media_segments(item_id).await? {
+            return Ok(Some(ts));
+        }
         let url = self.api_url(&format!("/Episode/{}/Timestamps", item_id))?;
         debug!("episode timestamps GET {}", url);
         let resp = self
@@ -619,6 +625,37 @@ impl JellyfinClient {
             return Ok(None);
         }
         Ok(Some(resp.json::<EpisodeTimestamps>().await?))
+    }
+
+    /// `GET /MediaSegments/{id}` as timestamps; None when the server has none usable, doesn't
+    /// know the route (before 10.10) or answers something else (logged) — the caller falls back.
+    async fn get_media_segments(&self, item_id: &str) -> Result<Option<EpisodeTimestamps>> {
+        let url = self.api_url(&format!("/MediaSegments/{item_id}"))?;
+        let resp = self
+            .http
+            .get(url.clone())
+            .header("Authorization", self.auth_header())
+            .send()
+            .await?;
+        let status = resp.status();
+        if !status.is_success() {
+            debug!("media segments HTTP {status}: {url}");
+            return Ok(None);
+        }
+        let segments = match resp.json::<MediaSegmentsResponse>().await {
+            Ok(r) => r.items,
+            Err(e) => {
+                warn!("media segments: unreadable answer for {item_id} — {e}");
+                return Ok(None);
+            }
+        };
+        let ts = EpisodeTimestamps::from_media_segments(&segments);
+        debug!(
+            "media segments: {} for {item_id}{}",
+            segments.len(),
+            if ts.is_none() { " — none usable" } else { "" }
+        );
+        Ok(ts)
     }
 
     pub async fn get_next_up_for_series(&self, series_id: &str) -> Result<Option<MediaItem>> {
