@@ -14,7 +14,8 @@
 //                       loading overlay only on an item_detail_cache miss; page shown after
 //                       spawn_main; spawns the DetailCtx tasks
 //   existing_detail_buttons / fix_trailer_focus  the header buttons Left/Right step through (Play,
-//                       Resume, Series →, Trailer when "ok", ♥, ✓ — must match detail.slint)
+//                       Resume, Series →, Trailer when "ok", ♥, ✓) — read from AppState.detail-buttons,
+//                       the list detail.slint mounts them by
 //   handle_key          rows: 0 header, 1 cast, 2 collection, 3 similar, 4 recommended (only
 //                       which row has focus — detail.slint scrolls to it from its real position)
 //   fetch_card_posters  async: parallel poster fetch for a slice of MediaItems → pixel buffers
@@ -716,20 +717,9 @@ pub(crate) fn open_detail(
 
 /// The header buttons Left/Right step through, in on-screen order (detail-focused-btn ids):
 /// 0 Play, 1 Resume, 2 Series →, 6 Trailer (only when "ok" — greyed isn't a stop), 3 ♥,
-/// 4 ✓. Must match detail.slint's `if` conditions.
+/// 4 ✓ — AppState.detail-buttons, built from the conditions detail.slint mounts them by.
 fn existing_detail_buttons(g: &AppState) -> Vec<i32> {
-    let mut v = vec![0];
-    if g.get_detail_can_resume() {
-        v.push(1);
-    }
-    if !g.get_detail_series_id().is_empty() {
-        v.push(2);
-    }
-    if g.get_detail_trailer_state() == "ok" {
-        v.push(6);
-    }
-    v.extend([3, 4]);
-    v
+    crate::keys::stops(&g.get_detail_buttons())
 }
 
 /// The Trailer button stopped being a D-pad stop (checking again / none): move focus to the
@@ -981,10 +971,10 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
                             g.set_detail_recommended(ModelRc::new(VecModel::<CardItem>::default()));
                             g.invoke_close_detail();
                         }
-                        1 if g.get_detail_can_resume() => {
+                        1 if g.get_detail_btn_resume() => {
                             g.invoke_resume_detail();
                         }
-                        2 if !g.get_detail_series_id().is_empty() => {
+                        2 if g.get_detail_btn_series() => {
                             let sid = g.get_detail_series_id().to_string();
                             g.set_detail_focused_row(0);
                             g.set_detail_cast_focused(-1);
@@ -1005,7 +995,7 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
                         5 => {
                             g.set_detail_overview_expanded(!g.get_detail_overview_expanded());
                         }
-                        6 if g.get_detail_trailer_state() == "ok" => {
+                        6 if g.get_detail_btn_trailer_stop() => {
                             g.invoke_play_detail_trailer();
                         }
                         _ => {
@@ -1335,5 +1325,34 @@ pub(crate) fn wire_detail_toggles(
                 });
             });
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The header's D-pad stops follow the same conditions detail.slint shows the buttons by.
+    #[test]
+    fn header_stops_follow_the_shown_buttons() {
+        i_slint_backend_testing::init_no_event_loop();
+        let w = crate::MainWindow::new().unwrap();
+        let g = AppState::get(&w);
+        assert_eq!(existing_detail_buttons(&g), vec![0, 3, 4]);
+        g.set_detail_can_resume(true);
+        g.set_detail_series_id("s".into());
+        assert_eq!(existing_detail_buttons(&g), vec![0, 1, 2, 3, 4]);
+        // A trailer being checked is shown greyed (with yt-dlp) but isn't a stop; "ok" is.
+        g.set_yt_dlp_available(true);
+        g.set_detail_trailer_state("checking".into());
+        assert!(g.get_detail_btn_trailer_shown() && !g.get_detail_btn_trailer_stop());
+        assert_eq!(existing_detail_buttons(&g), vec![0, 1, 2, 3, 4]);
+        g.set_detail_trailer_state("ok".into());
+        assert_eq!(existing_detail_buttons(&g), vec![0, 1, 2, 6, 3, 4]);
+        // Focus on the Trailer when it stops being a stop → the button before it.
+        g.set_detail_focused_btn(6);
+        g.set_detail_trailer_state("none".into());
+        fix_trailer_focus(&g);
+        assert_eq!(g.get_detail_focused_btn(), 2);
     }
 }

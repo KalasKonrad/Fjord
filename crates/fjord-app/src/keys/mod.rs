@@ -19,6 +19,7 @@
 //                kb-activate-pulse) → GLOBAL_SHORTCUTS (global.rs — Ctrl+Q, F, R, N, q, m, music,
 //                bar focus; excluding overlay/detail modes) → active_mode() → per-screen handler
 //                (context_menu, series, season, detail, browse, discover…, settings::dispatch_settings)
+//   stops        a page's [ZoneSlot] list (app_state.slint) → the ids the keys stop at
 //   caret_key    Left/Right/Home/End/Delete → text_field caret for the drawn fields (Discover/
 //                Browse/Library search, playlist name — Right still creates at the end — and the
 //                Bonfire join code)
@@ -424,6 +425,13 @@ pub(crate) fn handle_key(
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+/// The ids of a page's D-pad list (an AppState `[ZoneSlot]`, built in app_state.slint from the
+/// conditions the page mounts its elements by) where the keys stop now, in on-screen order.
+pub(crate) fn stops(slots: &slint::ModelRc<crate::ZoneSlot>) -> Vec<i32> {
+    use slint::Model;
+    slots.iter().filter(|s| s.stop).map(|s| s.id).collect()
+}
 
 // Returns the sort-bar cursor position that lands on the currently active sort pill.
 // For Music (nav=4) view pills occupy cursor 0-1, so sort pills start at offset 2.

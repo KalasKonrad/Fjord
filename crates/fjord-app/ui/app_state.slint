@@ -62,7 +62,8 @@
 //   Detail page           detail-id/-item-type/-resume-secs/-title/-tagline/-studio/-is-favorite/-has-played,
 //                         detail-focused-row/-btn, detail-cast/-similar/-collection/-recommended (+ -focused),
 //                         detail-series-id, detail-scroll, detail-ends-at, detail-trailer-state/-url +
-//                         play-detail-trailer, …
+//                         play-detail-trailer, detail-btn-* + detail-buttons ([ZoneSlot], the header
+//                         buttons' one list — detail.slint mounts by it, detail.rs walks it), …
 //   Series / season       series-id, seasons, episode-cards, poster, backdrop, tagline, studio, is-favorite,
 //                         meta/genres/rating-label, next-up card, cast, similar, series-recommended,
 //                         series-missing-seasons (+ -focused), series-trailer-state/-url +
@@ -170,6 +171,7 @@ import {
     DashRowItem,
     DashRow,
     MenuRow,
+    ZoneSlot,
     HeroInfo,
 } from "theme.slint";
 import { StandardListView } from "std-widgets.slint";
@@ -901,6 +903,21 @@ export global AppState {
     in-out property <image> detail-backdrop;
     in-out property <bool> detail-has-backdrop: false;
     in-out property <bool> detail-can-resume:   false;
+    // The header buttons, each condition once: detail.slint mounts them by these, detail.rs's keys
+    // walk detail-buttons (on-screen order). The Trailer is shown greyed while checking / when none
+    // plays (hidden without yt-dlp unless a trailer file on the server is "ok") and a stop only "ok".
+    out property <bool> detail-btn-resume: detail-can-resume;
+    out property <bool> detail-btn-series: detail-series-id != "";
+    out property <bool> detail-btn-trailer-shown: detail-trailer-state != "" && (yt-dlp-available || detail-trailer-state == "ok");
+    out property <bool> detail-btn-trailer-stop: detail-trailer-state == "ok";
+    out property <[ZoneSlot]> detail-buttons: [
+        { id: 0, stop: true },
+        { id: 1, stop: detail-btn-resume },
+        { id: 2, stop: detail-btn-series },
+        { id: 6, stop: detail-btn-trailer-stop },
+        { id: 3, stop: true },
+        { id: 4, stop: true },
+    ];
     in-out property <string> detail-resume-label: "";
     in-out property <string> detail-ends-at:      "";  // "HH:MM" wall-clock time playback ends; shown below buttons
     in-out property <bool> detail-is-favorite:  false;

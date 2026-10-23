@@ -4,6 +4,7 @@
 //   Structs shared between Rust and Slint (one line each; details on the struct):
 //   DashRow         one dashboard row (title, cards, discover) — AppState.*-rows
 //   MenuRow         one context-menu row (id, icon, icon-font, label) — context_menu.rs menu_rows
+//   ZoneSlot        one element of a page's D-pad list (id, stop) — AppState.*-buttons / *-zones
 //   DashRowItem     one row in the Dashboard rows editor (title, shown)
 //   HeroInfo        the dashboard hero's content (title, meta, rating, overview, backdrop/cover)
 //   VideoRect       a video spot's logical position/size (HDR Stage 5)
@@ -123,6 +124,14 @@ export struct MenuRow {
     icon: string,
     icon-font: string,
     label: string,
+}
+
+// One element of a page's D-pad list (AppState's *-buttons / *-zones): its id (the page's focus
+// value) and whether the keys stop there now. Each list is built in app_state.slint from the same
+// named conditions the page mounts its elements by — the keys (Rust) only read it.
+export struct ZoneSlot {
+    id: int,
+    stop: bool,
 }
 
 export struct DashRowItem {
