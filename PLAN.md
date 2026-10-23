@@ -57,7 +57,7 @@ A small release: bug fixes, polish, minor features. Released per CLAUDE.md → R
 **Check an item off only once it has been clicked through on real hardware** — a clean build/clippy/test says nothing about whether it works. Add a line here the moment something ships "not live-tested". Ticked items are removed at the next cleanup; their story lives in `DEVLOG.md`.
 
 ### 0.5.1
-Nothing waiting for a live test.
+- [ ] **Frame stats: playing and paused apart (2026-10-23).** HTPC, any video with a pause of a minute or more, then Stop: the log's `video backplane: this player drew N frame(s) playing — our overhead over 4 ms on … — and M paused — over 4 ms on …` line. Tells whether the 4,400 slow frames of 2026-10-23 (vs 5–169 before) came from the 4-minute pause. Nothing to see on screen.
 
 ---
 

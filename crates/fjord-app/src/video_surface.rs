@@ -37,7 +37,8 @@
 //   render_frame         one frame: fill + video in the spot, then commit
 //   free_render_ctx      frees a player's render context with our context
 //                        current (mpv requires it), logs the player's frame
-//                        stats, then drops a broken plane
+//                        stats (playing and paused frames apart — Overhead),
+//                        then drops a broken plane
 //   mark_broken          stop using it after an error mid-item (kept alive
 //                        until its render context is freed)
 //   idle_fill            repaint the plain background once after a stop
@@ -227,11 +228,13 @@ pub(crate) enum FrameOutcome {
 /// into an offscreen buffer that's blitted into `rect` over a `fill`-coloured
 /// background; then commit (in sync mode it lands with Slint's next commit).
 /// `rect` = [x, y, w, h] in physical px, top-left origin (to_buffer_rect).
+/// `paused`: the player is paused — its frame times are counted apart.
 pub(crate) fn render_frame(
     phys: (u32, u32),
     scale: f32,
     rect: [i32; 4],
     fill: [f32; 3],
+    paused: bool,
     render: impl FnOnce(Target) -> bool,
 ) -> Result<FrameOutcome> {
     BACKPLANE.with(|slot| {
@@ -239,7 +242,7 @@ pub(crate) fn render_frame(
         let Slot::Ready(bp) = &mut *slot else {
             return Ok(FrameOutcome::Unusable);
         };
-        bp.render(phys, scale, rect, fill, render)
+        bp.render(phys, scale, rect, fill, paused, render)
     })
 }
 
@@ -268,10 +271,12 @@ pub(crate) fn free_render_ctx(ctx: MpvRenderCtx) {
                 } else {
                     String::new()
                 };
+                let (run, pause) = (st.playing, st.paused);
                 info!(
-                    "video backplane: this player drew {} frame(s); our overhead over 4 ms on {} (slowest {:.1} ms), \
-                     slowest mpv render call {:.1} ms{own}; render context freed",
-                    st.frames, st.slow_overhead, st.max_overhead_ms, st.max_mpv_ms,
+                    "video backplane: this player drew {} frame(s) playing — our overhead over 4 ms on {} \
+                     (slowest {:.1} ms) — and {} paused — over 4 ms on {} (slowest {:.1} ms); slowest mpv \
+                     render call {:.1} ms{own}; render context freed",
+                    run.frames, run.slow, run.max_ms, pause.frames, pause.slow, pause.max_ms, st.max_mpv_ms,
                 );
             }
             _ => {
@@ -918,6 +923,7 @@ impl Backplane {
         scale: f32,
         rect: [i32; 4],
         fill: [f32; 3],
+        paused: bool,
         render: impl FnOnce(Target) -> bool,
     ) -> Result<FrameOutcome> {
         self.resize(phys, scale)?;
@@ -1027,11 +1033,11 @@ impl Backplane {
         self.dirty = true;
         let overhead = started.elapsed().as_secs_f64() * 1000.0 - mpv_ms;
         let st = &mut self.stats;
-        st.frames += 1;
-        if overhead > 4.0 {
-            st.slow_overhead += 1;
+        if paused {
+            st.paused.add(overhead);
+        } else {
+            st.playing.add(overhead);
         }
-        st.max_overhead_ms = st.max_overhead_ms.max(overhead);
         st.max_mpv_ms = st.max_mpv_ms.max(mpv_ms);
         if let Some(g) = gpu_ms {
             if g > 4.0 {
@@ -1482,14 +1488,35 @@ fn logical_size(phys: (u32, u32), scale: f32) -> (i32, i32) {
 
 #[derive(Debug, Clone, Copy, Default)]
 struct FrameStats {
-    frames: u64,
-    slow_overhead: u64,
-    max_overhead_ms: f64,
+    /// Our overhead while the video plays and while it's paused, apart: a paused player is still
+    /// drawn with Slint's redraws (~20 a second on the HTPC), so a long pause shouldn't read as
+    /// slow playback.
+    playing: Overhead,
+    paused: Overhead,
     max_mpv_ms: f64,
     /// Own buffers: glFinish waits over 4 ms, the slowest, frames skipped.
     slow_gpu_wait: u64,
     max_gpu_wait_ms: f64,
     skipped: u64,
+}
+
+/// Our overhead (everything but mpv's render call) over a run of frames.
+#[derive(Debug, Clone, Copy, Default)]
+struct Overhead {
+    frames: u64,
+    /// Frames over 4 ms.
+    slow: u64,
+    max_ms: f64,
+}
+
+impl Overhead {
+    fn add(&mut self, ms: f64) {
+        self.frames += 1;
+        if ms > 4.0 {
+            self.slow += 1;
+        }
+        self.max_ms = self.max_ms.max(ms);
+    }
 }
 
 /// The window background as the subsurface must fill it while it's tagged
