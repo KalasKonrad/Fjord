@@ -1,0 +1,974 @@
+// ── fjord-app · player_bars.slint ────────────────────────────────────────────
+//   StatRow            one label + value line of the playback stats overlay (player.slint)
+//   MiniPlayerBar      bottom bar for background video: 108px with a live thumbnail (a VideoSpot on the
+//                      separate surface), 56px when the video is behind the UI; float-card-focused
+//   VideoSpot          reports its absolute rect into AppState.video-rect-* (separate video surface)
+//   MusicPlayerBar     72px bottom bar while audio plays: art + title/artist·quality (left zone
+//                      280px × text-scale; the quality follows the artist, or stands alone),
+//                      ⏮ ⏯ ⏭ (⏯ filled) above the progress bar, then Shuffle/Repeat/Queue/Lyrics/
+//                      volume/⏹/☾ (vertically centred, the glow's reach of room at the right edge);
+//                      the art + title zone slides up-right by the glow's reach while focused (out of
+//                      the screen corner, so its glow shows all round); focus from AppState.bar-focused(n)
+//                      (slots fixed per button; keys/global.rs BAR_ORDER = the visual order)
+//                      (the bars' elements are `in-bar` / bar-ring-width: they stay lit while the
+//                      rest of the window hides its focus, AppState.bar-focus)
+//   QueuePanel         right-side queue overlay ("Queue N of M", Clear All → ConfirmDialog)
+//   LyricsView         lyrics overlay, active line highlighted and kept in view
+// ─────────────────────────────────────────────────────────────────────────────
+import { Theme } from "theme.slint";
+import { AppState } from "app_state.slint";
+import { ConfirmDialog, FjordButton, IconCircleButton } from "buttons.slint";
+import { FocusHalo, PressPulse } from "focus.slint";
+
+// ── VideoSpot (HDR Stage 5) ─────────────────────────────────────────────────
+// Marks where the video belongs while it's drawn on the subsurface below the
+// window (video_surface.rs): reports this element's absolute position and
+// size into AppState.video-rect-<which>. Draws nothing, takes no input.
+// Mirrors into local properties so `changed` can watch them (Slint only
+// watches the current component's own properties), using root.* geometry.
+export component VideoSpot {
+    in property <int> which; // 0 = PlayerScreen, 1 = video-behind-menus layer, 2 = mini-player thumbnail
+    property <length> ax: root.absolute-position.x;
+    property <length> ay: root.absolute-position.y;
+    property <length> aw: root.width;
+    property <length> ah: root.height;
+    function report() {
+        if root.which == 0 {
+            AppState.video-rect-player = { x: root.ax, y: root.ay, w: root.aw, h: root.ah };
+        } else if root.which == 1 {
+            AppState.video-rect-bg = { x: root.ax, y: root.ay, w: root.aw, h: root.ah };
+        } else {
+            AppState.video-rect-thumb = { x: root.ax, y: root.ay, w: root.aw, h: root.ah };
+        }
+    }
+    init => { root.report(); }
+    changed ax => { root.report(); }
+    changed ay => { root.report(); }
+    changed aw => { root.report(); }
+    changed ah => { root.report(); }
+}
+
+// ── Mini-player bar ───────────────────────────────────────────────────────────
+// Full-width bar docked at the bottom by MainWindow, above the music bar.
+// Mode 3 (!video-behind-ui): 108px — live video (192×108, 16:9) + title + Resume/Stop.
+// Mode 2 (video-behind-ui):   56px — compact bar (no thumbnail; video fills window) + title + Resume/Stop.
+// float-card-focused: -1=not focused, 0=Resume, 1=Stop. Down past a screen's last row
+// focuses it (keys::focus_bar_on_down).
+export component MiniPlayerBar inherits Rectangle {
+    height: AppState.video-behind-ui ? 56px : 108px;
+    // HDR Stage 5: with the video on the subsurface, the bar must not paint
+    // under the thumbnail — its colour goes behind the info part only.
+    background: AppState.video-surface-active && !AppState.video-behind-ui ? transparent : Theme.surface-raised;
+    if AppState.video-surface-active && !AppState.video-behind-ui: Rectangle {
+        x: 192px;
+        y: 0;
+        width: root.width - 192px;
+        height: root.height;
+        background: Theme.surface-raised;
+    }
+
+    // Focus ring
+    if AppState.float-card-active: Rectangle {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.height;
+        border-width: AppState.bar-ring-width(true, false);
+        border-color: AppState.focus-color;
+        border-radius: 0px;
+        background: transparent;
+        FocusHalo {
+            glowing: true;
+            radius: 0px;
+            in-bar: true;
+        }
+    }
+
+    // ── Mode 3: live video + info ─────────────────────────────────────────────
+    if !AppState.video-behind-ui: HorizontalLayout {
+        Rectangle {
+            width: 192px;
+            background: AppState.video-surface-active ? transparent : #000000;
+            clip: true;
+            Image {
+                source: AppState.video-frame;
+                width: parent.width;
+                height: parent.height;
+                image-fit: contain;
+                visible: !AppState.video-surface-active;
+            }
+
+            VideoSpot {
+                which: 2;
+                x: 0;
+                y: 0;
+                width: parent.width;
+                height: parent.height;
+            }
+        }
+
+        VerticalLayout {
+            padding: 12px;
+            spacing: 5px;
+            alignment: center;
+            Text {
+                text: "NOW PLAYING";
+                color: Theme.accent;
+                font-size: 9px * AppState.text-scale;
+                font-weight: 700;
+            }
+
+            Text {
+                text: AppState.playing-title;
+                color: Theme.text;
+                font-size: 13px * AppState.text-scale;
+                overflow: elide;
+            }
+
+            HorizontalLayout {
+                spacing: 6px;
+                alignment: start;
+                FjordButton {
+                    icon-left: "▶";
+                    text: "Resume";
+                    height: 28px;
+                    width: 120px * AppState.text-scale;
+                    kbd-focused: AppState.float-focused(0);
+                    in-bar: true;
+                    clicked => { AppState.float-card-focused = -1; AppState.resume-player(); }
+                }
+
+                FjordButton {
+                    icon-left: "■";
+                    text: "Stop";
+                    height: 28px;
+                    width: 80px * AppState.text-scale;
+                    danger: true;
+                    kbd-focused: AppState.float-focused(1);
+                    in-bar: true;
+                    clicked => { AppState.float-card-focused = -1; AppState.stop-playback(); }
+                }
+            }
+        }
+    }
+
+    // ── Mode 2: compact 56px bar (video fills window; no thumbnail needed) ────
+    if AppState.video-behind-ui: HorizontalLayout {
+        padding: 12px;
+        spacing: 8px;
+        VerticalLayout {
+            alignment: center;
+            spacing: 3px;
+            horizontal-stretch: 1;
+            Text {
+                text: "NOW PLAYING";
+                color: Theme.accent;
+                font-size: 9px * AppState.text-scale;
+                font-weight: 700;
+            }
+
+            Text {
+                text: AppState.playing-title;
+                color: Theme.text;
+                font-size: 13px * AppState.text-scale;
+                overflow: elide;
+            }
+        }
+
+        HorizontalLayout {
+            spacing: 6px;
+            alignment: end;
+            FjordButton {
+                icon-left: "▶";
+                text: "Resume";
+                height: 28px;
+                width: 120px * AppState.text-scale;
+                kbd-focused: AppState.float-focused(0);
+                in-bar: true;
+                clicked => { AppState.float-card-focused = -1; AppState.resume-player(); }
+            }
+
+            FjordButton {
+                icon-left: "■";
+                text: "Stop";
+                height: 28px;
+                width: 80px * AppState.text-scale;
+                danger: true;
+                kbd-focused: AppState.float-focused(1);
+                in-bar: true;
+                clicked => { AppState.float-card-focused = -1; AppState.stop-playback(); }
+            }
+        }
+    }
+}
+
+// ── Music player bar ──────────────────────────────────────────────────────────
+export component MusicPlayerBar inherits Rectangle {
+    height: 72px;
+    background: Theme.surface-raised;
+    border-color: Theme.border;
+    border-width: 0px;
+
+    // Top border line
+    Rectangle {
+        y: 0;
+        height: 1px;
+        background: Theme.border;
+    }
+
+    HorizontalLayout {
+        padding: 0px;
+        spacing: 0px;
+
+        // ── Left zone: album art + title + artist ─────────────────────────────
+        ta-left := TouchArea {
+            // Grows with Settings → Interface → Text size (at 240px fixed, Large cut a title
+            // after ~15 characters).
+            width: 280px * AppState.text-scale;
+            mouse-cursor: MouseCursor.pointer;
+            // Drawn over the centre zone while lifted (below).
+            z: AppState.bar-focused(0) ? 1 : 0;
+            // Opens the fullscreen Now Playing screen — "Open Album" moved
+            // inside it (Phase 66).
+            clicked => { AppState.open-now-playing(); }
+
+            // The zone sits in the screen's bottom-left corner, where half its glow would fall off
+            // the screen: while it has keyboard focus it slides up and right by the glow's reach,
+            // so the glow shows on every side (no glow — the Line style — no move).
+            Rectangle {
+                x: AppState.bar-focused(0) ? AppState.glow-reach : 0px;
+                y: AppState.bar-focused(0) ? -AppState.glow-reach : 0px;
+                animate x, y {
+                    duration: 150ms * AppState.settings-animation-speed;
+                    easing: ease-out-expo;
+                }
+                border-radius: Theme.radius;
+                border-width: AppState.bar-ring-width(AppState.bar-focused(0), ta-left.pressed || left-pulse.pulsing);
+                border-color: AppState.focus-color;
+                background: ta-left.has-hover ? Theme.surface-overlay : transparent;
+                animate border-width {
+                    duration: 90ms * AppState.settings-animation-speed;
+                    easing: ease-out-expo;
+                }
+                FocusHalo {
+                    glowing: AppState.bar-focused(0);
+                    in-bar: true;
+                    radius: Theme.radius;
+                }
+
+                left-pulse := PressPulse {
+                    trigger: AppState.kb-activate-pulse;
+                    active: AppState.bar-focused(0);
+                }
+
+                HorizontalLayout {
+                    padding: 8px;
+                    spacing: 10px;
+                    alignment: center;
+
+                    // Album art 56×56
+                Rectangle {
+                        width: 56px;
+                        height: 56px;
+                        border-radius: Theme.radius;
+                        background: Theme.surface-overlay;
+                        clip: true;
+                        if AppState.music-bar-has-art: Image {
+                            width: parent.width;
+                            height: parent.height;
+                            image-fit: cover;
+                            source: AppState.music-bar-art;
+                        }
+                        if !AppState.music-bar-has-art: Text {
+                            text: "♫";
+                            font-family: "Noto Sans Symbols 2";
+                            color: Theme.text-subtle;
+                            font-size: 24px;
+                            vertical-alignment: center;
+                            horizontal-alignment: center;
+                            width: parent.width;
+                            height: parent.height;
+                        }
+                    }
+
+                    VerticalLayout {
+                        alignment: center;
+                        spacing: 3px;
+                        horizontal-stretch: 1;
+                        Text {
+                            text: AppState.music-bar-title;
+                            color: Theme.text;
+                            font-size: 13px * AppState.text-scale;
+                            font-weight: 600;
+                            overflow: elide;
+                        }
+
+                        // Artist, then the song's format/quality right after it — at the left
+                        // when there's no artist (a stretching empty artist pushed it to the far
+                        // right). Only the artist shortens (elides) when the line is too narrow.
+                        HorizontalLayout {
+                            spacing: 8px;
+                            alignment: start;
+                            if AppState.music-bar-artist != "": Text {
+                                text: AppState.music-bar-artist;
+                                color: Theme.text-muted;
+                                font-size: 12px * AppState.text-scale;
+                                overflow: elide;
+                            }
+
+                            if AppState.music-bar-quality != "": Text {
+                                text: AppState.music-bar-quality;
+                                color: Theme.text-subtle;
+                                font-size: 11px * AppState.text-scale;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+                }
+            } // Rectangle (focus border)
+        }
+
+        // ── Centre zone: transport + progress + time ──────────────────────────
+        VerticalLayout {
+            horizontal-stretch: 1;
+            padding-top: 8px;
+            padding-bottom: 8px;
+            spacing: 4px;
+            alignment: center;
+
+            // Transport: ⏮ ⏯ ⏭ together, play/pause filled (bar slots 4, 1, 5 — keys/global.rs
+            // walks BAR_ORDER). 32/36/32px keep the bar at 72px; the small ones centred on ⏯.
+            HorizontalLayout {
+                alignment: center;
+                spacing: 14px;
+                VerticalLayout {
+                    alignment: center;
+                    IconCircleButton {
+                        size: 32px;
+                        icon: "⏮";
+                        kbd-focused: AppState.bar-focused(4);
+                        in-bar: true;
+                        clicked => {
+                            AppState.queue-prev-track();
+                        }
+                    }
+                }
+
+                IconCircleButton {
+                    size: 36px;
+                    icon: AppState.music-bar-paused ? "▶" : "⏸";
+                    active: true;
+                    kbd-focused: AppState.bar-focused(1);
+                    in-bar: true;
+                    clicked => {
+                        AppState.music-bar-play-pause();
+                    }
+                }
+
+                VerticalLayout {
+                    alignment: center;
+                    IconCircleButton {
+                        size: 32px;
+                        icon: "⏭";
+                        kbd-focused: AppState.bar-focused(5);
+                        in-bar: true;
+                        clicked => {
+                            AppState.queue-next-track();
+                        }
+                    }
+                }
+            }
+
+            // Progress bar + time
+            HorizontalLayout {
+                spacing: 8px;
+
+                Text {
+                    text: AppState.music-bar-elapsed;
+                    color: Theme.text-muted;
+                    font-size: 11px * AppState.text-scale;
+                    width: 36px * AppState.text-scale;
+                    horizontal-alignment: right;
+                    vertical-alignment: center;
+                }
+
+                // Seek bar
+                progress-ta := TouchArea {
+                    horizontal-stretch: 1;
+                    height: 16px;
+                    mouse-cursor: MouseCursor.pointer;
+                    clicked => {
+                        AppState.music-bar-seek(self.mouse-x / self.width);
+                    }
+                    // Track — thicker + brighter when keyboard-focused (slot 3)
+                    property <bool> tl-focused: AppState.bar-focused(3);
+                    Rectangle {
+                        x: 0;
+                        width: parent.width;
+                        y: (parent.height - (parent.tl-focused ? 5px : 3px)) / 2;
+                        height: parent.tl-focused ? 5px : 3px;
+                        border-radius: parent.tl-focused ? 2.5px : 1.5px;
+                        background: parent.tl-focused ? Theme.accent-muted : Theme.surface-overlay;
+
+                        // Filled portion
+                        Rectangle {
+                            x: 0;
+                            width: parent.width * AppState.music-bar-pos;
+                            height: parent.height;
+                            border-radius: parent.border-radius;
+                            background: Theme.accent;
+                        }
+                    }
+                }
+
+                Text {
+                    text: AppState.music-bar-total;
+                    color: Theme.text-muted;
+                    font-size: 11px * AppState.text-scale;
+                    width: 36px * AppState.text-scale;
+                    horizontal-alignment: left;
+                    vertical-alignment: center;
+                }
+            }
+        }
+
+        // ── Right zone: ⇌Shuffle/↺Repeat/⋮Queue/♪Lyrics(cond.)/🔉/🔊/⏹Stop/☾Screensaver(cond.) ──
+        // All IconCircleButton (38px). The width fits the worst case: 8 × 38px + 7 × 8px gaps =
+        // 360px — keep it in sync with the icon count, or the last buttons get clipped at the
+        // window edge (⏮ ⏭ moved to the centre with ⏯, 2026-10-21). The VerticalLayout
+        // centres the row: a HorizontalLayout puts fixed-height children at its top (they sat
+        // on the bar's top edge, the focused one's glow cut off there).
+        // Plus the glow's reach of room at the screen's right edge, so the last button's glow
+        // shows on that side too.
+        VerticalLayout {
+            width: 360px + AppState.glow-reach;
+            padding-right: AppState.glow-reach;
+            alignment: center;
+            HorizontalLayout {
+                alignment: center;
+                spacing: 8px;
+
+                IconCircleButton {
+                    icon: "⇌";
+                    active: AppState.queue-shuffle;
+                    kbd-focused: AppState.bar-focused(6);
+                    in-bar: true;
+                    clicked => { AppState.toggle-shuffle(); }
+                }
+
+                IconCircleButton {
+                    icon: AppState.queue-repeat-mode == 2 ? "↺¹" : "↺";
+                    active: AppState.queue-repeat-mode > 0;
+                    kbd-focused: AppState.bar-focused(7);
+                    in-bar: true;
+                    clicked => { AppState.cycle-repeat(); }
+                }
+
+                IconCircleButton {
+                    icon: "⋮";
+                    active: AppState.show-queue-panel;
+                    kbd-focused: AppState.bar-focused(8);
+                    in-bar: true;
+                    clicked => { AppState.open-queue-panel(); }
+                }
+
+                if AppState.lyrics-available: IconCircleButton {
+                    icon: "♪";
+                    active: AppState.show-lyrics;
+                    kbd-focused: AppState.bar-focused(9);
+                    in-bar: true;
+                    clicked => { AppState.toggle-lyrics(); }
+                }
+                IconCircleButton {
+                    icon: "🔉";
+                    kbd-focused: AppState.bar-focused(10);
+                    in-bar: true;
+                    clicked => { AppState.volume-down(); }
+                }
+
+                IconCircleButton {
+                    icon: "🔊";
+                    kbd-focused: AppState.bar-focused(11);
+                    in-bar: true;
+                    clicked => { AppState.volume-up(); }
+                }
+
+                IconCircleButton {
+                    icon: "⏹";
+                    kbd-focused: AppState.bar-focused(2);
+                    in-bar: true;
+                    clicked => { AppState.music-bar-stop(); }
+                }
+
+                // Screensaver (screensaver.rs): lit while it will come on; Enter/click turns it off for
+            // this playback (and back on). Only when Settings → Audio has a time set.
+            if AppState.screensaver-enabled: IconCircleButton {
+                    icon: "☾";
+                    active: !AppState.screensaver-paused;
+                    kbd-focused: AppState.bar-focused(12);
+                    in-bar: true;
+                    clicked => { AppState.toggle-screensaver(); }
+                }
+            }
+        }
+    }
+}
+
+// ── Queue panel ───────────────────────────────────────────────────────────────
+// Right-side overlay: header "Queue N of M" + "Clear All" + scrollable playlist; the
+// current item has an accent background and bold title. Keys: Up/Down navigate, Enter
+// jumps to the item, Delete/Back close. "Clear All" opens a ConfirmDialog
+// (show-queue-clear-confirm), declared last so it's on top; dispatch in
+// keys::handle_key_queue_panel.
+export component QueuePanel inherits Rectangle {
+    // Dim overlay behind the panel
+    background: Theme.scrim;
+
+    TouchArea {
+        // Click outside the panel closes it
+        width: parent.width - 400px * AppState.text-scale;
+        height: parent.height;
+        x: 0;
+        y: 0;
+        clicked => { AppState.show-queue-panel = false; }
+    }
+
+    // Panel body
+    panel := Rectangle {
+        x: parent.width - 400px;
+        y: 0;
+        width: 400px * AppState.text-scale;
+        height: parent.height;
+        background: Theme.surface;
+        border-width: 1px;
+        border-color: Theme.border;
+        clip: true;
+
+        VerticalLayout {
+            padding: 0px;
+            spacing: 0px;
+
+            // ── Header ────────────────────────────────────────────────────────
+            header := Rectangle {
+                height: 56px;
+                background: Theme.surface-raised;
+                border-width: 0px;
+
+                HorizontalLayout {
+                    padding-left: 16px;
+                    padding-right: 12px;
+                    alignment: space-between;
+                    spacing: 0px;
+
+                    Text {
+                        text: {
+                            let n = AppState.queue-items.length;
+                            let c = AppState.queue-panel-cursor;
+                            "Queue — " + (max(c, 0) + 1) + " of " + n
+                        }
+                        color: Theme.text;
+                        font-size: 15px * AppState.text-scale;
+                        font-weight: 600;
+                        vertical-alignment: center;
+                        height: parent.height;
+                    }
+
+                    ta-clear := TouchArea {
+                        width: 72px * AppState.text-scale;
+                        height: parent.height;
+                        mouse-cursor: MouseCursor.pointer;
+                        // Confirmation dialog, 2026-08-22 — see show-queue-
+                        // clear-confirm's own doc comment in app_state.slint.
+                        clicked => {
+                            AppState.queue-panel-cursor = -1;
+                            AppState.queue-clear-confirm-focused = 0;
+                            AppState.show-queue-clear-confirm = true;
+                        }
+                        Text {
+                            // Keyboard focus: Up from the top row lands here (cursor -1)
+                            text: "Clear All";
+                            color: {
+                                let hov = ta-clear.has-hover;
+                                AppState.queue-panel-cursor == -1 ? Theme.accent
+                                    : hov ? Theme.accent : Theme.text-muted
+                            };
+                            font-size: 13px * AppState.text-scale;
+                            font-weight: AppState.queue-panel-cursor == -1 ? 700 : 400;
+                            vertical-alignment: center;
+                            horizontal-alignment: right;
+                            width: parent.width;
+                            height: parent.height;
+                        }
+                        // Press feedback: underline only, text itself untouched.
+                        Rectangle {
+                            x: 0;
+                            y: parent.height - 3px;
+                            width: parent.width;
+                            height: (ta-clear.pressed || clear-pulse.pulsing) ? 3px : 0px;
+                            background: Theme.accent;
+                            animate height {
+                                duration: 90ms * AppState.settings-animation-speed;
+                                easing: ease-out-expo;
+                            }
+                        }
+
+                        clear-pulse := PressPulse {
+                            trigger: AppState.kb-activate-pulse;
+                            active: AppState.queue-panel-cursor == -1;
+                        }
+                    }
+                }
+
+                // Bottom border
+                Rectangle {
+                    x: 0;
+                    y: parent.height - 1px;
+                    width: parent.width;
+                    height: 1px;
+                    background: Theme.border;
+                }
+            }
+
+            // ── Scrollable list ───────────────────────────────────────────────
+            list-area := Rectangle {
+                height: parent.height - header.height;
+                clip: true;
+
+                fl := Flickable {
+                    width: parent.width;
+                    height: parent.height;
+                    content-height: max(parent.height, list.preferred-height);
+
+                    property <length> kb-y: clamp(
+                        -(AppState.queue-panel-cursor * 56px) + parent.height / 2 - 28px,
+                        min(0px, parent.height - list.preferred-height),
+                        0px);
+                    changed kb-y => { fl.content-y = kb-y; }
+
+                    list := VerticalLayout {
+                        alignment: start;
+                        spacing: 0px;
+                        padding: 0px;
+
+                        for entry[i] in AppState.queue-items: row-ta := TouchArea {
+                            height: 56px;
+                            mouse-cursor: MouseCursor.pointer;
+                            double-clicked => { AppState.queue-jump(entry.index); }
+                            clicked => { AppState.queue-panel-cursor = i; }
+
+                            Rectangle {
+                                height: parent.height;
+                                background: entry.is-current ? #ffffff14
+                                    : i == AppState.queue-panel-cursor ? Theme.surface-overlay
+                                    : row-ta.has-hover ? #ffffff08
+                                    : transparent;
+                                border-width: AppState.ring-width(row-pulse.active, row-ta.pressed || row-pulse.pulsing);
+                                border-color: AppState.focus-color;
+                                animate border-width {
+                                    duration: 90ms * AppState.settings-animation-speed;
+                                    easing: ease-out-expo;
+                                }
+                                FocusHalo {
+                                    glowing: row-pulse.active;
+                                }
+
+                                row-pulse := PressPulse {
+                                    trigger: AppState.kb-activate-pulse;
+                                    active: i == AppState.queue-panel-cursor;
+                                }
+
+                                HorizontalLayout {
+                                    padding-left: 10px;
+                                    padding-right: 12px;
+                                    spacing: 10px;
+                                    alignment: center;
+
+                                    // Album art thumbnail (40×40)
+                                    Rectangle {
+                                        width: 40px;
+                                        height: 40px;
+                                        border-radius: Theme.radius;
+                                        background: Theme.surface-overlay;
+                                        clip: true;
+                                        if entry.has-poster: Image {
+                                            width: parent.width;
+                                            height: parent.height;
+                                            image-fit: cover;
+                                            source: entry.poster;
+                                        }
+                                        if !entry.has-poster: Text {
+                                            text: "♫";
+                                            font-family: "Noto Sans Symbols 2";
+                                            color: Theme.text-subtle;
+                                            font-size: 18px * AppState.text-scale;
+                                            vertical-alignment: center;
+                                            horizontal-alignment: center;
+                                            width: parent.width;
+                                            height: parent.height;
+                                        }
+                                    }
+
+                                    // Index number
+                                    Text {
+                                        text: i + 1;
+                                        color: entry.is-current ? Theme.accent : Theme.text-muted;
+                                        font-size: 12px * AppState.text-scale;
+                                        horizontal-alignment: right;
+                                        vertical-alignment: center;
+                                        width: 22px * AppState.text-scale;
+                                    }
+
+                                    // Title + artist column
+                                    VerticalLayout {
+                                        alignment: center;
+                                        spacing: 2px;
+                                        horizontal-stretch: 1;
+
+                                        Text {
+                                            text: entry.title;
+                                            color: entry.is-current ? Theme.accent : Theme.text;
+                                            font-size: 14px * AppState.text-scale;
+                                            font-weight: entry.is-current ? 700 : 400;
+                                            overflow: elide;
+                                        }
+
+                                        if entry.artist != "" || entry.is-queued: Text {
+                                            text: entry.is-queued
+                                                ? (entry.artist == "" ? "Queued" : entry.artist + "  ·  Queued")
+                                                : entry.artist;
+                                            color: entry.is-queued ? Theme.text-subtle : Theme.text-muted;
+                                            font-size: 12px * AppState.text-scale;
+                                            overflow: elide;
+                                        }
+                                    }
+                                }
+
+                                // Bottom separator (skip last row)
+                                if i < AppState.queue-items.length - 1: Rectangle {
+                                    x: 10px;
+                                    y: parent.height - 1px;
+                                    width: parent.width - 20px;
+                                    height: 1px;
+                                    background: Theme.border;
+                                }
+
+                                // Focused-row left accent stripe
+                                if i == AppState.queue-panel-cursor: Rectangle {
+                                    x: 0;
+                                    y: 0;
+                                    width: 3px;
+                                    height: parent.height;
+                                    background: Theme.accent;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if AppState.show-queue-clear-confirm: ConfirmDialog {
+        title: "Clear Queue?";
+        message: "Remove every upcoming track from the queue? This can't be undone.";
+        confirm-label: "Clear All";
+        focused: AppState.queue-clear-confirm-focused;
+        confirmed => {
+            AppState.queue-clear();
+            AppState.show-queue-clear-confirm = false;
+        }
+        cancelled => {
+            AppState.show-queue-clear-confirm = false;
+        }
+    }
+}
+
+// ── Lyrics view ───────────────────────────────────────────────────────────────
+// Full-width overlay that shows synced or unsynced lyrics.
+// Active line (lyrics-active-idx) is highlighted in accent; the view auto-scrolls
+// to keep it centred via the kb-y binding pattern.
+export component LyricsView inherits Rectangle {
+    background: Theme.scrim-solid;
+
+    // Click backdrop to dismiss
+    TouchArea {
+        width: parent.width;
+        height: parent.height;
+        clicked => { AppState.toggle-lyrics(); }
+    }
+
+    // Panel: full window width minus fixed side padding (was capped at a
+    // narrow fixed 600px, which left large empty margins on typical HTPC
+    // displays). No upper cap — each line is short and horizontally centred
+    // within the column rather than flowing to fill it, so there's no
+    // paragraph-readability reason to additionally cap the column itself on
+    // wide screens.
+    panel := Rectangle {
+        x: 80px;
+        y: 0;
+        width: parent.width - 160px;
+        height: parent.height;
+        background: transparent;
+
+        // kb-y + changed-handler (not a direct content-y binding) keeps
+        // native mouse-wheel scroll working alongside the auto-follow.
+        fl := Flickable {
+            width: parent.width;
+            height: parent.height;
+            content-height: max(parent.height, lyric-list.preferred-height);
+
+            property <length> kb-y: clamp(
+                -(AppState.lyrics-active-idx * 76px) + parent.height / 2 - 38px,
+                min(0px, parent.height - lyric-list.preferred-height),
+                0px);
+            changed kb-y => { fl.content-y = kb-y; }
+            animate content-y {
+                duration: 450ms * AppState.settings-scroll-speed;
+                easing: ease-in-out;
+            }
+
+            lyric-list := VerticalLayout {
+                alignment: start;
+                spacing: 0px;
+                padding: 32px;
+
+                // min-height (not a fixed height) lets a long line wrap to 2+ lines
+                // instead of being elided with "…" — Text's un-set height then
+                // reports its real wrapped size upward, and the TouchArea (having
+                // no height of its own) takes that size, floored at 76px so short
+                // lines keep the usual single-line row rhythm. `sizer` is an
+                // invisible probe always measured at the ACTIVE font/weight, so a
+                // row that would need 2 lines once highlighted reserves that
+                // height up front — without this, a line sitting at 1 line while
+                // small would suddenly grow the whole list by a row's height the
+                // instant it activates, on top of the font-size jump.
+                for line[i] in AppState.lyrics-lines: TouchArea {
+                    min-height: max(76px, sizer.preferred-height);
+                    clicked => { AppState.toggle-lyrics(); }
+                    sizer := Text {
+                        visible: false;
+                        height: 0px;
+                        text: line.text;
+                        font-size: 40px;
+                        font-weight: 700;
+                        width: parent.width;
+                        wrap: word-wrap;
+                    }
+
+                    Text {
+                        text: line.text;
+                        color: i == AppState.lyrics-active-idx ? Theme.accent
+                            : i == AppState.lyrics-active-idx + 1 || i == AppState.lyrics-active-idx - 1
+                            ? Theme.text-muted
+                            : Theme.text-subtle;
+                        font-size: i == AppState.lyrics-active-idx ? 40px : 24px;
+                        font-weight: i == AppState.lyrics-active-idx ? 700 : 400;
+                        horizontal-alignment: center;
+                        width: parent.width;
+                        // Can't bind height: parent.height here — parent (the
+                        // TouchArea) derives ITS height from `sizer`, not from
+                        // this Text, so that's not a cycle, but this Text's own
+                        // natural (unset) height is what lets a short line stay
+                        // short instead of stretching to fill the reserved row;
+                        // centre it manually within that taller row instead.
+                        y: (parent.height - self.height) / 2;
+                        wrap: word-wrap;
+                        animate color, font-size {
+                            duration: 350ms * AppState.settings-animation-speed;
+                            easing: ease-in-out;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ── Volume overlay ───────────────────────────────────────────────────────────
+// Top-center toast; shows level bar + %; auto-hides after 1.5 s (Rust-driven).
+// Was inline in player.slint (fullscreen video only) — shared here so the new
+// music-bar / Now Playing volume buttons get the same feedback.
+export component VolumeOverlay inherits Rectangle {
+    width: 220px;
+    height: 44px;
+    border-radius: Theme.radius;
+    background: Theme.osd-panel;
+    drop-shadow-blur: 10px;
+    drop-shadow-color: Theme.shadow-soft;
+
+    HorizontalLayout {
+        padding-left: 14px;
+        padding-right: 14px;
+        padding-top: 0;
+        padding-bottom: 0;
+        spacing: 10px;
+        alignment: center;
+
+        Text {
+            text: "Vol";
+            color: Theme.accent;
+            font-size: 11px * AppState.text-scale;
+            font-weight: 700;
+            vertical-alignment: center;
+            width: 24px * AppState.text-scale;
+        }
+
+        if !AppState.audio-passthrough-active: Rectangle {
+            height: 6px;
+            horizontal-stretch: 1;
+            background: #444444;
+            border-radius: 3px;
+
+            Rectangle {
+                x: 0;
+                width: parent.width * AppState.volume-level / 100;
+                height: parent.height;
+                background: Theme.accent;
+                border-radius: 3px;
+            }
+        }
+
+        if AppState.audio-passthrough-active: Text {
+            text: "passthrough";
+            color: Theme.text-subtle;
+            font-size: 11px * AppState.text-scale;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+        }
+
+        if !AppState.audio-passthrough-active: Text {
+            text: AppState.volume-level + "%";
+            color: #bbbbbb;
+            font-size: 11px * AppState.text-scale;
+            vertical-alignment: center;
+            width: 38px * AppState.text-scale;
+        }
+    }
+}
+
+// ── Stats overlay row ─────────────────────────────────────────────────────────
+export component StatRow inherits Rectangle {
+    in property <string> label;
+    in property <string> value;
+    HorizontalLayout {
+        padding-top: 2px;
+        padding-bottom: 2px;
+        spacing: 10px;
+        Text {
+            text: label;
+            color: #555555;
+            font-size: 11px * AppState.text-scale;
+            font-weight: 700;
+            width: 60px * AppState.text-scale;
+            vertical-alignment: top;
+        }
+
+        Text {
+            text: value;
+            color: Theme.text-soft;
+            font-size: 11px * AppState.text-scale;
+            wrap: word-wrap;
+            horizontal-stretch: 1;
+        }
+    }
+}

@@ -207,7 +207,7 @@ Needs `mpv`/libmpv (`pacman -S mpv`). Optional at runtime: `yt-dlp` (trailers), 
   settings through AppState helpers only: `border-color: AppState.focus-color` + `border-width:
   AppState.ring-width(focused, ta.pressed || pulse.pulsing)` + a `FocusHalo { glowing: focused; radius: …; }` child for
   rows/fields/menu entries (`max(1px, …)` with an idle border; the sidebar's: `nav-ring-width` + `sidebar: true`);
-  opaque pictures/tiles/buttons/pills are a `FocusGlow` (widgets.slint): `fill`/`ring-width: glow-ring-width(…)`/
+  opaque pictures/tiles/buttons/pills are a `FocusGlow` (focus.slint; screens import widgets from widgets.slint): `fill`/`ring-width: glow-ring-width(…)`/
   `ring-color`/`radius`/`glowing` instead of background/border-*/border-radius/drop shadow (a drop shadow is the whole
   shape blurred, so it floods anything see-through drawn over it); a clipped picture goes inside a FocusGlow holder.
   These helpers hide every focus while a bottom bar has the keys (`AppState.bar-focus`); the music bar's and mini
