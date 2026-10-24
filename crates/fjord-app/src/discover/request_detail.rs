@@ -16,7 +16,7 @@
 //                              the UI thread apply_request_page, show, apply_post_action
 //   open_series_request_detail Series "Missing Seasons" entry (check_local_library: false)
 //   build_cast_list / format_rating  Seerr credits → capped cast + crew rows; voteAverage → "★ 7.9"
-//   format_date_pretty / language_display_name / country_flag_emoji  metadata panel formatting
+//   format_date_pretty / language_display_name  metadata panel formatting
 //   build_tag_profile_items    one tier's tags/profiles → TagItem/ProfileItem (row 0 = synthetic "Default")
 //   DetailFields / movie_fields / tv_fields  everything one fetch fills in, per media type
 //   tier_status_label          one tier's display status (fulfilment + approval workflow) → request-
@@ -146,24 +146,6 @@ fn language_display_name(code: &str) -> String {
     }
 }
 
-/// ISO 3166-1 alpha-2 ("US", "GB") -> flag emoji, built from the two
-/// Unicode Regional Indicator Symbols rather than a lookup table — every
-/// valid 2-letter country code maps this way, no data to maintain. Falls
-/// back to the bare code for anything that isn't exactly 2 ASCII letters
-/// (shouldn't happen for real TMDB data, but this is display-only content,
-/// not worth a hard failure over).
-fn country_flag_emoji(iso: &str) -> String {
-    let upper = iso.to_uppercase();
-    let chars: Vec<char> = upper.chars().collect();
-    if chars.len() == 2 && chars.iter().all(|c| c.is_ascii_uppercase()) {
-        let regional = |c: char| char::from_u32(0x1F1E6 + (c as u32 - 'A' as u32));
-        if let (Some(a), Some(b)) = (regional(chars[0]), regional(chars[1])) {
-            return format!("{a}{b}");
-        }
-    }
-    iso.to_string()
-}
-
 type TagProfileItems = (Vec<TagItem>, Vec<ProfileItem>);
 
 /// Converts one quality tier's raw tags/profiles into the Slint-facing
@@ -231,15 +213,14 @@ fn resolve_providers(
         .unwrap_or_default()
 }
 
-/// "🇺🇸 United States\n🇬🇧 United Kingdom" — see request-detail-production-
-/// countries' own doc comment in app_state.slint for why this is a single
-/// newline-joined string rather than a list model.
+/// "United States, United Kingdom". No flag emoji: no bundled font has them, and the first one
+/// drawn made the system search every font (a 1.6 s freeze on the HTPC's first Discover title).
 fn format_countries(countries: &[fjord_seerr::ProductionCountry]) -> String {
     countries
         .iter()
-        .map(|c| format!("{} {}", country_flag_emoji(&c.iso_3166_1), c.name))
+        .map(|c| c.name.as_str())
         .collect::<Vec<_>>()
-        .join("\n")
+        .join(", ")
 }
 
 /// Keeps the button cursor on a real stop when the Trailer slot disappears
@@ -1283,5 +1264,25 @@ fn apply_post_action(
             }
             open_request_options_modal(g);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Country names only — no regional-indicator flags, which no bundled font covers.
+    #[test]
+    fn countries_are_names_without_flags() {
+        let c = |iso: &str, name: &str| fjord_seerr::ProductionCountry {
+            iso_3166_1: iso.into(),
+            name: name.into(),
+        };
+        let s = format_countries(&[c("US", "United States"), c("GB", "United Kingdom")]);
+        assert_eq!(s, "United States, United Kingdom");
+        assert!(
+            s.chars()
+                .all(|ch| !('\u{1F1E6}'..='\u{1F1FF}').contains(&ch))
+        );
     }
 }

@@ -23,6 +23,10 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Fixed: the first Discover title of a session froze for over a second** on
+  the HTPC. Its production countries were shown with flag emoji that Fjord's
+  fonts don't have; they're now plain names ("United States, United
+  Kingdom").
 - **Improved: less work while a video is paused.** Fjord kept redrawing the
   unchanged paused picture dozens of times a second; it now redraws only when
   something changes (a seek, subtitles, the picture moving).
