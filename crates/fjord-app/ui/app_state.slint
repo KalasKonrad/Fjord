@@ -1397,10 +1397,7 @@ export global AppState {
     in-out property <string> request-detail-date-value:    "";  // "July 14, 2026"; "" if unknown
     in-out property <string> request-detail-next-air-date: "";  // TV only; "" if none/unknown
     in-out property <string> request-detail-original-language: "";  // display name, e.g. "English"
-    // Multi-line "🇺🇸 United States\n🇬🇧 United Kingdom" — a plain Text with
-    // wrap:word-wrap respects embedded \n as real line breaks (same
-    // mechanism StorylineSection relies on), so this doesn't need a
-    // separate list model just to stack a handful of country names.
+    // "United States, United Kingdom" (names only — flag emoji aren't in Fjord's fonts).
     in-out property <string> request-detail-production-countries: "";
     in-out property <string> request-detail-network:       "";  // TV only; joined "Apple TV, BBC"
     in-out property <[StreamingProvider]> request-detail-providers: [];  // flatrate only, resolved region
