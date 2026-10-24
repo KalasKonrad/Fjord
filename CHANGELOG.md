@@ -23,6 +23,9 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Improved: less work while a video is paused.** Fjord kept redrawing the
+  unchanged paused picture dozens of times a second; it now redraws only when
+  something changes (a seek, subtitles, the picture moving).
 - **Fixed: Skip Intro and Skip Credits were gone with Jellyfin 12.** The Intro
   Skipper version for Jellyfin 12 only hands out its times through Jellyfin's
   own media segments, which Fjord now reads (older servers keep working).

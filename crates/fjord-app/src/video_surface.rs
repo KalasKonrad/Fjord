@@ -37,8 +37,9 @@
 //   render_frame         one frame: fill + video in the spot, then commit
 //   free_render_ctx      frees a player's render context with our context
 //                        current (mpv requires it), logs the player's frame
-//                        stats (playing and paused frames apart — Overhead),
-//                        then drops a broken plane
+//                        stats (playing and paused frames apart — Overhead — and the
+//                        paused redraws skipped), then drops a broken plane
+//   note_unchanged_redraw  counts a paused redraw that left the plane alone
 //   mark_broken          stop using it after an error mid-item (kept alive
 //                        until its render context is freed)
 //   idle_fill            repaint the plain background once after a stop
@@ -246,6 +247,16 @@ pub(crate) fn render_frame(
     })
 }
 
+/// A window redraw that left the plane as it was (paused, nothing new — playback/render.rs's
+/// unchanged_while_paused): counted for the player's frame stats.
+pub(crate) fn note_unchanged_redraw() {
+    BACKPLANE.with(|slot| {
+        if let Slot::Ready(bp) = &mut *slot.borrow_mut() {
+            bp.stats.unchanged += 1;
+        }
+    });
+}
+
 /// Frees a render context made by create_render_ctx, with our context
 /// current (mpv requires its own GL context for that). If that context can't
 /// be made current, it's freed with NO context current instead — mpv's GL
@@ -274,9 +285,11 @@ pub(crate) fn free_render_ctx(ctx: MpvRenderCtx) {
                 let (run, pause) = (st.playing, st.paused);
                 info!(
                     "video backplane: this player drew {} frame(s) playing — our overhead over 4 ms on {} \
-                     (slowest {:.1} ms) — and {} paused — over 4 ms on {} (slowest {:.1} ms); slowest mpv \
-                     render call {:.1} ms{own}; render context freed",
-                    run.frames, run.slow, run.max_ms, pause.frames, pause.slow, pause.max_ms, st.max_mpv_ms,
+                     (slowest {:.1} ms) — and {} paused — over 4 ms on {} (slowest {:.1} ms), {} redraw(s) \
+                     skipped while paused (same picture); slowest mpv render call {:.1} ms{own}; render \
+                     context freed",
+                    run.frames, run.slow, run.max_ms, pause.frames, pause.slow, pause.max_ms, st.unchanged,
+                    st.max_mpv_ms,
                 );
             }
             _ => {
@@ -1493,6 +1506,8 @@ struct FrameStats {
     /// slow playback.
     playing: Overhead,
     paused: Overhead,
+    /// Window redraws while paused that left the plane alone (the same picture).
+    unchanged: u64,
     max_mpv_ms: f64,
     /// Own buffers: glFinish waits over 4 ms, the slowest, frames skipped.
     slow_gpu_wait: u64,

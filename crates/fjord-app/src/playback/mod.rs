@@ -241,6 +241,11 @@ pub(crate) struct VideoState {
     pub from_series: bool, // set by on_play_series_episode; cleared in start_playback
     pub from_season: bool, // set alongside from_series when show-season was also true
     pub did_render: bool,
+    // Set by mpv's update callback (it has a new frame or something to redraw), cleared by each
+    // video render — a fresh flag per render context. With `last_plane` (where and how the last
+    // frame was drawn) it lets a paused player skip redraws that would draw the same picture.
+    pub frame_news: Arc<AtomicBool>,
+    pub last_plane: Option<render::PlaneKey>,
     // Logged once per Player::new — distinguishes "render context created"
     // (just means the C object exists) from "a frame actually made it to the
     // screen", so a stall between the two (e.g. mpv waiting on a slow-to-open
@@ -379,6 +384,8 @@ impl Default for VideoState {
             from_series: false,
             from_season: false,
             did_render: false,
+            frame_news: Arc::new(AtomicBool::new(true)),
+            last_plane: None,
             first_frame_logged: false,
             stall_last_progress_pos: 0.0,
             stall_last_progress_at: None,

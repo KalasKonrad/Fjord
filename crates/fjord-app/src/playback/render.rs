@@ -13,6 +13,9 @@
 //                           own buffers skipped (none free) requests another redraw; times each frame
 //                           for ui_watch::note_frame (slow frames → debug log); tells render_frame whether
 //                           the player is paused (its frame stats count paused frames apart)
+//   PlaneKey / unchanged_while_paused  a paused player's window redraws leave the video alone (both
+//                           paths) unless mpv's update callback brought news (VideoState.frame_news) or the
+//                           picture's size/place/fill changed (last_plane); playing renders every redraw
 // ─────────────────────────────────────────────────────────────────────────────
 use super::*;
 
@@ -98,6 +101,19 @@ pub(crate) unsafe fn delete_fbo(fbo: u32, tex: u32) {
             gl::DeleteTextures(1, &tex);
         }
     }
+}
+
+/// Where and how a video frame was drawn: window size, the video's rect, the fill colour's bits,
+/// the scale factor's bits (in-window path: size only).
+pub(crate) type PlaneKey = ((u32, u32), [i32; 4], [u32; 3], u32);
+
+/// A paused player needn't redraw its video with every window redraw (~46 a second while paused,
+/// seen on the dev machine): only when mpv has something new (its update callback fired — a seek,
+/// a subtitle change) or the picture moved, resized or changed colour. While playing every redraw
+/// still renders — mpv's timing expects that (report_swap follows each render).
+fn unchanged_while_paused(vs: &VideoState, paused: bool, key: PlaneKey) -> bool {
+    let news = vs.frame_news.swap(false, Ordering::AcqRel);
+    paused && !news && vs.last_plane == Some(key)
 }
 
 // ── wire_rendering_notifier ───────────────────────────────────────────────────
@@ -211,7 +227,11 @@ pub(crate) fn wire_rendering_notifier(window: &MainWindow, video: Arc<Mutex<Vide
                         match created {
                             Ok(mut ctx) => {
                                 let ww = window_rn.clone();
+                                let news = Arc::new(AtomicBool::new(true));
+                                vs.frame_news = Arc::clone(&news);
+                                vs.last_plane = None;
                                 ctx.set_update_callback(move || {
+                                    news.store(true, Ordering::Release);
                                     let ww2 = ww.clone();
                                     let _ = slint::invoke_from_event_loop(move || {
                                         if let Some(w) = ww2.upgrade() {
@@ -283,9 +303,15 @@ pub(crate) fn wire_rendering_notifier(window: &MainWindow, video: Arc<Mutex<Vide
                             srgb
                         };
                         let paused = vs.player.as_ref().is_some_and(|p| p.observed().paused);
+                        let target = rect.unwrap_or([0, 0, w as i32, h as i32]);
+                        let key: PlaneKey = ((w, h), target, fill.map(f32::to_bits), scale.to_bits());
+                        if unchanged_while_paused(&vs, paused, key) {
+                            crate::video_surface::note_unchanged_redraw();
+                            return;
+                        }
                         let ctx = vs.render_ctx.as_ref().unwrap();
                         let result = crate::video_surface::render_frame(
-                            (w, h), scale, rect.unwrap_or([0, 0, w as i32, h as i32]), fill, paused,
+                            (w, h), scale, target, fill, paused,
                             |t| match ctx.render(t.fbo, t.w, t.h, t.flip_y, t.format, t.depth) {
                                 Ok(()) => true,
                                 Err(e) => { warn!("mpv render: {:#}", e); false }
@@ -295,6 +321,7 @@ pub(crate) fn wire_rendering_notifier(window: &MainWindow, video: Arc<Mutex<Vide
                         match result {
                             Ok(FrameOutcome::Drawn) => {
                                 vs.did_render = true;
+                                vs.last_plane = Some(key);
                                 if !vs.first_frame_logged && vs.play_start.is_some() {
                                     vs.first_frame_logged = true;
                                     let elapsed = vs.play_start.unwrap().elapsed().as_secs_f64();
@@ -314,11 +341,16 @@ pub(crate) fn wire_rendering_notifier(window: &MainWindow, video: Arc<Mutex<Vide
                             // skipped (mpv not called). Ask for another
                             // redraw — mpv's update callback fired for this
                             // frame already and won't again until it's drawn.
-                            Ok(FrameOutcome::Skipped) => win.window().request_redraw(),
+                            Ok(FrameOutcome::Skipped) => {
+                                vs.last_plane = None;
+                                win.window().request_redraw();
+                            }
                             Ok(FrameOutcome::MpvFailed | FrameOutcome::Unusable) => {
+                                vs.last_plane = None;
                                 if g.get_video_surface_active() { g.set_video_surface_active(false); }
                             }
                             Err(e) => {
+                                vs.last_plane = None;
                                 crate::video_surface::mark_broken(&format!("{e:#}"));
                                 g.set_video_surface_active(false);
                             }
@@ -350,6 +382,12 @@ pub(crate) fn wire_rendering_notifier(window: &MainWindow, video: Arc<Mutex<Vide
                         }
                     }
 
+                    // Paused and nothing new: Slint shows the last frame's texture again.
+                    let paused = vs.player.as_ref().is_some_and(|p| p.observed().paused);
+                    let key: PlaneKey = ((w, h), [0, 0, w as i32, h as i32], [0; 3], 0);
+                    if unchanged_while_paused(&vs, paused, key) {
+                        return;
+                    }
                     if let Some(ctx) = vs.render_ctx.as_ref() {
                         let b = vs.back;
                         // hdr branch, Stage 4: 0 (today's exact value) unless
@@ -360,8 +398,10 @@ pub(crate) fn wire_rendering_notifier(window: &MainWindow, video: Arc<Mutex<Vide
                         // Slint's 8-bit window.
                         if let Err(e) = ctx.render(vs.fbos[b] as i32, w as i32, h as i32, true, internal_format, 0) {
                             warn!("mpv render: {:#}", e);
+                            vs.last_plane = None;
                         } else {
                             vs.did_render = true;
+                            vs.last_plane = Some(key);
                             // Only once play_start is set: mpv renders idle frames during the display-sync
                             // wait, which mustn't count as the first frame.
                             if !vs.first_frame_logged && vs.play_start.is_some() {
@@ -419,4 +459,37 @@ pub(crate) fn wire_rendering_notifier(window: &MainWindow, video: Arc<Mutex<Vide
             }
         }
     }).ok();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Paused redraws skip only when mpv is quiet and the picture would land in the same place;
+    /// playing always renders.
+    #[test]
+    fn paused_redraws_skip_only_the_same_picture() {
+        let mut vs = VideoState::default();
+        let key: PlaneKey = ((1920, 1080), [0, 0, 1920, 1080], [0; 3], 0);
+        // Nothing drawn yet (and a fresh context starts with news): draw.
+        assert!(!unchanged_while_paused(&vs, true, key));
+        vs.last_plane = Some(key);
+        assert!(unchanged_while_paused(&vs, true, key));
+        assert!(!unchanged_while_paused(&vs, false, key));
+        // mpv has something new (a seek while paused): draw it once.
+        vs.frame_news.store(true, Ordering::Release);
+        assert!(!unchanged_while_paused(&vs, true, key));
+        assert!(unchanged_while_paused(&vs, true, key));
+        // The picture moves (mini-player, resize) or changes colour (HDR fill): draw.
+        assert!(!unchanged_while_paused(
+            &vs,
+            true,
+            ((1920, 1080), [8, 8, 640, 360], [0; 3], 0)
+        ));
+        assert!(!unchanged_while_paused(
+            &vs,
+            true,
+            ((1920, 1080), [0, 0, 1920, 1080], [1; 3], 0)
+        ));
+    }
 }
