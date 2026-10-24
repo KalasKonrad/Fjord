@@ -9,7 +9,11 @@
 //                              concurrency); generation-guarded. PostOpenAction: OpenRequestOptions
 //                              (open the modal when the fetch lands), EditRequest(id) (fetch the request,
 //                              pre-select its profile/tags/seasons; the modal hides Quality and PUTs),
-//                              OpenRequestOptionsPreselect(seasons) (new request, only those seasons)
+//                              OpenRequestOptionsPreselect(seasons) (new request, only those seasons).
+//                              In phases: reset_request_page (+ the generation) / spawn_delayed_spinner,
+//                              fetch_request_page (details, tiers' tags/profiles, the edited request —
+//                              TierItems) / fetch_page_images (PageImages: Send-safe buffers), then on
+//                              the UI thread apply_request_page, show, apply_post_action
 //   open_series_request_detail Series "Missing Seasons" entry (check_local_library: false)
 //   build_cast_list / format_rating  Seerr credits → capped cast + crew rows; voteAverage → "★ 7.9"
 //   format_date_pretty / language_display_name / country_flag_emoji  metadata panel formatting
@@ -638,6 +642,12 @@ pub(crate) fn open_series_request_detail(
 /// the Jellyfin item when the library has it); `false` only for the context menu's
 /// "View Request" row — a requested item can also be partly in the library (a series
 /// missing seasons), and that row must reach the request page.
+///
+/// In phases: reset_request_page (clear the previous item, new generation) +
+/// spawn_delayed_spinner, then off the UI thread fetch_request_page (details, both tiers'
+/// tags/profiles, the request being edited) and fetch_page_images (poster, backdrop,
+/// portraits, season posters, provider logos), then on the UI thread apply_request_page,
+/// show the page, and apply_post_action.
 pub(crate) fn open_discover_item_ex(
     media_type: String,
     tmdb_id_str: String,
@@ -663,289 +673,33 @@ pub(crate) fn open_discover_item_ex(
 
     let generation = {
         let Some(w) = ww.upgrade() else { return };
-        let g = AppState::get(&w);
-        let next = g.get_request_detail_open_gen() + 1;
-        g.set_request_detail_open_gen(next);
-        // Loading overlay while fetching (no local cache here), but deferred (see below):
-        // showing it at once made a fast fetch flash the spinner and then the content.
-        g.set_app_loading_progress(0.0);
-        // Reset immediately so a stale previous item's data doesn't flash
-        // before the new fetch completes (same idiom as open_collection_screen).
-        g.set_request_detail_media_type(media_type.as_str().into());
-        g.set_request_detail_tmdb_id(tmdb_id as i32);
-        g.set_request_detail_title("".into());
-        g.set_request_detail_overview("".into());
-        g.set_request_detail_overview_expanded(false);
-        g.set_request_detail_rating("".into());
-        g.set_request_detail_meta("".into());
-        g.set_request_detail_has_poster(false);
-        g.set_request_detail_has_backdrop(false);
-        g.set_request_detail_status("".into());
-        g.set_request_detail_status_4k("".into());
-        g.set_request_detail_availability("".into());
-        g.set_request_detail_request_id("".into());
-        g.set_request_detail_request_pending(false);
-        g.set_request_detail_request_mine(false);
-        g.set_request_detail_cast(ModelRc::new(VecModel::from(Vec::<CastMember>::new())));
-        g.set_request_detail_focused_cast(-1);
-        g.set_request_detail_seasons(ModelRc::new(VecModel::from(Vec::<SeasonItem>::new())));
-        g.set_request_detail_tags(ModelRc::new(VecModel::from(Vec::<TagItem>::new())));
-        g.set_request_detail_profiles(ModelRc::new(VecModel::from(Vec::<ProfileItem>::new())));
-        g.set_request_detail_tags_alt(ModelRc::new(VecModel::from(Vec::<TagItem>::new())));
-        g.set_request_detail_profiles_alt(ModelRc::new(VecModel::from(Vec::<ProfileItem>::new())));
-        g.set_request_detail_focused_profile(0);
-        g.set_request_detail_selected_profile_id(0);
-        g.set_request_detail_selected_profile_id_alt(0);
-        // Land on the button row (Request), not Back, like the other detail screens.
-        g.set_request_detail_back_focused(false);
-        g.set_request_detail_zone(0);
-        g.set_request_detail_focused_season(0);
-        g.set_request_detail_focused_tag(0);
-        g.set_request_detail_want_4k(false);
-        g.set_request_detail_production_status("".into());
-        g.set_request_detail_date_label("".into());
-        g.set_request_detail_date_value("".into());
-        g.set_request_detail_next_air_date("".into());
-        g.set_request_detail_original_language("".into());
-        g.set_request_detail_production_countries("".into());
-        g.set_request_detail_network("".into());
-        g.set_request_detail_providers(ModelRc::new(VecModel::from(
-            Vec::<StreamingProvider>::new(),
-        )));
-        g.set_request_detail_trailer_url("".into());
-        g.set_request_detail_trailer_state("".into()); // set again once the fetch lands
-        g.set_request_detail_btn_focused(0);
-        g.set_show_request_options(false); // defensive — shouldn't still be open across items
-        g.set_request_options_editing(false);
-        g.set_request_options_editing_request_id("".into());
-        // NOT set here — deferred to the commit closure below, once the
-        // primary fetch has actually landed (see this function's own
-        // app-content-loading comment above and the commit closure's
-        // matching comment further down).
-        next
+        reset_request_page(&AppState::get(&w), &media_type, tmdb_id)
     };
-
-    // Delayed spinner-show — see this block's own comment above. Only
-    // actually flips app-content-loading on if, once the short window
-    // elapses, this exact open (generation still matches — a newer open, or this
-    // same one having already superseded itself, both correctly skip it)
-    // hasn't already finished (show-request-detail still false). A fetch
-    // faster than the window never shows a spinner at all; one slower
-    // than it shows the identical overlay this always had, just not
-    // pre-emptively for the common fast case.
-    {
-        let ww_spin = ww.clone();
-        rt.spawn(async move {
-            tokio::time::sleep(Duration::from_millis(150)).await;
-            let _ = slint::invoke_from_event_loop(move || {
-                let Some(w) = ww_spin.upgrade() else { return };
-                let g = AppState::get(&w);
-                if g.get_request_detail_open_gen() == generation && !g.get_show_request_detail() {
-                    g.set_app_content_loading(true);
-                }
-            });
-        });
-    }
+    spawn_delayed_spinner(&ww, &rt, generation);
 
     let media_type2 = media_type.clone();
     let rt_trailer = rt.clone();
     rt.spawn(async move {
-        // Cached after the first item opened this connection (see
-        // resolve_streaming_region's own doc comment) — cheap enough not to
-        // bother joining in parallel with the detail/options fetch below.
-        let region = resolve_streaming_region(&client, &state).await;
-        // Needed to resolve "mine" for the ⋮ More button's request (below) —
-        // cheap synchronous read, same value ensure_discover_landing/
-        // fetch_requested_row already use for the identical purpose.
-        let my_user_id = state.lock().unwrap().seerr_user_id;
-
-        // Both quality tiers are fetched up front so the modal's Quality
-        // toggle can swap between them instantly (request_detail_set_quality
-        // below) instead of re-fetching live — no loading state, no race on
-        // rapid toggling. The common single-instance setup only costs one
-        // extra list call inside available_request_options_both_tiers, not
-        // a duplicate detail fetch (see its doc comment in fjord-seerr).
         let editing_request_id = match &post_action {
             PostOpenAction::EditRequest(id) => Some(*id),
             _ => None,
         };
-        let (detail_result, options_result, editing_request_result) = tokio::join!(
-            async {
-                if media_type2 == "movie" {
-                    client
-                        .get_movie(tmdb_id)
-                        .await
-                        .map(|d| movie_fields(d, &region, my_user_id))
-                } else {
-                    client
-                        .get_tv(tmdb_id)
-                        .await
-                        .map(|d| tv_fields(d, &region, my_user_id))
-                }
-            },
-            client.available_request_options_both_tiers(&media_type2),
-            async {
-                match editing_request_id {
-                    Some(id) => Some(client.get_request(id).await),
-                    None => None,
-                }
-            },
-        );
-        let fields = match detail_result {
-            Ok(f) => f,
-            Err(e) => {
-                handle_seerr_error(&state, &ww, is_session_auth, "Couldn't load details", &e);
-                // A failed detail fetch never reaches the commit closure that
-                // would otherwise clear this — same fix shape as detail.rs's
-                // own open_detail on its equivalent error path.
-                let ww_err = ww.clone();
-                let _ = slint::invoke_from_event_loop(move || {
-                    if let Some(w) = ww_err.upgrade() {
-                        AppState::get(&w).set_app_content_loading(false);
-                    }
-                });
-                return;
-            }
-        };
-        // Best-effort: no tags/profiles configured, or no permission to read
-        // /service/* on this account, are both "just don't show that
-        // picker," not a reason to fail opening the item.
-        let ((tags, profiles), (tags_4k, profiles_4k)): (TagProfileItems, TagProfileItems) =
-            match options_result {
-                Ok((regular, fourk)) => (
-                    build_tag_profile_items(regular),
-                    build_tag_profile_items(fourk),
-                ),
-                Err(e) => {
-                    debug!("seerr: couldn't fetch tags/profiles for {media_type2}: {e:#}");
-                    ((Vec::new(), Vec::new()), (Vec::new(), Vec::new()))
-                }
-            };
-
-        let Ok(http) = reqwest::Client::builder()
-            .timeout(Duration::from_secs(30))
-            .build()
+        let Some((fields, tiers, editing_request_result)) = fetch_request_page(
+            &client,
+            &state,
+            &ww,
+            is_session_auth,
+            &media_type2,
+            tmdb_id,
+            editing_request_id,
+        )
+        .await
         else {
             return;
         };
-        let cache_prefix = if media_type2 == "movie" {
-            "movie"
-        } else {
-            "tv"
+        let Some(images) = fetch_page_images(&fields, &media_type2, tmdb_id).await else {
+            return;
         };
-        let poster_buf = if let Some(p) = &fields.poster_path {
-            fetch_tmdb_image(
-                &http,
-                TMDB_POSTER_BASE,
-                p,
-                &format!("{cache_prefix}-{tmdb_id}"),
-            )
-            .await
-            .and_then(|b| decode_poster_buffer(&b))
-        } else {
-            None
-        };
-        let backdrop_buf = if let Some(p) = &fields.backdrop_path {
-            fetch_tmdb_image(
-                &http,
-                TMDB_BACKDROP_BASE,
-                p,
-                &format!("{cache_prefix}-{tmdb_id}-bg"),
-            )
-            .await
-            .and_then(|b| crate::poster::decode_backdrop_buffer(&b))
-        } else {
-            None
-        };
-
-        // Cast/crew portraits + season posters — same bounded-concurrency
-        // JoinSet+Semaphore shape as detail.rs's Jellyfin cast portrait fetch,
-        // pointed at TMDB instead. Fetched together so neither trickles in
-        // after the page is already shown.
-        let sem = Arc::new(tokio::sync::Semaphore::new(6));
-        let mut portrait_tasks: tokio::task::JoinSet<(
-            usize,
-            Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>,
-        )> = tokio::task::JoinSet::new();
-        for (idx, (_, _, _, profile_path)) in fields.cast.iter().enumerate() {
-            let Some(path) = profile_path.clone() else {
-                continue;
-            };
-            let http = http.clone();
-            let sem = Arc::clone(&sem);
-            let person_id = fields.cast[idx].0.clone();
-            portrait_tasks.spawn(async move {
-                let _permit = sem.acquire_owned().await.ok();
-                let bytes = fetch_tmdb_image(
-                    &http,
-                    TMDB_PROFILE_BASE,
-                    &path,
-                    &format!("person-{person_id}"),
-                )
-                .await;
-                (idx, bytes.as_deref().and_then(decode_poster_buffer))
-            });
-        }
-        let mut portrait_bufs: Vec<Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>> =
-            vec![None; fields.cast.len()];
-        while let Some(res) = portrait_tasks.join_next().await {
-            let Ok((idx, buf)) = res else { continue };
-            portrait_bufs[idx] = buf;
-        }
-
-        // Season posters are collected as plain Send-safe buffers here, same
-        // reason as `portrait_bufs` — `SeasonItem` carries a `slint::Image`
-        // field, so `fields.seasons` (moved into `invoke_from_event_loop`
-        // below) must stay untouched by any real `Image` until it's on the
-        // UI thread, or the whole closure fails to compile as `!Send`.
-        let mut season_poster_bufs: Vec<Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>> =
-            vec![None; fields.seasons.len()];
-        let mut season_tasks: tokio::task::JoinSet<(
-            usize,
-            Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>,
-        )> = tokio::task::JoinSet::new();
-        for (season_idx, path) in fields.season_poster_paths.clone() {
-            let http = http.clone();
-            let sem = Arc::clone(&sem);
-            let cache_key = format!("season-{tmdb_id}-{season_idx}");
-            season_tasks.spawn(async move {
-                let _permit = sem.acquire_owned().await.ok();
-                let bytes = fetch_tmdb_image(&http, TMDB_POSTER_BASE, &path, &cache_key).await;
-                (season_idx, bytes.as_deref().and_then(decode_poster_buffer))
-            });
-        }
-        while let Some(res) = season_tasks.join_next().await {
-            let Ok((season_idx, buf)) = res else { continue };
-            if let Some(slot) = season_poster_bufs.get_mut(season_idx) {
-                *slot = buf;
-            }
-        }
-
-        // Streaming-provider logos — same bounded-concurrency shape as cast
-        // portraits/season posters above, small TMDB CDN icons.
-        let mut provider_bufs: Vec<Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>> =
-            vec![None; fields.providers.len()];
-        let mut provider_tasks: tokio::task::JoinSet<(
-            usize,
-            Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>,
-        )> = tokio::task::JoinSet::new();
-        for (idx, (provider_id, _, logo_path)) in fields.providers.iter().enumerate() {
-            let Some(path) = logo_path.clone() else {
-                continue;
-            };
-            let http = http.clone();
-            let sem = Arc::clone(&sem);
-            let cache_key = format!("provider-{provider_id}");
-            provider_tasks.spawn(async move {
-                let _permit = sem.acquire_owned().await.ok();
-                let bytes = fetch_tmdb_image(&http, TMDB_LOGO_BASE, &path, &cache_key).await;
-                (idx, bytes.as_deref().and_then(decode_poster_buffer))
-            });
-        }
-        while let Some(res) = provider_tasks.join_next().await {
-            let Ok((idx, buf)) = res else { continue };
-            provider_bufs[idx] = buf;
-        }
 
         let _ = slint::invoke_from_event_loop(move || {
             let Some(w) = ww.upgrade() else { return };
@@ -959,132 +713,17 @@ pub(crate) fn open_discover_item_ex(
             if !crate::seerr_session_current(&state, &client) {
                 return;
             }
-            g.set_request_detail_title(fields.title.as_str().into());
-            g.set_request_detail_meta(fields.meta.as_str().into());
-            g.set_request_detail_overview(fields.overview.as_str().into());
-            g.set_request_detail_rating(fields.rating.as_str().into());
-            g.set_request_detail_status(fields.status_label.as_str().into());
-            g.set_request_detail_status_4k(fields.status4k_label.as_str().into());
-            g.set_request_detail_availability(fields.availability.into());
-            g.set_request_detail_request_id(fields.request_id.as_str().into());
-            g.set_request_detail_request_pending(fields.request_pending);
-            g.set_request_detail_request_mine(fields.request_mine);
-            g.set_request_detail_on_watchlist(fields.on_watchlist);
-            let cast: Vec<CastMember> = fields
-                .cast
-                .into_iter()
-                .zip(portrait_bufs)
-                .map(|((id, name, role, _), buf)| {
-                    let (photo, has_photo) = match buf {
-                        Some(b) => (slint::Image::from_rgba8(b), true),
-                        None => (Default::default(), false),
-                    };
-                    CastMember {
-                        id: id.as_str().into(),
-                        name: name.as_str().into(),
-                        role: role.as_str().into(),
-                        photo,
-                        has_photo,
-                    }
-                })
-                .collect();
-            g.set_request_detail_cast(ModelRc::new(VecModel::from(cast)));
-            let seasons: Vec<SeasonItem> = fields
-                .seasons
-                .into_iter()
-                .zip(season_poster_bufs)
-                .map(|((season_number, name, episode_count, selected), buf)| {
-                    let (poster, has_poster) = match buf {
-                        Some(b) => (slint::Image::from_rgba8(b), true),
-                        None => (Default::default(), false),
-                    };
-                    SeasonItem {
-                        season_number,
-                        name: name.as_str().into(),
-                        episode_count,
-                        selected,
-                        poster,
-                        has_poster,
-                    }
-                })
-                .collect();
-            g.set_request_detail_seasons(ModelRc::new(VecModel::from(seasons)));
-            g.set_request_detail_tags(ModelRc::new(VecModel::from(tags)));
-            g.set_request_detail_profiles(ModelRc::new(VecModel::from(profiles)));
-            g.set_request_detail_tags_alt(ModelRc::new(VecModel::from(tags_4k)));
-            g.set_request_detail_profiles_alt(ModelRc::new(VecModel::from(profiles_4k)));
-            // Start from the remembered Quality/Profile/Tags (Request Options' "remember last
-            // choice"); EditRequest's arm below overrides them with the request's real values.
-            let remembered = {
-                let s = state.lock().unwrap();
-                if media_type2 == "movie" {
-                    s.config.active().request_pref_movie.clone()
-                } else {
-                    s.config.active().request_pref_tv.clone()
-                }
-            };
-            {
-                let model = g.get_request_detail_tags();
-                for i in 0..model.row_count() {
-                    if let Some(mut t) = model.row_data(i) {
-                        t.selected = remembered.tag_ids_2k.contains(&(t.id as i64));
-                        model.set_row_data(i, t);
-                    }
-                }
-                let model_alt = g.get_request_detail_tags_alt();
-                for i in 0..model_alt.row_count() {
-                    if let Some(mut t) = model_alt.row_data(i) {
-                        t.selected = remembered.tag_ids_4k.contains(&(t.id as i64));
-                        model_alt.set_row_data(i, t);
-                    }
-                }
-            }
-            g.set_request_detail_selected_profile_id(remembered.profile_id_2k);
-            g.set_request_detail_selected_profile_id_alt(remembered.profile_id_4k);
-            if remembered.want_4k {
-                set_quality(&g, true);
-            }
-            g.set_request_detail_production_status(fields.production_status.as_str().into());
-            g.set_request_detail_date_label(fields.date_label.into());
-            g.set_request_detail_date_value(fields.date_value.as_str().into());
-            g.set_request_detail_next_air_date(fields.next_air_date.as_str().into());
-            g.set_request_detail_original_language(fields.original_language.as_str().into());
-            g.set_request_detail_production_countries(fields.production_countries.as_str().into());
-            g.set_request_detail_network(fields.network.as_str().into());
-            let providers: Vec<StreamingProvider> = fields
-                .providers
-                .into_iter()
-                .zip(provider_bufs)
-                .map(|((id, name, _), buf)| {
-                    let (logo, has_logo) = match buf {
-                        Some(b) => (slint::Image::from_rgba8(b), true),
-                        None => (Default::default(), false),
-                    };
-                    StreamingProvider {
-                        id: id as i32,
-                        name: name.as_str().into(),
-                        logo,
-                        has_logo,
-                    }
-                })
-                .collect();
-            g.set_request_detail_providers(ModelRc::new(VecModel::from(providers)));
-            start_trailer_check(
+            apply_request_page(
+                &g,
+                fields,
+                images,
+                tiers,
                 &state,
+                &media_type2,
                 &ww,
                 &rt_trailer,
-                TrailerScreen::RequestDetail,
-                generation.to_string(),
-                fields.trailer_candidates,
+                generation,
             );
-            if let Some(buf) = poster_buf {
-                g.set_request_detail_poster(slint::Image::from_rgba8(buf));
-                g.set_request_detail_has_poster(true);
-            }
-            if let Some(buf) = backdrop_buf {
-                g.set_request_detail_backdrop(slint::Image::from_rgba8(buf));
-                g.set_request_detail_has_backdrop(true);
-            }
             // Show the screen and clear the overlay now that the main content has landed (like
             // the native detail screens). Before the match below, so a failing follow-up action
             // (e.g. EditRequest's fetch) still leaves the loaded content visible.
@@ -1092,65 +731,557 @@ pub(crate) fn open_discover_item_ex(
             g.set_app_content_loading(false);
             g.set_app_loading_progress(0.0);
             w.invoke_grab_keyboard_focus();
-            match post_action {
-                PostOpenAction::None => {}
-                PostOpenAction::OpenRequestOptions => open_request_options_modal(&g),
-                PostOpenAction::EditRequest(id) => {
-                    match editing_request_result {
-                        Some(Ok(r)) => {
-                            if r.is4k {
-                                set_quality(&g, true);
-                            }
-                            g.set_request_detail_selected_profile_id(
-                                r.profile_id.unwrap_or(0) as i32
-                            );
-                            if let Some(tag_ids) = &r.tags {
-                                let model = g.get_request_detail_tags();
-                                for i in 0..model.row_count() {
-                                    if let Some(mut t) = model.row_data(i) {
-                                        t.selected = tag_ids.contains(&(t.id as i64));
-                                        model.set_row_data(i, t);
-                                    }
-                                }
-                            }
-                            if !r.seasons.is_empty() {
-                                let wanted: std::collections::HashSet<u32> =
-                                    r.seasons.iter().map(|s| s.season_number).collect();
-                                let model = g.get_request_detail_seasons();
-                                for i in 0..model.row_count() {
-                                    if let Some(mut s) = model.row_data(i) {
-                                        s.selected = wanted.contains(&(s.season_number as u32));
-                                        model.set_row_data(i, s);
-                                    }
-                                }
-                            }
-                            g.set_request_options_editing(true);
-                            g.set_request_options_editing_request_id(
-                                id.to_string().as_str().into(),
-                            );
-                        }
-                        Some(Err(e)) => {
-                            warn!("seerr: couldn't fetch request {id} for editing: {e:#}");
-                            show_toast(ww.clone(), "Couldn't load request for editing".into());
-                            return;
-                        }
-                        None => return, // shouldn't happen — editing_request_id was Some
-                    }
-                    open_request_options_modal(&g);
-                }
-                PostOpenAction::OpenRequestOptionsPreselect(wanted_seasons) => {
-                    let wanted: std::collections::HashSet<u32> =
-                        wanted_seasons.into_iter().collect();
-                    let model = g.get_request_detail_seasons();
-                    for i in 0..model.row_count() {
-                        if let Some(mut s) = model.row_data(i) {
-                            s.selected = wanted.contains(&(s.season_number as u32));
-                            model.set_row_data(i, s);
-                        }
-                    }
-                    open_request_options_modal(&g);
-                }
+            apply_post_action(&g, post_action, editing_request_result, &ww);
+        });
+    });
+}
+
+// ── reset_request_page ────────────────────────────────────────────────────────
+/// Clears the previous item's page at once (and returns this open's generation), so stale
+/// data doesn't flash before the new fetch completes.
+fn reset_request_page(g: &AppState, media_type: &str, tmdb_id: i64) -> i32 {
+    let next = g.get_request_detail_open_gen() + 1;
+    g.set_request_detail_open_gen(next);
+    // Loading overlay while fetching (no local cache here), but deferred (see below):
+    // showing it at once made a fast fetch flash the spinner and then the content.
+    g.set_app_loading_progress(0.0);
+    // Reset immediately so a stale previous item's data doesn't flash
+    // before the new fetch completes (same idiom as open_collection_screen).
+    g.set_request_detail_media_type(media_type.into());
+    g.set_request_detail_tmdb_id(tmdb_id as i32);
+    g.set_request_detail_title("".into());
+    g.set_request_detail_overview("".into());
+    g.set_request_detail_overview_expanded(false);
+    g.set_request_detail_rating("".into());
+    g.set_request_detail_meta("".into());
+    g.set_request_detail_has_poster(false);
+    g.set_request_detail_has_backdrop(false);
+    g.set_request_detail_status("".into());
+    g.set_request_detail_status_4k("".into());
+    g.set_request_detail_availability("".into());
+    g.set_request_detail_request_id("".into());
+    g.set_request_detail_request_pending(false);
+    g.set_request_detail_request_mine(false);
+    g.set_request_detail_cast(ModelRc::new(VecModel::from(Vec::<CastMember>::new())));
+    g.set_request_detail_focused_cast(-1);
+    g.set_request_detail_seasons(ModelRc::new(VecModel::from(Vec::<SeasonItem>::new())));
+    g.set_request_detail_tags(ModelRc::new(VecModel::from(Vec::<TagItem>::new())));
+    g.set_request_detail_profiles(ModelRc::new(VecModel::from(Vec::<ProfileItem>::new())));
+    g.set_request_detail_tags_alt(ModelRc::new(VecModel::from(Vec::<TagItem>::new())));
+    g.set_request_detail_profiles_alt(ModelRc::new(VecModel::from(Vec::<ProfileItem>::new())));
+    g.set_request_detail_focused_profile(0);
+    g.set_request_detail_selected_profile_id(0);
+    g.set_request_detail_selected_profile_id_alt(0);
+    // Land on the button row (Request), not Back, like the other detail screens.
+    g.set_request_detail_back_focused(false);
+    g.set_request_detail_zone(0);
+    g.set_request_detail_focused_season(0);
+    g.set_request_detail_focused_tag(0);
+    g.set_request_detail_want_4k(false);
+    g.set_request_detail_production_status("".into());
+    g.set_request_detail_date_label("".into());
+    g.set_request_detail_date_value("".into());
+    g.set_request_detail_next_air_date("".into());
+    g.set_request_detail_original_language("".into());
+    g.set_request_detail_production_countries("".into());
+    g.set_request_detail_network("".into());
+    g.set_request_detail_providers(ModelRc::new(
+        VecModel::from(Vec::<StreamingProvider>::new()),
+    ));
+    g.set_request_detail_trailer_url("".into());
+    g.set_request_detail_trailer_state("".into()); // set again once the fetch lands
+    g.set_request_detail_btn_focused(0);
+    g.set_show_request_options(false); // defensive — shouldn't still be open across items
+    g.set_request_options_editing(false);
+    g.set_request_options_editing_request_id("".into());
+    // NOT set here — deferred to the commit closure below, once the
+    // primary fetch has actually landed (see this function's own
+    // app-content-loading comment above and the commit closure's
+    // matching comment further down).
+    next
+}
+
+// ── spawn_delayed_spinner ─────────────────────────────────────────────────────
+fn spawn_delayed_spinner(ww: &Weak<MainWindow>, rt: &tokio::runtime::Handle, generation: i32) {
+    // Delayed spinner-show — see reset_request_page's loading-overlay comment. Only
+    // actually flips app-content-loading on if, once the short window
+    // elapses, this exact open (generation still matches — a newer open, or this
+    // same one having already superseded itself, both correctly skip it)
+    // hasn't already finished (show-request-detail still false). A fetch
+    // faster than the window never shows a spinner at all; one slower
+    // than it shows the identical overlay this always had, just not
+    // pre-emptively for the common fast case.
+    let ww_spin = ww.clone();
+    rt.spawn(async move {
+        tokio::time::sleep(Duration::from_millis(150)).await;
+        let _ = slint::invoke_from_event_loop(move || {
+            let Some(w) = ww_spin.upgrade() else { return };
+            let g = AppState::get(&w);
+            if g.get_request_detail_open_gen() == generation && !g.get_show_request_detail() {
+                g.set_app_content_loading(true);
             }
         });
     });
+}
+
+/// One tier pair of the Request Options pickers: (regular, 4K).
+type TierItems = (TagProfileItems, TagProfileItems);
+
+// ── fetch_request_page ────────────────────────────────────────────────────────
+/// Off the UI thread: the item's details, both tiers' tags/profiles and (EditRequest) the request.
+/// None after a failed detail fetch (already reported, the overlay cleared).
+async fn fetch_request_page(
+    client: &Arc<fjord_seerr::SeerrClient>,
+    state: &Arc<Mutex<FjordState>>,
+    ww: &Weak<MainWindow>,
+    is_session_auth: bool,
+    media_type2: &str,
+    tmdb_id: i64,
+    editing_request_id: Option<i64>,
+) -> Option<(
+    DetailFields,
+    TierItems,
+    Option<anyhow::Result<fjord_seerr::MediaRequest>>,
+)> {
+    // Cached after the first item opened this connection (see
+    // resolve_streaming_region's own doc comment) — cheap enough not to
+    // bother joining in parallel with the detail/options fetch below.
+    let region = resolve_streaming_region(client, state).await;
+    // Needed to resolve "mine" for the ⋮ More button's request (below) —
+    // cheap synchronous read, same value ensure_discover_landing/
+    // fetch_requested_row already use for the identical purpose.
+    let my_user_id = state.lock().unwrap().seerr_user_id;
+
+    // Both quality tiers are fetched up front so the modal's Quality
+    // toggle can swap between them instantly (request_detail_set_quality
+    // below) instead of re-fetching live — no loading state, no race on
+    // rapid toggling. The common single-instance setup only costs one
+    // extra list call inside available_request_options_both_tiers, not
+    // a duplicate detail fetch (see its doc comment in fjord-seerr).
+    let (detail_result, options_result, editing_request_result) = tokio::join!(
+        async {
+            if media_type2 == "movie" {
+                client
+                    .get_movie(tmdb_id)
+                    .await
+                    .map(|d| movie_fields(d, &region, my_user_id))
+            } else {
+                client
+                    .get_tv(tmdb_id)
+                    .await
+                    .map(|d| tv_fields(d, &region, my_user_id))
+            }
+        },
+        client.available_request_options_both_tiers(media_type2),
+        async {
+            match editing_request_id {
+                Some(id) => Some(client.get_request(id).await),
+                None => None,
+            }
+        },
+    );
+    let fields = match detail_result {
+        Ok(f) => f,
+        Err(e) => {
+            handle_seerr_error(state, ww, is_session_auth, "Couldn't load details", &e);
+            // A failed detail fetch never reaches the commit closure that
+            // would otherwise clear this — same fix shape as detail.rs's
+            // own open_detail on its equivalent error path.
+            let ww_err = ww.clone();
+            let _ = slint::invoke_from_event_loop(move || {
+                if let Some(w) = ww_err.upgrade() {
+                    AppState::get(&w).set_app_content_loading(false);
+                }
+            });
+            return None;
+        }
+    };
+    // Best-effort: no tags/profiles configured, or no permission to read
+    // /service/* on this account, are both "just don't show that
+    // picker," not a reason to fail opening the item.
+    let ((tags, profiles), (tags_4k, profiles_4k)): (TagProfileItems, TagProfileItems) =
+        match options_result {
+            Ok((regular, fourk)) => (
+                build_tag_profile_items(regular),
+                build_tag_profile_items(fourk),
+            ),
+            Err(e) => {
+                debug!("seerr: couldn't fetch tags/profiles for {media_type2}: {e:#}");
+                ((Vec::new(), Vec::new()), (Vec::new(), Vec::new()))
+            }
+        };
+    Some((
+        fields,
+        ((tags, profiles), (tags_4k, profiles_4k)),
+        editing_request_result,
+    ))
+}
+
+type PixelBuf = slint::SharedPixelBuffer<slint::Rgba8Pixel>;
+
+/// The page's pictures as Send-safe buffers (decoded off the UI thread, turned into Images in
+/// apply_request_page): poster, backdrop, and one slot per cast member / season / provider.
+struct PageImages {
+    poster_buf: Option<PixelBuf>,
+    backdrop_buf: Option<PixelBuf>,
+    portrait_bufs: Vec<Option<PixelBuf>>,
+    season_poster_bufs: Vec<Option<PixelBuf>>,
+    provider_bufs: Vec<Option<PixelBuf>>,
+}
+
+// ── fetch_page_images ─────────────────────────────────────────────────────────
+/// Poster, backdrop, cast portraits, season posters and provider logos from TMDB — all before
+/// the page shows, so nothing trickles in afterwards. None if no HTTP client could be built.
+async fn fetch_page_images(
+    fields: &DetailFields,
+    media_type2: &str,
+    tmdb_id: i64,
+) -> Option<PageImages> {
+    let Ok(http) = reqwest::Client::builder()
+        .timeout(Duration::from_secs(30))
+        .build()
+    else {
+        return None;
+    };
+    let cache_prefix = if media_type2 == "movie" {
+        "movie"
+    } else {
+        "tv"
+    };
+    let poster_buf = if let Some(p) = &fields.poster_path {
+        fetch_tmdb_image(
+            &http,
+            TMDB_POSTER_BASE,
+            p,
+            &format!("{cache_prefix}-{tmdb_id}"),
+        )
+        .await
+        .and_then(|b| decode_poster_buffer(&b))
+    } else {
+        None
+    };
+    let backdrop_buf = if let Some(p) = &fields.backdrop_path {
+        fetch_tmdb_image(
+            &http,
+            TMDB_BACKDROP_BASE,
+            p,
+            &format!("{cache_prefix}-{tmdb_id}-bg"),
+        )
+        .await
+        .and_then(|b| crate::poster::decode_backdrop_buffer(&b))
+    } else {
+        None
+    };
+
+    // Cast/crew portraits + season posters — same bounded-concurrency
+    // JoinSet+Semaphore shape as detail.rs's Jellyfin cast portrait fetch,
+    // pointed at TMDB instead. Fetched together so neither trickles in
+    // after the page is already shown.
+    let sem = Arc::new(tokio::sync::Semaphore::new(6));
+    let mut portrait_tasks: tokio::task::JoinSet<(
+        usize,
+        Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>,
+    )> = tokio::task::JoinSet::new();
+    for (idx, (_, _, _, profile_path)) in fields.cast.iter().enumerate() {
+        let Some(path) = profile_path.clone() else {
+            continue;
+        };
+        let http = http.clone();
+        let sem = Arc::clone(&sem);
+        let person_id = fields.cast[idx].0.clone();
+        portrait_tasks.spawn(async move {
+            let _permit = sem.acquire_owned().await.ok();
+            let bytes = fetch_tmdb_image(
+                &http,
+                TMDB_PROFILE_BASE,
+                &path,
+                &format!("person-{person_id}"),
+            )
+            .await;
+            (idx, bytes.as_deref().and_then(decode_poster_buffer))
+        });
+    }
+    let mut portrait_bufs: Vec<Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>> =
+        vec![None; fields.cast.len()];
+    while let Some(res) = portrait_tasks.join_next().await {
+        let Ok((idx, buf)) = res else { continue };
+        portrait_bufs[idx] = buf;
+    }
+
+    // Season posters are collected as plain Send-safe buffers here, same
+    // reason as `portrait_bufs` — `SeasonItem` carries a `slint::Image`
+    // field, so `fields.seasons` (moved into `invoke_from_event_loop`
+    // below) must stay untouched by any real `Image` until it's on the
+    // UI thread, or the whole closure fails to compile as `!Send`.
+    let mut season_poster_bufs: Vec<Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>> =
+        vec![None; fields.seasons.len()];
+    let mut season_tasks: tokio::task::JoinSet<(
+        usize,
+        Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>,
+    )> = tokio::task::JoinSet::new();
+    for (season_idx, path) in fields.season_poster_paths.clone() {
+        let http = http.clone();
+        let sem = Arc::clone(&sem);
+        let cache_key = format!("season-{tmdb_id}-{season_idx}");
+        season_tasks.spawn(async move {
+            let _permit = sem.acquire_owned().await.ok();
+            let bytes = fetch_tmdb_image(&http, TMDB_POSTER_BASE, &path, &cache_key).await;
+            (season_idx, bytes.as_deref().and_then(decode_poster_buffer))
+        });
+    }
+    while let Some(res) = season_tasks.join_next().await {
+        let Ok((season_idx, buf)) = res else { continue };
+        if let Some(slot) = season_poster_bufs.get_mut(season_idx) {
+            *slot = buf;
+        }
+    }
+
+    // Streaming-provider logos — same bounded-concurrency shape as cast
+    // portraits/season posters above, small TMDB CDN icons.
+    let mut provider_bufs: Vec<Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>> =
+        vec![None; fields.providers.len()];
+    let mut provider_tasks: tokio::task::JoinSet<(
+        usize,
+        Option<slint::SharedPixelBuffer<slint::Rgba8Pixel>>,
+    )> = tokio::task::JoinSet::new();
+    for (idx, (provider_id, _, logo_path)) in fields.providers.iter().enumerate() {
+        let Some(path) = logo_path.clone() else {
+            continue;
+        };
+        let http = http.clone();
+        let sem = Arc::clone(&sem);
+        let cache_key = format!("provider-{provider_id}");
+        provider_tasks.spawn(async move {
+            let _permit = sem.acquire_owned().await.ok();
+            let bytes = fetch_tmdb_image(&http, TMDB_LOGO_BASE, &path, &cache_key).await;
+            (idx, bytes.as_deref().and_then(decode_poster_buffer))
+        });
+    }
+    while let Some(res) = provider_tasks.join_next().await {
+        let Ok((idx, buf)) = res else { continue };
+        provider_bufs[idx] = buf;
+    }
+    Some(PageImages {
+        poster_buf,
+        backdrop_buf,
+        portrait_bufs,
+        season_poster_bufs,
+        provider_bufs,
+    })
+}
+
+// ── apply_request_page ────────────────────────────────────────────────────────
+/// On the UI thread: everything fetched into the page (details, cast, seasons, the pickers with
+/// the remembered Quality/Profile/Tags, metadata, providers, the trailer check, pictures).
+#[allow(clippy::too_many_arguments)]
+fn apply_request_page(
+    g: &AppState,
+    fields: DetailFields,
+    images: PageImages,
+    tiers: TierItems,
+    state: &Arc<Mutex<FjordState>>,
+    media_type2: &str,
+    ww: &Weak<MainWindow>,
+    rt_trailer: &tokio::runtime::Handle,
+    generation: i32,
+) {
+    let PageImages {
+        poster_buf,
+        backdrop_buf,
+        portrait_bufs,
+        season_poster_bufs,
+        provider_bufs,
+    } = images;
+    let ((tags, profiles), (tags_4k, profiles_4k)) = tiers;
+    g.set_request_detail_title(fields.title.as_str().into());
+    g.set_request_detail_meta(fields.meta.as_str().into());
+    g.set_request_detail_overview(fields.overview.as_str().into());
+    g.set_request_detail_rating(fields.rating.as_str().into());
+    g.set_request_detail_status(fields.status_label.as_str().into());
+    g.set_request_detail_status_4k(fields.status4k_label.as_str().into());
+    g.set_request_detail_availability(fields.availability.into());
+    g.set_request_detail_request_id(fields.request_id.as_str().into());
+    g.set_request_detail_request_pending(fields.request_pending);
+    g.set_request_detail_request_mine(fields.request_mine);
+    g.set_request_detail_on_watchlist(fields.on_watchlist);
+    let cast: Vec<CastMember> = fields
+        .cast
+        .into_iter()
+        .zip(portrait_bufs)
+        .map(|((id, name, role, _), buf)| {
+            let (photo, has_photo) = match buf {
+                Some(b) => (slint::Image::from_rgba8(b), true),
+                None => (Default::default(), false),
+            };
+            CastMember {
+                id: id.as_str().into(),
+                name: name.as_str().into(),
+                role: role.as_str().into(),
+                photo,
+                has_photo,
+            }
+        })
+        .collect();
+    g.set_request_detail_cast(ModelRc::new(VecModel::from(cast)));
+    let seasons: Vec<SeasonItem> = fields
+        .seasons
+        .into_iter()
+        .zip(season_poster_bufs)
+        .map(|((season_number, name, episode_count, selected), buf)| {
+            let (poster, has_poster) = match buf {
+                Some(b) => (slint::Image::from_rgba8(b), true),
+                None => (Default::default(), false),
+            };
+            SeasonItem {
+                season_number,
+                name: name.as_str().into(),
+                episode_count,
+                selected,
+                poster,
+                has_poster,
+            }
+        })
+        .collect();
+    g.set_request_detail_seasons(ModelRc::new(VecModel::from(seasons)));
+    g.set_request_detail_tags(ModelRc::new(VecModel::from(tags)));
+    g.set_request_detail_profiles(ModelRc::new(VecModel::from(profiles)));
+    g.set_request_detail_tags_alt(ModelRc::new(VecModel::from(tags_4k)));
+    g.set_request_detail_profiles_alt(ModelRc::new(VecModel::from(profiles_4k)));
+    // Start from the remembered Quality/Profile/Tags (Request Options' "remember last
+    // choice"); EditRequest's arm below overrides them with the request's real values.
+    let remembered = {
+        let s = state.lock().unwrap();
+        if media_type2 == "movie" {
+            s.config.active().request_pref_movie.clone()
+        } else {
+            s.config.active().request_pref_tv.clone()
+        }
+    };
+    {
+        let model = g.get_request_detail_tags();
+        for i in 0..model.row_count() {
+            if let Some(mut t) = model.row_data(i) {
+                t.selected = remembered.tag_ids_2k.contains(&(t.id as i64));
+                model.set_row_data(i, t);
+            }
+        }
+        let model_alt = g.get_request_detail_tags_alt();
+        for i in 0..model_alt.row_count() {
+            if let Some(mut t) = model_alt.row_data(i) {
+                t.selected = remembered.tag_ids_4k.contains(&(t.id as i64));
+                model_alt.set_row_data(i, t);
+            }
+        }
+    }
+    g.set_request_detail_selected_profile_id(remembered.profile_id_2k);
+    g.set_request_detail_selected_profile_id_alt(remembered.profile_id_4k);
+    if remembered.want_4k {
+        set_quality(g, true);
+    }
+    g.set_request_detail_production_status(fields.production_status.as_str().into());
+    g.set_request_detail_date_label(fields.date_label.into());
+    g.set_request_detail_date_value(fields.date_value.as_str().into());
+    g.set_request_detail_next_air_date(fields.next_air_date.as_str().into());
+    g.set_request_detail_original_language(fields.original_language.as_str().into());
+    g.set_request_detail_production_countries(fields.production_countries.as_str().into());
+    g.set_request_detail_network(fields.network.as_str().into());
+    let providers: Vec<StreamingProvider> = fields
+        .providers
+        .into_iter()
+        .zip(provider_bufs)
+        .map(|((id, name, _), buf)| {
+            let (logo, has_logo) = match buf {
+                Some(b) => (slint::Image::from_rgba8(b), true),
+                None => (Default::default(), false),
+            };
+            StreamingProvider {
+                id: id as i32,
+                name: name.as_str().into(),
+                logo,
+                has_logo,
+            }
+        })
+        .collect();
+    g.set_request_detail_providers(ModelRc::new(VecModel::from(providers)));
+    start_trailer_check(
+        state,
+        ww,
+        rt_trailer,
+        TrailerScreen::RequestDetail,
+        generation.to_string(),
+        fields.trailer_candidates,
+    );
+    if let Some(buf) = poster_buf {
+        g.set_request_detail_poster(slint::Image::from_rgba8(buf));
+        g.set_request_detail_has_poster(true);
+    }
+    if let Some(buf) = backdrop_buf {
+        g.set_request_detail_backdrop(slint::Image::from_rgba8(buf));
+        g.set_request_detail_has_backdrop(true);
+    }
+}
+
+// ── apply_post_action ─────────────────────────────────────────────────────────
+/// What the opener asked for once the page shows: Request Options, Edit Request (the request's
+/// own Quality/profile/tags/seasons), or Request Options with only some seasons.
+fn apply_post_action(
+    g: &AppState,
+    post_action: PostOpenAction,
+    editing_request_result: Option<anyhow::Result<fjord_seerr::MediaRequest>>,
+    ww: &Weak<MainWindow>,
+) {
+    match post_action {
+        PostOpenAction::None => {}
+        PostOpenAction::OpenRequestOptions => open_request_options_modal(g),
+        PostOpenAction::EditRequest(id) => {
+            match editing_request_result {
+                Some(Ok(r)) => {
+                    if r.is4k {
+                        set_quality(g, true);
+                    }
+                    g.set_request_detail_selected_profile_id(r.profile_id.unwrap_or(0) as i32);
+                    if let Some(tag_ids) = &r.tags {
+                        let model = g.get_request_detail_tags();
+                        for i in 0..model.row_count() {
+                            if let Some(mut t) = model.row_data(i) {
+                                t.selected = tag_ids.contains(&(t.id as i64));
+                                model.set_row_data(i, t);
+                            }
+                        }
+                    }
+                    if !r.seasons.is_empty() {
+                        let wanted: std::collections::HashSet<u32> =
+                            r.seasons.iter().map(|s| s.season_number).collect();
+                        let model = g.get_request_detail_seasons();
+                        for i in 0..model.row_count() {
+                            if let Some(mut s) = model.row_data(i) {
+                                s.selected = wanted.contains(&(s.season_number as u32));
+                                model.set_row_data(i, s);
+                            }
+                        }
+                    }
+                    g.set_request_options_editing(true);
+                    g.set_request_options_editing_request_id(id.to_string().as_str().into());
+                }
+                Some(Err(e)) => {
+                    warn!("seerr: couldn't fetch request {id} for editing: {e:#}");
+                    show_toast(ww.clone(), "Couldn't load request for editing".into());
+                    return;
+                }
+                None => return, // shouldn't happen — editing_request_id was Some
+            }
+            open_request_options_modal(g);
+        }
+        PostOpenAction::OpenRequestOptionsPreselect(wanted_seasons) => {
+            let wanted: std::collections::HashSet<u32> = wanted_seasons.into_iter().collect();
+            let model = g.get_request_detail_seasons();
+            for i in 0..model.row_count() {
+                if let Some(mut s) = model.row_data(i) {
+                    s.selected = wanted.contains(&(s.season_number as u32));
+                    model.set_row_data(i, s);
+                }
+            }
+            open_request_options_modal(g);
+        }
+    }
 }
