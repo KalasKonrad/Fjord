@@ -1,0 +1,326 @@
+// ── fjord-app · page_parts.slint ─────────────────────────────────────────────
+//   PosterBlock        160×240 poster with badges (played, progress, unplayed count, request status)
+//   MetaLine           year · runtime · rating + optional ★ community rating
+//   CastRow            scrollable cast row (portrait, name, role); content-x follows focused-idx;
+//                      zoom room above/below the photos (AppState.zoom-pad), focused photo zooms and
+//                      glows (a FocusGlow holder around the clipped photo)
+//   StorylineSection   collapsible overview; clicked-header() lets RequestDetailScreen sync its zone
+// ─────────────────────────────────────────────────────────────────────────────
+import { Theme, CastMember } from "theme.slint";
+import { AppState } from "app_state.slint";
+import { FocusGlow, FocusHalo, PressPulse } from "focus.slint";
+
+// ── Detail page shared atoms ──────────────────────────────────────────────────
+
+export component PosterBlock inherits Rectangle {
+    in property <image> source;
+    in property <bool> has-image:      false;
+    in property <bool> has-played:     false;
+    in property <float> resume-pct:     0.0;
+    in property <int> unplayed-count: 0;
+    // RequestDetailScreen only — already-formatted display text (e.g. "4K
+    // Needs Approval"), "" elsewhere. See the badge's own comment below.
+    in property <string> request-status: "";
+    width: 160px;
+    height: 240px;
+    border-radius: Theme.radius;
+    clip: true;
+    background: Theme.surface-raised;
+    if has-image: Image {
+        source: root.source;
+        width: parent.width;
+        height: parent.height;
+        image-fit: cover;
+    }
+    // progress bar (resume)
+    if root.resume-pct > 0.0 && !root.has-played: Rectangle {
+        x: 0;
+        y: parent.height - 4px;
+        width: parent.width * root.resume-pct;
+        height: 4px;
+        background: Theme.accent;
+    }
+    // ✓ played badge (top-right)
+    if root.has-played: Rectangle {
+        x: parent.width - self.width - 6px;
+        y: 6px;
+        width: 22px * AppState.text-scale;
+        height: self.width;
+        border-radius: self.height / 2;
+        background: Theme.accent;
+        Text {
+            text: "✓";
+            font-family: "Adwaita Sans";
+            color: white;
+            font-size: 11px * AppState.text-scale;
+            font-weight: 700;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            width: parent.width;
+            height: parent.height;
+        }
+    }
+    // unplayed-count pill (top-right, when no played badge)
+    if root.unplayed-count > 0 && !root.has-played: Rectangle {
+        x: parent.width - self.width - 6px;
+        y: 6px;
+        width: 22px * AppState.text-scale;
+        height: self.width;
+        border-radius: self.height / 2;
+        background: Theme.accent;
+        Text {
+            text: root.unplayed-count;
+            color: white;
+            font-size: 11px * AppState.text-scale;
+            font-weight: 700;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            width: parent.width;
+            height: parent.height;
+        }
+    }
+    // Seerr request-status badge (RequestDetailScreen only — "" elsewhere). Text comes
+    // formatted from the caller (e.g. "4K Needs Approval"); styled like MediaCard's
+    // availability pill, in PosterBlock's corner.
+    if root.request-status != "": Rectangle {
+        y: 4px;
+        height: 20px * AppState.text-scale;
+        width: request-status-text.preferred-width + 14px;
+        x: parent.width - self.width - 4px;
+        border-radius: self.height / 2;
+        background: root.request-status == "Available" || root.request-status == "4K Available" ? Theme.accent
+            : root.request-status == "Blocklisted" || root.request-status == "4K Blocklisted" ? Theme.error
+            : Theme.surface-overlay;
+        request-status-text := Text {
+            text: root.request-status;
+            color: Theme.text-bright;
+            font-size: 10px * AppState.text-scale;
+            font-weight: 700;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+    }
+}
+
+export component MetaLine inherits HorizontalLayout {
+    in property <string> meta;
+    in property <string> rating-label;
+    spacing: 16px;
+    alignment: start;
+    Text {
+        text: root.meta;
+        color: Theme.text-muted;
+        font-size: 14px * AppState.text-scale;
+    }
+
+    if root.rating-label != "": Text {
+        text: root.rating-label;
+        color: #f5c518;
+        font-size: 14px * AppState.text-scale;
+    }
+}
+
+export component CastRow inherits VerticalLayout {
+    in property <[CastMember]> cast;
+    in property <int> focused-idx: -1;
+    callback item-selected(/* idx */ int);
+    spacing: 12px;
+
+    // kb-x lives on CastRow (root), not on fl itself.
+    // A property on a Flickable that reads self.width / self.content-width creates
+    // a dependency cycle → "Recursion detected" panic (Slint gotcha). Reading
+    // fl.width from the parent element is safe (no self-reference).
+    property <length> kb-x: root.focused-idx <= 0 ? 0px
+        : clamp(
+                    -(root.focused-idx * 116px + 50px - fl.width / 2),
+                    min(0px, fl.width - hbox.preferred-width),
+                    0px);
+    changed kb-x => { fl.content-x = kb-x; }
+
+    Text {
+        text: "Cast & Crew";
+        color: Theme.text;
+        font-size: 16px * AppState.text-scale;
+        font-weight: 700;
+    }
+
+    // Flickable so keyboard navigation (content-x tracks focused-idx) scrolls the row.
+    // Card stride = 100px width + 16px spacing = 116px.
+    // kb-x drives content-x via changed callback; mouse-wheel scroll works natively.
+    fl := Flickable {
+        height: 162px + 2 * AppState.zoom-pad(120px);
+        content-width: hbox.preferred-width;
+        animate content-x {
+            duration: 150ms * AppState.settings-scroll-speed;
+            easing: ease-out-expo;
+        }
+
+        hbox := HorizontalLayout {
+            spacing: 16px;
+            alignment: start;
+            padding-top: AppState.zoom-pad(120px);
+            padding-bottom: AppState.zoom-pad(120px);
+
+            for c[i] in root.cast: VerticalLayout {
+                width: 100px;
+                spacing: 4px;
+                z: root.focused-idx == i ? 1 : 0;
+
+                // The glow + zoom holder (FocusGlow), the photo inside it: a Rectangle with clip +
+                // border — Slint renders that border on top of the children, so the focus ring
+                // shows even when the photo fills the area.
+                FocusGlow {
+                    height: 120px;
+                    // Focus zoom (AppState.focus-scale), a render transform; the row keeps room for it, the first photo grows from its left edge.
+                    transform-scale-x: AppState.zoom(root.focused-idx == i);
+                    transform-scale-y: AppState.zoom(root.focused-idx == i);
+                    transform-origin: { x: self.width * (i == 0 ? 0 : 0.5), y: self.height / 2 };
+                    animate transform-scale-x, transform-scale-y {
+                        duration: 150ms * AppState.settings-animation-speed;
+                        easing: ease-out-expo;
+                    }
+                    radius: Theme.radius;
+                    glowing: root.focused-idx == i;
+                    cast-pulse := PressPulse {
+                        trigger: AppState.kb-activate-pulse;
+                        active: root.focused-idx == i;
+                    }
+
+                    Rectangle {
+                        border-radius: Theme.radius;
+                        border-width: AppState.glow-ring-width(root.focused-idx == i, ta.pressed || cast-pulse.pulsing);
+                        border-color: AppState.focus-color;
+                        background: Theme.surface-raised;
+                        clip: true;
+                        animate border-width {
+                            duration: 90ms * AppState.settings-animation-speed;
+                            easing: ease-out-expo;
+                        }
+
+                        if c.has-photo: Image {
+                            source: c.photo;
+                            width: parent.width;
+                            height: parent.height;
+                            image-fit: cover;
+                        }
+
+                        // Hover overlay — read has-hover before ternary to keep binding alive
+                        Rectangle {
+                            background: { let h = ta.has-hover; h ? #ffffff18 : transparent; }
+                        }
+
+                        ta := TouchArea {
+                            clicked => { root.item-selected(i); }
+                        }
+                    }
+                }
+
+                Text {
+                    text: c.name;
+                    color: Theme.text;
+                    font-size: 12px * AppState.text-scale;
+                    font-weight: 600;
+                    overflow: elide;
+                }
+
+                Text {
+                    text: c.role;
+                    color: Theme.text-muted;
+                    font-size: 11px * AppState.text-scale;
+                    overflow: elide;
+                }
+            }
+        }
+    }
+}
+
+// ── Collapsible storyline section ─────────────────────────────────────────────
+export component StorylineSection inherits VerticalLayout {
+    in property <string> text;
+    in-out property <bool> expanded:    false;
+    in property <bool> kbd-focused: false;
+    // Fires on every header click, alongside toggling `expanded`, so RequestDetailScreen
+    // can move its keyboard zone (request-detail-zone) to where the mouse clicked —
+    // otherwise the next Enter could activate the wrong element. Other callers ignore it.
+    callback clicked-header();
+
+    hdr := Rectangle {
+        height: 44px;
+        background: ta.has-hover ? Theme.surface : transparent;
+        border-width: AppState.ring-width(root.kbd-focused, ta.pressed || story-pulse.pulsing);
+        border-color: AppState.focus-color;
+        border-radius: Theme.radius;
+        animate border-width {
+            duration: 90ms * AppState.settings-animation-speed;
+            easing: ease-out-expo;
+        }
+        FocusHalo {
+            glowing: root.kbd-focused;
+            radius: Theme.radius;
+        }
+
+        story-pulse := PressPulse {
+            trigger: AppState.kb-activate-pulse;
+            active: root.kbd-focused;
+        }
+
+        HorizontalLayout {
+            x: 0;
+            y: 0;
+            width: parent.width;
+            height: parent.height;
+            padding-left: 48px;
+            padding-right: 48px;
+            spacing: 8px;
+            alignment: start;
+            Text {
+                text: "Overview";
+                color: Theme.text;
+                font-size: 15px * AppState.text-scale;
+                font-weight: 600;
+                vertical-alignment: center;
+            }
+
+            Text {
+                text: expanded ? "▼" : "▶";
+                font-family: "Noto Sans Symbols 2";
+                color: Theme.text-muted;
+                font-size: 13px * AppState.text-scale;
+                vertical-alignment: center;
+            }
+        }
+
+        ta := TouchArea {
+            clicked => { expanded = !expanded; root.clicked-header(); }
+        }
+    }
+
+    VerticalLayout {
+        padding-left: 48px;
+        padding-right: 48px;
+        padding-bottom: 20px;
+
+        // Single clipping Rectangle whose height animates between collapsed (66px)
+        // and fully expanded (txt.preferred-height).  preferred-height is the text's
+        // natural wrapped height at the given width — it doesn't feed into any layout
+        // cycle because it reads the text content, not any allocated dimension.
+        Rectangle {
+            clip: true;
+            height: root.expanded ? max(txt.preferred-height, 66px) : 66px;
+            animate height {
+                duration: 200ms * AppState.settings-animation-speed;
+                easing: ease-in-out;
+            }
+
+            txt := Text {
+                x: 0;
+                y: 0;
+                text: root.text;
+                color: Theme.text-soft;
+                font-size: 15px * AppState.text-scale;
+                wrap: word-wrap;
+                width: min(root.width - 96px, 640px);
+            }
+        }
+    }
+}

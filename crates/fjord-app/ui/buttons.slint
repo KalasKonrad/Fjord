@@ -1,0 +1,279 @@
+// ── fjord-app · buttons.slint ────────────────────────────────────────────────
+//   FjordButton        accent / danger push button; kbd-focused ring; optional icon-left/-right
+//                      (pinned to Noto Sans Symbols 2, so the label keeps the chosen text font)
+//   IconCircleButton   circle button (`size`, 38px default; the glyph scales), accent when active; per-icon pinned fonts (Adwaita Sans
+//                      for ♥/✓, Noto Sans Math for ⇌ ⋮ ≡ ☾, Noto Sans Symbols 2 otherwise); also Now
+//                      Playing's transport row
+//   TabButton          tab pill (Bonfire admin, Dashboard rows editor); ring only on the active tab
+//   ConfirmDialog      generic dim-backdrop confirm/cancel modal; keyboard driven by the calling screen
+// ─────────────────────────────────────────────────────────────────────────────
+import { Theme } from "theme.slint";
+import { AppState } from "app_state.slint";
+import { FocusGlow, FocusHalo, PressPulse } from "focus.slint";
+
+// ── Accent button ─────────────────────────────────────────────────────────────
+export component FjordButton inherits FocusGlow {
+    in property <string> text;
+    // Optional icon glyph(s) in their own Text pinned to Noto Sans Symbols 2 (like every
+    // icon), so a button like "▶ Play" doesn't push the WORD through Noto (no Latin
+    // coverage → uncontrolled fallback). icon-left/icon-right for prefix ("▶ Play") and
+    // suffix ("30s ▶▶"); both empty by default.
+    in property <string> icon-left:  "";
+    in property <string> icon-right: "";
+    in property <bool> enabled:     true;
+    in property <bool> danger:      false;
+    in property <bool> kbd-focused: false;
+    callback clicked;
+
+    height: 38px;
+    radius: Theme.radius;
+    ring-width: root.in-bar ? AppState.bar-glow-ring-width(kbd-focused, ta.pressed || pulse.pulsing)
+        : AppState.glow-ring-width(kbd-focused, ta.pressed || pulse.pulsing);
+    glowing: kbd-focused;
+    fill: !enabled ? Theme.surface-raised
+        : ta.has-hover ? (danger ? #c53030 : Theme.accent-hover)
+        : (danger ? Theme.error : Theme.accent);
+    pulse := PressPulse {
+        trigger: AppState.kb-activate-pulse;
+        active: root.kbd-focused;
+    }
+
+    ta := TouchArea {
+        enabled: root.enabled;
+        clicked => { root.clicked(); }
+    }
+
+    HorizontalLayout {
+        alignment: center;
+        spacing: 6px;
+        if root.icon-left != "": Text {
+            text: root.icon-left;
+            color: root.enabled ? Theme.text-bright : Theme.text-subtle;
+            font-size: 14px * AppState.text-scale;
+            font-weight: 600;
+            font-family: "Noto Sans Symbols 2";
+            vertical-alignment: center;
+        }
+        if root.text != "": Text {
+            text: root.text;
+            color: root.enabled ? Theme.text-bright : Theme.text-subtle;
+            font-size: 14px * AppState.text-scale;
+            font-weight: 600;
+            vertical-alignment: center;
+        }
+        if root.icon-right != "": Text {
+            text: root.icon-right;
+            color: root.enabled ? Theme.text-bright : Theme.text-subtle;
+            font-size: 14px * AppState.text-scale;
+            font-weight: 600;
+            font-family: "Noto Sans Symbols 2";
+            vertical-alignment: center;
+        }
+    }
+}
+
+// Tab switcher pill (Bonfire admin, Dashboard rows editor): accent fill when active; the focus ring
+// shows only on the active tab while the caller's tab row has keyboard focus.
+export component TabButton inherits FocusGlow {
+    in property <string> label;
+    in property <bool> active;
+    in property <bool> kbd-focused;
+    callback clicked;
+
+    height: 34px;
+    radius: Theme.radius;
+    fill: active ? Theme.accent : (ta.has-hover ? Theme.surface : transparent);
+    animate-fill: true;
+    ring-width: AppState.glow-ring-width(kbd-focused && active, ta.pressed || pulse.pulsing);
+    glowing: kbd-focused && active;
+    pulse := PressPulse {
+        trigger: AppState.kb-activate-pulse;
+        active: root.active && root.kbd-focused;
+    }
+
+    ta := TouchArea {
+        clicked => { root.clicked(); }
+    }
+
+    Text {
+        text: root.label;
+        color: root.active ? Theme.text-bright : Theme.text;
+        font-size: 13px * AppState.text-scale;
+        font-weight: 600;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        width: parent.width;
+        height: parent.height;
+    }
+}
+
+// ── Circle icon button (♥ fav / ✓ watched) ───────────────────────────────────
+export component IconCircleButton inherits FocusGlow {
+    in property <string> icon;
+    in property <bool> active:      false;
+    in property <bool> kbd-focused: false;
+    // Diameter; the glyph scales with it (Now Playing's transport row is bigger).
+    in property <length> size: 38px;
+    callback clicked;
+
+    width: root.size;
+    height: root.size;
+    radius: root.size / 2;
+    ring-width: root.in-bar ? AppState.bar-glow-ring-width(kbd-focused, ta.pressed || pulse.pulsing)
+        : AppState.glow-ring-width(kbd-focused, ta.pressed || pulse.pulsing);
+    glowing: kbd-focused;
+    fill: active ? Theme.accent
+        : ta.has-hover ? Theme.surface-overlay
+        : Theme.surface-raised;
+    pulse := PressPulse {
+        trigger: AppState.kb-activate-pulse;
+        active: root.kbd-focused;
+    }
+
+    Text {
+        x: 0;
+        y: 0;
+        width: parent.width;
+        height: parent.height;
+        text: root.icon;
+        color: Theme.text-bright;
+        font-size: 20px * AppState.text-scale * root.size / 38px;
+        font-weight: 600;
+        // Hard-pinned regardless of Settings → Interface → Text font: ♥/✓ always
+        // render via Adwaita Sans specifically (the deliberately-chosen
+        // style for those two), every other icon this component shows
+        // (the now_playing.slint transport row: ⏮▶⏸⏭⇌↺🔉🔊) always
+        // via the bundled Noto Sans Symbols2 fallback font. Several
+        // candidate text fonts turned out to have their own competing
+        // glyphs for common icons like these — pinning explicitly means
+        // icon appearance never depends on which text font is active.
+        font-family: (root.icon == "❤" || root.icon == "✓") ? "Adwaita Sans"
+            : (root.icon == "⇌" || root.icon == "⋮" || root.icon == "≡" || root.icon == "☾") ? "Noto Sans Math" : "Noto Sans Symbols 2";
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    ta := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+// Generic confirm/cancel modal: dim backdrop (Theme.scrim) + Theme.surface-raised box +
+// drop shadow, the same chrome as PlaylistPicker and RequestOptionsOverlay. Cancel is
+// an outlined (ghost) button, not a FjordButton, so it reads as the secondary, safe
+// choice next to Confirm's solid fill.
+// Keyboard-dumb on purpose: `focused` (0=Cancel, 1=Confirm) is driven by the calling
+// screen's handle_key; `confirmed()`/`cancelled()` fire on the buttons, and
+// `cancelled()` also on a backdrop click.
+export component ConfirmDialog inherits Rectangle {
+    in property <string> title;
+    in property <string> message;
+    in property <string> confirm-label: "Confirm";
+    in property <int> focused: 0; // 0=Cancel, 1=Confirm
+    callback confirmed();
+    callback cancelled();
+
+    background: Theme.scrim;
+
+    // Close on backdrop click
+    TouchArea {
+        width: parent.width;
+        height: parent.height;
+        clicked => { root.cancelled(); }
+    }
+
+    Rectangle {
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        width: 360px * AppState.text-scale;
+        height: content.preferred-height + 32px;
+        border-radius: Theme.radius-lg;
+        background: Theme.surface-raised;
+        border-width: 1px;
+        border-color: Theme.border-strong;
+        drop-shadow-blur: 20px;
+        drop-shadow-color: Theme.shadow-strong;
+        drop-shadow-offset-y: 6px;
+
+        // Stop backdrop click from propagating through the box
+        TouchArea {
+            width: parent.width;
+            height: parent.height;
+        }
+
+        content := VerticalLayout {
+            x: 16px;
+            y: 16px;
+            width: parent.width - 32px;
+            // Bind the layout's height to its own preferred-height: a Layout placed directly in a
+            // plain Rectangle otherwise gets a default height that can disagree with the box
+            // (sized from content.preferred-height), leaving the button row outside the box.
+            height: self.preferred-height;
+            spacing: 16px;
+
+            Text {
+                text: root.title;
+                color: Theme.text;
+                font-size: 16px * AppState.text-scale;
+                font-weight: 700;
+                horizontal-alignment: center;
+                // Titles can carry a name ("Copy Settings from <profile>?"): wrap rather than cut.
+                wrap: word-wrap;
+            }
+
+            Text {
+                text: root.message;
+                color: Theme.text-muted;
+                font-size: 13px * AppState.text-scale;
+                horizontal-alignment: center;
+                wrap: word-wrap;
+            }
+
+            HorizontalLayout {
+                spacing: 12px;
+                alignment: center;
+                cancel-btn := Rectangle {
+                    width: 100px;
+                    height: 38px;
+                    border-radius: Theme.radius;
+                    background: transparent;
+                    border-width: max(1px, AppState.ring-width(root.focused == 0, cancel-ta.pressed || cancel-pulse.pulsing));
+                    border-color: root.focused == 0 ? AppState.focus-color : Theme.border-strong;
+                    animate border-width {
+                        duration: 90ms * AppState.settings-animation-speed;
+                        easing: ease-out-expo;
+                    }
+                    FocusHalo {
+                        glowing: root.focused == 0;
+                        radius: Theme.radius;
+                    }
+
+                    cancel-pulse := PressPulse {
+                        trigger: AppState.kb-activate-pulse;
+                        active: root.focused == 0;
+                    }
+
+                    cancel-ta := TouchArea {
+                        clicked => { root.cancelled(); }
+                    }
+
+                    Text {
+                        text: "Cancel";
+                        color: Theme.text;
+                        font-size: 14px * AppState.text-scale;
+                        font-weight: 600;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                }
+
+                FjordButton {
+                    text: root.confirm-label;
+                    width: 100px * AppState.text-scale;
+                    kbd-focused: root.focused == 1;
+                    clicked => { root.confirmed(); }
+                }
+            }
+        }
+    }
+}

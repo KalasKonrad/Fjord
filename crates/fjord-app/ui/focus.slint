@@ -1,0 +1,181 @@
+// ── fjord-app · focus.slint ──────────────────────────────────────────────────
+//   PressPulse         keyboard half of the press animation (kb-activate-pulse → 110 ms `pulsing`);
+//                      border-only, so pressing never resizes or re-weights text
+//   FocusGlow          a focusable picture/tile/button/pill that glows while focused: three stacked
+//                      layers cast AppState.glow-1/-2/-3 and repaint `fill`; the ring (ring-width /
+//                      ring-color) on top; raised (z) while lit. Used as the element (fill/ring-*/radius
+//                      instead of background/border-*/border-radius) or as a holder of a clipped picture
+//   FocusHalo          the glow around a focused row/field/menu entry (`sidebar: true` for the sidebar's):
+//                      a hollow nine-slice image (AppState.focus-halo, halo.rs) reaching past the
+//                      element's edges, lit by Settings "Glow on"; never covers the row itself.
+//                      Both stay dark while a bottom bar has the keys (AppState.bar-focus) unless `in-bar`
+//   FieldFocusWrap     focus ring around a LineEdit (which has no border of its own)
+// ─────────────────────────────────────────────────────────────────────────────
+import { Theme } from "theme.slint";
+import { AppState } from "app_state.slint";
+
+// Non-visual helper: instantiate as a NAMED child (e.g. `pulse := PressPulse {
+// trigger: AppState.kb-activate-pulse; active: root.kbd-focused; }`) and bind
+// the host element's `border-width: (ta.pressed || pulse.pulsing) ? 4px :
+// (kbd-focused ? 2px : 0px);` + `animate border-width {...}` to it — this is
+// the keyboard half of the universal press/click animation (mouse gets it for
+// free via TouchArea.pressed, which needs no Rust involvement). Deliberately
+// border-only, not a scale/opacity change — pressing never resizes, brightens,
+// or bolds the widget's own text, only a border appears/thickens (user
+// feedback: a scale-based version made text look like it was growing/getting
+// bolder on press, which read as gimmicky). `trigger` is bumped once by
+// keys.rs::handle_key() on every Enter press; every mounted PressPulse in the
+// tree sees the same bump but only plays the pulse if ITS OWN `active` input
+// (the widget's pre-existing focus/selection expression) is true at that
+// moment, so no per-widget identity/addressing scheme is needed. `pulsing`
+// self-resets after one Timer interval — same one-shot-Timer idiom as
+// FadeInTrigger below, just re-triggerable instead of fire-once. Declared
+// before FjordButton (Slint requires an element be declared before use within
+// the same file) since FjordButton is the first consumer.
+export component PressPulse {
+    in property <int> trigger;
+    in property <bool> active: true;
+    out property <bool> pulsing: false;
+
+    changed trigger => {
+        if root.active {
+            root.pulsing = true;
+            // Force a genuine stop-then-restart rather than just `= true` —
+            // Slint's Timer.running is dirty-checked like any property, so
+            // writing `true` when it's ALREADY true (a second trigger landing
+            // within the same 110ms window, e.g. rapid double-Enter) is a
+            // no-op and doesn't restart the countdown; the originally
+            // scheduled `triggered` still fires ~110ms after the FIRST press,
+            // cutting the second press's flash short. Both writes below are
+            // real value transitions, so both are always processed.
+            reset-timer.running = false;
+            reset-timer.running = true;
+        }
+    }
+    reset-timer := Timer {
+        interval: 110ms;
+        running: false;
+        triggered => {
+            root.pulsing = false;
+            self.running = false;
+        }
+    }
+}
+
+// ── FocusGlow ────────────────────────────────────────────────────────────────
+// A focusable picture, tile, button or pill that glows while focused (Settings → Interface → Focus
+// ring style + Focus glow strength). Use it in place of the element's Rectangle — `fill`,
+// `ring-width`, `ring-color`, `radius` instead of background, border-width, border-color,
+// border-radius, and `glowing` for the focus. The halos (AppState.glow-1/-2/-3, tight → wide) are
+// the drop shadows of three stacked layers: a Slint drop shadow is a blurred *filled* shape, so
+// every layer repaints `fill` over the halo below it, and the ring sits on the top layer, under
+// the element's own children. A clipped picture (ring drawn over the photo) goes inside it as a
+// child and `fill` stays transparent: the picture covers the halos' fill. The glow reaches
+// AppState.glow-reach past the edge; a glowing element is raised over its siblings (z).
+export component FocusGlow inherits Rectangle {
+    in property <bool> glowing;
+    in property <brush> fill: transparent;
+    in property <length> radius;
+    in property <length> ring-width: 0px;
+    in property <brush> ring-color: AppState.focus-color;
+    // Fade fill changes (90 ms, like the ring) — for an element whose fill follows focus or selection.
+    in property <bool> animate-fill: false;
+    // A bottom bar's own button (music bar, mini player): it keeps its glow while the bar has the
+    // keys (AppState.bar-focus hides every other element's).
+    in property <bool> in-bar: false;
+    property <bool> lit: root.glowing && AppState.focus-glow && (root.in-bar || !AppState.bar-focus);
+    property <duration> fill-ms: root.animate-fill ? 90ms * AppState.settings-animation-speed : 0ms;
+
+    z: root.lit ? 1 : 0;
+    border-radius: root.radius;
+    background: root.lit ? root.fill : transparent;
+    drop-shadow-blur: root.lit ? AppState.glow-3 : 0px;
+    drop-shadow-color: AppState.glow-color;
+    animate background {
+        duration: root.fill-ms;
+        easing: ease-out-expo;
+    }
+
+    Rectangle {
+        border-radius: root.radius;
+        background: root.lit ? root.fill : transparent;
+        drop-shadow-blur: root.lit ? AppState.glow-2 : 0px;
+        drop-shadow-color: AppState.glow-color;
+        animate background {
+            duration: root.fill-ms;
+            easing: ease-out-expo;
+        }
+
+        Rectangle {
+            border-radius: root.radius;
+            background: root.fill;
+            border-width: root.ring-width;
+            border-color: root.ring-color;
+            drop-shadow-blur: root.lit ? AppState.glow-1 : 0px;
+            drop-shadow-color: AppState.glow-color;
+            animate background {
+                duration: root.fill-ms;
+                easing: ease-out-expo;
+            }
+            animate border-width {
+                duration: 90ms * AppState.settings-animation-speed;
+                easing: ease-out-expo;
+            }
+        }
+    }
+}
+
+// ── FocusHalo ────────────────────────────────────────────────────────────────
+// The glow around a focused row, field or menu entry (Settings → Interface → Glow on: the sidebar
+// with `sidebar: true`, everything else with row-glow). Put it as the element's first child: it
+// fills the element and, while lit, draws AppState.focus-halo's hollow nine-slice image reaching
+// past every edge — nothing inside the element, so a see-through or transparent row isn't
+// flooded (FocusGlow needs an opaque fill for that). x/y are set and the image is `if`-mounted,
+// so neither feeds into the element's own size (Slint skips such children for layout info).
+// A scrolling list or a clipped box around the element cuts the glow at its edge.
+export component FocusHalo inherits Rectangle {
+    in property <bool> glowing;
+    in property <length> radius: 0px;
+    in property <bool> sidebar: false;
+    // A bottom bar's own element: keeps its glow while the bar has the keys (bar-focus).
+    in property <bool> in-bar: false;
+    property <bool> lit: root.glowing && (root.in-bar || !AppState.bar-focus)
+        && (root.sidebar ? AppState.sidebar-glow : AppState.row-glow);
+    // The image's reach, rounded up like halo.rs does.
+    property <length> pad: ceil(AppState.glow-reach / 1px) * 1px;
+
+    x: 0;
+    y: 0;
+
+    if root.lit: Image {
+        x: -root.pad;
+        y: -root.pad;
+        width: root.width + 2 * root.pad;
+        height: root.height + 2 * root.pad;
+        source: AppState.focus-halo(root.radius, AppState.glow-1, AppState.glow-2, AppState.glow-3);
+        colorize: AppState.glow-color;
+    }
+}
+
+// ── Field focus-ring wrapper ─────────────────────────────────────────────────
+// A 2px focus ring for a text field with no border of its own (std-widgets' LineEdit),
+// shown only while `focused` (login.slint shows it while the on-screen keyboard is open;
+// native focus has its own highlight otherwise). @children directly on the Rectangle (no
+// Layout), so a wrapped field's `x: 2px; y: 2px; width: parent.width - 4px` bindings
+// resolve against this root.
+export component FieldFocusWrap inherits Rectangle {
+    in property <bool> focused: false;
+    height: 40px;
+    border-radius: Theme.radius;
+    border-width: AppState.ring-width(root.focused, false);
+    border-color: AppState.focus-color;
+    animate border-width {
+        duration: 90ms * AppState.settings-animation-speed;
+        easing: ease-out-expo;
+    }
+    @children
+    FocusHalo {
+        glowing: root.focused;
+        radius: Theme.radius;
+    }
+}

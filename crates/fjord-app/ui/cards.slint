@@ -1,0 +1,540 @@
+// ── fjord-app · cards.slint ──────────────────────────────────────────────────
+//   BrowseItem         one row in the browse / search list
+//   MediaCard          poster card for rows and grids: the poster fills the card, the full title +
+//                      subtitle sit over its bottom on a dark fade; badges ♥ / ★ (top-left), ✓ /
+//                      count / Seerr availability / cross-tier pill (top-right), progress strip;
+//                      flush focus ring; a FocusGlow under the poster while focused (from the card's
+//                      edge with the line, the poster's in the Glow style); focus zoom via AppState.zoom from
+//                      zoom-anchor-x/-y (edge cards grow inward), raised with z; no poster fade;
+//                      the calendar card's (id "") 🗓 title pinned to Noto Sans Symbols 2
+//   TrackRow           one track of a track list (album/playlist page, the artist page's Tracks):
+//                      number, title (+ artist if not the page's), format/quality, duration, ♥, ✕
+//                      (playlists), disc label
+// ─────────────────────────────────────────────────────────────────────────────
+import { Theme, CardItem, TrackItem } from "theme.slint";
+import { AppState } from "app_state.slint";
+import { FocusGlow, FocusHalo, PressPulse } from "focus.slint";
+
+// ── Poster card (used inside horizontal scroll rows) ──────────────────────────
+export component MediaCard inherits Rectangle {
+    in property <CardItem> item;
+    in property <bool> focused: false;
+    // Where the zoom grows from (0 = left/top edge, 0.5 = centre, 1 = right/bottom edge): a row's
+    // first card and a grid's edge cards grow inward, so their scroll area doesn't cut them off.
+    in property <float> zoom-anchor-x: 0.5;
+    in property <float> zoom-anchor-y: 0.5;
+    callback clicked;
+    callback right-clicked;
+
+    width: 140px;
+    height: 224px;
+    border-radius: Theme.radius;
+    background: #00000000;
+    // Focus zoom (Settings → Interface → Zoom on the selected picture): a render transform, so
+    // nothing around it moves; drawn above its neighbours.
+    z: root.focused ? 1 : 0;
+    transform-scale-x: AppState.zoom(root.focused);
+    transform-scale-y: AppState.zoom(root.focused);
+    transform-origin: { x: self.width * root.zoom-anchor-x, y: self.height * root.zoom-anchor-y };
+    animate transform-scale-x, transform-scale-y {
+        duration: 150ms * AppState.settings-animation-speed;
+        easing: ease-out-expo;
+    }
+    pulse := PressPulse {
+        trigger: AppState.kb-activate-pulse;
+        active: root.focused;
+    }
+
+    // The glow (Glow styles), only on the focused card, under the poster (z: 0 — FocusGlow raises a
+    // glowing element). "Line and glow": from the card's edge, so it starts where the ring's line
+    // ends (the line covers the 3px gutter); "Glow": from the poster's edge (from the card's edge,
+    // the halos' fill would show in the gutter as a line).
+    if root.focused && AppState.focus-glow: FocusGlow {
+        property <length> inset: AppState.focus-line-width > 0 ? 0px : 3px;
+        x: self.inset;
+        y: self.inset;
+        width: root.width - 2 * self.inset;
+        height: root.height - 2 * self.inset;
+        z: 0;
+        glowing: true;
+        radius: Theme.radius;
+    }
+
+    // Inset 3px on every side so the focus/press ring (flush with root, declared last)
+    // has a gutter and doesn't bite into the poster/title. Use `padding`, NOT explicit
+    // x/y/width/height bindings on this layout: LibraryGrid gives MediaCard no explicit
+    // height, so root.height comes from the row layout's cache, and a child layout
+    // binding that reads root.height feeds back into it → "Recursion detected" panic
+    // (seen on the HTPC; an outset ring crashed the same way). `padding` is resolved
+    // inside the layout cache. See SLINT.md.
+    VerticalLayout {
+        padding: 3px;
+
+        // The poster fills the card; title and subtitle sit over its bottom on a dark fade, so
+        // every poster in a row has the same size however long its title is (0.5.1 — before,
+        // the text sat below and a long title shrank its poster).
+        poster-rect := Rectangle {
+            border-radius: Theme.radius;
+            background: Theme.surface-raised;
+            clip: true;
+
+            // No fade-in on the poster: grids reveal posters one by one as their fetches finish,
+            // and a per-card fade on top of that reads as continuous flashing however slow it is.
+            // The poster appears at full opacity when `has-poster` flips. (Every MediaCard screen.)
+            if item.has-poster: Image {
+                source: item.poster;
+                width: parent.width;
+                height: parent.height;
+                image-fit: cover;
+            }
+
+            // Title + subtitle over the bottom of the poster (also while it has none yet). Always
+            // the whole title, however many lines — a long one covers more of the poster. Plain
+            // Text items placed from their preferred heights, deliberately not a layout: a layout
+            // here would feed its size back into this component's own layout (the recursion note
+            // above). The scrim starts 18px above the title and darkens towards the bottom.
+            Rectangle {
+                y: title-text.y - 18px;
+                height: parent.height - self.y;
+                background: @linear-gradient(180deg, #00000000 0%, #000000b3 45%, #000000e0 100%);
+            }
+
+            title-text := Text {
+                x: 6px;
+                width: parent.width - 12px;
+                height: self.preferred-height;
+                y: subtitle-text.y - (item.subtitle != "" ? 2px : 0px) - self.height;
+                text: item.title;
+                // The Coming Up row's calendar card (id "") has 🗓 as its title — pinned to the
+                // bundled font that has it. Unpinned, the text font lacks it and the first draw
+                // searched the system fonts inside the frame: 660 ms on dev, ~1.4 s on the HTPC
+                // (Discover's first visit). "" = the window's default font for every other card.
+                font-family: item.id == "" && item.item-type == "" ? "Noto Sans Symbols 2" : "";
+                color: Theme.text;
+                font-size: 12px * AppState.text-scale;
+                font-weight: 600;
+                wrap: word-wrap;
+            }
+
+            subtitle-text := Text {
+                x: 6px;
+                width: parent.width - 12px;
+                height: item.subtitle != "" ? self.preferred-height : 0px;
+                y: parent.height - 7px - self.height;
+                visible: item.subtitle != "";
+                text: item.subtitle;
+                color: Theme.text-muted;
+                font-size: 10px * AppState.text-scale;
+                wrap: word-wrap;
+            }
+
+            // In-progress bar at bottom of poster
+            if item.resume-pct > 0 && !item.has-played: Rectangle {
+                y: parent.height - 3px;
+                height: 3px;
+                background: Theme.surface-overlay;
+                Rectangle {
+                    x: 0;
+                    width: parent.width * item.resume-pct;
+                    height: parent.height;
+                    background: Theme.accent;
+                }
+            }
+
+            // Favourite heart badge
+            if item.is-favorite: Rectangle {
+                x: 4px;
+                y: 4px;
+                width: 24px * AppState.text-scale;
+                height: self.width;
+                border-radius: self.height / 2;
+                background: Theme.accent;
+                Text {
+                    text: "❤";
+                    font-family: "Adwaita Sans";
+                    color: Theme.text-bright;
+                    font-size: 14px * AppState.text-scale;
+                    font-weight: 900;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+            }
+
+            // Watchlist star badge, top-left — under the ♥ when both show (the bottom belongs to
+            // the title). On ANY card with on-watchlist — Discover or a library item.
+            // Unpinned font, like the ★/☆ glyphs in context_menu.slint/request_detail.slint.
+            if item.on-watchlist: Rectangle {
+                x: 4px;
+                y: item.is-favorite ? 8px + 24px * AppState.text-scale : 4px;
+                width: 24px * AppState.text-scale;
+                height: self.width;
+                border-radius: self.height / 2;
+                background: Theme.accent;
+                Text {
+                    text: "★";
+                    color: Theme.text-bright;
+                    font-size: 14px * AppState.text-scale;
+                    font-weight: 900;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+            }
+
+            // Watched checkmark badge
+            if item.has-played: Rectangle {
+                x: parent.width - self.width - 4px;
+                y: 4px;
+                width: 24px * AppState.text-scale;
+                height: self.width;
+                border-radius: self.height / 2;
+                background: Theme.accent;
+                Text {
+                    text: "✓";
+                    font-family: "Adwaita Sans";
+                    color: Theme.text-bright;
+                    font-size: 18px * AppState.text-scale;
+                    font-weight: 900;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+            }
+
+            // Unseen episode count badge (series)
+            if item.unplayed-count > 0 && !item.has-played: Rectangle {
+                x: parent.width - self.width - 4px;
+                y: 4px;
+                width: 24px * AppState.text-scale;
+                height: self.width;
+                border-radius: self.height / 2;
+                background: Theme.accent;
+                Text {
+                    text: "\{item.unplayed-count}";
+                    color: Theme.text-bright;
+                    font-size: 11px * AppState.text-scale;
+                    font-weight: 900;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+            }
+
+            // Seerr availability pill (Discover cards only — "" on Jellyfin cards). Tier-prefixed
+            // ("4K Requested", "4K In Library") only for requested-4k; "blocklisted" never is (blocklisting sets
+            // both tiers together server-side).
+            if item.availability != "": Rectangle {
+                y: 4px;
+                height: 20px * AppState.text-scale;
+                width: avail-text.preferred-width + 14px;
+                x: parent.width - self.width - 4px;
+                border-radius: self.height / 2;
+                background: item.availability == "available" ? Theme.accent
+                    : item.availability == "blocklisted" ? Theme.error
+                    : Theme.surface-overlay;
+                avail-text := Text {
+                    text: item.availability == "blocklisted" ? "Blocklisted" : (item.requested-4k ? "4K " : "") + (
+                        item.availability == "requested" ? "Requested"
+                        : item.availability == "processing" ? "Processing"
+                        : item.availability == "partial" ? "Partial"
+                        : item.availability == "available" ? "In Library"
+                        : "");
+                    color: Theme.text-bright;
+                    font-size: 10px * AppState.text-scale;
+                    font-weight: 700;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+            }
+
+            // Cross-tier pill, top-right under the availability pill — Discover "Requested" row only. Two states share it,
+            // `other-tier-available` winning:
+            //   - other-tier-available: the OTHER tier is already watchable — filled accent,
+            //     "Available in 2K/4K".
+            //   - other-tier-requested: BOTH tiers requested, neither available — muted surface,
+            //     "Also requested in 2K/4K".
+            // See CardItem in theme.slint.
+            if item.other-tier-available || item.other-tier-requested: Rectangle {
+                y: 8px + 20px * AppState.text-scale;
+                height: 20px * AppState.text-scale;
+                width: other-tier-text.preferred-width + 14px;
+                x: parent.width - self.width - 4px;
+                border-radius: self.height / 2;
+                background: item.other-tier-available ? Theme.accent : Theme.surface-overlay;
+                other-tier-text := Text {
+                    text: item.other-tier-available
+                        ? (item.requested-4k ? "Available in 2K" : "Available in 4K")
+                        : (item.requested-4k ? "Also requested in 2K" : "Also requested in 4K");
+                    color: Theme.text-bright;
+                    font-size: 10px * AppState.text-scale;
+                    font-weight: 700;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+            }
+
+            // Hover highlight — on top of image and badges so it is visible even
+            // when a poster image fills the rectangle.
+            Rectangle {
+                background: #ffffff1a;
+                opacity: ta.has-hover ? 1.0 : 0.0;
+                animate opacity {
+                    duration: 120ms * AppState.settings-animation-speed;
+                    easing: ease;
+                }
+            }
+        }
+    }
+
+    ta := TouchArea {
+        clicked => { root.clicked(); }
+        pointer-event(e) => {
+            if e.button == PointerEventButton.right && e.kind == PointerEventKind.up {
+                root.right-clicked();
+            }
+        }
+    }
+
+    // Focus/press ring as a last-declared transparent overlay, not root's border (which
+    // could paint under the poster). Flush with root on purpose: an outset ring caused a
+    // "Recursion detected" panic on hover and got clipped by the Flickable at row edges —
+    // the gutter comes from the content's 3px inset instead.
+    Rectangle {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.height;
+        border-radius: Theme.radius;
+        border-width: AppState.glow-ring-width(focused, ta.pressed || pulse.pulsing);
+        border-color: AppState.focus-color;
+        background: transparent;
+        animate border-width {
+            duration: 90ms * AppState.settings-animation-speed;
+            easing: ease-out-expo;
+        }
+    }
+}
+
+// ── Track row ─────────────────────────────────────────────────────────────────
+// One track of a track list — the album/playlist page and the artist page's Tracks: number (the
+// track's own, else its position), title + the track's artist when it differs from `page-artist`,
+// duration, ♥, a ✕ remove button when `removable` (playlists), and the "Disc N" label above a disc's
+// first track (drawn in the `sep-h` gap the caller's row-y math leaves). The page owns the focus
+// (`focused`) and what a click / double click / ✕ does.
+export component TrackRow inherits Rectangle {
+    in property <TrackItem> track;
+    in property <int> index;
+    in property <bool> focused;
+    in property <string> page-artist;
+    in property <bool> removable: false;
+    in property <length> sep-h: 28px;
+    callback clicked();
+    callback double-clicked();
+    callback remove();
+
+    background: root.focused ? Theme.accent-muted : (ta.has-hover ? Theme.surface : transparent);
+    border-width: AppState.ring-width(track-pulse.active, ta.pressed || track-pulse.pulsing);
+    border-color: AppState.focus-color;
+    animate border-width {
+        duration: 90ms * AppState.settings-animation-speed;
+        easing: ease-out-expo;
+    }
+    FocusHalo {
+        glowing: track-pulse.active;
+    }
+
+    track-pulse := PressPulse {
+        trigger: AppState.kb-activate-pulse;
+        active: root.focused;
+    }
+
+    ta := TouchArea {
+        mouse-cursor: MouseCursor.pointer;
+        double-clicked => { root.double-clicked(); }
+        clicked => { root.clicked(); }
+    }
+
+    // Disc separator, in the gap above this row that the caller's row-y math reserves. Transparent:
+    // it matches the unfocused row background below it.
+    if root.track.disc-header != "": Rectangle {
+        x: 0px;
+        y: -root.sep-h;
+        width: parent.width;
+        height: root.sep-h;
+        Text {
+            x: 16px;
+            text: root.track.disc-header;
+            color: Theme.accent;
+            font-size: 11px * AppState.text-scale;
+            font-weight: 700;
+            vertical-alignment: center;
+            height: parent.height;
+        }
+    }
+
+    // Left accent bar (focused indicator)
+    if root.focused: Rectangle {
+        x: 0;
+        y: 0;
+        width: 3px;
+        height: parent.height;
+        background: Theme.accent;
+    }
+    // Bottom separator
+    Rectangle {
+        x: 0;
+        y: parent.height - 1px;
+        height: 1px;
+        background: Theme.border;
+    }
+
+    HorizontalLayout {
+        padding-left: 16px;
+        padding-right: 20px;
+        spacing: 14px;
+        alignment: start;
+
+        // Track number
+        Text {
+            text: root.track.track-number > 0 ? root.track.track-number : root.index + 1;
+            color: root.track.has-played ? Theme.accent : Theme.text-muted;
+            font-size: 13px * AppState.text-scale;
+            width: 24px * AppState.text-scale;
+            vertical-alignment: center;
+            horizontal-alignment: right;
+        }
+
+        // Title + artist
+        VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 1;
+            spacing: 2px;
+            Text {
+                text: root.track.title;
+                color: root.track.has-played ? Theme.text-muted : Theme.text;
+                font-size: 14px * AppState.text-scale;
+                overflow: elide;
+            }
+
+            if root.track.artist != "" && root.track.artist != root.page-artist: Text {
+                text: root.track.artist;
+                color: Theme.text-subtle;
+                font-size: 11px * AppState.text-scale;
+                overflow: elide;
+            }
+        }
+
+        // Format + quality ("FLAC 16/44.1", "MP3 256 kbps")
+        if root.track.quality != "": Text {
+            text: root.track.quality;
+            color: Theme.text-subtle;
+            font-size: 11px * AppState.text-scale;
+            vertical-alignment: center;
+        }
+
+        // Duration
+        Text {
+            text: root.track.duration;
+            color: Theme.text-muted;
+            font-size: 13px * AppState.text-scale;
+            vertical-alignment: center;
+            width: 44px * AppState.text-scale;
+            horizontal-alignment: right;
+        }
+
+        // Favorite indicator
+        if root.track.is-favorite: Text {
+            text: "♥";
+            font-family: "Adwaita Sans";
+            color: Theme.accent;
+            font-size: 12px * AppState.text-scale;
+            vertical-alignment: center;
+            width: 16px * AppState.text-scale;
+        }
+
+        // ✕ remove entry — playlists only
+        if root.removable: Rectangle {
+            width: 26px;
+            border-width: x-ta.pressed ? 3px : 0px;
+            border-color: Theme.error;
+            border-radius: Theme.radius;
+            animate border-width {
+                duration: 90ms * AppState.settings-animation-speed;
+                easing: ease-out-expo;
+            }
+            x-ta := TouchArea {
+                clicked => { root.remove(); }
+            }
+
+            Text {
+                text: "✕";
+                font-family: "Noto Sans Symbols 2";
+                color: x-ta.has-hover ? Theme.error : Theme.text-subtle;
+                font-size: 13px * AppState.text-scale;
+                vertical-alignment: center;
+                horizontal-alignment: center;
+                width: parent.width;
+                height: parent.height;
+            }
+        }
+    }
+}
+
+// ── Browse-screen list row ────────────────────────────────────────────────────
+export component BrowseItem inherits Rectangle {
+    in property <string> text;
+    in property <bool> selected: false;
+    callback clicked;
+    callback activated;
+    callback right-clicked;
+
+    height: 42px;
+    border-radius: Theme.radius;
+    background: { let hov = ta.has-hover; selected ? Theme.accent-muted : (hov ? Theme.surface-raised : #00000000) };
+    border-width: AppState.ring-width(pulse.active, ta.pressed || pulse.pulsing);
+    border-color: AppState.focus-color;
+    animate border-width {
+        duration: 90ms * AppState.settings-animation-speed;
+        easing: ease-out-expo;
+    }
+    FocusHalo {
+        glowing: pulse.active;
+        radius: Theme.radius;
+    }
+
+    pulse := PressPulse {
+        trigger: AppState.kb-activate-pulse;
+        active: root.selected;
+    }
+
+    ta := TouchArea {
+        clicked => { root.clicked(); }
+        double-clicked => { root.activated(); }
+        pointer-event(e) => {
+            if e.button == PointerEventButton.right && e.kind == PointerEventKind.up {
+                root.right-clicked();
+            }
+        }
+    }
+
+    HorizontalLayout {
+        padding-left: 10px;
+        padding-right: 12px;
+        spacing: 8px;
+        alignment: start;
+
+        Rectangle {
+            width: 3px;
+            height: 20px;
+            y: (parent.height - self.height) / 2;
+            border-radius: 1.5px;
+            background: selected ? Theme.accent : #00000000;
+        }
+
+        Text {
+            text: root.text;
+            color: selected ? Theme.text : Theme.text-muted;
+            font-size: 14px * AppState.text-scale;
+            overflow: elide;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+        }
+    }
+}

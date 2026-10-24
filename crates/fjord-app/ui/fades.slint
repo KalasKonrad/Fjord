@@ -1,0 +1,110 @@
+// ── fjord-app · fades.slint ──────────────────────────────────────────────────
+//   FadeInTrigger      fade-in-on-creation helper (Timer kick; the opacity animate is speed-scaled);
+//                      used by player.slint's skip overlays and the permanently mounted screens
+//   FadeGate           symmetric fade in/out that owns mount/unmount (`if gate.mounted: X {
+//                      opacity: gate.fade-opacity; }`) — every main.slint screen/overlay uses it
+//   StackPage          base of main.slint's stacked full-screen pages: fills the stack, page background
+//                      (see-through for video behind the UI), `fade` from its FadeGate
+// ─────────────────────────────────────────────────────────────────────────────
+import { Theme } from "theme.slint";
+import { AppState } from "app_state.slint";
+
+// ── StackPage ────────────────────────────────────────────────────────────────
+// The base of every full-screen page in main.slint's `stack` (Series, Season, Artist, Collection,
+// Album, Detail, Person, Request Detail/Options, Calendar, Blocklist): it fills the stack (the window
+// above the bottom bars), has the page background — see-through while a video plays behind the UI —
+// and fades with its FadeGate (`fade: gateN.fade-opacity`). A page with its own background (a
+// modal's scrim, an always-opaque page) sets `background:` in its definition.
+export component StackPage inherits Rectangle {
+    in property <float> fade: 1;
+    background: (AppState.video-behind-ui && AppState.has-background-player) ? transparent : Theme.bg;
+    opacity: root.fade;
+    animate opacity {
+        duration: 200ms * AppState.settings-animation-speed;
+        easing: ease-out-expo;
+    }
+}
+
+// Non-visual helper: instantiate as a NAMED child (e.g. `fade := FadeInTrigger {}`)
+// and bind the host element's `opacity: fade.fade-opacity;` + `animate opacity {...}`
+// to fade it in shortly after creation. Exposes fade-opacity as an out property
+// rather than writing `parent.opacity` directly — `parent` from inside the Timer
+// refers to FadeInTrigger itself (its immediate parent), not the host two levels
+// up, so a direct `parent.opacity` write silently no-ops on the host and leaves it
+// stuck invisible. Uses a Timer rather than `init =>` because the opacity write
+// needs to land on a genuinely later event-loop tick — writing it in the same tick
+// as the initial `opacity: 0` binding would just coalesce into a single value with
+// nothing for `animate` to transition from. Used for entrance fades on `if`-gated
+// elements (destroyed/recreated on every toggle, unlike an always-mounted element
+// whose opacity binding can just react to a condition changing).
+export component FadeInTrigger {
+    out property <float> fade-opacity: 0;
+    Timer {
+        interval: 16ms;
+        running: true;
+        triggered => {
+            fade-opacity = 1;
+            self.running = false;
+        }
+    }
+}
+
+// FadeGate: symmetric fade in/out. FadeInTrigger only handles the entrance —
+// the consumer's own `if condition: Element {...}` still destroys the
+// element the instant `condition` goes false, so nothing ever fades out.
+// FadeGate owns the mount decision itself: declare it as an always-present
+// sibling (`gate := FadeGate { show: <condition>; }`), then gate the `if` on
+// `gate.mounted` (not the raw condition) and bind `opacity: gate.fade-opacity;`.
+// `mounted` stays true for one fade-out's worth of time after `show` goes
+// false, so the element is still there to actually play that fade before
+// `if gate.mounted` unmounts it. The consumer still declares its own
+// `animate opacity {...}` block, same as with FadeInTrigger.
+export component FadeGate {
+    in property <bool> show: false;
+    out property <bool> mounted: false;
+    out property <float> fade-opacity: 0;
+
+    init => {
+        root.mounted = root.show;
+        if root.show {
+            kick-timer.running = true;
+        }
+    }
+
+    changed show => {
+        if root.show {
+            unmount-timer.running = false;
+            root.mounted = true;
+            kick-timer.running = true;
+        } else {
+            // Cancel a pending kick-timer: if show goes true→false before its 16 ms tick, it
+            // would still fire later and flash the element back to full opacity. (show-login
+            // starts true before the saved-session check flips it, so this hit every cold start.)
+            kick-timer.running = false;
+            root.fade-opacity = 0;
+            unmount-timer.running = true;
+        }
+    }
+
+    // Bumps opacity 0→1 a frame after mounting, same trick as FadeInTrigger,
+    // so the consumer's `animate opacity` has a real transition to interpolate.
+    kick-timer := Timer {
+        interval: 16ms;
+        running: false;
+        triggered => {
+            root.fade-opacity = 1;
+            self.running = false;
+        }
+    }
+
+    // Keeps `mounted` true for exactly as long as the fade-out animation
+    // takes, so `if gate.mounted` doesn't destroy the element mid-fade.
+    unmount-timer := Timer {
+        interval: max(16ms, 200ms * AppState.settings-animation-speed);
+        running: false;
+        triggered => {
+            root.mounted = false;
+            self.running = false;
+        }
+    }
+}
