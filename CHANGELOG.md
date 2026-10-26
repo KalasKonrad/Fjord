@@ -23,6 +23,10 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Improved: playback after the server's disks have slept.** When the first
+  file of the day takes long to open, Fjord now keeps waiting instead of
+  restarting the request every 5 seconds (which could even make Jellyfin
+  answer with an error).
 - **Fixed: the first Discover title of a session froze for over a second** on
   the HTPC. Its production countries were shown with flag emoji that Fjord's
   fonts don't have; they're now plain names ("United States, United

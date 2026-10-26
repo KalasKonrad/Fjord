@@ -18,11 +18,12 @@ const MAX_STALL_RELOAD_ATTEMPTS_UNHEALTHY: u32 = 2; // (2+1) × 5s = 15s, the or
 pub(crate) const STALL_GIVE_UP_TOAST: &str = "Playback stopped — lost connection to server";
 /// Seconds without progress before a reload, normally.
 pub(crate) const STALL_SECS: f64 = 5.0;
-/// The same for an item's FIRST open while mpv hasn't reached FileLoaded yet
-/// (2026-10-08): the server's media disks spin down, and waking them makes
-/// the first open hang 5–12 s — a reload at 5 s just restarted a request
-/// that was about to succeed. Reloads after that use STALL_SECS again, so a
-/// server that's really down still gives up about as fast as before.
+/// The same while mpv hasn't reached FileLoaded yet (2026-10-08): the server's
+/// media disks spin down, and waking them makes the first open hang 5–12 s (27 s
+/// after a long idle) — a reload at 5 s just restarted a request that was about
+/// to succeed. Applies to the first open, and to retries of an item that never
+/// opened while the server is reachable (timer.rs opening_grace); otherwise
+/// retries use STALL_SECS, so a server that's really down still gives up fast.
 pub(crate) const FIRST_OPEN_STALL_SECS: f64 = 15.0;
 pub(crate) const FAILED_OPEN_TOAST: &str = "Couldn't play this — the file wouldn't open";
 pub(crate) const TRAILER_FAILED_TOAST: &str = "Trailer unavailable";
