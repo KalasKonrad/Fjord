@@ -7,8 +7,9 @@
 //                           this render thread (a 300–400 ms freeze at every song change)
 //   Tick / TickOut          what every step shares / what the locked steps decide for dispatch
 //   skip_fade               the delayed skip-segment seek + the audio ramp/mute around it
-//   check_stall             stall recovery: no progress in STALL_SECS (FIRST_OPEN_STALL_SECS for a
-//                           first open before FileLoaded; after it only the time since FileLoaded
+//   check_stall             stall recovery: no progress in STALL_SECS (FIRST_OPEN_STALL_SECS before
+//                           FileLoaded — opening_grace: the first open, and a retry of an item that
+//                           never opened while the server is reachable; after it only the time since FileLoaded
 //                           counts — stalled_since_load, unit-tested) → reload at the last good
 //                           position, budget by connection health (ws_connected/keep-alive)
 //   startup_diagnostics     mpv start-up snapshots, decoder info, the no-VideoReconfig warning
@@ -336,21 +337,35 @@ fn check_stall(vs: &mut VideoState, t: &Tick, out: &mut TickOut) {
         // disks waking up) was otherwise reloaded on the very tick it finally loaded.
         let stalled_for =
             stalled_since_load(vs.stall_last_progress_at.map(|t| t.elapsed()), loaded_since);
-        let first_open = loaded_since.is_none()
-            && !vs
-                .stall_reload_attempts_for
-                .as_ref()
-                .is_some_and(|(id, n)| *n > 0 && vs.item_id.as_deref() == Some(id.as_str()));
-        let stall_limit = if first_open {
+        if loaded_since.is_some() && vs.stall_opened_item != vs.item_id {
+            vs.stall_opened_item = vs.item_id.clone();
+        }
+        let reloading_this_item = vs
+            .stall_reload_attempts_for
+            .as_ref()
+            .is_some_and(|(id, n)| *n > 0 && vs.item_id.as_deref() == Some(id.as_str()));
+        let opened_before = vs.stall_opened_item.is_some() && vs.stall_opened_item == vs.item_id;
+        let grace = opening_grace(
+            loaded_since.is_some(),
+            reloading_this_item,
+            opened_before,
+            connection_likely_healthy,
+        );
+        let stall_limit = if grace {
             FIRST_OPEN_STALL_SECS
         } else {
             STALL_SECS
         };
-        if first_open && stalled_for >= STALL_SECS && !vs.stall_grace_logged {
+        if grace && stalled_for >= STALL_SECS && !vs.stall_grace_logged {
             vs.stall_grace_logged = true;
             debug!(
-                "still opening after {stalled_for:.1}s (server disks waking up?) — first open of this item, \
-                 waiting up to {FIRST_OPEN_STALL_SECS:.0}s before a reload"
+                "still opening after {stalled_for:.1}s (server disks waking up?) — not opened yet{}, \
+                 waiting up to {FIRST_OPEN_STALL_SECS:.0}s before a reload",
+                if reloading_this_item {
+                    " (a retry)"
+                } else {
+                    ""
+                }
             );
         }
         let is_stalled = start.elapsed() >= Duration::from_secs(5)
@@ -1422,6 +1437,20 @@ fn seek_and_controls(vs: &mut VideoState, t: &Tick) {
     }
 }
 
+/// Whether a file that hasn't opened yet gets FIRST_OPEN_STALL_SECS instead of STALL_SECS: its
+/// first open always; a retry too while the item never got as far as FileLoaded and the server is
+/// reachable (a long disk spin-up — 2026-10-26 took 27 s, and 5 s retries only restarted the
+/// request and drew an HTTP 500). Once it has opened, or with the connection in doubt, retries
+/// use STALL_SECS, so a real outage still gives up fast.
+fn opening_grace(
+    loaded: bool,
+    reloading_this_item: bool,
+    opened_before: bool,
+    healthy: bool,
+) -> bool {
+    !loaded && (!reloading_this_item || (healthy && !opened_before))
+}
+
 /// Seconds without progress as the stall check counts them: since the last progress checkpoint,
 /// but never longer than the file has been open (`loaded_since`, None while it's still opening).
 fn stalled_since_load(since_progress: Option<Duration>, loaded_since: Option<Duration>) -> f64 {
@@ -2174,6 +2203,19 @@ fn on_natural_end(t: &Tick) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_retry_of_a_file_that_never_opened_keeps_the_opening_grace() {
+        // First open: the grace, whatever the connection.
+        assert!(opening_grace(false, false, false, false));
+        // A retry while it never opened and the server is reachable (disks waking up): still.
+        assert!(opening_grace(false, true, false, true));
+        // A retry with the connection in doubt, or after it had opened once: the normal limit.
+        assert!(!opening_grace(false, true, false, false));
+        assert!(!opening_grace(false, true, true, true));
+        // Once open, never.
+        assert!(!opening_grace(true, false, false, true));
+    }
 
     #[test]
     fn a_slow_first_open_is_not_a_stall_once_it_loads() {

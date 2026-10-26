@@ -263,6 +263,10 @@ pub(crate) struct VideoState {
     // recovery for the rest of a long video; a server that stays down never earns that.
     pub stall_reload_attempts_for: Option<(String, u32)>,
     pub stall_last_reload_at: Option<Instant>,
+    // The item that last reached FileLoaded — survives a reload like the record above, so a
+    // retry can tell "never got as far as opening" (a long disk spin-up: keep the opening
+    // grace) from "opened, then stalled" (a real stall: the normal limit).
+    pub stall_opened_item: Option<String>,
     /// "Still opening — first-open grace" already logged for this player
     /// (2026-10-08; see FIRST_OPEN_STALL_SECS).
     pub stall_grace_logged: bool,
@@ -387,6 +391,7 @@ impl Default for VideoState {
             stall_last_tick_pos: None,
             stall_reload_attempts_for: None,
             stall_last_reload_at: None,
+            stall_opened_item: None,
             stall_grace_logged: false,
             screensaver_cookie: PlaybackCookies::default(),
             chapters: Vec::new(),
@@ -748,7 +753,7 @@ fn reset_video_state_for_playback(
     // whatever was playing (or being seeked in) right before this reset.
     vs.stall_last_tick_pos = None;
     vs.stall_grace_logged = false;
-    // stall_reload_attempts_for/stall_last_reload_at deliberately NOT reset
+    // stall_reload_attempts_for/stall_last_reload_at/stall_opened_item deliberately NOT reset
     // here — see their own doc comment on VideoState for why they must
     // survive a same-item reload.
     vs.decoder_logged = false;
