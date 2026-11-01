@@ -2948,6 +2948,14 @@ The post-decode trigger needed a guard. It re-runs `sync_to_source` 2 s after lo
 
 This is not the brief 1080p choppiness reported the same day: those sessions had 0 drops. See the next section for the logging added for that.
 
+### Video hitch log (2026-11-01, branch `release-0.5.1`)
+
+Reported from the HTPC: 1080p video looked choppy for a short while, mid-playback, "like something loading in the background". The logs couldn't explain it. In the week's 1080p sessions `frame-drops` stayed at 0, nothing was logged from 45 s after the start until the end except the user's own keys, and the Jellyfin WebSocket's delta refresh (the one thing that does load in the background during playback) ran in only 3 of 11 sessions, each within ~25 s of the start. What's missing: `ui_watch` only logs frames from 150 ms and a UI stall from 250 ms, while a frame lasts 41.7 ms; `video backplane: … over 4 ms on N (slowest M)` has no timestamps; mistimed and delayed frames weren't logged at all; the cache level only for the first ~8 s.
+
+`playback/hitch.rs` (`HitchWatch`) now watches this. A frame 1.5 frame periods after the previous one, or a jump in mpv's dropped/decoder-dropped/mistimed/delayed counts (the latter two newly observed, so the tick still never does a `get_property`), opens a hitch; events up to 2 s apart merge, and one `video hitch before …` line follows with what was going on. `slowest frame` is the time from BeforeRendering to AfterRendering, `UI thread late` how late the 16 ms tick ran. Both large: Fjord's frame was slow. Only the tick late: other work on the UI thread. Both small with late frames: Fjord wasn't busy, so mpv had no frame yet or the compositor held it.
+
+Not counted: paused, seeking, audio, the first 5 s of a file and 1 s after any of those. Limits: at most 100 lines per player (`hitches=` in the 5-minute line keeps counting), a hitch over 30 s is reported in parts. A frame only counts when Fjord renders, so window redraws during an OSD animation can hide a gap; mpv's counters still catch those. The period comes from the file's fps, so a file faster than the display (60 fps on 24 Hz) would count every frame as late, which the cap bounds. Not live-tested.
+
 ### Opening grace for retries while the disks wake up (2026-10-26, branch `release-0.5.1`)
 
 HTPC r1281 2026-10-26 06:26 (the first open after the night): `still opening after 5.0s` → no progress for 15 s → reload (attempt 1); the retry was reloaded after only 5 s (attempt 2: the 15 s FIRST_OPEN_STALL_SECS applied only while no reload had happened); the third request got `HTTP error 500` from Jellyfin → mpv error -13 → reload (attempt 3); the fourth played at once. ~27 s from Play to picture. The same build's other first opens (2026-10-25 16:31, 2026-10-26 18:04) loaded within the 15 s. The reloads restarted requests the waking server was about to answer, and probably provoked the 500.

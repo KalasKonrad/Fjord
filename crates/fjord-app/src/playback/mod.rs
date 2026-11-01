@@ -5,6 +5,7 @@
 //     tracks   track list model, time formatting, apply_audio_track
 //     render   wire_rendering_notifier + FBO helpers (GL thread)
 //     stall    stall-recovery budget + next_stall_step
+//     hitch    HitchWatch: brief choppiness mid-playback, for the log
 //     start    start_playback, one function per step
 //     timer    wire_mpv_timer (16 ms tick)
 //   SkipFadeAudio / arm_skip_fade  the skip-segment fade (PCM volume ramp or passthrough mute)
@@ -16,7 +17,7 @@
 //                           (credits_auto_marked_played + credits_mark_threshold — a rewind before
 //                           the threshold reverts the mark and hides the banner), next_ep_pending,
 //                           chapters + OSD countdowns, stall-recovery fields, is_trailer/trailer_url,
-//                           HDR/display-sync one-shot flags, video_on_subsurface
+//                           HDR/display-sync one-shot flags, video_on_subsurface, hitch
 //   tear_down_player        capture ticks, drop render_ctx then player (mpv invariant; a subsurface
 //                           player's context is freed on our own GL context), return the stop data;
 //                           reports 0 ticks while credits_auto_marked_played so the stop report
@@ -64,6 +65,7 @@ fn ss(s: &str) -> SharedString {
     SharedString::from(s)
 }
 
+mod hitch;
 mod inhibit;
 mod queue;
 mod render;
@@ -72,6 +74,7 @@ mod start;
 mod timer;
 mod tracks;
 
+pub(crate) use hitch::*;
 pub(crate) use inhibit::*;
 pub(crate) use queue::*;
 pub(crate) use render::*;
@@ -267,6 +270,8 @@ pub(crate) struct VideoState {
     // retry can tell "never got as far as opening" (a long disk spin-up: keep the opening
     // grace) from "opened, then stalled" (a real stall: the normal limit).
     pub stall_opened_item: Option<String>,
+    pub hitch: HitchWatch,
+    pub hitch_fps: f64,
     /// "Still opening — first-open grace" already logged for this player
     /// (2026-10-08; see FIRST_OPEN_STALL_SECS).
     pub stall_grace_logged: bool,
@@ -392,6 +397,8 @@ impl Default for VideoState {
             stall_reload_attempts_for: None,
             stall_last_reload_at: None,
             stall_opened_item: None,
+            hitch: HitchWatch::default(),
+            hitch_fps: 0.0,
             stall_grace_logged: false,
             screensaver_cookie: PlaybackCookies::default(),
             chapters: Vec::new(),
@@ -753,6 +760,7 @@ fn reset_video_state_for_playback(
     // whatever was playing (or being seeked in) right before this reset.
     vs.stall_last_tick_pos = None;
     vs.stall_grace_logged = false;
+    vs.hitch = HitchWatch::default();
     // stall_reload_attempts_for/stall_last_reload_at/stall_opened_item deliberately NOT reset
     // here — see their own doc comment on VideoState for why they must
     // survive a same-item reload.
