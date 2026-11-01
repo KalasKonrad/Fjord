@@ -23,6 +23,10 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Fixed: a small hitch every 42 seconds in true 24 fps films.** Display sync
+  put them on 23.98 Hz even when the TV offers 24.00 Hz, which made mpv drop a
+  frame every 42 seconds. A file that really is 24, 30 or 60 fps now gets its
+  exact rate when the TV has it.
 - **Improved: playback after the server's disks have slept.** When the first
   file of the day takes long to open, Fjord now keeps waiting instead of
   restarting the request every 5 seconds (which could even make Jellyfin
