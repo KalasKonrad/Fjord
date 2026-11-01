@@ -565,8 +565,14 @@ fn hdr_and_display_sync(vs: &mut VideoState, t: &Tick) {
             let state2 = Arc::clone(state_timer);
             rt_handle.spawn(async move {
                 if fps_known {
-                    crate::display_sync::sync_to_source(state2, dims, meta.clone(), ds_settings)
-                        .await;
+                    crate::display_sync::sync_to_source(
+                        state2,
+                        dims,
+                        meta.clone(),
+                        ds_settings,
+                        crate::display_sync::FpsSource::MpvEstimate,
+                    )
+                    .await;
                 }
                 if video2.lock().unwrap().playback_generation != generation {
                     // Stopped/replaced while the mode switch was

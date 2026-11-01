@@ -7,8 +7,11 @@
 //   HdrMode / WcgMode      parsed from Config.device.display_sync_hdr_mode/_wcg_mode
 //   DisplaySyncSettings    what compute_target_mode/sync_to_source need, extracted from
 //                          DeviceConfig once per trigger
-//   compute_target_mode    pure, unit-tested: the script's fps→Hz cadence table + fallback chain
+//   compute_target_mode    pure, unit-tested: the script's fps→Hz cadence table, a true 24/30/60 fps
+//                          file on its exact rate when the output has it, + fallback chain
 //                          (exact → closest Hz at the same resolution → the default mode)
+//   keeps_current_mode     pure, unit-tested: mpv's post-decode estimate never moves the display
+//                          between two rates of one cadence (23.98 ↔ 24.00)
 //   get_supported_modes    kscreen-doctor -o → {(res, hz)} (strip_ansi, plain string parsing)
 //   supported_resolutions_and_hz  sorted lists for the Default resolution/Hz dropdowns
 //   list_outputs_with_priority  Output dropdown options: connector, KDE priority (1 = primary),
@@ -17,7 +20,8 @@
 //   apply_display_switch   mode + scale and/or HDR + WCG in ONE kscreen-doctor call
 //                          (display_switch_args, unit-tested); best-effort, logged
 //   sync_to_source         per item: supported modes → target → apply (+3 s settle) what changed
-//                          vs. FjordState's "currently applied"; from wire_mpv_timer, which runs
+//                          vs. FjordState's "currently applied" (FpsSource says how far the frame
+//                          rate can be trusted); from wire_mpv_timer, which runs
 //                          it to completion BEFORE HDR Stage 3 negotiates (they must not overlap)
 //   sync_before_load       pre-decode wrapper over sync_to_source, fed from Jellyfin's
 //                          MediaStreams, called by start_playback before mpv loads the file (no
@@ -128,6 +132,21 @@ impl DisplaySyncSettings {
 
 // ── mode selection (pure, unit-tested) ──────────────────────────────────────
 
+/// A file within this of a whole frame rate really is 24/30/60 fps, not 23.976/29.97/59.94.
+const EXACT_FPS_TOLERANCE: f64 = 0.01;
+/// Two rates this close at one resolution are the same cadence (23.98 and 24.00).
+const SAME_CADENCE_HZ: f64 = 0.05;
+
+/// Where sync_to_source's frame rate comes from.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) enum FpsSource {
+    /// The file's own frame rate (Jellyfin's MediaStreams): exact enough to pick 23.98 or 24.00.
+    FileMetadata,
+    /// mpv's estimate, 2 s into playback: too noisy for that, and a wrong call would blink the
+    /// TV mid-film.
+    MpvEstimate,
+}
+
 /// Direct port of the proven external script's own fps->Hz cadence table +
 /// fallback chain (`media_display_sync.py:202-237`, `display_modes.py`),
 /// parameterized by Fjord's own Settings fields instead of the script's
@@ -167,6 +186,15 @@ pub(crate) fn compute_target_mode(
         };
         (cfg.default_resolution.clone(), hz.to_string())
     };
+
+    // The table only knows the NTSC rates: a true 24 fps file on 23.98 Hz drops a frame every
+    // 42 s (30 fps on 29.97: 33 s, 60 on 59.94: 17 s). Its exact rate only when the output has it.
+    if matches!(fps_r, 24 | 30 | 60) && (fps - fps_r as f64).abs() < EXACT_FPS_TOLERANCE {
+        let exact = format!("{fps_r}.00");
+        if supported.contains(&(target_res.clone(), exact.clone())) {
+            target_hz = exact;
+        }
+    }
 
     if !cfg.sync_refresh_rate {
         target_hz = cfg.default_hz.clone();
@@ -527,6 +555,22 @@ fn apply_display_switch(
 /// `wire_mpv_timer`'s own trigger, only after that trigger has already
 /// claimed both one-shot flags synchronously (see the trigger's own doc
 /// comment in `playback.rs` for the re-entry bug this ordering avoids).
+/// Whether a post-decode correction leaves the display alone: same resolution, same cadence.
+pub(crate) fn keeps_current_mode(
+    source: FpsSource,
+    current: Option<&(String, String)>,
+    target: &(String, String),
+) -> bool {
+    let Some(current) = current else {
+        return false;
+    };
+    let same_cadence = match (current.1.parse::<f64>(), target.1.parse::<f64>()) {
+        (Ok(a), Ok(b)) => (a - b).abs() < SAME_CADENCE_HZ,
+        _ => false,
+    };
+    source == FpsSource::MpvEstimate && current.0 == target.0 && same_cadence
+}
+
 /// Only ever touches the physical output when something actually needs to
 /// change, tracked via `FjordState.display_sync_current_mode`/`_current_hdr`
 /// — a same-mode item (e.g. back-to-back episodes) is a cheap no-op.
@@ -535,6 +579,7 @@ pub(crate) async fn sync_to_source(
     dims: (i64, i64, f64),
     meta: SourceHdrMetadata,
     cfg: DisplaySyncSettings,
+    source: FpsSource,
 ) {
     if cfg.screen_name.is_empty() {
         tracing::warn!("display_sync: enabled but no output configured — skipping");
@@ -548,7 +593,14 @@ pub(crate) async fn sync_to_source(
         .await
         .unwrap_or_default();
 
-    let (target_res, target_hz) = compute_target_mode(width, fps, &cfg, &supported);
+    let mut target = compute_target_mode(width, fps, &cfg, &supported);
+    let current = state.lock().unwrap().display_sync_current_mode.clone();
+    if keeps_current_mode(source, current.as_ref(), &target)
+        && let Some(current) = current
+    {
+        target = current;
+    }
+    let (target_res, target_hz) = target;
 
     let is_hdr_content = meta.gamma == "pq" || meta.gamma == "hlg";
     let want_hdr = match cfg.hdr_mode {
@@ -617,7 +669,8 @@ pub(crate) async fn sync_before_load(
         },
         ..Default::default()
     };
-    sync_to_source(state, (video_info.width, 0, video_info.fps), meta, cfg).await;
+    let dims = (video_info.width, 0, video_info.fps);
+    sync_to_source(state, dims, meta, cfg, FpsSource::FileMetadata).await;
 }
 
 /// Whether a real stop must put the display back to its default mode: only when Fjord
@@ -1119,6 +1172,40 @@ mod tests {
             compute_target_mode(3840, 23.976, &cfg, &no_supported()),
             (RES_4K.to_string(), "59.94".to_string())
         );
+    }
+
+    #[test]
+    fn a_true_24_fps_file_gets_its_exact_rate_when_the_output_has_it() {
+        let cfg = settings();
+        let both: HashSet<(String, String)> = ["23.98", "24.00", "29.97", "30.00"]
+            .into_iter()
+            .map(|hz| (RES_4K.to_string(), hz.to_string()))
+            .collect();
+        let hz = |fps, supported| compute_target_mode(3840, fps, &cfg, supported).1;
+        assert_eq!(hz(24.0, &both), "24.00");
+        assert_eq!(hz(23.976025, &both), "23.98");
+        assert_eq!(hz(30.0, &both), "30.00");
+        assert_eq!(hz(29.97, &both), "29.97");
+        // Not offered at this resolution → the table's rate, as before.
+        let ntsc_only: HashSet<(String, String)> = [(RES_4K.to_string(), "23.98".to_string())]
+            .into_iter()
+            .collect();
+        assert_eq!(hz(24.0, &ntsc_only), "23.98");
+    }
+
+    #[test]
+    fn mpvs_estimate_never_moves_the_display_within_a_cadence() {
+        let mode = |res: &str, hz: &str| (res.to_string(), hz.to_string());
+        let current = mode("1920x1080", "24.00");
+        let keeps =
+            |source, target: &(String, String)| keeps_current_mode(source, Some(&current), target);
+        assert!(keeps(FpsSource::MpvEstimate, &mode("1920x1080", "23.98")));
+        // The file's own rate may; another cadence or resolution always does.
+        assert!(!keeps(FpsSource::FileMetadata, &mode("1920x1080", "23.98")));
+        assert!(!keeps(FpsSource::MpvEstimate, &mode("1920x1080", "25.00")));
+        assert!(!keeps(FpsSource::MpvEstimate, &mode(RES_4K, "23.98")));
+        let target = mode("1920x1080", "23.98");
+        assert!(!keeps_current_mode(FpsSource::MpvEstimate, None, &target));
     }
 
     #[test]
