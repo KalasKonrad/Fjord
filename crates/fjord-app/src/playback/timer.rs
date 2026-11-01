@@ -18,7 +18,8 @@
 //   select_tracks           track auto-select at FileLoaded: remembered per-series picks
 //                           (state.remembered_tracks) first, then Config sub/audio languages
 //   report_position         every ~480 ms: position/buffer UI, music bar, lyrics, progress reports
-//   stats_and_drops         stats overlay poll, the 5-minute frame-drop log
+//   stats_and_drops         stats overlay poll, the 5-minute frame-counts log, a line per video
+//                           hitch (hitch.rs; only while video plays, some seconds into the file)
 //   skip_segments           always-skip / ask / ask-timed / never-skip (the ask-timed countdown
 //                           freezes while paused) + arming the fade-to-black seek
 //   up_next_and_credits     Up Next trigger (credits mode), credits mark-played and its rewind revert
@@ -1017,6 +1018,9 @@ fn report_position(vs: &mut VideoState, t: &Tick) {
     }
 }
 
+/// A file's first seconds (decoder start, first HDR switch) aren't choppiness.
+const HITCH_WATCH_AFTER_SECS: u64 = 5;
+
 fn stats_and_drops(vs: &mut VideoState, t: &Tick) {
     let Tick { window_timer, .. } = *t;
     // ── Stats poll every ~512 ms (CR2-7, CR2-8) ──────────────────
@@ -1033,16 +1037,48 @@ fn stats_and_drops(vs: &mut VideoState, t: &Tick) {
         }
     }
 
-    // ── Periodic frame-drop log every 5 min ───────────────────────
+    // ── Brief choppiness: one line per hitch, with what was going on ──
+    if let Some(p) = vs.player.as_ref() {
+        let o = p.observed();
+        // A cached fps: video_info() clones the whole format, too much for every tick.
+        if vs.pos_tick.is_multiple_of(32) {
+            vs.hitch_fps = p.video_info().map_or(0.0, |v| v.dimensions().2);
+        }
+        let settled = t
+            .loaded_since
+            .is_some_and(|d| d >= Duration::from_secs(HITCH_WATCH_AFTER_SECS));
+        let sample = Sample {
+            active: !vs.current_is_audio && settled && !o.paused && !o.seeking,
+            fps: vs.hitch_fps,
+            counts: FrameCounts {
+                drops: o.frame_drops,
+                decoder_drops: o.decoder_drops,
+                mistimed: o.mistimed_frames,
+                delayed: o.delayed_frames,
+            },
+            cache_secs: o.cache_secs,
+            buffering: o.paused_for_cache,
+        };
+        if let Some(hitch) = vs.hitch.on_tick(Instant::now(), sample) {
+            info!("{}", hitch.line(o.time_pos, sample.fps));
+        }
+    }
+
+    // ── Periodic frame-counts log every 5 min ─────────────────────
     if vs.pos_tick > 0
         && vs.pos_tick.is_multiple_of(18750)
         && let Some(p) = vs.player.as_ref()
     {
         let o = p.observed();
-        let (drops, dec_drops, pos) = (o.frame_drops, o.decoder_drops, o.time_pos);
         info!(
-            "stats at {:.0}s: frame-drops={} decoder-drops={}",
-            pos, drops, dec_drops
+            "stats at {:.0}s: frame-drops={} decoder-drops={} mistimed={} delayed={} hitches={} cache={:.0}s",
+            o.time_pos,
+            o.frame_drops,
+            o.decoder_drops,
+            o.mistimed_frames,
+            o.delayed_frames,
+            vs.hitch.total,
+            o.cache_secs,
         );
     }
 }

@@ -16,7 +16,7 @@
 //                   fjord-app calls the player from its render thread; lists come as JSON
 //                   (libmpv2's node iteration frees mpv-owned memory — unused)
 //   Observed        playback state: position, duration, pause, buffering, cache seconds,
-//                   passthrough, the start-up snapshot's core-idle/seeking/avsync, drop counts,
+//                   passthrough, the start-up snapshot's core-idle/seeking/avsync, frame counts,
 //                   volume; buffer_end_fraction
 //   VideoInfo       decoder, size, frame rates, pixel format, gamma/primaries + HDR10 values;
 //                   hdr_metadata(), dimensions() (fps 0.0 = unknown)
@@ -306,6 +306,9 @@ pub struct Observed {
     /// frame-drop-count / decoder-frame-drop-count for this file.
     pub frame_drops: i64,
     pub decoder_drops: i64,
+    /// mistimed-frame-count / vo-delayed-frame-count (display sync modes only; 0 until reported).
+    pub mistimed_frames: i64,
+    pub delayed_frames: i64,
     /// 0–130; None until mpv reported it.
     pub volume: Option<f64>,
 }
@@ -327,6 +330,8 @@ const OBSERVED: &[(&str, Format)] = &[
     ("avsync", Format::Double),
     ("frame-drop-count", Format::Int64),
     ("decoder-frame-drop-count", Format::Int64),
+    ("mistimed-frame-count", Format::Int64),
+    ("vo-delayed-frame-count", Format::Int64),
     ("volume", Format::Double),
     ("width", Format::Int64),
     ("height", Format::Int64),
@@ -367,6 +372,8 @@ impl Observed {
             ("avsync", PropertyData::Double(v)) => self.avsync = Some(*v),
             ("frame-drop-count", PropertyData::Int64(v)) => self.frame_drops = *v,
             ("decoder-frame-drop-count", PropertyData::Int64(v)) => self.decoder_drops = *v,
+            ("mistimed-frame-count", PropertyData::Int64(v)) => self.mistimed_frames = *v,
+            ("vo-delayed-frame-count", PropertyData::Int64(v)) => self.delayed_frames = *v,
             ("volume", PropertyData::Double(v)) => self.volume = Some(*v),
             _ => {}
         }

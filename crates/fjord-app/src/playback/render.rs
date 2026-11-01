@@ -11,8 +11,9 @@
 //                           to ensure_ready; the path line names the plane's mode + mpv depth; mpv gets
 //                           the Target's flip/format/depth (in-window path: depth 0 = 8); a frame the
 //                           own buffers skipped (none free) requests another redraw; times each frame
-//                           for ui_watch::note_frame (slow frames → debug log); tells render_frame whether
-//                           the player is paused (its frame stats count paused frames apart)
+//                           for ui_watch::note_frame (slow frames → debug log) and VideoState.hitch (late
+//                           frames → hitch.rs); tells render_frame whether the player is paused (its frame
+//                           stats count paused frames apart)
 //   PlaneKey / unchanged_while_paused  a paused player's window redraws leave the video alone (both
 //                           paths) unless mpv's update callback brought news (VideoState.frame_news) or the
 //                           picture's size/place/fill changed (last_plane); playing renders every redraw
@@ -322,6 +323,7 @@ pub(crate) fn wire_rendering_notifier(window: &MainWindow, video: Arc<Mutex<Vide
                             Ok(FrameOutcome::Drawn) => {
                                 vs.did_render = true;
                                 vs.last_plane = Some(key);
+                                vs.hitch.on_frame(Instant::now());
                                 if !vs.first_frame_logged && vs.play_start.is_some() {
                                     vs.first_frame_logged = true;
                                     let elapsed = vs.play_start.unwrap().elapsed().as_secs_f64();
@@ -402,6 +404,7 @@ pub(crate) fn wire_rendering_notifier(window: &MainWindow, video: Arc<Mutex<Vide
                         } else {
                             vs.did_render = true;
                             vs.last_plane = Some(key);
+                            vs.hitch.on_frame(Instant::now());
                             // Only once play_start is set: mpv renders idle frames during the display-sync
                             // wait, which mustn't count as the first frame.
                             if !vs.first_frame_logged && vs.play_start.is_some() {
@@ -427,9 +430,12 @@ pub(crate) fn wire_rendering_notifier(window: &MainWindow, video: Arc<Mutex<Vide
 
                 slint::RenderingState::AfterRendering => {
                     {
-                        let vs = video_rn.lock().unwrap();
+                        let mut vs = video_rn.lock().unwrap();
                         if vs.did_render && let Some(ctx) = vs.render_ctx.as_ref() {
                             ctx.report_swap();
+                        }
+                        if let Some(start) = frame_start {
+                            vs.hitch.on_frame_done(start.elapsed());
                         }
                     }
                     if let Some(start) = frame_start.take()
