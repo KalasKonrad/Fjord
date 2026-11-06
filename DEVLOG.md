@@ -2948,6 +2948,14 @@ The post-decode trigger needed a guard. It re-runs `sync_to_source` 2 s after lo
 
 This is not the brief 1080p choppiness reported the same day: those sessions had 0 drops. See the next section for the logging added for that.
 
+### When video frames reach the screen (2026-11-06, branch `release-0.5.1`)
+
+Two more reports of brief choppiness on the HTPC, mid-episode at 1080p: 2026-11-03 ~18:25 and 2026-11-06 ~18:46 (29:00–30:30 into the episode). Both times the log had no `video hitch` line, `frame-drops`, `mistimed` and `delayed` stayed 0, the cache stayed at 60 s, and Fjord logged nothing else in those minutes. The user replayed the 2026-11-06 stretch right after: smooth. So it's neither the file nor the network, and neither mpv's timing nor Fjord: Fjord committed every frame on time. That leaves what happens after the commit (KWin, the separate video surface, the NVIDIA driver, the TV), which the log couldn't see.
+
+The video subsurface now asks for `wp_presentation` feedback on every video frame it commits: the request goes before the commit (`eglSwapBuffers` or `present_buffer`) and carries the commit `Instant`. KWin answers `presented` (when, in its clock, plus flags: zero-copy = direct scanout) or `discarded` (replaced before being shown). The events are read with the backplane's queue during rendering; `take_presentations` hands them to `HitchWatch::on_presented` after each frame. A frame counts as shown late when the gap since the previous shown frame is ≥ 1.5 frame periods while Fjord's commit gap was under that, so Fjord's own lateness isn't counted twice. Discarded frames and direct-scanout ↔ compositing switches (a candidate for a one-off stall) are counted too. The same `video hitch` line gets `on screen: N shown late (worst gap …), N discarded, N scanout switch(es)`, or `not measured` on the in-window path. The 5-minute line has the totals, and the per-player backplane line has `KWin showed N and discarded M`.
+
+KWin on the dev machine offers `wp_presentation` v2 (CLOCK_MONOTONIC). Whether it reports for a *sync-mode subsurface* isn't verified: the per-player line shows it (0 shown = no). Not live-tested.
+
 ### Video hitch log (2026-11-01, branch `release-0.5.1`)
 
 Reported from the HTPC: 1080p video looked choppy for a short while, mid-playback, "like something loading in the background". The logs couldn't explain it. In the week's 1080p sessions `frame-drops` stayed at 0, nothing was logged from 45 s after the start until the end except the user's own keys, and the Jellyfin WebSocket's delta refresh (the one thing that does load in the background during playback) ran in only 3 of 11 sessions, each within ~25 s of the start. What's missing: `ui_watch` only logs frames from 150 ms and a UI stall from 250 ms, while a frame lasts 41.7 ms; `video backplane: … over 4 ms on N (slowest M)` has no timestamps; mistimed and delayed frames weren't logged at all; the cache level only for the first ~8 s.
