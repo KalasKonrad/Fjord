@@ -12,7 +12,8 @@
 //                           the Target's flip/format/depth (in-window path: depth 0 = 8); a frame the
 //                           own buffers skipped (none free) requests another redraw; times each frame
 //                           for ui_watch::note_frame (slow frames → debug log) and VideoState.hitch (late
-//                           frames → hitch.rs); tells render_frame whether the player is paused (its frame
+//                           frames, and on the subsurface what KWin did with them — take_presentations →
+//                           hitch.rs); tells render_frame whether the player is paused (its frame
 //                           stats count paused frames apart)
 //   PlaneKey / unchanged_while_paused  a paused player's window redraws leave the video alone (both
 //                           paths) unless mpv's update callback brought news (VideoState.frame_news) or the
@@ -318,6 +319,9 @@ pub(crate) fn wire_rendering_notifier(window: &MainWindow, video: Arc<Mutex<Vide
                                 Err(e) => { warn!("mpv render: {:#}", e); false }
                             },
                         );
+                        for p in crate::video_surface::take_presentations() {
+                            vs.hitch.on_presented(Instant::now(), p);
+                        }
                         use crate::video_surface::FrameOutcome;
                         match result {
                             Ok(FrameOutcome::Drawn) => {

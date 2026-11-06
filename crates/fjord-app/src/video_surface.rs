@@ -34,11 +34,15 @@
 //   present_summary      how the plane presents + mpv's target depth (log line)
 //   create_render_ctx    mpv render context for a player, on our context
 //   Target / FrameOutcome  what render_frame's mpv call gets / how a frame went
-//   render_frame         one frame: fill + video in the spot, then commit
+//   render_frame         one frame: fill + video in the spot, then commit — asking
+//                        KWin for presentation feedback on it (wp_presentation, when offered)
+//   take_presentations   what KWin did with the committed frames since the last call
+//                        (shown when / discarded) — for playback's HitchWatch
 //   free_render_ctx      frees a player's render context with our context
 //                        current (mpv requires it), logs the player's frame
-//                        stats (playing and paused frames apart — Overhead — and the
-//                        paused redraws skipped), then drops a broken plane
+//                        stats (playing and paused frames apart — Overhead — the
+//                        paused redraws skipped, frames KWin showed/discarded),
+//                        then drops a broken plane
 //   note_unchanged_redraw  counts a paused redraw that left the plane alone
 //   mark_broken          stop using it after an error mid-item (kept alive
 //                        until its render context is freed)
@@ -90,7 +94,14 @@ use wayland_protocols::wp::viewporter::client::wp_viewport::WpViewport;
 use wayland_protocols::wp::viewporter::client::wp_viewporter::WpViewporter;
 use wayland_sys::egl::{WaylandEgl, wayland_egl_option, wl_egl_window};
 
+use wayland_client::WEnum;
+use wayland_protocols::wp::presentation_time::client::wp_presentation::WpPresentation;
+use wayland_protocols::wp::presentation_time::client::wp_presentation_feedback::{
+    self, WpPresentationFeedback,
+};
+
 use crate::dmabuf_plane::{self, Swapchain};
+use crate::playback::{Presentation, Shown};
 
 /// Raw `wl_display`/`wl_surface` addresses of Fjord's one window, set once by
 /// activity.rs. Plain addresses because raw pointers aren't `Sync`; both stay
@@ -247,6 +258,24 @@ pub(crate) fn render_frame(
     })
 }
 
+/// What KWin did with the frames committed since the last call (empty without presentation
+/// feedback). Events are read while frames render, so a frame's arrives a frame or two later.
+pub(crate) fn take_presentations() -> Vec<Presentation> {
+    BACKPLANE.with(|slot| match &mut *slot.borrow_mut() {
+        Slot::Ready(bp) | Slot::Broken(bp) => {
+            let taken = std::mem::take(&mut bp.state.presentations);
+            for p in &taken {
+                match p.shown {
+                    Some(_) => bp.stats.shown += 1,
+                    None => bp.stats.discarded += 1,
+                }
+            }
+            taken
+        }
+        _ => Vec::new(),
+    })
+}
+
 /// A window redraw that left the plane as it was (paused, nothing new — playback/render.rs's
 /// unchanged_while_paused): counted for the player's frame stats.
 pub(crate) fn note_unchanged_redraw() {
@@ -283,11 +312,16 @@ pub(crate) fn free_render_ctx(ctx: MpvRenderCtx) {
                     String::new()
                 };
                 let (run, pause) = (st.playing, st.paused);
+                let screen = if bp.presentation.is_some() {
+                    format!("KWin showed {} and discarded {}", st.shown, st.discarded)
+                } else {
+                    "KWin offers no presentation feedback".to_string()
+                };
                 info!(
                     "video backplane: this player drew {} frame(s) playing — our overhead over 4 ms on {} \
                      (slowest {:.1} ms) — and {} paused — over 4 ms on {} (slowest {:.1} ms), {} redraw(s) \
-                     skipped while paused (same picture); slowest mpv render call {:.1} ms{own}; render \
-                     context freed",
+                     skipped while paused (same picture); slowest mpv render call {:.1} ms{own}; {screen}; \
+                     render context freed",
                     run.frames, run.slow, run.max_ms, pause.frames, pause.slow, pause.max_ms, st.unchanged,
                     st.max_mpv_ms,
                 );
@@ -389,6 +423,8 @@ struct Backplane {
     viewport: WpViewport,
     /// linux-dmabuf v3, if KWin offers it (own buffers only).
     dmabuf: Option<ZwpLinuxDmabufV1>,
+    /// wp_presentation, if KWin offers it: when each video frame reached the screen.
+    presentation: Option<WpPresentation>,
     phys: (u32, u32),
     logical: (i32, i32),
     /// Offscreen target for a video spot smaller than the plane:
@@ -406,8 +442,8 @@ struct Backplane {
 }
 
 /// The backplane's event-queue state: linux-dmabuf's format list, the answer
-/// to a buffer creation, and buffers KWin has released. wl_surface
-/// enter/leave are ignored.
+/// to a buffer creation, buffers KWin has released and its presentation
+/// feedback. wl_surface enter/leave are ignored.
 #[derive(Default)]
 struct BpState {
     /// (fourcc, modifier) pairs KWin advertised (linux-dmabuf v3 events;
@@ -418,7 +454,12 @@ struct BpState {
     created: Option<Option<WlBuffer>>,
     /// wl_buffer.release events not yet handed to the swapchain.
     released: Vec<ObjectId>,
+    /// Presentation feedback not yet taken (take_presentations); the oldest go past MAX_PENDING.
+    presentations: Vec<Presentation>,
 }
+
+/// Presentation feedback kept while nobody takes it (a pause, the in-window path).
+const MAX_PENDING: usize = 256;
 
 /// Our EGL display/context/surface (window surface, pbuffer, or none when
 /// surfaceless). Copy, so GL work can run while other fields are borrowed.
@@ -567,6 +608,15 @@ impl Backplane {
             .context("binding wp_viewporter")?;
         // v3: the format/modifier list arrives as events right after binding.
         let dmabuf: Option<ZwpLinuxDmabufV1> = globals.bind(&qh, 3..=3, ()).ok();
+        let presentation: Option<WpPresentation> = globals.bind(&qh, 1..=2, ()).ok();
+        debug!(
+            "video backplane: presentation feedback {}",
+            if presentation.is_some() {
+                "offered"
+            } else {
+                "not offered"
+            }
+        );
         // Safety: see HANDLES. `from_ptr` checks the proxy's real interface.
         let parent_id =
             unsafe { ObjectId::from_ptr(WlSurface::interface(), surface_addr as *mut _) }
@@ -608,6 +658,7 @@ impl Backplane {
             subsurface,
             viewport,
             dmabuf,
+            presentation,
             phys,
             logical,
             rect_fbo: None,
@@ -946,6 +997,14 @@ impl Backplane {
         let depth = self.present.depth();
         let gl = self.gl;
         let rect_fbo = &mut self.rect_fbo;
+        // Before the commit (eglSwapBuffers or present_buffer): feedback is for the next commit.
+        let qh = self.queue.handle();
+        let (presentation, child) = (&self.presentation, &self.child);
+        let ask_feedback = || {
+            if let Some(p) = presentation {
+                p.feedback(child, &qh, Instant::now());
+            }
+        };
         let started = Instant::now();
         let mut mpv_ms = 0.0;
         let mut gpu_ms = None;
@@ -977,6 +1036,7 @@ impl Backplane {
                                 flip_y: true,
                                 depth,
                             });
+                            ask_feedback();
                             gl.swap()?;
                             return Ok(ok);
                         }
@@ -990,6 +1050,7 @@ impl Backplane {
                             depth,
                         });
                         blit_into(0, src, (w, h), flip_rect_y(rect, h), fill);
+                        ask_feedback();
                         gl.swap()?;
                         Ok(ok)
                     }
@@ -1038,7 +1099,8 @@ impl Backplane {
                         Ok(ok)
                     }
                 })??;
-                present_buffer(&self.child, sc, i, (w, h));
+                ask_feedback();
+                present_buffer(child, sc, i, (w, h));
                 ok
             }
         };
@@ -1501,6 +1563,9 @@ fn logical_size(phys: (u32, u32), scale: f32) -> (i32, i32) {
 
 #[derive(Debug, Clone, Copy, Default)]
 struct FrameStats {
+    /// Video frames KWin reported shown / discarded (presentation feedback).
+    shown: u64,
+    discarded: u64,
     /// Our overhead while the video plays and while it's paused, apart: a paused player is still
     /// drawn with Slint's redraws (~20 a second on the HTPC), so a long pause shouldn't read as
     /// slow playback.
@@ -1640,6 +1705,47 @@ delegate_noop!(BpState: WlRegion);
 delegate_noop!(BpState: WpViewporter);
 delegate_noop!(BpState: WpViewport);
 delegate_noop!(BpState: ignore WlSurface);
+delegate_noop!(BpState: ignore WpPresentation);
+
+impl Dispatch<WpPresentationFeedback, Instant> for BpState {
+    fn event(
+        state: &mut Self,
+        _: &WpPresentationFeedback,
+        event: wp_presentation_feedback::Event,
+        committed: &Instant,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        let shown = match event {
+            wp_presentation_feedback::Event::Presented {
+                tv_sec_hi,
+                tv_sec_lo,
+                tv_nsec,
+                flags,
+                ..
+            } => {
+                let secs = (u64::from(tv_sec_hi) << 32) | u64::from(tv_sec_lo);
+                let zero_copy = match flags {
+                    WEnum::Value(kind) => kind.contains(wp_presentation_feedback::Kind::ZeroCopy),
+                    WEnum::Unknown(bits) => bits & 0x8 != 0,
+                };
+                Some(Shown {
+                    at_ns: secs * 1_000_000_000 + u64::from(tv_nsec),
+                    zero_copy,
+                })
+            }
+            wp_presentation_feedback::Event::Discarded => None,
+            _ => return,
+        };
+        if state.presentations.len() >= MAX_PENDING {
+            state.presentations.remove(0);
+        }
+        state.presentations.push(Presentation {
+            committed: *committed,
+            shown,
+        });
+    }
+}
 
 impl Dispatch<ZwpLinuxDmabufV1, ()> for BpState {
     fn event(

@@ -1071,13 +1071,16 @@ fn stats_and_drops(vs: &mut VideoState, t: &Tick) {
     {
         let o = p.observed();
         info!(
-            "stats at {:.0}s: frame-drops={} decoder-drops={} mistimed={} delayed={} hitches={} cache={:.0}s",
+            "stats at {:.0}s: frame-drops={} decoder-drops={} mistimed={} delayed={} hitches={} \
+             shown-late={} discarded={} cache={:.0}s",
             o.time_pos,
             o.frame_drops,
             o.decoder_drops,
             o.mistimed_frames,
             o.delayed_frames,
             vs.hitch.total,
+            vs.hitch.shown_late_total,
+            vs.hitch.discarded_total,
             o.cache_secs,
         );
     }

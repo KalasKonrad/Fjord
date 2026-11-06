@@ -1,13 +1,17 @@
 // ── fjord-app · playback/hitch.rs ─────────────────────────────────────────
 //   HitchWatch   notices brief choppiness mid-playback, for the log only: a video frame that came
-//                late for the file's frame rate, or a jump in mpv's dropped/mistimed/delayed frame
-//                counts. Close events merge into one Hitch (QUIET_FOR apart, at most MAX_LASTING);
-//                pure, unit-tested — times are passed in. Seeks, pauses and the first seconds
-//                of a file don't count (Sample.active + SETTLE_FOR)
+//                late for the file's frame rate, a jump in mpv's dropped/mistimed/delayed frame
+//                counts, or (video subsurface) a frame KWin showed late or never though Fjord
+//                committed it on time (on_presented). Close events merge into one Hitch (QUIET_FOR
+//                apart, at most MAX_LASTING); pure, unit-tested — times are passed in. Seeks, pauses
+//                and the first seconds of a file don't count (Sample.active + SETTLE_FOR)
+//   Presentation / Shown  one committed frame's fate from KWin's presentation feedback
+//                (video_surface::take_presentations): shown when, zero-copy or not — or discarded
 //   Hitch        one such moment; its line says where the time went: `slowest frame` = Fjord's own
 //                frame (mpv's render + Slint's draw), `UI thread late` = the 16 ms tick ran late
-//                (that frame or other work on the UI thread). Both small = the frame didn't
-//                come from Fjord's side being busy: mpv had none yet, or the compositor held it
+//                (that frame or other work on the UI thread), `on screen` = what KWin did with frames
+//                Fjord committed on time (shown late, discarded, switches between direct scanout and
+//                compositing). All small = the frame reached the screen on time: the TV is left
 // ─────────────────────────────────────────────────────────────────────────────
 use std::time::{Duration, Instant};
 
@@ -25,6 +29,23 @@ const RECENT_FOR: Duration = Duration::from_millis(500);
 const TICK: Duration = Duration::from_millis(16);
 /// Lines per player; the 5-minute stats line keeps counting.
 const MAX_LOGGED: u32 = 100;
+
+/// What KWin did with one committed video frame (wp_presentation_feedback).
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Presentation {
+    /// When Fjord committed it.
+    pub committed: Instant,
+    /// None = discarded: replaced before it was ever shown.
+    pub shown: Option<Shown>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct Shown {
+    /// When it turned up on screen, in the compositor's clock (ns).
+    pub at_ns: u64,
+    /// Scanned out straight from Fjord's buffer, not composited.
+    pub zero_copy: bool,
+}
 
 /// mpv's frame counters for this file.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -78,6 +99,14 @@ pub(crate) struct Hitch {
     pub counts: FrameCounts,
     pub lowest_cache_secs: f64,
     pub buffering: bool,
+    /// Frames Fjord committed on time that reached the screen late, the longest wait between two
+    /// shown frames, frames never shown, direct-scanout ↔ compositing switches.
+    pub shown_late: u32,
+    pub worst_shown_gap: Duration,
+    pub discarded: u32,
+    pub scanout_switches: u32,
+    /// KWin's presentation feedback arrived for this player (video subsurface only).
+    pub measured: bool,
 }
 
 impl Hitch {
@@ -86,7 +115,7 @@ impl Hitch {
         format!(
             "video hitch before {pos:.0}s: {} ms, {} late frame(s) at {fps:.2} fps, worst gap {} ms; \
              slowest frame {} ms, UI thread late {} ms; mpv drops +{} decoder +{} mistimed +{} \
-             delayed +{}; lowest cache {:.1}s{}",
+             delayed +{}; lowest cache {:.1}s{}; on screen: {}",
             self.lasted.as_millis(),
             self.late_frames,
             self.worst_gap.as_millis(),
@@ -98,6 +127,17 @@ impl Hitch {
             c.delayed,
             self.lowest_cache_secs,
             if self.buffering { ", buffering" } else { "" },
+            if self.measured {
+                format!(
+                    "{} shown late (worst gap {} ms), {} discarded, {} scanout switch(es)",
+                    self.shown_late,
+                    self.worst_shown_gap.as_millis(),
+                    self.discarded,
+                    self.scanout_switches,
+                )
+            } else {
+                "not measured".to_string()
+            },
         )
     }
 }
@@ -120,8 +160,16 @@ pub(crate) struct HitchWatch {
     recent_ui_late: Option<(Instant, Duration)>,
     cache_secs: f64,
     open: Option<Open>,
+    /// The last frame KWin showed: when it was committed, how it was shown.
+    last_shown: Option<(Instant, Shown)>,
+    recent_switch: Option<Instant>,
     /// Hitches this player so far, logged or not.
     pub total: u32,
+    /// KWin's presentation feedback arrived for this player; on-time frames it showed late or
+    /// never, this player so far.
+    pub measured: bool,
+    pub shown_late_total: u32,
+    pub discarded_total: u32,
 }
 
 impl HitchWatch {
@@ -135,6 +183,9 @@ impl HitchWatch {
             Some((at, late)) if now.duration_since(at) <= RECENT_FOR => late,
             _ => Duration::ZERO,
         };
+        let recent =
+            |at: Option<Instant>| at.is_some_and(|at| now.duration_since(at) <= RECENT_FOR);
+        let switches = u32::from(recent(self.recent_switch));
         let open = self.open.get_or_insert_with(|| Open {
             first: now.checked_sub(gap).unwrap_or(now),
             last: now,
@@ -147,6 +198,11 @@ impl HitchWatch {
                 counts: FrameCounts::default(),
                 lowest_cache_secs: cache,
                 buffering: false,
+                shown_late: 0,
+                worst_shown_gap: Duration::ZERO,
+                discarded: 0,
+                scanout_switches: switches,
+                measured: false,
             },
         });
         open.last = now;
@@ -165,6 +221,41 @@ impl HitchWatch {
                 let hitch = &mut self.touch(now, gap).hitch;
                 hitch.late_frames += 1;
                 hitch.worst_gap = hitch.worst_gap.max(gap);
+            }
+        }
+    }
+
+    /// What KWin did with a committed frame (it reports a frame or two after the commit).
+    pub(crate) fn on_presented(&mut self, now: Instant, p: Presentation) {
+        self.measured = true;
+        let Some(shown) = p.shown else {
+            if self.armed(now) {
+                self.discarded_total += 1;
+                self.touch(now, Duration::ZERO).hitch.discarded += 1;
+            }
+            return;
+        };
+        let previous = self.last_shown.replace((p.committed, shown));
+        let Some((prev_committed, prev)) = previous.filter(|_| self.armed(now)) else {
+            return;
+        };
+        let switched = shown.zero_copy != prev.zero_copy;
+        let late = self.period.and_then(|period| {
+            let limit = period.mul_f64(LATE_FACTOR);
+            let shown_gap = Duration::from_nanos(shown.at_ns.saturating_sub(prev.at_ns));
+            let committed_gap = p.committed.saturating_duration_since(prev_committed);
+            (shown_gap >= limit && committed_gap < limit).then_some(shown_gap)
+        });
+        if let Some(gap) = late {
+            self.shown_late_total += 1;
+            let hitch = &mut self.touch(now, Duration::ZERO).hitch;
+            hitch.shown_late += 1;
+            hitch.worst_shown_gap = hitch.worst_shown_gap.max(gap);
+            hitch.scanout_switches += u32::from(switched);
+        } else if switched {
+            match self.open.as_mut() {
+                Some(open) => open.hitch.scanout_switches += 1,
+                None => self.recent_switch = Some(now),
             }
         }
     }
@@ -197,6 +288,7 @@ impl HitchWatch {
         if !sample.active {
             self.armed_at = None;
             self.last_frame = None;
+            self.last_shown = None;
             return self.finish();
         }
         let armed_at = *self.armed_at.get_or_insert(now + SETTLE_FOR);
@@ -217,6 +309,7 @@ impl HitchWatch {
         self.total += 1;
         (self.total <= MAX_LOGGED).then_some(Hitch {
             lasted: open.last.duration_since(open.first),
+            measured: self.measured,
             ..open.hitch
         })
     }
@@ -363,6 +456,91 @@ mod tests {
         assert!(w.total > MAX_LOGGED);
     }
 
+    const NS_PER_FRAME: u64 = 41_708_333;
+
+    fn presented(
+        w: &mut HitchWatch,
+        now: Instant,
+        committed: Instant,
+        at_ns: u64,
+        zero_copy: bool,
+    ) {
+        let shown = Some(Shown { at_ns, zero_copy });
+        w.on_presented(now, Presentation { committed, shown });
+    }
+
+    /// A settled watch that has seen frames shown, the last one committed and shown at the returned
+    /// times (Instant, ns).
+    fn presenting() -> (HitchWatch, Instant, u64) {
+        let (mut w, t) = settled();
+        presented(&mut w, t, t - FRAME, 1_000_000_000 - NS_PER_FRAME, true);
+        presented(&mut w, t, t, 1_000_000_000, true);
+        (w, t, 1_000_000_000)
+    }
+
+    #[test]
+    fn a_frame_fjord_committed_on_time_but_kwin_showed_late() {
+        let (mut w, t, ns) = presenting();
+        let t1 = t + FRAME;
+        w.on_frame(t1);
+        presented(&mut w, t1, t1, ns + 3 * NS_PER_FRAME, true);
+        let h = loop_until_reported(&mut w, t1);
+        assert_eq!((h.shown_late, h.late_frames, h.discarded), (1, 0, 0));
+        assert_eq!(h.worst_shown_gap.as_millis(), 125);
+        assert!(h.measured);
+        assert!(
+            h.line(10.0, FPS)
+                .contains("on screen: 1 shown late (worst gap 125 ms)")
+        );
+        assert_eq!(w.shown_late_total, 1);
+    }
+
+    #[test]
+    fn a_frame_fjord_committed_late_isnt_kwins_fault() {
+        let (mut w, t, ns) = presenting();
+        let t1 = t + Duration::from_millis(125);
+        w.on_frame(t1);
+        presented(&mut w, t1, t1, ns + 3 * NS_PER_FRAME, true);
+        let h = loop_until_reported(&mut w, t1);
+        assert_eq!((h.shown_late, h.late_frames), (0, 1));
+    }
+
+    #[test]
+    fn discarded_frames_and_scanout_switches_count() {
+        let (mut w, t, ns) = presenting();
+        w.on_presented(
+            t,
+            Presentation {
+                committed: t,
+                shown: None,
+            },
+        );
+        // Composited from here on, still on time: counted with the open hitch.
+        presented(&mut w, t + FRAME, t + FRAME, ns + NS_PER_FRAME, false);
+        let h = loop_until_reported(&mut w, t + FRAME);
+        assert_eq!((h.discarded, h.scanout_switches, h.shown_late), (1, 1, 0));
+        assert_eq!(w.discarded_total, 1);
+    }
+
+    #[test]
+    fn without_presentation_feedback_the_line_says_so() {
+        let (mut w, t) = settled();
+        w.on_frame(t + Duration::from_millis(200));
+        let h = loop_until_reported(&mut w, t + Duration::from_millis(200));
+        assert!(!h.measured);
+        assert!(h.line(10.0, FPS).ends_with("on screen: not measured"));
+    }
+
+    /// Ticks every 16 ms from `t` until the open hitch is reported.
+    fn loop_until_reported(w: &mut HitchWatch, mut t: Instant) -> Hitch {
+        loop {
+            t += TICK;
+            if let Some(h) = tick(w, t) {
+                return h;
+            }
+        }
+    }
+
     #[test]
     fn the_line_names_the_numbers() {
         let h = Hitch {
@@ -377,6 +555,11 @@ mod tests {
             },
             lowest_cache_secs: 41.5,
             buffering: false,
+            shown_late: 0,
+            worst_shown_gap: Duration::ZERO,
+            discarded: 0,
+            scanout_switches: 0,
+            measured: false,
         };
         let line = h.line(1234.4, 23.976);
         assert!(line.starts_with("video hitch before 1234s: 250 ms, 3 late frame(s) at 23.98 fps"));
