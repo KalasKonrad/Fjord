@@ -315,7 +315,7 @@ Needs `mpv`/libmpv (`pacman -S mpv`). Optional at runtime: `yt-dlp` (trailers), 
 ## Testing
 - Dev machine: AMD, KDE Wayland. HTPC: NVIDIA legacy (Pascal), KDE Wayland — the primary target, tested less often.
 - Logs: `~/.cache/fjord/logs/fjord.log` (rotated `.1`–`.10`). HTPC logs: the `HTPC logs/` symlink in the
-  repo root (no SSH).
+  repo root.
 - Each log starts with `fjord version: r<count>.<hash>` — compare with `HEAD` before treating it as a live repro.
 - Debug output needs Settings → Advanced → Log level = Debug (or `RUST_LOG`). Log generously at `debug!` on
   async/debounced/multi-step paths — silent paths have made live bugs undiagnosable before.
