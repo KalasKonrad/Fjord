@@ -14,12 +14,18 @@
 //                           position, budget by connection health (ws_connected/keep-alive)
 //   startup_diagnostics     mpv start-up snapshots, decoder info, the no-VideoReconfig warning
 //   hdr_and_display_sync    HDR Stage 3/4 (Branch A) and display sync (Branch B) — mutually exclusive
+//   display_rate            the display's refresh rate (winit's current monitor) → mpv's
+//                           display-fps-override, again when the mode changes — without it mpv's
+//                           display-sync modes never switch on under the render API and frames
+//                           drift against the display (display_rate_to_tell, unit-tested); logs
+//                           once per playback whether mpv really syncs (vsync-ratio)
 //   chapters_and_osd        chapter list + current chapter, chapter/delay OSD countdowns
 //   select_tracks           track auto-select at FileLoaded: remembered per-series picks
 //                           (state.remembered_tracks) first, then Config sub/audio languages
 //   report_position         every ~480 ms: position/buffer UI, music bar, lyrics, progress reports
-//   stats_and_drops         stats overlay poll, the 5-minute frame-counts log, a line per video
-//                           hitch (hitch.rs; only while video plays, some seconds into the file)
+//   stats_and_drops         stats overlay poll, the 5-minute frame-counts log (+ vsync-ratio), a
+//                           line per video hitch (hitch.rs; only while video plays, some seconds
+//                           into the file)
 //   skip_segments           always-skip / ask / ask-timed / never-skip (the ask-timed countdown
 //                           freezes while paused) + arming the fade-to-black seek
 //   up_next_and_credits     Up Next trigger (credits mode), credits mark-played and its rewind revert
@@ -41,6 +47,7 @@
 //                           check key off it, not play_start (before FileLoaded time-pos reads a fake 0)
 // ─────────────────────────────────────────────────────────────────────────────
 use super::*;
+use slint::winit_030::WinitWindowAccessor;
 
 /// What one tick reads once and every step shares: the timer's captures plus this tick's single
 /// read of mpv's position/duration and of how long ago the file opened.
@@ -190,6 +197,7 @@ pub(crate) fn wire_mpv_timer(
                     check_stall(&mut vs, &t, &mut out);
                     startup_diagnostics(&mut vs, &t);
                     hdr_and_display_sync(&mut vs, &t);
+                    display_rate(&mut vs, &t);
                     chapters_and_osd(&mut vs, &t);
                     select_tracks(&mut vs, &t);
                     report_position(&mut vs, &t);
@@ -604,6 +612,63 @@ fn hdr_and_display_sync(vs: &mut VideoState, t: &Tick) {
             p.apply_hdr_output();
         }
         vs.hdr_output_applied = true;
+    }
+}
+
+// ── display_rate ─────────────────────────────────────────────────────────────
+
+/// A smaller change of the display's refresh rate isn't passed on to mpv (Hz).
+const DISPLAY_RATE_STEP_HZ: f64 = 0.0005;
+
+/// The display's refresh rate to give mpv now: Some when the window system knows it and it
+/// differs from what mpv was told last (`told` 0.0 = never).
+fn display_rate_to_tell(told: f64, millihertz: Option<u32>) -> Option<f64> {
+    let hz = f64::from(millihertz.filter(|&m| m > 0)?) / 1000.0;
+    ((hz - told).abs() >= DISPLAY_RATE_STEP_HZ).then_some(hz)
+}
+
+/// mpv can't learn the display's refresh rate under the render API, and its display-sync modes
+/// (Settings "Video sync" display-*) stay off without it: frames are then timed by the audio
+/// clock, which drifts against the display's, and every so often they land right at the
+/// compositor's deadline — some seconds of frames shown late or dropped. So pass the rate on
+/// (every ~512 ms: display sync and HDR change the mode under a playing video) and log once per
+/// playback whether mpv really syncs.
+fn display_rate(vs: &mut VideoState, t: &Tick) {
+    if vs.current_is_audio || !vs.pos_tick.is_multiple_of(32) {
+        return;
+    }
+    let Some(w) = t.window_timer.upgrade() else {
+        return;
+    };
+    let millihertz = w
+        .window()
+        .with_winit_window(|win| win.current_monitor()?.refresh_rate_millihertz())
+        .flatten();
+    let Some(p) = vs.player.as_mut() else {
+        return;
+    };
+    if let Some(hz) = display_rate_to_tell(p.display_fps(), millihertz) {
+        info!("display rate for mpv: {hz:.3} Hz");
+        p.set_display_fps(hz);
+    }
+    if !vs.display_sync_logged
+        && t.loaded_since
+            .is_some_and(|d| d >= Duration::from_secs(HITCH_WATCH_AFTER_SECS))
+        && let Some(info) = p.video_info()
+    {
+        vs.display_sync_logged = true;
+        let told = p.display_fps();
+        match p.observed().vsync_ratio {
+            Some(ratio) => info!(
+                "display sync on: video-sync={}, {ratio:.4} refreshes per frame at {told:.3} Hz",
+                info.video_sync
+            ),
+            None => info!(
+                "display sync off: video-sync={}, display rate given {told:.3} Hz, mpv reports \
+                 no vsync-ratio",
+                info.video_sync
+            ),
+        }
     }
 }
 
@@ -1072,7 +1137,7 @@ fn stats_and_drops(vs: &mut VideoState, t: &Tick) {
         let o = p.observed();
         info!(
             "stats at {:.0}s: frame-drops={} decoder-drops={} mistimed={} delayed={} hitches={} \
-             shown-late={} discarded={} cache={:.0}s",
+             shown-late={} discarded={} vsync-ratio={} cache={:.0}s",
             o.time_pos,
             o.frame_drops,
             o.decoder_drops,
@@ -1081,6 +1146,7 @@ fn stats_and_drops(vs: &mut VideoState, t: &Tick) {
             vs.hitch.total,
             vs.hitch.shown_late_total,
             vs.hitch.discarded_total,
+            o.vsync_ratio.map_or("-".into(), |r| format!("{r:.4}")),
             o.cache_secs,
         );
     }
@@ -2248,6 +2314,19 @@ fn on_natural_end(t: &Tick) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mpv_is_told_the_display_rate_once_and_again_when_it_changes() {
+        // Unknown to the window system: nothing to tell.
+        assert_eq!(display_rate_to_tell(0.0, None), None);
+        assert_eq!(display_rate_to_tell(0.0, Some(0)), None);
+        // Never told: the rate, exactly (23.976 Hz, not the 23.98 a mode name shows).
+        assert_eq!(display_rate_to_tell(0.0, Some(23_976)), Some(23.976));
+        // Told already: nothing, until the mode changes.
+        assert_eq!(display_rate_to_tell(23.976, Some(23_976)), None);
+        assert_eq!(display_rate_to_tell(23.976, Some(24_000)), Some(24.0));
+        assert_eq!(display_rate_to_tell(60.0, Some(23_976)), Some(23.976));
+    }
 
     #[test]
     fn a_retry_of_a_file_that_never_opened_keeps_the_opening_grace() {

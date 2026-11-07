@@ -17,7 +17,8 @@
 //                           (credits_auto_marked_played + credits_mark_threshold — a rewind before
 //                           the threshold reverts the mark and hides the banner), next_ep_pending,
 //                           chapters + OSD countdowns, stall-recovery fields, is_trailer/trailer_url,
-//                           HDR/display-sync one-shot flags, video_on_subsurface, hitch
+//                           HDR/display-sync one-shot flags, video_on_subsurface, hitch,
+//                           display_sync_logged
 //   tear_down_player        capture ticks, drop render_ctx then player (mpv invariant; a subsurface
 //                           player's context is freed on our own GL context), return the stop data;
 //                           reports 0 ticks while credits_auto_marked_played so the stop report
@@ -272,6 +273,8 @@ pub(crate) struct VideoState {
     pub stall_opened_item: Option<String>,
     pub hitch: HitchWatch,
     pub hitch_fps: f64,
+    /// Whether mpv really syncs frames to the display already logged for this playback.
+    pub display_sync_logged: bool,
     /// "Still opening — first-open grace" already logged for this player
     /// (2026-10-08; see FIRST_OPEN_STALL_SECS).
     pub stall_grace_logged: bool,
@@ -399,6 +402,7 @@ impl Default for VideoState {
             stall_opened_item: None,
             hitch: HitchWatch::default(),
             hitch_fps: 0.0,
+            display_sync_logged: false,
             stall_grace_logged: false,
             screensaver_cookie: PlaybackCookies::default(),
             chapters: Vec::new(),
@@ -761,6 +765,7 @@ fn reset_video_state_for_playback(
     vs.stall_last_tick_pos = None;
     vs.stall_grace_logged = false;
     vs.hitch = HitchWatch::default();
+    vs.display_sync_logged = false;
     // stall_reload_attempts_for/stall_last_reload_at/stall_opened_item deliberately NOT reset
     // here — see their own doc comment on VideoState for why they must
     // survive a same-item reload.

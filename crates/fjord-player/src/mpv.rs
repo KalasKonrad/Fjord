@@ -17,7 +17,8 @@
 //                   (libmpv2's node iteration frees mpv-owned memory — unused)
 //   Observed        playback state: position, duration, pause, buffering, cache seconds,
 //                   passthrough, the start-up snapshot's core-idle/seeking/avsync, frame counts,
-//                   volume; buffer_end_fraction
+//                   vsync-ratio (only while mpv's display sync is active), volume;
+//                   buffer_end_fraction
 //   VideoInfo       decoder, size, frame rates, pixel format, gamma/primaries + HDR10 values;
 //                   hdr_metadata(), dimensions() (fps 0.0 = unknown)
 //   parse_track_list / parse_chapter_list  mpv's JSON lists (unit-tested)
@@ -32,6 +33,9 @@
 //                   direct (one-off, may wait): is_paused, get_drop_counts (teardown),
 //                     get_position / get_duration (right after Fjord's own command), poll_stats
 //                   file_loaded_at, has_seen_video_reconfig (diagnostic), apply_hdr_output
+//                   set_display_fps / display_fps: the display's refresh rate for mpv
+//                     (display-fps-override, async) — mpv can't learn it under vo=libmpv, and the
+//                     display-sync modes stay off without it
 //                   tracks: set_track_preferences (before load), set_sub_track /
 //                     set_audio_track / set_video_track, apply_auto_vf,
 //                     adjust_sub_delay / adjust_audio_delay, set_sub_style (live, same
@@ -309,6 +313,9 @@ pub struct Observed {
     /// mistimed-frame-count / vo-delayed-frame-count (display sync modes only; 0 until reported).
     pub mistimed_frames: i64,
     pub delayed_frames: i64,
+    /// vsync-ratio: mpv reports it only while its display sync is active (None = not this file;
+    /// libmpv2 sends nothing when it becomes unavailable, so it stays until the file ends).
+    pub vsync_ratio: Option<f64>,
     /// 0–130; None until mpv reported it.
     pub volume: Option<f64>,
 }
@@ -332,6 +339,7 @@ const OBSERVED: &[(&str, Format)] = &[
     ("decoder-frame-drop-count", Format::Int64),
     ("mistimed-frame-count", Format::Int64),
     ("vo-delayed-frame-count", Format::Int64),
+    ("vsync-ratio", Format::Double),
     ("volume", Format::Double),
     ("width", Format::Int64),
     ("height", Format::Int64),
@@ -374,6 +382,7 @@ impl Observed {
             ("decoder-frame-drop-count", PropertyData::Int64(v)) => self.decoder_drops = *v,
             ("mistimed-frame-count", PropertyData::Int64(v)) => self.mistimed_frames = *v,
             ("vo-delayed-frame-count", PropertyData::Int64(v)) => self.delayed_frames = *v,
+            ("vsync-ratio", PropertyData::Double(v)) => self.vsync_ratio = Some(*v),
             ("volume", PropertyData::Double(v)) => self.volume = Some(*v),
             _ => {}
         }
@@ -556,6 +565,8 @@ pub struct Player {
     // Everything mpv reported through observed properties (its own field, so poll can update
     // it while the event still borrows `mpv`).
     reported: Reported,
+    // The display refresh rate last given to mpv (set_display_fps; 0.0 = never).
+    display_fps: f64,
 }
 
 #[derive(Default)]
@@ -710,10 +721,7 @@ impl Player {
         })
         .map_err(|e| anyhow::anyhow!("mpv init failed: {}", e))?;
 
-        mpv.event_context_mut()
-            .observe_property("vsync-ratio", Format::Double, 1)
-            .map_err(|e| anyhow::anyhow!("observe vsync-ratio: {}", e))?;
-        for (id, (name, format)) in (2..).zip(OBSERVED) {
+        for (id, (name, format)) in (1..).zip(OBSERVED) {
             mpv.event_context_mut()
                 .observe_property(name, *format, id)
                 .map_err(|e| anyhow::anyhow!("observe {name}: {e}"))?;
@@ -754,6 +762,7 @@ impl Player {
             startup_log_suffix,
             resume_secs: config.start_position_secs,
             reported: Reported::default(),
+            display_fps: 0.0,
         })
     }
 
@@ -1192,6 +1201,25 @@ impl Player {
             sys::mpv_format_MPV_FORMAT_FLAG,
             std::os::raw::c_int::from(muted),
         );
+    }
+
+    /// Tell mpv the display's refresh rate (display-fps-override). Under vo=libmpv mpv can't
+    /// find it out itself (vo_libmpv answers no VOCTRL_GET_DISPLAY_FPS), and without it the
+    /// display-sync modes (video-sync=display-*) never switch on: vsync-ratio stays unreported
+    /// and frames are timed by the audio clock, which drifts against the display's. mpv picks a
+    /// change up at its next frame. Async, like set_volume (the tick calls it).
+    pub fn set_display_fps(&mut self, hz: f64) {
+        self.display_fps = hz;
+        self.set_async(
+            "display-fps-override",
+            sys::mpv_format_MPV_FORMAT_DOUBLE,
+            hz,
+        );
+    }
+
+    /// The rate last given to set_display_fps (0.0 = never).
+    pub fn display_fps(&self) -> f64 {
+        self.display_fps
     }
 
     pub fn set_video_track(&self, id: i64) {
