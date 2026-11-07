@@ -1,7 +1,7 @@
 // ── fjord-app · stats.rs ─────────────────────────────────────────────────────
 //   update_stats_window  StatsData → AppState stat-* props
-//                        VSYNC: mpv's video-sync mode (vsync-ratio is never set under the
-//                        render API); SPEED: audio/video speed corrections; DROP: VO drops ·
+//                        VSYNC: mpv's video-sync mode (+ vsync-ratio while mpv's display sync
+//                        is on — it needs timer.rs's display_rate under the render API); SPEED: audio/video speed corrections; DROP: VO drops ·
 //                        decoder drops · mistimed frames; CLR IN/OUT via fmt_color (IN = the
 //                        source's video-params; OUT = video-target-params, never available under
 //                        vo=libmpv → "n/a"); HDR row from hdr::status_text

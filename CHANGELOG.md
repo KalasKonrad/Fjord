@@ -23,6 +23,12 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Fixed: video turning choppy for a few seconds now and then** with Settings →
+  Advanced → "Video sync" on a display mode (display-vdrop, display-resample,
+  display-adrop). Those modes never actually switched on, because mpv wasn't told
+  the display's refresh rate. Frames were timed by the audio clock instead, which
+  drifts slowly against the TV's, and every so often they hit the moment the
+  screen updates. "Interpolation" needs the same and takes effect now too.
 - **Fixed: a small hitch every 42 seconds in true 24 fps films.** Display sync
   put them on 23.98 Hz even when the TV offers 24.00 Hz, which made mpv drop a
   frame every 42 seconds. A file that really is 24, 30 or 60 fps now gets its

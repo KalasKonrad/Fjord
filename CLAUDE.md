@@ -118,6 +118,8 @@ Needs `mpv`/libmpv (`pacman -S mpv`). Optional at runtime: `yt-dlp` (trailers), 
   `video_info()` is None until mpv reported the format after VideoReconfig — the event comes first.
 - Always pass mpv the target's real depth (`MPV_RENDER_PARAM_DEPTH`, the `depth` arg of `MpvRenderCtx::render`;
   0 = omitted = 8) — it dithers to it.
+- mpv can't learn the display's refresh rate under `vo=libmpv`: the tick's `display_rate` passes it on
+  (`display-fps-override`). Without it, `video-sync=display-*` and interpolation are silently off.
 
 ### Threads and shared state
 - Tokio for async, Slint event loop on the main thread. Return to the UI with `slint::invoke_from_event_loop`
