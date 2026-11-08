@@ -132,7 +132,7 @@ pub struct PlayerConfig {
 impl Default for PlayerConfig {
     fn default() -> Self {
         Self {
-            video_sync: "audio".into(),
+            video_sync: "display-vdrop".into(),
             opengl_early_flush: false,
             video_latency_hacks: false,
             dither_off: false,

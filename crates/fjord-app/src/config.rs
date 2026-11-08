@@ -205,8 +205,11 @@ fn de_dashboard_hero<'de, D: serde::Deserializer<'de>>(d: D) -> Result<String, D
 fn default_hwdec() -> String {
     "auto".into()
 }
+/// `display-vdrop`, not mpv's `audio`: `audio` times frames by the audio clock, which drifts against
+/// the display; `display-resample` leaves display sync off with audio passthrough (mpv's
+/// `handle_display_sync_frame`). New installs only — a saved value stays.
 pub(crate) fn default_video_sync() -> String {
-    "audio".into()
+    "display-vdrop".into()
 }
 pub(crate) fn default_tscale() -> String {
     "oversample".into()

@@ -1886,7 +1886,7 @@ export component SettingsScreen inherits Rectangle {
                             choice: true;
                             value: AppState.settings-video-sync;
                             title: "Video sync";
-                            subtitle: "display-resample: smooth sync · desync: no A/V correction (debug)";
+                            subtitle: "display-vdrop (default): smooth, also with passthrough · display-resample: smoothest, but off with passthrough · audio: follows the audio clock, can judder · desync: debug";
                         }
 
                         if AppState.settings-audio-spdif && AppState.settings-video-sync == "display-resample" && (AppState.settings-spdif-ac3 || AppState.settings-spdif-eac3 || AppState.settings-spdif-dts || AppState.settings-spdif-dts-hd || AppState.settings-spdif-truehd): Rectangle {

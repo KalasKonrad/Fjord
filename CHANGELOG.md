@@ -23,6 +23,12 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Changed: new installs use Settings → Advanced → Video sync =
+  display-vdrop.** The old default (audio) times frames by the audio clock,
+  which can make video choppy for a few seconds now and then. Existing
+  settings stay as they are; pick display-vdrop there to get the smoother
+  timing. The setting's description now says when to pick which.
+
 - **Improved: a log folder on a network drive that drops out.** While the
   folder is away, Fjord keeps the log lines and writes them once it's back,
   instead of losing them. The system journal gets one message when the folder
