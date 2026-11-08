@@ -3346,6 +3346,30 @@ What the 0.5.0 checklist confirmed before it was cleaned out of PLAN.md (dev = A
 
 Still open at the cleanup (kept in PLAN.md): 5c trailer retry, 5d trickplay on a long film/HTPC, S6 on the HTPC, S4 against an https:// server, the three packages. Later on 2026-10-15 the user ticked 5c, 5d, S6 and S4, and the `fjord` (source) and `fjord-bin` packages were confirmed on dev (pacman swaps, Fjord started with `0.5.0 (r1162.df80061)`, no warnings) — the source build is ~9 MiB bigger only because of the temporary `--cfg slint_debug_property` (measured: frame pointers alone 58.6 MiB vs CI 59.4 MiB). Left open: the first nightly from `release-0.5.1`.
 
+### 0.5.1 live tests (2026-10-22 – 2026-11-08)
+
+What the 0.5.1 checklist confirmed before it was cleaned out of PLAN.md (dev = AMD machine, HTPC = NVIDIA Pascal):
+
+- **Live test round, 2026-10-22:** the user went through the checklist as it stood then (the features and refactors of 2026-10-15 – 17); the HTPC logs confirmed playback.
+- **Keyboard zones from one list, Discover's request page in phases, playback start in steps** (pure refactors): the user, 2026-11-08, dev and HTPC. No `player init failed` in any kept log (dev since 2026-10-21, HTPC since 2026-11-03).
+- **No freeze on the first Discover title:** the user, 2026-11-08. The kept HTPC logs had no Discover page open to cross-check.
+- **Skip Intro on Jellyfin 12.2:** intro and credits times from the media segments, no 404 first.
+- **No video redraws while paused:** HTPC 2026-10-28 (an episode: 1,409 redraws skipped, 5 paused frames drawn). The in-window path ("Separate video surface" off) wasn't tried.
+- **Patience while the server's disks wake up:** HTPC r1282, 8 sessions, first opens 0.1–7.4 s, no reload, no HTTP 500. No open took over 15 s, so the retry branch has only run in its unit test.
+- **Video hitch log and presentation feedback:** HTPC r1288, 2026-11-07 (see "When video frames reach the screen").
+- **Display sync really on:** HTPC r1291, 2026-11-07/08 — four whole 1080p episodes (KWin discarded 0–3 single frames per episode, shown-late 0, frame-drops 0), two 4K HDR films at 23.976 Hz, a 25 fps video at 50 Hz (ratio 2.0000), a song (no line), the stats overlay's ratio (see "Display sync never switched on").
+- **True 24 fps films on 24.00 Hz:** ticked by the user without a 24.000 fps file played; 25 fps → 50 Hz only exercised the table path, not the exact 24/30/60 match.
+- **Settings crash watch:** closed 2026-11-08, `--cfg slint_debug_property` removed.
+- **Release:** tag run green, "Fjord v0.5.1" Latest on 2026-11-08; `fjord` and `fjord-bin` bumped to 0.5.1.
+
+### History rewrite: personal data out of the repo (2026-11-08)
+
+The repo is public. A scan before the 0.5.1 release (every tracked file, every commit's added lines and every commit message, against the server and Seerr addresses, IPs, host names, home paths, email, the ids and profile names in the local config, tokens, and the ~1,800 titles in Fjord's library cache) found titles from the user's library used as examples in DEVLOG, SLINT.md, PLAN.md, CLAUDE.md, code comments and commit messages, one real item id, and a mention of a family member. Addresses, ids, names and tokens had never been committed. The current files were cleaned first; then, at the user's request, the history.
+
+`git filter-repo --replace-text` + `--replace-message` with one list of 22 literal rules (titles → `<title>`/`<series>`/`<episode>`/`<album>`, the id → `<id>`, the family mention dropped), over all branches and tags. Every commit after the first affected one got a new hash; v0.1.0–v0.2.1 and three older tags kept theirs. The repo had been rewritten once before (2026-10-14), so filter-repo asked whether this run continued that one — with output piped and stdin from the tool, the question was invisible and the run sat at 0 % CPU; the old `.git/filter-repo` folder was moved aside (`.git/filter-repo-2026-10-14`) and the run took 23 s. The rewrite also caught two items the file cleanup had missed.
+
+Afterwards: commit hashes named in DEVLOG, CHANGELOG, `.git-blame-ignore-revs` and the nightly PKGBUILD were mapped to the new ones through both rewrites' `commit-map` (a hash from before 2026-10-14 → its 2026-10-14 rewrite → today's). The build workflow was disabled while `main`, `release-0.5.1` (at its GitHub position) and all tags were force-pushed — a pushed `v*` tag runs the release build — and enabled again; the GitHub releases stayed on their tags. The 0.5.0 tarball was then rebuilt from the rewritten tag (`workflow_dispatch` on `v0.5.0`, before 0.5.1 so 0.5.0's `make_latest` didn't matter), so its build id names a commit that exists (`r1162.df80061`). Old commits stay reachable on GitHub by hash until GitHub's cleanup; there are no forks. CLAUDE.md now has the rule: no personal data in files, commit messages or test data.
+
 ### 0.5.0 step 7 — release (2026-10-14, branch `release-0.5`)
 
 Version 0.5.0 in `Cargo.toml` (`workspace.package.version`, shown in Settings and the startup log). The 193 `[Unreleased]` CHANGELOG entries (~1,600 lines) were replaced by a short `[0.5.0]` section grouped New / Improved / Fixed, as decided in the release plan; the per-change detail stays in the sections of this file (and in git history of `CHANGELOG.md`). Each "Fixed" line was checked against `v0.4.2`: fixes for bugs that only existed during this cycle (in features that are new in 0.5.0 — profiles, display sync, the separate video surface, Reset to Defaults, the Discover trailer check and person links, the Browse All build-once guard, the blocklist filter) are not listed, since no released version had them. That includes the yt-dlp option injection (S2): `trailer_plays` arrived 2026-10-05; 0.4.2 only ran `yt-dlp --version`.
