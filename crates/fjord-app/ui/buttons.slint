@@ -1,5 +1,6 @@
 // ── fjord-app · buttons.slint ────────────────────────────────────────────────
-//   FjordButton        accent / danger push button; kbd-focused ring; optional icon-left/-right
+//   FjordButton        accent / danger push button; kbd-focused ring; optional icon-left/-right; both
+//                      buttons take FocusGlow's `on-dark` (dark fills and text in the player/Now Playing)
 //                      (pinned to Noto Sans Symbols 2, so the label keeps the chosen text font)
 //   IconCircleButton   circle button (`size`, 38px default; the glyph scales), accent when active; per-icon pinned fonts (Adwaita Sans
 //                      for ♥/✓, Noto Sans Math for ⇌ ⋮ ≡ ☾, Noto Sans Symbols 2 otherwise); also Now
@@ -30,7 +31,7 @@ export component FjordButton inherits FocusGlow {
     ring-width: root.in-bar ? AppState.bar-glow-ring-width(kbd-focused, ta.pressed || pulse.pulsing)
         : AppState.glow-ring-width(kbd-focused, ta.pressed || pulse.pulsing);
     glowing: kbd-focused;
-    fill: !enabled ? Theme.surface-raised
+    fill: !enabled ? (root.on-dark ? Theme.dark-surface-raised : Theme.surface-raised)
         : ta.has-hover ? (danger ? Theme.error-hover : Theme.accent-hover)
         : (danger ? Theme.error : Theme.accent);
     pulse := PressPulse {
@@ -48,7 +49,7 @@ export component FjordButton inherits FocusGlow {
         spacing: 6px;
         if root.icon-left != "": Text {
             text: root.icon-left;
-            color: root.enabled ? Theme.text-bright : Theme.text-subtle;
+            color: root.enabled ? Theme.text-bright : (root.on-dark ? Theme.dark-text-subtle : Theme.text-subtle);
             font-size: 14px * AppState.text-scale;
             font-weight: 600;
             font-family: "Noto Sans Symbols 2";
@@ -56,14 +57,14 @@ export component FjordButton inherits FocusGlow {
         }
         if root.text != "": Text {
             text: root.text;
-            color: root.enabled ? Theme.text-bright : Theme.text-subtle;
+            color: root.enabled ? Theme.text-bright : (root.on-dark ? Theme.dark-text-subtle : Theme.text-subtle);
             font-size: 14px * AppState.text-scale;
             font-weight: 600;
             vertical-alignment: center;
         }
         if root.icon-right != "": Text {
             text: root.icon-right;
-            color: root.enabled ? Theme.text-bright : Theme.text-subtle;
+            color: root.enabled ? Theme.text-bright : (root.on-dark ? Theme.dark-text-subtle : Theme.text-subtle);
             font-size: 14px * AppState.text-scale;
             font-weight: 600;
             font-family: "Noto Sans Symbols 2";
@@ -123,8 +124,8 @@ export component IconCircleButton inherits FocusGlow {
         : AppState.glow-ring-width(kbd-focused, ta.pressed || pulse.pulsing);
     glowing: kbd-focused;
     fill: active ? Theme.accent
-        : ta.has-hover ? Theme.surface-overlay
-        : Theme.surface-raised;
+        : ta.has-hover ? (root.on-dark ? Theme.dark-surface-overlay : Theme.surface-overlay)
+        : (root.on-dark ? Theme.dark-surface-raised : Theme.surface-raised);
     pulse := PressPulse {
         trigger: AppState.kb-activate-pulse;
         active: root.kbd-focused;
@@ -136,7 +137,8 @@ export component IconCircleButton inherits FocusGlow {
         width: parent.width;
         height: parent.height;
         text: root.icon;
-        color: Theme.text-bright;
+        // White on the accent fill; text colour on a plain one (dark: about the same white).
+        color: root.active ? Theme.text-bright : (root.on-dark ? Theme.dark-text : Theme.text);
         font-size: 20px * AppState.text-scale * root.size / 38px;
         font-weight: 600;
         // Hard-pinned regardless of Settings → Interface → Text font: ♥/✓ always

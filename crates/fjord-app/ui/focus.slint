@@ -8,7 +8,9 @@
 //   FocusHalo          the glow around a focused row/field/menu entry (`sidebar: true` for the sidebar's):
 //                      a hollow nine-slice image (AppState.focus-halo, halo.rs) reaching past the
 //                      element's edges, lit by Settings "Glow on"; never covers the row itself.
-//                      Both stay dark while a bottom bar has the keys (AppState.bar-focus) unless `in-bar`
+//                      Both stay dark while a bottom bar has the keys (AppState.bar-focus) unless `in-bar`;
+//                      `on-dark` (player, Now Playing) uses focus-/glow-color-on-dark ("White" stays
+//                      white in the light theme)
 //   FieldFocusWrap     focus ring around a LineEdit (which has no border of its own)
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
@@ -77,7 +79,10 @@ export component FocusGlow inherits Rectangle {
     in property <brush> fill: transparent;
     in property <length> radius;
     in property <length> ring-width: 0px;
-    in property <brush> ring-color: AppState.focus-color;
+    // On something that stays dark in the light theme (player, Now Playing): "White" stays white.
+    in property <bool> on-dark: false;
+    in property <brush> ring-color: root.on-dark ? AppState.focus-color-on-dark : AppState.focus-color;
+    property <color> glow-color: root.on-dark ? AppState.glow-color-on-dark : AppState.glow-color;
     // Fade fill changes (90 ms, like the ring) — for an element whose fill follows focus or selection.
     in property <bool> animate-fill: false;
     // A bottom bar's own button (music bar, mini player): it keeps its glow while the bar has the
@@ -90,7 +95,7 @@ export component FocusGlow inherits Rectangle {
     border-radius: root.radius;
     background: root.lit ? root.fill : transparent;
     drop-shadow-blur: root.lit ? AppState.glow-3 : 0px;
-    drop-shadow-color: AppState.glow-color;
+    drop-shadow-color: root.glow-color;
     animate background {
         duration: root.fill-ms;
         easing: ease-out-expo;
@@ -100,7 +105,7 @@ export component FocusGlow inherits Rectangle {
         border-radius: root.radius;
         background: root.lit ? root.fill : transparent;
         drop-shadow-blur: root.lit ? AppState.glow-2 : 0px;
-        drop-shadow-color: AppState.glow-color;
+        drop-shadow-color: root.glow-color;
         animate background {
             duration: root.fill-ms;
             easing: ease-out-expo;
@@ -112,7 +117,7 @@ export component FocusGlow inherits Rectangle {
             border-width: root.ring-width;
             border-color: root.ring-color;
             drop-shadow-blur: root.lit ? AppState.glow-1 : 0px;
-            drop-shadow-color: AppState.glow-color;
+            drop-shadow-color: root.glow-color;
             animate background {
                 duration: root.fill-ms;
                 easing: ease-out-expo;
@@ -139,6 +144,8 @@ export component FocusHalo inherits Rectangle {
     in property <bool> sidebar: false;
     // A bottom bar's own element: keeps its glow while the bar has the keys (bar-focus).
     in property <bool> in-bar: false;
+    // On something that stays dark in the light theme (player, Now Playing): "White" stays white.
+    in property <bool> on-dark: false;
     property <bool> lit: root.glowing && (root.in-bar || !AppState.bar-focus)
         && (root.sidebar ? AppState.sidebar-glow : AppState.row-glow);
     // The image's reach, rounded up like halo.rs does.
@@ -153,7 +160,7 @@ export component FocusHalo inherits Rectangle {
         width: root.width + 2 * root.pad;
         height: root.height + 2 * root.pad;
         source: AppState.focus-halo(root.radius, AppState.glow-1, AppState.glow-2, AppState.glow-3);
-        colorize: AppState.glow-color;
+        colorize: root.on-dark ? AppState.glow-color-on-dark : AppState.glow-color;
     }
 }
 

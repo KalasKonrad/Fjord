@@ -10,6 +10,8 @@
 //   HeroBackdrop  Background style: the two layers' pictures behind the whole dashboard below its
 //               title bar, crossfading, dimmed like the detail pages (hero-fade-top → -bottom);
 //               HeroBand then shows only the text (top-aligned) and the rows scroll over the picture
+//               Light theme: dark text, and the Background style's picture is veiled with the page
+//               background instead of darkened
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme, HeroInfo } from "theme.slint";
 import { AppState } from "app_state.slint";
@@ -72,7 +74,9 @@ component HeroLayer inherits Rectangle {
 
         Text {
             text: root.info.title;
-            color: Theme.text-bright;
+            // Light theme: the band fades into the light page and the Background style gets a light
+            // veil, so the text is dark there.
+            color: Theme.light ? Theme.text : Theme.text-bright;
             font-size: 30px;
             font-weight: 700;
             overflow: elide;
@@ -85,7 +89,7 @@ component HeroLayer inherits Rectangle {
 
         if root.info.overview != "": Text {
             text: root.info.overview;
-            color: Theme.text-soft;
+            color: Theme.light ? Theme.text-muted : Theme.text-soft;
             font-size: 15px * AppState.text-scale;
             wrap: word-wrap;
             max-lines: 3;
@@ -149,8 +153,11 @@ export component HeroBackdrop inherits Rectangle {
         }
     }
 
-    // Darkens the picture so the rows and the text over it stay readable (as on the detail pages).
+    // Darkens the picture so the rows and the text over it stay readable (as on the detail pages);
+    // the light theme veils it with the page background instead, so dark text stays readable.
     Rectangle {
-        background: @linear-gradient(180deg, Theme.hero-fade-top 0%, Theme.hero-fade-bottom 100%);
+        background: Theme.light
+            ? @linear-gradient(180deg, Theme.bg.transparentize(0.35) 0%, Theme.bg.transparentize(0.1) 100%)
+            : @linear-gradient(180deg, Theme.hero-fade-top 0%, Theme.hero-fade-bottom 100%);
     }
 }

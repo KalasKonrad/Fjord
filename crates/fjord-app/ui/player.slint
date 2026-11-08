@@ -98,18 +98,19 @@ component TrackPanel inherits Rectangle {
                 border-radius: Theme.radius;
                 background: {
                     let hov = off-ta.has-hover;
-                    AppState.player-panel-cursor == 0 ? Theme.surface-overlay
+                    AppState.player-panel-cursor == 0 ? Theme.dark-surface-overlay
                         : root.current-id == 0 ? Theme.accent-muted
-                        : hov ? Theme.surface
+                        : hov ? Theme.dark-surface
                         : transparent
                 };
                 border-width: AppState.ring-width(off-pulse.active, off-ta.pressed || off-pulse.pulsing);
-                border-color: AppState.focus-color;
+                border-color: AppState.focus-color-on-dark;
                 animate border-width {
                     duration: 90ms * AppState.settings-animation-speed;
                     easing: ease-out-expo;
                 }
                 FocusHalo {
+                    on-dark: true;
                     glowing: off-pulse.active;
                     radius: Theme.radius;
                 }
@@ -125,7 +126,7 @@ component TrackPanel inherits Rectangle {
                     alignment: center;
                     Text {
                         text: "Off";
-                        color: root.current-id == 0 ? Theme.accent : Theme.text;
+                        color: root.current-id == 0 ? Theme.accent : Theme.dark-text;
                         font-size: 12px * AppState.text-scale;
                         vertical-alignment: center;
                     }
@@ -144,18 +145,19 @@ component TrackPanel inherits Rectangle {
                 border-radius: Theme.radius;
                 background: {
                     let hov = row-ta.has-hover;
-                    AppState.player-panel-cursor == i + (root.has-off-row ? 1 : 0) ? Theme.surface-overlay
+                    AppState.player-panel-cursor == i + (root.has-off-row ? 1 : 0) ? Theme.dark-surface-overlay
                         : root.current-id == t.id ? Theme.accent-muted
-                        : hov ? Theme.surface
+                        : hov ? Theme.dark-surface
                         : transparent
                 };
                 border-width: AppState.ring-width(row-pulse.active, row-ta.pressed || row-pulse.pulsing);
-                border-color: AppState.focus-color;
+                border-color: AppState.focus-color-on-dark;
                 animate border-width {
                     duration: 90ms * AppState.settings-animation-speed;
                     easing: ease-out-expo;
                 }
                 FocusHalo {
+                    on-dark: true;
                     glowing: row-pulse.active;
                     radius: Theme.radius;
                 }
@@ -172,7 +174,7 @@ component TrackPanel inherits Rectangle {
                     padding-right: 10px;
                     Text {
                         text: t.label;
-                        color: root.current-id == t.id ? Theme.accent : Theme.text;
+                        color: root.current-id == t.id ? Theme.accent : Theme.dark-text;
                         font-size: 12px * AppState.text-scale;
                         wrap: word-wrap;
                         vertical-alignment: center;
@@ -417,12 +419,14 @@ export component PlayerScreen inherits Rectangle {
             HorizontalLayout {
                 spacing: 8px;
                 FjordButton {
+                    on-dark: true;
                     text: "Skip";
                     kbd-focused: AppState.skip-timed-focused == 0;
                     clicked => { AppState.skip-segment(); }
                 }
 
                 FjordButton {
+                    on-dark: true;
                     text: "Don't Skip";
                     kbd-focused: AppState.skip-timed-focused == 1;
                     clicked => { AppState.dismiss-skip-timed(); }
@@ -480,12 +484,14 @@ export component PlayerScreen inherits Rectangle {
             HorizontalLayout {
                 spacing: 8px;
                 FjordButton {
+                    on-dark: true;
                     text: "Play Now";
                     kbd-focused: AppState.next-ep-banner-focused == 0;
                     clicked => { AppState.play-next-ep(); }
                 }
 
                 FjordButton {
+                    on-dark: true;
                     text: "Skip";
                     kbd-focused: AppState.next-ep-banner-focused == 1;
                     clicked => { AppState.cancel-auto-advance(); }
@@ -524,7 +530,7 @@ export component PlayerScreen inherits Rectangle {
 
             if AppState.buffering-pct > 0: Text {
                 text: "Buffering  " + AppState.buffering-pct + "%";
-                color: Theme.text;
+                color: Theme.dark-text;
                 font-size: 13px * AppState.text-scale;
                 horizontal-alignment: center;
             }
@@ -578,7 +584,7 @@ export component PlayerScreen inherits Rectangle {
 
             Text {
                 text: "Reconnecting…";
-                color: Theme.text;
+                color: Theme.dark-text;
                 font-size: 13px * AppState.text-scale;
                 horizontal-alignment: center;
             }
@@ -807,12 +813,14 @@ export component PlayerScreen inherits Rectangle {
                     alignment: center;
                     spacing: 8px;
                     FjordButton {
+                        on-dark: true;
                         text: "← Back";
                         width: 76px * AppState.text-scale;
                         clicked => { AppState.minimize-player(); }
                     }
 
                     FjordButton {
+                        on-dark: true;
                         icon-left: "◀◀";
                         text: "30s";
                         width: 80px * AppState.text-scale;
@@ -820,6 +828,7 @@ export component PlayerScreen inherits Rectangle {
                     }
 
                     FjordButton {
+                        on-dark: true;
                         icon-left: AppState.is-paused ? "▶" : "⏸";
                         text: AppState.is-paused ? "Play" : "Pause";
                         width: 80px * AppState.text-scale;
@@ -827,6 +836,7 @@ export component PlayerScreen inherits Rectangle {
                     }
 
                     FjordButton {
+                        on-dark: true;
                         text: "30s";
                         icon-right: "▶▶";
                         width: 80px * AppState.text-scale;
@@ -834,6 +844,7 @@ export component PlayerScreen inherits Rectangle {
                     }
 
                     FjordButton {
+                        on-dark: true;
                         icon-left: "■";
                         text: "Stop";
                         width: 72px * AppState.text-scale;
@@ -847,6 +858,7 @@ export component PlayerScreen inherits Rectangle {
                     alignment: end;
                     spacing: 8px;
                     if AppState.chapter-entries.length > 0: FjordButton {
+                        on-dark: true;
                         text: "Ch";
                         icon-right: "▾";
                         width: 60px * AppState.text-scale;
@@ -856,6 +868,7 @@ export component PlayerScreen inherits Rectangle {
                         }
                     }
                     FjordButton {
+                        on-dark: true;
                         text: "Sync";
                         icon-right: "▾";
                         width: 70px * AppState.text-scale;
@@ -865,6 +878,7 @@ export component PlayerScreen inherits Rectangle {
                     }
 
                     FjordButton {
+                        on-dark: true;
                         text: "Sub";
                         icon-right: "▾";
                         width: 68px * AppState.text-scale;
@@ -875,6 +889,7 @@ export component PlayerScreen inherits Rectangle {
                     }
 
                     FjordButton {
+                        on-dark: true;
                         text: "Audio";
                         icon-right: "▾";
                         width: 76px * AppState.text-scale;
@@ -885,6 +900,7 @@ export component PlayerScreen inherits Rectangle {
                     }
 
                     FjordButton {
+                        on-dark: true;
                         text: "Video";
                         icon-right: "▾";
                         width: 76px * AppState.text-scale;
@@ -895,6 +911,7 @@ export component PlayerScreen inherits Rectangle {
                     }
 
                     FjordButton {
+                        on-dark: true;
                         text: AppState.stats-visible ? "Hide Stats" : "Stats";
                         width: 82px * AppState.text-scale;
                         clicked => { AppState.toggle-stats(); }
@@ -1151,13 +1168,14 @@ export component PlayerScreen inherits Rectangle {
                 alignment: center;
                 Text {
                     text: "Sub";
-                    color: Theme.text-subtle;
+                    color: Theme.dark-text-subtle;
                     font-size: 12px * AppState.text-scale;
                     vertical-alignment: center;
                     width: 34px * AppState.text-scale;
                 }
 
                 FjordButton {
+                    on-dark: true;
                     text: "−100ms";
                     width: 72px * AppState.text-scale;
                     clicked => { AppState.sub-delay-dec(); }
@@ -1165,7 +1183,7 @@ export component PlayerScreen inherits Rectangle {
 
                 Text {
                     text: (AppState.sub-delay-ms >= 0 ? "+" : "") + AppState.sub-delay-ms + " ms";
-                    color: AppState.sub-delay-ms == 0 ? Theme.text-subtle : Theme.accent;
+                    color: AppState.sub-delay-ms == 0 ? Theme.dark-text-subtle : Theme.accent;
                     font-size: 12px * AppState.text-scale;
                     font-weight: 700;
                     vertical-alignment: center;
@@ -1174,6 +1192,7 @@ export component PlayerScreen inherits Rectangle {
                 }
 
                 FjordButton {
+                    on-dark: true;
                     text: "+100ms";
                     width: 72px * AppState.text-scale;
                     clicked => { AppState.sub-delay-inc(); }
@@ -1187,13 +1206,14 @@ export component PlayerScreen inherits Rectangle {
                 alignment: center;
                 Text {
                     text: "Audio";
-                    color: Theme.text-subtle;
+                    color: Theme.dark-text-subtle;
                     font-size: 12px * AppState.text-scale;
                     vertical-alignment: center;
                     width: 34px * AppState.text-scale;
                 }
 
                 FjordButton {
+                    on-dark: true;
                     text: "−100ms";
                     width: 72px * AppState.text-scale;
                     clicked => { AppState.audio-delay-dec(); }
@@ -1201,7 +1221,7 @@ export component PlayerScreen inherits Rectangle {
 
                 Text {
                     text: (AppState.audio-delay-ms >= 0 ? "+" : "") + AppState.audio-delay-ms + " ms";
-                    color: AppState.audio-delay-ms == 0 ? Theme.text-subtle : Theme.accent;
+                    color: AppState.audio-delay-ms == 0 ? Theme.dark-text-subtle : Theme.accent;
                     font-size: 12px * AppState.text-scale;
                     font-weight: 700;
                     vertical-alignment: center;
@@ -1210,6 +1230,7 @@ export component PlayerScreen inherits Rectangle {
                 }
 
                 FjordButton {
+                    on-dark: true;
                     text: "+100ms";
                     width: 72px * AppState.text-scale;
                     clicked => { AppState.audio-delay-inc(); }

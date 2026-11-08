@@ -129,6 +129,7 @@ export component SeriesScreen inherits StackPage {
                             }
 
                             if AppState.series-meta != "": MetaLine {
+                                on-picture: AppState.series-has-backdrop;
                                 meta: AppState.series-meta;
                                 rating-label: AppState.series-rating-label;
                             }

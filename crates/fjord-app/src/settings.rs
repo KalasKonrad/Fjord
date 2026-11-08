@@ -207,6 +207,7 @@ const UI_TEXT_SIZE: &str = "ui.text_size"; // per profile, like card size
 const UI_DASHBOARD_ROWS: &str = "ui.dashboard_rows"; // per profile; opens dashboard_rows.rs's editor
 const UI_DASHBOARD_HERO: &str = "ui.dashboard_hero"; // per profile, a dropdown; hero.rs
 // Focus highlight, per profile (AppState.focus-*).
+const UI_THEME: &str = "ui.theme";
 const UI_ACCENT_COLOR: &str = "ui.accent_color";
 const UI_FOCUS_COLOR: &str = "ui.focus_color";
 const UI_FOCUS_WIDTH: &str = "ui.focus_width";
@@ -320,6 +321,7 @@ const SECTION_ROWS: &[(&str, &[&str])] = &[
             UI_TEXT_SIZE,
             UI_DASHBOARD_HERO,
             UI_DASHBOARD_ROWS,
+            UI_THEME,
             UI_ACCENT_COLOR,
             UI_FOCUS_COLOR,
             UI_FOCUS_WIDTH,
@@ -887,6 +889,12 @@ const HERO_STYLE_OPTIONS: &[(&str, &str)] = &[
     ("band", "Band at the top"),
     ("background", "Background"),
 ];
+// Stored keys = Theme.theme-key's values ("system" follows the desktop — appearance.rs).
+const THEME_OPTIONS: &[(&str, &str)] = &[
+    ("dark", "Dark"),
+    ("light", "Light"),
+    ("system", "Like the desktop"),
+];
 // Stored keys = Theme.accent-key's values (theme.slint has the colours).
 const ACCENT_COLOR_OPTIONS: &[(&str, &str)] = &[
     ("blue", "Blue"),
@@ -898,7 +906,7 @@ const ACCENT_COLOR_OPTIONS: &[(&str, &str)] = &[
 ];
 // "blue" is stored for the accent color (whichever one is chosen), its name from before accents.
 const FOCUS_COLOR_OPTIONS: &[(&str, &str)] = &[
-    ("white", "White"),
+    ("white", "White (black in the light theme)"),
     ("blue", "Accent color"),
     ("gold", "Gold"),
     ("green", "Green"),
@@ -1316,6 +1324,11 @@ static CHOICES: &[Choice] = &[
             |g| g.get_settings_dashboard_hero(),
             |g, v| g.set_settings_dashboard_hero(v),
         ),
+    },
+    Choice {
+        key: UI_THEME,
+        options: THEME_OPTIONS,
+        field: Field::Str(|g| g.get_settings_theme(), |g, v| g.set_settings_theme(v)),
     },
     Choice {
         key: UI_ACCENT_COLOR,
@@ -2231,6 +2244,7 @@ pub(crate) static PROFILE_BINDS: &[ProfileBind] = &[
         set_settings_dashboard_hero,
         str
     ),
+    bind!(Profile, theme, get_settings_theme, set_settings_theme, str),
     bind!(
         Profile,
         accent_color,
@@ -3720,6 +3734,30 @@ mod tests {
         );
         g.set_settings_accent_color("blue".into());
         assert_eq!(g.get_focus_color(), blue);
+    }
+
+    #[test]
+    fn the_light_theme_turns_a_white_ring_dark_except_on_dark_screens() {
+        i_slint_backend_testing::init_no_event_loop();
+        let window = crate::MainWindow::new().unwrap();
+        let g = crate::AppState::get(&window);
+        g.set_settings_focus_color("white".into());
+        let white = slint::Color::from_rgb_u8(0xff, 0xff, 0xff);
+        let near_black = slint::Color::from_rgb_u8(0x1c, 0x1c, 0x1e);
+        assert_eq!(g.get_focus_color(), white);
+        g.set_settings_theme("light".into());
+        assert_eq!(g.get_focus_color(), near_black);
+        assert_eq!(
+            g.get_focus_color_on_dark(),
+            white,
+            "player and Now Playing stay dark"
+        );
+        // "Like the desktop" follows the portal's preference.
+        g.set_settings_theme("system".into());
+        g.set_system_prefers_light(false);
+        assert_eq!(g.get_focus_color(), white);
+        g.set_system_prefers_light(true);
+        assert_eq!(g.get_focus_color(), near_black);
     }
 
     #[test]

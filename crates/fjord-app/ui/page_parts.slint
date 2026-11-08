@@ -1,6 +1,7 @@
 // ── fjord-app · page_parts.slint ─────────────────────────────────────────────
 //   PosterBlock        160×240 poster with badges (played, progress, unplayed count, request status)
-//   MetaLine           year · runtime · rating + optional ★ community rating
+//   MetaLine           year · runtime · rating + optional ★ community rating; `on-picture` (a
+//                      dimmed backdrop) → soft grey in the light theme
 //   CastRow            scrollable cast row (portrait, name, role); content-x follows focused-idx;
 //                      zoom room above/below the photos (AppState.zoom-pad), focused photo zooms and
 //                      glows (a FocusGlow holder around the clipped photo)
@@ -105,11 +106,13 @@ export component PosterBlock inherits Rectangle {
 export component MetaLine inherits HorizontalLayout {
     in property <string> meta;
     in property <string> rating-label;
+    // Over a dimmed backdrop: the light theme's muted grey would be dark on dark.
+    in property <bool> on-picture: false;
     spacing: 16px;
     alignment: start;
     Text {
         text: root.meta;
-        color: Theme.text-muted;
+        color: root.on-picture && Theme.light ? Theme.text-soft : Theme.text-muted;
         font-size: 14px * AppState.text-scale;
     }
 
@@ -316,7 +319,8 @@ export component StorylineSection inherits VerticalLayout {
                 x: 0;
                 y: 0;
                 text: root.text;
-                color: Theme.text-soft;
+                // On the plain page: soft grey in the dark theme, the text colour in the light one.
+                color: Theme.light ? Theme.text : Theme.text-soft;
                 font-size: 15px * AppState.text-scale;
                 wrap: word-wrap;
                 width: min(root.width - 96px, 640px);

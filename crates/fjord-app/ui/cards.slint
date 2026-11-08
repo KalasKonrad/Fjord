@@ -262,7 +262,7 @@ export component MediaCard inherits Rectangle {
                     text: item.other-tier-available
                         ? (item.requested-4k ? "Available in 2K" : "Available in 4K")
                         : (item.requested-4k ? "Also requested in 2K" : "Also requested in 4K");
-                    color: Theme.text-bright;
+                    color: item.other-tier-available ? Theme.text-bright : Theme.text;
                     font-size: 10px * AppState.text-scale;
                     font-weight: 700;
                     horizontal-alignment: center;

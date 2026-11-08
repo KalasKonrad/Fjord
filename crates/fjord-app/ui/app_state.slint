@@ -125,6 +125,8 @@
 //                         ProfileSettings.dashboard_rows), nav-row-order(); the editor: show-dashboard-rows,
 //                         dash-rows-tab/-items/-cursor/-col, dash-rows-open/-select-tab/-action
 //   Accent color          settings-accent-color <=> Theme.accent-key (Theme computes accent/-hover/-muted)
+//   Theme                 settings-theme <=> Theme.theme-key, system-prefers-light <=> Theme.system-light
+//                         (Theme.light switches the general tokens)
 //   Focus highlight       settings-focus-color/-width/-style/-glow/-opacity/-zoom → focus-color, focus-width,
 //                         focus-line-width, focus-press-width, focus-glow, glow-1/-2/-3 + glow-reach + glow-color (the
 //                         glow strength's halos, cast by widgets.slint FocusGlow), settings-focus-glow-on →
@@ -1818,6 +1820,10 @@ export global AppState {
     // zoom of a focused picture — cards, posters, tiles, cast photos).
     // Settings → Interface → Accent color: Theme computes accent / accent-hover / accent-muted from it.
     in-out property <string> settings-accent-color <=> Theme.accent-key;
+    // Settings → Interface → Theme ("dark" | "light" | "system") and the desktop's preference for
+    // "system" (appearance.rs, from the freedesktop portal); Theme.light follows both.
+    in-out property <string> settings-theme <=> Theme.theme-key;
+    in-out property <bool> system-prefers-light <=> Theme.system-light;
     in-out property <string> settings-focus-color: "white";
     in-out property <string> settings-focus-width: "3";
     in-out property <string> settings-focus-style: "line";
@@ -1833,6 +1839,9 @@ export global AppState {
         : settings-focus-color == "green" ? Theme.focus-green
         : settings-focus-color == "red" ? Theme.focus-red : Theme.focus-white;
     out property <color> focus-color: settings-focus-opacity == "see-through" ? focus-base.transparentize(0.4) : focus-base;
+    // The same for what stays dark in the light theme (player, Now Playing): "White" stays white.
+    property <color> focus-base-on-dark: settings-focus-color == "white" ? Theme.dark-focus-white : focus-base;
+    out property <color> focus-color-on-dark: settings-focus-opacity == "see-through" ? focus-base-on-dark.transparentize(0.4) : focus-base-on-dark;
     property <length> focus-thickness: settings-focus-width == "2" ? 2px
         : settings-focus-width == "4" ? 4px : settings-focus-width == "6" ? 6px : 3px;
     out property <length> focus-width: focus-thickness;
@@ -1853,6 +1862,7 @@ export global AppState {
     out property <length> glow-2: glow-k * (!glow-multi ? 0px : glow-level == "strong" ? 16px : 24px);
     out property <length> glow-3: glow-k * (glow-level == "strong" ? 32px : glow-level == "very-strong" ? 48px : 0px);
     out property <color> glow-color: glow-level == "faint" ? focus-color.transparentize(0.5) : focus-color;
+    out property <color> glow-color-on-dark: glow-level == "faint" ? focus-color-on-dark.transparentize(0.5) : focus-color-on-dark;
     // How far the glow reaches past an element's edge (a drop shadow's image ends one blur out).
     out property <length> glow-reach: focus-glow ? max(glow-1, max(glow-2, glow-3)) : 0px;
     out property <bool> sidebar-glow: focus-glow && settings-focus-glow-on != "pictures";

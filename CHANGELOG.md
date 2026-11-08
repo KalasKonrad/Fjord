@@ -23,6 +23,13 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **New: a light theme.** Settings → Interface → Theme: Dark (as before),
+  Light, or Like the desktop (follows KDE's light/dark choice, also when it
+  changes). Saved per profile and copied by "Copy settings from…". The player,
+  Now Playing and messages stay dark. In the light theme the accent colour is a
+  darker shade so it reads well on the light background, and the focus ring's
+  "White" is drawn black.
+
 - **New: Settings → Interface → Accent color** — blue (as before), purple,
   teal, green, orange or pink for buttons, pills, progress bars and the
   selected tab. Saved per profile and copied by "Copy settings from…". The

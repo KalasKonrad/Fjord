@@ -26,7 +26,7 @@
 //                   token), subtitle/audio language, library sort, skip_*_mode/_secs, trailer
 //                   quality, dashboard_rows (per dashboard: row ids in order + shown; DashboardRow),
 //                   dashboard_hero ("off" | "band" (default) | "background"; reads the old bool),
-//                   accent_color (Theme.accent-key), focus_color/_width/_style/_glow/_glow_on/
+//                   theme (Theme.theme-key), accent_color (Theme.accent-key), focus_color/_width/_style/_glow/_glow_on/
 //                   _opacity/_zoom (focus ring, glow
 //                   strength and scope, picture zoom), screensaver_mins (0 = off),
 //                   now_playing_auto_open_secs (0 = off; reads the old bool), controls_hide_secs,
@@ -163,6 +163,9 @@ fn default_now_playing_background() -> String {
 }
 fn default_toast_secs() -> u32 {
     4
+}
+fn default_theme() -> String {
+    "dark".into()
 }
 fn default_accent_color() -> String {
     "blue".into()
@@ -860,6 +863,9 @@ pub(crate) struct ProfileSettings {
     // "pictures" | "sidebar" | "everything" (what glows), both Glow styles only; opacity "solid" |
     // "see-through"; zoom "0" | "5" … "30" (%). AppState.focus-* / glow-* turn them into the
     // values every ring reads.
+    /// Settings → Interface → Theme: "dark" | "light" | "system" (Theme.theme-key).
+    #[serde(default = "default_theme")]
+    pub theme: String,
     /// Settings → Interface → Accent color: a Theme.accent-key value ("blue" | "purple" | "teal" |
     /// "green" | "orange" | "pink").
     #[serde(default = "default_accent_color")]
@@ -1024,6 +1030,7 @@ impl Default for ProfileSettings {
             text_size: default_card_size(),
             dashboard_rows: Default::default(),
             dashboard_hero: default_dashboard_hero(),
+            theme: default_theme(),
             accent_color: default_accent_color(),
             focus_color: default_focus_color(),
             focus_width: default_focus_width(),
@@ -1433,6 +1440,7 @@ fn migrate_legacy_config(l: LegacyConfig) -> Config {
         text_size: default_card_size(),
         dashboard_rows: Default::default(),
         dashboard_hero: default_dashboard_hero(),
+        theme: default_theme(),
         accent_color: default_accent_color(),
         focus_color: default_focus_color(),
         focus_width: default_focus_width(),

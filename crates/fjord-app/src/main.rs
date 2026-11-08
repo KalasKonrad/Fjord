@@ -25,7 +25,8 @@
 //                        the open file comes back; stderr says once that it's missing and once
 //                        that it's back (status_line; unit-tested)
 //   main                 logging setup + panic hook (writes PANIC + backtrace to fjord.log), backend
-//                        with the activity tap (activity.rs), app_id, periodic timers, apply saved
+//                        with the activity tap (activity.rs), app_id, the desktop's light/dark
+//                        preference (appearance.rs), periodic timers, apply saved
 //                        config + the startup gate (profile picker or auto-login), then one wire_*
 //                        call per area — the callbacks live in that area's module; helpers that
 //                        moved out of main.rs are re-exported below the `mod` list
@@ -34,6 +35,7 @@ slint::include_modules!();
 
 mod activity;
 mod album;
+mod appearance;
 mod artist;
 mod auth;
 mod blocklist;
@@ -1280,6 +1282,7 @@ fn main() -> Result<()> {
     settings::wire_copy_settings(&window, &state);
     settings::wire_choice_rows(&window);
     halo::wire(&window);
+    appearance::spawn_watch(window.as_weak());
     ui_watch::wire_ui_watch(&window);
     dashboard_rows::wire(&window, &state);
     hero::wire(&window, &state, &rt);

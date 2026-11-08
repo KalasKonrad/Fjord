@@ -31,34 +31,57 @@
 //   ToggleListItem  ProfileEditScreen checklist row (libraries, devices)
 //   BonfireAdminRow / BonfireAuditRow  Bonfire Admin mappings / audit-log rows
 // ─────────────────────────────────────────────────────────────────────────────
-// Fjord default theme — Jellyfin-inspired dark palette.
-// Swap this file (or override properties at runtime) to change the whole UI.
+// Fjord's palette: dark (Jellyfin-inspired, the default) or light, per profile (Settings →
+// Interface → Theme). The general tokens switch with `light`; the dark-* tokens and everything
+// drawn over pictures and video (scrims, OSD, text-bright …) stay dark in both — the player, Now
+// Playing and toasts use only those.
 export global Theme {
+    // ── Theme choice ─────────────────────────────────────────────────────────
+    // theme-key <=> AppState.settings-theme ("dark" | "light" | "system"); system-light <=>
+    // AppState.system-prefers-light (the desktop's preference, appearance.rs).
+    in-out property <string> theme-key:   "dark";
+    in-out property <bool> system-light:  false;
+    out property <bool> light: theme-key == "light" || (theme-key == "system" && system-light);
+
     // ── Backgrounds ───────────────────────────────────────────────────────────
-    out property <color> bg:              #0d0d0d;
-    out property <color> surface:         #1a1a1c;
-    out property <color> surface-raised:  #242426;
-    out property <color> surface-overlay: #2c2c2e;
-    out property <color> sidebar-bg:      #111113;
+    out property <color> bg:              light ? #f2f2f7 : dark-bg;
+    out property <color> surface:         light ? #ffffff : dark-surface;
+    out property <color> surface-raised:  light ? #e9e9ee : dark-surface-raised;
+    out property <color> surface-overlay: light ? #dedee3 : dark-surface-overlay;
+    out property <color> sidebar-bg:      light ? #e9e9ee : #111113;
+
+    // ── The dark palette, in both themes (player, Now Playing, toasts) ───────
+    out property <color> dark-bg:              #0d0d0d;
+    out property <color> dark-surface:         #1a1a1c;
+    out property <color> dark-surface-raised:  #242426;
+    out property <color> dark-surface-overlay: #2c2c2e;
+    out property <color> dark-text:            #f2f2f7;
+    out property <color> dark-text-muted:      #8e8e93;
+    out property <color> dark-text-subtle:     #767679;
+    out property <color> dark-border:          #2c2c2e;
+    out property <color> dark-border-strong:   #3a3a3c;
+    out property <color> dark-focus-white:     #ffffff; // the focus ring's "White" in those areas
 
     // ── Accent (Settings → Interface → Accent color, per profile) ─────────────
     // accent-key is bound both ways to AppState.settings-accent-color. Every colour has at least the
     // default blue's contrast with white text (accent-filled pills and buttons) and ≥ 4.6:1 on bg;
     // no red — red means an error.
+    // The light theme uses a darker shade (≥ 4.1:1 on its bg, ≥ 4.6:1 with white text).
     in-out property <string> accent-key:  "blue";
-    out property <color> accent: accent-key == "purple" ? #aa5cc3
+    out property <color> accent-base: accent-key == "purple" ? #aa5cc3
         : accent-key == "teal" ? #009e8e
         : accent-key == "green" ? #2e9e4f
         : accent-key == "orange" ? #e0701b
         : accent-key == "pink" ? #d6457f
         : #00a4dc;
+    out property <color> accent:          light ? accent-base.darker(0.3) : accent-base;
     out property <color> accent-hover:    accent.darker(0.15);
     out property <color> accent-muted:    accent.with-alpha(0.25);
 
     // Focus ring colours (Settings → Interface → Focus ring color; AppState.focus-color picks one
-    // and applies the transparency). "Accent blue" is `accent`. The gold is a lighter yellow than
-    // master-ring so a focused master tile still shows both.
-    out property <color> focus-white:     #ffffff;
+    // and applies the transparency). "Accent color" is `accent`; "White" is near-black in the light
+    // theme. The gold is a lighter yellow than master-ring so a focused master tile still shows both.
+    out property <color> focus-white:     light ? #1c1c1e : #ffffff;
     out property <color> focus-gold:      #ffd60a;
     out property <color> focus-green:     #34c759;
     out property <color> focus-red:       #ff5a5a;
@@ -69,11 +92,11 @@ export global Theme {
     out property <color> master-ring:     #f0b429;
 
     // ── Text ─────────────────────────────────────────────────────────────────
-    out property <color> text:            #f2f2f7;
-    out property <color> text-muted:      #8e8e93;
+    out property <color> text:            light ? #1c1c1e : dark-text;
+    out property <color> text-muted:      light ? #5c5c61 : dark-text-muted;
     // Dimmest readable text: ≥ 3:1 on every background (bg … surface-overlay; was #48484a at
     // 1.5–2.1:1, used for real information — hints, empty states, help text, track artists).
-    out property <color> text-subtle:     #767679;
+    out property <color> text-subtle:     light ? #6e6e73 : dark-text-subtle;
 
     // Pure white / soft grey for text over images, video and accent-filled pills and badges.
     out property <color> text-bright:     #ffffff;
@@ -88,9 +111,9 @@ export global Theme {
     out property <color> osd-panel-solid: #0d0d0ddd; // larger OSD panels (track lists)
     out property <color> hero-fade-top:   #00000080; // detail-page backdrop gradient
     out property <color> hero-fade-bottom: #000000cc;
-    out property <color> shadow-soft:     #00000055; // OSD pills
-    out property <color> shadow:          #00000070; // panels and boxes
-    out property <color> shadow-strong:   #000000aa; // dialogs, popups, menus
+    out property <color> shadow-soft:     light ? #00000022 : #00000055; // OSD pills
+    out property <color> shadow:          light ? #00000033 : #00000070; // panels and boxes
+    out property <color> shadow-strong:   light ? #00000055 : #000000aa; // dialogs, popups, menus
     out property <color> scrim-light:     #00000044; // a light dim over a background picture or video
     out property <color> osd-panel-opaque: #0e0e0eee; // track panels, the stats overlay
     out property <color> toast-bg:        #101012f0;
@@ -99,8 +122,8 @@ export global Theme {
     out property <brush> card-title-fade: @linear-gradient(180deg, #00000000 0%, #000000b3 45%, #000000e0 100%); // a poster's title
 
     // ── Interaction tints ────────────────────────────────────────────────────
-    out property <color> row-hover:       #ffffff08; // a list row under the mouse
-    out property <color> row-current:     #ffffff14; // the playing entry in a list
+    out property <color> row-hover:       light ? #0000000a : #ffffff08; // a list row under the mouse
+    out property <color> row-current:     light ? #00000014 : #ffffff14; // the playing entry in a list
     out property <color> image-hover:     #ffffff1a; // over a poster or photo under the mouse
 
     // ── Player OSD: text and bars over video ─────────────────────────────────
@@ -114,15 +137,15 @@ export global Theme {
     out property <color> toggle-knob:     #ffffff;
 
     // ── Borders / separators ─────────────────────────────────────────────────
-    out property <color> border:          #2c2c2e;
-    out property <color> border-strong:   #3a3a3c;
+    out property <color> border:          light ? #d1d1d6 : dark-border;
+    out property <color> border-strong:   light ? #c4c4c9 : dark-border-strong;
 
     // ── Feedback ─────────────────────────────────────────────────────────────
     out property <color> error:           #ff453a;
     out property <color> error-hover:     #c53030;   // a danger button under the mouse
-    out property <color> danger-muted:    #3a1a1a;   // Quit in the sidebar, hovered or focused
+    out property <color> danger-muted:    light ? #fbe0de : #3a1a1a; // Quit in the sidebar, hovered or focused
     out property <color> rating-gold:     #f5c518;   // the community rating star
-    out property <color> text-disabled:   #555555;
+    out property <color> text-disabled:   light ? #a8a8ad : #555555;
 
     // ── Layout ───────────────────────────────────────────────────────────────
     out property <length> sidebar-width:  200px;

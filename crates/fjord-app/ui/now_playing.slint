@@ -25,7 +25,7 @@ import {
 } from "widgets.slint";
 
 export component NowPlayingScreen inherits Rectangle {
-    background: Theme.bg;
+    background: Theme.dark-bg;
 
     // Sizes come from the window (and Settings → Interface → Text size), so the screen fills a TV.
     property <length> bar-h: 70px; // the top bar: Back at x/y 16 like every other screen's
@@ -71,8 +71,9 @@ export component NowPlayingScreen inherits Rectangle {
         // ── Top bar: Back ───────────────────────────────────────────────────
         Rectangle {
             height: root.bar-h;
-            background: root.blur-on ? Theme.osd-panel : Theme.surface;
+            background: root.blur-on ? Theme.osd-panel : Theme.dark-surface;
             FjordButton {
+                on-dark: true;
                 x: 16px;
                 y: 16px;
                 text: "← Back";
@@ -87,7 +88,7 @@ export component NowPlayingScreen inherits Rectangle {
                 x: 16px + 88px * AppState.text-scale + Theme.sp;
                 y: (parent.height - self.height) / 2;
                 text: "Now Playing";
-                color: Theme.text;
+                color: Theme.dark-text;
                 font-size: 17px * AppState.text-scale;
                 font-weight: 700;
             }
@@ -96,7 +97,7 @@ export component NowPlayingScreen inherits Rectangle {
                 y: parent.height - 1px;
                 height: 1px;
                 width: parent.width;
-                background: Theme.border;
+                background: Theme.dark-border;
             }
         }
 
@@ -120,7 +121,7 @@ export component NowPlayingScreen inherits Rectangle {
                         width: root.cover-size;
                         height: root.cover-size;
                         border-radius: Theme.radius-lg;
-                        background: Theme.surface-raised;
+                        background: Theme.dark-surface-raised;
                         clip: true;
                         if AppState.music-bar-has-art: Image {
                             width: parent.width;
@@ -131,7 +132,7 @@ export component NowPlayingScreen inherits Rectangle {
                         if !AppState.music-bar-has-art: Text {
                             text: "♫";
                             font-family: "Noto Sans Symbols 2";
-                            color: Theme.text-subtle;
+                            color: Theme.dark-text-subtle;
                             font-size: root.cover-size / 4;
                             horizontal-alignment: center;
                             vertical-alignment: center;
@@ -146,7 +147,7 @@ export component NowPlayingScreen inherits Rectangle {
                     spacing: 4px;
                     Text {
                         text: AppState.music-bar-title;
-                        color: Theme.text;
+                        color: Theme.dark-text;
                         font-size: 26px * AppState.text-scale;
                         font-weight: 700;
                         horizontal-alignment: center;
@@ -155,7 +156,7 @@ export component NowPlayingScreen inherits Rectangle {
 
                     if AppState.music-bar-artist != "": Text {
                         text: AppState.music-bar-artist;
-                        color: Theme.text-muted;
+                        color: Theme.dark-text-muted;
                         font-size: 16px * AppState.text-scale;
                         horizontal-alignment: center;
                         overflow: elide;
@@ -164,7 +165,7 @@ export component NowPlayingScreen inherits Rectangle {
                     // Format + quality: "FLAC · 16-bit / 44.1 kHz", "MP3 · 256 kbps · 44.1 kHz"
                     if AppState.music-bar-quality-long != "": Text {
                         text: AppState.music-bar-quality-long;
-                        color: Theme.text-subtle;
+                        color: Theme.dark-text-subtle;
                         font-size: 13px * AppState.text-scale;
                         horizontal-alignment: center;
                         overflow: elide;
@@ -182,7 +183,7 @@ export component NowPlayingScreen inherits Rectangle {
                         Rectangle {
                             height: 6px;
                             border-radius: 3px;
-                            background: Theme.border;
+                            background: Theme.dark-border;
                             Rectangle {
                                 x: 0;
                                 width: parent.width * AppState.music-bar-pos;
@@ -196,7 +197,7 @@ export component NowPlayingScreen inherits Rectangle {
                     HorizontalLayout {
                         Text {
                             text: AppState.music-bar-elapsed;
-                            color: Theme.text-muted;
+                            color: Theme.dark-text-muted;
                             font-size: 13px * AppState.text-scale;
                         }
 
@@ -206,7 +207,7 @@ export component NowPlayingScreen inherits Rectangle {
 
                         Text {
                             text: AppState.music-bar-total;
-                            color: Theme.text-muted;
+                            color: Theme.dark-text-muted;
                             font-size: 13px * AppState.text-scale;
                         }
                     }
@@ -225,6 +226,7 @@ export component NowPlayingScreen inherits Rectangle {
                         VerticalLayout {
                             alignment: center;
                             IconCircleButton {
+                                on-dark: true;
                                 size: 52px;
                                 icon: "⏮";
                                 kbd-focused: root.np-ctrl && AppState.now-playing-ctrl-focused == 1;
@@ -235,6 +237,7 @@ export component NowPlayingScreen inherits Rectangle {
                         }
 
                         IconCircleButton {
+                            on-dark: true;
                             size: 68px;
                             icon: AppState.music-bar-paused ? "▶" : "⏸";
                             active: true;
@@ -247,6 +250,7 @@ export component NowPlayingScreen inherits Rectangle {
                         VerticalLayout {
                             alignment: center;
                             IconCircleButton {
+                                on-dark: true;
                                 size: 52px;
                                 icon: "⏭";
                                 kbd-focused: root.np-ctrl && AppState.now-playing-ctrl-focused == 3;
@@ -261,6 +265,7 @@ export component NowPlayingScreen inherits Rectangle {
                         alignment: center;
                         spacing: 12px;
                         IconCircleButton {
+                            on-dark: true;
                             icon: "⇌";
                             active: AppState.queue-shuffle;
                             kbd-focused: root.np-ctrl && AppState.now-playing-ctrl-focused == 4;
@@ -270,6 +275,7 @@ export component NowPlayingScreen inherits Rectangle {
                         }
 
                         IconCircleButton {
+                            on-dark: true;
                             icon: AppState.queue-repeat-mode == 2 ? "↺¹" : "↺";
                             active: AppState.queue-repeat-mode > 0;
                             kbd-focused: root.np-ctrl && AppState.now-playing-ctrl-focused == 5;
@@ -279,6 +285,7 @@ export component NowPlayingScreen inherits Rectangle {
                         }
 
                         IconCircleButton {
+                            on-dark: true;
                             icon: "🔉";
                             kbd-focused: root.np-ctrl && AppState.now-playing-ctrl-focused == 6;
                             clicked => {
@@ -287,6 +294,7 @@ export component NowPlayingScreen inherits Rectangle {
                         }
 
                         IconCircleButton {
+                            on-dark: true;
                             icon: "🔊";
                             kbd-focused: root.np-ctrl && AppState.now-playing-ctrl-focused == 7;
                             clicked => {
@@ -296,6 +304,7 @@ export component NowPlayingScreen inherits Rectangle {
 
                         // Screensaver: lit while it will come on; turns it off for this playback.
                         if AppState.screensaver-enabled: IconCircleButton {
+                            on-dark: true;
                             icon: "☾";
                             active: !AppState.screensaver-paused;
                             kbd-focused: root.np-ctrl && AppState.now-playing-ctrl-focused == 8;
@@ -305,6 +314,7 @@ export component NowPlayingScreen inherits Rectangle {
                         }
 
                         FjordButton {
+                            on-dark: true;
                             text: "Open Album";
                             width: 130px * AppState.text-scale;
                             kbd-focused: root.np-ctrl && AppState.now-playing-ctrl-focused == 0;
@@ -324,7 +334,7 @@ export component NowPlayingScreen inherits Rectangle {
 
                 if !AppState.lyrics-available: Text {
                     text: "No lyrics available";
-                    color: Theme.text-subtle;
+                    color: Theme.dark-text-subtle;
                     font-size: 14px * AppState.text-scale;
                     horizontal-alignment: center;
                     vertical-alignment: center;
@@ -385,8 +395,8 @@ export component NowPlayingScreen inherits Rectangle {
                                 text: line.text;
                                 color: i == AppState.lyrics-active-idx ? Theme.accent
                                     : (i == AppState.lyrics-active-idx + 1 || i == AppState.lyrics-active-idx - 1)
-                                    ? Theme.text-muted
-                                    : Theme.text-subtle;
+                                    ? Theme.dark-text-muted
+                                    : Theme.dark-text-subtle;
                                 font-size: i == AppState.lyrics-active-idx ? 40px : 24px;
                                 font-weight: i == AppState.lyrics-active-idx ? 700 : 400;
                                 horizontal-alignment: center;
@@ -410,12 +420,12 @@ export component NowPlayingScreen inherits Rectangle {
         // ── Up Next strip ────────────────────────────────────────────────────
         Rectangle {
             height: root.strip-h;
-            background: root.blur-on ? Theme.osd-panel : Theme.surface;
+            background: root.blur-on ? Theme.osd-panel : Theme.dark-surface;
             Rectangle {
                 y: 0;
                 height: 1px;
                 width: parent.width;
-                background: Theme.border;
+                background: Theme.dark-border;
             }
 
             up-next-label := Text {
@@ -424,7 +434,7 @@ export component NowPlayingScreen inherits Rectangle {
                 width: self.preferred-width;
                 height: self.preferred-height;
                 text: "Up Next";
-                color: Theme.text-muted;
+                color: Theme.dark-text-muted;
                 font-size: 13px * AppState.text-scale;
                 font-weight: 600;
             }
@@ -477,6 +487,7 @@ export component NowPlayingScreen inherits Rectangle {
                             spacing: 4px;
                                 // The glow holder (FocusGlow); the cover inside it is clipped, its ring over the picture.
                                 FocusGlow {
+                                on-dark: true;
                                 width: root.strip-card;
                                 height: root.strip-card;
                                 x: (parent.width - self.width) / 2;
@@ -490,9 +501,9 @@ export component NowPlayingScreen inherits Rectangle {
 
                                 Rectangle {
                                     border-radius: Theme.radius;
-                                    background: Theme.surface-overlay;
+                                    background: Theme.dark-surface-overlay;
                                     border-width: AppState.glow-ring-width(!AppState.now-playing-back-focused && AppState.now-playing-in-strip && i == AppState.now-playing-strip-focused, chip-ta.pressed || chip-pulse.pulsing);
-                                    border-color: AppState.focus-color;
+                                    border-color: AppState.focus-color-on-dark;
                                     clip: true;
                                     animate border-width {
                                         duration: 90ms * AppState.settings-animation-speed;
@@ -508,7 +519,7 @@ export component NowPlayingScreen inherits Rectangle {
                                     if !entry.has-poster: Text {
                                         text: "♫";
                                         font-family: "Noto Sans Symbols 2";
-                                        color: Theme.text-subtle;
+                                        color: Theme.dark-text-subtle;
                                         font-size: 30px * AppState.text-scale;
                                         horizontal-alignment: center;
                                         vertical-alignment: center;
@@ -522,7 +533,7 @@ export component NowPlayingScreen inherits Rectangle {
                                 // one (the playing one in the accent colour).
                                 Text {
                                 text: entry.title;
-                                color: entry.is-current ? Theme.accent : Theme.text;
+                                color: entry.is-current ? Theme.accent : Theme.dark-text;
                                 font-size: 13px * AppState.text-scale;
                                 font-weight: entry.is-current ? 700 : 600;
                                 horizontal-alignment: center;
@@ -535,7 +546,7 @@ export component NowPlayingScreen inherits Rectangle {
 
                             if entry.artist != "": Text {
                                 text: entry.artist;
-                                color: Theme.text-muted;
+                                color: Theme.dark-text-muted;
                                 font-size: 12px * AppState.text-scale;
                                 horizontal-alignment: center;
                                 overflow: elide;

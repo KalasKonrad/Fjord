@@ -1065,6 +1065,15 @@ export component SettingsScreen inherits Rectangle {
                         }
 
                         SettingsRow {
+                            key: "ui.theme";
+                            choice: true;
+                            value: AppState.settings-theme;
+                            per-profile: true;
+                            title: "Theme";
+                            subtitle: "Dark, light, or the desktop's choice — the player and Now Playing stay dark — saved for this profile";
+                        }
+
+                        SettingsRow {
                             key: "ui.accent_color";
                             choice: true;
                             value: AppState.settings-accent-color;

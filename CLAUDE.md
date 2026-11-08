@@ -219,6 +219,10 @@ Needs `mpv`/libmpv (`pacman -S mpv`). Optional at runtime: `yt-dlp` (trailers), 
 - Every colour comes from `Theme` (theme.slint) — no hex colour anywhere else (only exception: the avatar palette in
   profile_edit.slint, which is stored data). Backdrops, OSD panels, shadows and text over images: `scrim*`, `osd-*`,
   `shadow*`, `hero-fade-*`, `text-bright`/`text-soft`; a missing role gets a new token.
+- Two themes (`Theme.light`, per profile): the general tokens (`bg`, `surface*`, `text*`, `border*`, `row-*`, `accent`)
+  switch. `text-bright`/`text-soft` (white) only over pictures, video or accent fills — on a plain surface use `text*`.
+  What stays dark in the light theme (player, Now Playing, toasts) uses the `dark-*` tokens and `on-dark: true` on its
+  `FocusGlow`/`FocusHalo`/`FjordButton`/`IconCircleButton` (and `AppState.focus-color-on-dark`).
 
 ### Screens, animation, glyphs
 - The full-screen pages over the dashboards (Detail, Series, Season, Person, Artist, Album, Collection, Request

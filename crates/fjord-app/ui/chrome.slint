@@ -168,7 +168,7 @@ export component ToastNotification inherits Rectangle {
     border-radius: Theme.radius-lg;
     background: Theme.toast-bg;
     border-width: 1px;
-    border-color: Theme.border-strong;
+    border-color: Theme.dark-border-strong;
     drop-shadow-blur: 14px;
     drop-shadow-color: Theme.shadow;
     drop-shadow-offset-y: 4px;
@@ -189,7 +189,7 @@ export component ToastNotification inherits Rectangle {
         width: parent.width - 26px;
         height: parent.height;
         text: root.message;
-        color: Theme.text;
+        color: Theme.dark-text;
         font-size: 13px * AppState.text-scale;
         wrap: word-wrap;
         vertical-alignment: center;

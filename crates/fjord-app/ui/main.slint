@@ -1,5 +1,6 @@
 // ── fjord-app · main.slint ───────────────────────────────────────────────────
-//   MainWindow    window root: sync-layout (grid columns/card sizes from the width × AppState.card-scale,
+//   MainWindow    window root: sync-widget-scheme (std-widgets' Palette.color-scheme follows Theme.light);
+//                 sync-layout (grid columns/card sizes from the width × AppState.card-scale,
 //                 re-run when the card size setting changes), the Up Next banner
 //                 (gate29, outside the fullscreen player), the one FocusScope `fs` →
 //                 AppState.handle-key() → keys.rs
@@ -43,6 +44,7 @@ import "../../../assets/fonts/Inter-Regular.ttf";
 import "../../../assets/fonts/Inter-Bold.ttf";
 import "../../../assets/fonts/AdwaitaSans-Regular.ttf";
 import { Theme } from "theme.slint";
+import { Palette } from "std-widgets.slint";
 import { AppState } from "app_state.slint";
 import {
     FjordButton,
@@ -145,8 +147,17 @@ export component MainWindow inherits Window {
         AppState.dash-cw = self.dash-card-w();
         AppState.dash-ch = self.dash-card-h();
     }
-    init => { self.sync-layout(); }
+    // Slint's own widgets (text fields, lists) follow Fjord's theme, not the desktop's colour scheme.
+    property <bool> theme-light: Theme.light;
+    function sync-widget-scheme() {
+        Palette.color-scheme = self.theme-light ? ColorScheme.light : ColorScheme.dark;
+    }
+    init => {
+        self.sync-layout();
+        self.sync-widget-scheme();
+    }
     changed width => { self.sync-layout(); }
+    changed theme-light => { self.sync-widget-scheme(); }
     // Mirrored so `changed` can watch it (it only sees this component's own properties).
     property <float> card-scale: AppState.card-scale;
     changed card-scale => { self.sync-layout(); }
