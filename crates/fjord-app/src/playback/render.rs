@@ -2,7 +2,8 @@
 //   create_fbo / delete_fbo  the two alternating video FBOs (wide = GL_RGB10_A2 for HDR passthrough)
 //   wire_rendering_notifier GL thread: FBO render + report_swap() for vsync feedback (no stats — moved to timer)
 //                           HDR Stage 5 (2026-10-05): decides each player's path once, at render-ctx
-//                           creation — video on the subsurface (video_surface.rs) when Settings →
+//                           creation (logged with its UI-thread time, as is the deferred loadfile)
+//                           — video on the subsurface (video_surface.rs) when Settings →
 //                           "Separate video surface" is on and it can be set up, else the FBO path;
 //                           subsurface players render via video_surface::render_frame into the spot
 //                           Slint shows (VideoSpot rects → to_buffer_rect; skips a frame while a new
@@ -189,6 +190,7 @@ pub(crate) fn wire_rendering_notifier(window: &MainWindow, video: Arc<Mutex<Vide
                         // "Separate video surface" is on and the subsurface
                         // can be set up; otherwise (audio, toggle off, X11,
                         // setup failure) the in-window FBO path below.
+                        let ctx_started = std::time::Instant::now();
                         let phys = win.window().size();
                         let want_surface = !vs.current_is_audio && g.get_settings_separate_video_surface();
                         let surface_ctx = if want_surface
@@ -242,7 +244,10 @@ pub(crate) fn wire_rendering_notifier(window: &MainWindow, video: Arc<Mutex<Vide
                                     });
                                 });
                                 vs.render_ctx = Some(ctx);
-                                info!("mpv render context created");
+                                info!(
+                                    "mpv render context created in {:.1} ms (UI thread)",
+                                    ctx_started.elapsed().as_secs_f64() * 1000.0
+                                );
                             }
                             Err(e) => { error!("MpvRenderCtx::new: {:#}", e); return; }
                         }
@@ -255,8 +260,15 @@ pub(crate) fn wire_rendering_notifier(window: &MainWindow, video: Arc<Mutex<Vide
                     if vs.render_ctx.is_some()
                         && let Some(url) = vs.pending_load_url.take()
                         && let Some(p) = vs.player.as_ref()
-                        && let Err(e) = p.load(&url) {
-                        error!("Player::load: {:#}", e);
+                    {
+                        let load_started = std::time::Instant::now();
+                        match p.load(&url) {
+                            Ok(()) => debug!(
+                                "loadfile sent in {:.1} ms (UI thread)",
+                                load_started.elapsed().as_secs_f64() * 1000.0
+                            ),
+                            Err(e) => error!("Player::load: {:#}", e),
+                        }
                     }
 
                     let phys = win.window().size();

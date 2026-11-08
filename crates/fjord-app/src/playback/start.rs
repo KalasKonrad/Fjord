@@ -6,8 +6,9 @@
 //                           switches the display first (display_sync::sync_before_load, 20 s cap;
 //                           skipped when replacing a live player for the same item; a stop mid-switch
 //                           reverts the display); a video starts trickplay::spawn_fetch
-//                           (VideoState.trickplay, cleared by every reset/teardown). One function per
-//                           step, in order:
+//                           (VideoState.trickplay, cleared by every reset/teardown). Debug line
+//                           "play start on the UI thread: …" with each step's time (StepTimes). One
+//                           function per step, in order:
 //     route_audio_output    music → the normal device without S/PDIF; video → the passthrough device
 //     bump_generation       playback_generation + 1 (the stale-result guard of every task below)
 //     apply_play_origin     from_detail/-series → which page reset_playback_ui restores on stop
@@ -72,6 +73,7 @@ pub(crate) fn start_playback(
         item_id,
         fjord_player::redact_api_key(&url)
     );
+    let mut steps = super::StepTimes::new();
 
     let config = route_audio_output(config, item_type);
     let my_gen = bump_generation(video);
@@ -81,8 +83,10 @@ pub(crate) fn start_playback(
     if item_type == "Episode" {
         spawn_segment_fetch(video, &client, &item_id, my_gen, rt_handle);
     }
+    steps.mark("bookkeeping");
 
     let (same_item_live, keep_presync) = replace_previous_player(video, &item_id, rt_handle);
+    steps.mark("previous player replaced");
     spawn_start_report(&client, &item_id, rt_handle);
 
     let client_art = Arc::clone(&client);
@@ -95,7 +99,9 @@ pub(crate) fn start_playback(
     let item_id_ds = item_id.clone();
     let url_ds = url.clone();
 
-    match Player::new(&config) {
+    let created = Player::new(&config);
+    steps.mark("mpv core created");
+    match created {
         Ok(player) => {
             let eligible = install_player(
                 video,
@@ -110,6 +116,7 @@ pub(crate) fn start_playback(
                 client,
                 state,
             );
+            steps.mark("installed");
             if !is_audio {
                 crate::trickplay::spawn_fetch(
                     Arc::clone(&client_art),
@@ -126,6 +133,7 @@ pub(crate) fn start_playback(
                 );
             }
             show_playing_ui(window_weak, &title, is_audio, &audio_meta);
+            steps.mark("player UI");
             // For audio tracks: fetch album art for music bar (and player background), and the
             // song's format + quality.
             if is_audio {
@@ -148,6 +156,8 @@ pub(crate) fn start_playback(
                 );
                 spawn_lyrics(&item_id_art, video, window_weak, rt_handle, my_gen);
             }
+            steps.mark("fetches started");
+            debug!("play start on the UI thread: {}", steps.summary());
         }
         Err(e) => player_init_failed(video, window_weak, e),
     }

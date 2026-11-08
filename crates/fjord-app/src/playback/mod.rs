@@ -19,10 +19,12 @@
 //                           chapters + OSD countdowns, stall-recovery fields, is_trailer/trailer_url,
 //                           HDR/display-sync one-shot flags, video_on_subsurface, hitch,
 //                           display_sync_logged
+//   StepTimes               per-step durations of one UI-thread operation → one debug line
 //   tear_down_player        capture ticks, drop render_ctx then player (mpv invariant; a subsurface
 //                           player's context is freed on our own GL context), return the stop data;
 //                           reports 0 ticks while credits_auto_marked_played so the stop report
-//                           can't re-add a resume point
+//                           can't re-add a resume point; debug line "teardown on the UI thread: …"
+//                           (position read, render context freed, mpv shut down)
 //   quit_cleanup            synchronous stop report + screensaver release after window.run() exits
 //   reset_playback_ui       clears all player UI state (video-surface-active first, so the window is
 //                           opaque before the next frame; music bar, Now Playing, buffering, overlays)
@@ -435,6 +437,48 @@ impl Default for VideoState {
     }
 }
 
+// ── StepTimes ─────────────────────────────────────────────────────────────────
+/// How long each step of one UI-thread operation took, for one debug line — the HTPC showed
+/// the UI busy 200–340 ms at every playback start and episode switch (PLAN 0.5.2 item 3).
+pub(crate) struct StepTimes {
+    start: Instant,
+    last: Instant,
+    steps: Vec<(&'static str, Duration)>,
+}
+
+impl StepTimes {
+    pub(crate) fn new() -> Self {
+        let now = Instant::now();
+        StepTimes {
+            start: now,
+            last: now,
+            steps: Vec::new(),
+        }
+    }
+
+    /// Ends the step that ran since the last mark (or since `new`).
+    pub(crate) fn mark(&mut self, step: &'static str) {
+        let now = Instant::now();
+        self.steps.push((step, now - self.last));
+        self.last = now;
+    }
+
+    /// "a 1.2 ms, b 180.4 ms — total 181.6 ms"
+    pub(crate) fn summary(&self) -> String {
+        let ms = |d: Duration| d.as_secs_f64() * 1000.0;
+        let parts: Vec<String> = self
+            .steps
+            .iter()
+            .map(|(name, d)| format!("{name} {:.1} ms", ms(*d)))
+            .collect();
+        format!(
+            "{} — total {:.1} ms",
+            parts.join(", "),
+            ms(self.last - self.start)
+        )
+    }
+}
+
 // ── tear_down_player ──────────────────────────────────────────────────────────
 // Capture the final playback position then drop render_ctx before player
 // (mpv invariant: MpvRenderCtx must be freed before mpv_terminate_destroy).
@@ -450,6 +494,8 @@ pub(crate) fn tear_down_player(
     i64,
 ) {
     vs.preloaded_next = None; // player is going away — pending gapless entry with it
+    let mut steps = StepTimes::new();
+    let had_player = vs.player.is_some();
     // get_position() returns 0.0 (via unwrap_or) if time-pos is not yet available
     // (file still loading).  Fall back to the last successfully-read position so
     // a stop-in-first-second doesn't send ticks=0 and wipe the Jellyfin resume point.
@@ -474,6 +520,7 @@ pub(crate) fn tear_down_player(
     };
     vs.credits_auto_marked_played = false;
     vs.credits_mark_threshold = None;
+    steps.mark("position read");
     // A render context made on the video subsurface's own GL context must be
     // freed on it (HDR Stage 5) — mpv requires its GL context for that, and
     // before the Player (mpv core) goes.
@@ -485,7 +532,12 @@ pub(crate) fn tear_down_player(
     }
     vs.video_spot_logged = None;
     vs.render_ctx = None;
+    steps.mark("render context freed");
     vs.player = None;
+    steps.mark("mpv shut down");
+    if had_player {
+        debug!("teardown on the UI thread: {}", steps.summary());
+    }
     vs.pending_load_url = None;
     vs.trailer_retry = None;
     vs.trickplay = None;
@@ -970,5 +1022,22 @@ pub(crate) fn start_trailer(
                 "Couldn't play trailer — is yt-dlp installed?".to_string(),
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod step_times_tests {
+    use super::StepTimes;
+
+    #[test]
+    fn summary_lists_steps_in_order_with_a_total() {
+        let mut steps = StepTimes::new();
+        steps.mark("first");
+        steps.mark("second");
+        let s = steps.summary();
+        let first = s.find("first ").unwrap();
+        let second = s.find("second ").unwrap();
+        assert!(first < second, "{s}");
+        assert!(s.contains(" ms, second ") && s.contains(" — total "), "{s}");
     }
 }
