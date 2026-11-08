@@ -44,14 +44,7 @@ jobs:
       - name: Build (release, locked)
         # Rust embeds source paths (panic locations); keep the runner's home
         # folder (and its user name) out of the published binary.
-        # TEMPORARY: nightly builds also get --cfg slint_debug_property (Slint
-        # then names the property in a "Recursion detected" panic — the
-        # Settings crash watch, PLAN.md → Issues); tag builds don't. Remove
-        # together with the same line in the root PKGBUILD.
-        run: |
-          flags="--remap-path-prefix=$HOME=/build"
-          if [[ "$GITHUB_REF" != refs/tags/* ]]; then flags="$flags --cfg slint_debug_property"; fi
-          RUSTFLAGS="$flags" cargo build --release --locked
+        run: RUSTFLAGS="--remap-path-prefix=$HOME=/build" cargo build --release --locked
 
       - name: Package artifact
         run: |

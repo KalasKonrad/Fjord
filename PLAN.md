@@ -47,7 +47,7 @@ A small release: bug fixes, polish, minor features. Released per CLAUDE.md → R
 - Not planned (low gain or high churn): splitting `AppState` into several globals (every Rust access would change), `reset_session_state` (a list by nature), `main()` (setup + `wire_*` calls).
 
 **Before tagging**
-- [ ] **Settings crash watch (Issues):** if it hasn't come back, remove the temporary `--cfg slint_debug_property` (Pending) and close the issue; if it has, fix it first.
+- [x] **Settings crash watch (Issues):** if it hasn't come back, remove the temporary `--cfg slint_debug_property` (Pending) and close the issue; if it has, fix it first. **Done 2026-11-08:** not seen again, flag removed.
 - [x] The first nightly from `release-0.5.1` built and installed (2026-10-15; every push since builds one).
 
 ---
@@ -74,11 +74,11 @@ A small release: bug fixes, polish, minor features. Released per CLAUDE.md → R
 
 ## Pending
 
-- [ ] **Remove the temporary `--cfg slint_debug_property` from `PKGBUILD`'s `build()` and from the nightly build in `build-release.yml`** once the Settings crash (Issues) is understood or hasn't come back for a while — it's there so a repeat names the property in the `PANIC` line.
+- [x] **Done 2026-11-08 — Remove the temporary `--cfg slint_debug_property` from `PKGBUILD`'s `build()` and from the nightly build in `build-release.yml`** once the Settings crash (Issues) is understood or hasn't come back for a while — it's there so a repeat names the property in the `PANIC` line.
 
 ## Issues
 
-- [ ] **Settings crash — watching (2026-10-08, r1064).** Two Slint "Recursion detected" panics on the HTPC after toggling Settings → Video (since 0.5.1: Display) → "Separate video surface" with the mouse and clicking Home. Not reproduced since (dev machine, debug build, several tries). If Fjord closes, send the log: the `PANIC` line has a timestamp and (HTPC build) the property's name; `settings changed: …` / `nav-selected(…)` show the steps before it. No PANIC / "Recursion detected" in any log still kept (dev and HTPC, 2026-10-17 → 2026-10-22).
+- [x] **Settings crash — watching (2026-10-08, r1064). Closed 2026-11-08:** the user never ran into it again; no `PANIC` in any kept log (dev since 2026-10-21, HTPC since 2026-11-01). Two Slint "Recursion detected" panics on the HTPC after toggling Settings → Video (since 0.5.1: Display) → "Separate video surface" with the mouse and clicking Home. Not reproduced since (dev machine, debug build, several tries). If Fjord closes, send the log: the `PANIC` line has a timestamp and (HTPC build) the property's name; `settings changed: …` / `nav-selected(…)` show the steps before it. No PANIC / "Recursion detected" in any log still kept (dev and HTPC, 2026-10-17 → 2026-10-22).
 - [x] **Brief choppy video on the HTPC — after Fjord's commit (2026-11-07). Closed 2026-11-07:** gone on r1291 (two whole episodes, 0 discarded, 0 shown late). Now and then 10–20 s of choppy 1080p video mid-episode. On 2026-11-07 08:14:42–08:15:02 KWin discarded or showed late about one frame in six while Fjord committed every frame on time, mpv dropped nothing and the cache stayed full (DEVLOG → When video frames reach the screen). The journal had nothing from KWin, the kernel or the driver then, and the GPU runs at full clock during playback. **Cause found 2026-11-07:** mpv's display sync was never on (no `vsync-ratio`, no display rate — mpv can't learn the rate under the render API), so frames were timed by the audio clock and drifted against the display: the slips came in clusters ~25 minutes apart. Fixed (Fjord now passes the rate on — DEVLOG → Display sync never switched on); close once the checklist item "Display sync really on" holds on the HTPC.
 
 ---

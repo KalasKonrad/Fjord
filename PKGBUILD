@@ -27,10 +27,6 @@ sha256sums=('SKIP')
 build() {
     cd "$srcdir/fjord"
     export CARGO_HOME="$srcdir/cargo-home"
-    # TEMPORARY (2026-10-08): Slint then names the property in a "Recursion
-    # detected" panic — watching for the Settings crash (PLAN.md → Issues).
-    # Remove once it's understood or hasn't come back for a while.
-    export RUSTFLAGS="${RUSTFLAGS:-} --cfg slint_debug_property"
     cargo build --release --locked
 }
 
