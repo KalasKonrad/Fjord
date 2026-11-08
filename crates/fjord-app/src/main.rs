@@ -21,7 +21,9 @@
 //                        (folder 0700, files 0600, best-effort; unit-tested); LazyLogFile —
 //                        the folder is created/rotated/opened on the log writer's thread at its
 //                        first write, never on the main thread (a network share at boot held up
-//                        the window); lines wait until it opens (unit-tested)
+//                        the window); lines wait until it opens, and while a folder lost under
+//                        the open file comes back; stderr says once that it's missing and once
+//                        that it's back (status_line; unit-tested)
 //   main                 logging setup + panic hook (writes PANIC + backtrace to fjord.log), backend
 //                        with the activity tap (activity.rs), app_id, periodic timers, apply saved
 //                        config + the startup gate (profile picker or auto-login), then one wire_*
@@ -704,6 +706,8 @@ fn rotate_logs(log_dir: &std::path::Path, keep: usize) {
 /// before the window, every file call waited for the network, nothing showed, and a second
 /// launch started alongside the first. Lines written before the file opens wait in the
 /// writer's queue, or here while opening fails (retried at most every 2 s, kept up to 4 MB).
+/// A folder that goes away under the open file (the share dropping out) is handled the same
+/// way: lines wait here and the file is reopened.
 struct LazyLogFile {
     dir: std::path::PathBuf,
     keep: usize,
@@ -712,6 +716,8 @@ struct LazyLogFile {
     pending: Vec<u8>,
     last_try: Option<std::time::Instant>,
     started: std::time::Instant,
+    /// Since when the folder can't be opened or written (reported once on stderr).
+    missing_since: Option<std::time::Instant>,
 }
 
 impl LazyLogFile {
@@ -727,6 +733,7 @@ impl LazyLogFile {
             pending: Vec::new(),
             last_try: None,
             started: std::time::Instant::now(),
+            missing_since: None,
         }
     }
 
@@ -735,7 +742,8 @@ impl LazyLogFile {
     fn open(&mut self) -> std::io::Result<std::fs::File> {
         use std::io::Write;
         std::fs::create_dir_all(&self.dir)?;
-        if !self.rotated {
+        let first = !self.rotated;
+        if first {
             rotate_logs(&self.dir, self.keep);
             self.rotated = true;
         }
@@ -745,11 +753,12 @@ impl LazyLogFile {
             .append(true)
             .open(self.dir.join("fjord.log"))?;
         let now = chrono::Local::now().format("%Y-%m-%dT%H:%M:%S%.6f%:z");
-        let waited = self.started.elapsed();
-        if waited >= Self::RETRY {
+        let waited = self.missing_since.unwrap_or(self.started).elapsed();
+        if (first || self.missing_since.is_some()) && waited >= Self::RETRY {
+            let again = if first { "" } else { " again" };
             let _ = writeln!(
                 file,
-                "{now}  INFO fjord_app: log folder reachable after {:.1} s — earlier lines follow",
+                "{now}  INFO fjord_app: log folder reachable{again} after {:.1} s — earlier lines follow",
                 waited.as_secs_f64()
             );
         }
@@ -762,6 +771,35 @@ impl LazyLogFile {
         }
         Ok(file)
     }
+
+    /// The stderr line (→ the journal) for a change of the folder's state: one when it can't be
+    /// used, one when it's back — not one per retry every 2 s.
+    fn status_line(&mut self, failure: Option<&std::io::Error>) -> Option<String> {
+        match (failure, self.missing_since) {
+            (Some(e), None) => {
+                self.missing_since = Some(std::time::Instant::now());
+                Some(format!(
+                    "fjord: log folder {} not available: {e} — lines are kept until it's back",
+                    self.dir.display()
+                ))
+            }
+            (None, Some(since)) => {
+                self.missing_since = None;
+                Some(format!(
+                    "fjord: log folder {} is back after {:.1} s",
+                    self.dir.display(),
+                    since.elapsed().as_secs_f64()
+                ))
+            }
+            _ => None,
+        }
+    }
+
+    fn report(&mut self, failure: Option<&std::io::Error>) {
+        if let Some(line) = self.status_line(failure) {
+            eprintln!("{line}");
+        }
+    }
 }
 
 impl std::io::Write for LazyLogFile {
@@ -770,21 +808,36 @@ impl std::io::Write for LazyLogFile {
             self.last_try = Some(std::time::Instant::now());
             match self.open() {
                 Ok(mut f) => {
-                    f.write_all(&std::mem::take(&mut self.pending))?;
-                    self.file = Some(f);
+                    let pending = std::mem::take(&mut self.pending);
+                    match f.write_all(&pending) {
+                        Ok(()) => {
+                            self.file = Some(f);
+                            self.report(None);
+                        }
+                        Err(e) => {
+                            self.pending = pending;
+                            self.report(Some(&e));
+                        }
+                    }
                 }
-                Err(e) => eprintln!("fjord: log folder {} not ready: {e}", self.dir.display()),
+                Err(e) => self.report(Some(&e)),
             }
         }
-        match self.file.as_mut() {
-            Some(f) => f.write(buf),
-            None => {
-                if self.pending.len() + buf.len() <= Self::PENDING_MAX {
-                    self.pending.extend_from_slice(buf);
+        if let Some(f) = self.file.as_mut() {
+            match f.write(buf) {
+                Ok(n) => return Ok(n),
+                // The folder went away under the open file: keep this line and reopen later.
+                Err(e) => {
+                    self.file = None;
+                    self.last_try = Some(std::time::Instant::now());
+                    self.report(Some(&e));
                 }
-                Ok(buf.len())
             }
         }
+        if self.pending.len() + buf.len() <= Self::PENDING_MAX {
+            self.pending.extend_from_slice(buf);
+        }
+        Ok(buf.len())
     }
 
     fn flush(&mut self) -> std::io::Result<()> {
@@ -1323,6 +1376,40 @@ mod lazy_log_tests {
         assert_eq!(read("fjord.log.1"), "last run\n");
         assert_eq!(read("fjord.log"), "early\nlate\nlater\n");
         let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn reports_a_missing_folder_once_and_once_when_back() {
+        let mut log = LazyLogFile::new(std::env::temp_dir().join("fjord-lazylog-status"), 3);
+        let gone = std::io::Error::other("gone");
+        assert!(
+            log.status_line(Some(&gone))
+                .unwrap()
+                .contains("not available")
+        );
+        assert_eq!(log.status_line(Some(&gone)), None, "no line per retry");
+        assert!(log.status_line(None).unwrap().contains("is back"));
+        assert_eq!(log.status_line(None), None);
+    }
+
+    #[test]
+    fn keeps_lines_when_the_open_file_fails_and_reopens() {
+        let dir = std::env::temp_dir().join(format!("fjord-lazylog-lost-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut log = LazyLogFile::new(dir.clone(), 3);
+        log.write_all(b"first\n").unwrap();
+        assert!(log.file.is_some());
+        // A handle that can't be written stands in for a share that dropped out.
+        log.file = Some(std::fs::File::open(dir.join("fjord.log")).unwrap());
+        log.write_all(b"during\n").unwrap();
+        assert!(log.file.is_none() && log.pending == b"during\n");
+        assert!(log.missing_since.is_some());
+        log.last_try = None;
+        log.write_all(b"after\n").unwrap();
+        assert!(log.missing_since.is_none());
+        let text = std::fs::read_to_string(dir.join("fjord.log")).unwrap();
+        assert_eq!(text, "first\nduring\nafter\n");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
 

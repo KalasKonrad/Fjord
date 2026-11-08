@@ -23,6 +23,11 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Improved: a log folder on a network drive that drops out.** While the
+  folder is away, Fjord keeps the log lines and writes them once it's back,
+  instead of losing them. The system journal gets one message when the folder
+  goes and one when it's back, instead of one every 2 seconds.
+
 ## [0.5.1] — 2026-11-08
 
 Dashboards and looks you can set up yourself, a reworked music screen and

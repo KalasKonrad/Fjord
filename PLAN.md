@@ -15,7 +15,7 @@ Version history: [CHANGELOG.md](CHANGELOG.md) (git tags `v0.1.0`–`v0.5.1`). Im
 Scope chosen by the user on 2026-11-08. In the order of work: small and safe first, the game controller last (on its own feature branch, CLAUDE.md → Development workflow). Released per CLAUDE.md → Releasing once everything here is done and live-tested. With a game controller and a light theme this is more than a patch: decide 0.5.2 vs 0.6.0 at release time.
 
 **1. Quieter missing log folder**
-- [ ] While the log folder can't be opened (e.g. the network share isn't there), `LazyLogFile` prints `fjord: log folder … not ready` to stderr (→ the journal) on every 2 s retry. Print it once when it first fails, and once when the folder is back (the file already gets "log folder reachable after N s"). main.rs `LazyLogFile::write`. Unit-testable with a folder that appears later.
+- [x] **Done 2026-11-08** (live check in the checklist; also handles a folder lost while the file is open). While the log folder can't be opened (e.g. the network share isn't there), `LazyLogFile` prints `fjord: log folder … not ready` to stderr (→ the journal) on every 2 s retry. Print it once when it first fails, and once when the folder is back (the file already gets "log folder reachable after N s"). main.rs `LazyLogFile::write`. Unit-testable with a folder that appears later.
 
 **2. Video sync default → `display-vdrop`**
 - [ ] `default_video_sync()` (config.rs) and `PlayerConfig::default` (fjord-player) → `display-vdrop`. **New installs only** (user): a saved `audio` stays. Why: `audio` times frames by the audio clock and drifts against the display (the 0.5.1 choppiness); `display-vdrop` works with normal audio *and* passthrough. Not `display-resample`: verified in mpv 0.41's `player/video.c` (`handle_display_sync_frame`: `if (resample && using_spdif_passthrough(mpctx)) return;`) — with passthrough it leaves display sync off entirely. The Settings description says when to pick which; DEVLOG gets the mpv source reference.
@@ -71,7 +71,7 @@ Scope chosen by the user on 2026-11-08. In the order of work: small and safe fir
 **Check an item off only once it has been clicked through on real hardware** — a clean build/clippy/test says nothing about whether it works. Add a line here the moment something ships "not live-tested". Ticked items are removed at the next cleanup; their story lives in `DEVLOG.md`.
 
 ### 0.5.2
-- Nothing yet.
+- [ ] **Log folder going away (2026-11-08).** HTPC, the next time the log share is unavailable — at startup, or dropping out while Fjord runs: `journalctl --user` has one `fjord: log folder … not available` line and one `… is back after N s` line, not one every 2 s. Afterwards fjord.log has the lines from the gap, after `log folder reachable again after N s` (or `reachable after` at startup).
 
 ---
 
