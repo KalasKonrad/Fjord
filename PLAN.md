@@ -6,7 +6,7 @@ A native Jellyfin frontend for Linux built with Rust and Slint. Uses the mpv ren
 
 ## Completed
 
-Version history: [CHANGELOG.md](CHANGELOG.md) (git tags `v0.1.0`–`v0.5.0`). Implementation detail per feature: `DEVLOG.md` (dated sections).
+Version history: [CHANGELOG.md](CHANGELOG.md) (git tags `v0.1.0`–`v0.5.1`). Implementation detail per feature: `DEVLOG.md` (dated sections).
 
 ---
 

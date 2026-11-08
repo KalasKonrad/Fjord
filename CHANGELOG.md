@@ -23,271 +23,85 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
-- **Fixed: video turning choppy for a few seconds now and then** with Settings →
-  Advanced → "Video sync" on a display mode (display-vdrop, display-resample,
-  display-adrop). Those modes never actually switched on, because mpv wasn't told
-  the display's refresh rate. Frames were timed by the audio clock instead, which
-  drifts slowly against the TV's, and every so often they hit the moment the
-  screen updates. "Interpolation" needs the same and takes effect now too.
-- **Fixed: a small hitch every 42 seconds in true 24 fps films.** Display sync
-  put them on 23.98 Hz even when the TV offers 24.00 Hz, which made mpv drop a
-  frame every 42 seconds. A file that really is 24, 30 or 60 fps now gets its
-  exact rate when the TV has it.
-- **Improved: playback after the server's disks have slept.** When the first
-  file of the day takes long to open, Fjord now keeps waiting instead of
-  restarting the request every 5 seconds (which could even make Jellyfin
-  answer with an error).
-- **Fixed: the first Discover title of a session froze for over a second** on
-  the HTPC. Its production countries were shown with flag emoji that Fjord's
-  fonts don't have; they're now plain names ("United States, United
-  Kingdom").
-- **Improved: less work while a video is paused.** Fjord kept redrawing the
-  unchanged paused picture dozens of times a second; it now redraws only when
-  something changes (a seek, subtitles, the picture moving).
-- **Fixed: Skip Intro and Skip Credits were gone with Jellyfin 12.** The Intro
-  Skipper version for Jellyfin 12 only hands out its times through Jellyfin's
-  own media segments, which Fjord now reads (older servers keep working).
-- **Fixed: the Up Next cards' focus glow was cut off** at the top and on the
-  left of the first card. It now shows all round, also at the strongest glow
-  settings (the strip gets a little taller for those).
-- **Fixed: the remote did nothing on the account screen at startup.** When
-  Fjord started on the account (or profile) picker, keys went to the hidden
-  sign-in form until you clicked something. They now work right away.
-- **Changed: Fjord needs Jellyfin 10.9 or newer.** It now uses Jellyfin's
-  current addresses for lists, item pages, watched and favorites; the old
-  ones are only kept for compatibility in Jellyfin 12. Tested with 10.11
-  and 12.2.
-- **Fixed: live updates with Jellyfin 12.2.** The server refused Fjord's
-  live-update connection, so watched state, favorites and new library items
-  from other devices only showed after a manual refresh. Older servers
-  (10.8 and later) keep working. Playback links send the login the way
-  Jellyfin 12 expects too.
-- **Fixed: the mouse pointer stayed visible over the music screensaver.** It
-  is now hidden as soon as the screen goes black, and comes back when the
-  mouse moves.
-- **Improved: Up Next shows more of a song's name** — up to two lines before
-  "…" (the artist line only when the song has one).
-- **Improved: the music bar's focus glow shows all round.** The art + title
-  zone sits in the screen's corner, so half of its glow was off screen: while
-  it has keyboard focus it now slides up and to the right out of the corner.
-  The buttons on the right keep a gap to the screen edge for the same reason.
-- **Improved: Back is in the same place on every page** — top left, the same
-  size. The album/playlist page lost its top bar (the title already sits next
-  to the cover), like the artist page; Browse, the library grids and Now
-  Playing moved their Back to match.
-- **Improved: the music bar's controls are grouped.** ⏮ ⏯ ⏭ now sit together
-  above the progress bar (play/pause filled); ⏹ joined the buttons on the
-  right. The remote's Left/Right follow the new order.
-- **Improved: a bigger Now Playing screen.** The cover grows with the screen
-  (about 430 px on a 1080p TV, was 380), the whole title shows (it wraps
-  instead of being cut), an empty artist line no longer leaves a gap, and the
-  controls sit in two rows under the cover: ⏮ ⏯ ⏭ large (play/pause the
-  biggest), then ⇌ ↻ 🔉 🔊 ☾ and Open Album. Up Next shows bigger covers with
-  the title and artist. Back sits where it does on every other page.
-- **New: Now Playing background.** Settings → Audio → "Now Playing
-  background": the song's cover, blurred, behind the screen — Soft (default,
-  darker), Strong (brighter) or Plain. Per profile.
-- **Changed: more settings are per profile.** Text font, Scroll speed,
-  Animation speed, On-screen keyboard, Video in background, the two seek
-  steps and Skip fade duration now belong to each profile (they carry the
-  "Profile" tag and are copied by "Copy settings from…"). Every profile
-  starts with what the device had, so nothing changes until someone picks
-  something else.
-- **Fixed: a song or video that took long to start began again from the
-  top** right after it finally started (when the server's disks were waking
-  up: Fjord waits up to 15 s for a first start, but then counted that wait as
-  a hang and reloaded).
-- **Fixed: the first visit to Discover froze for a moment** (about 0.7 s on a
-  desktop, 1.4 s on the HTPC). The cause was the calendar card's 🗓 icon: the
-  text font doesn't have it, so the first time it was drawn Fjord searched
-  every installed font. It now uses Fjord's own symbol font. The same applied
-  to the "View Details" icon in the menu, now 🛈.
-- **Fixed: the music bar's buttons sat at its top edge** (the focused one's
-  glow was cut off there) instead of in the middle. The song's format now
-  follows the artist — or sits on its own at the left when a song has no
-  artist, instead of at the far right — and the title gets more room,
-  growing with the Text size setting.
-- **Improved: opening Discover the first time no longer freezes as long.**
-  Its rows now appear one after another, top first, instead of all in one go
-  (on the HTPC the screen stopped for 1.4–1.7 s, and Down presses made
-  meanwhile all ran at once and landed in Settings).
-- **Fixed: Fjord could take a long time to appear at startup** when its log
-  folder is on a network drive that isn't connected yet (e.g. right after the
-  computer starts). The window now shows at once; the log is written as soon
-  as the drive is there, with nothing lost. Starting Fjord again while waiting
-  used to open two copies.
-- **Fixed: a short freeze at every song change.** With a playlist or album
-  playing, the interface stopped for about a third of a second each time the
-  next song started (on the HTPC; animations and keys paused). Fjord no longer
-  waits for the player while it opens the next song. The same goes for
-  starting a video (its format, HDR details, tracks and chapters) and for the
-  sound fade around an intro skip.
-- **Improved: the subtitle background box has levels.** Settings →
-  Subtitles → "Subtitle background box" is Off / Light / Medium / Dark /
-  Solid instead of on/off (a saved "on" is Dark, the same box as before).
-  Turning it off during a video now removes the box right away.
-- **New: how long the player controls and messages stay up.** Settings →
-  Player → "Hide controls after" (2 / 3 / 5 / 10 s, default 3 s) and Settings
-  → Interface → "Message duration" (3 / 4 / 6 / 10 s, default 4 s), per
-  profile. Both were fixed before (3 s and 4 s).
-- **Improved: the ☾ button says what it did** — "Screensaver off until the
-  music stops" or "Screensaver on".
-- **Improved: Auto-open Now Playing has a delay setting.** Settings → Audio →
-  "Auto-open Now Playing" is now Off / 15 s / 30 s / 1 / 2 / 5 min instead of
-  on/off (default 30 s, as before; a saved "off" stays off), per profile.
-  Moving the mouse now also counts as activity, not only key presses.
-- **Fixed: a playlist, album or artist page could show a long code instead of
-  its name** — e.g. View Details on a Music dashboard card before the library
-  list was opened. Every page now takes its name from the server (collections
-  and people too).
-- **Fixed: View Details on a collection opened the movie page** instead of
-  the collection page (a click opened the right one). Every way of opening an
-  item — click, Enter, View Details — now goes to the same page for its type.
-- **New: a song's format and quality.** Track lists (albums, playlists, an
-  artist's Tracks) show it next to the length — "FLAC 16/44.1" for lossless
-  (bit depth / kHz), "MP3 256 kbps" for compressed — the music bar shows it
-  after the artist, and Now Playing spells it out under the title ("FLAC ·
-  16-bit / 44.1 kHz").
-- **Fixed: songs added to the queue never played during a playlist on
-  repeat.** Queued songs waited for the playlist to end, which with Repeat
-  All never happened. Now Add to Queue plays the songs right after the
-  current one (in the order you added them; Play Next goes before those),
-  then the playlist continues. They become part of that playlist for the
-  session: with Repeat All they come around again, with shuffle they play
-  next this round and at a random spot in later rounds (shuffle with Repeat
-  All now mixes every new round). The queue panel and Up Next list them right
-  after the current song.
-- **New: an artist's tracks without an album.** Music files lying directly in
-  an artist's folder with no album (e.g. untagged files in "Various Artists")
-  now show as "Tracks" under the albums on that artist's page; Enter plays
-  from that track on. The page's line under the name counts them ("7 albums
-  · 4 tracks").
-- **Fixed: artist pages with many albums didn't scroll with the remote** —
-  the page now follows the selected album or track. An album card no longer
-  looks selected while the Play/♥ buttons above it have the focus.
-- **New: screensaver while music plays.** After a set time without a key
-  press or mouse movement the picture turns black — the TV stays on, so the
-  HDMI connection isn't lost. Any key or the mouse brings the picture back
-  (that key does nothing else). Settings → Audio → Screensaver while music
-  plays: Off, 1, 2, 5 (default), 10, 15 or 30 minutes, saved per profile. A ☾
-  button in the music bar and on Now Playing turns it off until the music
-  stops (and back on).
-- **Fixed: the screen could go dark during playback.** Fjord's request to
-  keep the screen on never reached the desktop (only sleep was blocked), so
-  KDE's screen energy saving could turn the TV off during long music
-  sessions. Fjord now holds the screen-saver and power-management blocks for
-  as long as something plays.
-- **Improved: opening Discover the first time does less at once** — its
-  posters are put in place in a few batches instead of one by one (the HTPC
-  froze for about a second there and ran the keys pressed meanwhile all at
-  once). With Log level = Debug, Fjord now also logs when the screen was
-  busy, so a remaining hiccup can be traced.
-- **Fixed: two things looked selected at once.** Moving down into the music
-  bar (or the mini player) left the card, track or row you came from looking
-  selected; it now shows its highlight again when you go back up. And a music
-  bar button no longer stays lit while the queue, Now Playing or a menu has
-  the keys.
-- **Fixed: an album opened from an artist page couldn't be navigated** — the
-  keys went to the artist page underneath (seen on Various Artists). The same
-  family: a film opened from a person page now opens on top instead of under
-  it, and a request or Discover page opened from one of these pages too.
-  Every page now opens on top of the one you came from, and Back returns to
-  it.
-- **Fixed: display-sync choices picked from the list did nothing.** Settings →
-  Display: choosing the 4K or 1080p scale, the odd-frame-rate 4K mode or the
-  HDR / wide-color mode from the opened list (Enter on the remote) now takes
-  effect; only Right and the mouse worked before.
-- **Improved: Discover's rows match the dashboards** — the same spacing
-  between rows, and the keyboard keeps the selected row properly in view.
-  Clicking a card on a dashboard now leaves it selected when you come back.
-- **New: the selected picture grows.** Posters and cards everywhere, cast
-  photos and profile tiles zoom a little when selected (10% by default) and
-  sit above their neighbours. Settings → Interface → Zoom on the selected
-  picture: Off, 5%–30%, saved per profile.
-- **New: choose how the selection looks.** Settings → Interface has a focus
-  ring color (white, accent blue, gold, green, red), thickness (2–6px), style
-  (line, glow, or both — the glow is on posters, tiles and buttons; rows and
-  menus keep the line), glow strength (Faint, Very soft, Subtle, Soft — the default —
-  Medium, Strong or Very strong; with line and glow, the glow starts where the
-  line ends),
-  what glows (pictures and buttons; also the sidebar; or everything — the
-  default — rows, fields, menus and lists too), and transparency. Every highlighted thing — cards,
-  buttons, menus, Settings rows, lists, the sidebar — now shows the same ring,
-  by default a solid 3px white line (thicker and brighter than before), and
-  the press flash follows it. Saved per profile.
-- **Improved: more text and card sizes.** Settings → Interface → Text size
-  and Card size now go from Small to Huge: text Small (−10%), Normal, Large,
-  Extra large, Huge (+50%); cards Small (−20%), Normal, Large, Extra large,
-  Huge (twice the size). Badges and pills on the cards grow with the text.
-- **Improved: screens line up.** Titles, search fields, filter/sort pills and
-  the rows or grids below them now start at the same left edge on the
-  dashboards, Discover, Browse All and the library grids, so switching between
-  them no longer shifts things sideways. The sidebar shows just the logo and
-  FJORD (the small "Jellyfin" under it is gone).
-- **New: a highlight on the dashboards.** Home, TV Shows, Movies,
-  Collections and Music show the selected item large — its backdrop (an
-  album's cover on Music), title, year, rating, length and the start of its
-  story — and it follows you as you move along the rows, Watchlist and Coming
-  Up included. Settings → Interface → Dashboard highlight: Band at the top
-  (the default), Background (the picture behind the whole dashboard, the
-  text above the rows) or Off; saved per profile.
-- **New: choose your dashboard rows.** Settings → Interface → Dashboard
-  rows: for Home, TV Shows, Movies, Collections and Music, hide the rows you
-  don't use and move the others up or down. Saved per profile (and copied by
-  "Copy settings from…"); works with the remote and the mouse.
-- **Fixed: removing a track from a playlist needed a mouse or a keyboard.**
-  The context menu on a playlist's track (C on the remote) now has "Remove
-  from Playlist".
-- **Fixed: "1 tracks", "1 episodes", "1 profiles"** and similar — counts
-  now use the singular for one. Long series names and dialog titles wrap
-  instead of being cut off, and the mouse shows a hand over every button and
-  menu entry (a text cursor over search fields).
-- **Improved: an empty search says so.** Searching a library or Browse All
-  (or filtering a library by Unwatched/Favorites) with no matches now shows
-  "No results for …" instead of a blank screen, like Discover does.
-- **New: Settings → Interface → Text size** — Normal, Large or Extra large
-  text everywhere (menus, cards, settings, the player), saved per profile.
-  Headings stay as they are.
-- **Improved: clearer error messages.** They now read "Couldn't … — reason"
-  (for example "the server isn't reachable") instead of showing raw error
-  text with web addresses; the details are in the log. Wording and spelling
-  are consistent across the app (e.g. "Add to Favorites", "Key bindings").
-- **Improved: setting descriptions are readable in full.** The selected row
-  shows its whole description instead of cutting it off with "…", and the
-  longest ones are shorter.
-- **New: Settings → Profiles → Copy settings from…** — take another
-  profile's settings (the ones tagged Profile: subtitles, audio language,
-  skipping, trailer quality, Now Playing, card size) into yours, after a
-  confirmation. No PIN needed: sign-in, Seerr and this device's settings
-  are never copied.
-- **Changed: Settings is organised by what you want to change.** The sections
-  are now Playback (skipping, seeking, trailers), Subtitles & language,
-  Display (HDR, display sync), Audio, Interface, Profiles, Integrations, Key
-  Bindings and Advanced (decoder and sync switches, buffering, log level).
-  Settings saved for your profile carry a small "Profile" tag. Every setting
-  keeps its value.
-- **Changed: Settings → Playback → Trailer quality** (was under Integrations,
-  only with Seerr connected). It sets the resolution for every YouTube
-  trailer, including the movie and series Trailer buttons that work without
-  Seerr, so it's now always there.
-- **New: Settings → Interface → Card size** — Normal, Large or Extra large poster
-  cards on every screen: dashboards, library grids, Discover and the rows on
-  detail pages. Saved per profile; library grids show fewer columns to fit.
-- **Changed: posters fill the whole card, with the title over them.** The
-  title and year now sit on a dark fade over the bottom of the poster instead
-  of below it, so every poster in a row is the same size however long its
-  title is (before, a long title shrank its poster). The ★ watchlist badge
-  moved to the top-left corner, under ♥.
-- **Fixed: Discover showed titles you have only in 4K as not in your
-  library.** Seerr tracks the regular and the 4K version separately, and
-  Discover only looked at the regular one. Cards (Discover, search,
-  watchlist) now read "4K In Library" — or "4K Requested" — when only the 4K
-  version is there.
-- **Changed: three packages to choose from.** `PKGBUILD` (now `fjord`, was
-  `fjord-git`) builds the latest release from source, `fjord-bin` installs
-  the same release pre-built (checked against its checksum), and the new
-  `fjord-bin-nightly` installs the current development build (what
-  `fjord-bin` did before). Each replaces the others when installed.
+## [0.5.1] — 2026-11-08
+
+Dashboards and looks you can set up yourself, a reworked music screen and
+Settings, Jellyfin 12 support and smoother video. **Fjord now needs Jellyfin
+10.9 or newer** (tested with 10.11 and 12.2). The full story of each change is
+in `DEVLOG.md`.
+
+### New
+
+- **Choose your dashboard rows:** hide the rows you don't use on Home, TV
+  Shows, Movies, Collections and Music, and move the others up or down
+  (Settings → Interface → Dashboard rows).
+- **Dashboard highlight:** the selected item shown large, with its backdrop,
+  title, year, rating, length and the start of its story. As a band at the
+  top, as the background, or off.
+- **Choose how the selection looks:** focus ring color, thickness, line or
+  glow, glow strength, what glows and transparency. The selected picture can
+  zoom a little.
+- **Text size and card size**, each from Small to Huge.
+- **Screensaver while music plays:** the picture goes black after a set time
+  but the TV stays on. A ☾ button turns it off until the music stops.
+- **Now Playing background:** the song's cover, blurred, behind the screen.
+- **A song's format and quality** in track lists, the music bar and Now
+  Playing ("FLAC · 16-bit / 44.1 kHz").
+- **An artist's tracks without an album** show under the albums on the
+  artist's page.
+- **Copy settings from another profile** (Settings → Profiles).
+- **How long the player controls and messages stay up** can be set; the
+  subtitle background box has levels from Light to Solid; Auto-open Now
+  Playing has a delay.
+
+### Improved
+
+- **Settings is organized by task:** Playback, Subtitles & language, Display,
+  Audio, Interface, Profiles, Integrations, Key Bindings, Advanced. Per-profile
+  settings carry a "Profile" tag, and more of them are per profile now.
+  Descriptions show in full, and error messages say what went wrong without raw
+  technical text.
+- **Music:** a bigger Now Playing screen with the controls under the cover, the
+  music bar's controls grouped, and longer song names in Up Next.
+- **Fewer freezes:** no pause at every song change, and the first visit to
+  Discover and its first title no longer stop the screen for a second or more.
+  Less work while a video is paused.
+- **The server's disks waking up:** Fjord keeps waiting for the first file of
+  the day instead of restarting the request.
+- **Screens line up:** Back sits top left on every page, titles, search fields
+  and rows start at the same edge, and posters fill the whole card with the
+  title over them. An empty search says "No results".
+- Fjord appears at once even when its log folder is on a network drive that
+  isn't connected yet.
+- Three packages: `fjord` (the latest release, from source), `fjord-bin` (the
+  same, pre-built) and `fjord-bin-nightly` (the development build).
+
+### Fixed
+
+- **Video turning choppy for a few seconds now and then** with a display
+  "Video sync" mode (display-vdrop/-resample/-adrop). mpv was never told the
+  display's refresh rate, so those modes, and Interpolation, never switched on.
+- **True 24 fps films** now get 24.00 Hz when the TV has it, instead of 23.98
+  Hz with a small hitch every 42 seconds.
+- **Jellyfin 12:** Skip Intro and Skip Credits work again (read from Jellyfin's
+  media segments), and live updates connect on 12.2.
+- The screen could go dark during long music sessions; Fjord now keeps it on
+  while anything plays.
+- Discover showed titles you have only in 4K as not in your library.
+- Songs added to the queue never played while a playlist was on repeat.
+- A song or video that took long to start began again from the top.
+- Pages opened from other pages could land underneath or ignore the remote
+  (e.g. an album opened from an artist page); every page now opens on top and
+  Back returns to the one before. Artist pages with many albums now scroll
+  with the remote.
+- The remote did nothing on the account screen at startup; two things could
+  look selected at once; display-sync choices picked from the opened list did
+  nothing; removing a track from a playlist needed a mouse.
+- A page could show a long code instead of its name, and View Details on a
+  collection opened the movie page.
+- "1 tracks" and similar counts; long titles cut off in dialogs.
+
+*Range: [`v0.5.0...v0.5.1`](https://github.com/KalasKonrad/Fjord/compare/v0.5.0...v0.5.1)*
 
 ## [0.5.0] — 2026-10-14
 
