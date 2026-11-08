@@ -267,7 +267,7 @@ export component AccountPickerScreen inherits Rectangle {
     // single-profile account's tile click can go straight into
     // switch_to_profile, which is the same multi-second async flow.
     if AppState.account-picker-loading: Rectangle {
-        background: #000000c0;
+        background: Theme.scrim-solid;
 
         VerticalLayout {
             alignment: center;

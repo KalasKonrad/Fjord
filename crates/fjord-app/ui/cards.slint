@@ -29,7 +29,7 @@ export component MediaCard inherits Rectangle {
     width: 140px;
     height: 224px;
     border-radius: Theme.radius;
-    background: #00000000;
+    background: transparent;
     // Focus zoom (Settings → Interface → Zoom on the selected picture): a render transform, so
     // nothing around it moves; drawn above its neighbours.
     z: root.focused ? 1 : 0;
@@ -96,7 +96,7 @@ export component MediaCard inherits Rectangle {
             Rectangle {
                 y: title-text.y - 18px;
                 height: parent.height - self.y;
-                background: @linear-gradient(180deg, #00000000 0%, #000000b3 45%, #000000e0 100%);
+                background: Theme.card-title-fade;
             }
 
             title-text := Text {
@@ -273,7 +273,7 @@ export component MediaCard inherits Rectangle {
             // Hover highlight — on top of image and badges so it is visible even
             // when a poster image fills the rectangle.
             Rectangle {
-                background: #ffffff1a;
+                background: Theme.image-hover;
                 opacity: ta.has-hover ? 1.0 : 0.0;
                 animate opacity {
                     duration: 120ms * AppState.settings-animation-speed;
@@ -487,7 +487,7 @@ export component BrowseItem inherits Rectangle {
 
     height: 42px;
     border-radius: Theme.radius;
-    background: { let hov = ta.has-hover; selected ? Theme.accent-muted : (hov ? Theme.surface-raised : #00000000) };
+    background: { let hov = ta.has-hover; selected ? Theme.accent-muted : (hov ? Theme.surface-raised : transparent) };
     border-width: AppState.ring-width(pulse.active, ta.pressed || pulse.pulsing);
     border-color: AppState.focus-color;
     animate border-width {
@@ -525,7 +525,7 @@ export component BrowseItem inherits Rectangle {
             height: 20px;
             y: (parent.height - self.height) / 2;
             border-radius: 1.5px;
-            background: selected ? Theme.accent : #00000000;
+            background: selected ? Theme.accent : transparent;
         }
 
         Text {

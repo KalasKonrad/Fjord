@@ -66,7 +66,7 @@ component TrackPanel inherits Rectangle {
     y: container-h - 158px - self.height - 8px;
     x: container-w - self.width - 16px;
     width: min(container-w - 32px, 400px);
-    background: #0e0e0eee;
+    background: Theme.osd-panel-opaque;
     border-radius: Theme.radius-lg;
     clip: true;
 
@@ -194,7 +194,7 @@ component TrackPanel inherits Rectangle {
 export component PlayerScreen inherits Rectangle {
     // Transparent while the video is drawn on the subsurface below the
     // window (HDR Stage 5, AppState.video-surface-active).
-    background: AppState.video-surface-active ? transparent : #000000;
+    background: AppState.video-surface-active ? transparent : Theme.video-bg;
 
     // ── pause/play flash state ────────────────────────────────────────────────
     property <float> flash-opacity: 0.0;
@@ -352,7 +352,7 @@ export component PlayerScreen inherits Rectangle {
         height: 40px;
         border-radius: Theme.radius;
         border-width: (skip-ta.pressed || skip-pulse.pulsing) ? 5px : 2px;
-        border-color: #ffffff55;
+        border-color: Theme.osd-border;
         background: Theme.accent;
         drop-shadow-blur: 10px;
         drop-shadow-color: Theme.shadow-soft;
@@ -440,7 +440,7 @@ export component PlayerScreen inherits Rectangle {
         border-radius: Theme.radius-lg;
         background: Theme.osd-panel-solid;
         drop-shadow-blur: 12px;
-        drop-shadow-color: #00000066;
+        drop-shadow-color: Theme.shadow;
         opacity: banner-fade.fade-opacity;
         animate opacity {
             duration: 200ms * AppState.settings-animation-speed;
@@ -531,7 +531,7 @@ export component PlayerScreen inherits Rectangle {
 
             if AppState.buffering-pct > 0: Rectangle {
                 height: 3px;
-                background: #444444;
+                background: Theme.track-bg;
                 border-radius: 2px;
                 property <float> fill: AppState.buffering-pct * 0.01;
                 Rectangle {
@@ -590,7 +590,7 @@ export component PlayerScreen inherits Rectangle {
         y: parent.height - self.height;
         // Collapses to 52 px in mini mode (pause / keyboard seek) — title + buttons hidden.
         height: AppState.controls-visible ? 158px : 52px;
-        background: @linear-gradient(180deg, #00000000 0%, #000000bb 45%, #000000ee 100%);
+        background: Theme.osd-fade;
         // visible removes children from hit-testing when hidden; opacity alone keeps
         // TouchAreas active (Slint gotcha: opacity:0 ≠ non-interactive).
         visible: AppState.controls-visible || AppState.pause-bar-visible || AppState.seek-osd-visible;
@@ -666,7 +666,7 @@ export component PlayerScreen inherits Rectangle {
                     Rectangle {
                         y: (parent.height - self.height) / 2;
                         height: seek-track.bar-h;
-                        background: #444444;
+                        background: Theme.track-bg;
                         border-radius: seek-track.bar-h / 2;
 
                         // Buffered layer
@@ -674,7 +674,7 @@ export component PlayerScreen inherits Rectangle {
                             x: 0;
                             width: AppState.buffered-pos * parent.width;
                             height: parent.height;
-                            background: #666666;
+                            background: Theme.track-buffered;
                             border-radius: seek-track.bar-h / 2;
                         }
                         // Played layer
@@ -693,7 +693,7 @@ export component PlayerScreen inherits Rectangle {
                         y: (parent.height - self.height) / 2;
                         width: 2px;
                         height: parent.bar-h + 4px;
-                        background: #ffffff66;
+                        background: Theme.track-hover;
                         border-radius: 1px;
                     }
 
@@ -704,7 +704,7 @@ export component PlayerScreen inherits Rectangle {
                         width: seek-track.thumb-s;
                         height: seek-track.thumb-s;
                         border-radius: seek-track.thumb-s / 2;
-                        background: #ffffff;
+                        background: Theme.track-knob;
                     }
 
                     // Trickplay thumbnail: above the hover time bubble, or above the bar at the D-pad
@@ -782,7 +782,7 @@ export component PlayerScreen inherits Rectangle {
 
                 Text {
                     text: AppState.playback-total;
-                    color: #888888;
+                    color: Theme.osd-text-faint;
                     font-size: 12px * AppState.text-scale;
                     width: 54px * AppState.text-scale;
                     horizontal-alignment: right;
@@ -791,7 +791,7 @@ export component PlayerScreen inherits Rectangle {
                 // "Ends at" in mini mode (title row is hidden, so show it here instead)
                 if !AppState.controls-visible && AppState.playback-ends-at != "": Text {
                     text: "Ends " + AppState.playback-ends-at;
-                    color: #aaaaaa;
+                    color: Theme.osd-text-dim;
                     font-size: 12px * AppState.text-scale;
                     vertical-alignment: center;
                 }
@@ -915,7 +915,7 @@ export component PlayerScreen inherits Rectangle {
         border-radius: Theme.radius-lg;
         background: Theme.osd-panel;
         drop-shadow-blur: 12px;
-        drop-shadow-color: #00000066;
+        drop-shadow-color: Theme.shadow;
 
         seek-pill-inner := VerticalLayout {
             padding: 14px;
@@ -932,7 +932,7 @@ export component PlayerScreen inherits Rectangle {
 
             target-txt := Text {
                 text: "→  " + AppState.seek-bar-time;
-                color: #aaaaaa;
+                color: Theme.osd-text-dim;
                 font-size: 13px * AppState.text-scale;
                 horizontal-alignment: center;
             }
@@ -1127,7 +1127,7 @@ export component PlayerScreen inherits Rectangle {
         x: parent.width - self.width - 16px;
         width: min(parent.width - 32px, 300px);
         height: sync-inner.preferred-height;
-        background: #0e0e0eee;
+        background: Theme.osd-panel-opaque;
         border-radius: Theme.radius-lg;
         clip: true;
 

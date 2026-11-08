@@ -390,7 +390,7 @@ export component ProfilePickerScreen inherits Rectangle {
     // revalidation, then the new session's fetches). Declared last so it also covers the PIN
     // modal, which stays technically open during a PIN-confirmed switch.
     if AppState.profile-picker-loading: Rectangle {
-        background: #000000c0;
+        background: Theme.scrim-solid;
 
         VerticalLayout {
             alignment: center;

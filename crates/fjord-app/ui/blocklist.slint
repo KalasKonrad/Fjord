@@ -106,7 +106,7 @@ export component BlocklistScreen inherits StackPage {
                     Rectangle {
                         height: parent.height;
                         background: (!AppState.blocklist-back-focused && i == AppState.blocklist-focused) ? Theme.surface-overlay
-                            : row-ta.has-hover ? #ffffff08
+                            : row-ta.has-hover ? Theme.row-hover
                             : transparent;
                         border-width: AppState.ring-width(row-pulse.active, row-ta.pressed || row-pulse.pulsing);
                         border-color: AppState.focus-color;

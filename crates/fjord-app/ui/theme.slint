@@ -1,5 +1,6 @@
 // ── fjord-app · theme.slint ──────────────────────────────────────────────────
-//   Theme           global design tokens: colors (incl. focus-white/-gold/-green/-red, master-ring, blackout), spacing,
+//   Theme           global design tokens: colors (incl. focus-white/-gold/-green/-red, master-ring, blackout, video-bg,
+//                   row/image hover tints, OSD text and seek-bar colors, osd-fade/card-title-fade gradients), spacing,
 //                   radius, font sizes
 //   Structs shared between Rust and Slint (one line each; details on the struct):
 //   DashRow         one dashboard row (title, cards, discover) — AppState.*-rows
@@ -80,6 +81,27 @@ export global Theme {
     out property <color> shadow-soft:     #00000055; // OSD pills
     out property <color> shadow:          #00000070; // panels and boxes
     out property <color> shadow-strong:   #000000aa; // dialogs, popups, menus
+    out property <color> scrim-light:     #00000044; // a light dim over a background picture or video
+    out property <color> osd-panel-opaque: #0e0e0eee; // track panels, the stats overlay
+    out property <color> toast-bg:        #101012f0;
+    out property <color> video-bg:        #000000;   // behind the video and its letterbox bars
+    out property <brush> osd-fade: @linear-gradient(180deg, #00000000 0%, #000000bb 45%, #000000ee 100%); // under the player controls
+    out property <brush> card-title-fade: @linear-gradient(180deg, #00000000 0%, #000000b3 45%, #000000e0 100%); // a poster's title
+
+    // ── Interaction tints ────────────────────────────────────────────────────
+    out property <color> row-hover:       #ffffff08; // a list row under the mouse
+    out property <color> row-current:     #ffffff14; // the playing entry in a list
+    out property <color> image-hover:     #ffffff1a; // over a poster or photo under the mouse
+
+    // ── Player OSD: text and bars over video ─────────────────────────────────
+    out property <color> osd-text-dim:    #aaaaaa;   // "Ends …", the seek target, volume
+    out property <color> osd-text-faint:  #888888;   // the total time
+    out property <color> osd-border:      #ffffff55;
+    out property <color> track-bg:        #444444;   // seek/volume/buffer/loading bars: the empty part
+    out property <color> track-buffered:  #666666;
+    out property <color> track-hover:     #ffffff66; // where the mouse points on the seek bar
+    out property <color> track-knob:      #ffffff;
+    out property <color> toggle-knob:     #ffffff;
 
     // ── Borders / separators ─────────────────────────────────────────────────
     out property <color> border:          #2c2c2e;
@@ -87,6 +109,10 @@ export global Theme {
 
     // ── Feedback ─────────────────────────────────────────────────────────────
     out property <color> error:           #ff453a;
+    out property <color> error-hover:     #c53030;   // a danger button under the mouse
+    out property <color> danger-muted:    #3a1a1a;   // Quit in the sidebar, hovered or focused
+    out property <color> rating-gold:     #f5c518;   // the community rating star
+    out property <color> text-disabled:   #555555;
 
     // ── Layout ───────────────────────────────────────────────────────────────
     out property <length> sidebar-width:  200px;

@@ -223,7 +223,7 @@ export component DetailPage inherits StackPage {
                             // Ends HH:MM — below the buttons, centered under the Play button (110px, Play's width).
                         if AppState.detail-ends-at != "": Text {
                                 text: "Ends " + AppState.detail-ends-at;
-                                color: AppState.detail-has-backdrop ? #eeeeee : Theme.text-muted;
+                                color: AppState.detail-has-backdrop ? Theme.text-bright : Theme.text-muted;
                                 font-size: 13px * AppState.text-scale;
                                 width: 110px * AppState.text-scale;
                                 horizontal-alignment: center;

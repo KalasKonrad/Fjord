@@ -22,7 +22,7 @@ export component NavItem inherits Rectangle {
     // on them, so a two-tier look made them inconsistent with the dashboard items.
     background: active ? Theme.accent-muted
         : ta.has-hover ? Theme.surface-raised
-        : #00000000;
+        : transparent;
     animate background {
         duration: 140ms * AppState.settings-animation-speed;
         easing: ease;
@@ -166,11 +166,11 @@ export component ToastNotification inherits Rectangle {
     height: max(44px, txt.preferred-height + 22px);
 
     border-radius: Theme.radius-lg;
-    background: #101012f0;
+    background: Theme.toast-bg;
     border-width: 1px;
     border-color: Theme.border-strong;
     drop-shadow-blur: 14px;
-    drop-shadow-color: #00000077;
+    drop-shadow-color: Theme.shadow;
     drop-shadow-offset-y: 4px;
     clip: true;
 

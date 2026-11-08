@@ -167,7 +167,7 @@ export component MainWindow inherits Window {
         border-width: 1px;
         border-color: Theme.border-strong;
         drop-shadow-blur: 12px;
-        drop-shadow-color: #00000066;
+        drop-shadow-color: Theme.shadow;
         drop-shadow-offset-y: 4px;
         opacity: gate29.fade-opacity;
         animate opacity {
@@ -272,7 +272,7 @@ export component MainWindow inherits Window {
     if AppState.video-behind-ui && AppState.has-background-player && !AppState.is-playing: Rectangle {
         y: 0;
         height: parent.height - total-bar-h;
-        background: AppState.video-surface-active ? transparent : #000000;
+        background: AppState.video-surface-active ? transparent : Theme.video-bg;
         Image {
             source: AppState.video-frame;
             width: parent.width;
@@ -290,7 +290,7 @@ export component MainWindow inherits Window {
         }
 
         Rectangle {
-            background: #00000044;
+            background: Theme.scrim-light;
         }
     }
 
@@ -544,7 +544,7 @@ export component MainWindow inherits Window {
     if _layer2-shown && !AppState.video-surface-active: Rectangle {
         y: 0;
         height: parent.height - total-bar-h;
-        background: #000000;
+        background: Theme.video-bg;
         Image {
             source: AppState.video-frame;
             width: parent.width;
@@ -553,7 +553,7 @@ export component MainWindow inherits Window {
         }
 
         Rectangle {
-            background: #00000044;
+            background: Theme.scrim-light;
         }
     }
 
@@ -684,7 +684,7 @@ export component MainWindow inherits Window {
     if AppState.app-content-loading: Rectangle {
         y: 0;
         height: parent.height - total-bar-h;
-        background: #000000c0;
+        background: Theme.scrim-solid;
         VerticalLayout {
             alignment: center;
             spacing: 28px;
@@ -698,7 +698,7 @@ export component MainWindow inherits Window {
                     width: 320px;
                     height: 6px;
                     border-radius: 3px;
-                    background: #ffffff28;
+                    background: Theme.track-bg;
                     Rectangle {
                         x: 0;
                         width: parent.width * AppState.app-loading-progress;

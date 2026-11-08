@@ -216,8 +216,9 @@ Needs `mpv`/libmpv (`pacman -S mpv`). Optional at runtime: `yt-dlp` (trailers), 
   These helpers hide every focus while a bottom bar has the keys (`AppState.bar-focus`); the music bar's and mini
   player's own elements use `bar-focused(n)`/`float-focused(n)` + `bar-ring-width`/`in-bar: true`, and keys/global.rs
   hands them keys only while `music-bar-active`/`float-card-active` — one condition for keys and highlight.
-- Backdrops, OSD panels, shadows and text over images use their `Theme` tokens (`scrim*`, `osd-panel*`, `shadow*`,
-  `hero-fade-*`, `text-bright`/`text-soft`) — no hand-picked colours or alphas in screens.
+- Every colour comes from `Theme` (theme.slint) — no hex colour anywhere else (only exception: the avatar palette in
+  profile_edit.slint, which is stored data). Backdrops, OSD panels, shadows and text over images: `scrim*`, `osd-*`,
+  `shadow*`, `hero-fade-*`, `text-bright`/`text-soft`; a missing role gets a new token.
 
 ### Screens, animation, glyphs
 - The full-screen pages over the dashboards (Detail, Series, Season, Person, Artist, Album, Collection, Request

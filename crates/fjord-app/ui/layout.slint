@@ -199,7 +199,7 @@ export component AppShell inherits HorizontalLayout {
             Rectangle {
                 height: 40px;
                 border-radius: Theme.radius;
-                background: (AppState.active-nav == 7) ? Theme.accent-muted : (profile-ta.has-hover ? Theme.surface-raised : #00000000);
+                background: (AppState.active-nav == 7) ? Theme.accent-muted : (profile-ta.has-hover ? Theme.surface-raised : transparent);
                 border-width: AppState.nav-ring-width(profile-pulse.active, profile-ta.pressed || profile-pulse.pulsing);
                 border-color: AppState.focus-color;
                 animate border-width {
@@ -273,7 +273,7 @@ export component AppShell inherits HorizontalLayout {
             Rectangle {
                 height: 36px;
                 border-radius: Theme.radius;
-                background: (AppState.active-nav == 11 && AppState.sidebar-kb-active) || ta-quit.has-hover ? #3a1a1a : #00000000;
+                background: (AppState.active-nav == 11 && AppState.sidebar-kb-active) || ta-quit.has-hover ? Theme.danger-muted : transparent;
                 border-width: AppState.nav-ring-width(quit-pulse.active, ta-quit.pressed || quit-pulse.pulsing);
                 border-color: AppState.focus-color;
                 animate border-width {

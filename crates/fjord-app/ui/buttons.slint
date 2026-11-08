@@ -31,7 +31,7 @@ export component FjordButton inherits FocusGlow {
         : AppState.glow-ring-width(kbd-focused, ta.pressed || pulse.pulsing);
     glowing: kbd-focused;
     fill: !enabled ? Theme.surface-raised
-        : ta.has-hover ? (danger ? #c53030 : Theme.accent-hover)
+        : ta.has-hover ? (danger ? Theme.error-hover : Theme.accent-hover)
         : (danger ? Theme.error : Theme.accent);
     pulse := PressPulse {
         trigger: AppState.kb-activate-pulse;

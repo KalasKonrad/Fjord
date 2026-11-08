@@ -153,7 +153,7 @@ export component BonfireAdminScreen inherits Rectangle {
                     Rectangle {
                         height: parent.height;
                         background: (AppState.bonfire-admin-cursor == i) ? Theme.surface-overlay
-                            : row-ta.has-hover ? #ffffff08
+                            : row-ta.has-hover ? Theme.row-hover
                             : transparent;
                         border-width: AppState.ring-width(row-pulse.active, row-ta.pressed || row-pulse.pulsing);
                         border-color: AppState.focus-color;

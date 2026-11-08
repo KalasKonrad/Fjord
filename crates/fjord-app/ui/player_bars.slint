@@ -88,7 +88,7 @@ export component MiniPlayerBar inherits Rectangle {
     if !AppState.video-behind-ui: HorizontalLayout {
         Rectangle {
             width: 192px;
-            background: AppState.video-surface-active ? transparent : #000000;
+            background: AppState.video-surface-active ? transparent : Theme.video-bg;
             clip: true;
             Image {
                 source: AppState.video-frame;
@@ -658,9 +658,9 @@ export component QueuePanel inherits Rectangle {
 
                             Rectangle {
                                 height: parent.height;
-                                background: entry.is-current ? #ffffff14
+                                background: entry.is-current ? Theme.row-current
                                     : i == AppState.queue-panel-cursor ? Theme.surface-overlay
-                                    : row-ta.has-hover ? #ffffff08
+                                    : row-ta.has-hover ? Theme.row-hover
                                     : transparent;
                                 border-width: AppState.ring-width(row-pulse.active, row-ta.pressed || row-pulse.pulsing);
                                 border-color: AppState.focus-color;
@@ -916,7 +916,7 @@ export component VolumeOverlay inherits Rectangle {
         if !AppState.audio-passthrough-active: Rectangle {
             height: 6px;
             horizontal-stretch: 1;
-            background: #444444;
+            background: Theme.track-bg;
             border-radius: 3px;
 
             Rectangle {
@@ -938,7 +938,7 @@ export component VolumeOverlay inherits Rectangle {
 
         if !AppState.audio-passthrough-active: Text {
             text: AppState.volume-level + "%";
-            color: #bbbbbb;
+            color: Theme.osd-text-dim;
             font-size: 11px * AppState.text-scale;
             vertical-alignment: center;
             width: 38px * AppState.text-scale;
@@ -956,7 +956,7 @@ export component StatRow inherits Rectangle {
         spacing: 10px;
         Text {
             text: label;
-            color: #555555;
+            color: Theme.text-disabled;
             font-size: 11px * AppState.text-scale;
             font-weight: 700;
             width: 60px * AppState.text-scale;

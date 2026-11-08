@@ -220,7 +220,7 @@ export component SeriesScreen inherits StackPage {
             // ── Season tabs ───────────────────────────────────────────────────
             if AppState.series-seasons.length > 0: Rectangle {
                 height: 44px;
-                background: AppState.series-in-season-row ? Theme.surface-raised : #00000000;
+                background: AppState.series-in-season-row ? Theme.surface-raised : transparent;
 
                 // kb-x lives on the outer Rectangle (not on season-fl) to avoid the Slint
                 // self-reference gotcha: a property binding on a Flickable that reads

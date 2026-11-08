@@ -115,7 +115,7 @@ export component MetaLine inherits HorizontalLayout {
 
     if root.rating-label != "": Text {
         text: root.rating-label;
-        color: #f5c518;
+        color: Theme.rating-gold;
         font-size: 14px * AppState.text-scale;
     }
 }
@@ -206,7 +206,7 @@ export component CastRow inherits VerticalLayout {
 
                         // Hover overlay — read has-hover before ternary to keep binding alive
                         Rectangle {
-                            background: { let h = ta.has-hover; h ? #ffffff18 : transparent; }
+                            background: { let h = ta.has-hover; h ? Theme.image-hover : transparent; }
                         }
 
                         ta := TouchArea {
