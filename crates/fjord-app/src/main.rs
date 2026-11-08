@@ -26,7 +26,7 @@
 //                        that it's back (status_line; unit-tested)
 //   main                 logging setup + panic hook (writes PANIC + backtrace to fjord.log), backend
 //                        with the activity tap (activity.rs), app_id, the desktop's light/dark
-//                        preference (appearance.rs), periodic timers, apply saved
+//                        preference (appearance.rs), game pads (gamepad.rs), periodic timers, apply saved
 //                        config + the startup gate (profile picker or auto-login), then one wire_*
 //                        call per area — the callbacks live in that area's module; helpers that
 //                        moved out of main.rs are re-exported below the `mod` list
@@ -50,6 +50,7 @@ mod detail;
 mod discover;
 mod display_sync;
 mod dmabuf_plane;
+mod gamepad;
 mod halo;
 mod hdr;
 mod hero;
@@ -1283,6 +1284,7 @@ fn main() -> Result<()> {
     settings::wire_choice_rows(&window);
     halo::wire(&window);
     appearance::spawn_watch(window.as_weak());
+    gamepad::spawn(window.as_weak(), Arc::clone(&state), activity_clock.clone());
     ui_watch::wire_ui_watch(&window);
     dashboard_rows::wire(&window, &state);
     hero::wire(&window, &state, &rt);

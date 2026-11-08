@@ -41,6 +41,8 @@ unicode-segmentation = "1"
 # exited at once — and was called with a `--session` option it doesn't have). Already built via
 # Slint (ksni); this adds only zbus's own blocking API (no new crates).
 zbus = { version = "5.16", default-features = false, features = ["async-io", "blocking-api"] }
+# Game pads (evdev + udev on Linux) — gamepad.rs
+gilrs = "0.11"
 # hdr branch (2026-09-10) — real HDR passthrough Stage 1+2: a live capability
 # diagnostic against the Wayland color-management-v1 protocol, run on Fjord's
 # own second wayland-client connection (see hdr.rs). All three versions are

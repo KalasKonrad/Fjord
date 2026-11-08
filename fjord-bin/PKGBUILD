@@ -15,7 +15,7 @@ pkgdesc="Jellyfin media frontend with smooth mpv playback on NVIDIA legacy hardw
 arch=('x86_64')
 url="https://github.com/KalasKonrad/Fjord"
 license=('GPL-3.0-only')
-depends=('mpv' 'fontconfig' 'freetype2' 'libxkbcommon')
+depends=('mpv' 'fontconfig' 'freetype2' 'libxkbcommon' 'systemd-libs')
 optdepends=('yt-dlp: play YouTube trailers')
 provides=("fjord=$pkgver")
 conflicts=('fjord' 'fjord-git' 'fjord-bin-nightly')

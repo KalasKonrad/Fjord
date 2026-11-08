@@ -83,7 +83,8 @@ Needs `mpv`/libmpv (`pacman -S mpv`). Optional at runtime: `yt-dlp` (trailers), 
 - Integrations/platform: `seerr_auth.rs`, `ws.rs` (Jellyfin WebSocket delta sync), `prewarm.rs`, `hdr.rs`
   (Wayland color-management worker), `video_surface.rs` (video subsurface) + `dmabuf_plane.rs` (its own 10-bit
   buffers), `display_sync.rs` (kscreen-doctor mode matching), `activity.rs` (winit event tap: idle detection +
-  Wayland handles), `pipewire_fix.rs`.
+  Wayland handles), `pipewire_fix.rs`, `appearance.rs` (the desktop's light/dark preference, freedesktop portal),
+  `gamepad.rs` (game pads via gilrs → the key each input stands for, through `AppState.handle-key`).
 
 ## Architecture rules
 

@@ -23,6 +23,16 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **New: game controller support.** An Xbox 360 pad (or another pad gilrs
+  knows) works like the remote: D-pad or left stick to move (held = repeat),
+  A to select, B to go back, X for the menu, Y for search (subtitles in the
+  player), Start for play/pause, Back for Now Playing (stats in the player),
+  LB/RB for the previous/next song (seek ±10 s in the player), LT/RT to seek
+  ±60 s, the right stick for volume, and the Xbox button for Home (minimize in
+  the player). It follows your key bindings, wakes the screensaver, and works
+  only while Fjord's window has the focus. Pads can be plugged in while Fjord
+  runs.
+
 - **Improved: drag dashboard rows with the mouse.** Settings → Interface →
   Dashboard rows → Edit…: drag a row by its name (≡) to a new place; a line
   shows where it lands. The remote keeps ▲ ▼.
