@@ -2,10 +2,10 @@
 # Locally: git config blame.ignoreRevsFile .git-blame-ignore-revs
 
 # style: format the Rust code with rustfmt (cargo fmt)
-2590659ab5be8d798f74b63b75e60d9c71f1f855
+ed09f072055b8ece4d83a43f942eed9f4a7b8309
 # style: format the .slint files with Slint's formatter
-65bc6b5ff4df2c0471479f197d2d4814c9af943c
-# style: cargo fmt of 72c67c6 (playback/mod.rs)
-c33267ae131bb2e5718643f5a62f468125d07f9a
-# style: cargo fmt of cefe871 (screen errors)
-3efb4668445dc1a753891b892462570b08d9654c
+2283b7b0e5514a2c772d7379d46491c74b06890d
+# style: cargo fmt of d024f49 (playback/mod.rs)
+33b327e8b0d3ef983053955b61d1ac65b3b92da3
+# style: cargo fmt of 7f4395d (screen errors)
+1573a0307e98009240a5f3d4123cc231a9cb2611

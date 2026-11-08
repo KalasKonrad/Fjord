@@ -223,7 +223,7 @@ instead of only living behind the Discover tab.
   U+FE0E variation selectors across the UI as a likely source of tofu
   glyphs on the HTPC's font stack.
 
-*Range: [`f2f11f7`](../../commit/f2f11f7)..[`41676d2`](../../commit/41676d2) (20 commits)*
+*Range: [`715410e`](../../commit/715410e)..[`196e642`](../../commit/196e642) (20 commits)*
 
 ## [0.4.1] — 2026-07-16 – 2026-07-18
 
@@ -243,7 +243,7 @@ Quality profiles, filters, and the full request lifecycle.
 - Full request-lifecycle context menu: View Details, Request, Edit
   Request, Cancel Request, Approve, Decline.
 
-*Range: [`42ba2bc`](../../commit/42ba2bc)..[`f2f11f7`](../../commit/f2f11f7) (35 commits)*
+*Range: [`6b9d48e`](../../commit/6b9d48e)..[`715410e`](../../commit/715410e) (35 commits)*
 
 ## [0.4.0] — 2026-07-15 – 2026-07-16
 
@@ -259,7 +259,7 @@ Discover screen + request flow — the pivot from "Jellyfin viewer" toward
   against Seerr's real TypeScript source rather than the OpenAPI spec,
   which this integration repeatedly found to be incomplete or wrong.
 
-*Range: [`cdef936`](../../commit/cdef936)..[`42ba2bc`](../../commit/42ba2bc) (8 commits)*
+*Range: [`5150e9d`](../../commit/5150e9d)..[`6b9d48e`](../../commit/6b9d48e) (8 commits)*
 
 ## [0.3.4] — 2026-07-09 – 2026-07-15
 
@@ -275,7 +275,7 @@ Feel and consistency polish.
 - Fjord's own client version shown in Settings, configurable seek step,
   subtitle appearance settings, per-series remembered audio/subtitle track.
 
-*Range: [`896c452`](../../commit/896c452)..[`cdef936`](../../commit/cdef936) (29 commits)*
+*Range: [`9b27c5a`](../../commit/9b27c5a)..[`5150e9d`](../../commit/5150e9d) (29 commits)*
 
 ## [0.3.3] — 2026-06-28 – 2026-07-09
 
@@ -304,7 +304,7 @@ Sync hardening, playlists, and a caching/performance pass.
   keyboard-focus re-grab, and a gapless edge case that could report a
   track as playing when it never produced audio.
 
-*Range: [`53f1c59`](../../commit/53f1c59)..[`896c452`](../../commit/896c452) (130 commits)*
+*Range: [`a7fe2dd`](../../commit/a7fe2dd)..[`9b27c5a`](../../commit/9b27c5a) (130 commits)*
 
 ## [0.3.2] — 2026-06-28
 
@@ -317,7 +317,7 @@ Playback queue, MusicPlayerBar, gapless, Now Playing, Lyrics.
 - Gapless music playback (same mpv instance, no gap between tracks).
 - A fullscreen Now Playing screen with synced lyrics.
 
-*Range: [`561a190`](../../commit/561a190)..[`53f1c59`](../../commit/53f1c59) (3 commits)*
+*Range: [`a2a92fc`](../../commit/a2a92fc)..[`a7fe2dd`](../../commit/a7fe2dd) (3 commits)*
 
 ## [0.3.1] — 2026-06-25 – 2026-06-27
 
@@ -334,7 +334,7 @@ Music library core.
   poster-loading races that could overwrite the wrong library grid if the
   user switched tabs mid-fetch.
 
-*Range: [`17f91e7`](../../commit/17f91e7)..[`561a190`](../../commit/561a190) (60 commits)*
+*Range: [`b3b1fa3`](../../commit/b3b1fa3)..[`a2a92fc`](../../commit/a2a92fc) (60 commits)*
 
 ## [0.3.0] — 2026-06-25
 
@@ -348,7 +348,7 @@ WebSocket real-time events, chapter navigation, Collections screen.
 - A new Collections library screen, with its own dashboard rows and disk
   cache.
 
-*Range: [`1c2691f`](../../commit/1c2691f)..[`17f91e7`](../../commit/17f91e7) (9 commits)*
+*Range: [`fb56b28`](../../commit/fb56b28)..[`b3b1fa3`](../../commit/b3b1fa3) (9 commits)*
 
 ## [0.2.3] — 2026-06-21 – 2026-06-25
 
@@ -368,7 +368,7 @@ Mini-player redesign, library grid sort/filter, error toasts.
   hardcoded false, and several dead/backwards keyboard-nav guards on the
   season/series header buttons.
 
-*Range: [`c977864`](../../commit/c977864)..[`1c2691f`](../../commit/1c2691f) (61 commits)*
+*Range: [`509f312`](../../commit/509f312)..[`fb56b28`](../../commit/fb56b28) (61 commits)*
 
 ## [0.2.2] — 2026-06-21 – 2026-06-23
 
@@ -384,7 +384,7 @@ Detail/Series/Season content enrichment + Person screen.
   a CastRow focus-ring visibility bug, and stale collection/similar-items
   models surviving a Back navigation.
 
-*Range: [`e067f6c`](../../commit/e067f6c)..[`c977864`](../../commit/c977864) (99 commits)*
+*Range: [`e067f6c`](../../commit/e067f6c)..[`509f312`](../../commit/509f312) (99 commits)*
 
 ## [0.2.1] — 2026-06-14 – 2026-06-21
 
