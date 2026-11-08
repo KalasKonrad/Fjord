@@ -23,6 +23,10 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Improved: drag dashboard rows with the mouse.** Settings → Interface →
+  Dashboard rows → Edit…: drag a row by its name (≡) to a new place; a line
+  shows where it lands. The remote keeps ▲ ▼.
+
 - **New: a light theme.** Settings → Interface → Theme: Dark (as before),
   Light, or Like the desktop (follows KDE's light/dark choice, also when it
   changes). Saved per profile and copied by "Copy settings from…". The player,

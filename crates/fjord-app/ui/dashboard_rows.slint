@@ -5,13 +5,23 @@
 //                        come from AppState.dash-rows-items (dashboard_rows.rs); every press goes
 //                        through dash-rows-action and is saved at once. Keyboard: dash-rows-cursor
 //                        (-2 ✕, -1 tabs, ≥ 0 a row) + dash-rows-col (0 ✓, 1 ▲, 2 ▼), keys in
-//                        dashboard_rows.rs handle_keys; mouse clicks set the same cursor/col.
+//                        dashboard_rows.rs handle_keys; mouse clicks set the same cursor/col. A row
+//                        can be dragged by its name (≡): drag-from/-dy/-to, an accent line where it
+//                        lands, dash-rows-move on release (the cursor follows the row).
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
 import { FjordButton, IconCircleButton, TabButton } from "widgets.slint";
 
 export component DashboardRowsScreen inherits Rectangle {
+    // Dragging a row by its name: which row, how far the mouse has moved, where it would land.
+    property <int> drag-from: -1;
+    property <length> drag-dy: 0px;
+    property <length> row-h: 50px;
+    property <length> row-pitch: root.row-h + Theme.sp-xs;
+    property <int> drag-to: root.drag-from < 0 ? -1
+        : clamp(root.drag-from + round(root.drag-dy / root.row-pitch), 0, AppState.dash-rows-items.length - 1);
+
     background: Theme.scrim-strong;
 
     close-ta := TouchArea {
@@ -72,69 +82,127 @@ export component DashboardRowsScreen inherits Rectangle {
             }
 
             Text {
-                text: "Show or hide a row, or move it up or down. Changes are saved right away.";
+                text: "Show or hide a row, or move it up or down — or drag it by its name. Changes are saved right away.";
                 color: Theme.text-muted;
                 font-size: 13px * AppState.text-scale;
                 wrap: word-wrap;
             }
 
-            VerticalLayout {
-                spacing: Theme.sp-xs;
-                for item[i] in AppState.dash-rows-items: Rectangle {
-                    height: 50px;
-                    border-radius: Theme.radius;
-                    background: AppState.dash-rows-cursor == i ? Theme.surface-raised : transparent;
+            rows := Rectangle {
+                height: rows-layout.preferred-height;
 
-                    HorizontalLayout {
-                        padding-left: Theme.sp-sm;
-                        padding-right: Theme.sp-sm;
-                        padding-top: 6px;
-                        padding-bottom: 6px;
-                        spacing: Theme.sp;
+                rows-layout := VerticalLayout {
+                    height: self.preferred-height;
+                    spacing: Theme.sp-xs;
+                    for item[i] in AppState.dash-rows-items: Rectangle {
+                        height: root.row-h;
+                        border-radius: Theme.radius;
+                        background: root.drag-from == i ? Theme.accent-muted
+                            : AppState.dash-rows-cursor == i ? Theme.surface-raised : transparent;
 
-                        IconCircleButton {
-                            icon: "✓";
-                            active: item.shown;
-                            kbd-focused: AppState.dash-rows-cursor == i && AppState.dash-rows-col == 0;
-                            clicked => {
-                                AppState.dash-rows-cursor = i;
-                                AppState.dash-rows-col = 0;
-                                AppState.dash-rows-action(i, 0);
+                        HorizontalLayout {
+                            padding-left: Theme.sp-sm;
+                            padding-right: Theme.sp-sm;
+                            padding-top: 6px;
+                            padding-bottom: 6px;
+                            spacing: Theme.sp;
+
+                            IconCircleButton {
+                                icon: "✓";
+                                active: item.shown;
+                                kbd-focused: AppState.dash-rows-cursor == i && AppState.dash-rows-col == 0;
+                                clicked => {
+                                    AppState.dash-rows-cursor = i;
+                                    AppState.dash-rows-col = 0;
+                                    AppState.dash-rows-action(i, 0);
+                                }
                             }
-                        }
 
-                        Text {
-                            horizontal-stretch: 1;
-                            text: item.title;
-                            color: item.shown ? Theme.text : Theme.text-subtle;
-                            font-size: 15px * AppState.text-scale;
-                            font-weight: AppState.dash-rows-cursor == i ? 600 : 400;
-                            vertical-alignment: center;
-                            overflow: elide;
-                        }
+                            // The name is the drag handle.
+                        Rectangle {
+                                horizontal-stretch: 1;
 
-                        IconCircleButton {
-                            icon: "▲";
-                            opacity: i == 0 ? 0.35 : 1;
-                            kbd-focused: AppState.dash-rows-cursor == i && AppState.dash-rows-col == 1;
-                            clicked => {
-                                AppState.dash-rows-cursor = i;
-                                AppState.dash-rows-col = 1;
-                                AppState.dash-rows-action(i, 1);
+                                HorizontalLayout {
+                                    spacing: Theme.sp-sm;
+
+                                    Text {
+                                        text: "≡";
+                                        font-family: "Noto Sans Math";
+                                        color: Theme.text-subtle;
+                                        font-size: 18px * AppState.text-scale;
+                                        vertical-alignment: center;
+                                    }
+
+                                    Text {
+                                        horizontal-stretch: 1;
+                                        text: item.title;
+                                        color: item.shown ? Theme.text : Theme.text-subtle;
+                                        font-size: 15px * AppState.text-scale;
+                                        font-weight: AppState.dash-rows-cursor == i ? 600 : 400;
+                                        vertical-alignment: center;
+                                        overflow: elide;
+                                    }
+                                }
+
+                                TouchArea {
+                                    mouse-cursor: root.drag-from == i ? MouseCursor.grabbing : MouseCursor.grab;
+                                    pointer-event(e) => {
+                                        if e.button == PointerEventButton.left && e.kind == PointerEventKind.down {
+                                            AppState.dash-rows-cursor = i;
+                                            root.drag-from = i;
+                                            root.drag-dy = 0px;
+                                        } else if e.button == PointerEventButton.left && e.kind == PointerEventKind.up && root.drag-from == i {
+                                        // Reset first: the move rebuilds the rows.
+                                        let to = root.drag-to;
+                                            root.drag-from = -1;
+                                            root.drag-dy = 0px;
+                                            if to != i {
+                                                AppState.dash-rows-move(i, to);
+                                            }
+                                        }
+                                    }
+                                    moved => {
+                                        if root.drag-from == i {
+                                            root.drag-dy = self.mouse-y - self.pressed-y;
+                                        }
+                                    }
+                                }
                             }
-                        }
 
-                        IconCircleButton {
-                            icon: "▼";
-                            opacity: i == AppState.dash-rows-items.length - 1 ? 0.35 : 1;
-                            kbd-focused: AppState.dash-rows-cursor == i && AppState.dash-rows-col == 2;
-                            clicked => {
-                                AppState.dash-rows-cursor = i;
-                                AppState.dash-rows-col = 2;
-                                AppState.dash-rows-action(i, 2);
+                            IconCircleButton {
+                                icon: "▲";
+                                opacity: i == 0 ? 0.35 : 1;
+                                kbd-focused: AppState.dash-rows-cursor == i && AppState.dash-rows-col == 1;
+                                clicked => {
+                                    AppState.dash-rows-cursor = i;
+                                    AppState.dash-rows-col = 1;
+                                    AppState.dash-rows-action(i, 1);
+                                }
+                            }
+
+                            IconCircleButton {
+                                icon: "▼";
+                                opacity: i == AppState.dash-rows-items.length - 1 ? 0.35 : 1;
+                                kbd-focused: AppState.dash-rows-cursor == i && AppState.dash-rows-col == 2;
+                                clicked => {
+                                    AppState.dash-rows-cursor = i;
+                                    AppState.dash-rows-col = 2;
+                                    AppState.dash-rows-action(i, 2);
+                                }
                             }
                         }
                     }
+                }
+
+                // Where a dragged row would land: a line between two rows.
+                if root.drag-from >= 0 && root.drag-to != root.drag-from: Rectangle {
+                    x: 0;
+                    width: parent.width;
+                    height: 3px;
+                    border-radius: 1.5px;
+                    background: Theme.accent;
+                    y: (root.drag-to > root.drag-from ? root.drag-to + 1 : root.drag-to) * root.row-pitch
+                        - Theme.sp-xs / 2 - self.height / 2;
                 }
             }
         }

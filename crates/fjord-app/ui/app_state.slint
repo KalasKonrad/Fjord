@@ -123,7 +123,7 @@
 //                         confirmed/-cancelled; settings-row-focused(string) (mouse click on a SettingsRow)
 //   Dashboard rows        home/tv/movies/collections/music-row-order (shown rows in order, pushed from
 //                         ProfileSettings.dashboard_rows), nav-row-order(); the editor: show-dashboard-rows,
-//                         dash-rows-tab/-items/-cursor/-col, dash-rows-open/-select-tab/-action
+//                         dash-rows-tab/-items/-cursor/-col, dash-rows-open/-select-tab/-action/-move
 //   Accent color          settings-accent-color <=> Theme.accent-key (Theme computes accent/-hover/-muted)
 //   Theme                 settings-theme <=> Theme.theme-key, system-prefers-light <=> Theme.system-light
 //                         (Theme.light switches the general tokens)
@@ -2181,6 +2181,7 @@ export global AppState {
     callback dash-rows-open();
     callback dash-rows-select-tab(int);
     callback dash-rows-action(int, int); // row index, 0 toggle / 1 up / 2 down
+    callback dash-rows-move(int, int); // a mouse drag: from row, to row
 
     // Dashboard hero (Settings → Interface → Dashboard highlight, per profile; hero.rs). Two layers
     // crossfade: Rust fills the hidden one (hero-a / hero-b) and flips hero-front-a. hero-target()

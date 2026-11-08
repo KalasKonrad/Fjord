@@ -7,8 +7,10 @@
 //   push_row_orders   ProfileSettings → AppState.*-row-order (shown rows, in order) — called by
 //                     settings::apply_profile_settings_to_window
 //   apply_action      one editor action on a row list: toggle (never the last shown row) / up / down
+//   move_row          a mouse drag: the row lands at the drop position (the rows between shift)
+//   edit_rows         one edit (button or drag): save, re-push the dashboards and the editor, cursor
 //   wire              Settings → Interface → Dashboard rows… editor: dash-rows-open / -select-tab /
-//                     -action (saves the profile, re-pushes the dashboards' orders)
+//                     -action / -move (through edit_rows)
 //   handle_keys       raw-key tier while the editor is open (keys/mod.rs)
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
@@ -142,6 +144,54 @@ pub(crate) fn apply_action(
     }
 }
 
+/// A mouse drag in the editor: the row at `from` lands at `to` (the rows between shift by one).
+/// Returns where it landed.
+pub(crate) fn move_row(rows: &mut Vec<DashboardRow>, from: usize, to: usize) -> usize {
+    let to = to.min(rows.len() - 1);
+    let row = rows.remove(from);
+    rows.insert(to, row);
+    to
+}
+
+/// One edit of the open tab's rows (a button or a drag): saved at once, the dashboards and the
+/// editor re-pushed, the cursor on the edited row. `op` returns None for a stale index, else the
+/// row's new index or a message for a toast.
+fn edit_rows(
+    g: &AppState<'_>,
+    state: &Arc<Mutex<FjordState>>,
+    ww: &slint::Weak<MainWindow>,
+    what: &str,
+    op: impl FnOnce(&mut Vec<DashboardRow>) -> Option<Result<usize, &'static str>>,
+) {
+    let dash = &DASHBOARDS[g.get_dash_rows_tab().clamp(0, 4) as usize];
+    let (result, cfg) = {
+        let mut s = state.lock().unwrap();
+        let mut rows = rows_for(s.config.active(), dash);
+        let Some(result) = op(&mut rows) else { return };
+        if result.is_ok() {
+            s.config
+                .active_mut()
+                .dashboard_rows
+                .insert(dash.key.to_string(), rows);
+        }
+        (result, s.config.clone())
+    };
+    match result {
+        Err(msg) => show_toast(ww.clone(), msg.into()),
+        Ok(new_idx) => {
+            save_config(&cfg);
+            push_row_orders(g, cfg.active());
+            push_editor_rows(g, cfg.active());
+            g.set_dash_rows_cursor(new_idx as i32);
+            debug!(
+                "dashboard rows: {} {what} → {:?}",
+                dash.key,
+                rows_for(cfg.active(), dash)
+            );
+        }
+    }
+}
+
 pub(crate) fn wire(window: &MainWindow, state: &Arc<Mutex<FjordState>>) {
     let g = AppState::get(window);
     {
@@ -173,37 +223,23 @@ pub(crate) fn wire(window: &MainWindow, state: &Arc<Mutex<FjordState>>) {
         let ww = window.as_weak();
         g.on_dash_rows_action(move |row, action| {
             let Some(w) = ww.upgrade() else { return };
-            let g = AppState::get(&w);
-            let dash = &DASHBOARDS[g.get_dash_rows_tab().clamp(0, 4) as usize];
-            let (result, cfg) = {
-                let mut s = state.lock().unwrap();
-                let mut rows = rows_for(s.config.active(), dash);
-                if row < 0 || row as usize >= rows.len() {
-                    return;
-                }
-                let result = apply_action(&mut rows, row as usize, action);
-                if result.is_ok() {
-                    s.config
-                        .active_mut()
-                        .dashboard_rows
-                        .insert(dash.key.to_string(), rows);
-                }
-                (result, s.config.clone())
-            };
-            match result {
-                Err(msg) => show_toast(ww.clone(), msg.into()),
-                Ok(new_idx) => {
-                    save_config(&cfg);
-                    push_row_orders(&g, cfg.active());
-                    push_editor_rows(&g, cfg.active());
-                    g.set_dash_rows_cursor(new_idx as i32);
-                    debug!(
-                        "dashboard rows: {} row {row} action {action} → {:?}",
-                        dash.key,
-                        rows_for(cfg.active(), dash)
-                    );
-                }
-            }
+            let what = format!("row {row} action {action}");
+            edit_rows(&AppState::get(&w), &state, &ww, &what, |rows| {
+                (row >= 0 && (row as usize) < rows.len())
+                    .then(|| apply_action(rows, row as usize, action))
+            });
+        });
+    }
+    {
+        let state = Arc::clone(state);
+        let ww = window.as_weak();
+        g.on_dash_rows_move(move |from, to| {
+            let Some(w) = ww.upgrade() else { return };
+            let what = format!("row {from} dragged to {to}");
+            edit_rows(&AppState::get(&w), &state, &ww, &what, |rows| {
+                (from >= 0 && to >= 0 && (from as usize) < rows.len())
+                    .then(|| Ok(move_row(rows, from as usize, to as usize)))
+            });
         });
     }
 }
@@ -274,6 +310,22 @@ mod tests {
             rows_for(&cp, &DASHBOARDS[4]),
             vec![row(2, true), row(0, false), row(1, true), row(3, true)]
         );
+    }
+
+    #[test]
+    fn a_dragged_row_lands_where_it_is_dropped() {
+        let ids = |rows: &[DashboardRow]| rows.iter().map(|r| r.id).collect::<Vec<_>>();
+        let mut rows = vec![row(0, true), row(1, true), row(2, false), row(3, true)];
+        assert_eq!(move_row(&mut rows, 0, 2), 2);
+        assert_eq!(ids(&rows), [1, 2, 0, 3]);
+        assert_eq!(move_row(&mut rows, 3, 1), 1);
+        assert_eq!(ids(&rows), [1, 3, 2, 0]);
+        assert_eq!(move_row(&mut rows, 2, 2), 2);
+        assert_eq!(ids(&rows), [1, 3, 2, 0]);
+        // Past the end lands last; shown flags travel with their row.
+        assert_eq!(move_row(&mut rows, 0, 9), 3);
+        assert_eq!(ids(&rows), [3, 2, 0, 1]);
+        assert!(!rows[1].shown);
     }
 
     #[test]
