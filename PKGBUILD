@@ -9,7 +9,7 @@
 # installs pre-built. Bumped together with fjord-bin/PKGBUILD as the last
 # step of every release. Development builds: fjord-bin-nightly/.
 pkgname=fjord
-pkgver=0.5.0
+pkgver=0.5.1
 pkgrel=1
 pkgdesc="Jellyfin media frontend with smooth mpv playback on NVIDIA legacy hardware"
 arch=('x86_64')
