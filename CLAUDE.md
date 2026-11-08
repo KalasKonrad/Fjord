@@ -274,8 +274,7 @@ Needs `mpv`/libmpv (`pacman -S mpv`). Optional at runtime: `yt-dlp` (trailers), 
   500s. Seerr user-settings POSTs replace the whole object: GET, mutate, POST.
 - On a non-2xx, read the response body into the error so logs/toasts show the server's message.
 - One-off live diagnostics: a temporary `#[tokio::test]` using the saved config/token — run once, then delete.
-  Never commit machine paths, real ids, server addresses or people's/profile names — use placeholders
-  (`<server>`, `UserA`).
+  What it finds goes into the repo only without personal data (Development workflow).
 - Jellyfin auth uses the `Authorization: MediaBrowser … Token="…"` header (not legacy `X-Emby-*`).
   `DeviceId` comes from `ensure_device_id()`; two machines must never share one.
 
@@ -303,6 +302,13 @@ Needs `mpv`/libmpv (`pacman -S mpv`). Optional at runtime: `yt-dlp` (trailers), 
    the end of a piece of work) — each push that touches `crates/`/`Cargo.*`/`assets/` builds the nightly that
    `fjord-bin-nightly` installs (~8 min on the dev machine). Push to the current `release-X.Y.Z` branch, never to
    `main`. Large/risky work: a feature branch off the release branch.
+
+**No personal data in the repo or its history** — it's public, and a commit can't be taken back without rewriting
+history. Never in files, commit messages or test data: server/Seerr addresses, IPs, host names, machine paths, email
+addresses, real ids or tokens, people's or profile names, the user's family or household, or titles from the user's
+library (films, series, episodes, songs, albums, artists, playlists) — also not when quoting a log, screenshot or
+user report. Use placeholders (`<server>`, `<id>`, `UserA`, "a film", "a playlist"). Check the diff for them before
+every commit.
 
 ## Releasing
 `main` only receives releases; work happens on `release-X.Y.Z` (the next version), branched from `main`.
