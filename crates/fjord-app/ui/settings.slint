@@ -1065,6 +1065,15 @@ export component SettingsScreen inherits Rectangle {
                         }
 
                         SettingsRow {
+                            key: "ui.accent_color";
+                            choice: true;
+                            value: AppState.settings-accent-color;
+                            per-profile: true;
+                            title: "Accent color";
+                            subtitle: "Color of buttons, pills, progress bars and the selected tab — saved for this profile";
+                        }
+
+                        SettingsRow {
                             key: "ui.focus_color";
                             choice: true;
                             value: AppState.settings-focus-color;

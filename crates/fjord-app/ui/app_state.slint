@@ -124,6 +124,7 @@
 //   Dashboard rows        home/tv/movies/collections/music-row-order (shown rows in order, pushed from
 //                         ProfileSettings.dashboard_rows), nav-row-order(); the editor: show-dashboard-rows,
 //                         dash-rows-tab/-items/-cursor/-col, dash-rows-open/-select-tab/-action
+//   Accent color          settings-accent-color <=> Theme.accent-key (Theme computes accent/-hover/-muted)
 //   Focus highlight       settings-focus-color/-width/-style/-glow/-opacity/-zoom → focus-color, focus-width,
 //                         focus-line-width, focus-press-width, focus-glow, glow-1/-2/-3 + glow-reach + glow-color (the
 //                         glow strength's halos, cast by widgets.slint FocusGlow), settings-focus-glow-on →
@@ -1815,6 +1816,8 @@ export global AppState {
     // FocusGlow casts them around those opaque elements, FocusHalo draws them as an image around
     // rows, fields and menus — sidebar-glow / row-glow, Settings "Glow on"), and focus-scale (the
     // zoom of a focused picture — cards, posters, tiles, cast photos).
+    // Settings → Interface → Accent color: Theme computes accent / accent-hover / accent-muted from it.
+    in-out property <string> settings-accent-color <=> Theme.accent-key;
     in-out property <string> settings-focus-color: "white";
     in-out property <string> settings-focus-width: "3";
     in-out property <string> settings-focus-style: "line";

@@ -23,6 +23,12 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **New: Settings → Interface → Accent color** — blue (as before), purple,
+  teal, green, orange or pink for buttons, pills, progress bars and the
+  selected tab. Saved per profile and copied by "Copy settings from…". The
+  focus ring's "Accent blue" option is now "Accent color" and follows the
+  choice.
+
 - **Changed: new installs use Settings → Advanced → Video sync =
   display-vdrop.** The old default (audio) times frames by the audio clock,
   which can make video choppy for a few seconds now and then. Existing

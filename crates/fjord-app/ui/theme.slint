@@ -1,5 +1,6 @@
 // ── fjord-app · theme.slint ──────────────────────────────────────────────────
-//   Theme           global design tokens: colors (incl. focus-white/-gold/-green/-red, master-ring, blackout, video-bg,
+//   Theme           global design tokens: colors (accent/-hover/-muted from accent-key — the per-profile Accent color,
+//                   bound to AppState.settings-accent-color; focus-white/-gold/-green/-red, master-ring, blackout, video-bg,
 //                   row/image hover tints, OSD text and seek-bar colors, osd-fade/card-title-fade gradients), spacing,
 //                   radius, font sizes
 //   Structs shared between Rust and Slint (one line each; details on the struct):
@@ -40,10 +41,19 @@ export global Theme {
     out property <color> surface-overlay: #2c2c2e;
     out property <color> sidebar-bg:      #111113;
 
-    // ── Accent (Jellyfin blue) ────────────────────────────────────────────────
-    out property <color> accent:          #00a4dc;
-    out property <color> accent-hover:    #0090c4;
-    out property <color> accent-muted:    #00a4dc40;  // ~25 % alpha
+    // ── Accent (Settings → Interface → Accent color, per profile) ─────────────
+    // accent-key is bound both ways to AppState.settings-accent-color. Every colour has at least the
+    // default blue's contrast with white text (accent-filled pills and buttons) and ≥ 4.6:1 on bg;
+    // no red — red means an error.
+    in-out property <string> accent-key:  "blue";
+    out property <color> accent: accent-key == "purple" ? #aa5cc3
+        : accent-key == "teal" ? #009e8e
+        : accent-key == "green" ? #2e9e4f
+        : accent-key == "orange" ? #e0701b
+        : accent-key == "pink" ? #d6457f
+        : #00a4dc;
+    out property <color> accent-hover:    accent.darker(0.15);
+    out property <color> accent-muted:    accent.with-alpha(0.25);
 
     // Focus ring colours (Settings → Interface → Focus ring color; AppState.focus-color picks one
     // and applies the transparency). "Accent blue" is `accent`. The gold is a lighter yellow than

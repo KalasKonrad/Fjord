@@ -207,6 +207,7 @@ const UI_TEXT_SIZE: &str = "ui.text_size"; // per profile, like card size
 const UI_DASHBOARD_ROWS: &str = "ui.dashboard_rows"; // per profile; opens dashboard_rows.rs's editor
 const UI_DASHBOARD_HERO: &str = "ui.dashboard_hero"; // per profile, a dropdown; hero.rs
 // Focus highlight, per profile (AppState.focus-*).
+const UI_ACCENT_COLOR: &str = "ui.accent_color";
 const UI_FOCUS_COLOR: &str = "ui.focus_color";
 const UI_FOCUS_WIDTH: &str = "ui.focus_width";
 const UI_FOCUS_STYLE: &str = "ui.focus_style";
@@ -319,6 +320,7 @@ const SECTION_ROWS: &[(&str, &[&str])] = &[
             UI_TEXT_SIZE,
             UI_DASHBOARD_HERO,
             UI_DASHBOARD_ROWS,
+            UI_ACCENT_COLOR,
             UI_FOCUS_COLOR,
             UI_FOCUS_WIDTH,
             UI_FOCUS_STYLE,
@@ -885,9 +887,19 @@ const HERO_STYLE_OPTIONS: &[(&str, &str)] = &[
     ("band", "Band at the top"),
     ("background", "Background"),
 ];
+// Stored keys = Theme.accent-key's values (theme.slint has the colours).
+const ACCENT_COLOR_OPTIONS: &[(&str, &str)] = &[
+    ("blue", "Blue"),
+    ("purple", "Purple"),
+    ("teal", "Teal"),
+    ("green", "Green"),
+    ("orange", "Orange"),
+    ("pink", "Pink"),
+];
+// "blue" is stored for the accent color (whichever one is chosen), its name from before accents.
 const FOCUS_COLOR_OPTIONS: &[(&str, &str)] = &[
     ("white", "White"),
-    ("blue", "Accent blue"),
+    ("blue", "Accent color"),
     ("gold", "Gold"),
     ("green", "Green"),
     ("red", "Red"),
@@ -1303,6 +1315,14 @@ static CHOICES: &[Choice] = &[
         field: Field::Str(
             |g| g.get_settings_dashboard_hero(),
             |g, v| g.set_settings_dashboard_hero(v),
+        ),
+    },
+    Choice {
+        key: UI_ACCENT_COLOR,
+        options: ACCENT_COLOR_OPTIONS,
+        field: Field::Str(
+            |g| g.get_settings_accent_color(),
+            |g, v| g.set_settings_accent_color(v),
         ),
     },
     Choice {
@@ -2209,6 +2229,13 @@ pub(crate) static PROFILE_BINDS: &[ProfileBind] = &[
         dashboard_hero,
         get_settings_dashboard_hero,
         set_settings_dashboard_hero,
+        str
+    ),
+    bind!(
+        Profile,
+        accent_color,
+        get_settings_accent_color,
+        set_settings_accent_color,
         str
     ),
     bind!(
@@ -3675,6 +3702,24 @@ mod tests {
             }
         }
         n
+    }
+
+    #[test]
+    fn the_accent_choice_reaches_theme() {
+        i_slint_backend_testing::init_no_event_loop();
+        let window = crate::MainWindow::new().unwrap();
+        let g = crate::AppState::get(&window);
+        // The focus ring's "Accent color" option reads Theme.accent.
+        g.set_settings_focus_color("blue".into());
+        let blue = g.get_focus_color();
+        assert_eq!(blue, slint::Color::from_rgb_u8(0x00, 0xa4, 0xdc));
+        g.set_settings_accent_color("purple".into());
+        assert_eq!(
+            g.get_focus_color(),
+            slint::Color::from_rgb_u8(0xaa, 0x5c, 0xc3)
+        );
+        g.set_settings_accent_color("blue".into());
+        assert_eq!(g.get_focus_color(), blue);
     }
 
     #[test]
