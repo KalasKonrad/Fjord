@@ -35,6 +35,29 @@ Scope chosen by the user on 2026-11-08. In the order of work: small and safe fir
 **7. Drag rows in the dashboard rows editor**
 - [ ] Settings → Interface → Dashboard rows → Edit…: drag a row with the mouse to a new place (the remote keeps ✓ ▲ ▼). Same per-profile `*-row-order` lists; the drop updates the order through the existing move path, and keyboard focus follows the dragged row (CLAUDE.md: mouse sets the same state as keys). Drop indicator between rows; auto-scroll near the list's edges.
 
+**9. UI/UX polish pass** (user, 2026-11-08 — all 16 items chosen from a code survey). Order: 9d's colours before items 5–6 (accent and light theme need every colour in `Theme`); the rest after 7, before 8. The type, spacing and radius scales change how things look slightly — screenshots of every screen before and after.
+- **9a. Loading, empty and error states**
+  - [ ] **Loading on 4 pages:** album, artist, collection and person pages have no loading state (detail, series, season and the request page do) — with the server's disks waking up that's 5–15 s of an empty page. Use the request page's delayed spinner (appears only after ~300 ms, `spawn_delayed_spinner`).
+  - [ ] **In-page error + Retry:** a page whose data fails to load shows only a toast and stays blank. Show "Couldn't load … — Retry / Back" in the page (the offline screen already has Retry).
+  - [ ] **Missing empty states:** calendar with no entries, a person with no credits, an empty collection or playlist, the empty queue — say so instead of blank space (the existing ones: "Nothing blocklisted", "No results for …", "No lyrics available").
+  - [ ] **Seerr unreachable:** Discover's rows are simply empty when Seerr can't be reached (e.g. at startup before the network is up) — a message and Retry.
+- **9b. Navigation flow**
+  - [ ] **Remote pass with the user:** every screen with the remote; each note becomes a line here and gets fixed. Last in 9, after the other fixes.
+  - [ ] **Focus after closing:** closing anything returns focus exactly where it was — the context menu → its card, Request Options → its button, the player → the page playback started from. Audit every close path; one helper if it's per-screen code today.
+  - [ ] **Edges of every screen:** Up from the top row and Left from the first column escape the same way (header / sidebar) everywhere; no dead keys.
+  - [ ] **Mouse = remote audit:** every clickable sets the same focus/zone state as the keys (CLAUDE.md rule) — check each `TouchArea` for a missing focus update.
+- **9c. Player and music screens** — each a code review first; the findings become sub-items for the user to choose, like 0.5.1's UI review.
+  - [ ] **Player OSD:** layout, seek bar, chapter marks, time display, what the remote reaches, show/hide timing.
+  - [ ] **Track & subtitle menus:** wording, order, what's shown per track, remote navigation.
+  - [ ] **Music bar & Now Playing:** leftovers after 0.5.1's rework — alignment, focus, queue panel, lyrics view.
+  - [ ] **End-of-episode prompts:** Up Next, Skip Intro/Credits and their countdowns — consistent look and placement, remote behaviour.
+- **9d. Visual consistency** (measured 2026-11-08 over the 43 `.slint` files; every `animate` already follows the speed settings)
+  - [ ] **All colours via `Theme`:** 72 hand-picked colours outside theme.slint (player 17, cards 7, main 7, player bars 6, …: scrims, OSD backgrounds, greys) → `Theme` tokens. The avatar palette in profile_edit.slint stays literal by design.
+  - [ ] **Type scale:** 21 font sizes (9–64 px; 11–14 px used ~250 times) → about 6 named sizes in `Theme`, every `Text` using one (still `× AppState.text-scale` under 24 px).
+  - [ ] **Spacing scale:** about 20 padding/spacing values → a small scale (4/8/12/16/24/48) as `Theme` tokens.
+  - [ ] **Corner radii:** 14 values → 3–4 tokens (small, card, panel, pill), including FocusGlow/FocusHalo `radius:`.
+  - CLAUDE.md gets the rule once the tokens exist (sizes, spacing, radii and colours only from `Theme`).
+
 **8. Game controller** (feature branch off `release-0.5.2`)
 - [ ] The user can test only a game controller (no IR receiver, no HDMI-CEC adapter) — which pad: ask before building. Read pads with the `gilrs` crate (evdev on Linux, hot-plug, SDL's controller mapping database; verify its version, build deps — libudev — and the PKGBUILDs' `depends`). Pads are readable by the logged-in user through udev's `uaccess` for joysticks — verify on the HTPC. Input only while Fjord's window has focus.
 - [ ] Mapping to Fjord's actions, not fake key events where avoidable: D-pad and left stick (threshold + hysteresis) → Up/Down/Left/Right with the keyboard's repeat delay/rate when held; A → Enter; B → Back; X → context menu; Y → ?; Start → play/pause; Select → OSD/stats?; shoulders → seek steps; triggers → volume? (final table with the user). Every pad press counts as real input for the idle lock and the music screensaver (`activity.rs`).
