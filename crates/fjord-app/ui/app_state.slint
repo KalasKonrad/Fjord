@@ -753,8 +753,12 @@ export global AppState {
         if key == "video.vf" {
             return settings-hwdec == "nvdec" || settings-hwdec == "nvdec-copy";
         }
+        // Interpolation needs a display video sync (mpv ignores it with `audio`), tscale needs both.
+        if key == "video.interpolation" {
+            return settings-display-video-sync;
+        }
         if key == "video.tscale" {
-            return settings-interpolation;
+            return settings-interpolation && settings-display-video-sync;
         }
         if key == "video.video_latency_hacks" {
             return settings-video-sync == "display-resample";
@@ -992,6 +996,7 @@ export global AppState {
     in property <string> stat-aud-out:  "—";
     in property <string> stat-display:  "—";
     in property <string> stat-vsync:    "—";
+    in property <string> stat-interp:   "—";
     in property <string> stat-avsync:   "—";
     in property <string> stat-speed:    "—";
     in property <string> stat-drop:     "—";
@@ -1654,6 +1659,9 @@ export global AppState {
     in-out property <string> settings-hwdec:                "auto";
     in-out property <string> settings-vf:                   "";
     in-out property <string> settings-video-sync:           "display-vdrop";
+    // A display-* Video sync: what Interpolation needs (settings-row-shown).
+    out property <bool> settings-display-video-sync: settings-video-sync == "display-resample"
+        || settings-video-sync == "display-vdrop" || settings-video-sync == "display-adrop";
     in-out property <bool> settings-opengl-early-flush:   false;
     in-out property <bool> settings-video-latency-hacks:  false;
     in-out property <bool> settings-interpolation:        false;

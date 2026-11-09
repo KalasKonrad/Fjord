@@ -1,7 +1,8 @@
 // ── fjord-app · stats.rs ─────────────────────────────────────────────────────
 //   update_stats_window  StatsData → AppState stat-* props
 //                        VSYNC: mpv's video-sync mode (+ vsync-ratio while mpv's display sync
-//                        is on — it needs timer.rs's display_rate under the render API); SPEED: audio/video speed corrections; DROP: VO drops ·
+//                        is on — it needs timer.rs's display_rate under the render API); INTERP:
+//                        interpolation on (+ tscale) / waiting for display sync / off; SPEED: audio/video speed corrections; DROP: VO drops ·
 //                        decoder drops · mistimed frames; CLR IN/OUT via fmt_color (IN = the
 //                        source's video-params; OUT = video-target-params, never available under
 //                        vo=libmpv → "n/a"); HDR row from hdr::status_text
@@ -151,6 +152,20 @@ pub(crate) fn update_stats_window(w: &MainWindow, s: &fjord_player::StatsData) {
             }
         }
     };
+    // Interpolation: mpv only gets it with a display video sync (Player::new); it blends frames
+    // once display sync runs (a ratio on the VSYNC line).
+    let interp = match (s.interpolation, s.vsync_ratio > 0.0) {
+        (true, true) => format!(
+            "on  ·  {}",
+            if s.tscale.is_empty() {
+                "oversample"
+            } else {
+                &s.tscale
+            }
+        ),
+        (true, false) => "on  ·  waiting for display sync".into(),
+        (false, _) => "off".into(),
+    };
     let avsync = format!("{:+.3}s", s.avsync);
 
     // audio-speed-correction ≈ 0 when passthrough is active (can't resample);
@@ -199,6 +214,7 @@ pub(crate) fn update_stats_window(w: &MainWindow, s: &fjord_player::StatsData) {
     g.set_stat_aud_out(ss(&aud_out));
     g.set_stat_display(ss(&display));
     g.set_stat_vsync(ss(&vsync));
+    g.set_stat_interp(ss(&interp));
     g.set_stat_avsync(ss(&avsync));
     g.set_stat_speed(ss(&speed));
     g.set_stat_drop(ss(&drop_));

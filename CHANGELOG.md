@@ -23,6 +23,12 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Improved: Interpolation shows when it can work.** Settings → Advanced →
+  Motion interpolation (and its temporal scaler) only appear with a display
+  Video sync (display-vdrop, -resample or -adrop) — with "audio" mpv ignored
+  it without saying so. The stats overlay (I) has a new INTERP line: on (with
+  the scaler), waiting for display sync, or off.
+
 - **Improved: shorter pause when a video ends or the next episode starts.**
   Fjord stopped for about a quarter of a second each time while the previous
   video was shut down; mpv now does that in the background.

@@ -1932,10 +1932,10 @@ export component SettingsScreen inherits Rectangle {
                             }
                         }
 
-                        SettingsRow {
+                        if AppState.settings-row-shown("video.interpolation"): SettingsRow {
                             key: "video.interpolation";
                             title: "Motion interpolation";
-                            subtitle: "Temporal interpolation between frames (best with display-resample)";
+                            subtitle: "Blends frames for smoother motion when the display's rate doesn't match the video's — only with a display Video sync";
                             ToggleSwitch {
                                 checked <=> AppState.settings-interpolation;
                                 toggled => { AppState.settings-changed(); AppState.refocus(); }

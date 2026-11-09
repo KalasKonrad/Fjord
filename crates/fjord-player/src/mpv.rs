@@ -251,6 +251,8 @@ pub struct StatsData {
     pub video_sync_mode: String, // "video-sync" property (audio / display-resample / …)
     // timing / performance
     pub vsync_ratio: f64,
+    pub interpolation: bool, // "interpolation" (set only with a display video sync)
+    pub tscale: String,      // "tscale"
     pub avsync: f64,
     pub audio_speed_correction: f64, // audio-speed-correction  (~0 with passthrough; drift = sync stress)
     pub video_speed_correction: f64, // video-speed-correction  (vsync=audio compensation)
@@ -632,7 +634,8 @@ impl Player {
             if config.video_sync != "audio" && !config.video_sync.is_empty() {
                 init.set_option("video-sync", config.video_sync.as_str())?;
             }
-            if config.interpolation {
+            // Interpolation needs a display video sync: with `audio` mpv only warns and ignores it.
+            if config.interpolation && config.video_sync.starts_with("display-") {
                 init.set_option("interpolation", "yes")?;
                 if !config.tscale.is_empty() {
                     init.set_option("tscale", config.tscale.as_str())?;
@@ -1026,6 +1029,11 @@ impl Player {
             },
             video_sync_mode: g_s("video-sync"),
             vsync_ratio: g_f("vsync-ratio"),
+            interpolation: self
+                .mpv
+                .get_property::<bool>("interpolation")
+                .unwrap_or(false),
+            tscale: g_s("tscale"),
             avsync: g_f("avsync"),
             audio_speed_correction: g_f("audio-speed-correction"),
             video_speed_correction: g_f("video-speed-correction"),
