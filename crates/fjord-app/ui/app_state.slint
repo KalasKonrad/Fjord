@@ -712,7 +712,7 @@ export global AppState {
             || key == "video.display_sync_wcg_mode" || key == "video.display_sync_trailers" {
             return settings-display-sync-enabled;
         }
-        if key == "video.display_sync_4k_odd_fps_mode" {
+        if key == "video.display_sync_4k_odd_fps_mode" || key == "video.display_sync_hd_in_4k" {
             return settings-display-sync-enabled && settings-display-sync-sync-resolution;
         }
         if key == "audio.spdif_ac3" || key == "audio.spdif_eac3" || key == "audio.spdif_dts"
@@ -1708,6 +1708,7 @@ export global AppState {
     in-out property <string> settings-display-sync-scale-4k:           "1.0";
     in-out property <string> settings-display-sync-scale-1080p:        "1.0";
     in-out property <bool> settings-display-sync-sync-resolution:    true;
+    in-out property <bool> settings-display-sync-hd-in-4k:           false;
     in-out property <bool> settings-display-sync-sync-refresh-rate:  true;
     in-out property <string> settings-display-sync-4k-odd-fps-mode:    "fallback";
     in-out property <string> settings-display-sync-hdr-mode:           "yes";

@@ -27,8 +27,13 @@ are bumped together as one step, not separately.
   Fjord draws it larger than it is: Default (Lanczos), Sharp (EWA Lanczos) or
   FSR 1 (AMD FidelityFX Super Resolution, bundled; an HDR copy is used for HDR
   files). The stats overlay's new SCALER line shows which one runs and whether
-  anything is scaled up at all — with display sync switching the TV to the
-  video's resolution, the TV upscales instead.
+  anything is scaled up at all — when the TV's mode matches the video, the TV
+  upscales instead.
+- **New: Settings → Display → HD video in 4K** (display sync, under "Sync
+  resolution"): a 1080p or smaller video at 24, 25 or 30 fps switches the TV
+  to 4K too, so the Upscaler scales it instead of the TV — while the desktop
+  can stay at 1080p with a high refresh rate. Only when the TV offers 4K at the
+  video's own rate; 50/60 fps video keeps the default resolution.
 
 - **Improved: Interpolation shows when it can work.** Settings → Advanced →
   Motion interpolation (and its temporal scaler) only appear with a display

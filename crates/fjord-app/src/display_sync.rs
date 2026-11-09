@@ -8,7 +8,8 @@
 //   DisplaySyncSettings    what compute_target_mode/sync_to_source need, extracted from
 //                          DeviceConfig once per trigger
 //   compute_target_mode    pure, unit-tested: the script's fps→Hz cadence table, a true 24/30/60 fps
-//                          file on its exact rate when the output has it, + fallback chain
+//                          file on its exact rate when the output has it, "HD video in 4K" (smaller
+//                          video at 24/25/30 fps on the 4K mode, for the Upscaler), + fallback chain
 //                          (exact → closest Hz at the same resolution → the default mode)
 //   keeps_current_mode     pure, unit-tested: mpv's post-decode estimate never moves the display
 //                          between two rates of one cadence (23.98 ↔ 24.00)
@@ -101,6 +102,9 @@ pub(crate) struct DisplaySyncSettings {
     /// framerate instead of dropping resolution), false = "fallback"
     /// (default — matches the proven script exactly).
     pub odd_fps_stay_4k: bool,
+    /// "HD video in 4K": non-4K video at a film/PAL/NTSC rate gets the 4K mode too (the
+    /// Upscaler scales it); 50/60 fps keeps the default resolution.
+    pub hd_in_4k: bool,
     pub hdr_mode: HdrMode,
     pub wcg_mode: WcgMode,
 }
@@ -116,6 +120,7 @@ impl DisplaySyncSettings {
             sync_resolution: c.display_sync_sync_resolution,
             sync_refresh_rate: c.display_sync_sync_refresh_rate,
             odd_fps_stay_4k: c.display_sync_4k_odd_fps_mode == "stay_4k",
+            hd_in_4k: c.display_sync_hd_in_4k,
             hdr_mode: HdrMode::parse(&c.display_sync_hdr_mode),
             wcg_mode: WcgMode::parse(&c.display_sync_wcg_mode),
         }
@@ -160,7 +165,10 @@ pub(crate) fn compute_target_mode(
     supported: &HashSet<(String, String)>,
 ) -> (String, String) {
     let fps_r = fps.round() as i64;
-    let is_4k = cfg.sync_resolution && width >= 3840;
+    // "HD video in 4K": smaller video at a rate the 4K table has (not 50/60 — a 4K mode at those
+    // rates may be more than the HDMI chain carries) is placed like 4K video.
+    let hd_as_4k = cfg.hd_in_4k && width > 0 && matches!(fps_r, 23 | 24 | 25 | 29 | 30);
+    let is_4k = cfg.sync_resolution && (width >= 3840 || hd_as_4k);
 
     let (mut target_res, mut target_hz) = if is_4k {
         match fps_r {
@@ -201,6 +209,20 @@ pub(crate) fn compute_target_mode(
     }
     if !cfg.sync_resolution {
         target_res = cfg.default_resolution.clone();
+    }
+
+    // "HD video in 4K" only with the 4K mode at exactly this rate: the fallback chain's "closest
+    // Hz at 4K" would put a 24 fps film on 4K@29.97 or 59.94 (judder) — worse than its usual mode.
+    if hd_as_4k
+        && width < 3840
+        && !supported.is_empty()
+        && !supported.contains(&(target_res.clone(), target_hz.clone()))
+    {
+        let usual = DisplaySyncSettings {
+            hd_in_4k: false,
+            ..cfg.clone()
+        };
+        return compute_target_mode(width, fps, &usual, supported);
     }
 
     // Fallback chain: exact mode -> closest Hz at the same resolution ->
@@ -1070,9 +1092,68 @@ mod tests {
             sync_resolution: true,
             sync_refresh_rate: true,
             odd_fps_stay_4k: false,
+            hd_in_4k: false,
             hdr_mode: HdrMode::Yes,
             wcg_mode: WcgMode::Auto,
         }
+    }
+
+    #[test]
+    fn hd_video_in_4k_takes_the_4k_mode_only_at_its_own_rate() {
+        let modes = |list: &[(&str, &str)]| -> HashSet<(String, String)> {
+            list.iter()
+                .map(|(r, h)| (r.to_string(), h.to_string()))
+                .collect()
+        };
+        let full = modes(&[
+            (RES_4K, "23.98"),
+            (RES_4K, "25.00"),
+            (RES_4K, "29.97"),
+            ("1920x1080", "23.98"),
+            ("1920x1080", "50.00"),
+            ("1920x1080", "59.94"),
+        ]);
+        let mode = |r: &str, h: &str| (r.to_string(), h.to_string());
+        let mut cfg = settings();
+        // Off: a 1080p film stays at the default resolution, as before.
+        assert_eq!(
+            compute_target_mode(1920, 23.976, &cfg, &full),
+            mode("1920x1080", "23.98")
+        );
+        cfg.hd_in_4k = true;
+        assert_eq!(
+            compute_target_mode(1920, 23.976, &cfg, &full),
+            mode(RES_4K, "23.98")
+        );
+        assert_eq!(
+            compute_target_mode(1280, 25.0, &cfg, &full),
+            mode(RES_4K, "25.00")
+        );
+        // 50/60 fps keeps the default resolution.
+        assert_eq!(
+            compute_target_mode(1920, 50.0, &cfg, &full),
+            mode("1920x1080", "50.00")
+        );
+        assert_eq!(
+            compute_target_mode(1920, 59.94, &cfg, &full),
+            mode("1920x1080", "59.94")
+        );
+        // No 4K at the film's rate (only 4K@59.94): its usual mode, not 4K at the wrong rate.
+        let no_4k24 = modes(&[
+            (RES_4K, "59.94"),
+            ("1920x1080", "23.98"),
+            ("1920x1080", "59.94"),
+        ]);
+        assert_eq!(
+            compute_target_mode(1920, 23.976, &cfg, &no_4k24),
+            mode("1920x1080", "23.98")
+        );
+        // Sync resolution off pins the default anyway.
+        cfg.sync_resolution = false;
+        assert_eq!(
+            compute_target_mode(1920, 23.976, &cfg, &full).0,
+            "1920x1080"
+        );
     }
 
     fn no_supported() -> HashSet<(String, String)> {

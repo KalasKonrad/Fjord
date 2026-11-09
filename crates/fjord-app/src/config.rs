@@ -541,6 +541,11 @@ pub(crate) struct DeviceConfig {
     // instead). Only consulted when display_sync_sync_resolution is true.
     #[serde(default = "default_4k_odd_fps_mode")]
     pub display_sync_4k_odd_fps_mode: String,
+    // "HD video in 4K": 1080p and smaller video at 23.98/24/25/29.97/30 fps switches to 4K too,
+    // so Fjord's Upscaler scales it (the TV doesn't); 50/60 fps stays at the default resolution.
+    // Only consulted when display_sync_sync_resolution is true.
+    #[serde(default)]
+    pub display_sync_hd_in_4k: bool,
     // "yes" (HDR on exactly when the source is HDR) | "no" (never) |
     // "always". No "manual" value — display_sync_enabled=false already IS
     // "never touch HDR/WCG", making a 4th value redundant.
@@ -603,6 +608,7 @@ impl Default for DeviceConfig {
             display_sync_scale_4k: default_scale(),
             display_sync_scale_1080p: default_scale(),
             display_sync_sync_resolution: true,
+            display_sync_hd_in_4k: false,
             display_sync_sync_refresh_rate: true,
             display_sync_4k_odd_fps_mode: default_4k_odd_fps_mode(),
             display_sync_hdr_mode: default_display_sync_hdr_mode(),
@@ -1359,6 +1365,7 @@ fn migrate_legacy_config(l: LegacyConfig) -> Config {
         display_sync_scale_4k: default_scale(),
         display_sync_scale_1080p: default_scale(),
         display_sync_sync_resolution: true,
+        display_sync_hd_in_4k: false,
         display_sync_sync_refresh_rate: true,
         display_sync_4k_odd_fps_mode: default_4k_odd_fps_mode(),
         display_sync_hdr_mode: default_display_sync_hdr_mode(),

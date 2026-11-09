@@ -692,7 +692,7 @@ export component SettingsScreen inherits Rectangle {
                             choice: true;
                             value: AppState.settings-upscaler;
                             title: "Upscaler";
-                            subtitle: "How the video is scaled up when it's drawn larger than it is. With display sync's \"Sync resolution\" on, the TV switches to the video's resolution and upscales itself — turn it off (default resolution 4K) to use this";
+                            subtitle: "How the video is scaled up when the screen has more pixels than the video — a 1080p video on a 4K mode (Default resolution 4K, or display sync's \"HD video in 4K\"). When the screen's mode matches the video, the TV upscales instead";
                         }
 
                         SectionHeader {
@@ -730,6 +730,17 @@ export component SettingsScreen inherits Rectangle {
                             indent: true;
                             ToggleSwitch {
                                 checked <=> AppState.settings-display-sync-sync-resolution;
+                                toggled => { AppState.settings-changed(); AppState.refocus(); }
+                            }
+                        }
+
+                        if AppState.settings-row-shown("video.display_sync_hd_in_4k"): SettingsRow {
+                            key: "video.display_sync_hd_in_4k";
+                            title: "HD video in 4K";
+                            subtitle: "1080p and smaller video at 24, 25 or 30 fps switches the TV to 4K too, so the Upscaler above scales it instead of the TV — 50/60 fps stays at the default resolution";
+                            indent: true;
+                            ToggleSwitch {
+                                checked <=> AppState.settings-display-sync-hd-in-4k;
                                 toggled => { AppState.settings-changed(); AppState.refocus(); }
                             }
                         }

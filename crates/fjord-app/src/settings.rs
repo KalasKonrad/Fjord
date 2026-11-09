@@ -143,6 +143,7 @@ const VID_VIDEO_LATENCY_HACKS: &str = "video.video_latency_hacks"; // virtual â€
 const VID_DISPLAY_SYNC_ENABLED: &str = "video.display_sync_enabled";
 const VID_DISPLAY_SYNC_SCREEN: &str = "video.display_sync_screen"; // dynamic dropdown
 const VID_DISPLAY_SYNC_SYNC_RESOLUTION: &str = "video.display_sync_sync_resolution";
+const VID_DISPLAY_SYNC_HD_IN_4K: &str = "video.display_sync_hd_in_4k";
 const VID_DISPLAY_SYNC_SYNC_REFRESH_RATE: &str = "video.display_sync_sync_refresh_rate";
 const VID_DISPLAY_SYNC_DEFAULT_RESOLUTION: &str = "video.display_sync_default_resolution";
 const VID_DISPLAY_SYNC_DEFAULT_HZ: &str = "video.display_sync_default_hz";
@@ -285,6 +286,7 @@ const SECTION_ROWS: &[(&str, &[&str])] = &[
             VID_DISPLAY_SYNC_ENABLED,
             VID_DISPLAY_SYNC_SCREEN,
             VID_DISPLAY_SYNC_SYNC_RESOLUTION,
+            VID_DISPLAY_SYNC_HD_IN_4K,
             VID_DISPLAY_SYNC_SYNC_REFRESH_RATE,
             VID_DISPLAY_SYNC_DEFAULT_RESOLUTION,
             VID_DISPLAY_SYNC_DEFAULT_HZ,
@@ -2077,6 +2079,13 @@ static DEVICE_BINDS: &[DeviceBind] = &[
     ),
     bind!(
         Device,
+        display_sync_hd_in_4k,
+        get_settings_display_sync_hd_in_4k,
+        set_settings_display_sync_hd_in_4k,
+        bool
+    ),
+    bind!(
+        Device,
         display_sync_sync_refresh_rate,
         get_settings_display_sync_sync_refresh_rate,
         set_settings_display_sync_sync_refresh_rate,
@@ -2555,6 +2564,11 @@ static TOGGLES: &[Toggle] = &[
         VID_DISPLAY_SYNC_SYNC_RESOLUTION,
         |g| g.get_settings_display_sync_sync_resolution(),
         |g, v| g.set_settings_display_sync_sync_resolution(v),
+    ),
+    (
+        VID_DISPLAY_SYNC_HD_IN_4K,
+        |g| g.get_settings_display_sync_hd_in_4k(),
+        |g, v| g.set_settings_display_sync_hd_in_4k(v),
     ),
     (
         VID_DISPLAY_SYNC_SYNC_REFRESH_RATE,
