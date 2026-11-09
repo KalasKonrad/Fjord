@@ -5,7 +5,8 @@
 //                              same function (discover-popup-confirm)
 //   handle_key_discover_filter_bar  Left/Right over the 7 pills (… Clear), Up → search field, Down →
 //                              grid/landing, Confirm opens the pill's popup; mouse via discover-filter-bar-confirm
-//   handle_key                 Discover grid: fs<0 sidebar (Up/Down tabs, Right enters), fs>=0 grid with
+//   handle_key                 Discover grid: the Retry button while discover-retry-focused (Enter
+//                              retries, Left → sidebar, Up → search); fs<0 sidebar (Up/Down tabs, Right enters), fs>=0 grid with
 //                              LibraryGrid's 2D math; Left at col 0 / Back → sidebar; C → context menu
 //   handle_key_landing         landing rows; the Coming Up sentinel opens the calendar
 //   existing_zones / zone_focus_reset / handle_key_request_detail  RequestDetailScreen: back → button row
@@ -228,6 +229,20 @@ pub(crate) fn handle_key(action: &Action, g: &AppState) -> bool {
         return handle_key_discover_filter_bar(action, g);
     }
 
+    // "Couldn't reach Seerr" → the Retry button has the keys while focused.
+    if g.get_discover_retry_focused() {
+        match action {
+            Action::Confirm => g.invoke_discover_landing_retry(),
+            Action::Left => g.set_discover_retry_focused(false),
+            Action::Up => {
+                g.set_discover_retry_focused(false);
+                g.set_discover_header_focused(true);
+            }
+            _ => {}
+        }
+        return true;
+    }
+
     let fs = g.get_focused_section();
     // Filtered-browse (query empty, >=1 filter active) renders into the same
     // discover-results grid search uses, not the landing-row models — must
@@ -255,6 +270,8 @@ pub(crate) fn handle_key(action: &Action, g: &AppState) -> bool {
                     if let Some(first) = landing_row_lens(g).iter().position(|&n| n > 0) {
                         g.set_focused_section(first as i32);
                         g.set_discover_landing_card(0);
+                    } else if g.get_discover_landing_failed() && g.get_seerr_connected() {
+                        g.set_discover_retry_focused(true);
                     } else {
                         g.set_discover_header_focused(true);
                     }

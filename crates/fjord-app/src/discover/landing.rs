@@ -11,7 +11,8 @@
 //   fetch_requested_row / refresh_requested_row  the Requested row (refreshed after a new request)
 //   fetch_new_in_theaters      canned filter preset (primary release date in the last ~45 days,
 //                              popularity) — an approximation, Seerr can't filter by release type
-//   ensure_discover_landing    all landing rows in parallel, once per session; text first, then
+//   ensure_discover_landing    all landing rows in parallel, once per session (again after every row
+//                              failed: discover-landing-failed → "Couldn't reach Seerr" + Retry); text first, then
 //                              posters (patched in batches ~150 ms apart, `timing:` logged);
 //                              dedups the discovery rows against Requested; fills
 //                              discover_known_requests and then rebuilds the calendar
@@ -595,6 +596,13 @@ pub(crate) fn ensure_discover_landing(
             }
         }
 
+        // Nothing came back at all (Seerr down, or not reachable yet at startup): say so with a
+        // Retry instead of an endless "Loading…", and let the next Discover visit fetch again.
+        let all_failed = first_error.is_some() && metas_per_row.iter().all(|m| m.is_empty());
+        if all_failed {
+            state2.lock().unwrap().discover_landing_fetched = false;
+            info!("seerr: every Discover landing row failed — Retry offered");
+        }
         let ww_commit = ww.clone();
         let state_commit  = Arc::clone(&state2);
         let client_commit = client.clone();
@@ -604,6 +612,10 @@ pub(crate) fn ensure_discover_landing(
             // Seerr connection's rows in the new session.
             if !crate::seerr_session_current(&state_commit, &client_commit) { return; }
             let g = AppState::get(&w);
+            g.set_discover_landing_failed(all_failed);
+            if !all_failed {
+                g.set_discover_retry_focused(false);
+            }
             for (row, metas) in metas_per_row.into_iter().enumerate() {
                 let cards: Vec<CardItem> = metas.into_iter().map(DiscoverCardMeta::into_card_item).collect();
                 landing_row_set(&g, row, ModelRc::new(VecModel::from(cards)));

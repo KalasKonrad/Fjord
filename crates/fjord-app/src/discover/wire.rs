@@ -8,7 +8,8 @@
 //                              browse.rs's per-nav logic, closes the on-screen keyboard on every tab
 //                              switch, resets Discover's popup/filter bar and Settings' keybinding
 //                              state when leaving them; on arriving at Discover: landing rows (once),
-//                              all_movies metadata refresh (for find_local_item), refresh_seerr_admin_status
+//                              all_movies metadata refresh (for find_local_item), refresh_seerr_admin_status;
+//                              discover-landing-retry (in wire_nav) fetches the landing rows again
 //   on_discover_filter_changed  shared tail of every filter-pill change: save Config, recompute
 //                              discover-filters-active, then filtered browse (query empty + active),
 //                              clear discover-results (empty + inactive), or apply_search_filters
@@ -144,6 +145,20 @@ fn wire_nav(
                 // Settings shows (it renders on the flag alone).
                 g.set_show_seerr_disconnect_confirm(false);
             }
+        }
+    });
+    // "Couldn't reach Seerr" → Retry: the failed fetch already allowed a new one
+    // (discover_landing_fetched reset), so this is the same call as arriving on Discover.
+    g.on_discover_landing_retry({
+        let state = Arc::clone(state);
+        let ww = window.as_weak();
+        let rt = rt.clone();
+        move || {
+            debug!("seerr: Discover landing retry");
+            if let Some(w) = ww.upgrade() {
+                AppState::get(&w).set_discover_landing_failed(false);
+            }
+            ensure_discover_landing(Arc::clone(&state), ww.clone(), rt.clone());
         }
     });
 }

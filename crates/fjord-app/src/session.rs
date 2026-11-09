@@ -155,6 +155,8 @@ pub(crate) fn reset_session_state(
         g.set_album_id(ss(""));
         g.set_artist_id(ss(""));
         g.set_show_context_menu(false);
+        g.set_discover_landing_failed(false);
+        g.set_discover_retry_focused(false);
         g.set_show_now_playing(false);
         // The sidebar profile menu and the outgoing profile's tile must not survive a switch
         // (finish_session_setup repushes the tile right after).

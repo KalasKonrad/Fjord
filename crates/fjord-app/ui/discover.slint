@@ -9,6 +9,8 @@
 //   DiscoverScreen  AppShell content at active-nav 6 (a base screen, no Back). Search field (hand-
 //                   drawn, caret at discover-query-cursor; discover-header-focused), a 40px filter
 //                   bar (Type/Genre/Sort/Rating/Year/Provider/Clear), then either:
+//                   - no landing rows: "Loading…" with a spinner, or after every row failed "Couldn't
+//                     reach Seerr" + Retry (discover-landing-failed / -retry-focused)
 //                   - landing rows (no query, no filters): Trending, Popular Movies/TV, Upcoming
 //                     Movies/TV, Requested, New in Theaters (release-date window), Coming Up (last
 //                     card: a "🗓 Full Calendar" sentinel, id "" → open-calendar), Watchlist —
@@ -30,6 +32,7 @@ import {
     FocusGlow,
     MediaCard,
     LoadingSpinner,
+    FjordButton,
     PressPulse,
     QwertyKeyboard,
 } from "widgets.slint";
@@ -383,18 +386,33 @@ export component DiscoverScreen inherits Rectangle {
                 width: parent.width;
                 alignment: start;
                 spacing: 12px;
-                if AppState.seerr-connected: LoadingSpinner {
+                if AppState.seerr-connected && !AppState.discover-landing-failed: LoadingSpinner {
                     height: 20px;
                 }
                 Text {
-                    text: AppState.seerr-connected
-                        ? "Loading Seerr's trending picks…"
-                        : "Type to search, or connect Seerr in Settings to see Trending, Popular, and Upcoming rows here.";
+                    text: !AppState.seerr-connected
+                        ? "Type to search, or connect Seerr in Settings to see Trending, Popular, and Upcoming rows here."
+                        : AppState.discover-landing-failed
+                        ? "Couldn't reach Seerr — its rows will show once it answers."
+                        : "Loading Seerr's trending picks…";
                     color: Theme.text-muted;
                     font-size: 14px * AppState.text-scale;
                     horizontal-alignment: center;
                     width: parent.width;
                     wrap: word-wrap;
+                }
+
+                if AppState.seerr-connected && AppState.discover-landing-failed: HorizontalLayout {
+                    alignment: center;
+                    FjordButton {
+                        text: "Retry";
+                        width: 120px * AppState.text-scale;
+                        kbd-focused: AppState.discover-retry-focused;
+                        clicked => {
+                            AppState.discover-retry-focused = true;
+                            AppState.discover-landing-retry();
+                        }
+                    }
                 }
             }
         }

@@ -23,6 +23,11 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Fixed: Discover stuck on "Loading Seerr's trending picks…"** when Seerr
+  couldn't be reached (down, or not reachable yet right after startup). It now
+  says "Couldn't reach Seerr" with a Retry button (Enter on the remote), and
+  opening Discover again tries again.
+
 - **New: Settings → Display → Upscaler** — how the video is scaled up when
   Fjord draws it larger than it is: Default (Lanczos), Sharp (EWA Lanczos) or
   FSR 1 (AMD FidelityFX Super Resolution, bundled; an HDR copy is used for HDR

@@ -569,7 +569,7 @@ export global AppState {
         && !show-profile-edit
         && ((show-browse && current-item < 0 && !browse-header-focused)
         || (!show-browse && active-nav == 10 && settings-section == "")
-        || (!show-browse && active-nav != 10 && focused-section < 0));
+        || (!show-browse && active-nav != 10 && focused-section < 0 && !discover-retry-focused));
         // show-sidebar-profile-menu / -manage-profiles / -profile-edit keep active-nav at
         // 7 and don't touch focused-section, so without this exclusion the sidebar's
         // Profile row would flash its press-pulse with every Enter inside those overlays
@@ -1258,6 +1258,11 @@ export global AppState {
     in-out property <int> discover-focused:         0;
     in-out property <int> discover-focused-row:     0;      // scroll anchor, mirrors library-focused-row
     in-out property <bool> discover-header-focused:  false;  // search field focused, mirrors browse-header-focused
+    // Every landing row failed (Seerr unreachable): Discover shows "Couldn't reach Seerr" + Retry
+    // instead of the endless "Loading…"; the Retry button has the keys while focused.
+    in-out property <bool> discover-landing-failed:  false;
+    in-out property <bool> discover-retry-focused:   false;
+    callback discover-landing-retry();
     callback discover-search-append(string);
     callback discover-search-backspace();
     callback discover-search-delete();   // Delete key: letter after the caret (2026-10-04)
