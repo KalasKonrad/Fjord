@@ -23,6 +23,10 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Improved: shorter pause when a video ends or the next episode starts.**
+  Fjord stopped for about a quarter of a second each time while the previous
+  video was shut down; mpv now does that in the background.
+
 - **New: game controller support.** An Xbox 360 pad (or another pad gilrs
   knows) works like the remote: D-pad or left stick to move (held = repeat),
   A to select, B to go back, X for the menu, Y for search (subtitles in the

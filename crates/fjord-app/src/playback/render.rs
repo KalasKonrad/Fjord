@@ -463,6 +463,7 @@ pub(crate) fn wire_rendering_notifier(window: &MainWindow, video: Arc<Mutex<Vide
 
                 slint::RenderingState::RenderingTeardown => {
                     let mut vs = video_rn.lock().unwrap();
+                    crate::playback::free_all_retiring(&mut vs);
                     if vs.video_on_subsurface {
                         if let Some(ctx) = vs.render_ctx.take() {
                             crate::video_surface::free_render_ctx(ctx);

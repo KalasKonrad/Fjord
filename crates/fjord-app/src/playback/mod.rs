@@ -20,11 +20,15 @@
 //                           HDR/display-sync one-shot flags, video_on_subsurface, hitch,
 //                           display_sync_logged
 //   StepTimes               per-step durations of one UI-thread operation → one debug line
-//   tear_down_player        capture ticks, drop render_ctx then player (mpv invariant; a subsurface
-//                           player's context is freed on our own GL context), return the stop data;
+//   RetiringPlayer / retire_player / reap_retiring / free_all_retiring  a player on its way out:
+//                           Player::begin_retire (async stop) → the tick frees it once mpv is idle
+//                           (render context first; debug line "retired player freed …"); quit and
+//                           the window's GL teardown free them all at once
+//   tear_down_player        capture ticks, hand player + render_ctx to retire_player (never frees a
+//                           running player's render context here: mpv then tore the video down while
+//                           the UI thread waited, 205–262 ms on the HTPC), return the stop data;
 //                           reports 0 ticks while credits_auto_marked_played so the stop report
 //                           can't re-add a resume point; debug line "teardown on the UI thread: …"
-//                           (position read, render context freed, mpv shut down)
 //   quit_cleanup            synchronous stop report + screensaver release after window.run() exits
 //   reset_playback_ui       clears all player UI state (video-surface-active first, so the window is
 //                           opaque before the next frame; music bar, Now Playing, buffering, overlays)
@@ -277,6 +281,9 @@ pub(crate) struct VideoState {
     pub hitch_fps: f64,
     /// Whether mpv really syncs frames to the display already logged for this playback.
     pub display_sync_logged: bool,
+    /// Players shutting down (tear_down_player → retire_player): mpv stops them on its own
+    /// threads, the tick frees each once it's idle (reap_retiring) — render context first.
+    pub retiring: Vec<RetiringPlayer>,
     /// "Still opening — first-open grace" already logged for this player
     /// (2026-10-08; see FIRST_OPEN_STALL_SECS).
     pub stall_grace_logged: bool,
@@ -405,6 +412,7 @@ impl Default for VideoState {
             hitch: HitchWatch::default(),
             hitch_fps: 0.0,
             display_sync_logged: false,
+            retiring: Vec::new(),
             stall_grace_logged: false,
             screensaver_cookie: PlaybackCookies::default(),
             chapters: Vec::new(),
@@ -479,6 +487,80 @@ impl StepTimes {
     }
 }
 
+// ── Retiring players ──────────────────────────────────────────────────────────
+/// A player on its way out: mpv stops it on its own threads (Player::begin_retire); the tick
+/// frees it once mpv is idle — the render context first (mpv invariant), on our own GL context
+/// for a subsurface player.
+pub(crate) struct RetiringPlayer {
+    render_ctx: Option<MpvRenderCtx>,
+    on_subsurface: bool,
+    player: Player,
+    since: Instant,
+}
+
+/// A render context made on the video subsurface's own GL context must be freed on it (HDR
+/// Stage 5); an in-window one on Slint's, which is current on this thread outside rendering.
+fn free_render_ctx(ctx: Option<MpvRenderCtx>, on_subsurface: bool) {
+    match (ctx, on_subsurface) {
+        (Some(ctx), true) => crate::video_surface::free_render_ctx(ctx),
+        (ctx, _) => drop(ctx),
+    }
+}
+
+fn retire_player(
+    vs: &mut VideoState,
+    mut player: Player,
+    render_ctx: Option<MpvRenderCtx>,
+    on_subsurface: bool,
+) {
+    player.begin_retire();
+    vs.retiring.push(RetiringPlayer {
+        render_ctx,
+        on_subsurface,
+        player,
+        since: Instant::now(),
+    });
+}
+
+fn free_retired(r: RetiringPlayer, why: &str) {
+    let waited = r.since.elapsed();
+    let mut steps = StepTimes::new();
+    free_render_ctx(r.render_ctx, r.on_subsurface);
+    steps.mark("render context freed");
+    drop(r.player);
+    steps.mark("mpv shut down");
+    debug!(
+        "retired player freed {why}, {:.0} ms after the teardown: {}",
+        waited.as_secs_f64() * 1000.0,
+        steps.summary()
+    );
+}
+
+/// The tick (UI thread): free every retiring player mpv is done with.
+pub(crate) fn reap_retiring(vs: &mut VideoState) {
+    let mut i = 0;
+    while i < vs.retiring.len() {
+        if vs.retiring[i].player.retire_done() {
+            let r = vs.retiring.remove(i);
+            let why = if r.since.elapsed() >= fjord_player::RETIRE_CAP {
+                "after the wait cap"
+            } else {
+                "once mpv was idle"
+            };
+            free_retired(r, why);
+        } else {
+            i += 1;
+        }
+    }
+}
+
+/// Quit and the window's GL teardown: free them all now, without waiting for mpv.
+pub(crate) fn free_all_retiring(vs: &mut VideoState) {
+    for r in std::mem::take(&mut vs.retiring) {
+        free_retired(r, "at teardown");
+    }
+}
+
 // ── tear_down_player ──────────────────────────────────────────────────────────
 // Capture the final playback position then drop render_ctx before player
 // (mpv invariant: MpvRenderCtx must be freed before mpv_terminate_destroy).
@@ -521,20 +603,18 @@ pub(crate) fn tear_down_player(
     vs.credits_auto_marked_played = false;
     vs.credits_mark_threshold = None;
     steps.mark("position read");
-    // A render context made on the video subsurface's own GL context must be
-    // freed on it (HDR Stage 5) — mpv requires its GL context for that, and
-    // before the Player (mpv core) goes.
-    if vs.video_on_subsurface {
-        if let Some(ctx) = vs.render_ctx.take() {
-            crate::video_surface::free_render_ctx(ctx);
-        }
-        vs.video_on_subsurface = false;
-    }
+    // The player and its render context aren't freed here: freeing the render context while
+    // the video runs made mpv tear the video down while this thread waited (205–262 ms on the
+    // HTPC at every switch). retire_player asks mpv to stop on its own threads; the tick frees
+    // them once it's idle (reap_retiring).
+    let render_ctx = vs.render_ctx.take();
+    let on_subsurface = std::mem::take(&mut vs.video_on_subsurface);
     vs.video_spot_logged = None;
-    vs.render_ctx = None;
-    steps.mark("render context freed");
-    vs.player = None;
-    steps.mark("mpv shut down");
+    match vs.player.take() {
+        Some(player) => retire_player(vs, player, render_ctx, on_subsurface),
+        None => free_render_ctx(render_ctx, on_subsurface),
+    }
+    steps.mark("handed over to retire");
     if had_player {
         debug!("teardown on the UI thread: {}", steps.summary());
     }
@@ -584,6 +664,8 @@ pub(crate) fn quit_cleanup(
         dropped, dec_dropped
     );
     let (item_id, client, ss_cookie, final_ticks) = tear_down_player(&mut video.lock().unwrap());
+    // Quitting: no tick will reap them.
+    free_all_retiring(&mut video.lock().unwrap());
     uninhibit_screensaver(ss_cookie);
     if let (Some(id), Some(cli)) = (item_id, client) {
         info!(

@@ -33,6 +33,9 @@
 //                   direct (one-off, may wait): is_paused, get_drop_counts (teardown),
 //                     get_position / get_duration (right after Fjord's own command), poll_stats
 //                   file_loaded_at, has_seen_video_reconfig (diagnostic), apply_hdr_output
+//                   begin_retire / retire_done (+ RETIRE_CAP): shut down without waiting — an
+//                     async `stop`, then idle (or the cap) says the render context can be freed
+//                     without mpv tearing the video down while the caller waits
 //                   set_display_fps / display_fps: the display's refresh rate for mpv
 //                     (display-fps-override, async) — mpv can't learn it under vo=libmpv, and the
 //                     display-sync modes stay off without it
@@ -567,6 +570,8 @@ pub struct Player {
     reported: Reported,
     // The display refresh rate last given to mpv (set_display_fps; 0.0 = never).
     display_fps: f64,
+    // When begin_retire asked mpv to stop (None = in use).
+    retire_started: Option<std::time::Instant>,
 }
 
 #[derive(Default)]
@@ -609,6 +614,9 @@ impl Reported {
 // large-enough-to-never-realistically-bind ceiling so cache_secs is the only
 // real constraint, rather than mpv's own much smaller 150 MiB stock default.
 const UNLIMITED_CACHE_MB: u32 = 65536;
+
+/// The longest a retiring player waits for mpv's idle before it's freed anyway.
+pub const RETIRE_CAP: std::time::Duration = std::time::Duration::from_secs(2);
 
 impl Player {
     /// Initialise mpv with `vo=libmpv` (render-API mode). Deliberately does
@@ -763,6 +771,7 @@ impl Player {
             resume_secs: config.start_position_secs,
             reported: Reported::default(),
             display_fps: 0.0,
+            retire_started: None,
         })
     }
 
@@ -1154,6 +1163,41 @@ impl Player {
     }
     pub fn stop(&self) {
         self.mpv.command("quit", &[]).ok();
+    }
+
+    /// Start shutting this player down without waiting: an asynchronous `stop`, so mpv's core
+    /// tears down the decoder and the video output on its own threads. Freeing the render
+    /// context while the video still runs makes mpv do that teardown while the caller waits —
+    /// 200+ ms on the UI thread at every switch (HTPC, 2026-11-09). Poll `retire_done`, then
+    /// drop the render context, then the player.
+    pub fn begin_retire(&mut self) {
+        self.retire_started = Some(std::time::Instant::now());
+        let mut args = [c"stop".as_ptr(), std::ptr::null()];
+        // SAFETY: the handle is valid for as long as `self`; mpv copies the arguments before
+        // mpv_command_async returns.
+        let rc = unsafe { sys::mpv_command_async(self.mpv.ctx.as_ptr(), 0, args.as_mut_ptr()) };
+        if rc < 0 {
+            warn!("stop (async) failed: {rc}");
+        }
+    }
+
+    /// After `begin_retire`: true once mpv went idle (it announces idle only after its video
+    /// chain and output are gone, so freeing the render context no longer waits) or RETIRE_CAP
+    /// passed (e.g. nothing was loaded, so no idle comes). Drains this player's events.
+    pub fn retire_done(&mut self) -> bool {
+        let Some(started) = self.retire_started else {
+            return false;
+        };
+        while let Some(event) = self.mpv.event_context_mut().wait_event(0.0) {
+            match event {
+                Ok(Event::Deprecated(e)) if e.event_id == sys::mpv_event_id_MPV_EVENT_IDLE => {
+                    return true;
+                }
+                Ok(Event::Shutdown) => return true,
+                _ => {}
+            }
+        }
+        started.elapsed() >= RETIRE_CAP
     }
 
     /// Adjust volume by `delta` and return the resulting level (0–130).

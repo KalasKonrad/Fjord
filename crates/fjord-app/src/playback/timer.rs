@@ -1,5 +1,6 @@
 // ── fjord-app · playback/timer.rs ─────────────────────────────────────────
-//   wire_mpv_timer          the 16 ms tick: reads the config flags, locks the video state, reads
+//   wire_mpv_timer          the 16 ms tick: reads the config flags, locks the video state, frees
+//                           retiring players mpv is done with (reap_retiring), reads
 //                           position/duration/loaded_since once into a Tick, runs the steps below
 //                           in this order under the lock, then dispatch (after the lock). The
 //                           per-tick mpv state (position, pause, buffering, passthrough) comes from
@@ -150,6 +151,8 @@ pub(crate) fn wire_mpv_timer(
             let mut out = TickOut::default();
             let t = {
                 let mut vs = video_timer.lock().unwrap();
+                // Players shutting down: free those mpv is done with (tear_down_player).
+                crate::playback::reap_retiring(&mut vs);
                 // One position/duration read per tick, shared by chapter tracking, the
                 // skip-segment and Up Next checks and the gapless preload — from mpv's change
                 // events (Player::observed), never a get_property: that waits for mpv's core,

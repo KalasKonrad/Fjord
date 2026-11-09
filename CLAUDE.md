@@ -99,6 +99,8 @@ Needs `mpv`/libmpv (`pacman -S mpv`). Optional at runtime: `yt-dlp` (trailers), 
   mode has been switched (pre-decode task, 20 s cap). Stamp `play_start` only when decode is actually
   requested — every stall/diagnostic watchdog is gated on it.
 - All teardown goes through `tear_down_player`; all fresh-playback resets through `reset_video_state_for_playback`.
+  It never frees a running player's render context: that makes mpv tear the video down while the UI thread waits
+  (~200 ms). The player is retired (`Player::begin_retire`, an async `stop`) and the tick frees it once mpv is idle.
 - libmpv2 reports a file that fails to open as `Err(Raw(code))`, not `EndFile`: `Player::poll` maps mpv's END_FILE
   codes (-13…-20) to `PollResult::Failed` — never treat those as transient (a black player screen forever).
 - **Video subsurface (HDR Stage 5, `video_surface.rs`, Wayland, Settings "Separate video surface", default on):** a
