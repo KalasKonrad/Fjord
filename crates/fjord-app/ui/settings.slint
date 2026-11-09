@@ -687,6 +687,14 @@ export component SettingsScreen inherits Rectangle {
                             indent: true;
                         }
 
+                        SettingsRow {
+                            key: "video.upscaler";
+                            choice: true;
+                            value: AppState.settings-upscaler;
+                            title: "Upscaler";
+                            subtitle: "How the video is scaled up when it's drawn larger than it is. With display sync's \"Sync resolution\" on, the TV switches to the video's resolution and upscales itself — turn it off (default resolution 4K) to use this";
+                        }
+
                         SectionHeader {
                             text: "DISPLAY SYNC";
                         }

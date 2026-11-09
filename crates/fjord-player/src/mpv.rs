@@ -33,6 +33,8 @@
 //                   direct (one-off, may wait): is_paused, get_drop_counts (teardown),
 //                     get_position / get_duration (right after Fjord's own command), poll_stats
 //                   file_loaded_at, has_seen_video_reconfig (diagnostic), apply_hdr_output
+//                   PlayerConfig.scale / fsr_shaders: Settings' Upscaler — `scale` at start; FSR 1
+//                     (apply_fsr) once the video's gamma is known (the PQ copy for HDR), async
 //                   begin_retire / retire_done (+ RETIRE_CAP): shut down without waiting — an
 //                     async `stop`, then idle (or the cap) says the render context can be freed
 //                     without mpv tearing the video down while the caller waits
@@ -89,6 +91,11 @@ pub struct PlayerConfig {
     pub dither_off: bool,
     pub interpolation: bool,
     pub tscale: String,
+    /// mpv's `scale` (the upscaler; empty = mpv's default, lanczos).
+    pub scale: String,
+    /// The FSR 1 shader files (SDR, PQ) when Settings' Upscaler is FSR: applied once mpv reports
+    /// the video's gamma (`apply_fsr` in poll) — the PQ copy for HDR files.
+    pub fsr_shaders: Option<(String, String)>,
     pub tone_mapping: String,
     pub target_colorspace_hint: bool,
     pub hwdec: String,
@@ -141,6 +148,8 @@ impl Default for PlayerConfig {
             dither_off: false,
             interpolation: false,
             tscale: "oversample".into(),
+            scale: String::new(),
+            fsr_shaders: None,
             tone_mapping: "auto".into(),
             target_colorspace_hint: false,
             hwdec: "auto".into(),
@@ -253,6 +262,8 @@ pub struct StatsData {
     pub vsync_ratio: f64,
     pub interpolation: bool, // "interpolation" (set only with a display video sync)
     pub tscale: String,      // "tscale"
+    pub scale: String,       // "scale" (the upscaler)
+    pub glsl_shaders: String, // "glsl-shaders" (FSR 1 when chosen)
     pub avsync: f64,
     pub audio_speed_correction: f64, // audio-speed-correction  (~0 with passthrough; drift = sync stress)
     pub video_speed_correction: f64, // video-speed-correction  (vsync=audio compensation)
@@ -574,6 +585,8 @@ pub struct Player {
     display_fps: f64,
     // When begin_retire asked mpv to stop (None = in use).
     retire_started: Option<std::time::Instant>,
+    // FSR 1 shader files (SDR, PQ) still to apply once the gamma is known (PlayerConfig).
+    fsr_pending: Option<(String, String)>,
 }
 
 #[derive(Default)]
@@ -640,6 +653,9 @@ impl Player {
                 if !config.tscale.is_empty() {
                     init.set_option("tscale", config.tscale.as_str())?;
                 }
+            }
+            if !config.scale.is_empty() {
+                init.set_option("scale", config.scale.as_str())?;
             }
             if config.opengl_early_flush {
                 init.set_option("opengl-early-flush", "yes")?;
@@ -775,6 +791,7 @@ impl Player {
             reported: Reported::default(),
             display_fps: 0.0,
             retire_started: None,
+            fsr_pending: config.fsr_shaders.clone(),
         })
     }
 
@@ -853,6 +870,7 @@ impl Player {
                 }
                 Some(Ok(Event::PropertyChange { name, change, .. })) => {
                     self.reported.apply(name, &change);
+                    self.apply_fsr();
                 }
                 // set_volume/set_mute's async replies — failures arrive as Err below.
                 Some(Ok(Event::SetPropertyReply(_))) => {}
@@ -968,6 +986,28 @@ impl Player {
         self.reported.chapters.clone()
     }
 
+    /// Settings' Upscaler = FSR: once mpv reports the video's gamma, load the matching shader copy
+    /// (FSR_PQ 1 for PQ/HDR) — asynchronously, mpv reloads its shaders itself. Once per player.
+    fn apply_fsr(&mut self) {
+        if self.fsr_pending.is_none() || self.reported.video.gamma.is_empty() {
+            return;
+        }
+        let Some((sdr, pq)) = self.fsr_pending.take() else {
+            return;
+        };
+        let hdr = self.reported.video.gamma == "pq";
+        info!("upscaler: FSR 1 ({})", if hdr { "HDR copy" } else { "SDR" });
+        self.set_async_str("glsl-shaders", if hdr { &pq } else { &sdr });
+    }
+
+    /// `set_async` for a string value (MPV_FORMAT_STRING takes a `char*` by pointer).
+    fn set_async_str(&self, name: &str, value: &str) {
+        let Ok(value_c) = std::ffi::CString::new(value) else {
+            return;
+        };
+        self.set_async(name, sys::mpv_format_MPV_FORMAT_STRING, value_c.as_ptr());
+    }
+
     /// Queue a property change and return at once — unlike set_property, it never waits for
     /// mpv's core, so it's safe on the render thread (client.h). A failure comes back later as
     /// an error event (poll logs it).
@@ -1034,6 +1074,8 @@ impl Player {
                 .get_property::<bool>("interpolation")
                 .unwrap_or(false),
             tscale: g_s("tscale"),
+            scale: g_s("scale"),
+            glsl_shaders: g_s("glsl-shaders"),
             avsync: g_f("avsync"),
             audio_speed_correction: g_f("audio-speed-correction"),
             video_speed_correction: g_f("video-speed-correction"),

@@ -2,7 +2,8 @@
 //   update_stats_window  StatsData → AppState stat-* props
 //                        VSYNC: mpv's video-sync mode (+ vsync-ratio while mpv's display sync
 //                        is on — it needs timer.rs's display_rate under the render API); INTERP:
-//                        interpolation on (+ tscale) / waiting for display sync / off; SPEED: audio/video speed corrections; DROP: VO drops ·
+//                        interpolation on (+ tscale) / waiting for display sync / off; SCALER: the
+//                        upscaler (FSR 1 / mpv's scale) and whether it scales up at all; SPEED: audio/video speed corrections; DROP: VO drops ·
 //                        decoder drops · mistimed frames; CLR IN/OUT via fmt_color (IN = the
 //                        source's video-params; OUT = video-target-params, never available under
 //                        vo=libmpv → "n/a"); HDR row from hdr::status_text
@@ -166,6 +167,23 @@ pub(crate) fn update_stats_window(w: &MainWindow, s: &fjord_player::StatsData) {
         (true, false) => "on  ·  waiting for display sync".into(),
         (false, _) => "off".into(),
     };
+    // The upscaler, and whether anything is scaled up at all (with display sync matching the TV to
+    // the video's resolution, nothing is — the TV upscales).
+    let scaling_up = s.video_out_w > s.width && s.width > 0;
+    let scaler = if s.glsl_shaders.to_ascii_lowercase().contains("fsr") {
+        "FSR 1".to_string()
+    } else if s.scale.is_empty() {
+        "lanczos".to_string()
+    } else {
+        s.scale.clone()
+    };
+    let scaler = if scaling_up {
+        format!("{scaler}  ·  {}→{} px wide", s.width, s.video_out_w)
+    } else if s.width > 0 {
+        format!("{scaler}  ·  not scaling up (1:1 or smaller)")
+    } else {
+        scaler
+    };
     let avsync = format!("{:+.3}s", s.avsync);
 
     // audio-speed-correction ≈ 0 when passthrough is active (can't resample);
@@ -215,6 +233,7 @@ pub(crate) fn update_stats_window(w: &MainWindow, s: &fjord_player::StatsData) {
     g.set_stat_display(ss(&display));
     g.set_stat_vsync(ss(&vsync));
     g.set_stat_interp(ss(&interp));
+    g.set_stat_scaler(ss(&scaler));
     g.set_stat_avsync(ss(&avsync));
     g.set_stat_speed(ss(&speed));
     g.set_stat_drop(ss(&drop_));

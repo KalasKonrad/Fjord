@@ -218,6 +218,9 @@ fn default_hwdec() -> String {
 pub(crate) fn default_video_sync() -> String {
     "display-vdrop".into()
 }
+pub(crate) fn default_upscaler() -> String {
+    "default".into()
+}
 pub(crate) fn default_tscale() -> String {
     "oversample".into()
 }
@@ -406,6 +409,9 @@ pub(crate) struct DeviceConfig {
     pub interpolation: bool,
     #[serde(default = "default_tscale")]
     pub tscale: String,
+    /// Settings → Display → Upscaler: "default" (mpv's lanczos) | "sharp" | "fsr" (upscaler.rs).
+    #[serde(default = "default_upscaler")]
+    pub upscaler: String,
     #[serde(default = "default_tone_mapping")]
     pub tone_mapping: String,
     #[serde(default)]
@@ -568,6 +574,7 @@ impl Default for DeviceConfig {
             video_latency_hacks: false,
             interpolation: false,
             tscale: default_tscale(),
+            upscaler: default_upscaler(),
             tone_mapping: default_tone_mapping(),
             target_colorspace_hint: false,
             separate_video_surface: true,
@@ -1302,6 +1309,7 @@ fn migrate_legacy_config(l: LegacyConfig) -> Config {
         video_latency_hacks: l.video_latency_hacks,
         interpolation: l.interpolation,
         tscale: l.tscale,
+        upscaler: default_upscaler(),
         tone_mapping: l.tone_mapping,
         target_colorspace_hint: l.target_colorspace_hint,
         separate_video_surface: true,
@@ -2532,6 +2540,8 @@ impl FjordState {
             dither_off: c.video_dither_off,
             interpolation: c.interpolation,
             tscale: c.tscale.clone(),
+            scale: crate::upscaler::scale_for(&c.upscaler).to_string(),
+            fsr_shaders: crate::upscaler::fsr_for(&c.upscaler),
             tone_mapping: c.tone_mapping.clone(),
             target_colorspace_hint: c.target_colorspace_hint,
             deinterlace: c.deinterlace.clone(),

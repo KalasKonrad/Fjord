@@ -23,6 +23,13 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **New: Settings → Display → Upscaler** — how the video is scaled up when
+  Fjord draws it larger than it is: Default (Lanczos), Sharp (EWA Lanczos) or
+  FSR 1 (AMD FidelityFX Super Resolution, bundled; an HDR copy is used for HDR
+  files). The stats overlay's new SCALER line shows which one runs and whether
+  anything is scaled up at all — with display sync switching the TV to the
+  video's resolution, the TV upscales instead.
+
 - **Improved: Interpolation shows when it can work.** Settings → Advanced →
   Motion interpolation (and its temporal scaler) only appear with a display
   Video sync (display-vdrop, -resample or -adrop) — with "audio" mpv ignored

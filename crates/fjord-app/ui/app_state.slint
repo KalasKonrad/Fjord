@@ -997,6 +997,7 @@ export global AppState {
     in property <string> stat-display:  "—";
     in property <string> stat-vsync:    "—";
     in property <string> stat-interp:   "—";
+    in property <string> stat-scaler:   "—";
     in property <string> stat-avsync:   "—";
     in property <string> stat-speed:    "—";
     in property <string> stat-drop:     "—";
@@ -1666,6 +1667,7 @@ export global AppState {
     in-out property <bool> settings-video-latency-hacks:  false;
     in-out property <bool> settings-interpolation:        false;
     in-out property <string> settings-tscale:               "oversample";
+    in-out property <string> settings-upscaler:             "default";
     in-out property <string> settings-tone-mapping:         "auto";
     in-out property <bool> settings-target-colorspace-hint: false;
     // Settings → Display → HDR → "Separate video surface" (HDR Stage 5,

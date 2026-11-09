@@ -84,7 +84,8 @@ Needs `mpv`/libmpv (`pacman -S mpv`). Optional at runtime: `yt-dlp` (trailers), 
   (Wayland color-management worker), `video_surface.rs` (video subsurface) + `dmabuf_plane.rs` (its own 10-bit
   buffers), `display_sync.rs` (kscreen-doctor mode matching), `activity.rs` (winit event tap: idle detection +
   Wayland handles), `pipewire_fix.rs`, `appearance.rs` (the desktop's light/dark preference, freedesktop portal),
-  `gamepad.rs` (game pads via gilrs → the key each input stands for, through `AppState.handle-key`).
+  `gamepad.rs` (game pads via gilrs → the key each input stands for, through `AppState.handle-key`), `upscaler.rs`
+  (Settings' Upscaler → mpv's `scale` or the bundled FSR 1 shader, `assets/shaders/FSR.glsl`, MIT).
 
 ## Architecture rules
 

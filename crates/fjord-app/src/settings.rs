@@ -124,6 +124,7 @@ const VID_VF: &str = "video.vf";
 const VID_DEINTERLACE: &str = "video.deinterlace";
 const VID_VIDEO_SYNC: &str = "video.video_sync";
 const VID_INTERPOLATION: &str = "video.interpolation"; // virtual — only with a display video sync
+const VID_UPSCALER: &str = "video.upscaler";
 const VID_TSCALE: &str = "video.tscale"; // virtual — only when interpolation is on (and shown)
 const VID_TARGET_COLORSPACE: &str = "video.target_colorspace";
 const VID_SEPARATE_VIDEO_SURFACE: &str = "video.separate_video_surface";
@@ -280,6 +281,7 @@ const SECTION_ROWS: &[(&str, &[&str])] = &[
             VID_TARGET_COLORSPACE,
             VID_SEPARATE_VIDEO_SURFACE,
             VID_TONE_MAPPING,
+            VID_UPSCALER,
             VID_DISPLAY_SYNC_ENABLED,
             VID_DISPLAY_SYNC_SCREEN,
             VID_DISPLAY_SYNC_SYNC_RESOLUTION,
@@ -998,6 +1000,12 @@ const VIDEO_SYNC_OPTIONS: &[(&str, &str)] = &[
     ("display-adrop", "display-adrop"),
     ("desync", "desync"),
 ];
+// Stored keys = upscaler.rs's choices.
+const UPSCALER_OPTIONS: &[(&str, &str)] = &[
+    ("default", "Default (Lanczos)"),
+    ("sharp", "Sharp (EWA Lanczos)"),
+    ("fsr", "FSR 1 (AMD FidelityFX)"),
+];
 const TSCALE_OPTIONS: &[(&str, &str)] = &[
     ("oversample", "oversample"),
     ("catmull_rom", "catmull_rom"),
@@ -1453,6 +1461,14 @@ static CHOICES: &[Choice] = &[
         ),
     },
     Choice {
+        key: VID_UPSCALER,
+        options: UPSCALER_OPTIONS,
+        field: Field::Str(
+            |g| g.get_settings_upscaler(),
+            |g, v| g.set_settings_upscaler(v),
+        ),
+    },
+    Choice {
         key: VID_TSCALE,
         options: TSCALE_OPTIONS,
         field: Field::Str(|g| g.get_settings_tscale(), |g, v| g.set_settings_tscale(v)),
@@ -1861,6 +1877,13 @@ static DEVICE_BINDS: &[DeviceBind] = &[
         tscale,
         get_settings_tscale,
         set_settings_tscale,
+        str
+    ),
+    bind!(
+        Device,
+        upscaler,
+        get_settings_upscaler,
+        set_settings_upscaler,
         str
     ),
     bind!(
