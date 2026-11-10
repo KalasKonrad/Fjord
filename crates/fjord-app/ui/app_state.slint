@@ -114,6 +114,8 @@
 //   Calendar / blocklist  show-calendar + calendar-days/-leading-blanks/-total-days/…; show-blocklist + rows
 //   Settings state        hwdec, interpolation, audio-spdif, sub-lang, skip-*-mode/secs, display-sync-*, …;
 //                         settings-row-shown(key) — every row condition once (settings.slint + row_shown);
+//                         settings-row-blocked(key) — why a shown row is grayed ("" = usable; SettingsRow,
+//                         row_blocked);
 //                         setting-options/-label/-choose (fixed-choice rows ↔ settings.rs CHOICES);
 //                         settings-card-size → card-scale (0.8/1/1.25/1.5/2) for every poster card;
 //                         settings-copy-sources-display + the Copy settings confirm (show-/-focused,
@@ -748,26 +750,37 @@ export global AppState {
         if key == "integrations.manage_blocklist" {
             return settings-seerr-enabled && seerr-connected && seerr-can-manage-blocklist;
         }
-        // vf only works around NVDEC's stride corruption (CLAUDE.md): only with NVDEC chosen
-        // explicitly — "auto" counts as not NVDEC.
-        if key == "video.vf" {
-            return settings-hwdec == "nvdec" || settings-hwdec == "nvdec-copy";
-        }
-        // Interpolation needs a display video sync (mpv ignores it with `audio`), tscale needs both.
-        if key == "video.interpolation" {
-            return settings-display-video-sync;
-        }
+        // tscale: only while interpolation is on and can run (settings-row-blocked).
         if key == "video.tscale" {
-            return settings-interpolation && settings-display-video-sync;
+            return settings-interpolation && settings-row-blocked("video.interpolation") == "";
         }
         if key == "video.video_latency_hacks" {
             return settings-video-sync == "display-resample";
         }
-        // 10-bit video plane: only with the separate video surface (Wayland).
+        // 10-bit video plane: Wayland only (grayed without the separate video surface).
         if key == "video.video_own_buffers" {
-            return is-wayland && settings-separate-video-surface;
+            return is-wayland;
         }
         true
+    }
+    // Why a row can't be used now ("" = it can): a separate feature another setting rules out stays
+    // on screen, grayed, with this reason, and Enter/Right/clicks leave it alone. Details of the row
+    // above (auto-skip seconds, display-sync details, tscale…) are hidden instead (settings-row-shown).
+    // settings.rs's row_blocked asks this; SettingsRow draws it from its key.
+    public pure function settings-row-blocked(key: string) -> string {
+        // mpv ignores interpolation with `audio` sync ("requires enabling display-sync mode").
+        if key == "video.interpolation" && !settings-display-video-sync {
+            return "Needs Video sync set to a display mode (above)";
+        }
+        // vf only works around NVDEC's stride corruption (CLAUDE.md): only with NVDEC chosen
+        // explicitly — "auto" counts as not NVDEC.
+        if key == "video.vf" && settings-hwdec != "nvdec" && settings-hwdec != "nvdec-copy" {
+            return "Only with Hardware decode set to nvdec or nvdec-copy (above)";
+        }
+        if key == "video.video_own_buffers" && !settings-separate-video-surface {
+            return "Needs Separate video surface on (above)";
+        }
+        ""
     }
     // Approximate scroll-target index for the focused row within the
     // current section's visible list (see settings.slint's kb-y) — Rust
@@ -1665,7 +1678,7 @@ export global AppState {
     in-out property <string> settings-hwdec:                "auto";
     in-out property <string> settings-vf:                   "";
     in-out property <string> settings-video-sync:           "display-vdrop";
-    // A display-* Video sync: what Interpolation needs (settings-row-shown).
+    // A display-* Video sync: what Interpolation needs (settings-row-blocked).
     out property <bool> settings-display-video-sync: settings-video-sync == "display-resample"
         || settings-video-sync == "display-vdrop" || settings-video-sync == "display-adrop";
     in-out property <bool> settings-opengl-early-flush:   false;

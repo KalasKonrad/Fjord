@@ -13,10 +13,11 @@
 //   Row keys     the const block below, "<section>.<field>", grouped by section (bespoke button
 //                rows — Sign Out, Add Account, Connect/Disconnect, Manage Blocklist, Prewarm —
 //                use the same shape)
-//   SECTION_ROWS / row_shown / section_row_keys  every row per section in on-screen order (a
-//                test checks it against settings.slint), whether a row is shown (AppState's
-//                settings-row-shown), and the rows on screen now — the source of truth for Up/Down
-//                stepping
+//   SECTION_ROWS / row_shown / row_blocked / section_row_keys  every row per section in on-screen
+//                order (a test checks it against settings.slint), whether a row is shown (AppState's
+//                settings-row-shown), whether a shown row is grayed (settings-row-blocked: another
+//                setting rules it out — still focusable, Enter/Right ignore it), and the rows on
+//                screen now — the source of truth for Up/Down stepping
 //   set_focused / set_section / row_focused  focus helpers (row_focused = mouse click path)
 //   dispatch_settings  keyboard: section list → rows / key bindings; Enter opens a dropdown
 //                popup (Up/Down/Enter/Esc inside it); confirm dialogs checked first
@@ -129,7 +130,7 @@ const VID_HWDEC: &str = "video.hwdec";
 const VID_VF: &str = "video.vf";
 const VID_DEINTERLACE: &str = "video.deinterlace";
 const VID_VIDEO_SYNC: &str = "video.video_sync";
-const VID_INTERPOLATION: &str = "video.interpolation"; // virtual — only with a display video sync
+const VID_INTERPOLATION: &str = "video.interpolation"; // grayed without a display video sync
 const VID_UPSCALER: &str = "video.upscaler";
 const VID_TSCALE: &str = "video.tscale"; // virtual — only when interpolation is on (and shown)
 const VID_TARGET_COLORSPACE: &str = "video.target_colorspace";
@@ -414,6 +415,12 @@ fn row_shown(key: &str, g: &crate::AppState<'_>) -> bool {
     g.invoke_settings_row_shown(key.into())
 }
 
+/// Whether a shown row is grayed because another setting rules it out — AppState's
+/// `settings-row-blocked` (SettingsRow draws the reason). It stays focusable; Enter/Right skip it.
+fn row_blocked(key: &str, g: &crate::AppState<'_>) -> bool {
+    !g.invoke_settings_row_blocked(key.into()).is_empty()
+}
+
 fn section_row_keys(section: &str, g: &crate::AppState<'_>) -> Vec<&'static str> {
     SECTION_ROWS
         .iter()
@@ -581,6 +588,10 @@ pub(crate) fn dispatch_settings(action: &Action, g: &crate::AppState<'_>) -> Opt
                     }
                     return Some(true);
                 };
+                if row_blocked(sf.as_str(), g) {
+                    debug!("settings: {sf} is grayed — Enter ignored");
+                    return Some(true);
+                }
                 // Dropdown rows: show overlay with cursor on current value.
                 // Toggle/button/action rows: activate directly.
                 if is_dropdown_row(sf.as_str()) {
@@ -597,6 +608,10 @@ pub(crate) fn dispatch_settings(action: &Action, g: &crate::AppState<'_>) -> Opt
                     }
                     return Some(true);
                 };
+                if row_blocked(sf.as_str(), g) {
+                    debug!("settings: {sf} is grayed — Right ignored");
+                    return Some(true);
+                }
                 settings_row_action(sf.as_str(), g);
                 Some(true)
             }
@@ -4049,6 +4064,40 @@ mod tests {
         g.set_settings_device_is_pipewire(true);
         assert!(row_shown(AUD_ALSA_IRQ, &g));
         assert!(row_shown(VID_HWDEC, &g));
+    }
+
+    #[test]
+    fn a_ruled_out_row_is_grayed_and_keys_leave_it_alone() {
+        i_slint_backend_testing::init_no_event_loop();
+        let w = crate::MainWindow::new().unwrap();
+        let g = crate::AppState::get(&w);
+        g.set_settings_section(SECTION_PICTURE.into());
+        g.set_settings_interpolation(true);
+        g.set_settings_video_sync("audio".into());
+        // Still on screen (and in Up/Down's list), grayed; its tscale detail is hidden.
+        assert!(section_row_keys(SECTION_PICTURE, &g).contains(&VID_INTERPOLATION));
+        assert!(row_blocked(VID_INTERPOLATION, &g) && !row_shown(VID_TSCALE, &g));
+        set_focused(&g, VID_INTERPOLATION, 1);
+        for action in [Action::Confirm, Action::Right] {
+            assert_eq!(dispatch_settings(&action, &g), Some(true));
+            assert!(
+                g.get_settings_interpolation(),
+                "{action:?} changed a grayed row"
+            );
+        }
+        // A display sync frees it: Right flips it as usual.
+        g.set_settings_video_sync("display-vdrop".into());
+        assert!(!row_blocked(VID_INTERPOLATION, &g) && row_shown(VID_TSCALE, &g));
+        dispatch_settings(&Action::Right, &g);
+        assert!(!g.get_settings_interpolation());
+        // vf waits for NVDEC; own 10-bit buffers for the separate video surface.
+        assert!(row_blocked(VID_VF, &g));
+        g.set_settings_hwdec("nvdec-copy".into());
+        assert!(!row_blocked(VID_VF, &g));
+        g.set_settings_separate_video_surface(false);
+        assert!(row_blocked(VID_OWN_BUFFERS, &g));
+        // An ordinary row is never grayed.
+        assert!(!row_blocked(VID_HWDEC, &g));
     }
 
     #[test]

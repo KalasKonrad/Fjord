@@ -32,6 +32,12 @@ are bumped together as one step, not separately.
   a line saying what it's for and is split into groups. A setting that only
   applies under another one sits right below it: Video latency hacks moved
   under Video sync. Saved settings are unchanged.
+- **Improved: a setting another one rules out is grayed, not hidden,** and
+  says why: Motion interpolation (needs Video sync set to a display mode),
+  Video filter (only with NVDEC decoding) and Fjord's own 10-bit buffers
+  (needs Separate video surface). You can still move onto it to read the
+  reason; Enter and clicks leave it alone. Motion interpolation's description
+  now says when Sync refresh rate makes it unnecessary.
 
 - **Fixed: KDE dimmed the screen while you used the game pad,** and a pad
   press didn't wake it (only the mouse or keyboard did). The desktop only

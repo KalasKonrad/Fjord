@@ -180,7 +180,8 @@ Needs `mpv`/libmpv (`pacman -S mpv`). Optional at runtime: `yt-dlp` (trailers), 
   list is an `out property <[ZoneSlot]>` (`detail-buttons`, `request-detail-zones`…) built from named conditions
   (`detail-btn-resume`…) — the page mounts its elements by those names, Rust's `existing_*` is `keys::stops(…)`;
   Settings rows are gated only by `AppState.settings-row-shown(key)` (Rust's `row_shown` calls it; rows/order are
-  `settings::SECTION_ROWS`; tests check both). A new conditional element: name its condition there, never a
+  `settings::SECTION_ROWS`; tests check both); a row only for one choice of the row above sits right below it and hides;
+  a feature another setting rules out stays, grayed with the reason from `AppState.settings-row-blocked(key)`. A new conditional element: name its condition there, never a
   second copy in Rust or the page. The context menu is built in Rust only (`context_menu::menu_rows` → a `for`
   in context_menu.slint; Enter and click both run `activate`).
 - A card row's height is `AppState.row-h(card-h)` (title + cards + zoom room) — never `card-h + row-chrome-h` by hand;

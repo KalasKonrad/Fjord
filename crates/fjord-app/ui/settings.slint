@@ -4,7 +4,9 @@
 //                    AppState.settings-section (a string); a SERVER/CLIENT/SEERR info block
 //                    pinned to the bottom ("Not encrypted (http://)" for plain-HTTP connections)
 //     Right pane     Flickable; one `if` block per section (conditional rows are gated only by
-//                    AppState.settings-row-shown("<key>"), the S/PDIF group by its first row), grouped
+//                    AppState.settings-row-shown("<key>"), the S/PDIF group by its first row; a row
+//                    another setting rules out stays, grayed by SettingsRow with the reason from
+//                    AppState.settings-row-blocked), grouped
 //                    by task (0.5.1, again 0.5.2: a row that only applies under another setting sits
 //                    right below it; row keys keep their old prefixes); each section opens with a
 //                    SectionIntro line and splits into SectionHeader groups; rows saved per profile
@@ -16,7 +18,8 @@
 //       Subtitles &  audio language; subtitles (+ languages, type, scale, position, ASS styling,
 //        language    color, background)
 //       Picture      SMOOTHNESS video sync (+ passthrough/display-resample warning, latency hacks
-//                    for display-resample), interpolation (display-* sync) + tscale; SCALING
+//                    for display-resample), interpolation (grayed without a display-* sync; its
+//                    description changes with Sync refresh rate) + tscale; SCALING
 //                    upscaler; HDR passthrough + tone mapping (+ per-curve description)
 //       TV & display ("display") launch fullscreen; display sync (+ screen, resolution/refresh
 //                    sync, HD video in 4K, default resolution/Hz, 4K/1080p scaling, 4K odd-fps
@@ -37,8 +40,9 @@
 //                    display/discover language, discover region, Manage Blocklist
 //                    (seerr-can-manage-blocklist)
 //       Key Bindings rebind rows (keybinding-focused 0..N, positional) + Reset to Defaults
-//       Advanced     hwdec, vf (NVDEC only), deinterlace; separate video surface (Wayland); own
-//                    10-bit buffers (separate surface), dithering off; early flush; cache secs/MB;
+//       Advanced     hwdec, vf (grayed unless NVDEC), deinterlace; separate video surface
+//                    (Wayland); own 10-bit buffers (Wayland, grayed without the separate surface),
+//                    dithering off; early flush; cache secs/MB;
 //                    prewarm metadata/images; log level
 //     Dialogs        Key Bindings reset + rebind-collision confirms, Copy settings confirm,
 //                    Disconnect Seerr confirm
@@ -693,10 +697,13 @@ export component SettingsScreen inherits Rectangle {
                             }
                         }
 
-                        if AppState.settings-row-shown("video.interpolation"): SettingsRow {
+                        // Grayed without a display Video sync (settings-row-blocked).
+                        SettingsRow {
                             key: "video.interpolation";
                             title: "Motion interpolation";
-                            subtitle: "Blends frames for smoother motion when the TV's refresh rate isn't the video's own rate. With TV & display's Sync refresh rate on, that only happens when the TV has no mode at the video's rate. Needs a display Video sync";
+                            subtitle: AppState.settings-display-sync-enabled && AppState.settings-display-sync-sync-refresh-rate
+                                ? "Blends frames for smoother motion when the TV's refresh rate isn't the video's own rate. TV & display's Sync refresh rate is on, so that's only when the TV has no mode at the video's rate"
+                                : "Blends frames for smoother motion when the TV's refresh rate isn't the video's own rate, e.g. a 24 fps film on a 60 Hz screen";
                             ToggleSwitch {
                                 checked <=> AppState.settings-interpolation;
                                 toggled => { AppState.settings-changed(); AppState.refocus(); }
@@ -2031,7 +2038,8 @@ export component SettingsScreen inherits Rectangle {
 
                         // Only with NVDEC selected explicitly (works around NVDEC's stride corruption, see
                         // CLAUDE.md) — hidden for every other hwdec, including "auto".
-                    if AppState.settings-row-shown("video.vf"): SettingsRow {
+                    // Grayed unless Hardware decode is nvdec/nvdec-copy (settings-row-blocked).
+                        SettingsRow {
                             key: "video.vf";
                             choice: true;
                             value: AppState.settings-vf;

@@ -2,7 +2,9 @@
 //   ToggleSwitch / SectionHeader / SectionIntro (a section's one-line description) /
 //   SettingsDropdown / SettingsRow (key = settings.rs row key;
 //                      `choice: true` + `value` = a fixed-choice row: its dropdown comes from
-//                      settings.rs CHOICES via AppState.setting-options/-label/-choose)
+//                      settings.rs CHOICES via AppState.setting-options/-label/-choose; grayed —
+//                      reason first, controls faded, a click only focuses — while
+//                      AppState.settings-row-blocked(key) names one)
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
@@ -212,6 +214,10 @@ export component SettingsRow inherits Rectangle {
     // `value` is the stored value (an AppState.settings-… property); a pick saves through Rust.
     in property <bool> choice: false;
     in property <string> value;
+    // Ruled out by another setting: grayed, the subtitle starts with why, and a click only focuses
+    // the row (the keys skip it in settings.rs) — it stays focusable so the reason can be read.
+    property <string> blocked-why: AppState.settings-row-blocked(root.key);
+    property <bool> blocked: blocked-why != "";
 
     border-radius: Theme.radius;
     background: {
@@ -259,7 +265,7 @@ export component SettingsRow inherits Rectangle {
                 alignment: start;
                 Text {
                     text: root.title;
-                    color: Theme.text;
+                    color: root.blocked ? Theme.text-disabled : Theme.text;
                     font-size: 14px * AppState.text-scale;
                 }
 
@@ -285,7 +291,7 @@ export component SettingsRow inherits Rectangle {
             // One line, cut with "…" — except on the focused row, which shows the whole description
             // (a remote can't hover to read the rest).
             Text {
-                text: root.subtitle;
+                text: root.blocked ? root.blocked-why + " — " + root.subtitle : root.subtitle;
                 color: Theme.text-muted;
                 font-size: 12px * AppState.text-scale;
                 wrap: AppState.settings-focused == root.key ? TextWrap.word-wrap : TextWrap.no-wrap;
@@ -293,14 +299,27 @@ export component SettingsRow inherits Rectangle {
             }
         }
 
-        @children
-        if root.choice: SettingsDropdown {
-            model: AppState.setting-options(root.key);
-            current-value: AppState.setting-label(root.key, root.value);
-            selected(v) => {
-                AppState.setting-choose(root.key, v);
-                AppState.refocus();
+        // The switch or dropdown, faded while the row is grayed.
+        controls := Rectangle {
+            opacity: root.blocked ? 0.4 : 1;
+            HorizontalLayout {
+                @children
+                if root.choice: SettingsDropdown {
+                    model: AppState.setting-options(root.key);
+                    current-value: AppState.setting-label(root.key, root.value);
+                    selected(v) => {
+                        AppState.setting-choose(root.key, v);
+                        AppState.refocus();
+                    }
+                }
             }
+        }
+    }
+
+    // A grayed row: a click only focuses it (the switch or dropdown underneath stays shut).
+    if root.blocked: TouchArea {
+        clicked => {
+            AppState.settings-row-focused(root.key);
         }
     }
 }
