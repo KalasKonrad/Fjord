@@ -2976,6 +2976,8 @@ How: AppState's `settings-row-blocked(key) -> string` (app_state.slint, next to 
 
 Not grayed: Motion interpolation with Sync refresh rate on — the TV may have no mode at the video's rate (then interpolation helps), so its description says so instead.
 
+Live-checked on the dev machine the same evening (r1325): the new sidebar order, Up/Down through every section, the grayed rows (light theme too, Enter/Right ignored, own 10-bit buffers following Separate video surface) and scrolling — all fine.
+
 ### The pad didn't keep KDE awake (2026-11-10, branch `release-0.5.2`)
 
 User: KDE dims the screen after a while when using the controller. KDE judges idleness by keyboard and mouse input through KWin; Fjord reads pads straight from evdev, so KWin never sees them. Tried first: `org.freedesktop.ScreenSaver.SimulateUserActivity` (the method exists on Plasma 6.8). Tested on the dev machine before shipping: `GetSessionIdleTime` answers "not supported on this platform" on Wayland — KIdleTime has no idle-time access there, and its simulateUserActivity doesn't reach KWin's idle timer either — so that call would have done nothing. Used instead: the ScreenSaver + PowerManagement `Inhibit` that playback already holds (proven on the HTPC: no dimming during playback). `playback::hold_activity` / `ActivityHold` (inhibit.rs) take the same two blocks on their own session-bus connection — releasing them never touches playback's, and a dropped connection releases them too (KWin/PowerDevil tie inhibitions to the connection); `dbus_inhibit` got a reason parameter ("Playback" / "Game pad in use"). The pad thread's `KeepAwake` holds it from the first pad input until 5 minutes without one (`release_due`, unit-tested), then KDE's own timers apply again. Not live-tested.
