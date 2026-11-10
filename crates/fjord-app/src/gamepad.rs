@@ -13,10 +13,12 @@
 //                 text field gets Escape, not Backspace
 //   action_for    the other buttons → a Fjord action, by screen (browsing / video player) — the
 //                 table agreed for the Xbox 360 pad (PLAN 0.5.2 item 8); unit-tested
-//   KeepAwake     KDE judges idleness by keyboard/mouse through KWin, which never sees the pad (and
-//                 SimulateUserActivity doesn't reach KWin's timer on Plasma 6 Wayland): the reader
-//                 thread holds playback::hold_activity (screen blanking + sleep blocked) from the
-//                 first pad input until PAD_HOLD without one (release_due, unit-tested)
+//   KeepAwake     KDE judges idleness by keyboard/mouse through KWin, which never sees the pad (the
+//                 D-Bus SimulateUserActivity is an empty function in KIdleTime's Wayland plugin):
+//                 pad input → KWin's org_kde_kwin_idle simulate_user_activity (KwinIdle, its own
+//                 Wayland connection; at most every KWIN_ACTIVITY_EVERY, activity_due) — no dimming,
+//                 and a dimmed screen wakes; without that protocol, playback::hold_activity from
+//                 the first pad input until PAD_HOLD without one (release_due) — both unit-tested
 //   key_for       the key bound to an action (the player's bindings first while a video plays,
 //                 and last otherwise — global.rs's music play/pause reads the player map; the
 //                 fewest modifiers, then the shortest key — deterministic); unit-tested
@@ -28,6 +30,9 @@ use gilrs::{Axis, Button, EventType, Gilrs};
 use slint::winit_030::WinitWindowAccessor;
 use slint::{ComponentHandle, Global};
 use tracing::{debug, info};
+
+use wayland_client::protocol::{wl_registry, wl_seat};
+use wayland_protocols_plasma::idle::client::{org_kde_kwin_idle, org_kde_kwin_idle_timeout};
 
 use crate::activity::ActivityClock;
 use crate::config::FjordState;
@@ -52,7 +57,108 @@ fn release_due(last_input: Option<Instant>, now: Instant) -> bool {
 }
 
 /// Blocks screen blanking and sleep while the pad is in use (KDE never sees pad input).
+/// KWin's idle timer through its `org_kde_kwin_idle` protocol: `simulate_user_activity` runs
+/// KWin's own `InputRedirection::simulateUserActivity` (every idle detector — PowerDevil's dim,
+/// screen-off and sleep timers restart, and a dimmed screen wakes), the same call KWin's
+/// (default-off) gamecontroller plugin makes per pad event. Its own Wayland connection.
+struct KwinIdle {
+    conn: wayland_client::Connection,
+    queue: wayland_client::EventQueue<IdleState>,
+    timeout: org_kde_kwin_idle_timeout::OrgKdeKwinIdleTimeout,
+}
+
+struct IdleState;
+
+impl KwinIdle {
+    fn connect() -> Option<Self> {
+        let conn = wayland_client::Connection::connect_to_env().ok()?;
+        let (globals, queue) =
+            wayland_client::globals::registry_queue_init::<IdleState>(&conn).ok()?;
+        let qh = queue.handle();
+        let seat: wl_seat::WlSeat = globals.bind(&qh, 1..=1, ()).ok()?;
+        let idle: org_kde_kwin_idle::OrgKdeKwinIdle = globals.bind(&qh, 1..=1, ()).ok()?;
+        // The timeout's own length doesn't matter: only simulate_user_activity is used.
+        let timeout = idle.get_idle_timeout(&seat, 60_000, &qh, ());
+        conn.flush().ok()?;
+        Some(KwinIdle {
+            conn,
+            queue,
+            timeout,
+        })
+    }
+
+    fn activity(&mut self) {
+        self.timeout.simulate_user_activity();
+        let _ = self.conn.flush();
+        // Drain the timeout's idle/resumed events (unused).
+        let _ = self.queue.dispatch_pending(&mut IdleState);
+    }
+}
+
+impl wayland_client::Dispatch<wl_registry::WlRegistry, wayland_client::globals::GlobalListContents>
+    for IdleState
+{
+    fn event(
+        _: &mut Self,
+        _: &wl_registry::WlRegistry,
+        _: wl_registry::Event,
+        _: &wayland_client::globals::GlobalListContents,
+        _: &wayland_client::Connection,
+        _: &wayland_client::QueueHandle<Self>,
+    ) {
+    }
+}
+
+impl wayland_client::Dispatch<wl_seat::WlSeat, ()> for IdleState {
+    fn event(
+        _: &mut Self,
+        _: &wl_seat::WlSeat,
+        _: wl_seat::Event,
+        _: &(),
+        _: &wayland_client::Connection,
+        _: &wayland_client::QueueHandle<Self>,
+    ) {
+    }
+}
+
+impl wayland_client::Dispatch<org_kde_kwin_idle::OrgKdeKwinIdle, ()> for IdleState {
+    fn event(
+        _: &mut Self,
+        _: &org_kde_kwin_idle::OrgKdeKwinIdle,
+        _: org_kde_kwin_idle::Event,
+        _: &(),
+        _: &wayland_client::Connection,
+        _: &wayland_client::QueueHandle<Self>,
+    ) {
+    }
+}
+
+impl wayland_client::Dispatch<org_kde_kwin_idle_timeout::OrgKdeKwinIdleTimeout, ()> for IdleState {
+    fn event(
+        _: &mut Self,
+        _: &org_kde_kwin_idle_timeout::OrgKdeKwinIdleTimeout,
+        _: org_kde_kwin_idle_timeout::Event,
+        _: &(),
+        _: &wayland_client::Connection,
+        _: &wayland_client::QueueHandle<Self>,
+    ) {
+    }
+}
+
+/// KWin hears of pad input at most this often (the first input after a pause at once).
+const KWIN_ACTIVITY_EVERY: Duration = Duration::from_secs(10);
+
+fn activity_due(last: Option<Instant>, now: Instant) -> bool {
+    last.is_none_or(|t| now.duration_since(t) >= KWIN_ACTIVITY_EVERY)
+}
+
+/// Keeps the desktop from dimming while the pad is used, and wakes it on a pad press: KWin's
+/// simulate_user_activity where KWin offers it, else the ScreenSaver/PowerManagement block from
+/// the first pad input until PAD_HOLD without one (it can't wake an already dimmed screen).
 struct KeepAwake {
+    kwin: Option<KwinIdle>,
+    kwin_tried: bool,
+    last_activity: Option<Instant>,
     hold: Option<crate::playback::ActivityHold>,
     last_input: Option<Instant>,
     failed: bool,
@@ -61,6 +167,9 @@ struct KeepAwake {
 impl KeepAwake {
     fn new() -> Self {
         KeepAwake {
+            kwin: None,
+            kwin_tried: false,
+            last_activity: None,
             hold: None,
             last_input: None,
             failed: false,
@@ -69,6 +178,22 @@ impl KeepAwake {
 
     fn input(&mut self, now: Instant) {
         self.last_input = Some(now);
+        if !self.kwin_tried {
+            self.kwin_tried = true;
+            self.kwin = KwinIdle::connect();
+            if self.kwin.is_some() {
+                info!("gamepad: pad input counts as activity for KWin (org_kde_kwin_idle)");
+            } else {
+                debug!("gamepad: no KWin idle protocol — the screen-saver block instead");
+            }
+        }
+        if let Some(kwin) = self.kwin.as_mut() {
+            if activity_due(self.last_activity, now) {
+                self.last_activity = Some(now);
+                kwin.activity();
+            }
+            return;
+        }
         if self.hold.is_some() || self.failed {
             return;
         }
@@ -532,6 +657,14 @@ mod tests {
         assert_eq!(pad.right_stick(-0.7, t), [(PadInput::VolumeDown, false)]);
         assert!(pad.right_stick(0.0, t).is_empty());
         assert!(pad.tick(t + REPEAT_DELAY * 3).is_empty());
+    }
+
+    #[test]
+    fn kwin_hears_of_pad_input_at_once_then_at_most_every_10_s() {
+        let t = Instant::now();
+        assert!(activity_due(None, t));
+        assert!(!activity_due(Some(t), t + KWIN_ACTIVITY_EVERY / 2));
+        assert!(activity_due(Some(t), t + KWIN_ACTIVITY_EVERY));
     }
 
     #[test]

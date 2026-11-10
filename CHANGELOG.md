@@ -23,10 +23,12 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
-- **Fixed: KDE dimmed the screen while you used the game pad.** The desktop
-  only sees keyboard and mouse, so it thought nobody was there. While the pad
-  is in use Fjord now keeps the screen on (and the computer awake); 5 minutes
-  after the last pad press the desktop's own idle settings apply again.
+- **Fixed: KDE dimmed the screen while you used the game pad,** and a pad
+  press didn't wake it (only the mouse or keyboard did). The desktop only
+  sees keyboard and mouse, so it thought nobody was there. Pad presses now
+  count as activity for KDE: the screen doesn't dim while you use the pad, a
+  dimmed screen wakes on the first press, and the desktop's own idle settings
+  apply as usual after the last one.
 
 - **Fixed: Discover stuck on "Loading Seerr's trending picks…"** when Seerr
   couldn't be reached (down, or not reachable yet right after startup). It now
