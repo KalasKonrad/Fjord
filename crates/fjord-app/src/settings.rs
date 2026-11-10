@@ -5,10 +5,11 @@
 //                Which rows exist is decided once, by AppState's settings-row-shown(key)
 //                (app_state.slint): settings.slint mounts its conditional rows by it and
 //                row_shown() asks it (a test checks settings.slint gates rows only that way).
-//   Sections     SECTION_PLAYBACK, SECTION_LANGUAGE, SECTION_DISPLAY, SECTION_AUDIO, SECTION_UI
-//                ("Interface"), SECTION_PROFILES, SECTION_INTEGRATIONS, SECTION_KEYBINDINGS,
-//                SECTION_ADVANCED (expert switches); ALL_SECTIONS is the sidebar order (0.5.1
-//                regrouping — row keys keep their old prefixes)
+//   Sections     SECTION_PLAYBACK, SECTION_LANGUAGE, SECTION_PICTURE, SECTION_DISPLAY ("TV &
+//                display"), SECTION_AUDIO, SECTION_MUSIC, SECTION_UI ("Interface"),
+//                SECTION_PROFILES, SECTION_INTEGRATIONS, SECTION_KEYBINDINGS, SECTION_ADVANCED
+//                (fixes for particular hardware); ALL_SECTIONS is the sidebar order (regrouped in
+//                0.5.1 and 0.5.2 — row keys keep their old prefixes)
 //   Row keys     the const block below, "<section>.<field>", grouped by section (bespoke button
 //                rows — Sign Out, Add Account, Connect/Disconnect, Manage Blocklist, Prewarm —
 //                use the same shape)
@@ -58,12 +59,15 @@ use slint::{ComponentHandle, Global, Model, ModelRc, SharedString, VecModel};
 use tracing::debug;
 
 // ── Sections (sidebar order) ────────────────────────────────────────────────
-// Grouped by what you want to change (0.5.1). Row keys keep their old prefixes ("video.hwdec" now
-// lives in Advanced): a key is only an identity, nothing derives the section from it.
+// Grouped by what you want to change (0.5.1, 0.5.2): a row that only applies under another
+// setting sits right below it. Row keys keep their old prefixes ("video.video_sync" lives in
+// Picture, "audio.gapless" in Music): a key is only an identity, nothing derives the section from it.
 pub(crate) const SECTION_PLAYBACK: &str = "playback";
 pub(crate) const SECTION_LANGUAGE: &str = "language";
+pub(crate) const SECTION_PICTURE: &str = "picture";
 pub(crate) const SECTION_DISPLAY: &str = "display";
 pub(crate) const SECTION_AUDIO: &str = "audio";
+pub(crate) const SECTION_MUSIC: &str = "music";
 pub(crate) const SECTION_UI: &str = "ui";
 pub(crate) const SECTION_PROFILES: &str = "profiles";
 pub(crate) const SECTION_INTEGRATIONS: &str = "integrations";
@@ -73,8 +77,10 @@ pub(crate) const SECTION_ADVANCED: &str = "advanced";
 const ALL_SECTIONS: &[&str] = &[
     SECTION_PLAYBACK,
     SECTION_LANGUAGE,
+    SECTION_PICTURE,
     SECTION_DISPLAY,
     SECTION_AUDIO,
+    SECTION_MUSIC,
     SECTION_UI,
     SECTION_PROFILES,
     SECTION_INTEGRATIONS,
@@ -276,13 +282,21 @@ const SECTION_ROWS: &[(&str, &[&str])] = &[
         ],
     ),
     (
+        SECTION_PICTURE,
+        &[
+            VID_VIDEO_SYNC,
+            VID_VIDEO_LATENCY_HACKS,
+            VID_INTERPOLATION,
+            VID_TSCALE,
+            VID_UPSCALER,
+            VID_TARGET_COLORSPACE,
+            VID_TONE_MAPPING,
+        ],
+    ),
+    (
         SECTION_DISPLAY,
         &[
             GEN_LAUNCH_FULLSCREEN,
-            VID_TARGET_COLORSPACE,
-            VID_SEPARATE_VIDEO_SURFACE,
-            VID_TONE_MAPPING,
-            VID_UPSCALER,
             VID_DISPLAY_SYNC_ENABLED,
             VID_DISPLAY_SYNC_SCREEN,
             VID_DISPLAY_SYNC_SYNC_RESOLUTION,
@@ -312,6 +326,11 @@ const SECTION_ROWS: &[(&str, &[&str])] = &[
             AUD_PASSTHROUGH_DEVICE,
             AUD_ALSA_IRQ,
             AUD_SKIP_FADE_MUTE,
+        ],
+    ),
+    (
+        SECTION_MUSIC,
+        &[
             AUD_GAPLESS,
             AUD_NOW_PLAYING_AUTO_OPEN,
             AUD_NOW_PLAYING_BG,
@@ -321,12 +340,13 @@ const SECTION_ROWS: &[(&str, &[&str])] = &[
     (
         SECTION_UI,
         &[
-            UI_CARD_SIZE,
-            UI_TEXT_SIZE,
-            UI_DASHBOARD_HERO,
-            UI_DASHBOARD_ROWS,
             UI_THEME,
             UI_ACCENT_COLOR,
+            UI_TEXT_SIZE,
+            UI_FONT_FAMILY,
+            UI_CARD_SIZE,
+            UI_DASHBOARD_HERO,
+            UI_DASHBOARD_ROWS,
             UI_FOCUS_COLOR,
             UI_FOCUS_WIDTH,
             UI_FOCUS_STYLE,
@@ -335,7 +355,6 @@ const SECTION_ROWS: &[(&str, &[&str])] = &[
             UI_FOCUS_OPACITY,
             UI_FOCUS_ZOOM,
             GEN_VIDEO_BEHIND,
-            UI_FONT_FAMILY,
             UI_ONSCREEN_KEYBOARD,
             UI_TOAST_SECS,
             UI_SCROLL_SPEED,
@@ -376,13 +395,10 @@ const SECTION_ROWS: &[(&str, &[&str])] = &[
             VID_HWDEC,
             VID_VF,
             VID_DEINTERLACE,
-            VID_VIDEO_SYNC,
-            VID_INTERPOLATION,
-            VID_TSCALE,
-            VID_OPENGL_EARLY_FLUSH,
-            VID_VIDEO_LATENCY_HACKS,
+            VID_SEPARATE_VIDEO_SURFACE,
             VID_OWN_BUFFERS,
             VID_DITHER_OFF,
+            VID_OPENGL_EARLY_FLUSH,
             PLY_CACHE_SECS,
             PLY_CACHE_MAX_MB,
             GEN_PREWARM_METADATA,

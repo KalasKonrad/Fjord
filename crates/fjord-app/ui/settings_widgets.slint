@@ -1,5 +1,6 @@
 // ── fjord-app · settings_widgets.slint ───────────────────────────────────────
-//   ToggleSwitch / SectionHeader / SettingsDropdown / SettingsRow (key = settings.rs row key;
+//   ToggleSwitch / SectionHeader / SectionIntro (a section's one-line description) /
+//   SettingsDropdown / SettingsRow (key = settings.rs row key;
 //                      `choice: true` + `value` = a fixed-choice row: its dropdown comes from
 //                      settings.rs CHOICES via AppState.setting-options/-label/-choose)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -177,6 +178,18 @@ export component SettingsDropdown inherits Rectangle {
                 }
             }
         }
+    }
+}
+
+// ── A section's description, above its first header ─────────────────────────────
+export component SectionIntro inherits VerticalLayout {
+    in property <string> text;
+    padding-bottom: 4px;
+    Text {
+        text: root.text;
+        color: Theme.text-muted;
+        font-size: 13px * AppState.text-scale;
+        wrap: word-wrap;
     }
 }
 

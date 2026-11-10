@@ -5,34 +5,41 @@
 //                    pinned to the bottom ("Not encrypted (http://)" for plain-HTTP connections)
 //     Right pane     Flickable; one `if` block per section (conditional rows are gated only by
 //                    AppState.settings-row-shown("<key>"), the S/PDIF group by its first row), grouped
-//                    by task since 0.5.1 (row keys keep their old prefixes); rows saved per profile
+//                    by task (0.5.1, again 0.5.2: a row that only applies under another setting sits
+//                    right below it; row keys keep their old prefixes); each section opens with a
+//                    SectionIntro line and splits into SectionHeader groups; rows saved per profile
 //                    carry `per-profile: true` (the "Profile" tag); fixed-choice dropdowns are
 //                    `choice: true; value: AppState.settings-…;` (options/labels: settings.rs CHOICES):
-//       Playback     intro/recap/preview/commercial modes (+ secs for ask-timed), credits mode
-//                    (+ secs), skip-fade ms; seek steps; hide controls after; trailer quality
+//       Playback     SKIPPING intro/recap/preview/commercial modes (+ secs for ask-timed), credits
+//                    mode (+ secs), skip-fade ms; CONTROLS seek steps, hide controls after;
+//                    TRAILERS trailer quality
 //       Subtitles &  audio language; subtitles (+ languages, type, scale, position, ASS styling,
 //        language    color, background)
-//       Display      launch fullscreen; HDR passthrough, separate video surface (Wayland), tone
-//                    mapping (+ per-curve description); display sync (+ screen, resolution/refresh
-//                    sync, default resolution/Hz, 4K/1080p scaling, 4K odd-fps mode, HDR/WCG
-//                    modes, trailers)
-//       Audio        device, channels, SPDIF (+ AC3/EAC3/DTS/DTS-HD/TrueHD, passthrough device,
-//                    ALSA IRQ scheduling on PipeWire, skip-fade mute); gapless, Now Playing
-//                    auto-open (off / 15 s … 5 min), Now Playing background (plain / soft /
-//                    strong), screensaver while music plays
-//       Interface    ("ui") card size, video behind UI, text font, on-screen keyboard, message
-//                    duration, scroll and animation speed; focus ring color/thickness/style, glow strength + Glow on (only
-//                    when the style isn't Line), transparency, zoom
+//       Picture      SMOOTHNESS video sync (+ passthrough/display-resample warning, latency hacks
+//                    for display-resample), interpolation (display-* sync) + tscale; SCALING
+//                    upscaler; HDR passthrough + tone mapping (+ per-curve description)
+//       TV & display ("display") launch fullscreen; display sync (+ screen, resolution/refresh
+//                    sync, HD video in 4K, default resolution/Hz, 4K/1080p scaling, 4K odd-fps
+//                    mode, HDR/WCG modes, trailers)
+//       Audio        device, channels; SPDIF (+ AC3/EAC3/DTS/DTS-HD/TrueHD, passthrough device,
+//                    ALSA IRQ scheduling on PipeWire, skip-fade mute, the display-resample warning)
+//       Music        gapless; Now Playing auto-open (off / 15 s … 5 min), Now Playing background
+//                    (plain / soft / strong), screensaver while music plays
+//       Interface    ("ui") APPEARANCE theme, accent, text size, text font, card size; DASHBOARDS
+//                    highlight, rows; FOCUS ring color/thickness/style, glow strength + Glow on
+//                    (only when the style isn't Line), transparency, zoom; BEHAVIOR video behind
+//                    UI, on-screen keyboard, message duration, scroll and animation speed
 //       Profiles     launch policy (+ default profile), Manage Profiles (master account), Copy
-//                    settings from… (when other profiles exist), account launch policy (+ default account), Add Account, remember login,
-//                    Sign Out, Bonfire Group (master account), Bonfire Admin (server admin)
+//                    settings from… (when other profiles exist), account launch policy (+ default
+//                    account), Add Account, remember login, Sign Out, Bonfire Group (master
+//                    account), Bonfire Admin (server admin)
 //       Integrations Seerr enabled, Connect/Disconnect, then (connected) streaming region,
 //                    display/discover language, discover region, Manage Blocklist
 //                    (seerr-can-manage-blocklist)
 //       Key Bindings rebind rows (keybinding-focused 0..N, positional) + Reset to Defaults
-//       Advanced     hwdec, vf (NVDEC only), deinterlace; video-sync, interpolation (+ tscale);
-//                    early flush, latency hacks (display-resample); own 10-bit buffers (separate
-//                    surface), dithering off; cache secs/MB; prewarm metadata/images; log level
+//       Advanced     hwdec, vf (NVDEC only), deinterlace; separate video surface (Wayland); own
+//                    10-bit buffers (separate surface), dithering off; early flush; cache secs/MB;
+//                    prewarm metadata/images; log level
 //     Dialogs        Key Bindings reset + rebind-collision confirms, Copy settings confirm,
 //                    Disconnect Seerr confirm
 //   Row identity     every row has a stable string `key` = the constant in settings.rs (keep the
@@ -53,6 +60,7 @@ import {
     FjordButton,
     ToggleSwitch,
     SectionHeader,
+    SectionIntro,
     SettingsDropdown,
     SettingsRow,
     PressPulse,
@@ -81,8 +89,10 @@ export component SettingsScreen inherits Rectangle {
     property <[string]> sect-keys:   [
         "playback",
         "language",
+        "picture",
         "display",
         "audio",
+        "music",
         "ui",
         "profiles",
         "integrations",
@@ -92,8 +102,10 @@ export component SettingsScreen inherits Rectangle {
     property <[string]> sect-labels: [
         "Playback",
         "Subtitles & language",
-        "Display",
+        "Picture",
+        "TV & display",
         "Audio",
+        "Music",
         "Interface",
         "Profiles",
         "Integrations",
@@ -342,9 +354,13 @@ export component SettingsScreen inherits Rectangle {
                     height: self.preferred-height;
                     x: Theme.sp-xl;
 
-                    // ── Playback section ────────────────────────────────────────────────────
+                    // ── Playback section ────────────────────────────────────────────────────────
                 if AppState.settings-section == "playback": VerticalLayout {
                         spacing: Theme.sp-sm;
+
+                        SectionIntro {
+                            text: "How films and episodes play: skipping intros and credits, seeking, the player controls and trailers.";
+                        }
 
                         SectionHeader {
                             text: "SKIPPING";
@@ -455,7 +471,7 @@ export component SettingsScreen inherits Rectangle {
                         }
 
                         SectionHeader {
-                            text: "SEEKING";
+                            text: "CONTROLS";
                         }
 
                         SettingsRow {
@@ -474,10 +490,6 @@ export component SettingsScreen inherits Rectangle {
                             value: AppState.settings-seek-step-long-secs;
                             title: "Long seek step";
                             subtitle: "Shift+Left/Right arrow seek amount during playback";
-                        }
-
-                        SectionHeader {
-                            text: "CONTROLS";
                         }
 
                         SettingsRow {
@@ -509,6 +521,10 @@ export component SettingsScreen inherits Rectangle {
                     // ── Subtitles & language section ────────────────────────────────────────
                 if AppState.settings-section == "language": VerticalLayout {
                         spacing: Theme.sp-sm;
+
+                        SectionIntro {
+                            text: "Which audio and subtitle tracks play by default, and how subtitles look.";
+                        }
 
                         SectionHeader {
                             text: "AUDIO";
@@ -621,22 +637,90 @@ export component SettingsScreen inherits Rectangle {
                         }
                     }
 
-                    // ── Display section ─────────────────────────────────────────────────────
-                if AppState.settings-section == "display": VerticalLayout {
+                    // ── Picture section ─────────────────────────────────────────────────────────
+                if AppState.settings-section == "picture": VerticalLayout {
                         spacing: Theme.sp-sm;
 
+                        SectionIntro {
+                            text: "How the video looks: smooth motion, upscaling and HDR.";
+                        }
+
                         SectionHeader {
-                            text: "WINDOW";
+                            text: "SMOOTHNESS";
                         }
 
                         SettingsRow {
-                            key: "general.launch_fullscreen";
-                            title: "Launch in fullscreen";
-                            subtitle: "Start Fjord in fullscreen mode";
+                            key: "video.video_sync";
+                            choice: true;
+                            value: AppState.settings-video-sync;
+                            title: "Video sync";
+                            subtitle: "display-vdrop (default): smooth, also with passthrough · display-resample: smoothest, but off with passthrough · audio: follows the audio clock, can judder · desync: debug";
+                        }
+
+                        if AppState.settings-audio-spdif && AppState.settings-video-sync == "display-resample" && (AppState.settings-spdif-ac3 || AppState.settings-spdif-eac3 || AppState.settings-spdif-dts || AppState.settings-spdif-dts-hd || AppState.settings-spdif-truehd): Rectangle {
+                            height: 24px;
+                            HorizontalLayout {
+                                x: 12px;
+                                y: 0px;
+                                height: parent.height;
+                                spacing: 4px;
+                                alignment: start;
+                                Text {
+                                    text: "⚠";
+                                    font-family: "Noto Sans Symbols 2";
+                                    color: Theme.error;
+                                    font-size: 12px * AppState.text-scale;
+                                    vertical-alignment: center;
+                                }
+
+                                Text {
+                                    text: "passthrough active — display-resample falls back to 'audio' sync (no display sync correction)";
+                                    color: Theme.error;
+                                    font-size: 12px * AppState.text-scale;
+                                    vertical-alignment: center;
+                                }
+                            }
+                        }
+
+                        if AppState.settings-row-shown("video.video_latency_hacks"): SettingsRow {
+                            key: "video.video_latency_hacks";
+                            title: "Video latency hacks";
+                            subtitle: "Works around imprecise vsync timestamps (NVIDIA legacy on Wayland); breaks interpolation — only if you need it";
+                            indent: true;
                             ToggleSwitch {
-                                checked <=> AppState.settings-launch-fullscreen;
+                                checked <=> AppState.settings-video-latency-hacks;
                                 toggled => { AppState.settings-changed(); AppState.refocus(); }
                             }
+                        }
+
+                        if AppState.settings-row-shown("video.interpolation"): SettingsRow {
+                            key: "video.interpolation";
+                            title: "Motion interpolation";
+                            subtitle: "Blends frames for smoother motion when the TV's refresh rate isn't the video's own rate. With TV & display's Sync refresh rate on, that only happens when the TV has no mode at the video's rate. Needs a display Video sync";
+                            ToggleSwitch {
+                                checked <=> AppState.settings-interpolation;
+                                toggled => { AppState.settings-changed(); AppState.refocus(); }
+                            }
+                        }
+
+                        if AppState.settings-row-shown("video.tscale"): SettingsRow {
+                            key: "video.tscale";
+                            choice: true;
+                            value: AppState.settings-tscale;
+                            title: "Temporal scaler (tscale)";
+                            subtitle: "Algorithm used for motion interpolation";
+                        }
+
+                        SectionHeader {
+                            text: "SCALING";
+                        }
+
+                        SettingsRow {
+                            key: "video.upscaler";
+                            choice: true;
+                            value: AppState.settings-upscaler;
+                            title: "Upscaler";
+                            subtitle: "How the video is scaled up when the screen has more pixels than the video — a 1080p video on a 4K mode (TV & display's Default resolution 4K, or \"HD video in 4K\"). When the screen's mode matches the video, the TV upscales instead";
                         }
 
                         SectionHeader {
@@ -649,17 +733,6 @@ export component SettingsScreen inherits Rectangle {
                             subtitle: "Send HDR metadata to the TV for real HDR; if it isn't accepted, the Tone mapping curve below is used";
                             ToggleSwitch {
                                 checked <=> AppState.settings-target-colorspace-hint;
-                                toggled => { AppState.settings-changed(); AppState.refocus(); }
-                            }
-                        }
-
-                        // HDR Stage 5 (2026-10-05) — Wayland only (settings::section_row_keys mirrors this).
-                    if AppState.settings-row-shown("video.separate_video_surface"): SettingsRow {
-                            key: "video.separate_video_surface";
-                            title: "Separate video surface";
-                            subtitle: "Keeps menus in the right colors during HDR. Turn off if video stutters. Applies from the next video";
-                            ToggleSwitch {
-                                checked <=> AppState.settings-separate-video-surface;
                                 toggled => { AppState.settings-changed(); AppState.refocus(); }
                             }
                         }
@@ -686,13 +759,28 @@ export component SettingsScreen inherits Rectangle {
                                 "HDR → SDR algorithm";
                             indent: true;
                         }
+                    }
+
+                    // ── TV & display section ────────────────────────────────────────────────────
+                if AppState.settings-section == "display": VerticalLayout {
+                        spacing: Theme.sp-sm;
+
+                        SectionIntro {
+                            text: "What Fjord asks of the TV: fullscreen, and switching its resolution and refresh rate to match each video.";
+                        }
+
+                        SectionHeader {
+                            text: "WINDOW";
+                        }
 
                         SettingsRow {
-                            key: "video.upscaler";
-                            choice: true;
-                            value: AppState.settings-upscaler;
-                            title: "Upscaler";
-                            subtitle: "How the video is scaled up when the screen has more pixels than the video — a 1080p video on a 4K mode (Default resolution 4K, or display sync's \"HD video in 4K\"). When the screen's mode matches the video, the TV upscales instead";
+                            key: "general.launch_fullscreen";
+                            title: "Launch in fullscreen";
+                            subtitle: "Start Fjord in fullscreen mode";
+                            ToggleSwitch {
+                                checked <=> AppState.settings-launch-fullscreen;
+                                toggled => { AppState.settings-changed(); AppState.refocus(); }
+                            }
                         }
 
                         SectionHeader {
@@ -837,9 +925,13 @@ export component SettingsScreen inherits Rectangle {
                         }
                     }
 
-                    // ── Audio section ───────────────────────────────────────────────────────
+                    // ── Audio section ───────────────────────────────────────────────────────────
                 if AppState.settings-section == "audio": VerticalLayout {
                         spacing: Theme.sp-sm;
+
+                        SectionIntro {
+                            text: "Where the sound goes and in what form: output device, channels, and passthrough to an AV receiver.";
+                        }
 
                         SectionHeader {
                             text: "OUTPUT";
@@ -992,9 +1084,18 @@ export component SettingsScreen inherits Rectangle {
                                 }
                             }
                         }
+                    }
+
+                    // ── Music section ───────────────────────────────────────────────────────────
+                if AppState.settings-section == "music": VerticalLayout {
+                        spacing: Theme.sp-sm;
+
+                        SectionIntro {
+                            text: "Music playback: gapless albums, the Now Playing screen and the screensaver.";
+                        }
 
                         SectionHeader {
-                            text: "MUSIC";
+                            text: "PLAYBACK";
                         }
 
                         SettingsRow {
@@ -1005,6 +1106,10 @@ export component SettingsScreen inherits Rectangle {
                                 checked <=> AppState.settings-gapless-audio;
                                 toggled => { AppState.settings-changed(); AppState.refocus(); }
                             }
+                        }
+
+                        SectionHeader {
+                            text: "NOW PLAYING";
                         }
 
                         SettingsRow {
@@ -1035,12 +1140,57 @@ export component SettingsScreen inherits Rectangle {
                         }
                     }
 
-                    // ── Interface section ───────────────────────────────────────────────────
+                    // ── Interface section ───────────────────────────────────────────────────────
                 if AppState.settings-section == "ui": VerticalLayout {
                         spacing: Theme.sp-sm;
 
+                        SectionIntro {
+                            text: "How Fjord looks and responds: theme, text, dashboards, the focus highlight and speeds.";
+                        }
+
                         SectionHeader {
-                            text: "INTERFACE";
+                            text: "APPEARANCE";
+                        }
+
+                        SettingsRow {
+                            key: "ui.theme";
+                            choice: true;
+                            value: AppState.settings-theme;
+                            per-profile: true;
+                            title: "Theme";
+                            subtitle: "Dark, light, or the desktop's choice — the player and Now Playing stay dark — saved for this profile";
+                        }
+
+                        SettingsRow {
+                            key: "ui.accent_color";
+                            choice: true;
+                            value: AppState.settings-accent-color;
+                            per-profile: true;
+                            title: "Accent color";
+                            subtitle: "Color of buttons, pills, progress bars and the selected tab — saved for this profile";
+                        }
+
+                        SettingsRow {
+                            key: "ui.text_size";
+                            choice: true;
+                            value: AppState.settings-text-size;
+                            per-profile: true;
+                            title: "Text size";
+                            subtitle: "Size of the text everywhere — menus, cards, settings, the player — saved for this profile";
+                        }
+
+                        // Text font (dynamic dropdown, same shape as Audio output
+                    // above — fetched at startup via fc-list, main.rs)
+                    SettingsRow {
+                            key: "ui.font_family";
+                            per-profile: true;
+                            title: "Text font";
+                            subtitle: "Inter is Fjord's own designed-around default — pick any font installed on this system to override it";
+                            SettingsDropdown {
+                                model <=> AppState.settings-font-family-display;
+                                current-value: AppState.settings-font-family-desc != "" ? AppState.settings-font-family-desc : "Inter (Fjord default)";
+                                selected(v) => { AppState.font-family-selected(v); AppState.refocus(); }
+                            }
                         }
 
                         // Poster card size — per profile, unlike the rows below.
@@ -1053,13 +1203,8 @@ export component SettingsScreen inherits Rectangle {
                             subtitle: "Size of the poster cards on every screen (dashboards, libraries, Discover) — saved for this profile";
                         }
 
-                        SettingsRow {
-                            key: "ui.text_size";
-                            choice: true;
-                            value: AppState.settings-text-size;
-                            per-profile: true;
-                            title: "Text size";
-                            subtitle: "Size of the text everywhere — menus, cards, settings, the player — saved for this profile";
+                        SectionHeader {
+                            text: "DASHBOARDS";
                         }
 
                         SettingsRow {
@@ -1083,22 +1228,8 @@ export component SettingsScreen inherits Rectangle {
                             }
                         }
 
-                        SettingsRow {
-                            key: "ui.theme";
-                            choice: true;
-                            value: AppState.settings-theme;
-                            per-profile: true;
-                            title: "Theme";
-                            subtitle: "Dark, light, or the desktop's choice — the player and Now Playing stay dark — saved for this profile";
-                        }
-
-                        SettingsRow {
-                            key: "ui.accent_color";
-                            choice: true;
-                            value: AppState.settings-accent-color;
-                            per-profile: true;
-                            title: "Accent color";
-                            subtitle: "Color of buttons, pills, progress bars and the selected tab — saved for this profile";
+                        SectionHeader {
+                            text: "FOCUS";
                         }
 
                         SettingsRow {
@@ -1164,6 +1295,10 @@ export component SettingsScreen inherits Rectangle {
                             subtitle: "How much a selected poster, cover, photo or profile tile grows — saved for this profile";
                         }
 
+                        SectionHeader {
+                            text: "BEHAVIOR";
+                        }
+
                         SettingsRow {
                             key: "general.video_behind";
                             per-profile: true;
@@ -1172,20 +1307,6 @@ export component SettingsScreen inherits Rectangle {
                             ToggleSwitch {
                                 checked <=> AppState.settings-video-behind;
                                 toggled => { AppState.settings-changed(); AppState.refocus(); }
-                            }
-                        }
-
-                        // Text font (dynamic dropdown, same shape as Audio output
-                    // above — fetched at startup via fc-list, main.rs)
-                    SettingsRow {
-                            key: "ui.font_family";
-                            per-profile: true;
-                            title: "Text font";
-                            subtitle: "Inter is Fjord's own designed-around default — pick any font installed on this system to override it";
-                            SettingsDropdown {
-                                model <=> AppState.settings-font-family-display;
-                                current-value: AppState.settings-font-family-desc != "" ? AppState.settings-font-family-desc : "Inter (Fjord default)";
-                                selected(v) => { AppState.font-family-selected(v); AppState.refocus(); }
                             }
                         }
 
@@ -1240,6 +1361,10 @@ export component SettingsScreen inherits Rectangle {
                 // General; Phase 1 step 7 adds the launch-policy rows) ─────────
                 if AppState.settings-section == "profiles": VerticalLayout {
                         spacing: Theme.sp-sm;
+
+                        SectionIntro {
+                            text: "Who uses Fjord on this device: profiles, accounts, and what happens at startup.";
+                        }
 
                         SectionHeader {
                             text: "PROFILES";
@@ -1681,6 +1806,10 @@ export component SettingsScreen inherits Rectangle {
                 if AppState.settings-section == "integrations": VerticalLayout {
                         spacing: Theme.sp-sm;
 
+                        SectionIntro {
+                            text: "Other services Fjord works with: Seerr, for discovering and requesting films and series.";
+                        }
+
                         SectionHeader {
                             text: "INTEGRATIONS";
                         }
@@ -1880,9 +2009,13 @@ export component SettingsScreen inherits Rectangle {
                         }
                     }
 
-                    // ── Advanced section ────────────────────────────────────────────────────
+                    // ── Advanced section ────────────────────────────────────────────────────────
                 if AppState.settings-section == "advanced": VerticalLayout {
                         spacing: Theme.sp-sm;
+
+                        SectionIntro {
+                            text: "Fixes for particular hardware and drivers, buffering and logs. The defaults suit most setups.";
+                        }
 
                         SectionHeader {
                             text: "DECODE";
@@ -1915,81 +2048,16 @@ export component SettingsScreen inherits Rectangle {
                         }
 
                         SectionHeader {
-                            text: "SYNCHRONIZATION";
+                            text: "VIDEO SURFACE";
                         }
 
-                        SettingsRow {
-                            key: "video.video_sync";
-                            choice: true;
-                            value: AppState.settings-video-sync;
-                            title: "Video sync";
-                            subtitle: "display-vdrop (default): smooth, also with passthrough · display-resample: smoothest, but off with passthrough · audio: follows the audio clock, can judder · desync: debug";
-                        }
-
-                        if AppState.settings-audio-spdif && AppState.settings-video-sync == "display-resample" && (AppState.settings-spdif-ac3 || AppState.settings-spdif-eac3 || AppState.settings-spdif-dts || AppState.settings-spdif-dts-hd || AppState.settings-spdif-truehd): Rectangle {
-                            height: 24px;
-                            HorizontalLayout {
-                                x: 12px;
-                                y: 0px;
-                                height: parent.height;
-                                spacing: 4px;
-                                alignment: start;
-                                Text {
-                                    text: "⚠";
-                                    font-family: "Noto Sans Symbols 2";
-                                    color: Theme.error;
-                                    font-size: 12px * AppState.text-scale;
-                                    vertical-alignment: center;
-                                }
-
-                                Text {
-                                    text: "passthrough active — display-resample falls back to 'audio' sync (no display sync correction)";
-                                    color: Theme.error;
-                                    font-size: 12px * AppState.text-scale;
-                                    vertical-alignment: center;
-                                }
-                            }
-                        }
-
-                        if AppState.settings-row-shown("video.interpolation"): SettingsRow {
-                            key: "video.interpolation";
-                            title: "Motion interpolation";
-                            subtitle: "Blends frames for smoother motion when the display's rate doesn't match the video's — only with a display Video sync";
+                        // HDR Stage 5 (2026-10-05) — Wayland only (settings::section_row_keys mirrors this).
+                    if AppState.settings-row-shown("video.separate_video_surface"): SettingsRow {
+                            key: "video.separate_video_surface";
+                            title: "Separate video surface";
+                            subtitle: "Keeps menus in the right colors during HDR. Turn off if video stutters. Applies from the next video";
                             ToggleSwitch {
-                                checked <=> AppState.settings-interpolation;
-                                toggled => { AppState.settings-changed(); AppState.refocus(); }
-                            }
-                        }
-
-                        if AppState.settings-row-shown("video.tscale"): SettingsRow {
-                            key: "video.tscale";
-                            choice: true;
-                            value: AppState.settings-tscale;
-                            title: "Temporal scaler (tscale)";
-                            subtitle: "Algorithm used for motion interpolation";
-                        }
-
-                        SectionHeader {
-                            text: "NVIDIA WAYLAND";
-                        }
-
-                        SettingsRow {
-                            key: "video.opengl_early_flush";
-                            title: "OpenGL early flush";
-                            subtitle: "Flush after every frame — can reduce jitter on NVIDIA Wayland; off by default in mpv as it hurts some other setups";
-                            ToggleSwitch {
-                                checked <=> AppState.settings-opengl-early-flush;
-                                toggled => { AppState.settings-changed(); AppState.refocus(); }
-                            }
-                        }
-
-                        if AppState.settings-row-shown("video.video_latency_hacks"): SettingsRow {
-                            key: "video.video_latency_hacks";
-                            title: "Video latency hacks";
-                            subtitle: "Works around imprecise vsync timestamps (NVIDIA legacy on Wayland); breaks interpolation — only if you need it";
-                            indent: true;
-                            ToggleSwitch {
-                                checked <=> AppState.settings-video-latency-hacks;
+                                checked <=> AppState.settings-separate-video-surface;
                                 toggled => { AppState.settings-changed(); AppState.refocus(); }
                             }
                         }
@@ -2017,6 +2085,20 @@ export component SettingsScreen inherits Rectangle {
                             subtitle: "Test for comparing 8-bit and 10-bit: without dithering, 8-bit shows steps in gradients. Leave off normally";
                             ToggleSwitch {
                                 checked <=> AppState.settings-video-dither-off;
+                                toggled => { AppState.settings-changed(); AppState.refocus(); }
+                            }
+                        }
+
+                        SectionHeader {
+                            text: "NVIDIA WAYLAND";
+                        }
+
+                        SettingsRow {
+                            key: "video.opengl_early_flush";
+                            title: "OpenGL early flush";
+                            subtitle: "Flush after every frame — can reduce jitter on NVIDIA Wayland; off by default in mpv as it hurts some other setups";
+                            ToggleSwitch {
+                                checked <=> AppState.settings-opengl-early-flush;
                                 toggled => { AppState.settings-changed(); AppState.refocus(); }
                             }
                         }

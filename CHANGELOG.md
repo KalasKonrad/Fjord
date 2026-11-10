@@ -23,6 +23,16 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Improved: Settings are easier to find.** Two new sections: **Picture**
+  (video sync, motion interpolation, upscaler, HDR passthrough and tone
+  mapping — before split between Display and Advanced) and **Music** (gapless
+  playback, Now Playing, the screensaver — before under Audio). Display is now
+  **TV & display** (fullscreen and display sync), and Advanced keeps only the
+  fixes for particular hardware, buffering and logs. Each section starts with
+  a line saying what it's for and is split into groups. A setting that only
+  applies under another one sits right below it: Video latency hacks moved
+  under Video sync. Saved settings are unchanged.
+
 - **Fixed: KDE dimmed the screen while you used the game pad,** and a pad
   press didn't wake it (only the mouse or keyboard did). The desktop only
   sees keyboard and mouse, so it thought nobody was there. Pad presses now
@@ -35,19 +45,19 @@ are bumped together as one step, not separately.
   says "Couldn't reach Seerr" with a Retry button (Enter on the remote), and
   opening Discover again tries again.
 
-- **New: Settings → Display → Upscaler** — how the video is scaled up when
+- **New: Settings → Picture → Upscaler** — how the video is scaled up when
   Fjord draws it larger than it is: Default (Lanczos), Sharp (EWA Lanczos) or
   FSR 1 (AMD FidelityFX Super Resolution, bundled; an HDR copy is used for HDR
   files). The stats overlay's new SCALER line shows which one runs and whether
   anything is scaled up at all — when the TV's mode matches the video, the TV
   upscales instead.
-- **New: Settings → Display → HD video in 4K** (display sync, under "Sync
+- **New: Settings → TV & display → HD video in 4K** (display sync, under "Sync
   resolution"): a 1080p or smaller video at 24, 25 or 30 fps switches the TV
   to 4K too, so the Upscaler scales it instead of the TV — while the desktop
   can stay at 1080p with a high refresh rate. Only when the TV offers 4K at the
   video's own rate; 50/60 fps video keeps the default resolution.
 
-- **Improved: Interpolation shows when it can work.** Settings → Advanced →
+- **Improved: Interpolation shows when it can work.** Settings → Picture →
   Motion interpolation (and its temporal scaler) only appear with a display
   Video sync (display-vdrop, -resample or -adrop) — with "audio" mpv ignored
   it without saying so. The stats overlay (I) has a new INTERP line: on (with
@@ -84,7 +94,7 @@ are bumped together as one step, not separately.
   focus ring's "Accent blue" option is now "Accent color" and follows the
   choice.
 
-- **Changed: new installs use Settings → Advanced → Video sync =
+- **Changed: new installs use Settings → Picture → Video sync =
   display-vdrop.** The old default (audio) times frames by the audio clock,
   which can make video choppy for a few seconds now and then. Existing
   settings stay as they are; pick display-vdrop there to get the smoother
