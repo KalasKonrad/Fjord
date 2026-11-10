@@ -13,6 +13,10 @@
 //                 text field gets Escape, not Backspace
 //   action_for    the other buttons → a Fjord action, by screen (browsing / video player) — the
 //                 table agreed for the Xbox 360 pad (PLAN 0.5.2 item 8); unit-tested
+//   KeepAwake     KDE judges idleness by keyboard/mouse through KWin, which never sees the pad (and
+//                 SimulateUserActivity doesn't reach KWin's timer on Plasma 6 Wayland): the reader
+//                 thread holds playback::hold_activity (screen blanking + sleep blocked) from the
+//                 first pad input until PAD_HOLD without one (release_due, unit-tested)
 //   key_for       the key bound to an action (the player's bindings first while a video plays,
 //                 and last otherwise — global.rs's music play/pause reads the player map; the
 //                 fewest modifiers, then the shortest key — deterministic); unit-tested
@@ -40,6 +44,55 @@ const STICK_ON: f32 = 0.6;
 const STICK_OFF: f32 = 0.4;
 /// How long the reader waits for an event before it checks the repeats.
 const POLL: Duration = Duration::from_millis(20);
+/// The desktop's idle rules apply again after this long without pad input (KeepAwake).
+const PAD_HOLD: Duration = Duration::from_secs(5 * 60);
+
+fn release_due(last_input: Option<Instant>, now: Instant) -> bool {
+    last_input.is_some_and(|t| now.duration_since(t) >= PAD_HOLD)
+}
+
+/// Blocks screen blanking and sleep while the pad is in use (KDE never sees pad input).
+struct KeepAwake {
+    hold: Option<crate::playback::ActivityHold>,
+    last_input: Option<Instant>,
+    failed: bool,
+}
+
+impl KeepAwake {
+    fn new() -> Self {
+        KeepAwake {
+            hold: None,
+            last_input: None,
+            failed: false,
+        }
+    }
+
+    fn input(&mut self, now: Instant) {
+        self.last_input = Some(now);
+        if self.hold.is_some() || self.failed {
+            return;
+        }
+        self.hold = crate::playback::hold_activity("Game pad in use");
+        if self.hold.is_none() {
+            info!(
+                "gamepad: can't keep the desktop awake while the pad is used — it may dim the screen"
+            );
+            self.failed = true;
+        }
+    }
+
+    fn tick(&mut self, now: Instant) {
+        if self.hold.is_some() && release_due(self.last_input, now) {
+            debug!(
+                "gamepad: no pad input for {} s — the desktop's idle rules apply again",
+                PAD_HOLD.as_secs()
+            );
+            if let Some(hold) = self.hold.take() {
+                hold.release();
+            }
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum PadInput {
@@ -300,6 +353,7 @@ fn run(window: slint::Weak<MainWindow>, state: Arc<Mutex<FjordState>>, clock: Ac
         info!("gamepad: {} connected", pad.name());
     }
     let mut pad = PadState::default();
+    let mut awake = KeepAwake::new();
     loop {
         let now = Instant::now();
         let mut out = Vec::new();
@@ -332,6 +386,11 @@ fn run(window: slint::Weak<MainWindow>, state: Arc<Mutex<FjordState>>, clock: Ac
             }
         }
         out.extend(pad.tick(Instant::now()));
+        if out.is_empty() {
+            awake.tick(Instant::now());
+        } else {
+            awake.input(Instant::now());
+        }
         for (input, repeat) in out {
             deliver(&window, &state, &clock, input, repeat);
         }
@@ -473,6 +532,14 @@ mod tests {
         assert_eq!(pad.right_stick(-0.7, t), [(PadInput::VolumeDown, false)]);
         assert!(pad.right_stick(0.0, t).is_empty());
         assert!(pad.tick(t + REPEAT_DELAY * 3).is_empty());
+    }
+
+    #[test]
+    fn the_desktop_may_idle_again_5_min_after_the_last_pad_input() {
+        let t = Instant::now();
+        assert!(!release_due(None, t), "never used: nothing to release");
+        assert!(!release_due(Some(t), t + PAD_HOLD / 2));
+        assert!(release_due(Some(t), t + PAD_HOLD));
     }
 
     #[test]

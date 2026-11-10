@@ -23,6 +23,11 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Fixed: KDE dimmed the screen while you used the game pad.** The desktop
+  only sees keyboard and mouse, so it thought nobody was there. While the pad
+  is in use Fjord now keeps the screen on (and the computer awake); 5 minutes
+  after the last pad press the desktop's own idle settings apply again.
+
 - **Fixed: Discover stuck on "Loading Seerr's trending picks…"** when Seerr
   couldn't be reached (down, or not reachable yet right after startup). It now
   says "Couldn't reach Seerr" with a Retry button (Enter on the remote), and

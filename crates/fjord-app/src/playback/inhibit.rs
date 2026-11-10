@@ -5,6 +5,8 @@
 //                           org.freedesktop.PowerManagement.Inhibit (sleep) on one held connection +
 //                           systemd-inhibit idle:sleep child
 //   uninhibit_screensaver   UnInhibit both, drop the connection, end the child (no-op when unavailable)
+//   ActivityHold / hold_activity  the same two D-Bus blocks for something other than playback (the
+//                           game pad: KDE never sees pad input), on their own connection; release()
 // ─────────────────────────────────────────────────────────────────────────────
 use super::*;
 
@@ -37,15 +39,10 @@ const POWER: (&str, &str, &str) = (
 fn dbus_inhibit(
     bus: &zbus::blocking::Connection,
     (service, path, iface): (&str, &str, &str),
+    why: &str,
 ) -> Option<u32> {
     match bus
-        .call_method(
-            Some(service),
-            path,
-            Some(iface),
-            "Inhibit",
-            &("Fjord", "Playback"),
-        )
+        .call_method(Some(service), path, Some(iface), "Inhibit", &("Fjord", why))
         .and_then(|reply| reply.body().deserialize::<u32>())
     {
         Ok(cookie) => {
@@ -105,8 +102,12 @@ pub(crate) fn inhibit_screensaver() -> PlaybackCookies {
             None
         }
     };
-    let screensaver = bus.as_ref().and_then(|b| dbus_inhibit(b, SCREENSAVER));
-    let power = bus.as_ref().and_then(|b| dbus_inhibit(b, POWER));
+    let screensaver = bus
+        .as_ref()
+        .and_then(|b| dbus_inhibit(b, SCREENSAVER, "Playback"));
+    let power = bus
+        .as_ref()
+        .and_then(|b| dbus_inhibit(b, POWER, "Playback"));
     PlaybackCookies {
         bus,
         screensaver,
@@ -128,5 +129,41 @@ pub(crate) fn uninhibit_screensaver(mut cookies: PlaybackCookies) {
         child.kill().ok();
         child.wait().ok();
         info!("systemd sleep inhibitor released");
+    }
+}
+
+// ── ActivityHold ─────────────────────────────────────────────────────────────
+/// Screen blanking and sleep blocked for something other than playback — the game pad (KDE judges
+/// idleness by keyboard and mouse through KWin, which never sees pad input; `SimulateUserActivity`
+/// doesn't reach KWin's idle timer on Plasma 6 Wayland). Its own connection, so releasing it never
+/// touches playback's; dropping it releases both blocks too.
+pub(crate) struct ActivityHold {
+    bus: zbus::blocking::Connection,
+    screensaver: Option<u32>,
+    power: Option<u32>,
+}
+
+pub(crate) fn hold_activity(why: &str) -> Option<ActivityHold> {
+    let bus = zbus::blocking::Connection::session().ok()?;
+    let screensaver = dbus_inhibit(&bus, SCREENSAVER, why);
+    let power = dbus_inhibit(&bus, POWER, why);
+    if screensaver.is_none() && power.is_none() {
+        return None;
+    }
+    Some(ActivityHold {
+        bus,
+        screensaver,
+        power,
+    })
+}
+
+impl ActivityHold {
+    pub(crate) fn release(self) {
+        if let Some(cookie) = self.screensaver {
+            dbus_uninhibit(&self.bus, SCREENSAVER, cookie);
+        }
+        if let Some(cookie) = self.power {
+            dbus_uninhibit(&self.bus, POWER, cookie);
+        }
     }
 }
