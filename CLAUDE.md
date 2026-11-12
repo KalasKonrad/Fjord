@@ -116,7 +116,8 @@ Needs `mpv`/libmpv (`pacman -S mpv`). Optional at runtime: `yt-dlp` (trailers), 
   (buffer row 0 is the top), spot rects top-origin, `glFinish` before attach, only format/modifier pairs KWin
   advertised, linux-dmabuf `create` (async) — never `create_immed` (a refusal is fatal on winit's display).
 - The UI thread is mpv's render thread: what the tick and playback steps read from mpv comes from what mpv reports
-  (`Player::observed()` / `video_info()` / `tracks()` / `chapters()`, kept current by `poll` from observed properties),
+  (`Player::observed()` / `video_info()` / `tracks()` / `chapters()` / `stats()`, kept current by `poll` from observed
+  properties),
   never a `get_property` — that waits for mpv's core, which froze the UI 300–400 ms at every song change. Writes in
   the tick go through `set_async`. Direct getters only for one-off reads (a key press, right after Fjord's own command).
   `video_info()` is None until mpv reported the format after VideoReconfig — the event comes first.

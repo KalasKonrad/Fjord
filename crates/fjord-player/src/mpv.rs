@@ -9,13 +9,16 @@
 //                   video_out_primaries/gamma/sig_peak = what goes to the display
 //                   (video-target-params — after tone-mapping), video_out_pix_fmt/w/h = after
 //                   the --vf chain (video-out-params), drawn_w/h = the size the video is drawn at
-//                   (osd-dimensions minus the black bars — what the upscaler scales to)
+//                   (osd-dimensions minus the black bars — what the upscaler scales to); filled by
+//                   apply from reported properties (unit-tested), per-file values cleared by
+//                   clear_file
 //   SourceHdrMetadata  per-file HDR10 metadata for hdr.rs (Option<f64> luma/CLL/FALL —
 //                   None = unavailable, not 0)
 //   OBSERVED        every property mpv reports to us (observe_property) instead of being asked —
 //                   a get_property waits for mpv's core (300–400 ms at a song change) and
 //                   fjord-app calls the player from its render thread; lists come as JSON
 //                   (libmpv2's node iteration frees mpv-owned memory — unused)
+//   STATS_OBSERVED  the stats overlay's extra properties, observed only while it's open
 //   Observed        playback state: position, duration, pause, buffering, cache seconds,
 //                   passthrough, the start-up snapshot's core-idle/seeking/avsync, frame counts,
 //                   vsync-ratio (only while mpv's display sync is active), volume;
@@ -32,7 +35,9 @@
 //                     — mpv sends it right after the event; VIDEO_INFO_GRACE), tracks(),
 //                     chapters(); startup_snapshot, log_decoder_info and get_volume read it too
 //                   direct (one-off, may wait): is_paused, get_drop_counts (teardown),
-//                     get_position / get_duration (right after Fjord's own command), poll_stats
+//                     get_position / get_duration (right after Fjord's own command)
+//                   stats() / watch_stats(on): the stats overlay's StatsData from reported values
+//                     (STATS_OBSERVED observed only while it's open, under STATS_WATCH_ID)
 //                   file_loaded_at, has_seen_video_reconfig (diagnostic), apply_hdr_output
 //                   PlayerConfig.scale / fsr_shaders: Settings' Upscaler — `scale` at start; FSR 1
 //                     (apply_fsr) once the video's gamma is known (the PQ copy for HDR), async
@@ -289,6 +294,109 @@ pub struct StatsData {
     // configured buffer (cache-secs/demuxer-max-bytes) actually is, so it
     // reads ~100% almost immediately during normal healthy playback.
     pub cache_duration_secs: f64,
+    // Raw parts the computed fields come from: osd-dimensions w, h, ml, mr, mt, mb; display-fps
+    // and estimated-display-fps.
+    osd: [i64; 6],
+    display_fps_set: f64,
+    display_fps_est: f64,
+}
+
+impl StatsData {
+    /// One reported property (OBSERVED's shared ones and STATS_OBSERVED's) into its field.
+    fn apply(&mut self, name: &str, change: &PropertyData) {
+        let s = || match change {
+            PropertyData::Str(s) => s.to_string(),
+            _ => String::new(),
+        };
+        let i = || match change {
+            PropertyData::Int64(v) => *v,
+            _ => 0,
+        };
+        let f = || match change {
+            PropertyData::Double(v) => *v,
+            _ => 0.0,
+        };
+        match name {
+            "video-codec" => self.video_codec = s(),
+            "width" => self.width = i(),
+            "height" => self.height = i(),
+            "estimated-vf-fps" => self.fps = f(),
+            "video-params/pixelformat" => self.video_pix_fmt = s(),
+            "video-params/primaries" => self.video_primaries = s(),
+            "video-params/gamma" => self.video_gamma = s(),
+            "video-params/sig-peak" => self.video_sig_peak = f(),
+            "video-out-params/pixelformat" => self.video_out_pix_fmt = s(),
+            "video-out-params/w" => self.video_out_w = i(),
+            "video-out-params/h" => self.video_out_h = i(),
+            "hwdec-current" => self.hwdec_current = s(),
+            "audio-codec" => self.audio_codec = s(),
+            "audio-codec-name" => self.audio_codec_name = s(),
+            "audio-params/channels" => self.audio_channels = s(),
+            "audio-params/samplerate" => self.audio_samplerate = i(),
+            "current-ao" => self.current_ao = s(),
+            "audio-out-params/format" => self.audio_out_format = s(),
+            "audio-out-params/channels" => self.audio_out_channels = s(),
+            "audio-out-params/samplerate" => self.audio_out_samplerate = i(),
+            "display-fps" => self.display_fps_set = f(),
+            "estimated-display-fps" => self.display_fps_est = f(),
+            "video-sync" => self.video_sync_mode = s(),
+            "vsync-ratio" => self.vsync_ratio = f(),
+            "interpolation" => self.interpolation = matches!(change, PropertyData::Flag(true)),
+            "tscale" => self.tscale = s(),
+            "scale" => self.scale = s(),
+            "glsl-shaders" => self.glsl_shaders = s(),
+            "avsync" => self.avsync = f(),
+            "audio-speed-correction" => self.audio_speed_correction = f(),
+            "video-speed-correction" => self.video_speed_correction = f(),
+            "frame-drop-count" => self.dropped_frames = i(),
+            "decoder-frame-drop-count" => self.decoder_dropped = i(),
+            "mistimed-frame-count" => self.mistimed_frames = i(),
+            "video-bitrate" => self.video_bitrate = f(),
+            "audio-bitrate" => self.audio_bitrate = f(),
+            "cache-buffering-state" => self.cache_state = i(),
+            "demuxer-cache-duration" => self.cache_duration_secs = f(),
+            _ => {
+                let Some(k) = name.strip_prefix("osd-dimensions/") else {
+                    return;
+                };
+                let Some(n) = ["w", "h", "ml", "mr", "mt", "mb"]
+                    .iter()
+                    .position(|x| *x == k)
+                else {
+                    return;
+                };
+                self.osd[n] = i();
+            }
+        }
+        let [w, h, ml, mr, mt, mb] = self.osd;
+        self.drawn_w = (w - ml - mr).max(0);
+        self.drawn_h = (h - mt - mb).max(0);
+        self.display_fps = if self.display_fps_set > 0.0 {
+            self.display_fps_set
+        } else {
+            self.display_fps_est
+        };
+    }
+
+    /// A file starts or ends: its values no longer apply. The player's settings (sync, scalers,
+    /// shaders, interpolation, audio output, display rate) and the window size stay.
+    fn clear_file(&mut self) {
+        *self = StatsData {
+            video_sync_mode: std::mem::take(&mut self.video_sync_mode),
+            interpolation: self.interpolation,
+            tscale: std::mem::take(&mut self.tscale),
+            scale: std::mem::take(&mut self.scale),
+            glsl_shaders: std::mem::take(&mut self.glsl_shaders),
+            current_ao: std::mem::take(&mut self.current_ao),
+            display_fps: self.display_fps,
+            display_fps_set: self.display_fps_set,
+            display_fps_est: self.display_fps_est,
+            osd: self.osd,
+            drawn_w: self.drawn_w,
+            drawn_h: self.drawn_h,
+            ..StatsData::default()
+        };
+    }
 }
 
 // ── SourceHdrMetadata ───────────────────────────────────────────────────────
@@ -380,6 +488,44 @@ const OBSERVED: &[(&str, Format)] = &[
     ("track-list", Format::String),
     ("chapter-list", Format::String),
 ];
+
+/// What the stats overlay needs beyond OBSERVED — observed only while it's open
+/// (`Player::watch_stats`), all under STATS_WATCH_ID so one unobserve drops them. Until
+/// 2026-11-12 the overlay asked mpv for each of these every 512 ms (get_property — waiting for
+/// the core on the thread that draws the video): 46–90 ms late frames and drops while it was
+/// open. Not here: video-target-params (the CLR OUT row) — never available under vo=libmpv.
+const STATS_OBSERVED: &[(&str, Format)] = &[
+    ("video-params/sig-peak", Format::Double),
+    ("video-out-params/pixelformat", Format::String),
+    ("video-out-params/w", Format::Int64),
+    ("video-out-params/h", Format::Int64),
+    ("osd-dimensions/w", Format::Int64),
+    ("osd-dimensions/h", Format::Int64),
+    ("osd-dimensions/ml", Format::Int64),
+    ("osd-dimensions/mr", Format::Int64),
+    ("osd-dimensions/mt", Format::Int64),
+    ("osd-dimensions/mb", Format::Int64),
+    ("audio-codec", Format::String),
+    ("audio-codec-name", Format::String),
+    ("audio-params/channels", Format::String),
+    ("audio-params/samplerate", Format::Int64),
+    ("current-ao", Format::String),
+    ("audio-out-params/channels", Format::String),
+    ("audio-out-params/samplerate", Format::Int64),
+    ("display-fps", Format::Double),
+    ("estimated-display-fps", Format::Double),
+    ("interpolation", Format::Flag),
+    ("tscale", Format::String),
+    ("scale", Format::String),
+    ("glsl-shaders", Format::String),
+    ("audio-speed-correction", Format::Double),
+    ("video-speed-correction", Format::Double),
+    ("video-bitrate", Format::Double),
+    ("audio-bitrate", Format::Double),
+];
+
+/// The observe id STATS_OBSERVED shares (OBSERVED's are 1…n).
+const STATS_WATCH_ID: u64 = 1000;
 
 /// How long after VideoReconfig `Player::video_info` waits for the video's format to be
 /// reported (mpv sends it right after the event; this only covers a file that never does).
@@ -587,6 +733,8 @@ pub struct Player {
     // Everything mpv reported through observed properties (its own field, so poll can update
     // it while the event still borrows `mpv`).
     reported: Reported,
+    // STATS_OBSERVED is being observed (the stats overlay is open) — watch_stats.
+    stats_watched: bool,
     // The display refresh rate last given to mpv (set_display_fps; 0.0 = never).
     display_fps: f64,
     // When begin_retire asked mpv to stop (None = in use).
@@ -599,6 +747,7 @@ pub struct Player {
 struct Reported {
     observed: Observed,
     video: VideoInfo,
+    stats: StatsData,
     tracks: Vec<TrackInfo>,
     chapters: Vec<(f64, String)>,
     // This file's first VideoReconfig — video_info waits for the format after it.
@@ -613,6 +762,7 @@ impl Reported {
             _ => {
                 self.observed.apply(name, change);
                 self.video.apply(name, change);
+                self.stats.apply(name, change);
             }
         }
     }
@@ -620,6 +770,7 @@ impl Reported {
     /// A file starts or ends: its reported values no longer apply (see Observed::clear_file).
     fn clear_file(&mut self) {
         self.observed.clear_file();
+        self.stats.clear_file();
         let video_sync = std::mem::take(&mut self.video.video_sync);
         self.video = VideoInfo {
             video_sync,
@@ -795,6 +946,7 @@ impl Player {
             startup_log_suffix,
             resume_secs: config.start_position_secs,
             reported: Reported::default(),
+            stats_watched: false,
             display_fps: 0.0,
             retire_started: None,
             fsr_pending: config.fsr_shaders.clone(),
@@ -1037,70 +1189,35 @@ impl Player {
         }
     }
 
-    pub fn poll_stats(&self) -> StatsData {
-        let g_s = |k: &str| self.mpv.get_property::<String>(k).unwrap_or_default();
-        let g_i = |k: &str| self.mpv.get_property::<i64>(k).unwrap_or(0);
-        let g_f = |k: &str| self.mpv.get_property::<f64>(k).unwrap_or(0.0);
-        StatsData {
-            video_codec: g_s("video-codec"),
-            width: g_i("width"),
-            height: g_i("height"),
-            fps: g_f("estimated-vf-fps"),
-            video_pix_fmt: g_s("video-params/pixelformat"),
-            video_primaries: g_s("video-params/primaries"),
-            video_gamma: g_s("video-params/gamma"),
-            video_sig_peak: g_f("video-params/sig-peak"),
-            video_out_pix_fmt: g_s("video-out-params/pixelformat"),
-            video_out_w: g_i("video-out-params/w"),
-            video_out_h: g_i("video-out-params/h"),
-            drawn_w: (g_i("osd-dimensions/w")
-                - g_i("osd-dimensions/ml")
-                - g_i("osd-dimensions/mr"))
-            .max(0),
-            drawn_h: (g_i("osd-dimensions/h")
-                - g_i("osd-dimensions/mt")
-                - g_i("osd-dimensions/mb"))
-            .max(0),
-            video_out_primaries: g_s("video-target-params/primaries"),
-            video_out_gamma: g_s("video-target-params/gamma"),
-            video_out_sig_peak: g_f("video-target-params/sig-peak"),
-            hwdec_current: g_s("hwdec-current"),
-            audio_codec: g_s("audio-codec"),
-            audio_codec_name: g_s("audio-codec-name"),
-            audio_channels: g_s("audio-params/channels"),
-            audio_samplerate: g_i("audio-params/samplerate"),
-            current_ao: g_s("current-ao"),
-            audio_out_format: g_s("audio-out-params/format"),
-            audio_out_channels: g_s("audio-out-params/channels"),
-            audio_out_samplerate: g_i("audio-out-params/samplerate"),
-            display_fps: {
-                let d = g_f("display-fps");
-                if d > 0.0 {
-                    d
-                } else {
-                    g_f("estimated-display-fps")
-                }
-            },
-            video_sync_mode: g_s("video-sync"),
-            vsync_ratio: g_f("vsync-ratio"),
-            interpolation: self
-                .mpv
-                .get_property::<bool>("interpolation")
-                .unwrap_or(false),
-            tscale: g_s("tscale"),
-            scale: g_s("scale"),
-            glsl_shaders: g_s("glsl-shaders"),
-            avsync: g_f("avsync"),
-            audio_speed_correction: g_f("audio-speed-correction"),
-            video_speed_correction: g_f("video-speed-correction"),
-            dropped_frames: g_i("frame-drop-count"),
-            decoder_dropped: g_i("decoder-frame-drop-count"),
-            mistimed_frames: g_i("mistimed-frame-count"),
-            video_bitrate: g_f("video-bitrate"),
-            audio_bitrate: g_f("audio-bitrate"),
-            cache_state: g_i("cache-buffering-state"),
-            cache_duration_secs: g_f("demuxer-cache-duration"),
+    /// The stats overlay's values as last reported — never waits for mpv's core. Fresh only
+    /// while `watch_stats(true)`: the overlay's own properties are observed only then (the
+    /// shared ones — sizes, frame counts, sync — always).
+    pub fn stats(&self) -> StatsData {
+        self.reported.stats.clone()
+    }
+
+    /// Observe what the stats overlay needs beyond OBSERVED while it's open, and stop when it
+    /// closes (one unobserve: they share STATS_WATCH_ID). mpv re-reads several of them every
+    /// frame, so not always. Cheap to call every tick: only a change does anything.
+    pub fn watch_stats(&mut self, on: bool) {
+        if on == self.stats_watched {
+            return;
         }
+        self.stats_watched = on;
+        let events = self.mpv.event_context_mut();
+        if on {
+            for (name, format) in STATS_OBSERVED {
+                if let Err(e) = events.observe_property(name, *format, STATS_WATCH_ID) {
+                    warn!("stats: observe {name}: {e}");
+                }
+            }
+        } else if let Err(e) = events.unobserve_property(STATS_WATCH_ID) {
+            warn!("stats: unobserve: {e}");
+        }
+        debug!(
+            "stats: overlay values {}",
+            if on { "observed" } else { "no longer observed" }
+        );
     }
 
     /// Returns (frame-drop-count, decoder-frame-drop-count). Two IPC reads.
@@ -1695,8 +1812,8 @@ pub fn sub_back_color(pct: u32) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        Observed, PropertyData, VideoInfo, parse_chapter_list, parse_track_list, redact_api_key,
-        sub_back_color,
+        Observed, PropertyData, StatsData, VideoInfo, parse_chapter_list, parse_track_list,
+        redact_api_key, sub_back_color,
     };
 
     #[test]
@@ -1742,6 +1859,48 @@ mod tests {
         let m = v.hdr_metadata();
         assert_eq!((m.gamma.as_str(), m.primaries.as_str()), ("pq", "bt.2020"));
         assert_eq!((m.max_cll, m.max_luma), (Some(1000.0), None));
+    }
+
+    #[test]
+    fn stats_follow_change_events_and_keep_the_player_settings_per_file() {
+        let mut s = StatsData::default();
+        s.apply("width", &PropertyData::Int64(1920));
+        // osd-dimensions: a 3840x2160 target with no bars → drawn 3840 wide.
+        for (k, v) in [
+            ("w", 3840),
+            ("h", 2160),
+            ("ml", 0),
+            ("mr", 0),
+            ("mt", 0),
+            ("mb", 0),
+        ] {
+            s.apply(&format!("osd-dimensions/{k}"), &PropertyData::Int64(v));
+        }
+        assert_eq!((s.drawn_w, s.drawn_h), (3840, 2160));
+        // A 4:3 video pillarboxed in it.
+        s.apply("osd-dimensions/ml", &PropertyData::Int64(480));
+        s.apply("osd-dimensions/mr", &PropertyData::Int64(480));
+        assert_eq!(s.drawn_w, 2880);
+        // display-fps unknown → mpv's estimate.
+        s.apply("estimated-display-fps", &PropertyData::Double(59.94));
+        assert_eq!(s.display_fps, 59.94);
+        s.apply("display-fps", &PropertyData::Double(23.976));
+        assert_eq!(s.display_fps, 23.976);
+        s.apply("interpolation", &PropertyData::Flag(true));
+        s.apply("glsl-shaders", &PropertyData::Str("/cache/fsr.glsl"));
+        s.apply("frame-drop-count", &PropertyData::Int64(3));
+        s.apply("no-such-property", &PropertyData::Int64(7));
+        s.clear_file();
+        assert_eq!((s.width, s.dropped_frames), (0, 0), "the file's values go");
+        assert!(
+            s.interpolation && s.glsl_shaders == "/cache/fsr.glsl",
+            "settings stay"
+        );
+        assert_eq!(
+            (s.drawn_w, s.display_fps),
+            (2880, 23.976),
+            "so do the window and display"
+        );
     }
 
     #[test]

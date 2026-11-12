@@ -23,6 +23,12 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Fixed: the stats overlay (I) made playback stutter while it was open.** It
+  asked the player for about 45 values every half second and waited for each
+  answer on the thread that also draws the video, which caused late and
+  dropped frames. It now shows what the player reports by itself, so opening
+  it no longer affects playback.
+
 - **Fixed: a film could play in the desktop's mode when the TV ignored the
   switch.** Display sync asked for the film's mode, the desktop accepted the
   request but left the TV where it was, and the whole film played at the

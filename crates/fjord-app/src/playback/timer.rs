@@ -24,7 +24,8 @@
 //   select_tracks           track auto-select at FileLoaded: remembered per-series picks
 //                           (state.remembered_tracks) first, then Config sub/audio languages
 //   report_position         every ~480 ms: position/buffer UI, music bar, lyrics, progress reports
-//   stats_and_drops         stats overlay poll, the 5-minute frame-counts log (+ vsync-ratio), a
+//   stats_and_drops         stats overlay (Player::stats — reported values, its own properties
+//                           observed only while it's open: watch_stats), the 5-minute frame-counts log (+ vsync-ratio), a
 //                           line per video hitch (hitch.rs; only while video plays, some seconds
 //                           into the file)
 //   skip_segments           always-skip / ask / ask-timed / never-skip (the ask-timed countdown
@@ -1091,17 +1092,20 @@ const HITCH_WATCH_AFTER_SECS: u64 = 5;
 
 fn stats_and_drops(vs: &mut VideoState, t: &Tick) {
     let Tick { window_timer, .. } = *t;
-    // ── Stats poll every ~512 ms (CR2-7, CR2-8) ──────────────────
-    // Full poll when overlay is visible; 1 read for passthrough only
-    // when hidden so the volume-control guard stays current.
-    if vs.pos_tick.is_multiple_of(32)
-        && let (Some(p), Some(w)) = (vs.player.as_ref(), window_timer.upgrade())
-    {
-        if AppState::get(&w).get_stats_visible() {
-            let stats = p.poll_stats();
-            update_stats_window(&w, &stats);
-        } else {
-            AppState::get(&w).set_audio_passthrough_active(p.observed().passthrough);
+    // ── Stats overlay every ~512 ms (CR2-7, CR2-8) ───────────────
+    // From what mpv reported — never asking it (that waited for mpv's core on this thread:
+    // late frames and drops while the overlay was open, 2026-11-12). Its own properties are
+    // observed only while it's open (watch_stats, checked every tick so they're in by the next
+    // update). Hidden: only the passthrough flag, for the volume-control guard.
+    if let (Some(p), Some(w)) = (vs.player.as_mut(), window_timer.upgrade()) {
+        let visible = AppState::get(&w).get_stats_visible();
+        p.watch_stats(visible);
+        if vs.pos_tick.is_multiple_of(32) {
+            if visible {
+                update_stats_window(&w, &p.stats());
+            } else {
+                AppState::get(&w).set_audio_passthrough_active(p.observed().passthrough);
+            }
         }
     }
 
