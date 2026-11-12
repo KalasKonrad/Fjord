@@ -2,8 +2,11 @@
 //   update_stats_window  StatsData → AppState stat-* props
 //                        VSYNC: mpv's video-sync mode (+ vsync-ratio while mpv's display sync
 //                        is on — it needs timer.rs's display_rate under the render API); INTERP:
-//                        interpolation on (+ tscale) / waiting for display sync / off; SCALER: the
-//                        upscaler (FSR 1 / mpv's scale) and whether it scales up at all; SPEED: audio/video speed corrections; DROP: VO drops ·
+//                        interpolation on (+ tscale) / waiting for display sync / off; SCALER
+//                        (scaler_line, unit-tested): the upscaler (FSR 1 / mpv's scale) and
+//                        whether it scales up — the source's width against the drawn width
+//                        (StatsData.drawn_w, osd-dimensions); OUT: the drawn size + pixel formats;
+//                        SPEED: audio/video speed corrections; DROP: VO drops ·
 //                        decoder drops · mistimed frames; CLR IN/OUT via fmt_color (IN = the
 //                        source's video-params; OUT = video-target-params, never available under
 //                        vo=libmpv → "n/a"); HDR row from hdr::status_text
@@ -12,6 +15,19 @@ use slint::{Global, SharedString};
 
 use crate::AppState;
 use crate::MainWindow;
+
+/// SCALER: the upscaler, and whether it scales up at all — the source's width against the width
+/// the video is drawn at (with display sync matching the TV to the video, nothing is; the TV
+/// upscales). Unit-tested.
+fn scaler_line(scaler: String, source_w: i64, drawn_w: i64) -> String {
+    if source_w > 0 && drawn_w > source_w {
+        format!("{scaler}  ·  {source_w}→{drawn_w} px wide")
+    } else if source_w > 0 && drawn_w > 0 {
+        format!("{scaler}  ·  not scaling up (1:1 or smaller)")
+    } else {
+        scaler
+    }
+}
 
 fn ss(s: &str) -> SharedString {
     SharedString::from(s)
@@ -33,9 +49,14 @@ pub(crate) fn update_stats_window(w: &MainWindow, s: &fjord_player::StatsData) {
         "Buffering…".into()
     };
 
-    // VID OUT: WxH  ·  in_pix  →  out_pix  (carries pixel format info)
+    // VID OUT: the size the video is drawn at (after the --vf chain while mpv hasn't drawn yet)
+    //  ·  in_pix  →  out_pix
     let vid_out = if s.video_out_w > 0 {
-        let scale = format!("{}×{}", s.video_out_w, s.video_out_h);
+        let scale = if s.drawn_w > 0 {
+            format!("{}×{} on screen", s.drawn_w, s.drawn_h)
+        } else {
+            format!("{}×{}", s.video_out_w, s.video_out_h)
+        };
         let in_fmt = if s.video_pix_fmt.is_empty() {
             String::new()
         } else {
@@ -167,9 +188,6 @@ pub(crate) fn update_stats_window(w: &MainWindow, s: &fjord_player::StatsData) {
         (true, false) => "on  ·  waiting for display sync".into(),
         (false, _) => "off".into(),
     };
-    // The upscaler, and whether anything is scaled up at all (with display sync matching the TV to
-    // the video's resolution, nothing is — the TV upscales).
-    let scaling_up = s.video_out_w > s.width && s.width > 0;
     let scaler = if s.glsl_shaders.to_ascii_lowercase().contains("fsr") {
         "FSR 1".to_string()
     } else if s.scale.is_empty() {
@@ -177,13 +195,7 @@ pub(crate) fn update_stats_window(w: &MainWindow, s: &fjord_player::StatsData) {
     } else {
         s.scale.clone()
     };
-    let scaler = if scaling_up {
-        format!("{scaler}  ·  {}→{} px wide", s.width, s.video_out_w)
-    } else if s.width > 0 {
-        format!("{scaler}  ·  not scaling up (1:1 or smaller)")
-    } else {
-        scaler
-    };
+    let scaler = scaler_line(scaler, s.width, s.drawn_w);
     let avsync = format!("{:+.3}s", s.avsync);
 
     // audio-speed-correction ≈ 0 when passthrough is active (can't resample);
@@ -239,4 +251,24 @@ pub(crate) fn update_stats_window(w: &MainWindow, s: &fjord_player::StatsData) {
     g.set_stat_drop(ss(&drop_));
     g.set_stat_bitrate(ss(&bitrate));
     g.set_stat_cache(ss(&cache));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_scaler_line_compares_the_source_with_the_drawn_width() {
+        // A 1080p film on a 4K mode (HD video in 4K): drawn 3840 wide.
+        assert_eq!(
+            scaler_line("FSR 1".into(), 1920, 3840),
+            "FSR 1  ·  1920→3840 px wide"
+        );
+        assert_eq!(
+            scaler_line("lanczos".into(), 1920, 1920),
+            "lanczos  ·  not scaling up (1:1 or smaller)"
+        );
+        // Nothing drawn yet: just the scaler.
+        assert_eq!(scaler_line("FSR 1".into(), 1920, 0), "FSR 1");
+    }
 }

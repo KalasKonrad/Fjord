@@ -8,7 +8,8 @@
 //   StatsData       mpv values for the stats overlay; video_* = the decoded source (video-params),
 //                   video_out_primaries/gamma/sig_peak = what goes to the display
 //                   (video-target-params — after tone-mapping), video_out_pix_fmt/w/h = after
-//                   the --vf chain (video-out-params)
+//                   the --vf chain (video-out-params), drawn_w/h = the size the video is drawn at
+//                   (osd-dimensions minus the black bars — what the upscaler scales to)
 //   SourceHdrMetadata  per-file HDR10 metadata for hdr.rs (Option<f64> luma/CLL/FALL —
 //                   None = unavailable, not 0)
 //   OBSERVED        every property mpv reports to us (observe_property) instead of being asked —
@@ -234,6 +235,11 @@ pub struct StatsData {
     pub video_out_pix_fmt: String, // video-out-params/pixelformat
     pub video_out_w: i64,
     pub video_out_h: i64,
+    // The size the video is drawn at: osd-dimensions (the render target Fjord gives mpv) minus
+    // its black bars. Not video-out-params — that's still the source's size, so a 1080p film on
+    // a 4K mode read as "1:1" (2026-11-12). 0 before the first frame.
+    pub drawn_w: i64,
+    pub drawn_h: i64,
     // Read from video-target-params — "the target properties that VO outputs to" (mpv
     // manual), i.e. what's actually sent to the display. video-out-params is only after
     // the --vf chain and never reflects the VO's tone-mapping/HDR passthrough. (So any
@@ -1047,6 +1053,14 @@ impl Player {
             video_out_pix_fmt: g_s("video-out-params/pixelformat"),
             video_out_w: g_i("video-out-params/w"),
             video_out_h: g_i("video-out-params/h"),
+            drawn_w: (g_i("osd-dimensions/w")
+                - g_i("osd-dimensions/ml")
+                - g_i("osd-dimensions/mr"))
+            .max(0),
+            drawn_h: (g_i("osd-dimensions/h")
+                - g_i("osd-dimensions/mt")
+                - g_i("osd-dimensions/mb"))
+            .max(0),
             video_out_primaries: g_s("video-target-params/primaries"),
             video_out_gamma: g_s("video-target-params/gamma"),
             video_out_sig_peak: g_f("video-target-params/sig-peak"),

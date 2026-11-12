@@ -63,7 +63,8 @@ are bumped together as one step, not separately.
   FSR 1 (AMD FidelityFX Super Resolution, bundled; an HDR copy is used for HDR
   files). The stats overlay's new SCALER line shows which one runs and whether
   anything is scaled up at all — when the TV's mode matches the video, the TV
-  upscales instead.
+  upscales instead — and its OUT line now shows the size the video is drawn
+  at (it used to repeat the video's own size).
 - **New: Settings → TV & display → HD video in 4K** (display sync, under "Sync
   resolution"): a 1080p or smaller video at 24, 25 or 30 fps switches the TV
   to 4K too, so the Upscaler scales it instead of the TV — while the desktop
