@@ -13,16 +13,22 @@
 //                          (exact → closest Hz at the same resolution → the default mode)
 //   keeps_current_mode     pure, unit-tested: mpv's post-decode estimate never moves the display
 //                          between two rates of one cadence (23.98 ↔ 24.00)
-//   get_supported_modes    kscreen-doctor -o → {(res, hz)} (strip_ansi, plain string parsing)
+//   get_supported_modes    kscreen-doctor -o → {(res, hz)} (strip_ansi, plain string parsing;
+//                          mode_tokens / parse_mode_token, shared with current_mode)
+//   current_mode / reached the mode an output is in now (the `*` token; current_mode_in
+//                          unit-tested) and whether it's the target's resolution + cadence
 //   supported_resolutions_and_hz  sorted lists for the Default resolution/Hz dropdowns
 //   list_outputs_with_priority  Output dropdown options: connector, KDE priority (1 = primary),
 //                          EDID "Vendor Model" (friendly_output_name / parse_edid_product_name,
 //                          unit-tested); startup only
 //   apply_display_switch   mode + scale and/or HDR + WCG in ONE kscreen-doctor call
-//                          (display_switch_args, unit-tested); best-effort, logged
+//                          (display_switch_args, unit-tested); best-effort, logged (with what
+//                          kscreen-doctor printed, also on success)
 //   sync_to_source         per item: supported modes → target → apply (+3 s settle) what changed
 //                          vs. FjordState's "currently applied" (FpsSource says how far the frame
-//                          rate can be trusted); from wire_mpv_timer, which runs
+//                          rate can be trusted); reads the mode back and switches once more when
+//                          KWin left it alone (then records the real mode, so the next sync
+//                          retries); from wire_mpv_timer, which runs
 //                          it to completion BEFORE HDR Stage 3 negotiates (they must not overlap)
 //   sync_before_load       pre-decode wrapper over sync_to_source, fed from Jellyfin's
 //                          MediaStreams, called by start_playback before mpv loads the file (no
@@ -278,7 +284,16 @@ static WARNED_MISSING_BINARY: AtomicBool = AtomicBool::new(false);
 
 fn run_kscreen(args: &[String]) {
     match Command::new("kscreen-doctor").args(args).output() {
-        Ok(o) if o.status.success() => {}
+        Ok(o) if o.status.success() => {
+            let said = format!(
+                "{}{}",
+                String::from_utf8_lossy(&o.stdout),
+                String::from_utf8_lossy(&o.stderr)
+            );
+            if !said.trim().is_empty() {
+                tracing::debug!("display_sync: kscreen-doctor said: {}", said.trim());
+            }
+        }
         Ok(o) => tracing::warn!(
             "display_sync: kscreen-doctor {:?} failed: {}",
             args,
@@ -334,32 +349,57 @@ pub(crate) fn get_supported_modes(screen: &str) -> HashSet<(String, String)> {
     let Some(output) = kscreen_doctor_o() else {
         return HashSet::new();
     };
-    let mut modes = HashSet::new();
+    mode_tokens(&output, screen)
+        .filter_map(|tok| parse_mode_token(tok).map(|(mode, _)| mode))
+        .collect()
+}
+
+/// The `Modes:` tokens of `screen`'s section in `kscreen-doctor -o` text.
+fn mode_tokens<'a>(output: &'a str, screen: &'a str) -> impl Iterator<Item = &'a str> {
     let mut in_section = false;
-    for line in output.lines() {
+    output.lines().flat_map(move |line| {
         let trimmed = line.trim();
+        let mut tokens = None;
         if let Some(rest) = trimmed.strip_prefix("Output:") {
             in_section = rest.split_whitespace().any(|w| w == screen);
         } else if in_section && let Some(rest) = trimmed.strip_prefix("Modes:") {
-            for tok in rest.split_whitespace() {
-                // token shape: "N:WxH@HZ[*][!]"
-                let Some((_, after_colon)) = tok.split_once(':') else {
-                    continue;
-                };
-                let Some((res, hz_raw)) = after_colon.split_once('@') else {
-                    continue;
-                };
-                let hz: String = hz_raw
-                    .chars()
-                    .filter(|c| c.is_ascii_digit() || *c == '.')
-                    .collect();
-                if !res.is_empty() && !hz.is_empty() {
-                    modes.insert((res.to_string(), hz));
-                }
-            }
+            tokens = Some(rest.split_whitespace());
         }
-    }
-    modes
+        tokens.into_iter().flatten()
+    })
+}
+
+/// "N:WxH@HZ[*][!]" → ((resolution, hz), whether it's the current mode — `*`; `!` = preferred).
+fn parse_mode_token(tok: &str) -> Option<((String, String), bool)> {
+    let (_, after_colon) = tok.split_once(':')?;
+    let (res, hz_raw) = after_colon.split_once('@')?;
+    let hz: String = hz_raw
+        .chars()
+        .filter(|c| c.is_ascii_digit() || *c == '.')
+        .collect();
+    (!res.is_empty() && !hz.is_empty()).then(|| ((res.to_string(), hz), hz_raw.contains('*')))
+}
+
+/// The mode `screen` is in now, from `kscreen-doctor -o` text (unit-tested).
+fn current_mode_in(output: &str, screen: &str) -> Option<(String, String)> {
+    mode_tokens(output, screen)
+        .filter_map(parse_mode_token)
+        .find_map(|(mode, current)| current.then_some(mode))
+}
+
+/// The mode `screen` is in now (a blocking kscreen-doctor call); None when it can't be read.
+fn current_mode(screen: &str) -> Option<(String, String)> {
+    current_mode_in(&kscreen_doctor_o()?, screen)
+}
+
+/// Whether the display is in `target`: same resolution and cadence (23.98 = 24.00, as
+/// keeps_current_mode counts it).
+fn reached(current: &(String, String), target: &(String, String)) -> bool {
+    current.0 == target.0
+        && match (current.1.parse::<f64>(), target.1.parse::<f64>()) {
+            (Ok(a), Ok(b)) => (a - b).abs() < SAME_CADENCE_HZ,
+            _ => false,
+        }
 }
 
 /// The resolutions (by pixel count, largest first) and Hz values (ascending) `screen`
@@ -650,22 +690,78 @@ pub(crate) async fn sync_to_source(
     // re-applied when HDR's effective value changed.
     if mode_changed || hdr_changed {
         let scale = cfg.scale_for(&target_res);
-        let (screen2, res2, hz2) = (screen.clone(), target_res.clone(), target_hz.clone());
-        tokio::task::spawn_blocking(move || {
-            apply_display_switch(
-                &screen2,
-                mode_changed.then_some((res2.as_str(), hz2.as_str(), scale.as_str())),
-                hdr_changed.then_some((want_hdr, want_wcg)),
-            )
-        })
-        .await
-        .ok();
-        // "Allow HDMI link to renegotiate" — the proven script's settle delay,
-        // now after HDR changes too.
-        tokio::time::sleep(Duration::from_secs(3)).await;
+        let switch = || {
+            let (screen2, res2, hz2, scale2) = (
+                screen.clone(),
+                target_res.clone(),
+                target_hz.clone(),
+                scale.clone(),
+            );
+            async move {
+                tokio::task::spawn_blocking(move || {
+                    apply_display_switch(
+                        &screen2,
+                        mode_changed.then_some((res2.as_str(), hz2.as_str(), scale2.as_str())),
+                        hdr_changed.then_some((want_hdr, want_wcg)),
+                    )
+                })
+                .await
+                .ok();
+                // "Allow HDMI link to renegotiate" — the proven script's settle delay,
+                // now after HDR changes too.
+                tokio::time::sleep(Duration::from_secs(3)).await;
+            }
+        };
+        switch().await;
+        // kscreen-doctor can succeed while KWin leaves the mode alone (HTPC, 2026-11-12: the
+        // whole episode stayed at the desktop's 1080p@119.88): check, and switch once more.
+        let target = (target_res.clone(), target_hz.clone());
+        let mut now_in = target.clone();
+        if mode_changed {
+            let read = |screen: String| async move {
+                tokio::task::spawn_blocking(move || current_mode(&screen))
+                    .await
+                    .ok()
+                    .flatten()
+            };
+            match read(screen.clone()).await {
+                Some(now) if !reached(&now, &target) => {
+                    tracing::warn!(
+                        "display_sync: {screen} is still at {}@{} after switching to {}@{} — \
+                         switching once more",
+                        now.0,
+                        now.1,
+                        target.0,
+                        target.1
+                    );
+                    switch().await;
+                    match read(screen.clone()).await {
+                        Some(again) if !reached(&again, &target) => {
+                            tracing::warn!(
+                                "display_sync: {screen} stayed at {}@{} — playing in it; the \
+                                 next sync (after decoding starts) tries again",
+                                again.0,
+                                again.1
+                            );
+                            now_in = again;
+                        }
+                        Some(_) => {
+                            tracing::info!("display_sync: {screen} switched on the second try")
+                        }
+                        None => {}
+                    }
+                }
+                Some(_) => {}
+                None => tracing::debug!(
+                    "display_sync: couldn't read {screen}'s mode back — assuming the switch worked"
+                ),
+            }
+        }
         let mut s = state.lock().unwrap();
         if mode_changed {
-            s.display_sync_current_mode = Some((target_res, target_hz));
+            // The mode the display is really in: a switch that didn't land is tried again
+            // by the next sync instead of being taken as done.
+            s.display_sync_current_mode = Some(now_in);
         }
         if hdr_changed {
             s.display_sync_current_hdr = Some(want_hdr);
@@ -984,6 +1080,30 @@ pub(crate) fn spawn_display_sync_modes_fetch(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_current_mode_is_the_starred_token_of_that_output() {
+        let o = "Output: 1 HDMI-A-2 <uuid>\n\tenabled\n\tModes:  1:3840x2160@60.00! 2:3840x2160@23.98 \
+                 3:1920x1080@119.88* 4:1920x1080@60.00\nOutput: 2 DP-3 <uuid>\n\tModes:  9:2560x1440@59.95*!\n";
+        let at = |r: &str, h: &str| Some((r.to_string(), h.to_string()));
+        assert_eq!(current_mode_in(o, "HDMI-A-2"), at("1920x1080", "119.88"));
+        assert_eq!(current_mode_in(o, "DP-3"), at("2560x1440", "59.95"));
+        assert_eq!(current_mode_in(o, "HDMI-A-1"), None);
+        let target = ("3840x2160".to_string(), "23.98".to_string());
+        assert!(!reached(&current_mode_in(o, "HDMI-A-2").unwrap(), &target));
+        assert!(
+            reached(&("3840x2160".into(), "24.00".into()), &target),
+            "same cadence"
+        );
+        assert!(!reached(&("1920x1080".into(), "23.98".into()), &target));
+        // The supported set comes from the same tokens.
+        assert_eq!(
+            mode_tokens(o, "HDMI-A-2")
+                .filter_map(parse_mode_token)
+                .count(),
+            4
+        );
+    }
 
     #[test]
     fn display_switch_is_one_call() {
