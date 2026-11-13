@@ -14,6 +14,7 @@
 //                      rest of the window hides its focus, AppState.bar-focus)
 //   QueuePanel         right-side queue overlay ("Queue N of M", Clear All → ConfirmDialog)
 //   LyricsView         lyrics overlay, active line highlighted and kept in view
+//   Mouse = keys       a MusicPlayerBar button's click sets music-bar-focused to its slot first
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
@@ -230,7 +231,7 @@ export component MusicPlayerBar inherits Rectangle {
             z: AppState.bar-focused(0) ? 1 : 0;
             // Opens the fullscreen Now Playing screen — "Open Album" moved
             // inside it (Phase 66).
-            clicked => { AppState.open-now-playing(); }
+            clicked => { AppState.music-bar-focused = 0; AppState.open-now-playing(); }
 
             // The zone sits in the screen's bottom-left corner, where half its glow would fall off
             // the screen: while it has keyboard focus it slides up and right by the glow's reach,
@@ -349,6 +350,7 @@ export component MusicPlayerBar inherits Rectangle {
                         kbd-focused: AppState.bar-focused(4);
                         in-bar: true;
                         clicked => {
+                            AppState.music-bar-focused = 4;
                             AppState.queue-prev-track();
                         }
                     }
@@ -361,6 +363,7 @@ export component MusicPlayerBar inherits Rectangle {
                     kbd-focused: AppState.bar-focused(1);
                     in-bar: true;
                     clicked => {
+                        AppState.music-bar-focused = 1;
                         AppState.music-bar-play-pause();
                     }
                 }
@@ -373,6 +376,7 @@ export component MusicPlayerBar inherits Rectangle {
                         kbd-focused: AppState.bar-focused(5);
                         in-bar: true;
                         clicked => {
+                            AppState.music-bar-focused = 5;
                             AppState.queue-next-track();
                         }
                     }
@@ -398,6 +402,7 @@ export component MusicPlayerBar inherits Rectangle {
                     height: 16px;
                     mouse-cursor: MouseCursor.pointer;
                     clicked => {
+                        AppState.music-bar-focused = 3;
                         AppState.music-bar-seek(self.mouse-x / self.width);
                     }
                     // Track — thicker + brighter when keyboard-focused (slot 3)
@@ -453,7 +458,7 @@ export component MusicPlayerBar inherits Rectangle {
                     active: AppState.queue-shuffle;
                     kbd-focused: AppState.bar-focused(6);
                     in-bar: true;
-                    clicked => { AppState.toggle-shuffle(); }
+                    clicked => { AppState.music-bar-focused = 6; AppState.toggle-shuffle(); }
                 }
 
                 IconCircleButton {
@@ -461,7 +466,7 @@ export component MusicPlayerBar inherits Rectangle {
                     active: AppState.queue-repeat-mode > 0;
                     kbd-focused: AppState.bar-focused(7);
                     in-bar: true;
-                    clicked => { AppState.cycle-repeat(); }
+                    clicked => { AppState.music-bar-focused = 7; AppState.cycle-repeat(); }
                 }
 
                 IconCircleButton {
@@ -469,7 +474,7 @@ export component MusicPlayerBar inherits Rectangle {
                     active: AppState.show-queue-panel;
                     kbd-focused: AppState.bar-focused(8);
                     in-bar: true;
-                    clicked => { AppState.open-queue-panel(); }
+                    clicked => { AppState.music-bar-focused = 8; AppState.open-queue-panel(); }
                 }
 
                 if AppState.lyrics-available: IconCircleButton {
@@ -477,27 +482,27 @@ export component MusicPlayerBar inherits Rectangle {
                     active: AppState.show-lyrics;
                     kbd-focused: AppState.bar-focused(9);
                     in-bar: true;
-                    clicked => { AppState.toggle-lyrics(); }
+                    clicked => { AppState.music-bar-focused = 9; AppState.toggle-lyrics(); }
                 }
                 IconCircleButton {
                     icon: "🔉";
                     kbd-focused: AppState.bar-focused(10);
                     in-bar: true;
-                    clicked => { AppState.volume-down(); }
+                    clicked => { AppState.music-bar-focused = 10; AppState.volume-down(); }
                 }
 
                 IconCircleButton {
                     icon: "🔊";
                     kbd-focused: AppState.bar-focused(11);
                     in-bar: true;
-                    clicked => { AppState.volume-up(); }
+                    clicked => { AppState.music-bar-focused = 11; AppState.volume-up(); }
                 }
 
                 IconCircleButton {
                     icon: "⏹";
                     kbd-focused: AppState.bar-focused(2);
                     in-bar: true;
-                    clicked => { AppState.music-bar-stop(); }
+                    clicked => { AppState.music-bar-focused = 2; AppState.music-bar-stop(); }
                 }
 
                 // Screensaver (screensaver.rs): lit while it will come on; Enter/click turns it off for
@@ -507,7 +512,7 @@ export component MusicPlayerBar inherits Rectangle {
                     active: !AppState.screensaver-paused;
                     kbd-focused: AppState.bar-focused(12);
                     in-bar: true;
-                    clicked => { AppState.toggle-screensaver(); }
+                    clicked => { AppState.music-bar-focused = 12; AppState.toggle-screensaver(); }
                 }
             }
         }

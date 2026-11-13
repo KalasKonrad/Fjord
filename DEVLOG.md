@@ -2980,6 +2980,8 @@ Now: `AppState.osd-focused` (-1 = the seek bar, else a button id), `osd-buttons`
 
 Keymap: the player map no longer binds Up/Down — they fall through to the normal map's Up/Down (lookup_action) — and volume is `+`, `=` (US, unshifted +) and `-` (a shifted printable falls back to its unshifted binding). Saved keymaps are loaded as-is (no default merge, so removals persist), so `migrate_player_volume_keys` drops exactly the old pair (Up → VolumeUp and Down → VolumeDown) and adds +/=/- where free, saving the file once (the dev machine's keybindings.json from 2026-08 still had the pair). Music doesn't set `is-playing`, so the music bar/Now Playing use the normal map — unaffected.
 
+M1 (same day): the music bar's buttons set `music-bar-focused` to their slot on click (a script paired each `bar-focused(N)` with the click handler after it; the art zone (0) and the progress bar (3) by hand) — the keys then go to the bar, as after Down into it; Now Playing's controls call `focus-ctrl(n)` (strip and Back off), a strip cover's click focuses that cover. The mini-player's two buttons already cleared their focus on purpose (both leave the bar).
+
 P3 (media keys) checked and not done: Slint 1.18's key table maps only Pause from winit (no MediaPlayPause/MediaTrackNext/…), and KDE Plasma grabs those keys as global shortcuts for MPRIS players anyway — an MPRIS D-Bus interface is the real fix (next version, to ask).
 
 ### Polish 9c T1/T2: track names people can read (2026-11-13, branch `release-0.5.2`)

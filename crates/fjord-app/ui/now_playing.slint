@@ -14,6 +14,7 @@
 //                      bar), now-playing-in-strip, now-playing-ctrl-focused (1-3 ⏮⏯⏭ / 4 ⇌ 5 ↻
 //                      6 🔉 7 🔊 8 ☾ (only with the screensaver on) 0 Open Album),
 //                      now-playing-strip-focused (index into queue-items).
+//   Mouse = keys       focus-ctrl(n): a control's click focuses it; a strip cover's click focuses it
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
@@ -25,6 +26,13 @@ import {
 } from "widgets.slint";
 
 export component NowPlayingScreen inherits Rectangle {
+    // A click on a control focuses it first, like the keys would (CLAUDE.md: mouse = remote).
+    function focus-ctrl(n: int) {
+        AppState.now-playing-back-focused = false;
+        AppState.now-playing-in-strip = false;
+        AppState.now-playing-ctrl-focused = n;
+    }
+
     background: Theme.dark-bg;
 
     // Sizes come from the window (and Settings → Interface → Text size), so the screen fills a TV.
@@ -231,6 +239,7 @@ export component NowPlayingScreen inherits Rectangle {
                                 icon: "⏮";
                                 kbd-focused: root.np-ctrl && AppState.now-playing-ctrl-focused == 1;
                                 clicked => {
+                                    root.focus-ctrl(1);
                                     AppState.queue-prev-track();
                                 }
                             }
@@ -243,6 +252,7 @@ export component NowPlayingScreen inherits Rectangle {
                             active: true;
                             kbd-focused: root.np-ctrl && AppState.now-playing-ctrl-focused == 2;
                             clicked => {
+                                root.focus-ctrl(2);
                                 AppState.music-bar-play-pause();
                             }
                         }
@@ -255,6 +265,7 @@ export component NowPlayingScreen inherits Rectangle {
                                 icon: "⏭";
                                 kbd-focused: root.np-ctrl && AppState.now-playing-ctrl-focused == 3;
                                 clicked => {
+                                    root.focus-ctrl(3);
                                     AppState.queue-next-track();
                                 }
                             }
@@ -270,6 +281,7 @@ export component NowPlayingScreen inherits Rectangle {
                             active: AppState.queue-shuffle;
                             kbd-focused: root.np-ctrl && AppState.now-playing-ctrl-focused == 4;
                             clicked => {
+                                root.focus-ctrl(4);
                                 AppState.toggle-shuffle();
                             }
                         }
@@ -280,6 +292,7 @@ export component NowPlayingScreen inherits Rectangle {
                             active: AppState.queue-repeat-mode > 0;
                             kbd-focused: root.np-ctrl && AppState.now-playing-ctrl-focused == 5;
                             clicked => {
+                                root.focus-ctrl(5);
                                 AppState.cycle-repeat();
                             }
                         }
@@ -289,6 +302,7 @@ export component NowPlayingScreen inherits Rectangle {
                             icon: "🔉";
                             kbd-focused: root.np-ctrl && AppState.now-playing-ctrl-focused == 6;
                             clicked => {
+                                root.focus-ctrl(6);
                                 AppState.volume-down();
                             }
                         }
@@ -298,6 +312,7 @@ export component NowPlayingScreen inherits Rectangle {
                             icon: "🔊";
                             kbd-focused: root.np-ctrl && AppState.now-playing-ctrl-focused == 7;
                             clicked => {
+                                root.focus-ctrl(7);
                                 AppState.volume-up();
                             }
                         }
@@ -309,6 +324,7 @@ export component NowPlayingScreen inherits Rectangle {
                             active: !AppState.screensaver-paused;
                             kbd-focused: root.np-ctrl && AppState.now-playing-ctrl-focused == 8;
                             clicked => {
+                                root.focus-ctrl(8);
                                 AppState.toggle-screensaver();
                             }
                         }
@@ -319,6 +335,7 @@ export component NowPlayingScreen inherits Rectangle {
                             width: 130px * AppState.text-scale;
                             kbd-focused: root.np-ctrl && AppState.now-playing-ctrl-focused == 0;
                             clicked => {
+                                root.focus-ctrl(0);
                                 AppState.music-bar-open-album();
                                 AppState.show-now-playing = false;
                             }
@@ -480,6 +497,9 @@ export component NowPlayingScreen inherits Rectangle {
                             // The focused card over its neighbours: a strong glow reaches past the gap.
                             z: !AppState.now-playing-back-focused && AppState.now-playing-in-strip && i == AppState.now-playing-strip-focused ? 1 : 0;
                         clicked => {
+                            AppState.now-playing-back-focused = false;
+                            AppState.now-playing-in-strip = true;
+                            AppState.now-playing-strip-focused = i;
                             AppState.queue-jump(entry.index);
                         }
 

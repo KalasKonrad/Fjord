@@ -28,7 +28,8 @@ are bumped together as one step, not separately.
   Back, ±30 s, Play/Pause, Stop, Chapters, Sync, Sub, Audio, Video, Stats — and
   Enter presses one, so the audio track and subtitles can be changed with just
   a D-pad. Back hides the controls (a second Back stops). OK now pauses and
-  resumes. The volume moved from Up/Down to the + and - keys (and the game
+  resumes. Clicking a button on the controls, the music bar or Now Playing
+  moves the remote's focus there too. The volume moved from Up/Down to the + and - keys (and the game
   pad's right stick); a saved key layout is updated once.
 
 - **Improved: audio and subtitle tracks have readable names.** "English · SDH
