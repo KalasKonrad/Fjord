@@ -161,6 +161,8 @@ impl std::fmt::Display for KeyCombo {
             k if k == key::RIGHT => "Right",
             k if k == key::F11 => "F11",
             " " => "Space",
+            // "+" is the modifier separator — written as a name so the file reads back.
+            "+" => "Plus",
             k => k,
         };
         write!(f, "{}", name)
@@ -186,6 +188,9 @@ impl TryFrom<String> for KeyCombo {
             "Right" => key::RIGHT.to_string(),
             "F11" => key::F11.to_string(),
             "Space" => " ".to_string(),
+            "Plus" => "+".to_string(),
+            // A bare "+" (or "ctrl++") splits into an empty last part: the key is "+".
+            "" if s.ends_with('+') => "+".to_string(),
             k if k.chars().count() == 1 => {
                 // Migration: an old-format bare uppercase letter (e.g. "Z") encoded Shift through
                 // its case. Lower-casing it without restoring the shift would collide it with plain
@@ -925,6 +930,20 @@ mod tests {
             kb.player.get(&KeyCombo::plain("-")),
             Some(&Action::Mute),
             "the user's own binding stays"
+        );
+        // "+" is the modifier separator: the volume key must read back from keybindings.json.
+        assert_eq!(KeyCombo::plain("+").to_string(), "Plus");
+        for text in ["Plus", "+", "shift++"] {
+            assert_eq!(
+                KeyCombo::try_from(text.to_string()).unwrap().key,
+                "+",
+                "{text}"
+            );
+        }
+        let json = serde_json::to_string(&default_keybindings()).unwrap();
+        assert!(
+            serde_json::from_str::<Keybindings>(&json).is_ok(),
+            "the defaults read back"
         );
         // A user who bound Up to something else keeps it.
         kb.player.insert(KeyCombo::plain(key::UP), Action::Mute);
