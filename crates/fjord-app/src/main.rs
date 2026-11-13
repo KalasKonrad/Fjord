@@ -26,7 +26,7 @@
 //                        that it's back (status_line; unit-tested)
 //   main                 logging setup + panic hook (writes PANIC + backtrace to fjord.log), backend
 //                        with the activity tap (activity.rs), app_id, the desktop's light/dark
-//                        preference (appearance.rs), game pads (gamepad.rs), the FSR shader files
+//                        preference (appearance.rs), game pads (gamepad.rs), MPRIS (mpris.rs), the FSR shader files
 //                        (upscaler.rs), periodic timers, apply saved
 //                        config + the startup gate (profile picker or auto-login), then one wire_*
 //                        call per area — the callbacks live in that area's module; helpers that
@@ -58,6 +58,7 @@ mod hero;
 mod home;
 mod keys;
 mod movies;
+mod mpris;
 mod music;
 mod open_item;
 mod person;
@@ -1288,6 +1289,7 @@ fn main() -> Result<()> {
     appearance::spawn_watch(window.as_weak());
     upscaler::install_shaders(cache_dir.clone());
     gamepad::spawn(window.as_weak(), Arc::clone(&state), activity_clock.clone());
+    mpris::spawn(window.as_weak());
     ui_watch::wire_ui_watch(&window);
     dashboard_rows::wire(&window, &state);
     hero::wire(&window, &state, &rt);

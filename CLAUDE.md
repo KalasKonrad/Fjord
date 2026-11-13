@@ -85,7 +85,9 @@ Needs `mpv`/libmpv (`pacman -S mpv`). Optional at runtime: `yt-dlp` (trailers), 
   buffers), `display_sync.rs` (kscreen-doctor mode matching), `activity.rs` (winit event tap: idle detection +
   Wayland handles), `pipewire_fix.rs`, `appearance.rs` (the desktop's light/dark preference, freedesktop portal),
   `gamepad.rs` (game pads via gilrs → the key each input stands for, through `AppState.handle-key`), `upscaler.rs`
-  (Settings' Upscaler → mpv's `scale` or the bundled FSR 1 shader, `assets/shaders/FSR.glsl`, MIT).
+  (Settings' Upscaler → mpv's `scale` or the bundled FSR 1 shader, `assets/shaders/FSR.glsl`, MIT), `mpris.rs`
+  (MPRIS on the session bus: what's playing for the desktop; its media keys/widget/KDE Connect commands → the keys'
+  callbacks; covers only as file:// URLs — a server image URL would hand the token to every D-Bus client).
 
 ## Architecture rules
 

@@ -39,6 +39,9 @@
 //   gapless_preload         append the next track near the end (backs off after a failed append)
 //   poll_player             mpv events: natural end, a failed open (same budget as stalls), the
 //                           trailer open retry (TRAILER_OPEN_RETRY_SECS, once), gapless commit
+//   mpris_publish           every ~0.5 s (VideoState.mpris_tick, also with no player): what's playing
+//                           → mpris::publish (title/artist, the cover as a file:// URL into the poster
+//                           cache, mpv's reported length/position/volume, Stopped without a player)
 //   dispatch / spawn_up_next / on_natural_end  after the lock: reloads, toasts, mark-played,
 //                           gapless UI, the Up Next countdown task (counts unpaused time only), and
 //                           the natural-end advance (resolve_true_next_episode, EOF-before-fetch
@@ -213,6 +216,7 @@ pub(crate) fn wire_mpv_timer(
                 music_auto_open(&mut vs, &t, &mut out);
                 gapless_preload(&mut vs, &t);
                 poll_player(&mut vs, &t, &mut out);
+                mpris_publish(&mut vs, &t);
                 t
             };
             dispatch(&t, out);
@@ -1085,6 +1089,71 @@ fn report_position(vs: &mut VideoState, t: &Tick) {
             });
         }
     }
+}
+
+/// What's playing for the desktop (mpris.rs), every ~0.5 s — also with no player ("Stopped").
+/// From what mpv reported and the UI's own titles; the cover only as a file:// URL into the poster
+/// cache (a server image URL would carry the token to every D-Bus client).
+fn mpris_publish(vs: &mut VideoState, t: &Tick) {
+    vs.mpris_tick = vs.mpris_tick.wrapping_add(1);
+    if !vs.mpris_tick.is_multiple_of(32) {
+        return;
+    }
+    let Some(w) = t.window_timer.upgrade() else {
+        return;
+    };
+    let g = AppState::get(&w);
+    let state = match vs.player.as_ref() {
+        None => crate::mpris::MprisState::default(),
+        Some(p) => {
+            let o = p.observed();
+            let audio = vs.current_is_audio;
+            let (title, artist, art_ids) = if audio {
+                let artist = g.get_music_bar_artist().to_string();
+                (
+                    g.get_music_bar_title().to_string(),
+                    if artist.is_empty() {
+                        vec![]
+                    } else {
+                        vec![artist]
+                    },
+                    vec![g.get_music_bar_album_id().to_string()],
+                )
+            } else {
+                (
+                    g.get_playing_title().to_string(),
+                    vec![],
+                    [vs.item_id.clone(), vs.playing_series_id.clone()]
+                        .into_iter()
+                        .flatten()
+                        .collect(),
+                )
+            };
+            let art_url = art_ids
+                .iter()
+                .filter_map(|id| crate::config::poster_cache_path(id))
+                .find(|p| p.exists())
+                .map(|p| format!("file://{}", p.display()).replace(' ', "%20"))
+                .unwrap_or_default();
+            crate::mpris::MprisState {
+                status: if o.paused {
+                    crate::mpris::Status::Paused
+                } else {
+                    crate::mpris::Status::Playing
+                },
+                track_id: vs.item_id.clone().unwrap_or_default(),
+                title,
+                artist,
+                album: String::new(),
+                art_url,
+                length_us: (o.duration.max(0.0) * 1e6) as i64,
+                position_us: (o.time_pos.max(0.0) * 1e6) as i64,
+                volume: o.volume.map_or(1.0, |v| (v / 100.0).clamp(0.0, 1.0)),
+                audio,
+            }
+        }
+    };
+    crate::mpris::publish(state);
 }
 
 /// A file's first seconds (decoder start, first HDR switch) aren't choppiness.

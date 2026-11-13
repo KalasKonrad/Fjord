@@ -23,6 +23,12 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **New: media keys and the desktop's media controls.** Fjord now tells the
+  desktop what it plays (MPRIS): Play/Pause, Next, Previous and Stop keys work
+  — on a keyboard, or a remote that sends media keys — and KDE's media widget,
+  the lock screen and KDE Connect on a phone show the film, episode or song
+  with its cover and can pause, skip and seek it.
+
 - **New: the player's controls work with the remote.** Up or Down brings up
   the controls (Down lands on Play/Pause); Left/Right move along the buttons —
   Back, ±30 s, Play/Pause, Stop, Chapters, Sync, Sub, Audio, Video, Stats — and

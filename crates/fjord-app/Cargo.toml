@@ -68,6 +68,9 @@ libloading = "0.8"
 # Slint's own headless backend (already in Cargo.lock through slint, same version), so a test can
 # create the real MainWindow — settings.rs's config ↔ window round trip.
 i-slint-backend-testing = "=1.18.1"
+# zbus's peer-to-peer connections, so mpris.rs's test drives the real MPRIS interfaces in-process
+# (no bus daemon). Tests only — the app's zbus keeps its features (resolver 3).
+zbus = { version = "5.16", default-features = false, features = ["async-io", "blocking-api", "p2p"] }
 
 [build-dependencies]
 slint-build = "1"

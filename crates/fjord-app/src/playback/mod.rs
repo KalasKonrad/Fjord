@@ -207,6 +207,8 @@ pub(crate) struct VideoState {
     pub display_presynced: bool,
     pub tracks_loaded: bool,
     pub pos_tick: u32,
+    /// Ticks since start, for mpris::publish's ~0.5 s cadence (pos_tick only runs with a player).
+    pub mpris_tick: u32,
     pub controls_idle_ticks: u32,
     pub seek_pending_secs: f64, // accumulated keyboard seek; executed after debounce
     pub seek_pending_ticks: u32, // countdown to execution; 0 = idle
@@ -372,6 +374,7 @@ impl Default for VideoState {
             display_presynced: false,
             tracks_loaded: false,
             pos_tick: 0,
+            mpris_tick: 0,
             controls_idle_ticks: 0,
             seek_pending_secs: 0.0,
             seek_pending_ticks: 0,
