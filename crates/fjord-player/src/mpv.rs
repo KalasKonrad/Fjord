@@ -1211,8 +1211,12 @@ impl Player {
                     warn!("stats: observe {name}: {e}");
                 }
             }
-        } else if let Err(e) = events.unobserve_property(STATS_WATCH_ID) {
-            warn!("stats: unobserve: {e}");
+        } else {
+            match events.unobserve_property(STATS_WATCH_ID) {
+                // mpv returns how many properties it removed; libmpv2 calls any non-zero an error.
+                Ok(()) | Err(libmpv2::Error::Raw(0..)) => {}
+                Err(e) => warn!("stats: unobserve: {e}"),
+            }
         }
         debug!(
             "stats: overlay values {}",
