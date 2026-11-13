@@ -102,7 +102,7 @@ component TrackPanel inherits Rectangle {
     height: min(panel-list.preferred-height + 16px, container-h - 158px - 40px);
     y: container-h - 158px - self.height - 8px;
     x: container-w - self.width - 16px;
-    width: min(container-w - 32px, 400px);
+    width: min(container-w - 32px, 400px * AppState.text-scale);
     background: Theme.osd-panel-opaque;
     border-radius: Theme.radius-lg;
     clip: true;

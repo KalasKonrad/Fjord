@@ -25,7 +25,8 @@
 //                   buffer_end_fraction
 //   VideoInfo       decoder, size, frame rates, pixel format, gamma/primaries + HDR10 values;
 //                   hdr_metadata(), dimensions() (fps 0.0 = unknown)
-//   parse_track_list / parse_chapter_list  mpv's JSON lists (unit-tested)
+//   parse_track_list / parse_chapter_list  mpv's JSON lists (unit-tested); TrackInfo carries
+//                   codec-profile, default, visual-impaired and the audio channels for the labels
 //   Player          libmpv2 wrapper:
 //                   new(config) builds the core only (+ observes OBSERVED); load(url) issues the
 //                     loadfile once a render context is attached (vo=libmpv's init without one
@@ -665,9 +666,14 @@ fn parse_track_list(json: &str) -> Vec<TrackInfo> {
         lang: String,
         selected: bool,
         codec: String,
+        codec_profile: String,
         external_filename: String,
         forced: bool,
         hearing_impaired: bool,
+        visual_impaired: bool,
+        default: bool,
+        demux_channel_count: i64,
+        demux_channels: String,
     }
     match serde_json::from_str::<Vec<Track>>(json) {
         Ok(tracks) => tracks
@@ -679,9 +685,14 @@ fn parse_track_list(json: &str) -> Vec<TrackInfo> {
                 lang: t.lang,
                 selected: t.selected,
                 codec: t.codec,
+                codec_profile: t.codec_profile,
                 external_filename: t.external_filename,
                 forced: t.forced,
                 hearing_impaired: t.hearing_impaired,
+                visual_impaired: t.visual_impaired,
+                default: t.default,
+                channel_count: t.demux_channel_count,
+                channels: t.demux_channels,
             })
             .collect(),
         Err(e) => {
@@ -1601,7 +1612,7 @@ impl Player {
 
 // ── TrackInfo ─────────────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct TrackInfo {
     pub id: i64,
     pub track_type: String,
@@ -1609,9 +1620,18 @@ pub struct TrackInfo {
     pub lang: String,
     pub selected: bool,
     pub codec: String,
+    /// mpv's codec-profile, e.g. "DTS-HD MA" for a dts track ("" when none).
+    pub codec_profile: String,
     pub external_filename: String,
     pub forced: bool,
     pub hearing_impaired: bool,
+    /// Audio description (mpv's visual-impaired flag).
+    pub visual_impaired: bool,
+    /// The file marks it as the default track.
+    pub default: bool,
+    /// Audio: demux-channel-count (0 = unknown) and demux-channels' layout ("5.1(side)").
+    pub channel_count: i64,
+    pub channels: String,
 }
 
 // ── MpvRenderCtx ─────────────────────────────────────────────────────────────
@@ -1825,7 +1845,7 @@ mod tests {
         // Shapes as libmpv prints them (checked against mpv with a generated mkv).
         let tracks = parse_track_list(
             r#"[{"id":1,"type":"video","selected":true,"codec":"hevc","forced":false},
-                {"id":2,"type":"audio","lang":"swe","title":"Svenska","selected":false,"codec":"aac"},
+                {"id":2,"type":"audio","lang":"swe","title":"Svenska","selected":false,"codec":"dts","codec-profile":"DTS-HD MA","default":true,"demux-channel-count":8,"demux-channels":"7.1"},
                 {"id":1,"type":"sub","lang":"eng","external":true,"external-filename":"/x.srt","forced":true,"hearing-impaired":true}]"#,
         );
         assert_eq!(tracks.len(), 3);
@@ -1838,6 +1858,12 @@ mod tests {
             ("swe", "Svenska")
         );
         assert!(tracks[2].forced && tracks[2].hearing_impaired);
+        assert_eq!(tracks[1].codec_profile, "DTS-HD MA");
+        assert!(tracks[1].default && !tracks[0].default);
+        assert_eq!(
+            (tracks[1].channel_count, tracks[1].channels.as_str()),
+            (8, "7.1")
+        );
         assert_eq!(tracks[2].external_filename, "/x.srt");
         assert!(parse_track_list("not json").is_empty());
         assert_eq!(

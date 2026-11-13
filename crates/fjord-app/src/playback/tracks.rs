@@ -1,7 +1,11 @@
 // ── fjord-app · playback/tracks.rs ────────────────────────────────────────
 //   fmt_secs                seconds → "H:MM:SS" / "M:SS"
 //   fmt_ends_at             remaining seconds → local wall-clock "HH:MM" (empty when ≤ 0)
-//   build_track_model       Vec<TrackInfo> → ModelRc<TrackEntry>; title preferred, falls back to external filename base
+//   lang_name / codec_name / channels_name  track names people know: "es-419" → "Spanish (Latin
+//                           America)", "subrip" → "SRT", 6 channels → "5.1" (unit-tested)
+//   track_label             language · a title that says more · SDH/Forced/Audio description · format
+//                           (+ channels) · Default (unit-tested)
+//   build_track_model       Vec<TrackInfo> → ModelRc<TrackEntry> (track_label)
 //   spawn_audio_quality     the playing song's format + quality (music-bar-quality / -long) from one
 //                           item-detail fetch, generation-guarded (start_playback + apply_audio_track)
 //   apply_audio_track       music bar + album art (+ its 24px blur for Now Playing's background) +
@@ -61,68 +65,223 @@ pub(crate) fn sub_lang_code(name: &str) -> &str {
     }
 }
 
+// ── Track names (9c T1/T2) ────────────────────────────────────────────────────
+
+/// A track's language code as a name: ISO 639-1 ("en") and 639-2 ("eng", "swe"), plus a region or
+/// script ("es-419" → "Spanish (Latin America)", "pt-BR", "zh-Hant"). None for an unknown code
+/// (the caller shows the code). Unit-tested.
+pub(crate) fn lang_name(code: &str) -> Option<String> {
+    let lower = code.to_ascii_lowercase();
+    let (base, rest) = match lower.split_once(['-', '_']) {
+        Some((b, r)) => (b, Some(r)),
+        None => (lower.as_str(), None),
+    };
+    let name = match base {
+        "en" | "eng" => "English",
+        "sv" | "swe" => "Swedish",
+        "da" | "dan" => "Danish",
+        "no" | "nor" | "nb" | "nob" | "nn" | "nno" => "Norwegian",
+        "fi" | "fin" => "Finnish",
+        "is" | "ice" | "isl" => "Icelandic",
+        "de" | "ger" | "deu" => "German",
+        "fr" | "fre" | "fra" => "French",
+        "es" | "spa" => "Spanish",
+        "pt" | "por" => "Portuguese",
+        "it" | "ita" => "Italian",
+        "nl" | "dut" | "nld" => "Dutch",
+        "pl" | "pol" => "Polish",
+        "cs" | "cze" | "ces" => "Czech",
+        "sk" | "slo" | "slk" => "Slovak",
+        "hu" | "hun" => "Hungarian",
+        "ro" | "rum" | "ron" => "Romanian",
+        "el" | "gre" | "ell" => "Greek",
+        "tr" | "tur" => "Turkish",
+        "ru" | "rus" => "Russian",
+        "uk" | "ukr" => "Ukrainian",
+        "bg" | "bul" => "Bulgarian",
+        "hr" | "hrv" => "Croatian",
+        "sr" | "srp" => "Serbian",
+        "sl" | "slv" => "Slovenian",
+        "et" | "est" => "Estonian",
+        "lv" | "lav" => "Latvian",
+        "lt" | "lit" => "Lithuanian",
+        "he" | "heb" => "Hebrew",
+        "ar" | "ara" => "Arabic",
+        "fa" | "per" | "fas" => "Persian",
+        "hi" | "hin" => "Hindi",
+        "th" | "tha" => "Thai",
+        "vi" | "vie" => "Vietnamese",
+        "id" | "ind" => "Indonesian",
+        "ms" | "may" | "msa" => "Malay",
+        "ja" | "jpn" => "Japanese",
+        "ko" | "kor" => "Korean",
+        "zh" | "chi" | "zho" => "Chinese",
+        "ca" | "cat" => "Catalan",
+        "eu" | "baq" | "eus" => "Basque",
+        "gl" | "glg" => "Galician",
+        "ta" | "tam" => "Tamil",
+        "te" | "tel" => "Telugu",
+        "fil" | "tl" | "tgl" => "Filipino",
+        "und" => return Some("Unknown language".into()),
+        _ => return None,
+    };
+    let region = rest.map(|r| match r {
+        "419" => "Latin America".to_string(),
+        "br" => "Brazil".into(),
+        "pt" => "Portugal".into(),
+        "es" => "Spain".into(),
+        "mx" => "Mexico".into(),
+        "us" => "US".into(),
+        "gb" => "UK".into(),
+        "ca" => "Canada".into(),
+        "fr" => "France".into(),
+        "be" => "Belgium".into(),
+        "ch" => "Switzerland".into(),
+        "at" => "Austria".into(),
+        "hant" | "tw" | "hk" => "Traditional".into(),
+        "hans" | "cn" => "Simplified".into(),
+        other => other.to_ascii_uppercase(),
+    });
+    Some(match region {
+        Some(r) => format!("{name} ({r})"),
+        None => name.to_string(),
+    })
+}
+
+/// mpv's codec id as people know it ("subrip" → "SRT", "eac3" → "E-AC3"); a profile that names
+/// the format better ("DTS-HD MA") wins. Unknown ids pass through, upper-cased. Unit-tested.
+pub(crate) fn codec_name(codec: &str, profile: &str) -> String {
+    if codec == "dts" && profile.starts_with("DTS") {
+        return profile.to_string();
+    }
+    match codec {
+        "subrip" | "srt" => "SRT",
+        "ass" => "ASS",
+        "ssa" => "SSA",
+        "hdmv_pgs_subtitle" | "pgssub" => "PGS",
+        "dvd_subtitle" | "dvdsub" => "VobSub",
+        "dvb_subtitle" | "dvbsub" => "DVB",
+        "mov_text" => "MP4 text",
+        "webvtt" => "WebVTT",
+        "aac" => "AAC",
+        "ac3" => "AC3",
+        "eac3" => "E-AC3",
+        "truehd" => "TrueHD",
+        "dts" => "DTS",
+        "flac" => "FLAC",
+        "opus" => "Opus",
+        "vorbis" => "Vorbis",
+        "mp3" => "MP3",
+        "alac" => "ALAC",
+        "hevc" => "HEVC",
+        "h264" => "H.264",
+        "av1" => "AV1",
+        "vp9" => "VP9",
+        "mpeg2video" => "MPEG-2",
+        c if c.starts_with("pcm") => "PCM",
+        c => return c.to_ascii_uppercase(),
+    }
+    .to_string()
+}
+
+/// An audio track's channels: "Mono", "Stereo", "5.1", "7.1" — mpv's layout without "(side)",
+/// else the count. "" when unknown. Unit-tested.
+pub(crate) fn channels_name(count: i64, layout: &str) -> String {
+    match count {
+        1 => return "Mono".into(),
+        2 => return "Stereo".into(),
+        _ => {}
+    }
+    let layout = layout.split('(').next().unwrap_or("").trim();
+    if layout.contains('.') {
+        return layout.to_string();
+    }
+    match count {
+        6 => "5.1".into(),
+        8 => "7.1".into(),
+        n if n > 0 => format!("{n} ch"),
+        _ => String::new(),
+    }
+}
+
+/// One track's line in the Sub/Audio/Video panels: language, a title that says more than the
+/// language, the flags, then the format — "English  ·  SDH  ·  SRT", "Swedish  ·  Commentary  ·
+/// E-AC3 5.1  ·  Default". Unit-tested.
+fn track_label(t: &TrackInfo) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    let lang = if t.lang.is_empty() {
+        None
+    } else {
+        Some(lang_name(&t.lang).unwrap_or_else(|| t.lang.clone()))
+    };
+    if let Some(l) = &lang {
+        parts.push(l.clone());
+    }
+    // The title, or an external track's file name — unless it only repeats the language.
+    let title = if !t.title.is_empty() {
+        t.title.clone()
+    } else if !t.external_filename.is_empty() {
+        std::path::Path::new(&t.external_filename)
+            .file_name()
+            .map(|f| f.to_string_lossy().into_owned())
+            .unwrap_or_default()
+    } else {
+        String::new()
+    };
+    let title_lower = title.to_ascii_lowercase();
+    if !title.is_empty()
+        && lang
+            .as_ref()
+            .is_none_or(|l| !l.eq_ignore_ascii_case(&title))
+    {
+        parts.push(title);
+    }
+    if t.track_type == "sub" {
+        if t.hearing_impaired && !title_lower.contains("sdh") && !title_lower.contains("hearing") {
+            parts.push("SDH".into());
+        } else if t.forced && !title_lower.contains("forced") {
+            parts.push("Forced".into());
+        }
+    }
+    if t.visual_impaired && !title_lower.contains("descri") {
+        parts.push("Audio description".into());
+    }
+    let format = if t.codec.is_empty() {
+        String::new()
+    } else {
+        codec_name(&t.codec, &t.codec_profile)
+    };
+    let format = if t.track_type == "audio" {
+        let ch = channels_name(t.channel_count, &t.channels);
+        [format, ch]
+            .into_iter()
+            .filter(|s| !s.is_empty())
+            .collect::<Vec<_>>()
+            .join(" ")
+    } else {
+        format
+    };
+    if !format.is_empty() {
+        parts.push(format);
+    }
+    if t.default {
+        parts.push("Default".into());
+    }
+    if parts.is_empty() {
+        format!("Track {}", t.id)
+    } else {
+        parts.join("  ·  ")
+    }
+}
+
 // ── build_track_model ─────────────────────────────────────────────────────────
 pub(crate) fn build_track_model(tracks: &[TrackInfo], kind: &str) -> ModelRc<TrackEntry> {
     let entries: Vec<TrackEntry> = tracks
         .iter()
         .filter(|t| t.track_type == kind)
-        .map(|t| {
-            let mut label = String::new();
-
-            // Title first: prefer embedded title, fall back to base filename for external tracks.
-            let title = if !t.title.is_empty() {
-                t.title.clone()
-            } else if !t.external_filename.is_empty() {
-                std::path::Path::new(&t.external_filename)
-                    .file_name()
-                    .map(|f| f.to_string_lossy().into_owned())
-                    .unwrap_or_default()
-            } else {
-                String::new()
-            };
-            if !title.is_empty() {
-                label.push_str(&title);
-            }
-
-            // Append type tag for subtitle tracks when the flag is set but the
-            // title doesn't already contain a hint (avoids "English (SDH) [SDH]").
-            if kind == "sub" {
-                let title_lower = title.to_ascii_lowercase();
-                if t.hearing_impaired
-                    && !title_lower.contains("sdh")
-                    && !title_lower.contains("hearing")
-                {
-                    if !label.is_empty() {
-                        label.push(' ');
-                    }
-                    label.push_str("[SDH]");
-                } else if t.forced && !title_lower.contains("forced") {
-                    if !label.is_empty() {
-                        label.push(' ');
-                    }
-                    label.push_str("[Forced]");
-                }
-            }
-
-            // Language code after title.
-            if !t.lang.is_empty() {
-                if !label.is_empty() {
-                    label.push(' ');
-                }
-                label.push_str(&t.lang);
-            }
-
-            // Codec last.
-            if !t.codec.is_empty() {
-                label.push_str(&format!(" ({})", t.codec));
-            }
-            if label.is_empty() {
-                label = format!("Track {}", t.id);
-            }
-            TrackEntry {
-                id: t.id as i32,
-                label: label.into(),
-            }
+        .map(|t| TrackEntry {
+            id: t.id as i32,
+            label: track_label(t).into(),
         })
         .collect();
     ModelRc::new(VecModel::from(entries))
@@ -271,5 +430,72 @@ pub(crate) fn apply_audio_track(
                 });
             }
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn track(kind: &str) -> TrackInfo {
+        TrackInfo {
+            id: 3,
+            track_type: kind.into(),
+            ..TrackInfo::default()
+        }
+    }
+
+    #[test]
+    fn languages_have_names() {
+        assert_eq!(lang_name("en").as_deref(), Some("English"));
+        assert_eq!(lang_name("swe").as_deref(), Some("Swedish"));
+        assert_eq!(
+            lang_name("es-419").as_deref(),
+            Some("Spanish (Latin America)")
+        );
+        assert_eq!(lang_name("pt-BR").as_deref(), Some("Portuguese (Brazil)"));
+        assert_eq!(
+            lang_name("zh-Hant").as_deref(),
+            Some("Chinese (Traditional)")
+        );
+        assert_eq!(lang_name("xx"), None);
+    }
+
+    #[test]
+    fn formats_and_channels_have_names() {
+        assert_eq!(codec_name("subrip", ""), "SRT");
+        assert_eq!(codec_name("hdmv_pgs_subtitle", ""), "PGS");
+        assert_eq!(codec_name("eac3", ""), "E-AC3");
+        assert_eq!(codec_name("dts", "DTS-HD MA"), "DTS-HD MA");
+        assert_eq!(codec_name("weird", ""), "WEIRD");
+        assert_eq!(channels_name(2, ""), "Stereo");
+        assert_eq!(channels_name(6, "5.1(side)"), "5.1");
+        assert_eq!(channels_name(8, ""), "7.1");
+        assert_eq!(channels_name(0, ""), "");
+    }
+
+    #[test]
+    fn a_track_reads_like_people_say_it() {
+        let mut s = track("sub");
+        s.lang = "en".into();
+        s.codec = "subrip".into();
+        s.hearing_impaired = true;
+        assert_eq!(track_label(&s), "English  ·  SDH  ·  SRT");
+        // A title that only repeats the language goes; one that says more stays.
+        s.hearing_impaired = false;
+        s.lang = "es-419".into();
+        s.title = "Spanish (Latin America)".into();
+        assert_eq!(track_label(&s), "Spanish (Latin America)  ·  SRT");
+        let mut a = track("audio");
+        a.lang = "eng".into();
+        a.title = "Commentary".into();
+        a.codec = "eac3".into();
+        a.channel_count = 6;
+        a.default = true;
+        assert_eq!(
+            track_label(&a),
+            "English  ·  Commentary  ·  E-AC3 5.1  ·  Default"
+        );
+        assert_eq!(track_label(&track("video")), "Track 3");
     }
 }

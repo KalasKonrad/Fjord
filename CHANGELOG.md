@@ -23,6 +23,11 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Improved: audio and subtitle tracks have readable names.** "English · SDH
+  · SRT" instead of "en (subrip)", "Spanish (Latin America)" instead of
+  "es-419"; audio tracks show their format and channels ("E-AC3 5.1",
+  "DTS-HD MA 7.1") and which track is the file's default.
+
 - **Improved: the end-of-episode prompts look alike.** Skip Intro, the timed
   Skip / Don't Skip prompt and the Up Next banner are now the same dark panel
   in the same place, and grow with the Text size. Up Next's "Skip" is now
