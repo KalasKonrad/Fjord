@@ -29,12 +29,12 @@ are bumped together as one step, not separately.
   dropped frames. It now shows what the player reports by itself, so opening
   it no longer affects playback.
 
-- **Fixed: a film could play in the desktop's mode when the TV ignored the
-  switch.** Display sync asked for the film's mode, the desktop accepted the
-  request but left the TV where it was, and the whole film played at the
+- **Fixed: a film could play in the desktop's mode when the switch was
+  refused.** Right after the HTPC wakes, the graphics driver can refuse a 4K
+  HDR mode for a few seconds — and the whole film then played at the
   desktop's refresh rate. Fjord now reads the mode back after switching,
-  tries once more if the TV isn't there, and tries again when the video has
-  started if it still isn't.
+  tries once more if the TV isn't there (that worked on the first morning it
+  happened), and tries again when the video has started if it still isn't.
 
 - **Improved: Settings are easier to find.** Two new sections: **Picture**
   (video sync, motion interpolation, upscaler, HDR passthrough and tone

@@ -23,7 +23,8 @@
 //                          unit-tested); startup only
 //   apply_display_switch   mode + scale and/or HDR + WCG in ONE kscreen-doctor call
 //                          (display_switch_args, unit-tested); best-effort, logged (with what
-//                          kscreen-doctor printed, also on success)
+//                          kscreen-doctor printed, also on success — a warning when it says
+//                          "failed": it exits 0 when the driver rejects a mode)
 //   sync_to_source         per item: supported modes → target → apply (+3 s settle) what changed
 //                          vs. FjordState's "currently applied" (FpsSource says how far the frame
 //                          rate can be trusted); reads the mode back and switches once more when
@@ -290,8 +291,13 @@ fn run_kscreen(args: &[String]) {
                 String::from_utf8_lossy(&o.stdout),
                 String::from_utf8_lossy(&o.stderr)
             );
-            if !said.trim().is_empty() {
-                tracing::debug!("display_sync: kscreen-doctor said: {}", said.trim());
+            let said = said.trim();
+            // It exits 0 even when KWin refused ("applying config failed! The driver rejected
+            // the output configuration" — HTPC, 2026-11-13, right after waking): a warning.
+            if said.to_ascii_lowercase().contains("failed") {
+                tracing::warn!("display_sync: kscreen-doctor said: {said}");
+            } else if !said.is_empty() {
+                tracing::debug!("display_sync: kscreen-doctor said: {said}");
             }
         }
         Ok(o) => tracing::warn!(
