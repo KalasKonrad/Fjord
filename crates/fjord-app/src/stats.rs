@@ -7,7 +7,8 @@
 //                        whether it scales up — the source's width against the drawn width
 //                        (StatsData.drawn_w, osd-dimensions); OUT: the drawn size + pixel formats;
 //                        SPEED: audio/video speed corrections; DROP: VO drops ·
-//                        decoder drops · mistimed frames; CLR IN/OUT via fmt_color (IN = the
+//                        decoder drops · mistimed frames; CLR IN/OUT via color_line (unit-tested:
+//                        "BT.709 colors · BT.1886 gamma (SDR)"; IN = the
 //                        source's video-params; OUT = video-target-params, never available under
 //                        vo=libmpv → "n/a"); HDR row from hdr::status_text
 // ─────────────────────────────────────────────────────────────────────────────
@@ -27,6 +28,37 @@ fn scaler_line(scaler: String, source_w: i64, drawn_w: i64) -> String {
     } else {
         scaler
     }
+}
+
+/// CLR IN/OUT in words: "BT.709 colors · BT.1886 gamma (SDR)", "BT.2020 colors · PQ (HDR10, peak
+/// 1000 nits)" — mpv's bare "bt.709 · bt.1886" read like a conversion from one to the other
+/// (2026-11-13). Primaries are the colors, gamma the brightness curve (BT.1886 is the display
+/// curve for BT.709 video). Unknown names pass through. Unit-tested.
+fn color_line(primaries: &str, gamma: &str, sig_peak: f64) -> String {
+    if primaries.is_empty() && gamma.is_empty() {
+        return "—".into();
+    }
+    let colors = match primaries {
+        "" => "unknown colors".to_string(),
+        "bt.601-525" => "BT.601 (NTSC) colors".into(),
+        "bt.601-625" => "BT.601 (PAL) colors".into(),
+        "dci-p3" => "DCI-P3 colors".into(),
+        "display-p3" => "Display P3 colors".into(),
+        p => format!("{} colors", p.replace("bt.", "BT.")),
+    };
+    let curve = match gamma {
+        "pq" if sig_peak > 0.0 => format!("PQ (HDR10, peak {:.0} nits)", sig_peak * 100.0),
+        "pq" => "PQ (HDR10)".into(),
+        "hlg" => "HLG (HDR)".into(),
+        "" => "unknown gamma".into(),
+        "bt.1886" => "BT.1886 gamma (SDR)".into(),
+        "srgb" => "sRGB gamma (SDR)".into(),
+        g => match g.strip_prefix("gamma") {
+            Some(n) => format!("gamma {n} (SDR)"),
+            None => format!("{g} gamma"),
+        },
+    };
+    format!("{colors}  ·  {curve}")
 }
 
 fn ss(s: &str) -> SharedString {
@@ -72,23 +104,11 @@ pub(crate) fn update_stats_window(w: &MainWindow, s: &fjord_player::StatsData) {
         "—".into()
     };
 
-    // fmt_color formats primaries/gamma/peak for both rows. CLR IN = video-params (the decoded
-    // source — Dolby Vision/HDR stays "bt.2020 · pq" even when tone-mapped); CLR OUT =
+    // color_line words primaries/gamma/peak for both rows. CLR IN = video-params (the decoded
+    // source — Dolby Vision/HDR stays "BT.2020 colors · PQ" even when tone-mapped); CLR OUT =
     // video-target-params (video-out-params never reflected tone-mapping; see StatsData in
     // fjord-player).
-    let fmt_color = |prim: &str, gamma: &str, sig_peak: f64| -> String {
-        let hdr = match gamma {
-            "pq" => format!("  ·  HDR10 (peak {:.0} nits)", sig_peak * 100.0),
-            "hlg" => "  ·  HLG".into(),
-            _ => String::new(),
-        };
-        if prim.is_empty() && gamma.is_empty() {
-            "—".into()
-        } else {
-            format!("{}  ·  {}{}", prim, gamma, hdr)
-        }
-    };
-    let color_in = fmt_color(&s.video_primaries, &s.video_gamma, s.video_sig_peak);
+    let color_in = color_line(&s.video_primaries, &s.video_gamma, s.video_sig_peak);
     // CLR OUT: video-target-params is always unavailable under vo=libmpv — it describes a VO's
     // own swapchain, and under the render API mpv has none. Shown as an explicit "n/a" (CLR IN's
     // "—" just means not yet known). What actually reaches the screen is Fjord's FBO (8-bit,
@@ -96,7 +116,7 @@ pub(crate) fn update_stats_window(w: &MainWindow, s: &fjord_player::StatsData) {
     let color_out = if s.video_out_primaries.is_empty() && s.video_out_gamma.is_empty() {
         "n/a — not reported under this render path".into()
     } else {
-        fmt_color(
+        color_line(
             &s.video_out_primaries,
             &s.video_out_gamma,
             s.video_out_sig_peak,
@@ -270,5 +290,26 @@ mod tests {
         );
         // Nothing drawn yet: just the scaler.
         assert_eq!(scaler_line("FSR 1".into(), 1920, 0), "FSR 1");
+    }
+
+    #[test]
+    fn the_color_line_says_what_each_part_is() {
+        assert_eq!(
+            color_line("bt.709", "bt.1886", 1.0),
+            "BT.709 colors  ·  BT.1886 gamma (SDR)"
+        );
+        assert_eq!(
+            color_line("bt.2020", "pq", 10.0),
+            "BT.2020 colors  ·  PQ (HDR10, peak 1000 nits)"
+        );
+        assert_eq!(
+            color_line("bt.2020", "hlg", 0.0),
+            "BT.2020 colors  ·  HLG (HDR)"
+        );
+        assert_eq!(
+            color_line("bt.601-625", "gamma2.2", 1.0),
+            "BT.601 (PAL) colors  ·  gamma 2.2 (SDR)"
+        );
+        assert_eq!(color_line("", "", 0.0), "—");
     }
 }

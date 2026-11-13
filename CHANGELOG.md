@@ -23,6 +23,11 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Improved: the stats overlay's color rows say what they mean** — "BT.709
+  colors · BT.1886 gamma (SDR)" instead of "bt.709 · bt.1886", which read like
+  a conversion from one to the other; HDR reads "BT.2020 colors · PQ (HDR10,
+  peak 1000 nits)".
+
 - **Fixed: the stats overlay (I) made playback stutter while it was open.** It
   asked the player for about 45 values every half second and waited for each
   answer on the thread that also draws the video, which caused late and
