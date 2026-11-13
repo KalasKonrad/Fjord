@@ -125,7 +125,7 @@ export component SeriesScreen inherits StackPage {
                             Text {
                                 text: AppState.series-title;
                                 color: Theme.text;
-                                font-size: 28px;
+                                font-size: Theme.fs-3xl;
                                 font-weight: 700;
                                 wrap: no-wrap;
                                 overflow: elide;
@@ -134,7 +134,7 @@ export component SeriesScreen inherits StackPage {
                             if AppState.series-tagline != "": Text {
                                 text: AppState.series-tagline;
                                 color: AppState.series-has-backdrop ? Theme.text-bright : Theme.text-muted;
-                                font-size: 15px * AppState.text-scale;
+                                font-size: Theme.fs-base * AppState.text-scale;
                                 font-italic: true;
                                 wrap: word-wrap;
                             }
@@ -148,14 +148,14 @@ export component SeriesScreen inherits StackPage {
                             if AppState.series-genres != "": Text {
                                 text: AppState.series-genres;
                                 color: AppState.series-has-backdrop ? Theme.text-bright : Theme.text-muted;
-                                font-size: 13px * AppState.text-scale;
+                                font-size: Theme.fs-md * AppState.text-scale;
                                 wrap: word-wrap;
                             }
 
                             if AppState.series-studio != "": Text {
                                 text: AppState.series-studio;
                                 color: AppState.series-has-backdrop ? Theme.text-bright : Theme.text-muted;
-                                font-size: 13px * AppState.text-scale;
+                                font-size: Theme.fs-md * AppState.text-scale;
                             }
 
                             HorizontalLayout {
@@ -291,7 +291,7 @@ export component SeriesScreen inherits StackPage {
                             lbl := Text {
                                 text: s.name;
                                 color: i == AppState.series-season-idx ? Theme.text-bright : Theme.text-muted;
-                                font-size: 13px * AppState.text-scale;
+                                font-size: Theme.fs-md * AppState.text-scale;
                                 font-weight: i == AppState.series-season-idx ? 700 : 400;
                                 horizontal-alignment: center;
                                 vertical-alignment: center;
@@ -336,7 +336,7 @@ export component SeriesScreen inherits StackPage {
                 Text {
                     text: "Loading episodes…";
                     color: Theme.text-muted;
-                    font-size: 14px * AppState.text-scale;
+                    font-size: Theme.fs-base * AppState.text-scale;
                     horizontal-alignment: center;
                     vertical-alignment: center;
                 }

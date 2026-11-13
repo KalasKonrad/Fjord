@@ -49,7 +49,7 @@ component MenuRowItem inherits Rectangle {
             text: root.icon-text;
             font-family: root.icon-font-family;
             color: AppState.context-menu-focused == row-index ? Theme.accent : Theme.text-muted;
-            font-size: 14px * AppState.text-scale;
+            font-size: Theme.fs-base * AppState.text-scale;
             vertical-alignment: center;
             width: 18px * AppState.text-scale;
         }
@@ -57,7 +57,7 @@ component MenuRowItem inherits Rectangle {
         Text {
             text: root.label;
             color: AppState.context-menu-focused == row-index ? Theme.text : Theme.text-muted;
-            font-size: 14px * AppState.text-scale;
+            font-size: Theme.fs-base * AppState.text-scale;
             vertical-alignment: center;
         }
     }
@@ -182,7 +182,7 @@ export component PlaylistPicker inherits Rectangle {
             Text {
                 text: "ADD TO PLAYLIST";
                 color: Theme.text-muted;
-                font-size: 11px * AppState.text-scale;
+                font-size: Theme.fs-xs * AppState.text-scale;
                 height: head-h;
                 vertical-alignment: center;
                 horizontal-alignment: center;
@@ -217,7 +217,7 @@ export component PlaylistPicker inherits Rectangle {
                     Text {
                         text: "+";
                         color: AppState.playlist-picker-cursor == 0 ? Theme.accent : Theme.text-muted;
-                        font-size: 14px * AppState.text-scale;
+                        font-size: Theme.fs-base * AppState.text-scale;
                         vertical-alignment: center;
                         width: 18px * AppState.text-scale;
                     }
@@ -225,7 +225,7 @@ export component PlaylistPicker inherits Rectangle {
                     Text {
                         text: "New playlist…";
                         color: AppState.playlist-picker-cursor == 0 ? Theme.text : Theme.text-muted;
-                        font-size: 14px * AppState.text-scale;
+                        font-size: Theme.fs-base * AppState.text-scale;
                         vertical-alignment: center;
                     }
                 }
@@ -237,14 +237,14 @@ export component PlaylistPicker inherits Rectangle {
                     Text {
                         text: "Name:";
                         color: Theme.text-muted;
-                        font-size: 13px * AppState.text-scale;
+                        font-size: Theme.fs-md * AppState.text-scale;
                         vertical-alignment: center;
                     }
 
                     Text {
                         text: AppState.caret-text(AppState.playlist-picker-name, AppState.playlist-picker-name-cursor, "|");
                         color: Theme.text;
-                        font-size: 14px * AppState.text-scale;
+                        font-size: Theme.fs-base * AppState.text-scale;
                         vertical-alignment: center;
                         overflow: elide;
                     }
@@ -303,14 +303,14 @@ export component PlaylistPicker inherits Rectangle {
                                 Text {
                                     text: p.title;
                                     color: AppState.playlist-picker-cursor == i + 1 ? Theme.text : Theme.text-muted;
-                                    font-size: 14px * AppState.text-scale;
+                                    font-size: Theme.fs-base * AppState.text-scale;
                                     overflow: elide;
                                 }
 
                                 if p.subtitle != "": Text {
                                     text: p.subtitle;
                                     color: Theme.text-subtle;
-                                    font-size: 11px * AppState.text-scale;
+                                    font-size: Theme.fs-xs * AppState.text-scale;
                                     overflow: elide;
                                 }
                             }

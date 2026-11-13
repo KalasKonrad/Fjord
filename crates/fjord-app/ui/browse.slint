@@ -82,7 +82,7 @@ export component BrowseScreen inherits Rectangle {
                             text: "🔍";
                             font-family: "Noto Sans Symbols 2";
                             color: AppState.browse-header-focused ? Theme.accent : Theme.text-muted;
-                            font-size: 17px * AppState.text-scale;
+                            font-size: Theme.fs-lg * AppState.text-scale;
                             vertical-alignment: center;
                             width: 22px * AppState.text-scale;
                         }
@@ -95,7 +95,7 @@ export component BrowseScreen inherits Rectangle {
                             color: AppState.browse-query != "" ? Theme.text
                                 : AppState.browse-header-focused ? Theme.text-muted
                                 : Theme.text-subtle;
-                            font-size: 14px * AppState.text-scale;
+                            font-size: Theme.fs-base * AppState.text-scale;
                             vertical-alignment: center;
                             horizontal-stretch: 1;
                         }
@@ -103,7 +103,7 @@ export component BrowseScreen inherits Rectangle {
                         if AppState.browse-query != "" && !AppState.browse-header-focused: Text {
                             text: "Esc to clear";
                             color: Theme.text-subtle;
-                            font-size: 12px * AppState.text-scale;
+                            font-size: Theme.fs-sm * AppState.text-scale;
                             vertical-alignment: center;
                         }
                     }
@@ -157,7 +157,7 @@ export component BrowseScreen inherits Rectangle {
             if AppState.browse-query != "" && AppState.media-items.length == 0: Text {
                 text: "No results for \"\{AppState.browse-query}\"";
                 color: Theme.text-muted;
-                font-size: 14px * AppState.text-scale;
+                font-size: Theme.fs-base * AppState.text-scale;
                 horizontal-alignment: center;
                 y: parent.height / 3;
                 width: parent.width;
@@ -183,7 +183,7 @@ export component BrowseScreen inherits Rectangle {
                 Text {
                     text: AppState.status;
                     color: Theme.text-muted;
-                    font-size: 13px * AppState.text-scale;
+                    font-size: Theme.fs-md * AppState.text-scale;
                     vertical-alignment: center;
                     horizontal-stretch: 1;
                 }

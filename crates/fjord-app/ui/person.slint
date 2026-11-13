@@ -70,7 +70,7 @@ export component PersonScreen inherits StackPage {
                     Text {
                         text: AppState.person-name;
                         color: Theme.text;
-                        font-size: 28px;
+                        font-size: Theme.fs-3xl;
                         font-weight: 700;
                         wrap: word-wrap;
                     }
@@ -78,7 +78,7 @@ export component PersonScreen inherits StackPage {
                     if AppState.person-bio != "": Text {
                         text: AppState.person-bio;
                         color: Theme.text-muted;
-                        font-size: 14px * AppState.text-scale;
+                        font-size: Theme.fs-base * AppState.text-scale;
                         wrap: word-wrap;
                     }
                 }
@@ -132,7 +132,7 @@ export component PersonScreen inherits StackPage {
                     Text {
                         text: "None of their titles are in your library";
                         color: Theme.text-muted;
-                        font-size: 14px * AppState.text-scale;
+                        font-size: Theme.fs-base * AppState.text-scale;
                     }
                 }
             }

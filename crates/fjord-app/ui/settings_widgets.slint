@@ -69,7 +69,7 @@ export component SectionHeader inherits Rectangle {
         Text {
             text: root.text;
             color: Theme.accent;
-            font-size: 11px * AppState.text-scale;
+            font-size: Theme.fs-xs * AppState.text-scale;
             font-weight: 700;
             vertical-alignment: center;
         }
@@ -119,7 +119,7 @@ export component SettingsDropdown inherits Rectangle {
         val := Text {
             text: root.display-value;
             color: Theme.text;
-            font-size: 13px * AppState.text-scale;
+            font-size: Theme.fs-md * AppState.text-scale;
             vertical-alignment: center;
             overflow: elide;
         }
@@ -128,7 +128,7 @@ export component SettingsDropdown inherits Rectangle {
             text: "▾";
             font-family: "Noto Sans Symbols 2";
             color: Theme.text-muted;
-            font-size: 10px * AppState.text-scale;
+            font-size: Theme.fs-2xs * AppState.text-scale;
             vertical-alignment: center;
         }
     }
@@ -169,7 +169,7 @@ export component SettingsDropdown inherits Rectangle {
                             x: 10px;
                             text: opt != "" ? opt : "(none)";
                             color: opt == root.current-value ? Theme.accent : Theme.text;
-                            font-size: 13px * AppState.text-scale;
+                            font-size: Theme.fs-md * AppState.text-scale;
                             font-weight: opt == root.current-value ? 600 : 400;
                             vertical-alignment: center;
                             overflow: elide;
@@ -196,7 +196,7 @@ export component SectionIntro inherits VerticalLayout {
     Text {
         text: root.text;
         color: Theme.text-muted;
-        font-size: 13px * AppState.text-scale;
+        font-size: Theme.fs-md * AppState.text-scale;
         wrap: word-wrap;
     }
 }
@@ -272,7 +272,7 @@ export component SettingsRow inherits Rectangle {
                 Text {
                     text: root.title;
                     color: root.blocked ? Theme.text-disabled : Theme.text;
-                    font-size: 14px * AppState.text-scale;
+                    font-size: Theme.fs-base * AppState.text-scale;
                 }
 
                 if root.per-profile: VerticalLayout {
@@ -285,7 +285,7 @@ export component SettingsRow inherits Rectangle {
                         profile-tag := Text {
                             text: "Profile";
                             color: Theme.text-muted;
-                            font-size: 10px * AppState.text-scale;
+                            font-size: Theme.fs-2xs * AppState.text-scale;
                             font-weight: 600;
                             horizontal-alignment: center;
                             vertical-alignment: center;
@@ -299,7 +299,7 @@ export component SettingsRow inherits Rectangle {
             Text {
                 text: root.blocked ? root.blocked-why + " — " + root.subtitle : root.subtitle;
                 color: Theme.text-muted;
-                font-size: 12px * AppState.text-scale;
+                font-size: Theme.fs-sm * AppState.text-scale;
                 wrap: AppState.settings-focused == root.key ? TextWrap.word-wrap : TextWrap.no-wrap;
                 overflow: elide;
             }

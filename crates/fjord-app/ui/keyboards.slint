@@ -42,7 +42,7 @@ component VirtualKeyboardKey inherits FocusGlow {
     Text {
         text: root.label;
         color: root.active ? Theme.text-bright : (root.kb-focused ? Theme.accent : Theme.text);
-        font-size: 22px * AppState.text-scale;
+        font-size: Theme.fs-2xl * AppState.text-scale;
         font-weight: 600;
         horizontal-alignment: center;
         vertical-alignment: center;

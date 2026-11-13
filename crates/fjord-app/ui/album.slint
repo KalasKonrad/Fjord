@@ -111,7 +111,7 @@ export component AlbumScreen inherits StackPage {
                             text: "♫";
                             font-family: "Noto Sans Symbols 2";
                             color: Theme.text-subtle;
-                            font-size: 64px;
+                            font-size: Theme.fs-hero;
                             vertical-alignment: center;
                             horizontal-alignment: center;
                             width: parent.width;
@@ -129,7 +129,7 @@ export component AlbumScreen inherits StackPage {
                         Text {
                             text: AppState.album-title;
                             color: Theme.text;
-                            font-size: 22px * AppState.text-scale;
+                            font-size: Theme.fs-2xl * AppState.text-scale;
                             font-weight: 700;
                             overflow: elide;
                         }
@@ -137,14 +137,14 @@ export component AlbumScreen inherits StackPage {
                         Text {
                             text: AppState.album-artist;
                             color: Theme.accent;
-                            font-size: 15px * AppState.text-scale;
+                            font-size: Theme.fs-base * AppState.text-scale;
                             overflow: elide;
                         }
 
                         Text {
                             text: AppState.album-meta;
                             color: Theme.text-muted;
-                            font-size: 13px * AppState.text-scale;
+                            font-size: Theme.fs-md * AppState.text-scale;
                         }
 
                         Rectangle {
@@ -231,7 +231,7 @@ export component AlbumScreen inherits StackPage {
                     width: parent.width;
                     text: AppState.album-is-playlist ? "This playlist is empty" : "This album has no tracks";
                     color: Theme.text-muted;
-                    font-size: 14px * AppState.text-scale;
+                    font-size: Theme.fs-base * AppState.text-scale;
                     horizontal-alignment: center;
                 }
             }

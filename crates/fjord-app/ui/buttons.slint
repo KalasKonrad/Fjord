@@ -50,7 +50,7 @@ export component FjordButton inherits FocusGlow {
         if root.icon-left != "": Text {
             text: root.icon-left;
             color: root.enabled ? Theme.text-bright : (root.on-dark ? Theme.dark-text-subtle : Theme.text-subtle);
-            font-size: 14px * AppState.text-scale;
+            font-size: Theme.fs-base * AppState.text-scale;
             font-weight: 600;
             font-family: "Noto Sans Symbols 2";
             vertical-alignment: center;
@@ -58,14 +58,14 @@ export component FjordButton inherits FocusGlow {
         if root.text != "": Text {
             text: root.text;
             color: root.enabled ? Theme.text-bright : (root.on-dark ? Theme.dark-text-subtle : Theme.text-subtle);
-            font-size: 14px * AppState.text-scale;
+            font-size: Theme.fs-base * AppState.text-scale;
             font-weight: 600;
             vertical-alignment: center;
         }
         if root.icon-right != "": Text {
             text: root.icon-right;
             color: root.enabled ? Theme.text-bright : (root.on-dark ? Theme.dark-text-subtle : Theme.text-subtle);
-            font-size: 14px * AppState.text-scale;
+            font-size: Theme.fs-base * AppState.text-scale;
             font-weight: 600;
             font-family: "Noto Sans Symbols 2";
             vertical-alignment: center;
@@ -99,7 +99,7 @@ export component TabButton inherits FocusGlow {
     Text {
         text: root.label;
         color: root.active ? Theme.text-bright : Theme.text;
-        font-size: 13px * AppState.text-scale;
+        font-size: Theme.fs-md * AppState.text-scale;
         font-weight: 600;
         horizontal-alignment: center;
         vertical-alignment: center;
@@ -216,7 +216,7 @@ export component ConfirmDialog inherits Rectangle {
             Text {
                 text: root.title;
                 color: Theme.text;
-                font-size: 16px * AppState.text-scale;
+                font-size: Theme.fs-lg * AppState.text-scale;
                 font-weight: 700;
                 horizontal-alignment: center;
                 // Titles can carry a name ("Copy Settings from <profile>?"): wrap rather than cut.
@@ -226,7 +226,7 @@ export component ConfirmDialog inherits Rectangle {
             Text {
                 text: root.message;
                 color: Theme.text-muted;
-                font-size: 13px * AppState.text-scale;
+                font-size: Theme.fs-md * AppState.text-scale;
                 horizontal-alignment: center;
                 wrap: word-wrap;
             }
@@ -262,7 +262,7 @@ export component ConfirmDialog inherits Rectangle {
                     Text {
                         text: "Cancel";
                         color: Theme.text;
-                        font-size: 14px * AppState.text-scale;
+                        font-size: Theme.fs-base * AppState.text-scale;
                         font-weight: 600;
                         horizontal-alignment: center;
                         vertical-alignment: center;

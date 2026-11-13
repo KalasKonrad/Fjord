@@ -30,6 +30,7 @@
 //   BonfireGroupMemberTile  Bonfire Group screen member
 //   ToggleListItem  ProfileEditScreen checklist row (libraries, devices)
 //   BonfireAdminRow / BonfireAuditRow  Bonfire Admin mappings / audit-log rows
+//   Type scale         fs-2xs … fs-hero (10–64 px): every literal font size is one of them (9d)
 // ─────────────────────────────────────────────────────────────────────────────
 // Fjord's palette: dark (Jellyfin-inspired, the default) or light, per profile (Settings →
 // Interface → Theme). The general tokens switch with `light`; the dark-* tokens and everything
@@ -156,6 +157,21 @@ export global Theme {
     out property <length> sp:             14px;
     out property <length> sp-lg:          20px;
     out property <length> sp-xl:          32px;
+
+    // ── Type scale (9d, 2026-11-13) ──────────────────────────────────────────
+    // Every literal font size is one of these (× AppState.text-scale under 24px, CLAUDE.md).
+    out property <length> fs-2xs:         10px;   // tags, tiny pills
+    out property <length> fs-xs:          11px;   // section headers, meta
+    out property <length> fs-sm:          12px;   // secondary text, subtitles
+    out property <length> fs-md:          13px;   // labels, buttons
+    out property <length> fs-base:        14px;   // body, row titles
+    out property <length> fs-lg:          16px;   // row/section titles
+    out property <length> fs-xl:          18px;   // dialog titles
+    out property <length> fs-2xl:         20px;   // page sub-headings
+    out property <length> fs-3xl:         28px;   // page titles
+    out property <length> fs-4xl:         32px;   // hero titles
+    out property <length> fs-5xl:         40px;   // big glyphs, lyrics
+    out property <length> fs-hero:        64px;   // the largest display text
 }
 
 // Where a video spot is on screen (HDR Stage 5): absolute position + size in logical px,

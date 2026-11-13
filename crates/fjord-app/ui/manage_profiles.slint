@@ -78,7 +78,7 @@ component ManageProfileTile inherits VerticalLayout {
                 Text {
                     text: "🔒";
                     font-family: "Noto Sans Symbols 2";
-                    font-size: 12px * AppState.text-scale;
+                    font-size: Theme.fs-sm * AppState.text-scale;
                     horizontal-alignment: center;
                     vertical-alignment: center;
                     width: parent.width;
@@ -96,7 +96,7 @@ component ManageProfileTile inherits VerticalLayout {
     Text {
         text: root.is-add-tile ? "Add Profile" : root.tile.display-name;
         color: root.kbd-focused ? Theme.accent : Theme.text;
-        font-size: 13px * AppState.text-scale;
+        font-size: Theme.fs-md * AppState.text-scale;
         font-weight: root.kbd-focused ? 700 : 400;
         horizontal-alignment: center;
         overflow: elide;
@@ -133,7 +133,7 @@ export component ManageProfilesScreen inherits Rectangle {
                 Text {
                     text: "Manage Profiles";
                     color: Theme.text;
-                    font-size: 20px * AppState.text-scale;
+                    font-size: Theme.fs-2xl * AppState.text-scale;
                     font-weight: 700;
                 }
 
@@ -158,7 +158,7 @@ export component ManageProfilesScreen inherits Rectangle {
                 text: "Profiles under this household — Bonfire caps a master account at "
                     + AppState.manage-profiles-max-sub-profiles + ".";
                 color: Theme.text-muted;
-                font-size: 12px * AppState.text-scale;
+                font-size: Theme.fs-sm * AppState.text-scale;
                 wrap: word-wrap;
             }
 
@@ -196,14 +196,14 @@ export component ManageProfilesScreen inherits Rectangle {
             if AppState.manage-profiles-list.length == 0: Text {
                 text: "No sub-profiles yet — add one to get started";
                 color: Theme.text-subtle;
-                font-size: 12px * AppState.text-scale;
+                font-size: Theme.fs-sm * AppState.text-scale;
                 horizontal-alignment: center;
             }
 
             if AppState.manage-profiles-error != "": Text {
                 text: AppState.manage-profiles-error;
                 color: Theme.error;
-                font-size: 12px * AppState.text-scale;
+                font-size: Theme.fs-sm * AppState.text-scale;
                 horizontal-alignment: center;
                 wrap: word-wrap;
             }

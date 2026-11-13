@@ -49,7 +49,7 @@ export component DashboardRowsScreen inherits Rectangle {
                 Text {
                     text: "Dashboard Rows";
                     color: Theme.text;
-                    font-size: 20px * AppState.text-scale;
+                    font-size: Theme.fs-2xl * AppState.text-scale;
                     font-weight: 700;
                     vertical-alignment: center;
                 }
@@ -84,7 +84,7 @@ export component DashboardRowsScreen inherits Rectangle {
             Text {
                 text: "Show or hide a row, or move it up or down — or drag it by its name. Changes are saved right away.";
                 color: Theme.text-muted;
-                font-size: 13px * AppState.text-scale;
+                font-size: Theme.fs-md * AppState.text-scale;
                 wrap: word-wrap;
             }
 
@@ -129,7 +129,7 @@ export component DashboardRowsScreen inherits Rectangle {
                                         text: "≡";
                                         font-family: "Noto Sans Math";
                                         color: Theme.text-subtle;
-                                        font-size: 18px * AppState.text-scale;
+                                        font-size: Theme.fs-xl * AppState.text-scale;
                                         vertical-alignment: center;
                                     }
 
@@ -137,7 +137,7 @@ export component DashboardRowsScreen inherits Rectangle {
                                         horizontal-stretch: 1;
                                         text: item.title;
                                         color: item.shown ? Theme.text : Theme.text-subtle;
-                                        font-size: 15px * AppState.text-scale;
+                                        font-size: Theme.fs-base * AppState.text-scale;
                                         font-weight: AppState.dash-rows-cursor == i ? 600 : 400;
                                         vertical-alignment: center;
                                         overflow: elide;

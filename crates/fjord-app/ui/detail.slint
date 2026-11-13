@@ -132,7 +132,7 @@ export component DetailPage inherits StackPage {
                                     Text {
                                         text: AppState.detail-title;
                                         color: Theme.text;
-                                        font-size: 28px;
+                                        font-size: Theme.fs-3xl;
                                         font-weight: 700;
                                         wrap: word-wrap;
                                     }
@@ -140,7 +140,7 @@ export component DetailPage inherits StackPage {
                                     if AppState.detail-tagline != "": Text {
                                         text: AppState.detail-tagline;
                                         color: AppState.detail-has-backdrop ? Theme.text-bright : Theme.text-muted;
-                                        font-size: 15px * AppState.text-scale;
+                                        font-size: Theme.fs-base * AppState.text-scale;
                                         font-italic: true;
                                         wrap: word-wrap;
                                     }
@@ -148,7 +148,7 @@ export component DetailPage inherits StackPage {
                                     if AppState.detail-series-label != "": Text {
                                         text: AppState.detail-series-label;
                                         color: Theme.accent;
-                                        font-size: 14px * AppState.text-scale;
+                                        font-size: Theme.fs-base * AppState.text-scale;
                                         wrap: word-wrap;
                                     }
 
@@ -161,13 +161,13 @@ export component DetailPage inherits StackPage {
                                     if AppState.detail-genres != "": Text {
                                         text: AppState.detail-genres;
                                         color: AppState.detail-has-backdrop ? Theme.text-bright : Theme.text-muted;
-                                        font-size: 13px * AppState.text-scale;
+                                        font-size: Theme.fs-md * AppState.text-scale;
                                     }
 
                                     if AppState.detail-studio != "": Text {
                                         text: AppState.detail-studio;
                                         color: AppState.detail-has-backdrop ? Theme.text-bright : Theme.text-muted;
-                                        font-size: 13px * AppState.text-scale;
+                                        font-size: Theme.fs-md * AppState.text-scale;
                                     }
                                 }
 
@@ -233,7 +233,7 @@ export component DetailPage inherits StackPage {
                         if AppState.detail-ends-at != "": Text {
                                 text: "Ends " + AppState.detail-ends-at;
                                 color: AppState.detail-has-backdrop ? Theme.text-bright : Theme.text-muted;
-                                font-size: 13px * AppState.text-scale;
+                                font-size: Theme.fs-md * AppState.text-scale;
                                 width: 110px * AppState.text-scale;
                                 horizontal-alignment: center;
                             }

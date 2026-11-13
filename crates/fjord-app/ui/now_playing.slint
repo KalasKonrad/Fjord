@@ -97,7 +97,7 @@ export component NowPlayingScreen inherits Rectangle {
                 y: (parent.height - self.height) / 2;
                 text: "Now Playing";
                 color: Theme.dark-text;
-                font-size: 17px * AppState.text-scale;
+                font-size: Theme.fs-lg * AppState.text-scale;
                 font-weight: 700;
             }
 
@@ -156,7 +156,7 @@ export component NowPlayingScreen inherits Rectangle {
                     Text {
                         text: AppState.music-bar-title;
                         color: Theme.dark-text;
-                        font-size: 26px * AppState.text-scale;
+                        font-size: Theme.fs-3xl * AppState.text-scale;
                         font-weight: 700;
                         horizontal-alignment: center;
                         wrap: word-wrap;
@@ -165,7 +165,7 @@ export component NowPlayingScreen inherits Rectangle {
                     if AppState.music-bar-artist != "": Text {
                         text: AppState.music-bar-artist;
                         color: Theme.dark-text-muted;
-                        font-size: 16px * AppState.text-scale;
+                        font-size: Theme.fs-lg * AppState.text-scale;
                         horizontal-alignment: center;
                         overflow: elide;
                     }
@@ -174,7 +174,7 @@ export component NowPlayingScreen inherits Rectangle {
                     if AppState.music-bar-quality-long != "": Text {
                         text: AppState.music-bar-quality-long;
                         color: Theme.dark-text-subtle;
-                        font-size: 13px * AppState.text-scale;
+                        font-size: Theme.fs-md * AppState.text-scale;
                         horizontal-alignment: center;
                         overflow: elide;
                     }
@@ -206,7 +206,7 @@ export component NowPlayingScreen inherits Rectangle {
                         Text {
                             text: AppState.music-bar-elapsed;
                             color: Theme.dark-text-muted;
-                            font-size: 13px * AppState.text-scale;
+                            font-size: Theme.fs-md * AppState.text-scale;
                         }
 
                         Rectangle {
@@ -216,7 +216,7 @@ export component NowPlayingScreen inherits Rectangle {
                         Text {
                             text: AppState.music-bar-total;
                             color: Theme.dark-text-muted;
-                            font-size: 13px * AppState.text-scale;
+                            font-size: Theme.fs-md * AppState.text-scale;
                         }
                     }
                 }
@@ -352,7 +352,7 @@ export component NowPlayingScreen inherits Rectangle {
                 if !AppState.lyrics-available: Text {
                     text: "No lyrics available";
                     color: Theme.dark-text-subtle;
-                    font-size: 14px * AppState.text-scale;
+                    font-size: Theme.fs-base * AppState.text-scale;
                     horizontal-alignment: center;
                     vertical-alignment: center;
                     width: parent.width;
@@ -402,7 +402,7 @@ export component NowPlayingScreen inherits Rectangle {
                                 visible: false;
                                 height: 0px;
                                 text: line.text;
-                                font-size: 40px;
+                                font-size: Theme.fs-5xl;
                                 font-weight: 700;
                                 width: parent.width;
                                 wrap: word-wrap;
@@ -452,7 +452,7 @@ export component NowPlayingScreen inherits Rectangle {
                 height: self.preferred-height;
                 text: "Up Next";
                 color: Theme.dark-text-muted;
-                font-size: 13px * AppState.text-scale;
+                font-size: Theme.fs-md * AppState.text-scale;
                 font-weight: 600;
             }
 
@@ -540,7 +540,7 @@ export component NowPlayingScreen inherits Rectangle {
                                         text: "♫";
                                         font-family: "Noto Sans Symbols 2";
                                         color: Theme.dark-text-subtle;
-                                        font-size: 30px * AppState.text-scale;
+                                        font-size: Theme.fs-3xl * AppState.text-scale;
                                         horizontal-alignment: center;
                                         vertical-alignment: center;
                                         width: parent.width;
@@ -554,7 +554,7 @@ export component NowPlayingScreen inherits Rectangle {
                                 Text {
                                 text: entry.title;
                                 color: entry.is-current ? Theme.accent : Theme.dark-text;
-                                font-size: 13px * AppState.text-scale;
+                                font-size: Theme.fs-md * AppState.text-scale;
                                 font-weight: entry.is-current ? 700 : 600;
                                 horizontal-alignment: center;
                                 wrap: word-wrap;
@@ -567,7 +567,7 @@ export component NowPlayingScreen inherits Rectangle {
                             if entry.artist != "": Text {
                                 text: entry.artist;
                                 color: Theme.dark-text-muted;
-                                font-size: 12px * AppState.text-scale;
+                                font-size: Theme.fs-sm * AppState.text-scale;
                                 horizontal-alignment: center;
                                 overflow: elide;
                             }

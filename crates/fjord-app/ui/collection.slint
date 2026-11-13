@@ -123,7 +123,7 @@ export component CollectionScreen inherits StackPage {
                                 Text {
                                     text: AppState.collection-title;
                                     color: Theme.text;
-                                    font-size: 28px;
+                                    font-size: Theme.fs-3xl;
                                     font-weight: 700;
                                     wrap: word-wrap;
                                 }
@@ -131,13 +131,13 @@ export component CollectionScreen inherits StackPage {
                                 if AppState.collection-items.length > 0: Text {
                                     text: AppState.plural(AppState.collection-items.length, "item", "items");
                                     color: AppState.collection-has-backdrop ? Theme.text-soft : Theme.text-muted;
-                                    font-size: 14px * AppState.text-scale;
+                                    font-size: Theme.fs-base * AppState.text-scale;
                                 }
 
                                 if AppState.collection-overview != "": Text {
                                     text: AppState.collection-overview;
                                     color: AppState.collection-has-backdrop ? Theme.text-soft : Theme.text-muted;
-                                    font-size: 13px * AppState.text-scale;
+                                    font-size: Theme.fs-md * AppState.text-scale;
                                     wrap: word-wrap;
                                     max-width: 620px;
                                 }
@@ -248,7 +248,7 @@ export component CollectionScreen inherits StackPage {
                 Text {
                     text: "This collection is empty";
                     color: Theme.text-muted;
-                    font-size: 14px * AppState.text-scale;
+                    font-size: Theme.fs-base * AppState.text-scale;
                 }
             }
 

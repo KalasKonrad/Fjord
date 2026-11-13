@@ -111,7 +111,7 @@ export component MediaCard inherits Rectangle {
                 // (Discover's first visit). "" = the window's default font for every other card.
                 font-family: item.id == "" && item.item-type == "" ? "Noto Sans Symbols 2" : "";
                 color: Theme.text;
-                font-size: 12px * AppState.text-scale;
+                font-size: Theme.fs-sm * AppState.text-scale;
                 font-weight: 600;
                 wrap: word-wrap;
             }
@@ -124,7 +124,7 @@ export component MediaCard inherits Rectangle {
                 visible: item.subtitle != "";
                 text: item.subtitle;
                 color: Theme.text-muted;
-                font-size: 10px * AppState.text-scale;
+                font-size: Theme.fs-2xs * AppState.text-scale;
                 wrap: word-wrap;
             }
 
@@ -153,7 +153,7 @@ export component MediaCard inherits Rectangle {
                     text: "❤";
                     font-family: "Adwaita Sans";
                     color: Theme.text-bright;
-                    font-size: 14px * AppState.text-scale;
+                    font-size: Theme.fs-base * AppState.text-scale;
                     font-weight: 900;
                     horizontal-alignment: center;
                     vertical-alignment: center;
@@ -173,7 +173,7 @@ export component MediaCard inherits Rectangle {
                 Text {
                     text: "★";
                     color: Theme.text-bright;
-                    font-size: 14px * AppState.text-scale;
+                    font-size: Theme.fs-base * AppState.text-scale;
                     font-weight: 900;
                     horizontal-alignment: center;
                     vertical-alignment: center;
@@ -192,7 +192,7 @@ export component MediaCard inherits Rectangle {
                     text: "✓";
                     font-family: "Adwaita Sans";
                     color: Theme.text-bright;
-                    font-size: 18px * AppState.text-scale;
+                    font-size: Theme.fs-xl * AppState.text-scale;
                     font-weight: 900;
                     horizontal-alignment: center;
                     vertical-alignment: center;
@@ -210,7 +210,7 @@ export component MediaCard inherits Rectangle {
                 Text {
                     text: "\{item.unplayed-count}";
                     color: Theme.text-bright;
-                    font-size: 11px * AppState.text-scale;
+                    font-size: Theme.fs-xs * AppState.text-scale;
                     font-weight: 900;
                     horizontal-alignment: center;
                     vertical-alignment: center;
@@ -237,7 +237,7 @@ export component MediaCard inherits Rectangle {
                         : item.availability == "available" ? "In Library"
                         : "");
                     color: Theme.text-bright;
-                    font-size: 10px * AppState.text-scale;
+                    font-size: Theme.fs-2xs * AppState.text-scale;
                     font-weight: 700;
                     horizontal-alignment: center;
                     vertical-alignment: center;
@@ -263,7 +263,7 @@ export component MediaCard inherits Rectangle {
                         ? (item.requested-4k ? "Available in 2K" : "Available in 4K")
                         : (item.requested-4k ? "Also requested in 2K" : "Also requested in 4K");
                     color: item.other-tier-available ? Theme.text-bright : Theme.text;
-                    font-size: 10px * AppState.text-scale;
+                    font-size: Theme.fs-2xs * AppState.text-scale;
                     font-weight: 700;
                     horizontal-alignment: center;
                     vertical-alignment: center;
@@ -362,7 +362,7 @@ export component TrackRow inherits Rectangle {
             x: 16px;
             text: root.track.disc-header;
             color: Theme.accent;
-            font-size: 11px * AppState.text-scale;
+            font-size: Theme.fs-xs * AppState.text-scale;
             font-weight: 700;
             vertical-alignment: center;
             height: parent.height;
@@ -395,7 +395,7 @@ export component TrackRow inherits Rectangle {
         Text {
             text: root.track.track-number > 0 ? root.track.track-number : root.index + 1;
             color: root.track.has-played ? Theme.accent : Theme.text-muted;
-            font-size: 13px * AppState.text-scale;
+            font-size: Theme.fs-md * AppState.text-scale;
             width: 24px * AppState.text-scale;
             vertical-alignment: center;
             horizontal-alignment: right;
@@ -409,14 +409,14 @@ export component TrackRow inherits Rectangle {
             Text {
                 text: root.track.title;
                 color: root.track.has-played ? Theme.text-muted : Theme.text;
-                font-size: 14px * AppState.text-scale;
+                font-size: Theme.fs-base * AppState.text-scale;
                 overflow: elide;
             }
 
             if root.track.artist != "" && root.track.artist != root.page-artist: Text {
                 text: root.track.artist;
                 color: Theme.text-subtle;
-                font-size: 11px * AppState.text-scale;
+                font-size: Theme.fs-xs * AppState.text-scale;
                 overflow: elide;
             }
         }
@@ -425,7 +425,7 @@ export component TrackRow inherits Rectangle {
         if root.track.quality != "": Text {
             text: root.track.quality;
             color: Theme.text-subtle;
-            font-size: 11px * AppState.text-scale;
+            font-size: Theme.fs-xs * AppState.text-scale;
             vertical-alignment: center;
         }
 
@@ -433,7 +433,7 @@ export component TrackRow inherits Rectangle {
         Text {
             text: root.track.duration;
             color: Theme.text-muted;
-            font-size: 13px * AppState.text-scale;
+            font-size: Theme.fs-md * AppState.text-scale;
             vertical-alignment: center;
             width: 44px * AppState.text-scale;
             horizontal-alignment: right;
@@ -444,7 +444,7 @@ export component TrackRow inherits Rectangle {
             text: "♥";
             font-family: "Adwaita Sans";
             color: Theme.accent;
-            font-size: 12px * AppState.text-scale;
+            font-size: Theme.fs-sm * AppState.text-scale;
             vertical-alignment: center;
             width: 16px * AppState.text-scale;
         }
@@ -467,7 +467,7 @@ export component TrackRow inherits Rectangle {
                 text: "✕";
                 font-family: "Noto Sans Symbols 2";
                 color: x-ta.has-hover ? Theme.error : Theme.text-subtle;
-                font-size: 13px * AppState.text-scale;
+                font-size: Theme.fs-md * AppState.text-scale;
                 vertical-alignment: center;
                 horizontal-alignment: center;
                 width: parent.width;
@@ -531,7 +531,7 @@ export component BrowseItem inherits Rectangle {
         Text {
             text: root.text;
             color: selected ? Theme.text : Theme.text-muted;
-            font-size: 14px * AppState.text-scale;
+            font-size: Theme.fs-base * AppState.text-scale;
             overflow: elide;
             vertical-alignment: center;
             horizontal-stretch: 1;

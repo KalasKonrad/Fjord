@@ -68,7 +68,7 @@ export component NavItem inherits Rectangle {
         Text {
             text: label;
             color: active ? Theme.text : Theme.text-muted;
-            font-size: 14px * AppState.text-scale;
+            font-size: Theme.fs-base * AppState.text-scale;
             font-weight: active ? 600 : 400;
             vertical-alignment: center;
         }
@@ -139,7 +139,7 @@ export component SidebarProfileMenu inherits Rectangle {
                 Text {
                     text: label;
                     color: AppState.sidebar-profile-menu-focused == i ? Theme.text : Theme.text-muted;
-                    font-size: 14px * AppState.text-scale;
+                    font-size: Theme.fs-base * AppState.text-scale;
                     vertical-alignment: center;
                     x: 12px;
                 }
@@ -190,7 +190,7 @@ export component ToastNotification inherits Rectangle {
         height: parent.height;
         text: root.message;
         color: Theme.dark-text;
-        font-size: 13px * AppState.text-scale;
+        font-size: Theme.fs-md * AppState.text-scale;
         wrap: word-wrap;
         vertical-alignment: center;
     }

@@ -49,7 +49,7 @@ component CalendarDayCell inherits Rectangle {
         Text {
             text: root.day;
             color: Theme.text;
-            font-size: 13px * AppState.text-scale;
+            font-size: Theme.fs-md * AppState.text-scale;
             font-weight: 600;
         }
         // A 2nd/3rd same-day entry isn't dropped, just summarized — the
@@ -58,7 +58,7 @@ component CalendarDayCell inherits Rectangle {
         if root.count > 0: Text {
             text: root.count > 1 ? root.release-title + " +" + (root.count - 1) : root.release-title;
             color: Theme.accent;
-            font-size: 10px * AppState.text-scale;
+            font-size: Theme.fs-2xs * AppState.text-scale;
             font-weight: 700;
             overflow: elide;
         }
@@ -127,7 +127,7 @@ export component CalendarScreen inherits StackPage {
 
             Text {
                 text: root.month-names[AppState.calendar-month - 1] + " " + AppState.calendar-year;
-                font-size: 20px * AppState.text-scale;
+                font-size: Theme.fs-2xl * AppState.text-scale;
                 font-weight: 700;
                 color: Theme.text;
                 horizontal-stretch: 0;
@@ -158,7 +158,7 @@ export component CalendarScreen inherits StackPage {
             text: label;
             horizontal-alignment: center;
             color: Theme.text-muted;
-            font-size: 12px * AppState.text-scale;
+            font-size: Theme.fs-sm * AppState.text-scale;
             font-weight: 600;
         }
     }
@@ -243,7 +243,7 @@ export component CalendarScreen inherits StackPage {
                         Text {
                             text: entry.title;
                             color: Theme.text;
-                            font-size: 14px * AppState.text-scale;
+                            font-size: Theme.fs-base * AppState.text-scale;
                             font-weight: 600;
                             overflow: elide;
                         }
@@ -251,7 +251,7 @@ export component CalendarScreen inherits StackPage {
                         Text {
                             text: entry.subtitle;
                             color: Theme.text-muted;
-                            font-size: 12px * AppState.text-scale;
+                            font-size: Theme.fs-sm * AppState.text-scale;
                             overflow: elide;
                         }
                     }

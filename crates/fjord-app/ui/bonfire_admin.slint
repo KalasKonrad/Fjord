@@ -47,7 +47,7 @@ export component BonfireAdminScreen inherits Rectangle {
             height: 32px * AppState.text-scale;
             text: "Bonfire Admin";
             color: Theme.text;
-            font-size: 18px * AppState.text-scale;
+            font-size: Theme.fs-xl * AppState.text-scale;
             font-weight: 700;
             vertical-alignment: center;
         }
@@ -95,7 +95,7 @@ export component BonfireAdminScreen inherits Rectangle {
         width: parent.width - 48px;
         text: AppState.bonfire-admin-error;
         color: Theme.error;
-        font-size: 13px * AppState.text-scale;
+        font-size: Theme.fs-md * AppState.text-scale;
         wrap: word-wrap;
         horizontal-alignment: center;
     }
@@ -104,14 +104,14 @@ export component BonfireAdminScreen inherits Rectangle {
         y: root.header-h + 40px;
         text: "No master accounts found";
         color: Theme.text-muted;
-        font-size: 14px * AppState.text-scale;
+        font-size: Theme.fs-base * AppState.text-scale;
     }
     if !AppState.bonfire-admin-loading && AppState.bonfire-admin-error == "" && AppState.bonfire-admin-tab == 1 && AppState.bonfire-admin-audit-rows.length == 0: Text {
         x: (parent.width - self.width) / 2;
         y: root.header-h + 40px;
         text: "No audit log entries";
         color: Theme.text-muted;
-        font-size: 14px * AppState.text-scale;
+        font-size: Theme.fs-base * AppState.text-scale;
     }
 
     // ── Mappings tab ─────────────────────────────────────────────────────────
@@ -189,7 +189,7 @@ export component BonfireAdminScreen inherits Rectangle {
                                     Text {
                                         text: row.avatar-initial;
                                         color: Theme.text;
-                                        font-size: 16px * AppState.text-scale;
+                                        font-size: Theme.fs-lg * AppState.text-scale;
                                         font-weight: 700;
                                         horizontal-alignment: center;
                                         vertical-alignment: center;
@@ -205,7 +205,7 @@ export component BonfireAdminScreen inherits Rectangle {
                                     Text {
                                         text: row.display-name;
                                         color: Theme.text;
-                                        font-size: 14px * AppState.text-scale;
+                                        font-size: Theme.fs-base * AppState.text-scale;
                                         font-weight: 600;
                                         overflow: elide;
                                     }
@@ -215,7 +215,7 @@ export component BonfireAdminScreen inherits Rectangle {
                                         Text {
                                             text: row.is-master ? "Master account" : "Sub-profile";
                                             color: Theme.text-subtle;
-                                            font-size: 11px * AppState.text-scale;
+                                            font-size: Theme.fs-xs * AppState.text-scale;
                                         }
 
                                         // The lock in the symbol font (no colour emoji), the words in the UI font.
@@ -225,13 +225,13 @@ export component BonfireAdminScreen inherits Rectangle {
                                                 text: "🔒";
                                                 font-family: "Noto Sans Symbols 2";
                                                 color: Theme.text-muted;
-                                                font-size: 11px * AppState.text-scale;
+                                                font-size: Theme.fs-xs * AppState.text-scale;
                                             }
 
                                             Text {
                                                 text: "PIN set";
                                                 color: Theme.text-muted;
-                                                font-size: 11px * AppState.text-scale;
+                                                font-size: Theme.fs-xs * AppState.text-scale;
                                             }
                                         }
                                     }
@@ -278,7 +278,7 @@ export component BonfireAdminScreen inherits Rectangle {
                                         Text {
                                             text: "Reset PIN";
                                             color: Theme.error;
-                                            font-size: 12px * AppState.text-scale;
+                                            font-size: Theme.fs-sm * AppState.text-scale;
                                             font-weight: 600;
                                             horizontal-alignment: center;
                                             vertical-alignment: center;
@@ -293,7 +293,7 @@ export component BonfireAdminScreen inherits Rectangle {
                                     Text {
                                         text: "Limit";
                                         color: Theme.text-muted;
-                                        font-size: 11px * AppState.text-scale;
+                                        font-size: Theme.fs-xs * AppState.text-scale;
                                         vertical-alignment: center;
                                     }
 
@@ -328,7 +328,7 @@ export component BonfireAdminScreen inherits Rectangle {
                                                 // which gets the coercion for free).
                                                 text: row.max-profiles < 0 ? "Default" : "" + row.max-profiles;
                                                 color: Theme.text;
-                                                font-size: 12px * AppState.text-scale;
+                                                font-size: Theme.fs-sm * AppState.text-scale;
                                                 font-weight: 600;
                                                 horizontal-alignment: center;
                                                 vertical-alignment: center;
@@ -410,7 +410,7 @@ export component BonfireAdminScreen inherits Rectangle {
                             Text {
                                 text: row.master-username + " → " + row.target-username;
                                 color: Theme.text;
-                                font-size: 13px * AppState.text-scale;
+                                font-size: Theme.fs-md * AppState.text-scale;
                                 font-weight: 600;
                                 overflow: elide;
                             }
@@ -418,7 +418,7 @@ export component BonfireAdminScreen inherits Rectangle {
                             Text {
                                 text: row.device-name + " · " + row.client + " · " + row.ip-address;
                                 color: Theme.text-muted;
-                                font-size: 11px * AppState.text-scale;
+                                font-size: Theme.fs-xs * AppState.text-scale;
                                 overflow: elide;
                             }
                         }
@@ -426,7 +426,7 @@ export component BonfireAdminScreen inherits Rectangle {
                         Text {
                             text: row.timestamp;
                             color: Theme.text-subtle;
-                            font-size: 11px * AppState.text-scale;
+                            font-size: Theme.fs-xs * AppState.text-scale;
                             vertical-alignment: center;
                         }
                     }

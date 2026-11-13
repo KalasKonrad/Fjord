@@ -108,7 +108,7 @@ export component SeasonScreen inherits StackPage {
                                 Text {
                                     text: AppState.season-title;
                                     color: Theme.text;
-                                    font-size: 28px;
+                                    font-size: Theme.fs-3xl;
                                     font-weight: 700;
                                     wrap: no-wrap;
                                     overflow: elide;
@@ -117,7 +117,7 @@ export component SeasonScreen inherits StackPage {
                                 if AppState.season-meta != "": Text {
                                     text: AppState.season-meta;
                                     color: AppState.season-has-backdrop ? Theme.text-bright : Theme.text-muted;
-                                    font-size: 13px * AppState.text-scale;
+                                    font-size: Theme.fs-md * AppState.text-scale;
                                 }
                             }
 
@@ -162,7 +162,7 @@ export component SeasonScreen inherits StackPage {
                 Text {
                     text: "Loading episodes…";
                     color: Theme.text-muted;
-                    font-size: 14px * AppState.text-scale;
+                    font-size: Theme.fs-base * AppState.text-scale;
                     horizontal-alignment: center;
                     vertical-alignment: center;
                 }

@@ -133,7 +133,7 @@ export component SettingsScreen inherits Rectangle {
                 Text {
                     text: "Settings";
                     color: Theme.text;
-                    font-size: 20px * AppState.text-scale;
+                    font-size: Theme.fs-2xl * AppState.text-scale;
                     font-weight: 700;
                 }
 
@@ -193,7 +193,7 @@ export component SettingsScreen inherits Rectangle {
                         Text {
                             text: label;
                             color: Theme.text;
-                            font-size: 14px * AppState.text-scale;
+                            font-size: Theme.fs-base * AppState.text-scale;
                             vertical-alignment: center;
                         }
                     }
@@ -215,14 +215,14 @@ export component SettingsScreen inherits Rectangle {
                 Text {
                     text: "SERVER";
                     color: Theme.text-muted;
-                    font-size: 10px * AppState.text-scale;
+                    font-size: Theme.fs-2xs * AppState.text-scale;
                     font-weight: 700;
                 }
 
                 Text {
                     text: AppState.server-name != "" ? AppState.server-name : "—";
                     color: Theme.text;
-                    font-size: 13px * AppState.text-scale;
+                    font-size: Theme.fs-md * AppState.text-scale;
                     font-weight: 600;
                     overflow: elide;
                 }
@@ -230,14 +230,14 @@ export component SettingsScreen inherits Rectangle {
                 Text {
                     text: AppState.server-version != "" ? AppState.server-version : "";
                     color: Theme.text-muted;
-                    font-size: 11px * AppState.text-scale;
+                    font-size: Theme.fs-xs * AppState.text-scale;
                     overflow: elide;
                 }
                 // Plain http:// (2026-10-09 security review): shown, not nagged about.
                 if AppState.server-unencrypted: Text {
                     text: "Not encrypted (http://)";
                     color: Theme.error;
-                    font-size: 11px * AppState.text-scale;
+                    font-size: Theme.fs-xs * AppState.text-scale;
                     overflow: elide;
                 }
 
@@ -246,40 +246,40 @@ export component SettingsScreen inherits Rectangle {
                 if AppState.seerr-connected: Text {
                     text: "SEERR";
                     color: Theme.text-muted;
-                    font-size: 10px * AppState.text-scale;
+                    font-size: Theme.fs-2xs * AppState.text-scale;
                     font-weight: 700;
                 }
                 if AppState.seerr-connected: Text {
                     text: "Seerr";
                     color: Theme.text;
-                    font-size: 13px * AppState.text-scale;
+                    font-size: Theme.fs-md * AppState.text-scale;
                     font-weight: 600;
                     overflow: elide;
                 }
                 if AppState.seerr-connected && AppState.seerr-version != "": Text {
                     text: AppState.seerr-version;
                     color: Theme.text-muted;
-                    font-size: 11px * AppState.text-scale;
+                    font-size: Theme.fs-xs * AppState.text-scale;
                     overflow: elide;
                 }
                 if AppState.seerr-unencrypted: Text {
                     text: "Not encrypted (http://)";
                     color: Theme.error;
-                    font-size: 11px * AppState.text-scale;
+                    font-size: Theme.fs-xs * AppState.text-scale;
                     overflow: elide;
                 }
 
                 Text {
                     text: "CLIENT";
                     color: Theme.text-muted;
-                    font-size: 10px * AppState.text-scale;
+                    font-size: Theme.fs-2xs * AppState.text-scale;
                     font-weight: 700;
                 }
 
                 Text {
                     text: "FJORD";
                     color: Theme.text;
-                    font-size: 13px * AppState.text-scale;
+                    font-size: Theme.fs-md * AppState.text-scale;
                     font-weight: 600;
                     overflow: elide;
                 }
@@ -287,7 +287,7 @@ export component SettingsScreen inherits Rectangle {
                 Text {
                     text: AppState.client-version != "" ? AppState.client-version : "—";
                     color: Theme.text-muted;
-                    font-size: 11px * AppState.text-scale;
+                    font-size: Theme.fs-xs * AppState.text-scale;
                     overflow: elide;
                 }
             }
@@ -674,14 +674,14 @@ export component SettingsScreen inherits Rectangle {
                                     text: "⚠";
                                     font-family: "Noto Sans Symbols 2";
                                     color: Theme.error;
-                                    font-size: 12px * AppState.text-scale;
+                                    font-size: Theme.fs-sm * AppState.text-scale;
                                     vertical-alignment: center;
                                 }
 
                                 Text {
                                     text: "passthrough active — display-resample falls back to 'audio' sync (no display sync correction)";
                                     color: Theme.error;
-                                    font-size: 12px * AppState.text-scale;
+                                    font-size: Theme.fs-sm * AppState.text-scale;
                                     vertical-alignment: center;
                                 }
                             }
@@ -1085,14 +1085,14 @@ export component SettingsScreen inherits Rectangle {
                                     text: "⚠";
                                     font-family: "Noto Sans Symbols 2";
                                     color: Theme.error;
-                                    font-size: 12px * AppState.text-scale;
+                                    font-size: Theme.fs-sm * AppState.text-scale;
                                     vertical-alignment: center;
                                 }
 
                                 Text {
                                     text: "passthrough active — display-resample falls back to 'audio' sync (no display sync correction)";
                                     color: Theme.error;
-                                    font-size: 12px * AppState.text-scale;
+                                    font-size: Theme.fs-sm * AppState.text-scale;
                                     vertical-alignment: center;
                                 }
                             }
@@ -1444,7 +1444,7 @@ export component SettingsScreen inherits Rectangle {
                                 Text {
                                     text: "Manage Profiles";
                                     color: Theme.text;
-                                    font-size: 14px * AppState.text-scale;
+                                    font-size: Theme.fs-base * AppState.text-scale;
                                     font-weight: 600;
                                     vertical-alignment: center;
                                 }
@@ -1525,7 +1525,7 @@ export component SettingsScreen inherits Rectangle {
                                 Text {
                                     text: "Add Account";
                                     color: Theme.text;
-                                    font-size: 14px * AppState.text-scale;
+                                    font-size: Theme.fs-base * AppState.text-scale;
                                     font-weight: 600;
                                     vertical-alignment: center;
                                 }
@@ -1579,7 +1579,7 @@ export component SettingsScreen inherits Rectangle {
                                 Text {
                                     text: "Sign Out";
                                     color: Theme.error;
-                                    font-size: 14px * AppState.text-scale;
+                                    font-size: Theme.fs-base * AppState.text-scale;
                                     font-weight: 600;
                                     vertical-alignment: center;
                                 }
@@ -1621,7 +1621,7 @@ export component SettingsScreen inherits Rectangle {
                                 Text {
                                     text: "Bonfire Group";
                                     color: Theme.text;
-                                    font-size: 14px * AppState.text-scale;
+                                    font-size: Theme.fs-base * AppState.text-scale;
                                     font-weight: 600;
                                     vertical-alignment: center;
                                 }
@@ -1664,7 +1664,7 @@ export component SettingsScreen inherits Rectangle {
                                 Text {
                                     text: "Bonfire Admin";
                                     color: Theme.text;
-                                    font-size: 14px * AppState.text-scale;
+                                    font-size: Theme.fs-base * AppState.text-scale;
                                     font-weight: 600;
                                     vertical-alignment: center;
                                 }
@@ -1680,7 +1680,7 @@ export component SettingsScreen inherits Rectangle {
                     Text {
                             text: "Enter rebinds the focused action — press any key to set it, or Escape to cancel";
                             color: Theme.text-muted;
-                            font-size: 12px * AppState.text-scale;
+                            font-size: Theme.fs-sm * AppState.text-scale;
                             wrap: word-wrap;
                         }
 
@@ -1725,7 +1725,7 @@ export component SettingsScreen inherits Rectangle {
                                 Text {
                                     text: kb.action;
                                     color: Theme.text;
-                                    font-size: 13px * AppState.text-scale;
+                                    font-size: Theme.fs-md * AppState.text-scale;
                                     vertical-alignment: center;
                                 }
 
@@ -1734,7 +1734,7 @@ export component SettingsScreen inherits Rectangle {
                                         ? "Press a key…" : kb.key;
                                     color: AppState.keybinding-focused == i && AppState.keybinding-rebinding
                                         ? Theme.bg : Theme.text-muted;
-                                    font-size: 12px * AppState.text-scale;
+                                    font-size: Theme.fs-sm * AppState.text-scale;
                                     vertical-alignment: center;
                                 }
                             }
@@ -1777,7 +1777,7 @@ export component SettingsScreen inherits Rectangle {
                                 Text {
                                     text: kb.action;
                                     color: Theme.text;
-                                    font-size: 13px * AppState.text-scale;
+                                    font-size: Theme.fs-md * AppState.text-scale;
                                     vertical-alignment: center;
                                 }
 
@@ -1786,7 +1786,7 @@ export component SettingsScreen inherits Rectangle {
                                         && AppState.keybinding-rebinding ? "Press a key…" : kb.key;
                                     color: AppState.keybinding-focused == i + AppState.keybinding-normal.length
                                         && AppState.keybinding-rebinding ? Theme.bg : Theme.text-muted;
-                                    font-size: 12px * AppState.text-scale;
+                                    font-size: Theme.fs-sm * AppState.text-scale;
                                     vertical-alignment: center;
                                 }
                             }
@@ -1898,14 +1898,14 @@ export component SettingsScreen inherits Rectangle {
                                     Text {
                                         text: AppState.seerr-connected ? "Disconnect" : "Connect Seerr";
                                         color: AppState.seerr-connected ? Theme.error : Theme.text;
-                                        font-size: 14px * AppState.text-scale;
+                                        font-size: Theme.fs-base * AppState.text-scale;
                                         font-weight: 600;
                                     }
 
                                     Text {
                                         text: AppState.seerr-connected-label;
                                         color: Theme.text-muted;
-                                        font-size: 12px * AppState.text-scale;
+                                        font-size: Theme.fs-sm * AppState.text-scale;
                                     }
                                 }
                             }
@@ -2016,14 +2016,14 @@ export component SettingsScreen inherits Rectangle {
                                     Text {
                                         text: "Manage Blocklist";
                                         color: Theme.text;
-                                        font-size: 14px * AppState.text-scale;
+                                        font-size: Theme.fs-base * AppState.text-scale;
                                         font-weight: 600;
                                     }
 
                                     Text {
                                         text: "Movies and shows blocked from being requested";
                                         color: Theme.text-muted;
-                                        font-size: 12px * AppState.text-scale;
+                                        font-size: Theme.fs-sm * AppState.text-scale;
                                     }
                                 }
                             }
@@ -2251,7 +2251,7 @@ export component SettingsScreen inherits Rectangle {
                                 text: opt;
                                 color: opt == AppState.settings-dropdown-display
                                     ? Theme.accent : Theme.text;
-                                font-size: 13px * AppState.text-scale;
+                                font-size: Theme.fs-md * AppState.text-scale;
                                 font-weight: opt == AppState.settings-dropdown-display ? 600 : 400;
                                 vertical-alignment: center;
                                 overflow: elide;

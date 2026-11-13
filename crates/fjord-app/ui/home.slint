@@ -65,7 +65,7 @@ export component SectionRow inherits Rectangle {
         Text {
             text: section-title;
             color: Theme.text;
-            font-size: 16px * AppState.text-scale;
+            font-size: Theme.fs-lg * AppState.text-scale;
             font-weight: 700;
         }
 
@@ -171,7 +171,7 @@ export component LibraryGrid inherits Rectangle {
                 Text {
                     text: grid-title;
                     color: Theme.text;
-                    font-size: 18px * AppState.text-scale;
+                    font-size: Theme.fs-xl * AppState.text-scale;
                     font-weight: 700;
                     vertical-alignment: center;
                 }
@@ -180,7 +180,7 @@ export component LibraryGrid inherits Rectangle {
                     text: AppState.library-query != "" ? AppState.plural(AppState.library-display.length, "result", "results")
                         : AppState.plural(AppState.library-display.length, "item", "items");
                     color: AppState.library-query != "" ? Theme.accent : Theme.text-muted;
-                    font-size: 13px * AppState.text-scale;
+                    font-size: Theme.fs-md * AppState.text-scale;
                     vertical-alignment: center;
                 }
             }
@@ -227,7 +227,7 @@ export component LibraryGrid inherits Rectangle {
                         v-t := Text {
                             text: v-lbl;
                             color: v-active ? Theme.bg : (v-focused ? Theme.text : Theme.text-muted);
-                            font-size: 12px * AppState.text-scale;
+                            font-size: Theme.fs-sm * AppState.text-scale;
                             vertical-alignment: center;
                             horizontal-alignment: center;
                             x: 9px;
@@ -248,7 +248,7 @@ export component LibraryGrid inherits Rectangle {
                 Text {
                     text: "Sort:";
                     color: Theme.text-muted;
-                    font-size: 11px * AppState.text-scale;
+                    font-size: Theme.fs-xs * AppState.text-scale;
                     vertical-alignment: center;
                     width: 30px * AppState.text-scale;
                 }
@@ -279,7 +279,7 @@ export component LibraryGrid inherits Rectangle {
                     pill-t := Text {
                         text: pill-lbl;
                         color: pill-active ? Theme.bg : (pill-focused ? Theme.text : Theme.text-muted);
-                        font-size: 12px * AppState.text-scale;
+                        font-size: Theme.fs-sm * AppState.text-scale;
                         vertical-alignment: center;
                         horizontal-alignment: center;
                         x: 9px;
@@ -315,7 +315,7 @@ export component LibraryGrid inherits Rectangle {
                     mf-t := Text {
                         text: "Favorites";
                         color: mf-active ? Theme.bg : (mf-focused ? Theme.text : Theme.text-muted);
-                        font-size: 12px * AppState.text-scale;
+                        font-size: Theme.fs-sm * AppState.text-scale;
                         vertical-alignment: center;
                         horizontal-alignment: center;
                         x: 9px;
@@ -352,7 +352,7 @@ export component LibraryGrid inherits Rectangle {
                     fw-t := Text {
                         text: "Unwatched";
                         color: fw-active ? Theme.bg : (fw-focused ? Theme.text : Theme.text-muted);
-                        font-size: 12px * AppState.text-scale;
+                        font-size: Theme.fs-sm * AppState.text-scale;
                         vertical-alignment: center;
                         horizontal-alignment: center;
                         x: 9px;
@@ -384,7 +384,7 @@ export component LibraryGrid inherits Rectangle {
                     ff-t := Text {
                         text: "Favorites";
                         color: ff-active ? Theme.bg : (ff-focused ? Theme.text : Theme.text-muted);
-                        font-size: 12px * AppState.text-scale;
+                        font-size: Theme.fs-sm * AppState.text-scale;
                         vertical-alignment: center;
                         horizontal-alignment: center;
                         x: 9px;
@@ -404,7 +404,7 @@ export component LibraryGrid inherits Rectangle {
                 Text {
                     text: AppState.library-sort-focused ? "← → navigate  ↵ apply  Esc" : "Tab to sort";
                     color: AppState.library-sort-focused ? Theme.accent : Theme.text-subtle;
-                    font-size: 11px * AppState.text-scale;
+                    font-size: Theme.fs-xs * AppState.text-scale;
                     vertical-alignment: center;
                 }
             }
@@ -461,7 +461,7 @@ export component LibraryGrid inherits Rectangle {
                         text: "🔍";
                         font-family: "Noto Sans Symbols 2";
                         color: AppState.library-header-focused ? Theme.accent : Theme.text-muted;
-                        font-size: 17px * AppState.text-scale;
+                        font-size: Theme.fs-lg * AppState.text-scale;
                         vertical-alignment: center;
                         width: 22px * AppState.text-scale;
                     }
@@ -474,7 +474,7 @@ export component LibraryGrid inherits Rectangle {
                         color: AppState.library-query != "" ? Theme.text
                             : AppState.library-header-focused ? Theme.text-muted
                             : Theme.text-subtle;
-                        font-size: 14px * AppState.text-scale;
+                        font-size: Theme.fs-base * AppState.text-scale;
                         vertical-alignment: center;
                         horizontal-stretch: 1;
                     }
@@ -482,7 +482,7 @@ export component LibraryGrid inherits Rectangle {
                     if AppState.library-query != "" && !AppState.library-header-focused: Text {
                         text: "Esc to clear";
                         color: Theme.text-subtle;
-                        font-size: 12px * AppState.text-scale;
+                        font-size: Theme.fs-sm * AppState.text-scale;
                         vertical-alignment: center;
                     }
                 }
@@ -632,7 +632,7 @@ export component LibraryGrid inherits Rectangle {
                         Text {
                             text: ltr;
                             color: tracking ? Theme.accent : (has-items ? Theme.text-muted : Theme.text-subtle);
-                            font-size: 10px * AppState.text-scale;
+                            font-size: Theme.fs-2xs * AppState.text-scale;
                             font-weight: tracking ? 700 : 400;
                             vertical-alignment: center;
                             horizontal-alignment: center;
@@ -658,7 +658,7 @@ export component LibraryGrid inherits Rectangle {
             if (AppState.library-query != "" || AppState.library-filter-unwatched || AppState.library-filter-favorites) && AppState.library-display.length == 0: Text {
                 text: AppState.library-query != "" ? "No results for \"\{AppState.library-query}\"" : "No results match the current filters";
                 color: Theme.text-muted;
-                font-size: 14px * AppState.text-scale;
+                font-size: Theme.fs-base * AppState.text-scale;
                 horizontal-alignment: center;
                 y: parent.height / 3;
                 width: parent.width;
@@ -855,7 +855,7 @@ export component DashboardView inherits Rectangle {
                 Text {
                     text: root.screen-title;
                     color: Theme.text;
-                    font-size: 18px * AppState.text-scale;
+                    font-size: Theme.fs-xl * AppState.text-scale;
                     font-weight: 700;
                     vertical-alignment: center;
                 }

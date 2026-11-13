@@ -94,7 +94,7 @@ export component ArtistScreen inherits StackPage {
                                 text: "♪";
                                 font-family: "Noto Sans Symbols 2";
                                 color: Theme.text-subtle;
-                                font-size: 64px;
+                                font-size: Theme.fs-hero;
                                 vertical-alignment: center;
                                 horizontal-alignment: center;
                                 width: parent.width;
@@ -122,7 +122,7 @@ export component ArtistScreen inherits StackPage {
                                 Text {
                                     text: AppState.artist-title;
                                     color: Theme.text;
-                                    font-size: 28px;
+                                    font-size: Theme.fs-3xl;
                                     font-weight: 700;
                                     wrap: word-wrap;
                                 }
@@ -130,7 +130,7 @@ export component ArtistScreen inherits StackPage {
                                 if AppState.artist-meta != "": Text {
                                     text: AppState.artist-meta;
                                     color: Theme.text-muted;
-                                    font-size: 14px * AppState.text-scale;
+                                    font-size: Theme.fs-base * AppState.text-scale;
                                 }
                             }
 
@@ -238,7 +238,7 @@ export component ArtistScreen inherits StackPage {
                 Text {
                     text: "Tracks";
                     color: Theme.text;
-                    font-size: 16px * AppState.text-scale;
+                    font-size: Theme.fs-lg * AppState.text-scale;
                     font-weight: 700;
                 }
 
