@@ -11,8 +11,10 @@
 //                 up/down is volume — unit-tested
 //   raw_key       directions, A (Return) and B (Escape) as keys — never through the bindings, so a
 //                 text field gets Escape, not Backspace
-//   action_for    the other buttons → a Fjord action, by screen (browsing / video player) — the
-//                 table agreed for the Xbox 360 pad (PLAN 0.5.2 item 8); unit-tested
+//   pad_name / action_for  the other buttons → a Fjord action, by screen (browsing / video player),
+//                 from the user's pad table (Keybindings.pad_normal/-player — Settings → Key
+//                 Bindings; the agreed Xbox 360 table by default); unit-tested. While a Key
+//                 Bindings row waits for its binding, such a button binds there (keys::rebind_pad)
 //   KeepAwake     KDE judges idleness by keyboard/mouse through KWin, which never sees the pad (the
 //                 D-Bus SimulateUserActivity is an empty function in KIdleTime's Wayland plugin):
 //                 pad input → KWin's org_kde_kwin_idle simulate_user_activity (KwinIdle, its own
@@ -406,25 +408,32 @@ pub(crate) fn raw_key(input: PadInput) -> Option<&'static str> {
     })
 }
 
-/// The agreed Xbox 360 table for the other buttons: browsing / video player.
-pub(crate) fn action_for(input: PadInput, in_player: bool) -> Option<Action> {
-    Some(match (input, in_player) {
-        (PadInput::ContextMenu, _) => Action::OpenContextMenu,
-        (PadInput::Y, false) => Action::SearchJump,
-        (PadInput::Y, true) => Action::PanelSubtitles,
-        (PadInput::Start, _) => Action::PausePlay,
-        (PadInput::Select, false) => Action::ToggleNowPlaying,
-        (PadInput::Select, true) => Action::ToggleStats,
-        (PadInput::Lb, false) => Action::PrevTrack,
-        (PadInput::Rb, false) => Action::NextTrack,
-        (PadInput::Lb, true) => Action::SeekBackward,
-        (PadInput::Rb, true) => Action::SeekForward,
-        (PadInput::Lt, true) => Action::SeekBackwardLong,
-        (PadInput::Rt, true) => Action::SeekForwardLong,
-        (PadInput::Guide, false) => Action::NavHome,
-        (PadInput::Guide, true) => Action::MinimizePlayer,
+/// A rebindable button's name in keybindings.json and Settings (keys::PAD_BUTTONS); None for the
+/// fixed inputs (directions, A, B, the right stick).
+pub(crate) fn pad_name(input: PadInput) -> Option<&'static str> {
+    Some(match input {
+        PadInput::ContextMenu => "X",
+        PadInput::Y => "Y",
+        PadInput::Start => "Start",
+        PadInput::Select => "Select",
+        PadInput::Guide => "Guide",
+        PadInput::Lb => "LB",
+        PadInput::Rb => "RB",
+        PadInput::Lt => "LT",
+        PadInput::Rt => "RT",
         _ => return None,
     })
+}
+
+/// The action a rebindable button runs: the user's pad table (Settings → Key Bindings, 0.5.2 item
+/// 8; the agreed Xbox 360 table by default) — browsing or video player.
+pub(crate) fn action_for(kb: &Keybindings, input: PadInput, in_player: bool) -> Option<Action> {
+    let pad = if in_player {
+        &kb.pad_player
+    } else {
+        &kb.pad_normal
+    };
+    pad.get(pad_name(input)?).cloned()
 }
 
 /// The key bound to `action` — the player's bindings first while a video plays, as handle_key
@@ -559,16 +568,28 @@ fn deliver(
             }
             return;
         }
+        // A Key Bindings row waiting for its binding: a rebindable button binds there instead of
+        // acting (the directions, A and B still go as keys — Escape cancels, Enter/arrows bind).
+        if g.get_keybinding_rebinding()
+            && let Some(name) = pad_name(input)
+        {
+            if !repeat {
+                clock.touch();
+                crate::keys::rebind_pad(g.get_keybinding_focused(), name, &state, &w);
+            }
+            return;
+        }
         let combo = match raw_key(input) {
             Some(k) => KeyCombo::plain(k),
             None => {
                 let in_player = g.get_is_playing();
-                let Some(action) = action_for(input, in_player) else {
-                    return;
-                };
                 let found = {
                     let s = state.lock().unwrap();
-                    key_for(&s.keybindings, &action, in_player)
+                    action_for(&s.keybindings, input, in_player)
+                        .map(|action| (key_for(&s.keybindings, &action, in_player), action))
+                };
+                let Some((found, action)) = found else {
+                    return;
                 };
                 let Some(combo) = found else {
                     debug!("gamepad: {input:?} → {action:?}, but no key is bound to it");
@@ -683,27 +704,70 @@ mod tests {
             "B is Escape, never Backspace"
         );
         assert_eq!(raw_key(PadInput::Confirm), Some(key::RETURN));
-        assert_eq!(action_for(PadInput::Y, false), Some(Action::SearchJump));
-        assert_eq!(action_for(PadInput::Y, true), Some(Action::PanelSubtitles));
+        let kb = crate::keys::default_keybindings();
         assert_eq!(
-            action_for(PadInput::Select, false),
+            action_for(&kb, PadInput::Y, false),
+            Some(Action::SearchJump)
+        );
+        assert_eq!(
+            action_for(&kb, PadInput::Y, true),
+            Some(Action::PanelSubtitles)
+        );
+        assert_eq!(
+            action_for(&kb, PadInput::Select, false),
             Some(Action::ToggleNowPlaying)
         );
         assert_eq!(
-            action_for(PadInput::Select, true),
+            action_for(&kb, PadInput::Select, true),
             Some(Action::ToggleStats)
         );
-        assert_eq!(action_for(PadInput::Lb, true), Some(Action::SeekBackward));
         assert_eq!(
-            action_for(PadInput::Rt, true),
+            action_for(&kb, PadInput::Lb, true),
+            Some(Action::SeekBackward)
+        );
+        assert_eq!(
+            action_for(&kb, PadInput::Rt, true),
             Some(Action::SeekForwardLong)
         );
-        assert_eq!(action_for(PadInput::Lt, false), None);
-        assert_eq!(action_for(PadInput::Guide, false), Some(Action::NavHome));
+        assert_eq!(action_for(&kb, PadInput::Lt, false), None);
         assert_eq!(
-            action_for(PadInput::Guide, true),
+            action_for(&kb, PadInput::Guide, false),
+            Some(Action::NavHome)
+        );
+        assert_eq!(
+            action_for(&kb, PadInput::Guide, true),
             Some(Action::MinimizePlayer)
         );
+        assert_eq!(
+            action_for(&kb, PadInput::Confirm, false),
+            None,
+            "A is fixed (Enter)"
+        );
+        // A rebound button runs its new action; every rebindable button has a name.
+        let mut kb = kb;
+        kb.pad_normal.insert("Y".into(), Action::NavSettings);
+        assert_eq!(
+            action_for(&kb, PadInput::Y, false),
+            Some(Action::NavSettings)
+        );
+        for b in crate::keys::PAD_BUTTONS {
+            assert!(
+                [
+                    PadInput::ContextMenu,
+                    PadInput::Y,
+                    PadInput::Start,
+                    PadInput::Select,
+                    PadInput::Guide,
+                    PadInput::Lb,
+                    PadInput::Rb,
+                    PadInput::Lt,
+                    PadInput::Rt
+                ]
+                .into_iter()
+                .any(|i| pad_name(i) == Some(*b)),
+                "{b} has no PadInput"
+            );
+        }
     }
 
     #[test]
@@ -721,7 +785,7 @@ mod tests {
             PadInput::Guide,
         ] {
             for in_player in [false, true] {
-                if let Some(action) = action_for(input, in_player) {
+                if let Some(action) = action_for(&bindings, input, in_player) {
                     assert!(
                         key_for(&bindings, &action, in_player).is_some(),
                         "{input:?} (player {in_player}) → {action:?} has no default key"

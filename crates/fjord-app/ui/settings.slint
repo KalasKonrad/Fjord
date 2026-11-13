@@ -39,7 +39,8 @@
 //       Integrations Seerr enabled, Connect/Disconnect, then (connected) streaming region,
 //                    display/discover language, discover region, Manage Blocklist
 //                    (seerr-can-manage-blocklist)
-//       Key Bindings rebind rows (keybinding-focused 0..N, positional) + Reset to Defaults
+//       Key Bindings rebind rows (keybinding-focused 0..N, positional; each shows its key and pad
+//                    buttons — a rebind takes a key or a pad button) + Reset to Defaults
 //       Advanced     hwdec, vf (grayed unless NVDEC), deinterlace; separate video surface
 //                    (Wayland); own 10-bit buffers (Wayland, grayed without the separate surface),
 //                    dithering off; early flush; cache secs/MB;
@@ -1678,7 +1679,7 @@ export component SettingsScreen inherits Rectangle {
 
                         // Spell out that Enter captures the very next key as the new binding.
                     Text {
-                            text: "Enter rebinds the focused action — press any key to set it, or Escape to cancel";
+                            text: "Enter rebinds the focused action — press any key, or a game pad button (X, Y, Start, Select, Guide, LB, RB, LT, RT), to set it; Escape cancels";
                             color: Theme.text-muted;
                             font-size: Theme.fs-sm * AppState.text-scale;
                             wrap: word-wrap;
@@ -1731,7 +1732,8 @@ export component SettingsScreen inherits Rectangle {
 
                                 Text {
                                     text: AppState.keybinding-focused == i && AppState.keybinding-rebinding
-                                        ? "Press a key…" : kb.key;
+                                        ? "Press a key or a pad button…"
+                                        : kb.pad == "" ? kb.key : kb.key + "   ·   pad " + kb.pad;
                                     color: AppState.keybinding-focused == i && AppState.keybinding-rebinding
                                         ? Theme.bg : Theme.text-muted;
                                     font-size: Theme.fs-sm * AppState.text-scale;
@@ -1783,7 +1785,8 @@ export component SettingsScreen inherits Rectangle {
 
                                 Text {
                                     text: AppState.keybinding-focused == i + AppState.keybinding-normal.length
-                                        && AppState.keybinding-rebinding ? "Press a key…" : kb.key;
+                                        && AppState.keybinding-rebinding ? "Press a key or a pad button…"
+                                        : kb.pad == "" ? kb.key : kb.key + "   ·   pad " + kb.pad;
                                     color: AppState.keybinding-focused == i + AppState.keybinding-normal.length
                                         && AppState.keybinding-rebinding ? Theme.bg : Theme.text-muted;
                                     font-size: Theme.fs-sm * AppState.text-scale;

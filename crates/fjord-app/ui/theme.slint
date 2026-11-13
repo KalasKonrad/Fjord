@@ -288,6 +288,7 @@ export struct SeasonEntry {
 export struct KeyBindingEntry {
     action: string,
     key: string,
+    pad: string, // the game pad buttons that run it ("" = none) — keys::action_pad_labels
 }
 
 // Passed from Rust for every poster card on any screen.

@@ -7,7 +7,13 @@
 //   ActionMap          Normal or Player — which KeyMap an action lives in
 //   deserialize_keymap custom KeyMap Deserialize — resolves two raw strings normalizing to the
 //                      same KeyCombo deliberately (explicit modifier prefix wins), logged
-//   Keybindings        normal + player KeyMaps; the user's keybindings.json replaces the defaults
+//   Keybindings        normal + player KeyMaps + pad_normal/pad_player (PadMap: a PAD_BUTTONS name
+//                      → action; default_pad_normal/_player, also for a file without them); the
+//                      user's keybindings.json replaces the defaults ("+" is written "Plus")
+//   action_pad_labels  the pad buttons a row shows (+ the fixed A / B / D-pad)
+//   rebind_pad / apply_pad_rebind  a pad button pressed while a row waits — the pad's
+//                      rebind_action/apply_rebind (a button another action has asks first:
+//                      PendingKeybindRebind's RebindTarget::Pad)
 //   PendingKeybindRebind  (row, combo) stashed while the rebind-collision dialog is open
 //   default_keybindings  built-in defaults (one entry per shift-insensitive letter; z/x shifted;
 //                      the player map leaves Up/Down to the normal map, volume on +/= and -)
@@ -113,7 +119,14 @@ pub struct KeyCombo {
 #[derive(Debug, Clone)]
 pub(crate) struct PendingKeybindRebind {
     pub fi: i32,
-    pub combo: KeyCombo,
+    pub target: RebindTarget,
+}
+
+/// What a rebind assigns: a key, or a game pad button (one of PAD_BUTTONS).
+#[derive(Debug, Clone)]
+pub(crate) enum RebindTarget {
+    Key(KeyCombo),
+    Pad(String),
 }
 
 impl KeyCombo {
@@ -304,6 +317,52 @@ pub struct Keybindings {
     pub normal: KeyMap,
     #[serde(default, deserialize_with = "deserialize_keymap")]
     pub player: KeyMap,
+    /// Game pad buttons (PAD_BUTTONS names) → actions while browsing / in the video player (0.5.2
+    /// item 8). A file from before has none — the defaults then. The D-pad/left stick, A, B and the
+    /// right stick are fixed (the D-pad contract; gamepad.rs).
+    #[serde(default = "default_pad_normal")]
+    pub pad_normal: PadMap,
+    #[serde(default = "default_pad_player")]
+    pub pad_player: PadMap,
+}
+
+/// A pad button's name (PAD_BUTTONS) → the action it runs.
+pub type PadMap = HashMap<String, Action>;
+
+/// The pad buttons that can be rebound, as they're named in keybindings.json and in Settings.
+pub const PAD_BUTTONS: &[&str] = &["X", "Y", "Start", "Select", "Guide", "LB", "RB", "LT", "RT"];
+
+/// The Xbox 360 table agreed for 0.5.2 (gamepad.rs used it as a fixed table before item 8).
+pub fn default_pad_normal() -> PadMap {
+    [
+        ("X", Action::OpenContextMenu),
+        ("Y", Action::SearchJump),
+        ("Start", Action::PausePlay),
+        ("Select", Action::ToggleNowPlaying),
+        ("LB", Action::PrevTrack),
+        ("RB", Action::NextTrack),
+        ("Guide", Action::NavHome),
+    ]
+    .into_iter()
+    .map(|(b, a)| (b.to_string(), a))
+    .collect()
+}
+
+pub fn default_pad_player() -> PadMap {
+    [
+        ("X", Action::OpenContextMenu),
+        ("Y", Action::PanelSubtitles),
+        ("Start", Action::PausePlay),
+        ("Select", Action::ToggleStats),
+        ("LB", Action::SeekBackward),
+        ("RB", Action::SeekForward),
+        ("LT", Action::SeekBackwardLong),
+        ("RT", Action::SeekForwardLong),
+        ("Guide", Action::MinimizePlayer),
+    ]
+    .into_iter()
+    .map(|(b, a)| (b.to_string(), a))
+    .collect()
 }
 
 // ── ActionMap ─────────────────────────────────────────────────────────────────
@@ -345,6 +404,8 @@ pub fn default_keybindings() -> Keybindings {
     Keybindings {
         normal: default_normal_map(),
         player: default_player_map(),
+        pad_normal: default_pad_normal(),
+        pad_player: default_pad_player(),
     }
 }
 
@@ -555,6 +616,24 @@ pub fn action_key_labels(action: &Action, map: &KeyMap) -> String {
     labels.join("  ")
 }
 
+/// The pad buttons that run `action` in `pad` — plus the fixed ones for the navigation rows (A, B,
+/// the D-pad). "" when none.
+pub fn action_pad_labels(action: &Action, pad: &PadMap) -> String {
+    let fixed = match action {
+        Action::Confirm => Some("A"),
+        Action::Back => Some("B"),
+        Action::Up | Action::Down | Action::Left | Action::Right => Some("D-pad"),
+        _ => None,
+    };
+    let mut labels: Vec<&str> = PAD_BUTTONS
+        .iter()
+        .copied()
+        .filter(|b| pad.get(*b) == Some(action))
+        .collect();
+    labels.extend(fixed);
+    labels.join("  ")
+}
+
 // ── Keybinding row model ──────────────────────────────────────────────────────
 
 fn build_keybinding_entries(
@@ -564,14 +643,15 @@ fn build_keybinding_entries(
     let mut player_rows = vec![];
 
     for (action, label, map) in remappable_actions() {
-        let the_map = match map {
-            ActionMap::Normal => &kb.normal,
-            ActionMap::Player => &kb.player,
+        let (the_map, the_pad) = match map {
+            ActionMap::Normal => (&kb.normal, &kb.pad_normal),
+            ActionMap::Player => (&kb.player, &kb.pad_player),
         };
         let key_str = action_key_labels(&action, the_map);
         let entry = crate::KeyBindingEntry {
             action: SharedString::from(label),
             key: SharedString::from(key_str.as_str()),
+            pad: SharedString::from(action_pad_labels(&action, the_pad).as_str()),
         };
         match map {
             ActionMap::Normal => normal_rows.push(entry),
@@ -697,7 +777,7 @@ pub(crate) fn rebind_action(
         debug!("keybindings: collision — {message}");
         state.lock().unwrap().pending_keybind_rebind = Some(PendingKeybindRebind {
             fi,
-            combo: new_combo,
+            target: RebindTarget::Key(new_combo),
         });
         g.set_keybinding_collision_message(message.into());
         g.set_keybinding_collision_confirm_focused(0);
@@ -706,6 +786,80 @@ pub(crate) fn rebind_action(
     }
 
     apply_rebind(fi, new_combo, state, window);
+}
+
+/// Applies a pad rebind — the pad's counterpart of apply_rebind: the action's other buttons in that
+/// map go (one button per action, like one key), the button runs the action from now on.
+pub(crate) fn apply_pad_rebind(
+    fi: i32,
+    button: &str,
+    state: &Arc<Mutex<FjordState>>,
+    window: &crate::MainWindow,
+) {
+    let actions = remappable_actions();
+    let Some((action, _, map)) = actions.get(fi as usize) else {
+        return;
+    };
+    debug!("keybindings: pad {button} → {action:?} ({map:?})");
+    {
+        let mut st = state.lock().unwrap();
+        let pad = match map {
+            ActionMap::Normal => &mut st.keybindings.pad_normal,
+            ActionMap::Player => &mut st.keybindings.pad_player,
+        };
+        pad.retain(|_, v| v != action);
+        pad.insert(button.to_string(), action.clone());
+        crate::config::save_keybindings(&st.keybindings);
+    }
+    push_keybinding_rows(window, state);
+}
+
+/// A pad button pressed while a row waits for its new binding (gamepad.rs): like rebind_action — a
+/// button another action uses asks first (the same collision dialog).
+pub(crate) fn rebind_pad(
+    fi: i32,
+    button: &str,
+    state: &Arc<Mutex<FjordState>>,
+    window: &crate::MainWindow,
+) {
+    let actions = remappable_actions();
+    let g = crate::AppState::get(window);
+    g.set_keybinding_rebinding(false);
+    let Some((action, _, map)) = actions.get(fi.max(0) as usize).filter(|_| fi >= 0) else {
+        debug!("keybindings: rebind_pad fi={fi} out of range, ignoring");
+        return;
+    };
+    debug!("keybindings: rebind capture pad {button} for row {fi} ({action:?})");
+    let collision: Option<String> = {
+        let st = state.lock().unwrap();
+        let pad = match map {
+            ActionMap::Normal => &st.keybindings.pad_normal,
+            ActionMap::Player => &st.keybindings.pad_player,
+        };
+        pad.get(button)
+            .filter(|other| *other != action)
+            .map(|other| {
+                actions
+                    .iter()
+                    .find(|(a, _, _)| a == other)
+                    .map(|(_, label, _)| label.to_string())
+                    .unwrap_or_else(|| format!("{other:?}"))
+            })
+    };
+    if let Some(other_label) = collision {
+        let message =
+            format!("The pad's {button} is already bound to {other_label} — reassign it?");
+        debug!("keybindings: collision — {message}");
+        state.lock().unwrap().pending_keybind_rebind = Some(PendingKeybindRebind {
+            fi,
+            target: RebindTarget::Pad(button.to_string()),
+        });
+        g.set_keybinding_collision_message(message.into());
+        g.set_keybinding_collision_confirm_focused(0);
+        g.set_show_keybinding_collision_confirm(true);
+        return;
+    }
+    apply_pad_rebind(fi, button, state, window);
 }
 
 // ── Keybinding section navigation ────────────────────────────────────────────
@@ -874,9 +1028,16 @@ pub(crate) fn wire_keybindings(
             if let Some(p) = pending {
                 info!(
                     "keybindings: collision confirmed, reassigning {:?}",
-                    p.combo
+                    p.target
                 );
-                keys::apply_rebind(p.fi, p.combo, &state_kc, &w);
+                match p.target {
+                    keys::RebindTarget::Key(combo) => {
+                        keys::apply_rebind(p.fi, combo, &state_kc, &w)
+                    }
+                    keys::RebindTarget::Pad(button) => {
+                        keys::apply_pad_rebind(p.fi, &button, &state_kc, &w)
+                    }
+                }
             }
             AppState::get(&w).set_show_keybinding_collision_confirm(false);
         });
@@ -898,6 +1059,40 @@ pub(crate) fn wire_keybindings(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pad_tables_default_show_in_the_rows_and_round_trip() {
+        // A keybindings.json from before item 8 has no pad tables: the defaults.
+        let old: Keybindings = serde_json::from_str(r#"{"normal":{},"player":{}}"#).unwrap();
+        assert_eq!(old.pad_player.get("Y"), Some(&Action::PanelSubtitles));
+        assert_eq!(old.pad_normal.get("Guide"), Some(&Action::NavHome));
+        let kb = default_keybindings();
+        assert_eq!(
+            action_pad_labels(&Action::PausePlay, &kb.pad_player),
+            "Start"
+        );
+        assert_eq!(action_pad_labels(&Action::Confirm, &kb.pad_normal), "A");
+        assert_eq!(action_pad_labels(&Action::Up, &kb.pad_normal), "D-pad");
+        assert_eq!(action_pad_labels(&Action::Quit, &kb.pad_normal), "");
+        // The "+" volume key (9c P1) must survive the file: "+" is the modifier separator.
+        let plus = KeyCombo::plain("+");
+        assert_eq!(plus.to_string(), "Plus");
+        for text in ["Plus", "+", "shift++"] {
+            assert_eq!(
+                KeyCombo::try_from(text.to_string()).unwrap().key,
+                "+",
+                "{text}"
+            );
+        }
+        let back: Keybindings = serde_json::from_str(&serde_json::to_string(&kb).unwrap()).unwrap();
+        assert_eq!(back.player.get(&plus), Some(&Action::VolumeUp));
+        assert_eq!(back.pad_normal, kb.pad_normal);
+        assert_eq!(back.pad_player, kb.pad_player);
+        // Every default button is one Settings knows.
+        for b in kb.pad_normal.keys().chain(kb.pad_player.keys()) {
+            assert!(PAD_BUTTONS.contains(&b.as_str()), "{b}");
+        }
+    }
 
     #[test]
     fn an_old_saved_keymap_gets_up_down_back_for_the_controls_bar() {

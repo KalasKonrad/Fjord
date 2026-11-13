@@ -23,6 +23,11 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **New: game pad buttons in Settings → Key Bindings.** Each action shows the
+  pad button that runs it, and X, Y, Start, Select, Guide and the shoulder
+  buttons can be rebound like keys — Enter on an action, then press the pad
+  button (one another action uses asks first). Reset to Defaults resets them too.
+
 - **Improved: consistent sizes.** Text, spacing and rounded corners now come
   from one set of sizes, so similar things look the same everywhere; a few odd
   sizes moved by a pixel or two, and the dropdown lists now have the same
