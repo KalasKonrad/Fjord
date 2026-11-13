@@ -44,7 +44,7 @@ component CalendarDayCell inherits Rectangle {
 
     if root.day > 0: VerticalLayout {
         padding: 6px;
-        spacing: 4px;
+        spacing: Theme.sp-xs;
         alignment: start;
         Text {
             text: root.day;
@@ -113,7 +113,7 @@ export component CalendarScreen inherits StackPage {
             width: parent.width;
             height: 40px;
             alignment: center;
-            spacing: 12px;
+            spacing: Theme.sp-md;
             FjordButton {
                 text: "◀";
                 width: 44px * AppState.text-scale;
@@ -170,9 +170,9 @@ export component CalendarScreen inherits StackPage {
         x: 24px;
         width: parent.width - 48px;
         height: parent.height - 92px - 24px;
-        spacing: 4px;
+        spacing: Theme.sp-xs;
         for week in root.total-rows: HorizontalLayout {
-            spacing: 4px;
+            spacing: Theme.sp-xs;
             for col in 7: CalendarDayCell {
                 property <int> day-idx: week * 7 + col - AppState.calendar-leading-blanks;
                 day: (self.day-idx >= 0 && self.day-idx < AppState.calendar-days.length) ? self.day-idx + 1 : 0;
@@ -237,8 +237,8 @@ export component CalendarScreen inherits StackPage {
                     }
 
                     VerticalLayout {
-                        padding-left: 12px;
-                        padding-right: 12px;
+                        padding-left: Theme.sp-md;
+                        padding-right: Theme.sp-md;
                         alignment: center;
                         Text {
                             text: entry.title;

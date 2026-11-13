@@ -91,11 +91,11 @@ export component CollectionScreen inherits StackPage {
 
                 VerticalLayout {
                     HorizontalLayout {
-                        padding-left: 48px;
-                        padding-right: 48px;
+                        padding-left: Theme.sp-2xl;
+                        padding-right: Theme.sp-2xl;
                         padding-top: 68px;
                         padding-bottom: 24px;
-                        spacing: 32px;
+                        spacing: Theme.sp-xl;
                         alignment: start;
 
                         if AppState.collection-has-poster: PosterBlock {
@@ -117,7 +117,7 @@ export component CollectionScreen inherits StackPage {
                                 x: 0;
                                 y: 0;
                                 width: parent.width;
-                                spacing: 12px;
+                                spacing: Theme.sp-md;
                                 alignment: start;
 
                                 Text {
@@ -243,8 +243,8 @@ export component CollectionScreen inherits StackPage {
 
             // Loaded and no members (the Missing row below can still list what's not in the library).
             if AppState.collection-loaded && AppState.collection-items.length == 0: HorizontalLayout {
-                padding-left: 48px;
-                padding-right: 48px;
+                padding-left: Theme.sp-2xl;
+                padding-right: Theme.sp-2xl;
                 Text {
                     text: "This collection is empty";
                     color: Theme.text-muted;
@@ -263,8 +263,8 @@ export component CollectionScreen inherits StackPage {
 
             // ── Missing From This Collection (Discover-sourced, 2026-07-29) ────
             if AppState.collection-missing.length > 0: VerticalLayout {
-                padding-left: 48px;
-                padding-right: 48px;
+                padding-left: Theme.sp-2xl;
+                padding-right: Theme.sp-2xl;
                 padding-bottom: 40px;
 
                 Rectangle {

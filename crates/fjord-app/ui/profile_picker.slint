@@ -35,7 +35,7 @@ component ProfileTileCard inherits VerticalLayout {
     in property <bool> is-add-tile: false;
     callback activated();
 
-    spacing: 8px;
+    spacing: Theme.sp-sm;
     width: 132px;
 
     // The glow + zoom holder (FocusGlow); the avatar circle inside it is clipped, its ring over the content.
@@ -394,7 +394,7 @@ export component ProfilePickerScreen inherits Rectangle {
 
         VerticalLayout {
             alignment: center;
-            spacing: 20px;
+            spacing: Theme.sp-lg;
 
             LoadingSpinner { }
 

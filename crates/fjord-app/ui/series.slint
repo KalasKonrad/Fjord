@@ -101,10 +101,10 @@ export component SeriesScreen inherits StackPage {
 
                 VerticalLayout {
                     HorizontalLayout {
-                        padding-left: 48px;
-                        padding-right: 48px;
+                        padding-left: Theme.sp-2xl;
+                        padding-right: Theme.sp-2xl;
                         padding-top: 68px;
-                        padding-bottom: 20px;
+                        padding-bottom: Theme.sp-lg;
                         spacing: 28px;
                         alignment: start;
 
@@ -118,7 +118,7 @@ export component SeriesScreen inherits StackPage {
                         }
 
                         VerticalLayout {
-                            spacing: 8px;
+                            spacing: Theme.sp-sm;
                             alignment: start;
                             horizontal-stretch: 1;
 
@@ -159,7 +159,7 @@ export component SeriesScreen inherits StackPage {
                             }
 
                             HorizontalLayout {
-                                spacing: 12px;
+                                spacing: Theme.sp-md;
                                 alignment: start;
                                 // Trailer: greyed while checking / when none plays (AppState.series-btn-*).
                                 if AppState.series-btn-trailer-shown: FjordButton {
@@ -205,8 +205,8 @@ export component SeriesScreen inherits StackPage {
 
             // ── Next Up ───────────────────────────────────────────────────────
             if AppState.series-has-next-up: VerticalLayout {
-                padding-left: 48px;
-                padding-right: 48px;
+                padding-left: Theme.sp-2xl;
+                padding-right: Theme.sp-2xl;
                 Rectangle {
                     height: 1px;
                     background: Theme.border;
@@ -270,9 +270,9 @@ export component SeriesScreen inherits StackPage {
                     }
 
                     season-tabs := HorizontalLayout {
-                        padding-left: 48px;
-                        padding-right: 48px;
-                        spacing: 8px;
+                        padding-left: Theme.sp-2xl;
+                        padding-right: Theme.sp-2xl;
+                        spacing: Theme.sp-sm;
                         alignment: start;
 
                         for s[i] in AppState.series-seasons: FocusGlow {
@@ -344,8 +344,8 @@ export component SeriesScreen inherits StackPage {
 
             // ── Episode horizontal row ────────────────────────────────────────
             if AppState.series-episode-cards.length > 0: VerticalLayout {
-                padding-left: 48px;
-                padding-right: 48px;
+                padding-left: Theme.sp-2xl;
+                padding-right: Theme.sp-2xl;
                 SectionRow {
                     section-title: "Episodes";
                     items: AppState.series-episode-cards;
@@ -371,8 +371,8 @@ export component SeriesScreen inherits StackPage {
 
             // ── Missing Seasons (Discover-sourced, 2026-07-29) ─────────────────
             if AppState.series-missing-seasons.length > 0: VerticalLayout {
-                padding-left: 48px;
-                padding-right: 48px;
+                padding-left: Theme.sp-2xl;
+                padding-right: Theme.sp-2xl;
                 padding-bottom: 24px;
 
                 Rectangle {
@@ -401,9 +401,9 @@ export component SeriesScreen inherits StackPage {
 
             // ── Cast & Crew ───────────────────────────────────────────────────
             if AppState.series-cast.length > 0: VerticalLayout {
-                padding-left: 48px;
-                padding-right: 48px;
-                padding-top: 4px;
+                padding-left: Theme.sp-2xl;
+                padding-right: Theme.sp-2xl;
+                padding-top: Theme.sp-xs;
                 padding-bottom: 24px;
 
                 Rectangle {
@@ -431,8 +431,8 @@ export component SeriesScreen inherits StackPage {
 
             // ── More Like This ────────────────────────────────────────────────
             if AppState.series-similar.length > 0: VerticalLayout {
-                padding-left: 48px;
-                padding-right: 48px;
+                padding-left: Theme.sp-2xl;
+                padding-right: Theme.sp-2xl;
                 padding-bottom: 40px;
 
                 Rectangle {
@@ -459,8 +459,8 @@ export component SeriesScreen inherits StackPage {
 
             // ── Recommended (Discover-sourced, 2026-07-29) ─────────────────────
             if AppState.series-recommended.length > 0: VerticalLayout {
-                padding-left: 48px;
-                padding-right: 48px;
+                padding-left: Theme.sp-2xl;
+                padding-right: Theme.sp-2xl;
                 padding-bottom: 40px;
 
                 Rectangle {

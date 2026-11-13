@@ -113,7 +113,7 @@ export component SettingsDropdown inherits Rectangle {
 
     HorizontalLayout {
         padding-left: 10px;
-        padding-right: 8px;
+        padding-right: Theme.sp-sm;
         spacing: 6px;
         alignment: start;
         val := Text {
@@ -159,7 +159,7 @@ export component SettingsDropdown inherits Rectangle {
             Flickable {
                 content-height: root.model.length * 32px + 8px;
                 items-layout := VerticalLayout {
-                    padding: 4px;
+                    padding: Theme.sp-xs;
                     for opt in root.model: Rectangle {
                         height: 32px;
                         border-radius: Theme.radius;
@@ -192,7 +192,7 @@ export component SettingsDropdown inherits Rectangle {
 // ── A section's description, above its first header ─────────────────────────────
 export component SectionIntro inherits VerticalLayout {
     in property <string> text;
-    padding-bottom: 4px;
+    padding-bottom: Theme.sp-xs;
     Text {
         text: root.text;
         color: Theme.text-muted;
@@ -257,17 +257,17 @@ export component SettingsRow inherits Rectangle {
     }
 
     HorizontalLayout {
-        padding-top: 12px;
-        padding-bottom: 12px;
-        padding-right: 12px;
+        padding-top: Theme.sp-md;
+        padding-bottom: Theme.sp-md;
+        padding-right: Theme.sp-md;
         padding-left: root.indent ? 28px : 12px;
         spacing: Theme.sp;
         alignment: space-between;
         VerticalLayout {
-            spacing: 3px;
+            spacing: Theme.sp-xs;
             horizontal-stretch: 1;
             HorizontalLayout {
-                spacing: 8px;
+                spacing: Theme.sp-sm;
                 alignment: start;
                 Text {
                     text: root.title;

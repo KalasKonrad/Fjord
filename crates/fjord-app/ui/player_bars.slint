@@ -109,8 +109,8 @@ export component MiniPlayerBar inherits Rectangle {
         }
 
         VerticalLayout {
-            padding: 12px;
-            spacing: 5px;
+            padding: Theme.sp-md;
+            spacing: Theme.sp-xs;
             alignment: center;
             Text {
                 text: "NOW PLAYING";
@@ -155,11 +155,11 @@ export component MiniPlayerBar inherits Rectangle {
 
     // ── Mode 2: compact 56px bar (video fills window; no thumbnail needed) ────
     if AppState.video-behind-ui: HorizontalLayout {
-        padding: 12px;
-        spacing: 8px;
+        padding: Theme.sp-md;
+        spacing: Theme.sp-sm;
         VerticalLayout {
             alignment: center;
-            spacing: 3px;
+            spacing: Theme.sp-xs;
             horizontal-stretch: 1;
             Text {
                 text: "NOW PLAYING";
@@ -263,7 +263,7 @@ export component MusicPlayerBar inherits Rectangle {
                 }
 
                 HorizontalLayout {
-                    padding: 8px;
+                    padding: Theme.sp-sm;
                     spacing: 10px;
                     alignment: center;
 
@@ -294,7 +294,7 @@ export component MusicPlayerBar inherits Rectangle {
 
                     VerticalLayout {
                         alignment: center;
-                        spacing: 3px;
+                        spacing: Theme.sp-xs;
                         horizontal-stretch: 1;
                         Text {
                             text: AppState.music-bar-title;
@@ -308,7 +308,7 @@ export component MusicPlayerBar inherits Rectangle {
                         // when there's no artist (a stretching empty artist pushed it to the far
                         // right). Only the artist shortens (elides) when the line is too narrow.
                         HorizontalLayout {
-                            spacing: 8px;
+                            spacing: Theme.sp-sm;
                             alignment: start;
                             if AppState.music-bar-artist != "": Text {
                                 text: AppState.music-bar-artist;
@@ -332,16 +332,16 @@ export component MusicPlayerBar inherits Rectangle {
         // ── Centre zone: transport + progress + time ──────────────────────────
         VerticalLayout {
             horizontal-stretch: 1;
-            padding-top: 8px;
-            padding-bottom: 8px;
-            spacing: 4px;
+            padding-top: Theme.sp-sm;
+            padding-bottom: Theme.sp-sm;
+            spacing: Theme.sp-xs;
             alignment: center;
 
             // Transport: ⏮ ⏯ ⏭ together, play/pause filled (bar slots 4, 1, 5 — keys/global.rs
             // walks BAR_ORDER). 32/36/32px keep the bar at 72px; the small ones centred on ⏯.
             HorizontalLayout {
                 alignment: center;
-                spacing: 14px;
+                spacing: Theme.sp;
                 VerticalLayout {
                     alignment: center;
                     IconCircleButton {
@@ -385,7 +385,7 @@ export component MusicPlayerBar inherits Rectangle {
 
             // Progress bar + time
             HorizontalLayout {
-                spacing: 8px;
+                spacing: Theme.sp-sm;
 
                 Text {
                     text: AppState.music-bar-elapsed;
@@ -451,7 +451,7 @@ export component MusicPlayerBar inherits Rectangle {
             alignment: center;
             HorizontalLayout {
                 alignment: center;
-                spacing: 8px;
+                spacing: Theme.sp-sm;
 
                 IconCircleButton {
                     icon: "⇌";
@@ -561,7 +561,7 @@ export component QueuePanel inherits Rectangle {
 
                 HorizontalLayout {
                     padding-left: 16px;
-                    padding-right: 12px;
+                    padding-right: Theme.sp-md;
                     alignment: space-between;
                     spacing: 0px;
 
@@ -684,7 +684,7 @@ export component QueuePanel inherits Rectangle {
 
                                 HorizontalLayout {
                                     padding-left: 10px;
-                                    padding-right: 12px;
+                                    padding-right: Theme.sp-md;
                                     spacing: 10px;
                                     alignment: center;
 
@@ -726,7 +726,7 @@ export component QueuePanel inherits Rectangle {
                                     // Title + artist column
                                     VerticalLayout {
                                         alignment: center;
-                                        spacing: 2px;
+                                        spacing: Theme.sp-2xs;
                                         horizontal-stretch: 1;
 
                                         Text {
@@ -835,7 +835,7 @@ export component LyricsView inherits Rectangle {
             lyric-list := VerticalLayout {
                 alignment: start;
                 spacing: 0px;
-                padding: 32px;
+                padding: Theme.sp-xl;
 
                 // min-height (not a fixed height) lets a long line wrap to 2+ lines
                 // instead of being elided with "…" — Text's un-set height then
@@ -902,8 +902,8 @@ export component VolumeOverlay inherits Rectangle {
     drop-shadow-color: Theme.shadow-soft;
 
     HorizontalLayout {
-        padding-left: 14px;
-        padding-right: 14px;
+        padding-left: Theme.sp;
+        padding-right: Theme.sp;
         padding-top: 0;
         padding-bottom: 0;
         spacing: 10px;
@@ -956,8 +956,8 @@ export component StatRow inherits Rectangle {
     in property <string> label;
     in property <string> value;
     HorizontalLayout {
-        padding-top: 2px;
-        padding-bottom: 2px;
+        padding-top: Theme.sp-2xs;
+        padding-bottom: Theme.sp-2xs;
         spacing: 10px;
         Text {
             text: label;

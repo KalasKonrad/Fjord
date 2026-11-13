@@ -68,7 +68,7 @@ export component MediaCard inherits Rectangle {
     // (seen on the HTPC; an outset ring crashed the same way). `padding` is resolved
     // inside the layout cache. See SLINT.md.
     VerticalLayout {
-        padding: 3px;
+        padding: 3px; // the focus ring's gutter (see above) — not a spacing step
 
         // The poster fills the card; title and subtitle sit over its bottom on a dark fade, so
         // every poster in a row has the same size however long its title is (0.5.1 — before,
@@ -387,8 +387,8 @@ export component TrackRow inherits Rectangle {
 
     HorizontalLayout {
         padding-left: 16px;
-        padding-right: 20px;
-        spacing: 14px;
+        padding-right: Theme.sp-lg;
+        spacing: Theme.sp;
         alignment: start;
 
         // Track number
@@ -405,7 +405,7 @@ export component TrackRow inherits Rectangle {
         VerticalLayout {
             alignment: center;
             horizontal-stretch: 1;
-            spacing: 2px;
+            spacing: Theme.sp-2xs;
             Text {
                 text: root.track.title;
                 color: root.track.has-played ? Theme.text-muted : Theme.text;
@@ -516,8 +516,8 @@ export component BrowseItem inherits Rectangle {
 
     HorizontalLayout {
         padding-left: 10px;
-        padding-right: 12px;
-        spacing: 8px;
+        padding-right: Theme.sp-md;
+        spacing: Theme.sp-sm;
         alignment: start;
 
         Rectangle {

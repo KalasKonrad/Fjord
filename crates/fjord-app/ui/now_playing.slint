@@ -112,15 +112,15 @@ export component NowPlayingScreen inherits Rectangle {
         HorizontalLayout {
             vertical-stretch: 1;
             padding: root.pad;
-            padding-left: 48px;
-            padding-right: 48px;
-            spacing: 48px;
+            padding-left: Theme.sp-2xl;
+            padding-right: Theme.sp-2xl;
+            spacing: Theme.sp-2xl;
 
             // ── Left: cover + title/artist/format + progress + controls ──────
             VerticalLayout {
                 width: root.col-w;
                 alignment: center;
-                spacing: 20px;
+                spacing: Theme.sp-lg;
 
                 Rectangle {
                     height: root.cover-size;
@@ -152,7 +152,7 @@ export component NowPlayingScreen inherits Rectangle {
 
                 // The whole title (it wraps), the artist only when there is one, the format.
                 VerticalLayout {
-                    spacing: 4px;
+                    spacing: Theme.sp-xs;
                     Text {
                         text: AppState.music-bar-title;
                         color: Theme.dark-text;
@@ -225,7 +225,7 @@ export component NowPlayingScreen inherits Rectangle {
                 // the largest and filled — then ⇌ ↻ 🔉 🔊 ☾ Open Album. Indices
                 // (now-playing-ctrl-focused): 1 ⏮, 2 ⏯, 3 ⏭ / 4 ⇌, 5 ↻, 6 🔉, 7 🔊, 8 ☾, 0 Open Album.
                 VerticalLayout {
-                    spacing: 12px;
+                    spacing: Theme.sp-md;
                     HorizontalLayout {
                         alignment: center;
                         spacing: 28px;
@@ -274,7 +274,7 @@ export component NowPlayingScreen inherits Rectangle {
 
                     HorizontalLayout {
                         alignment: center;
-                        spacing: 12px;
+                        spacing: Theme.sp-md;
                         IconCircleButton {
                             on-dark: true;
                             icon: "⇌";
@@ -379,7 +379,7 @@ export component NowPlayingScreen inherits Rectangle {
                     lyr-list := VerticalLayout {
                         alignment: start;
                         spacing: 0px;
-                        padding: 32px;
+                        padding: Theme.sp-xl;
 
                         // Text.width bound to parent.width directly here would
                         // self-reference lyr-list's own layout computation
@@ -504,7 +504,7 @@ export component NowPlayingScreen inherits Rectangle {
                         }
 
                         VerticalLayout {
-                            spacing: 4px;
+                            spacing: Theme.sp-xs;
                                 // The glow holder (FocusGlow); the cover inside it is clipped, its ring over the picture.
                                 FocusGlow {
                                 on-dark: true;

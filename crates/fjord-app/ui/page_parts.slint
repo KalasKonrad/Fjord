@@ -127,7 +127,7 @@ export component CastRow inherits VerticalLayout {
     in property <[CastMember]> cast;
     in property <int> focused-idx: -1;
     callback item-selected(/* idx */ int);
-    spacing: 12px;
+    spacing: Theme.sp-md;
 
     // kb-x lives on CastRow (root), not on fl itself.
     // A property on a Flickable that reads self.width / self.content-width creates
@@ -166,7 +166,7 @@ export component CastRow inherits VerticalLayout {
 
             for c[i] in root.cast: VerticalLayout {
                 width: 100px;
-                spacing: 4px;
+                spacing: Theme.sp-xs;
                 z: root.focused-idx == i ? 1 : 0;
 
                 // The glow + zoom holder (FocusGlow), the photo inside it: a Rectangle with clip +
@@ -272,9 +272,9 @@ export component StorylineSection inherits VerticalLayout {
             y: 0;
             width: parent.width;
             height: parent.height;
-            padding-left: 48px;
-            padding-right: 48px;
-            spacing: 8px;
+            padding-left: Theme.sp-2xl;
+            padding-right: Theme.sp-2xl;
+            spacing: Theme.sp-sm;
             alignment: start;
             Text {
                 text: "Overview";
@@ -299,9 +299,9 @@ export component StorylineSection inherits VerticalLayout {
     }
 
     VerticalLayout {
-        padding-left: 48px;
-        padding-right: 48px;
-        padding-bottom: 20px;
+        padding-left: Theme.sp-2xl;
+        padding-right: Theme.sp-2xl;
+        padding-bottom: Theme.sp-lg;
 
         // Single clipping Rectangle whose height animates between collapsed (66px)
         // and fully expanded (txt.preferred-height).  preferred-height is the text's

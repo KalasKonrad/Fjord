@@ -18,13 +18,13 @@ export component AppShell inherits HorizontalLayout {
         VerticalLayout {
             padding: Theme.sp;
             padding-top: Theme.sp-lg;
-            spacing: 3px;
+            spacing: Theme.sp-xs;
 
             Rectangle {
                 height: 48px;
                 HorizontalLayout {
                     alignment: center;
-                    spacing: 8px;
+                    spacing: Theme.sp-sm;
                     Image {
                         width: 40px;
                         height: 40px;
@@ -38,7 +38,7 @@ export component AppShell inherits HorizontalLayout {
 
                     VerticalLayout {
                         alignment: center;
-                        spacing: 2px;
+                        spacing: Theme.sp-2xs;
                         Text {
                             text: "FJORD";
                             color: Theme.accent;
@@ -305,7 +305,7 @@ export component AppShell inherits HorizontalLayout {
                 }
 
                 HorizontalLayout {
-                    padding-left: 14px;
+                    padding-left: Theme.sp;
                     spacing: 10px;
                     alignment: start;
                     Rectangle {

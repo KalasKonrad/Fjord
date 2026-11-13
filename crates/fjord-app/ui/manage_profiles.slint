@@ -20,7 +20,7 @@ component ManageProfileTile inherits VerticalLayout {
     in property <bool> kbd-focused: false;
     callback activated();
 
-    spacing: 8px;
+    spacing: Theme.sp-sm;
     width: 120px;
 
     // The glow + zoom holder (FocusGlow); the avatar circle inside it is clipped, its ring over the content.
@@ -164,7 +164,7 @@ export component ManageProfilesScreen inherits Rectangle {
 
             HorizontalLayout {
                 alignment: center;
-                spacing: 20px;
+                spacing: Theme.sp-lg;
 
                 for t[i] in AppState.manage-profiles-list: ManageProfileTile {
                     tile: t;

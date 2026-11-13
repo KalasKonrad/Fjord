@@ -260,9 +260,9 @@ export component DiscoverScreen inherits Rectangle {
                 }
 
                 HorizontalLayout {
-                    padding-left: 12px;
-                    padding-right: 12px;
-                    spacing: 8px;
+                    padding-left: Theme.sp-md;
+                    padding-right: Theme.sp-md;
+                    spacing: Theme.sp-sm;
                     alignment: start;
 
                     Text {
@@ -315,7 +315,7 @@ export component DiscoverScreen inherits Rectangle {
             HorizontalLayout {
                 padding-left: Theme.sp;
                 padding-right: Theme.sp;
-                spacing: 8px;
+                spacing: Theme.sp-sm;
                 alignment: start;
                 FilterPill {
                     idx: 0;
@@ -385,7 +385,7 @@ export component DiscoverScreen inherits Rectangle {
                 y: parent.height / 3 - 20px;
                 width: parent.width;
                 alignment: start;
-                spacing: 12px;
+                spacing: Theme.sp-md;
                 if AppState.seerr-connected && !AppState.discover-landing-failed: LoadingSpinner {
                     height: 20px;
                 }
@@ -553,7 +553,7 @@ export component DiscoverScreen inherits Rectangle {
             TouchArea { }
 
             if AppState.discover-popup-open == "type": VerticalLayout {
-                padding: 8px;
+                padding: Theme.sp-sm;
                 for opt[i] in ["All", "Movies", "TV"]: PopupOption {
                     text: opt;
                     option-focused: i == AppState.discover-popup-cursor;
@@ -561,7 +561,7 @@ export component DiscoverScreen inherits Rectangle {
                 }
             }
             if AppState.discover-popup-open == "sort": VerticalLayout {
-                padding: 8px;
+                padding: Theme.sp-sm;
                 for opt[i] in ["Popularity", "Rating", "Newest", "Oldest"]: PopupOption {
                     text: opt;
                     option-focused: i == AppState.discover-popup-cursor;
@@ -569,7 +569,7 @@ export component DiscoverScreen inherits Rectangle {
                 }
             }
             if AppState.discover-popup-open == "rating": VerticalLayout {
-                padding: 8px;
+                padding: Theme.sp-sm;
                 for opt[i] in ["Any", "6+", "7+", "8+"]: PopupOption {
                     text: opt;
                     option-focused: i == AppState.discover-popup-cursor;
@@ -577,7 +577,7 @@ export component DiscoverScreen inherits Rectangle {
                 }
             }
             if AppState.discover-popup-open == "year": VerticalLayout {
-                padding: 8px;
+                padding: Theme.sp-sm;
                 for opt[i] in ["Any", "2000+", "2010+", "2015+", "2020+"]: PopupOption {
                     text: opt;
                     option-focused: i == AppState.discover-popup-cursor;
@@ -602,7 +602,7 @@ export component DiscoverScreen inherits Rectangle {
                     height: parent.height;
                     content-width: genre-hbox.preferred-width;
                     genre-hbox := HorizontalLayout {
-                        spacing: 8px;
+                        spacing: Theme.sp-sm;
                         for g[i] in AppState.discover-filter-genres: FilterChip {
                             text: g.name;
                             selected: g.selected;
@@ -627,7 +627,7 @@ export component DiscoverScreen inherits Rectangle {
                     height: parent.height;
                     content-width: provider-hbox.preferred-width;
                     provider-hbox := HorizontalLayout {
-                        spacing: 8px;
+                        spacing: Theme.sp-sm;
                         for p[i] in AppState.discover-filter-providers: FilterChip {
                             text: p.name;
                             selected: p.selected;

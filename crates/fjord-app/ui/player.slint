@@ -73,7 +73,7 @@ component OsdPrompt inherits Rectangle {
     fade := FadeInTrigger { }
 
     inner := VerticalLayout {
-        padding: 14px;
+        padding: Theme.sp;
         spacing: 10px;
         @children
     }
@@ -121,8 +121,8 @@ component TrackPanel inherits Rectangle {
         content-height: panel-list.preferred-height;
 
         panel-list := VerticalLayout {
-            padding: 8px;
-            spacing: 2px;
+            padding: Theme.sp-sm;
+            spacing: Theme.sp-2xs;
 
             Text {
                 text: root.title;
@@ -336,9 +336,9 @@ export component PlayerScreen inherits Rectangle {
         drop-shadow-color: Theme.shadow-soft;
 
         HorizontalLayout {
-            padding-left: 12px;
-            padding-right: 14px;
-            spacing: 8px;
+            padding-left: Theme.sp-md;
+            padding-right: Theme.sp;
+            spacing: Theme.sp-sm;
             alignment: center;
             Text {
                 text: "▸";
@@ -371,9 +371,9 @@ export component PlayerScreen inherits Rectangle {
         drop-shadow-color: Theme.shadow-soft;
 
         HorizontalLayout {
-            padding-left: 12px;
-            padding-right: 14px;
-            spacing: 8px;
+            padding-left: Theme.sp-md;
+            padding-right: Theme.sp;
+            spacing: Theme.sp-sm;
             alignment: center;
             Text {
                 text: "⏱";
@@ -416,7 +416,7 @@ export component PlayerScreen inherits Rectangle {
         }
 
         HorizontalLayout {
-            spacing: 8px;
+            spacing: Theme.sp-sm;
             FjordButton {
                 on-dark: true;
                 text: "Skip";
@@ -440,7 +440,7 @@ export component PlayerScreen inherits Rectangle {
         y: parent.height - 158px - self.height - 16px;
         max-w: 420px * AppState.text-scale;
         HorizontalLayout {
-            spacing: 12px;
+            spacing: Theme.sp-md;
             OsdPromptLabel {
                 text: "Up Next  ·  " + AppState.next-ep-secs + "s";
                 horizontal-stretch: 1;
@@ -462,7 +462,7 @@ export component PlayerScreen inherits Rectangle {
         }
 
         HorizontalLayout {
-            spacing: 8px;
+            spacing: Theme.sp-sm;
             FjordButton {
                 on-dark: true;
                 text: "Play Now";
@@ -501,8 +501,8 @@ export component PlayerScreen inherits Rectangle {
         opacity: self.buf-opacity;
 
         buf-inner := VerticalLayout {
-            padding: 14px;
-            spacing: 8px;
+            padding: Theme.sp;
+            spacing: Theme.sp-sm;
             alignment: center;
 
             if AppState.buffering-pct == 0: LoadingSpinner { }
@@ -555,8 +555,8 @@ export component PlayerScreen inherits Rectangle {
         opacity: self.stall-opacity;
 
         stall-inner := VerticalLayout {
-            padding: 14px;
-            spacing: 8px;
+            padding: Theme.sp;
+            spacing: Theme.sp-sm;
             alignment: center;
 
             LoadingSpinner { }
@@ -583,13 +583,13 @@ export component PlayerScreen inherits Rectangle {
         animate opacity { duration: 300ms * AppState.settings-animation-speed; }
 
         VerticalLayout {
-            padding: 12px;
-            spacing: 9px;
+            padding: Theme.sp-md;
+            spacing: Theme.sp-sm;
             alignment: center;
 
             // ── Title row (full controls only) ───────────────────────────────
             if AppState.controls-visible: HorizontalLayout {
-                spacing: 12px;
+                spacing: Theme.sp-md;
                 Text {
                     text: AppState.playing-title;
                     color: Theme.text-bright;
@@ -609,7 +609,7 @@ export component PlayerScreen inherits Rectangle {
 
             // ── Seek row: current-time | track (with tooltip) | total ─────────
             HorizontalLayout {
-                spacing: 8px;
+                spacing: Theme.sp-sm;
 
                 Text {
                     // During seek accumulation show the target time; otherwise current position.
@@ -790,7 +790,7 @@ export component PlayerScreen inherits Rectangle {
                 HorizontalLayout {
                     width: parent.width;
                     alignment: center;
-                    spacing: 8px;
+                    spacing: Theme.sp-sm;
                     FjordButton {
                         on-dark: true;
                         text: "← Back";
@@ -840,7 +840,7 @@ export component PlayerScreen inherits Rectangle {
                 HorizontalLayout {
                     width: parent.width;
                     alignment: end;
-                    spacing: 8px;
+                    spacing: Theme.sp-sm;
                     if AppState.osd-btn-chapters: FjordButton {
                         on-dark: true;
                         text: "Ch";
@@ -911,8 +911,8 @@ export component PlayerScreen inherits Rectangle {
         drop-shadow-color: Theme.shadow;
 
         seek-pill-inner := VerticalLayout {
-            padding: 14px;
-            spacing: 4px;
+            padding: Theme.sp;
+            spacing: Theme.sp-xs;
             alignment: center;
 
             delta-txt := Text {
@@ -1135,8 +1135,8 @@ export component PlayerScreen inherits Rectangle {
         clip: true;
 
         sync-inner := VerticalLayout {
-            padding: 12px;
-            spacing: 4px;
+            padding: Theme.sp-md;
+            spacing: Theme.sp-xs;
 
             Text {
                 text: "SYNC";

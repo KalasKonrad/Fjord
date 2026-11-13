@@ -37,14 +37,14 @@ export component PersonScreen inherits StackPage {
         changed kb-y => { self.content-y = kb-y; }
 
         content := VerticalLayout {
-            padding-left: 48px;
-            padding-right: 48px;
+            padding-left: Theme.sp-2xl;
+            padding-right: Theme.sp-2xl;
             padding-top: 72px;
             padding-bottom: 40px;
 
             // ── Header: portrait + name + bio ─────────────────────────────────
             HorizontalLayout {
-                spacing: 36px;
+                spacing: Theme.sp-xl;
                 alignment: start;
 
                 Rectangle {
@@ -65,7 +65,7 @@ export component PersonScreen inherits StackPage {
                     spacing: 16px;
                     alignment: start;
                     horizontal-stretch: 1;
-                    padding-top: 4px;
+                    padding-top: Theme.sp-xs;
 
                     Text {
                         text: AppState.person-name;

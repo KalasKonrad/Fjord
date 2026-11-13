@@ -91,11 +91,11 @@ export component DetailPage inherits StackPage {
 
                 VerticalLayout {
                     HorizontalLayout {
-                        padding-left: 48px;
-                        padding-right: 48px;
+                        padding-left: Theme.sp-2xl;
+                        padding-right: Theme.sp-2xl;
                         padding-top: 68px;
                         padding-bottom: 24px;
-                        spacing: 32px;
+                        spacing: Theme.sp-xl;
                         alignment: start;
 
                         if AppState.detail-has-poster: PosterBlock {
@@ -106,7 +106,7 @@ export component DetailPage inherits StackPage {
                         }
 
                         VerticalLayout {
-                            spacing: 8px;
+                            spacing: Theme.sp-sm;
                             alignment: start;
 
                             // A plain (non-Layout) Rectangle fixed at 240px (PosterBlock's height) with two
@@ -126,7 +126,7 @@ export component DetailPage inherits StackPage {
                                     x: 0;
                                     y: 0;
                                     width: parent.width;
-                                    spacing: 8px;
+                                    spacing: Theme.sp-sm;
                                     alignment: start;
 
                                     Text {
@@ -174,7 +174,7 @@ export component DetailPage inherits StackPage {
                                 HorizontalLayout {
                                     x: 0;
                                     y: parent.height - 38px;
-                                    spacing: 12px;
+                                    spacing: Theme.sp-md;
                                     alignment: start;
                                     FjordButton {
                                         icon-left: "▶";
@@ -253,8 +253,8 @@ export component DetailPage inherits StackPage {
             }
 
             if AppState.detail-cast.length > 0: VerticalLayout {
-                padding-left: 48px;
-                padding-right: 48px;
+                padding-left: Theme.sp-2xl;
+                padding-right: Theme.sp-2xl;
                 padding-bottom: 24px;
 
                 Rectangle {
@@ -280,8 +280,8 @@ export component DetailPage inherits StackPage {
             }
 
             if AppState.detail-collection.length > 0: VerticalLayout {
-                padding-left: 48px;
-                padding-right: 48px;
+                padding-left: Theme.sp-2xl;
+                padding-right: Theme.sp-2xl;
                 padding-bottom: 40px;
 
                 Rectangle {
@@ -306,8 +306,8 @@ export component DetailPage inherits StackPage {
             }
 
             if AppState.detail-similar.length > 0: VerticalLayout {
-                padding-left: 48px;
-                padding-right: 48px;
+                padding-left: Theme.sp-2xl;
+                padding-right: Theme.sp-2xl;
                 padding-bottom: 40px;
 
                 Rectangle {
@@ -332,8 +332,8 @@ export component DetailPage inherits StackPage {
             }
 
             if AppState.detail-recommended.length > 0: VerticalLayout {
-                padding-left: 48px;
-                padding-right: 48px;
+                padding-left: Theme.sp-2xl;
+                padding-right: Theme.sp-2xl;
                 padding-bottom: 40px;
 
                 Rectangle {

@@ -50,7 +50,7 @@ export component RememberLoginConfirmOverlay inherits Rectangle {
             // disagree with card's height (computed from content.preferred-height), which varies here
             // (optional error line, spinner or buttons) — the ConfirmDialog fix.
             height: self.preferred-height;
-            spacing: 14px;
+            spacing: Theme.sp;
 
             Text {
                 text: "Confirm password for " + AppState.remember-login-confirm-username;

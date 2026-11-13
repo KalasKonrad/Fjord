@@ -205,7 +205,7 @@ export component LibraryGrid inherits Rectangle {
 
                 // Music: view pills (Artists/Albums/Playlists) at LEFT of sort pills (cursor 0-2)
                 if AppState.active-nav == 4: HorizontalLayout {
-                    spacing: 4px;
+                    spacing: Theme.sp-xs;
                     alignment: center;
                     for vi in 3: FocusGlow {
                         property <bool> v-active:  AppState.library-music-view == vi;
@@ -449,9 +449,9 @@ export component LibraryGrid inherits Rectangle {
                 }
 
                 HorizontalLayout {
-                    padding-left: 12px;
-                    padding-right: 12px;
-                    spacing: 8px;
+                    padding-left: Theme.sp-md;
+                    padding-right: Theme.sp-md;
+                    spacing: Theme.sp-sm;
                     alignment: start;
 
                     Text {

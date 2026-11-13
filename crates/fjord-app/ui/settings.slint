@@ -188,7 +188,7 @@ export component SettingsScreen inherits Rectangle {
                     }
 
                     HorizontalLayout {
-                        padding-left: 12px;
+                        padding-left: Theme.sp-md;
                         alignment: start;
                         Text {
                             text: label;
@@ -668,7 +668,7 @@ export component SettingsScreen inherits Rectangle {
                                 x: 12px;
                                 y: 0px;
                                 height: parent.height;
-                                spacing: 4px;
+                                spacing: Theme.sp-xs;
                                 alignment: start;
                                 Text {
                                     text: "⚠";
@@ -1079,7 +1079,7 @@ export component SettingsScreen inherits Rectangle {
                                 x: 12px;
                                 y: 0px;
                                 height: parent.height;
-                                spacing: 4px;
+                                spacing: Theme.sp-xs;
                                 alignment: start;
                                 Text {
                                     text: "⚠";
@@ -1439,7 +1439,7 @@ export component SettingsScreen inherits Rectangle {
                             }
 
                             HorizontalLayout {
-                                padding-left: 12px;
+                                padding-left: Theme.sp-md;
                                 alignment: start;
                                 Text {
                                     text: "Manage Profiles";
@@ -1520,7 +1520,7 @@ export component SettingsScreen inherits Rectangle {
                             }
 
                             HorizontalLayout {
-                                padding-left: 12px;
+                                padding-left: Theme.sp-md;
                                 alignment: start;
                                 Text {
                                     text: "Add Account";
@@ -1574,7 +1574,7 @@ export component SettingsScreen inherits Rectangle {
                             }
 
                             HorizontalLayout {
-                                padding-left: 12px;
+                                padding-left: Theme.sp-md;
                                 alignment: start;
                                 Text {
                                     text: "Sign Out";
@@ -1616,7 +1616,7 @@ export component SettingsScreen inherits Rectangle {
                             }
 
                             HorizontalLayout {
-                                padding-left: 12px;
+                                padding-left: Theme.sp-md;
                                 alignment: start;
                                 Text {
                                     text: "Bonfire Group";
@@ -1659,7 +1659,7 @@ export component SettingsScreen inherits Rectangle {
                             }
 
                             HorizontalLayout {
-                                padding-left: 12px;
+                                padding-left: Theme.sp-md;
                                 alignment: start;
                                 Text {
                                     text: "Bonfire Admin";
@@ -1719,8 +1719,8 @@ export component SettingsScreen inherits Rectangle {
                             }
 
                             HorizontalLayout {
-                                padding-left: 12px;
-                                padding-right: 12px;
+                                padding-left: Theme.sp-md;
+                                padding-right: Theme.sp-md;
                                 alignment: space-between;
                                 Text {
                                     text: kb.action;
@@ -1771,8 +1771,8 @@ export component SettingsScreen inherits Rectangle {
                             }
 
                             HorizontalLayout {
-                                padding-left: 12px;
-                                padding-right: 12px;
+                                padding-left: Theme.sp-md;
+                                padding-right: Theme.sp-md;
                                 alignment: space-between;
                                 Text {
                                     text: kb.action;
@@ -1889,12 +1889,12 @@ export component SettingsScreen inherits Rectangle {
                             }
 
                             HorizontalLayout {
-                                padding-left: 12px;
+                                padding-left: Theme.sp-md;
                                 alignment: start;
-                                spacing: 2px;
+                                spacing: Theme.sp-2xs;
                                 VerticalLayout {
                                     alignment: center;
-                                    spacing: 2px;
+                                    spacing: Theme.sp-2xs;
                                     Text {
                                         text: AppState.seerr-connected ? "Disconnect" : "Connect Seerr";
                                         color: AppState.seerr-connected ? Theme.error : Theme.text;
@@ -2007,12 +2007,12 @@ export component SettingsScreen inherits Rectangle {
                             }
 
                             HorizontalLayout {
-                                padding-left: 12px;
+                                padding-left: Theme.sp-md;
                                 alignment: start;
-                                spacing: 2px;
+                                spacing: Theme.sp-2xs;
                                 VerticalLayout {
                                     alignment: center;
-                                    spacing: 2px;
+                                    spacing: Theme.sp-2xs;
                                     Text {
                                         text: "Manage Blocklist";
                                         color: Theme.text;
@@ -2222,7 +2222,7 @@ export component SettingsScreen inherits Rectangle {
                     init => { kbdd-fl.content-y = kbdd-scroll; }
 
                     kbdd-vl := VerticalLayout {
-                        padding: 4px;
+                        padding: Theme.sp-xs;
                         for opt[i] in AppState.settings-dropdown-model: Rectangle {
                             height: 32px;
                             border-radius: Theme.radius-sm;

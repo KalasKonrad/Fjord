@@ -50,7 +50,7 @@ export component NavItem inherits Rectangle {
     }
 
     HorizontalLayout {
-        padding-left: 14px;
+        padding-left: Theme.sp;
         spacing: 10px;
         alignment: start;
 
@@ -112,9 +112,9 @@ export component SidebarProfileMenu inherits Rectangle {
             x: 0;
             y: 8px;
             width: parent.width;
-            spacing: 2px;
-            padding-left: 8px;
-            padding-right: 8px;
+            spacing: Theme.sp-2xs;
+            padding-left: Theme.sp-sm;
+            padding-right: Theme.sp-sm;
 
             for label[i] in AppState.sidebar-profile-menu-rows: Rectangle {
                 height: 44px;

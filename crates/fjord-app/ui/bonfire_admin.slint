@@ -57,7 +57,7 @@ export component BonfireAdminScreen inherits Rectangle {
             y: 56px;
             width: 240px;
             height: 34px;
-            spacing: 8px;
+            spacing: Theme.sp-sm;
 
             TabButton {
                 label: "Mappings";
@@ -177,7 +177,7 @@ export component BonfireAdminScreen inherits Rectangle {
                             alignment: space-between;
 
                             HorizontalLayout {
-                                spacing: 12px;
+                                spacing: Theme.sp-md;
                                 alignment: start;
                                 horizontal-stretch: 1;
 
@@ -200,7 +200,7 @@ export component BonfireAdminScreen inherits Rectangle {
 
                                 VerticalLayout {
                                     alignment: center;
-                                    spacing: 2px;
+                                    spacing: Theme.sp-2xs;
 
                                     Text {
                                         text: row.display-name;
@@ -211,7 +211,7 @@ export component BonfireAdminScreen inherits Rectangle {
                                     }
 
                                     HorizontalLayout {
-                                        spacing: 8px;
+                                        spacing: Theme.sp-sm;
                                         Text {
                                             text: row.is-master ? "Master account" : "Sub-profile";
                                             color: Theme.text-subtle;
@@ -220,7 +220,7 @@ export component BonfireAdminScreen inherits Rectangle {
 
                                         // The lock in the symbol font (no colour emoji), the words in the UI font.
                                         if row.requires-pin: HorizontalLayout {
-                                            spacing: 4px;
+                                            spacing: Theme.sp-xs;
                                             Text {
                                                 text: "🔒";
                                                 font-family: "Noto Sans Symbols 2";
@@ -289,7 +289,7 @@ export component BonfireAdminScreen inherits Rectangle {
                                 }
 
                                 if row.is-master: HorizontalLayout {
-                                    spacing: 8px;
+                                    spacing: Theme.sp-sm;
                                     Text {
                                         text: "Limit";
                                         color: Theme.text-muted;
@@ -404,7 +404,7 @@ export component BonfireAdminScreen inherits Rectangle {
 
                         VerticalLayout {
                             alignment: center;
-                            spacing: 2px;
+                            spacing: Theme.sp-2xs;
                             horizontal-stretch: 1;
 
                             Text {

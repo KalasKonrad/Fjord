@@ -29,7 +29,7 @@ component AccountTileCard inherits VerticalLayout {
     in property <bool> is-add-tile: false;
     callback activated();
 
-    spacing: 8px;
+    spacing: Theme.sp-sm;
     width: 132px;
 
     // The glow + zoom holder (FocusGlow); the avatar circle inside it is clipped, its ring over the content.
@@ -137,8 +137,8 @@ component AccountTileCard inherits VerticalLayout {
         border-radius: self.height / 2;
         background: Theme.accent-muted;
         badge-content := HorizontalLayout {
-            padding-left: 8px;
-            padding-right: 8px;
+            padding-left: Theme.sp-sm;
+            padding-right: Theme.sp-sm;
             Text {
                 text: "LINKED";
                 color: Theme.accent;
@@ -271,7 +271,7 @@ export component AccountPickerScreen inherits Rectangle {
 
         VerticalLayout {
             alignment: center;
-            spacing: 20px;
+            spacing: Theme.sp-lg;
 
             LoadingSpinner { }
 

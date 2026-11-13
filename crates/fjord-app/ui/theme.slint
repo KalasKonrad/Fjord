@@ -155,11 +155,17 @@ export global Theme {
     out property <length> radius-sm:      4px;
     out property <length> radius:         6px;
     out property <length> radius-lg:      12px;
+    // Spacing (9d, light): literal paddings/spacings equal to one of these use it. sp stays 14px —
+    // AppState.row-chrome-h (56px) assumes it around a dashboard row's title. 6/10/16/24px stay
+    // literal for now: they sit in fixed-width buttons, the keyboard grid and measured rows.
+    out property <length> sp-2xs:         2px;
     out property <length> sp-xs:          4px;
     out property <length> sp-sm:          8px;
+    out property <length> sp-md:          12px;
     out property <length> sp:             14px;
     out property <length> sp-lg:          20px;
     out property <length> sp-xl:          32px;
+    out property <length> sp-2xl:         48px;
 
     // ── Type scale (9d, 2026-11-13) ──────────────────────────────────────────
     // Every literal font size is one of these (× AppState.text-scale under 24px, CLAUDE.md).

@@ -124,14 +124,14 @@ export component BlocklistScreen inherits StackPage {
                         }
 
                         HorizontalLayout {
-                            padding-left: 48px;
-                            padding-right: 48px;
-                            spacing: 12px;
+                            padding-left: Theme.sp-2xl;
+                            padding-right: Theme.sp-2xl;
+                            spacing: Theme.sp-md;
                             alignment: space-between;
 
                             VerticalLayout {
                                 alignment: center;
-                                spacing: 2px;
+                                spacing: Theme.sp-2xs;
                                 horizontal-stretch: 1;
 
                                 Text {
@@ -143,7 +143,7 @@ export component BlocklistScreen inherits StackPage {
                                 }
 
                                 HorizontalLayout {
-                                    spacing: 8px;
+                                    spacing: Theme.sp-sm;
                                     Text {
                                         text: row.media-type == "movie" ? "Movie" : "TV";
                                         color: Theme.text-subtle;

@@ -48,8 +48,8 @@ import {
 component MetaRow inherits HorizontalLayout {
     in property <string> label;
     in property <string> value;
-    padding-top: 4px;
-    padding-bottom: 4px;
+    padding-top: Theme.sp-xs;
+    padding-bottom: Theme.sp-xs;
     spacing: 16px;
     Text {
         text: root.label;
@@ -125,11 +125,11 @@ export component RequestDetailScreen inherits StackPage {
 
                 VerticalLayout {
                     HorizontalLayout {
-                        padding-left: 48px;
-                        padding-right: 48px;
+                        padding-left: Theme.sp-2xl;
+                        padding-right: Theme.sp-2xl;
                         padding-top: 68px;
                         padding-bottom: 24px;
-                        spacing: 32px;
+                        spacing: Theme.sp-xl;
                         alignment: start;
 
                         // request-status: prefers the 4K label when both tiers
@@ -158,7 +158,7 @@ export component RequestDetailScreen inherits StackPage {
                                 x: 0;
                                 y: 0;
                                 width: parent.width;
-                                spacing: 8px;
+                                spacing: Theme.sp-sm;
                                 alignment: start;
 
                                 Text {
@@ -197,7 +197,7 @@ export component RequestDetailScreen inherits StackPage {
 
                                 req-hbox := HorizontalLayout {
                                     alignment: start;
-                                    spacing: 12px;
+                                    spacing: Theme.sp-md;
                             // FjordButton has no internal horizontal padding
                             // (see widgets.slint) — every other call site sets
                             // an explicit width (Play: 110px) for exactly this
@@ -363,8 +363,8 @@ export component RequestDetailScreen inherits StackPage {
                             }
 
                             if AppState.request-detail-providers.length > 0: VerticalLayout {
-                                padding-top: 8px;
-                                spacing: 8px;
+                                padding-top: Theme.sp-sm;
+                                spacing: Theme.sp-sm;
 
                                 Text {
                                     text: "Currently Streaming On";
@@ -387,7 +387,7 @@ export component RequestDetailScreen inherits StackPage {
                                     content-width: providers-hbox.preferred-width;
 
                                     providers-hbox := HorizontalLayout {
-                                        spacing: 12px;
+                                        spacing: Theme.sp-md;
                                         alignment: start;
 
                                         for p in AppState.request-detail-providers: Rectangle {
@@ -434,8 +434,8 @@ export component RequestDetailScreen inherits StackPage {
 
             // ── Cast & Crew (director/writer/top-billed cast, TMDB photos) ──
             if has-cast: VerticalLayout {
-                padding-left: 48px;
-                padding-right: 48px;
+                padding-left: Theme.sp-2xl;
+                padding-right: Theme.sp-2xl;
                 padding-bottom: 24px;
 
                 Rectangle {
@@ -527,7 +527,7 @@ export component RequestOptionsOverlay inherits StackPage {
             // row fell outside the box with many rows mounted (same fix as ConfirmDialog). Reading a
             // child's geometry instead was a binding loop.
             height: self.preferred-height;
-            spacing: 20px;
+            spacing: Theme.sp-lg;
 
             Text {
                 text: "Request Options";
@@ -543,7 +543,7 @@ export component RequestOptionsOverlay inherits StackPage {
             // request: Seerr's PUT /request/{id} can't change the tier (see
             // SeerrClient::update_request).
             if AppState.request-options-zone-quality: VerticalLayout {
-                spacing: 8px;
+                spacing: Theme.sp-sm;
                 Text {
                     text: "Quality";
                     color: Theme.text;
@@ -625,7 +625,7 @@ export component RequestOptionsOverlay inherits StackPage {
             // Same Flickable/kb-x shape as Tags below, but exactly one chip is selected; row 0 is the
             // synthetic "Default" that Rust prepends (the way back to no override).
             if has-profiles: VerticalLayout {
-                spacing: 8px;
+                spacing: Theme.sp-sm;
 
                 Text {
                     text: "Profile";
@@ -702,7 +702,7 @@ export component RequestOptionsOverlay inherits StackPage {
             // kb-x math every scrollable row in this app relies on; long
             // labels elide instead).
             if has-tags: VerticalLayout {
-                spacing: 8px;
+                spacing: Theme.sp-sm;
 
                 Text {
                     text: "Tags";
@@ -759,7 +759,7 @@ export component RequestOptionsOverlay inherits StackPage {
                                 padding-left: 10px;
                                 padding-right: 10px;
                                 alignment: center;
-                                spacing: 4px;
+                                spacing: Theme.sp-xs;
                                 if t.selected: Text {
                                     text: "✓";
                                     font-family: "Adwaita Sans";
@@ -788,7 +788,7 @@ export component RequestOptionsOverlay inherits StackPage {
             // kb-x idiom as the tag strip and CastRow, just with a poster
             // instead of a chip label.
             if has-seasons: VerticalLayout {
-                spacing: 8px;
+                spacing: Theme.sp-sm;
 
                 Text {
                     text: "Seasons";
@@ -817,7 +817,7 @@ export component RequestOptionsOverlay inherits StackPage {
 
                         for s[i] in AppState.request-detail-seasons: VerticalLayout {
                             width: 110px;
-                            spacing: 4px;
+                            spacing: Theme.sp-xs;
 
                             // The glow holder (FocusGlow); the poster inside it is clipped, its ring over the picture.
                             FocusGlow {
@@ -917,7 +917,7 @@ export component RequestOptionsOverlay inherits StackPage {
             // Cancel is an outlined (ghost) button, not a FjordButton (always filled accent): it reads
             // as the secondary, safe action next to Request.
             confirm-row := HorizontalLayout {
-                spacing: 12px;
+                spacing: Theme.sp-md;
                 alignment: center;
                 cancel-btn := Rectangle {
                     width: 100px;
