@@ -81,7 +81,7 @@ export component ArtistScreen inherits StackPage {
                         Rectangle {
                             width: 160px;
                             height: 160px;
-                            border-radius: 80px;  // circle
+                            border-radius: self.width / 2;  // circle
                             background: Theme.surface-overlay;
                             clip: true;
                             if AppState.artist-has-portrait: Image {

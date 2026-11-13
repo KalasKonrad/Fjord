@@ -69,7 +69,7 @@ component ToggleRow inherits Rectangle {
             width: 20px * AppState.text-scale;
             height: self.width;
             y: (parent.height - self.height) / 2;
-            border-radius: 4px;
+            border-radius: Theme.radius-sm;
             background: root.item.selected ? Theme.accent : transparent;
             border-width: 1.5px;
             border-color: root.item.selected ? Theme.accent : Theme.border-strong;
@@ -318,7 +318,7 @@ export component ProfileEditScreen inherits Rectangle {
                     Rectangle {
                         width: 40px;
                         height: 40px;
-                        border-radius: 20px;
+                        border-radius: self.width / 2;
                         background: AppState.profile-edit-avatar-preview;
                         border-width: 2px;
                         border-color: Theme.border-strong;
@@ -328,7 +328,7 @@ export component ProfileEditScreen inherits Rectangle {
                         width: 32px;
                         height: 32px;
                         y: 4px;
-                        radius: 16px;
+                        radius: self.width / 2;
                         fill: c;
                         ring-width: max(AppState.profile-edit-avatar-color == avatar-palette-hex[i] ? 3px : 0px,
                                 AppState.glow-ring-width(AppState.profile-edit-zone == 1 && AppState.profile-edit-avatar-cursor == i, swatch-ta.pressed || swatch-pulse.pulsing));
@@ -926,7 +926,7 @@ export component ProfileEditScreen inherits Rectangle {
         x: (parent.width - self.width) / 2;
         y: (parent.height - self.height) / 2;
         background: Theme.surface-raised;
-        border-radius: 8px;
+        border-radius: Theme.radius;
         border-width: 1px;
         border-color: Theme.border;
         drop-shadow-blur: 12px;
@@ -947,7 +947,7 @@ export component ProfileEditScreen inherits Rectangle {
                 padding: 4px;
                 for opt[i] in AppState.profile-edit-dropdown-model: Rectangle {
                     height: 32px;
-                    border-radius: 4px;
+                    border-radius: Theme.radius-sm;
                     background: i == AppState.profile-edit-dropdown-cursor
                         ? Theme.accent-muted
                         : (dd-item-ta.has-hover ? Theme.surface-overlay : transparent);
@@ -961,7 +961,7 @@ export component ProfileEditScreen inherits Rectangle {
                     }
                     FocusHalo {
                         glowing: i == AppState.profile-edit-dropdown-cursor;
-                        radius: 4px;
+                        radius: Theme.radius-sm;
                     }
 
                     dd-pulse := PressPulse {

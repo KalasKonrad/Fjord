@@ -2203,7 +2203,7 @@ export component SettingsScreen inherits Rectangle {
                 x: right-pane.width - self.width - Theme.sp-xl;
                 y: Theme.sp-xl;
                 background: Theme.surface-raised;
-                border-radius: 8px;
+                border-radius: Theme.radius;
                 border-width: 1px;
                 border-color: Theme.border;
                 drop-shadow-blur: 12px;
@@ -2225,7 +2225,7 @@ export component SettingsScreen inherits Rectangle {
                         padding: 4px;
                         for opt[i] in AppState.settings-dropdown-model: Rectangle {
                             height: 32px;
-                            border-radius: 4px;
+                            border-radius: Theme.radius-sm;
                             preferred-width: kbdd-txt.preferred-width + 24px;
                             background: i == AppState.settings-dropdown-cursor
                                 ? Theme.accent-muted
@@ -2238,7 +2238,7 @@ export component SettingsScreen inherits Rectangle {
                             }
                             FocusHalo {
                                 glowing: kbdd-pulse.active;
-                                radius: 4px;
+                                radius: Theme.radius-sm;
                             }
 
                             kbdd-pulse := PressPulse {

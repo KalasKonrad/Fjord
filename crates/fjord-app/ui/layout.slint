@@ -232,7 +232,7 @@ export component AppShell inherits HorizontalLayout {
                     Rectangle {
                         width: 26px;
                         height: 26px;
-                        border-radius: 13px;
+                        border-radius: self.width / 2;
                         background: AppState.current-profile-tile.avatar-color;
                         y: (parent.height - self.height) / 2;
                         Text {
@@ -313,7 +313,7 @@ export component AppShell inherits HorizontalLayout {
                         Rectangle {
                             width: 6px;
                             height: 6px;
-                            border-radius: 3px;
+                            border-radius: self.width / 2;
                             y: (parent.height - self.height) / 2;
                             background: Theme.error;
                         }

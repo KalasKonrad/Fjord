@@ -93,7 +93,7 @@ component PopupOption inherits Rectangle {
     in property <int> idx;
 
     height: 32px;
-    border-radius: 4px;
+    border-radius: Theme.radius-sm;
     background: root.option-focused ? Theme.accent-muted : (ta.has-hover ? Theme.surface-overlay : transparent);
     border-width: AppState.ring-width(pulse.active, ta.pressed || pulse.pulsing);
     border-color: AppState.focus-color;
@@ -103,7 +103,7 @@ component PopupOption inherits Rectangle {
     }
     FocusHalo {
         glowing: pulse.active;
-        radius: 4px;
+        radius: Theme.radius-sm;
     }
 
     pulse := PressPulse {

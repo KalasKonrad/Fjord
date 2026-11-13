@@ -922,14 +922,14 @@ export component VolumeOverlay inherits Rectangle {
             height: 6px;
             horizontal-stretch: 1;
             background: Theme.track-bg;
-            border-radius: 3px;
+            border-radius: self.height / 2;
 
             Rectangle {
                 x: 0;
                 width: parent.width * AppState.volume-level / 100;
                 height: parent.height;
                 background: Theme.accent;
-                border-radius: 3px;
+                border-radius: self.height / 2;
             }
         }
 

@@ -517,14 +517,14 @@ export component PlayerScreen inherits Rectangle {
             if AppState.buffering-pct > 0: Rectangle {
                 height: 3px;
                 background: Theme.track-bg;
-                border-radius: 2px;
+                border-radius: self.height / 2;
                 property <float> fill: AppState.buffering-pct * 0.01;
                 Rectangle {
                     x: 0;
                     width: parent.width * parent.fill;
                     height: parent.height;
                     background: Theme.accent;
-                    border-radius: 2px;
+                    border-radius: self.height / 2;
                 }
             }
         }
@@ -679,7 +679,7 @@ export component PlayerScreen inherits Rectangle {
                         width: 2px;
                         height: parent.bar-h + 4px;
                         background: Theme.track-hover;
-                        border-radius: 1px;
+                        border-radius: self.width / 2;
                     }
 
                     // Thumb knob (expands on hover)
@@ -704,7 +704,7 @@ export component PlayerScreen inherits Rectangle {
                         x: clamp(self.anchor - self.width / 2, 0px, seek-track.width - self.width);
                         y: (self.hovering ? -8px - 22px * AppState.text-scale : 0px) - self.height - 6px;
                         background: Theme.osd-panel-solid;
-                        border-radius: 4px;
+                        border-radius: Theme.radius-sm;
                         Image {
                             x: 2px;
                             y: 2px;
@@ -722,7 +722,7 @@ export component PlayerScreen inherits Rectangle {
                         width: 52px * AppState.text-scale;
                         height: 22px * AppState.text-scale;
                         background: Theme.osd-panel-solid;
-                        border-radius: 4px;
+                        border-radius: Theme.radius-sm;
                         Text {
                             text: AppState.seek-hover-time;
                             color: Theme.text-bright;
@@ -1231,7 +1231,7 @@ export component PlayerScreen inherits Rectangle {
         y: (parent.height - self.height) / 2;
         width: 84px;
         height: 84px;
-        border-radius: 42px;
+        border-radius: self.width / 2;
         background: Theme.scrim;
         opacity: root.flash-opacity;
         Text {

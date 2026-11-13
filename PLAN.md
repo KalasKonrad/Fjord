@@ -68,7 +68,7 @@ Scope chosen by the user on 2026-11-08. In the order of work: small and safe fir
   - [x] **Done 2026-11-08** (live check in the checklist) — **All colours via `Theme`:** 72 hand-picked colours outside theme.slint (player 17, cards 7, main 7, player bars 6, …: scrims, OSD backgrounds, greys) → `Theme` tokens. The avatar palette in profile_edit.slint stays literal by design.
   - [x] **Done 2026-11-13** (light, user's choice; live check in the checklist) — **Type scale:** 21 font sizes (9–64 px; 11–14 px used ~250 times) → about 6 named sizes in `Theme`, every `Text` using one (still `× AppState.text-scale` under 24 px). Done as 12 tokens in Theme (fs-2xs 10 … fs-hero 64); 337 literal sizes replaced, 32 moved to a neighbour (9→10, 15→14, 17→16, 22→20, 24/26/30→28, 34→32, 38→40); computed sizes (ternaries, cover-size / 4) kept.
   - [ ] **Spacing scale:** about 20 padding/spacing values → a small scale (4/8/12/16/24/48) as `Theme` tokens.
-  - [ ] **Corner radii:** 14 values → 3–4 tokens (small, card, panel, pill), including FocusGlow/FocusHalo `radius:`.
+  - [x] **Done 2026-11-13** (light; live check: the Sizes line) — **Corner radii:** 14 values → 3–4 tokens (small, card, panel, pill), including FocusGlow/FocusHalo `radius:`. Done: Theme.radius-sm (4) / radius (6) / radius-lg (12); circles, dots and thin bars as self.width/height / 2 (same look, can't drift); small rows and pills → radius-sm (the letter strip 3→4); the three dropdown popups (4/8/8) → radius; only two deliberate 0 px stay literal.
   - CLAUDE.md gets the rule once the tokens exist (sizes, spacing, radii and colours only from `Theme`).
 
 **10. Upscaler** (user, 2026-11-09)

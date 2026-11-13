@@ -342,7 +342,7 @@ export component ProfilePickerScreen inherits Rectangle {
                     for d in 8: Rectangle {
                         width: 14px;
                         height: 14px;
-                        border-radius: 7px;
+                        border-radius: self.width / 2;
                         background: d < AppState.profile-pin-len ? Theme.accent : Theme.surface-overlay;
                         border-width: 1px;
                         border-color: Theme.border-strong;

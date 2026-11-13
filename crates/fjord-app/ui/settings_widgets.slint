@@ -36,7 +36,7 @@ export component ToggleSwitch inherits Rectangle {
         Rectangle {
             width: 22px;
             height: 22px;
-            border-radius: 11px;
+            border-radius: self.width / 2;
             background: Theme.toggle-knob;
             y: (parent.height - self.height) / 2;
             x: root.checked ? parent.width - self.width - 3px : 3px;
@@ -162,7 +162,7 @@ export component SettingsDropdown inherits Rectangle {
                     padding: 4px;
                     for opt in root.model: Rectangle {
                         height: 32px;
-                        border-radius: 4px;
+                        border-radius: Theme.radius;
                         preferred-width: opt-text.preferred-width + 20px;
                         background: opt-ta.has-hover ? Theme.accent-muted : transparent;
                         opt-text := Text {

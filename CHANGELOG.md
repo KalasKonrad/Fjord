@@ -23,6 +23,11 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Improved: consistent sizes.** Text, spacing and rounded corners now come
+  from one set of sizes, so similar things look the same everywhere; a few odd
+  sizes moved by a pixel or two, and the dropdown lists now have the same
+  rounded corners.
+
 - **New: media keys and the desktop's media controls.** Fjord now tells the
   desktop what it plays (MPRIS): Play/Pause, Next, Previous and Stop keys work
   — on a keyboard, or a remote that sends media keys — and KDE's media widget,

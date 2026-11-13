@@ -708,13 +708,13 @@ export component MainWindow inherits Window {
                 Rectangle {
                     width: 320px;
                     height: 6px;
-                    border-radius: 3px;
+                    border-radius: self.height / 2;
                     background: Theme.track-bg;
                     Rectangle {
                         x: 0;
                         width: parent.width * AppState.app-loading-progress;
                         height: parent.height;
-                        border-radius: 3px;
+                        border-radius: self.height / 2;
                         background: Theme.accent;
                         animate width {
                             duration: 400ms * AppState.settings-animation-speed;

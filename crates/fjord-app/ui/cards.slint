@@ -524,7 +524,7 @@ export component BrowseItem inherits Rectangle {
             width: 3px;
             height: 20px;
             y: (parent.height - self.height) / 2;
-            border-radius: 1.5px;
+            border-radius: self.width / 2;
             background: selected ? Theme.accent : transparent;
         }
 

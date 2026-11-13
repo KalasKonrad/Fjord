@@ -199,7 +199,7 @@ export component DashboardRowsScreen inherits Rectangle {
                     x: 0;
                     width: parent.width;
                     height: 3px;
-                    border-radius: 1.5px;
+                    border-radius: self.height / 2;
                     background: Theme.accent;
                     y: (root.drag-to > root.drag-from ? root.drag-to + 1 : root.drag-to) * root.row-pitch
                         - Theme.sp-xs / 2 - self.height / 2;

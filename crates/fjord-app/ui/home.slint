@@ -611,7 +611,7 @@ export component LibraryGrid inherits Rectangle {
                         property <bool> tracking:   AppState.library-scrubber-cursor == li;
                         width: 22px;
                         height: 16px;
-                        border-radius: 3px;
+                        border-radius: Theme.radius-sm;
                         background: tracking ? Theme.accent-muted : transparent;
                         border-width: AppState.ring-width(ltr-pulse.active, ltr-ta.pressed || ltr-pulse.pulsing);
                         border-color: AppState.focus-color;
@@ -621,7 +621,7 @@ export component LibraryGrid inherits Rectangle {
                         }
                         FocusHalo {
                             glowing: ltr-pulse.active;
-                            radius: 3px;
+                            radius: Theme.radius-sm;
                         }
 
                         ltr-pulse := PressPulse {

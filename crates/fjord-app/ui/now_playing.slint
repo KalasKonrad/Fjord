@@ -190,13 +190,13 @@ export component NowPlayingScreen inherits Rectangle {
                         }
                         Rectangle {
                             height: 6px;
-                            border-radius: 3px;
+                            border-radius: self.height / 2;
                             background: Theme.dark-border;
                             Rectangle {
                                 x: 0;
                                 width: parent.width * AppState.music-bar-pos;
                                 height: parent.height;
-                                border-radius: 3px;
+                                border-radius: self.height / 2;
                                 background: Theme.accent;
                             }
                         }
