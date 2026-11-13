@@ -1,5 +1,6 @@
 // ── fjord-app · person.slint ──────────────────────────────────────────────────
-//   PersonScreen  scrollable page: portrait · name · bio · filmography SectionRow ·
+//   PersonScreen  scrollable page: portrait · name · bio · filmography SectionRow (or, once
+//                 person-loaded with none, "None of their titles are in your library") ·
 //                 "Other Work" SectionRow (Discover-sourced, not-already-owned
 //                 titles, 2026-07-29 — item-play/item-context-full route through
 //                 open-discover-item/open-context-menu-discover, same as the
@@ -114,6 +115,24 @@ export component PersonScreen inherits StackPage {
                     item-play(id, itype) => { AppState.open-detail(id, itype); }
                     item-context(id, played, fav, rpct, itype, sid) => {
                         AppState.open-context-menu(id, played, fav, rpct, itype, sid);
+                    }
+                }
+            }
+
+            // ── No filmography: said once it's known (not while loading, not after a failed fetch, not
+            // for a TMDB-only person — person-loaded) ─────────────────────────────
+            if AppState.person-loaded && AppState.person-filmography.length == 0: VerticalLayout {
+                Rectangle {
+                    height: 1px;
+                    background: Theme.border;
+                }
+
+                HorizontalLayout {
+                    padding: Theme.sp;
+                    Text {
+                        text: "None of their titles are in your library";
+                        color: Theme.text-muted;
+                        font-size: 14px * AppState.text-scale;
                     }
                 }
             }

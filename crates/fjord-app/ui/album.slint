@@ -13,6 +13,8 @@
 //                precomputed row-y-px (not a VerticalLayout) so a "Disc N" label can sit
 //                above a disc's first track; kb-track-y/tracks-content-h read the model by
 //                index (album.rs::media_items_to_tracks computes the values).
+//                Empty (album-loaded and no tracks): "This playlist is empty" / "This album has
+//                no tracks" where the list would be.
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
@@ -214,6 +216,17 @@ export component AlbumScreen inherits StackPage {
                         double-clicked => { AppState.play-album-track(trk.id); }
                         remove => { AppState.playlist-remove-entry(i); }
                     }
+                }
+
+                // Loaded and nothing in it (not while a load is in flight or after a failed one).
+                if AppState.album-loaded && AppState.album-tracks.length == 0: Text {
+                    x: 0;
+                    y: 24px;
+                    width: parent.width;
+                    text: AppState.album-is-playlist ? "This playlist is empty" : "This album has no tracks";
+                    color: Theme.text-muted;
+                    font-size: 14px * AppState.text-scale;
+                    horizontal-alignment: center;
                 }
             }
         }

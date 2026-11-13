@@ -72,8 +72,10 @@
 //                         list, like detail-buttons); show-season, season-id/title/overview/meta,
 //                         poster/backdrop, cast, focused-ep
 //   Person                show-person, person-id/name/bio, portrait, filmography, film-focused, in-film-row,
-//                         person-other-work (+ -focused), person-in-other-work-row
+//                         person-other-work (+ -focused), person-in-other-work-row; person-loaded
+//                         (the filmography arrived — its empty line)
 //   Album / artist        show-album, album-id/title/artist/meta/overview, poster, tracks ([TrackItem]),
+//                         album-loaded (the tracks arrived — its empty line; collection-loaded likewise),
 //                         album-focused-track/-back-focused/-is-favorite/-has-played/-open-gen/-btn-focused/
 //                         -overview-expanded; show-artist, artist-id/title/overview/meta, portrait, albums,
 //                         artist-focused/-back-focused/-open-gen/-is-favorite/-btn-focused (-1/0=▶/1=♥)/
@@ -1176,6 +1178,9 @@ export global AppState {
     in-out property <image> person-portrait;
     in-out property <bool> person-has-portrait: false;
     in-out property <[CardItem]> person-filmography:  [];
+    // This person's data has arrived (not just reset for a load in flight or a failed one): the
+    // empty-filmography line shows only then.
+    in-out property <bool> person-loaded: false;
     in-out property <int> person-film-focused: 0;
     in-out property <bool> person-in-film-row:  false;
     // "Other Work" row (2026-07-29, Deep Seerr integration) — Discover-sourced,
@@ -1194,6 +1199,8 @@ export global AppState {
     in-out property <image> collection-backdrop;
     in-out property <bool> collection-has-backdrop: false;
     in-out property <[CardItem]> collection-items:        [];
+    // Its items have arrived — "This collection is empty" shows only then (like person-loaded).
+    in-out property <bool> collection-loaded: false;
     in-out property <int> collection-focused:      0;
     in-out property <bool> collection-back-focused: false;
     in-out property <int> collection-open-gen:     0;    // incremented on every open; stale closures abort
@@ -1222,6 +1229,8 @@ export global AppState {
     in-out property <image> album-poster;
     in-out property <bool> album-has-poster:    false;
     in-out property <[TrackItem]> album-tracks:        [];
+    // Its tracks have arrived — the empty-playlist/album line shows only then (like person-loaded).
+    in-out property <bool> album-loaded: false;
     in-out property <int> album-focused-track: 0;
     in-out property <bool> album-back-focused:  false;
     in-out property <bool> album-is-favorite:   false;

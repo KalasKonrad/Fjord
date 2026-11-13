@@ -1,5 +1,6 @@
 // ── fjord-app · collection.rs ─────────────────────────────────────────────────
-//   open_collection_screen  reset the collection props, bump collection-open-gen, check
+//   open_collection_screen  reset the collection props (collection-loaded false until the items
+//                           arrive — "This collection is empty"), bump collection-open-gen, check
 //                           boxset_items_cache + item_detail_cache (loading overlay only on a
 //                           miss); fetch BoxSet items + poster + detail in parallel (cached parts
 //                           skip the network), overview/favourite/played from the detail, backdrop
@@ -71,6 +72,7 @@ pub(crate) fn open_collection_screen(
         g.set_collection_has_poster(false);
         g.set_collection_has_backdrop(false);
         g.set_collection_items(ModelRc::new(VecModel::default()));
+        g.set_collection_loaded(false);
         g.set_collection_focused(0);
         g.set_collection_back_focused(false);
         g.set_collection_missing(ModelRc::new(VecModel::default()));
@@ -227,6 +229,7 @@ pub(crate) fn open_collection_screen(
                 &g.get_collection_items(),
                 cards,
             ));
+            g.set_collection_loaded(true);
             g.set_collection_focused(0);
             g.set_collection_back_focused(false);
             // The server's name; the caller's title only when the detail fetch failed (a caller
@@ -314,6 +317,7 @@ fn spawn_collection_revalidate(
                 &g.get_collection_items(),
                 cards,
             ));
+            g.set_collection_loaded(true);
         });
     }))
 }

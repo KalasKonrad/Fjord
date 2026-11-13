@@ -23,6 +23,11 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Improved: empty pages say so.** An empty playlist says "This playlist is
+  empty", a collection with nothing in it "This collection is empty", and a
+  person with no titles in your library "None of their titles are in your
+  library" — instead of a blank space under the header.
+
 - **Improved: the stats overlay's color rows say what they mean** — "BT.709
   colors · BT.1886 gamma (SDR)" instead of "bt.709 · bt.1886", which read like
   a conversion from one to the other; HDR reads "BT.2020 colors · PQ (HDR10,

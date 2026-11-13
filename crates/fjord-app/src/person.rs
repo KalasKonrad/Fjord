@@ -2,7 +2,9 @@
 //   open_person_screen  reset the person props; portrait + bio + filmography in parallel (cached
 //                       parts from item_detail_cache/person_filmography_cache skip the network;
 //                       app-content-loading only on a miss), then show; spawns spawn_other_work;
-//                       a cache hit revalidates (spawn_person_revalidate). Session-guarded. The name
+//                       a cache hit revalidates (spawn_person_revalidate). person-loaded = the
+//                       filmography arrived (the "None of their titles…" line; never for
+//                       open_person_screen_tmdb). Session-guarded. The name
 //                       comes from the server's detail (opened through open_item.rs's router)
 //   resolve_person_tmdb_id  Jellyfin person → TMDB person id (ProviderIds, else a Seerr name
 //                       search); cached incl. misses in person_tmdb_id_cache
@@ -64,6 +66,7 @@ pub(crate) fn open_person_screen(
         g.set_person_bio("".into());
         g.set_person_has_portrait(false);
         g.set_person_filmography(ModelRc::new(VecModel::<CardItem>::default()));
+        g.set_person_loaded(false);
         g.set_person_film_focused(0);
         g.set_person_in_film_row(false);
         g.set_person_other_work(ModelRc::new(VecModel::<CardItem>::default()));
@@ -121,6 +124,8 @@ pub(crate) fn open_person_screen(
         if let Ok(v) = &film_res {
             state.lock().unwrap().person_filmography_cache.insert(id.clone(), v.clone());
         }
+        // Only a filmography that arrived can say "none in your library" (person-loaded).
+        let film_known = film_res.is_ok();
         let film_items = film_res.unwrap_or_else(|e| {
             warn!("get_person_filmography {}: {:#}", id, e);
             vec![]
@@ -168,6 +173,7 @@ pub(crate) fn open_person_screen(
                 let fresh = items_to_cards(&film_items, film_bufs);
                 g.set_person_filmography(crate::apply_cards_preserving_identity(&g.get_person_filmography(), fresh));
             }
+            g.set_person_loaded(film_known);
             crate::keys::open_screen(&g, crate::keys::StackScreen::Person);
             g.set_app_content_loading(false);
             g.set_app_loading_progress(0.0);
@@ -241,6 +247,7 @@ fn spawn_person_revalidate(
                 &g.get_person_filmography(),
                 fresh,
             ));
+            g.set_person_loaded(true);
         });
     });
 }
@@ -530,6 +537,7 @@ fn open_person_screen_tmdb(
         g.set_person_bio("".into());
         g.set_person_has_portrait(false);
         g.set_person_filmography(ModelRc::new(VecModel::<CardItem>::default()));
+        g.set_person_loaded(false);
         g.set_person_film_focused(0);
         g.set_person_in_film_row(false);
         g.set_person_other_work(ModelRc::new(VecModel::<CardItem>::default()));

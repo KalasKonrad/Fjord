@@ -2,6 +2,7 @@
 //   reset_session_state  the one teardown for sign-out and profile switch (also closes the screen
 //                        stack and ends the screensaver; moved from main.rs,
 //                        0.5.0 step 3) — every new transient flag/cache/overlay is reset here
+//                        (incl. the pages' *-loaded flags)
 // ─────────────────────────────────────────────────────────────────────────────
 use std::sync::{Arc, Mutex};
 
@@ -153,6 +154,9 @@ pub(crate) fn reset_session_state(
         g.set_person_id(ss(""));
         g.set_collection_id(ss(""));
         g.set_album_id(ss(""));
+        g.set_person_loaded(false);
+        g.set_collection_loaded(false);
+        g.set_album_loaded(false);
         g.set_artist_id(ss(""));
         g.set_show_context_menu(false);
         g.set_discover_landing_failed(false);

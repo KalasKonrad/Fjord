@@ -10,8 +10,8 @@
 //   open_music_screen     reset the album props, bump album-open-gen, check container_tracks_cache
 //                         (the title comes from the fetched detail's Name — callers may only know the id)
 //                         + item_detail_cache (loading overlay only on a miss); tracks + cover in
-//                         parallel; generation- and session-guarded commit shows the page; a cache
-//                         hit revalidates
+//                         parallel; generation- and session-guarded commit shows the page (and sets
+//                         album-loaded — the empty-playlist line); a cache hit revalidates
 //   handle_key            header (← Back / ▶ + ♥ / bio: keys::header_keys, shared with the artist
 //                         page) / track list; Up from track 0 → keys::list_up_to_header; C →
 //                         context menu; Delete → playlist-remove-entry (playlists); Enter →
@@ -182,6 +182,7 @@ fn open_music_screen(
         g.set_album_btn_focused(-1);
         g.set_album_overview_expanded(false);
         g.set_album_tracks(ModelRc::new(VecModel::default()));
+        g.set_album_loaded(false);
         g.set_album_focused_track(0);
         g.set_album_back_focused(false);
         g.set_app_loading_progress(0.0);
@@ -350,6 +351,7 @@ fn open_music_screen(
             }
 
             g.set_album_tracks(ModelRc::new(VecModel::from(track_items)));
+            g.set_album_loaded(true);
             g.set_album_focused_track(0);
             g.set_album_back_focused(false);
             g.set_app_content_loading(false);
@@ -466,6 +468,7 @@ fn spawn_album_revalidate(
             g.set_album_is_favorite(detail.user_data.is_favorite);
             g.set_album_has_played(detail.user_data.played);
             g.set_album_tracks(ModelRc::new(VecModel::from(track_items)));
+            g.set_album_loaded(true);
         });
     });
 }

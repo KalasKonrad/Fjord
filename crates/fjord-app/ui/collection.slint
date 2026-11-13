@@ -2,7 +2,8 @@
 //   CollectionScreen  BoxSet detail (Enter on a BoxSet in Collections): backdrop hero, Back, title
 //                     column (a plain Rectangle fixed at PosterBlock's 240px, width from root.width
 //                     — not parent.width, binding loop — title/item count/overview at the top,
-//                     ♥/✓/⛔ pinned at y = parent.height - 38px), member grid, then the "Missing
+//                     ♥/✓/⛔ pinned at y = parent.height - 38px), member grid ("This collection is
+//                     empty" once collection-loaded with no members), then the "Missing
 //                     From This Collection" row. ⛔ (only with seerr-can-manage-blocklist) opens a
 //                     ConfirmDialog: it blocklists the whole TMDB collection.
 //                     Focus: collection-focused (card), collection-back-focused, the button row,
@@ -224,6 +225,17 @@ export component CollectionScreen inherits StackPage {
                             }
                         }
                     }
+                }
+            }
+
+            // Loaded and no members (the Missing row below can still list what's not in the library).
+            if AppState.collection-loaded && AppState.collection-items.length == 0: HorizontalLayout {
+                padding-left: 48px;
+                padding-right: 48px;
+                Text {
+                    text: "This collection is empty";
+                    color: Theme.text-muted;
+                    font-size: 14px * AppState.text-scale;
                 }
             }
 
