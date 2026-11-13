@@ -2,6 +2,7 @@
 //   BrowseScreen  Browse All: 70px top bar (Back at x/y 16 like every page) with the keyboard-driven
 //                 search bar (browse-query, caret at browse-query-cursor)
 //                 + scrollable list; on-screen keyboard window-centered, target-guarded
+//   Mouse = keys   a row's click and right-click (context menu) select it first
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
@@ -142,7 +143,11 @@ export component BrowseScreen inherits Rectangle {
                         selected: i == AppState.current-item && !AppState.browse-header-focused;
                         clicked => { AppState.current-item = i; AppState.browse-header-focused = false; }
                         activated => { AppState.play-item(i); }
-                        right-clicked => { AppState.open-context-menu-browse(i); }
+                        right-clicked => {
+                            AppState.current-item = i;
+                            AppState.browse-header-focused = false;
+                            AppState.open-context-menu-browse(i);
+                        }
                     }
                 }
             }

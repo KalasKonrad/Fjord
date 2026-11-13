@@ -11,6 +11,7 @@
 //                 Title column: a plain Rectangle fixed at the portrait's 160px, width from
 //                 root.width (not parent.width — binding loop), the button row pinned at
 //                 y = parent.height - 38px.
+//   Mouse = keys     focus-btn(n): ▶/♥ clicks focus the button; an album's right-click focuses it
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
@@ -24,6 +25,13 @@ import {
 } from "widgets.slint";
 
 export component ArtistScreen inherits StackPage {
+    // A click on a header button focuses it first, like the keys would (CLAUDE.md: mouse = remote).
+    function focus-btn(n: int) {
+        AppState.artist-back-focused = false;
+        AppState.artist-in-tracks = false;
+        AppState.artist-btn-focused = n;
+    }
+
     property <length> card-w: 145px * AppState.card-scale;
     property <length> card-h: 224px * AppState.card-scale;
     property <length> gap:    14px;
@@ -138,14 +146,14 @@ export component ArtistScreen inherits StackPage {
                                     height: 34px;
                                     width: 110px * AppState.text-scale;
                                     kbd-focused: AppState.artist-btn-focused == 0;
-                                    clicked => { AppState.play-artist-all(); }
+                                    clicked => { root.focus-btn(0); AppState.play-artist-all(); }
                                 }
 
                                 IconCircleButton {
                                     icon: "❤";
                                     active: AppState.artist-is-favorite;
                                     kbd-focused: AppState.artist-btn-focused == 1;
-                                    clicked => { AppState.toggle-artist-fav(); }
+                                    clicked => { root.focus-btn(1); AppState.toggle-artist-fav(); }
                                 }
                             }
                         }
@@ -202,7 +210,12 @@ export component ArtistScreen inherits StackPage {
                                 let c = AppState.artist-albums[idx];
                                 AppState.open-detail(c.id, c.item-type);
                             }
+                            // Focus the card first, like a click (the menu returns to it when it closes).
                             right-clicked => {
+                                AppState.artist-focused = idx;
+                                AppState.artist-back-focused = false;
+                                AppState.artist-btn-focused = -1;
+                                AppState.artist-in-tracks = false;
                                 let c = AppState.artist-albums[idx];
                                 AppState.context-menu-title = c.title;
                                 AppState.open-context-menu(c.id, c.has-played, c.is-favorite, c.resume-pct, c.item-type, c.series-id);

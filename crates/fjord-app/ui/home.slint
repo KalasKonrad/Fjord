@@ -18,6 +18,8 @@
 //                         bar), then the rows of AppState.*-rows (DashRow: title, cards, discover)
 //                         in row-order; Discover rows play/menu through Discover and don't hold up
 //                         the LoadingSpinner (their fetches are independent)
+//   Mouse = keys        LibraryGrid: a card's click and right-click focus it; a bar pill (focus-bar,
+//                       keys/library.rs's cursor numbers) or a letter (focus-scrubber) takes the focus
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme, CardItem, DashRow } from "theme.slint";
 import { AppState } from "app_state.slint";
@@ -113,6 +115,23 @@ export component SectionRow inherits Rectangle {
 
 // ── Library grid: all movies or all series in a 2-D poster grid ──────────────
 export component LibraryGrid inherits Rectangle {
+    // A click on the bar or the letter strip takes the focus there first, like the keys
+    // (CLAUDE.md: mouse = remote) — the bar's cursor numbering is keys/library.rs's.
+    function focus-bar(cursor: int) {
+        AppState.library-back-focused = false;
+        AppState.library-scrubber-focused = false;
+        AppState.library-header-focused = false;
+        AppState.library-sort-focused = true;
+        AppState.library-sort-cursor = cursor;
+    }
+    function focus-scrubber(letter: int) {
+        AppState.library-back-focused = false;
+        AppState.library-sort-focused = false;
+        AppState.library-header-focused = false;
+        AppState.library-scrubber-focused = true;
+        AppState.library-scrubber-cursor = letter;
+    }
+
     in property <string> grid-title;
 
     property <length> card-w: 145px * AppState.card-scale;
@@ -217,7 +236,7 @@ export component LibraryGrid inherits Rectangle {
 
                         v-ta := TouchArea {
                             mouse-cursor: MouseCursor.pointer;
-                            clicked => { AppState.library-music-view-changed(vi); }
+                            clicked => { root.focus-bar(vi); AppState.library-music-view-changed(vi); }
                         }
                     }
                 }
@@ -269,7 +288,7 @@ export component LibraryGrid inherits Rectangle {
 
                     sort-ta := TouchArea {
                         mouse-cursor: MouseCursor.pointer;
-                        clicked => { AppState.library-sort-apply(si, AppState.library-filter-unwatched, AppState.library-filter-favorites); }
+                        clicked => { root.focus-bar(AppState.active-nav == 4 ? si + 3 : si); AppState.library-sort-apply(si, AppState.library-filter-unwatched, AppState.library-filter-favorites); }
                     }
                 }
 
@@ -305,7 +324,7 @@ export component LibraryGrid inherits Rectangle {
 
                     mf-ta := TouchArea {
                         mouse-cursor: MouseCursor.pointer;
-                        clicked => { AppState.library-sort-apply(AppState.library-sort, AppState.library-filter-unwatched, !AppState.library-filter-favorites); }
+                        clicked => { root.focus-bar(8); AppState.library-sort-apply(AppState.library-sort, AppState.library-filter-unwatched, !AppState.library-filter-favorites); }
                     }
                 }
 
@@ -342,7 +361,7 @@ export component LibraryGrid inherits Rectangle {
 
                     fw-ta := TouchArea {
                         mouse-cursor: MouseCursor.pointer;
-                        clicked => { AppState.library-sort-apply(AppState.library-sort, !AppState.library-filter-unwatched, AppState.library-filter-favorites); }
+                        clicked => { root.focus-bar(5); AppState.library-sort-apply(AppState.library-sort, !AppState.library-filter-unwatched, AppState.library-filter-favorites); }
                     }
                 }
 
@@ -374,7 +393,7 @@ export component LibraryGrid inherits Rectangle {
 
                     ff-ta := TouchArea {
                         mouse-cursor: MouseCursor.pointer;
-                        clicked => { AppState.library-sort-apply(AppState.library-sort, AppState.library-filter-unwatched, !AppState.library-filter-favorites); }
+                        clicked => { root.focus-bar(6); AppState.library-sort-apply(AppState.library-sort, AppState.library-filter-unwatched, !AppState.library-filter-favorites); }
                     }
                 }
 
@@ -533,7 +552,14 @@ export component LibraryGrid inherits Rectangle {
                                 // The item's page by its type (open_item.rs) — a BoxSet opens CollectionScreen.
                                 AppState.open-detail(c.id, c.item-type);
                             }
-                            right-clicked => { let c = AppState.library-display[idx]; AppState.context-menu-title = c.title; AppState.open-context-menu(c.id, c.has-played, c.is-favorite, c.resume-pct, c.item-type, c.series-id); }
+                            // Focus the card first, like a click (the menu returns to it when it closes).
+                            right-clicked => {
+                                AppState.library-focused = idx;
+                                AppState.library-focused-row = row-idx;
+                                let c = AppState.library-display[idx];
+                                AppState.context-menu-title = c.title;
+                                AppState.open-context-menu(c.id, c.has-played, c.is-favorite, c.resume-pct, c.item-type, c.series-id);
+                            }
                         }
                     }
                 }
@@ -615,7 +641,7 @@ export component LibraryGrid inherits Rectangle {
 
                         ltr-ta := TouchArea {
                             mouse-cursor: has-items ? MouseCursor.pointer : MouseCursor.default;
-                            clicked => { if has-items { AppState.library-jump-to-letter(li); } }
+                            clicked => { root.focus-scrubber(li); if has-items { AppState.library-jump-to-letter(li); } }
                             scroll-event(e) => {
                                 let new-c = clamp(AppState.library-scrubber-cursor + (e.delta-y < 0 ? 1 : -1), 0, 26);
                                 AppState.library-scrubber-cursor = new-c;

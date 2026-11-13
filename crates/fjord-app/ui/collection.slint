@@ -9,6 +9,7 @@
 //                     Focus: collection-focused (card), collection-back-focused, the button row,
 //                     collection-missing-focused >= 0 (Down from the grid's last row). Enter on a
 //                     card → open-detail; C → context menu; Back → close.
+//   Mouse = keys        focus-btn(n): ♥/✓ clicks focus the button; a card's right-click focuses it
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
@@ -23,6 +24,13 @@ import {
 import { SectionRow } from "home.slint";
 
 export component CollectionScreen inherits StackPage {
+    // A click on a header button focuses it first, like the keys would (CLAUDE.md: mouse = remote).
+    function focus-btn(n: int) {
+        AppState.collection-back-focused = false;
+        AppState.collection-missing-focused = -1;
+        AppState.collection-btn-focused = n;
+    }
+
     property <length> card-w: 145px * AppState.card-scale;
     property <length> card-h: 224px * AppState.card-scale;
     property <length> gap:    14px;
@@ -144,14 +152,14 @@ export component CollectionScreen inherits StackPage {
                                     icon: "❤";
                                     active: AppState.collection-is-favorite;
                                     kbd-focused: AppState.collection-btn-focused == 0;
-                                    clicked => { AppState.toggle-collection-fav(); }
+                                    clicked => { root.focus-btn(0); AppState.toggle-collection-fav(); }
                                 }
 
                                 IconCircleButton {
                                     icon: "✓";
                                     active: AppState.collection-has-played;
                                     kbd-focused: AppState.collection-btn-focused == 1;
-                                    clicked => { AppState.toggle-collection-played(); }
+                                    clicked => { root.focus-btn(1); AppState.toggle-collection-played(); }
                                 }
                                 // Blocklist the whole TMDB collection — no `active` state (no single "is it blocklisted"
                                 // flag), and it asks first: it blocklists every part of the franchise, globally.
@@ -217,7 +225,12 @@ export component CollectionScreen inherits StackPage {
                                     let c = AppState.collection-items[idx];
                                     AppState.open-detail(c.id, c.item-type);
                                 }
+                                // Focus the card first, like a click (the menu returns to it when it closes).
                                 right-clicked => {
+                                    AppState.collection-focused = idx;
+                                    AppState.collection-back-focused = false;
+                                    AppState.collection-btn-focused = -1;
+                                    AppState.collection-missing-focused = -1;
                                     let c = AppState.collection-items[idx];
                                     AppState.context-menu-title = c.title;
                                     AppState.open-context-menu(c.id, c.has-played, c.is-favorite, c.resume-pct, c.item-type, c.series-id);

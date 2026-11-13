@@ -17,6 +17,7 @@
 //               Shown only once metadata + poster + backdrop have loaded (detail.rs spawn_main;
 //               app-content-loading covers the previous screen meanwhile). Back with a minimized
 //               background player clears playback-from-detail, so stopping won't reopen this.
+//   Mouse = keys   focus-btn(n): a header button's click focuses it first (row 0, cast off)
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme, CastMember } from "theme.slint";
 import { AppState } from "app_state.slint";
@@ -32,6 +33,13 @@ import {
 import { SectionRow } from "home.slint";
 
 export component DetailPage inherits StackPage {
+    // A click on a header button focuses it first, like the keys would (CLAUDE.md: mouse = remote).
+    function focus-btn(n: int) {
+        AppState.detail-focused-row = 0;
+        AppState.detail-focused-btn = n;
+        AppState.detail-cast-focused = -1;
+    }
+
     // Keyboard scroll: a focused row (cast / collection / similar / recommended) is brought to the
     // middle from its real position — the 0-height anchors before each section, as on the series
     // page; the header (buttons, overview) uses detail-scroll (0, or detail.rs's small nudge when
@@ -173,14 +181,14 @@ export component DetailPage inherits StackPage {
                                         text: "Play";
                                         width: 110px * AppState.text-scale;
                                         kbd-focused: AppState.detail-focused-btn == 0 && AppState.detail-cast-focused < 0;
-                                        clicked => { AppState.play-detail(); }
+                                        clicked => { root.focus-btn(0); AppState.play-detail(); }
                                     }
 
                                     if AppState.detail-btn-resume: FjordButton {
                                         icon-left: "⏩";
                                         text: AppState.detail-resume-label;
                                         kbd-focused: AppState.detail-focused-btn == 1 && AppState.detail-cast-focused < 0;
-                                        clicked => { AppState.resume-detail(); }
+                                        clicked => { root.focus-btn(1); AppState.resume-detail(); }
                                     }
                                     if AppState.detail-btn-series: FjordButton {
                                         text: "Series →";
@@ -202,21 +210,21 @@ export component DetailPage inherits StackPage {
                                             : "No trailer";
                                         width: 130px * AppState.text-scale;
                                         kbd-focused: AppState.detail-focused-btn == 6 && AppState.detail-cast-focused < 0;
-                                        clicked => { AppState.play-detail-trailer(); }
+                                        clicked => { root.focus-btn(6); AppState.play-detail-trailer(); }
                                     }
                                 // ♥ favourite — gray when not fav, accent when fav
                                 IconCircleButton {
                                         icon: "❤";
                                         active: AppState.detail-is-favorite;
                                         kbd-focused: AppState.detail-focused-btn == 3 && AppState.detail-cast-focused < 0;
-                                        clicked => { AppState.toggle-detail-fav(); }
+                                        clicked => { root.focus-btn(3); AppState.toggle-detail-fav(); }
                                     }
                                 // ✓ watched — gray when not watched, accent when watched
                                 IconCircleButton {
                                         icon: "✓";
                                         active: AppState.detail-has-played;
                                         kbd-focused: AppState.detail-focused-btn == 4 && AppState.detail-cast-focused < 0;
-                                        clicked => { AppState.toggle-detail-played(); }
+                                        clicked => { root.focus-btn(4); AppState.toggle-detail-played(); }
                                     }
                                 }
                             }

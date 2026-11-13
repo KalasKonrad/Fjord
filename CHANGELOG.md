@@ -23,6 +23,13 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Improved: the mouse and the remote agree on where you are.** Right-clicking
+  a poster (library, artist, collection, Browse) focuses it before its menu
+  opens, so the remote continues from there when the menu closes; clicking a
+  page's buttons (Play, ♥, ✓, Trailer…), a Settings switch, dropdown or button,
+  a library sort/filter pill or a letter in the A–Z strip moves the focus there
+  too.
+
 - **Improved: Left reaches Back on every page.** On a film's page, an album,
   artist, collection or request page, Left from the first button now moves to
   ← Back (as on series and season pages), and Right from Back goes to the first

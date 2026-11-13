@@ -10,6 +10,7 @@
 //                 section to a content-y, assigned in `changed kb-y` (mouse wheel stays native).
 //   Season tabs kb-x: root.width, not self.width (a conditional Rectangle's self.width comes from
 //                 the layout cache being evaluated → "Recursion detected").
+//   Mouse = keys     focus-btn(n): a header button's click focuses it (other rows' focus off)
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme, SeasonEntry, CardItem } from "theme.slint";
 import { AppState } from "app_state.slint";
@@ -27,6 +28,16 @@ import {
 import { SectionRow } from "home.slint";
 
 export component SeriesScreen inherits StackPage {
+    // A click on a header button focuses it first, like the keys would (CLAUDE.md: mouse = remote).
+    function focus-btn(n: int) {
+        AppState.series-focused-btn = n;
+        AppState.series-next-up-focused = false;
+        AppState.series-in-season-row = false;
+        AppState.series-cast-focused = -1;
+        AppState.series-similar-focused = -1;
+        AppState.series-recommended-focused = -1;
+        AppState.series-missing-seasons-focused = -1;
+    }
 
     fl := Flickable {
         width: parent.width;
@@ -159,21 +170,21 @@ export component SeriesScreen inherits StackPage {
                                         : "No trailer";
                                     width: 130px * AppState.text-scale;
                                     kbd-focused: AppState.series-focused-btn == 4;
-                                    clicked => { AppState.play-series-trailer(); }
+                                    clicked => { root.focus-btn(4); AppState.play-series-trailer(); }
                                 }
                             // ♥ favourite — gray when not fav, accent when fav
                             IconCircleButton {
                                     icon: "❤";
                                     active: AppState.series-is-favorite;
                                     kbd-focused: AppState.series-focused-btn == 1;
-                                    clicked => { AppState.toggle-series-fav(); }
+                                    clicked => { root.focus-btn(1); AppState.toggle-series-fav(); }
                                 }
                             // ✓ watched — gray when not watched, accent when watched
                             IconCircleButton {
                                     icon: "✓";
                                     active: AppState.series-has-played;
                                     kbd-focused: AppState.series-focused-btn == 2;
-                                    clicked => { AppState.toggle-series-played(); }
+                                    clicked => { root.focus-btn(2); AppState.toggle-series-played(); }
                                 }
                             }
                         }

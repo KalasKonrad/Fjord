@@ -15,6 +15,7 @@
 //                index (album.rs::media_items_to_tracks computes the values).
 //                Empty (album-loaded and no tracks): "This playlist is empty" / "This album has
 //                no tracks" where the list would be.
+//   Mouse = keys focus-btn(n): ▶ Play All / ♥ clicks focus the button (Back off)
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
@@ -27,6 +28,11 @@ import {
 } from "widgets.slint";
 
 export component AlbumScreen inherits StackPage {
+    // A click on a header button focuses it first, like the keys would (CLAUDE.md: mouse = remote).
+    function focus-btn(n: int) {
+        AppState.album-back-focused = false;
+        AppState.album-btn-focused = n;
+    }
 
     property <length> track-h: 48px;
     // Must match SectionHeader's own fixed 28px height (widgets.slint) — the
@@ -155,14 +161,14 @@ export component AlbumScreen inherits StackPage {
                                 height: 34px;
                                 width: 110px * AppState.text-scale;
                                 kbd-focused: AppState.album-btn-focused == 0;
-                                clicked => { AppState.play-album-all(); }
+                                clicked => { root.focus-btn(0); AppState.play-album-all(); }
                             }
 
                             IconCircleButton {
                                 icon: "❤";
                                 active: AppState.album-is-favorite;
                                 kbd-focused: AppState.album-btn-focused == 1;
-                                clicked => { AppState.toggle-album-fav(); }
+                                clicked => { root.focus-btn(1); AppState.toggle-album-fav(); }
                             }
                         }
                     }

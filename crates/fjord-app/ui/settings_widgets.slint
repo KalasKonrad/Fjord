@@ -5,6 +5,7 @@
 //                      settings.rs CHOICES via AppState.setting-options/-label/-choose; grayed —
 //                      reason first, controls faded, a click only focuses — while
 //                      AppState.settings-row-blocked(key) names one)
+//   SettingsDropdown.opened  the mouse opened its list — rows focus themselves on it (mouse = keys)
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme } from "theme.slint";
 import { AppState } from "app_state.slint";
@@ -91,6 +92,8 @@ export component SettingsDropdown inherits Rectangle {
     in property <[string]> model;
     in-out property <string> current-value;
     callback selected(string);
+    // The mouse opened the list — the row focuses itself on it (mouse = remote).
+    callback opened;
 
     property <string> display-value: root.current-value != "" ? root.current-value : "(none)";
     // Cap popup height for long lists; Flickable handles overflow.
@@ -131,7 +134,10 @@ export component SettingsDropdown inherits Rectangle {
     }
 
     ta := TouchArea {
-        clicked => { popup.show(); }
+        clicked => {
+            root.opened();
+            popup.show();
+        }
     }
 
     popup := PopupWindow {
@@ -305,6 +311,7 @@ export component SettingsRow inherits Rectangle {
             HorizontalLayout {
                 @children
                 if root.choice: SettingsDropdown {
+                    opened => { AppState.settings-row-focused(root.key); }
                     model: AppState.setting-options(root.key);
                     current-value: AppState.setting-label(root.key, root.value);
                     selected(v) => {
