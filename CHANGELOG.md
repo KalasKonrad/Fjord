@@ -23,6 +23,12 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Improved: Left reaches Back on every page.** On a film's page, an album,
+  artist, collection or request page, Left from the first button now moves to
+  ← Back (as on series and season pages), and Right from Back goes to the first
+  button. In a library grid, Left on the first item moves up to the bar above
+  instead of doing nothing.
+
 - **Fixed: Resume on a film's page started from where you were when you opened
   the page.** After watching from that page and stopping (or finishing), the
   page showed the old "Resume from" time, and Resume started there instead of

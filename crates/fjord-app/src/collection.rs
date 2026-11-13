@@ -15,7 +15,8 @@
 //                           (POST /blocklist/collection/{id}), then re-run spawn_missing_items
 //   handle_key              grid (arrows, Enter open-detail, C menu); Up from row 0 → Back; button
 //                           row ♥/✓/⛔ (⛔ only with seerr-can-manage-blocklist, opens a confirm
-//                           dialog — checked first); Down past the grid → the Missing Items row
+//                           dialog — checked first; Left from ♥ → Back, Right from Back → ♥); Down
+//                           past the grid → the Missing Items row
 //   (opened through open_item.rs's router; the title comes from the server's detail)
 //   wire_collection_toggles callbacks moved from main() (0.5.0 step 3): collection favourite /
 //                           played / blocklist confirm
@@ -555,7 +556,8 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
                 g.set_show_collection(false);
                 true
             }
-            Action::Down => {
+            // Right from Back → the first button, like Down (9b: no dead keys at the edges).
+            Action::Down | Action::Right => {
                 g.set_collection_back_focused(false);
                 g.set_collection_btn_focused(0);
                 true
@@ -576,8 +578,14 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
             1
         };
         return match action {
+            // Left from the first button → Back (like Series/Season — Back sits top-left).
+            Action::Left if btn == 0 => {
+                g.set_collection_btn_focused(-1);
+                g.set_collection_back_focused(true);
+                true
+            }
             Action::Left => {
-                g.set_collection_btn_focused((btn - 1).max(0));
+                g.set_collection_btn_focused(btn - 1);
                 true
             }
             Action::Right => {

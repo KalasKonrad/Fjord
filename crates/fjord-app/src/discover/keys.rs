@@ -10,7 +10,8 @@
 //                              LibraryGrid's 2D math; Left at col 0 / Back → sidebar; C → context menu
 //   handle_key_landing         landing rows; the Coming Up sentinel opens the calendar
 //   existing_zones / zone_focus_reset / handle_key_request_detail  RequestDetailScreen: back → button row
-//                              → storyline → cast (existing zones only — AppState.request-detail-zones)
+//                              → storyline → cast (existing zones only — AppState.request-detail-zones);
+//                              Left from the first button → Back, Right from Back → the first button
 //   existing_detail_btn_slots  button-row slots: 0=Request 1=Trailer 2=⋮ More 3=Watchlist 4=Blocklist;
 //                              Left/Right within existing slots (AppState.request-detail-buttons)
 //   existing_option_zones / option_zone_focus_reset / handle_key_request_options  Request Options modal:
@@ -535,6 +536,15 @@ pub(crate) fn handle_key_request_detail(action: &Action, g: &AppState) -> bool {
                 g.set_request_detail_zone(0);
                 true
             }
+            // Right from Back → the first button (9b: no dead keys at the edges).
+            Action::Right => {
+                g.set_request_detail_back_focused(false);
+                g.set_request_detail_zone(0);
+                if let Some(&first) = existing_detail_btn_slots(g).first() {
+                    g.set_request_detail_btn_focused(first);
+                }
+                true
+            }
             Action::Up => false, // let focus_bar_on_up handle the mini-player bar
             _ => true,
         };
@@ -658,7 +668,11 @@ pub(crate) fn handle_key_request_detail(action: &Action, g: &AppState) -> bool {
                 g.set_request_detail_btn_focused(prev);
                 true
             }
-            None => false,
+            // Left from the first button → Back (like Series/Season — Back sits top-left).
+            None => {
+                g.set_request_detail_back_focused(true);
+                true
+            }
         },
         Action::Right => match slots.get(slot_pos + 1) {
             Some(&next) => {

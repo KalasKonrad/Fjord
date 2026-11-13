@@ -1,6 +1,7 @@
 // ── fjord-app · keys/library.rs ──────────────────────────────────────────────
 //   dispatch_library   keyboard nav for the library grid (4 focus states: grid → search → sort → back);
-//                      Enter on a card → open-detail (open_item.rs picks the page)
+//                      Enter on a card → open-detail (open_item.rs picks the page); Left wraps to
+//                      the row above, on the first item it goes to the header like Up
 // ─────────────────────────────────────────────────────────────────────────────
 use super::*;
 
@@ -177,6 +178,9 @@ pub(crate) fn dispatch_library(action: &Action, g: &crate::AppState) -> bool {
                 let nf = f - 1;
                 g.set_library_focused(nf);
                 g.set_library_focused_row(nf / cols); // wrap to prev row — scroll
+            } else {
+                // The first item: to the header, like Up from the top row (9b: no dead keys).
+                g.set_library_header_focused(true);
             }
             true
         }

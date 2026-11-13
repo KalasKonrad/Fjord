@@ -21,7 +21,8 @@
 //                       position/label/progress, end time, played, favorite from the server, so
 //                       the page shown again doesn't resume from where it was opened
 //   handle_key          rows: 0 header, 1 cast, 2 collection, 3 similar, 4 recommended (only
-//                       which row has focus — detail.slint scrolls to it from its real position)
+//                       which row has focus — detail.slint scrolls to it from its real position);
+//                       Left from the first header button → Back (-1), Right from Back → the first
 //   fetch_card_posters  async: parallel poster fetch for a slice of MediaItems → pixel buffers
 //   items_to_cards      Vec<CardItem> from items + pre-fetched buffers (UI thread)
 //   (open-detail is open_item.rs's router — it calls open_detail for movies, episodes, …)
@@ -970,9 +971,15 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
             let dir = if *action == Action::Right { 1i32 } else { -1 };
             match row {
                 0 => {
-                    // -1=Back and 5=Overview are reached via Up/Down, not Left/Right.
+                    // -1=Back: Up from the buttons, Left from the first one (like Series/Season —
+                    // Back sits top-left); Right from it → the first button. 5=Overview: Up/Down.
                     let cur = g.get_detail_focused_btn();
                     if cur < 0 {
+                        if dir > 0
+                            && let Some(&first) = existing_detail_buttons(g).first()
+                        {
+                            g.set_detail_focused_btn(first);
+                        }
                         return true;
                     }
                     if cur == 5 {
@@ -984,6 +991,10 @@ pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
                     }
                     let slots = existing_detail_buttons(g);
                     let pos = slots.iter().position(|&b| b == cur).unwrap_or(0) as i32;
+                    if pos == 0 && dir < 0 {
+                        g.set_detail_focused_btn(-1);
+                        return true;
+                    }
                     let next = (pos + dir).clamp(0, slots.len() as i32 - 1);
                     g.set_detail_focused_btn(slots[next as usize]);
                 }

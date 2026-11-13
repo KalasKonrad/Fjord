@@ -3,7 +3,8 @@
 //                       then ▶ Play All + ♥ (btn 0/1), then the bio (btn 2, only when there is one),
 //                       then the page's own list (tracks / album grid) — as one table of their
 //                       AppState fields and actions
-//   header_keys         keys while the header has the focus; None = the list has it
+//   header_keys         keys while the header has the focus; None = the list has it (Left from
+//                       ▶ → Back, Right/Down from Back → ▶)
 //   list_up_to_header   Up from the list's first row: the bio, else ▶ Play All
 // ─────────────────────────────────────────────────────────────────────────────
 use super::Action;
@@ -105,7 +106,8 @@ pub(crate) fn header_keys(page: MusicPage, action: &Action, g: &AppState) -> Opt
                 page.close(g);
                 true
             }
-            Action::Down => {
+            // Right from Back → ▶, like Down (9b: no dead keys at the edges).
+            Action::Down | Action::Right => {
                 page.set_back_focused(g, false);
                 page.set_btn(g, 0);
                 true
@@ -120,8 +122,14 @@ pub(crate) fn header_keys(page: MusicPage, action: &Action, g: &AppState) -> Opt
     }
     Some(match action {
         Action::Left => {
-            if btn == 1 {
-                page.set_btn(g, 0);
+            match btn {
+                1 => page.set_btn(g, 0),
+                // Left from ▶ → Back (like Series/Season — Back sits top-left).
+                0 => {
+                    page.set_btn(g, -1);
+                    page.set_back_focused(g, true);
+                }
+                _ => {}
             }
             true
         }
