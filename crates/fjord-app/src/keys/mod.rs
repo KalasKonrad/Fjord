@@ -20,6 +20,7 @@
 //                bar focus; excluding overlay/detail modes) → active_mode() → per-screen handler
 //                (context_menu, series, season, detail, browse, discover…, settings::dispatch_settings)
 //   stops        a page's [ZoneSlot] list (app_state.slint) → the ids the keys stop at
+//   settle       the focused id if it's still a stop, else the nearest stop before it
 //   caret_key    Left/Right/Home/End/Delete → text_field caret for the drawn fields (Discover/
 //                Browse/Library search, playlist name — Right still creates at the end — and the
 //                Bonfire join code)
@@ -431,6 +432,25 @@ pub(crate) fn handle_key(
 pub(crate) fn stops(slots: &slint::ModelRc<crate::ZoneSlot>) -> Vec<i32> {
     use slint::Model;
     slots.iter().filter(|s| s.stop).map(|s| s.id).collect()
+}
+
+/// Where the focus belongs in a page's D-pad list: `focused` while it's a stop, else the nearest
+/// stop before it in on-screen order (the first stop when there's none before) — for a focused
+/// button that just went away (Detail's Resume after a film was watched to the end, its Trailer
+/// when none plays). Unit-tested in detail.rs.
+pub(crate) fn settle(slots: &slint::ModelRc<crate::ZoneSlot>, focused: i32) -> i32 {
+    use slint::Model;
+    let all: Vec<crate::ZoneSlot> = slots.iter().collect();
+    if all.iter().any(|s| s.id == focused && s.stop) {
+        return focused;
+    }
+    let pos = all.iter().position(|s| s.id == focused).unwrap_or(0);
+    all[..pos]
+        .iter()
+        .rev()
+        .find(|s| s.stop)
+        .or_else(|| all.iter().find(|s| s.stop))
+        .map_or(focused, |s| s.id)
 }
 
 // Returns the sort-bar cursor position that lands on the currently active sort pill.

@@ -23,6 +23,12 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Fixed: Resume on a film's page started from where you were when you opened
+  the page.** After watching from that page and stopping (or finishing), the
+  page showed the old "Resume from" time, and Resume started there instead of
+  where you stopped. The page now updates once playback ends; after watching to
+  the end, Resume goes away and the focus moves to Play.
+
 - **Improved: empty pages say so.** An empty playlist says "This playlist is
   empty", a collection with nothing in it "This collection is empty", and a
   person with no titles in your library "None of their titles are in your

@@ -33,7 +33,8 @@
 //   reset_playback_ui       clears all player UI state (video-surface-active first, so the window is
 //                           opaque before the next frame; music bar, Now Playing, buffering, overlays)
 //   do_stop_playback        user stop: tear down, keep playlist + queue (idle queue panel), reset the
-//                           UI, stop report, home refresh
+//                           UI, stop report, then the Detail page's resume state (if it shows) and the
+//                           home refresh
 //   reset_video_state_for_playback  the shared "fresh playback" reset for start_playback/play_trailer
 //   start_playback (start.rs) open an item: one function per step — see start.rs's header
 //   TrailerSource           YouTube (a server-provided link) | Server (a stream URL Fjord builds)
@@ -843,6 +844,24 @@ pub(crate) fn do_stop_playback(
         rt_handle.spawn(async move {
             if let Err(e) = cli.report_playback_stopped(&id, final_ticks).await {
                 warn!("report_playback_stopped failed: {e}");
+            }
+            // The Detail page shown again (playback started there) reads its resume position at
+            // open: refresh it now that the server has the new one.
+            {
+                let (cli, state, ww, rth2) = (
+                    Arc::clone(&cli),
+                    Arc::clone(&state),
+                    ww.clone(),
+                    rth.clone(),
+                );
+                let _ = slint::invoke_from_event_loop(move || {
+                    let Some(w) = ww.upgrade() else { return };
+                    let g = crate::AppState::get(&w);
+                    let detail_id = g.get_detail_id().to_string();
+                    if g.get_show_detail() && !detail_id.is_empty() {
+                        rth2.spawn(crate::detail::refresh_user_data(cli, state, ww, detail_id));
+                    }
+                });
             }
             let home_data = fetch_home_data(&cli, Some(&state)).await;
             let sections = home_data_sections(&home_data);

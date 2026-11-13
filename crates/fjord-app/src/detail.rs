@@ -15,7 +15,11 @@
 //                       spawn_main; spawns the DetailCtx tasks
 //   existing_detail_buttons / fix_trailer_focus  the header buttons Left/Right step through (Play,
 //                       Resume, Series →, Trailer when "ok", ♥, ✓) — read from AppState.detail-buttons,
-//                       the list detail.slint mounts them by
+//                       the list detail.slint mounts them by; a focused button that went away
+//                       moves to the one before it (keys::settle)
+//   refresh_user_data   after playback (do_stop_playback, once the stop is reported): resume
+//                       position/label/progress, end time, played, favorite from the server, so
+//                       the page shown again doesn't resume from where it was opened
 //   handle_key          rows: 0 header, 1 cast, 2 collection, 3 similar, 4 recommended (only
 //                       which row has focus — detail.slint scrolls to it from its real position)
 //   fetch_card_posters  async: parallel poster fetch for a slice of MediaItems → pixel buffers
@@ -722,16 +726,70 @@ fn existing_detail_buttons(g: &AppState) -> Vec<i32> {
     crate::keys::stops(&g.get_detail_buttons())
 }
 
-/// The Trailer button stopped being a D-pad stop (checking again / none): move focus to the
-/// button before it.
+/// The focused header button stopped being a D-pad stop (the Trailer checking again / none, Resume
+/// after the film was watched to the end): move focus to the button before it (keys::settle).
 pub(crate) fn fix_trailer_focus(g: &AppState) {
-    if g.get_detail_focused_btn() == 6 {
-        let prev = existing_detail_buttons(g)
-            .into_iter()
-            .rfind(|&b| b != 3 && b != 4)
-            .unwrap_or(0);
-        g.set_detail_focused_btn(prev);
+    g.set_detail_focused_btn(crate::keys::settle(
+        &g.get_detail_buttons(),
+        g.get_detail_focused_btn(),
+    ));
+}
+
+/// After playback: the Detail page's resume position, played/favorite and end time again from the
+/// server. They're read when the page opens, so a page shown again after playback offered "Resume
+/// from" the old position — and Resume started there (2026-11-13). From do_stop_playback, once the
+/// stop is reported; only while that page still shows `id`. Session-guarded.
+pub(crate) async fn refresh_user_data(
+    client: Arc<fjord_api::JellyfinClient>,
+    state: Arc<Mutex<FjordState>>,
+    ww: slint::Weak<MainWindow>,
+    id: String,
+) {
+    let detail = match client.get_item_detail(&id).await {
+        Ok(d) => d,
+        Err(e) => {
+            warn!("detail: couldn't refresh {id} after playback: {e:#}");
+            return;
+        }
+    };
+    if !crate::session_current(&state, &client) {
+        return;
     }
+    state
+        .lock()
+        .unwrap()
+        .item_detail_cache
+        .insert(id.clone(), detail.clone());
+    let resume_secs = detail.resume_position_secs().unwrap_or(0.0);
+    let runtime_secs = detail.run_time_ticks.unwrap_or(0) as f64 / 10_000_000.0;
+    let remaining = if resume_secs > 0.0 {
+        runtime_secs - resume_secs
+    } else {
+        runtime_secs
+    };
+    let ends = crate::playback::fmt_ends_at(remaining).to_string();
+    let label = fmt_resume_label(resume_secs);
+    let pct = detail.resume_pct();
+    let (played, favorite) = (detail.user_data.played, detail.user_data.is_favorite);
+    let _ = slint::invoke_from_event_loop(move || {
+        let Some(w) = ww.upgrade() else { return };
+        let g = AppState::get(&w);
+        if g.get_detail_id().as_str() != id {
+            return;
+        }
+        g.set_detail_resume_secs(resume_secs as f32);
+        g.set_detail_can_resume(resume_secs > 0.0);
+        g.set_detail_resume_label(label.as_str().into());
+        g.set_detail_resume_pct(pct);
+        g.set_detail_ends_at(ends.as_str().into());
+        g.set_detail_has_played(played);
+        g.set_detail_is_favorite(favorite);
+        fix_trailer_focus(&g);
+        debug!(
+            "detail: refreshed {id} after playback — resume {resume_secs:.0}s, played={played}, focus {}",
+            g.get_detail_focused_btn()
+        );
+    });
 }
 
 pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
@@ -1354,5 +1412,13 @@ mod tests {
         g.set_detail_trailer_state("none".into());
         fix_trailer_focus(&g);
         assert_eq!(g.get_detail_focused_btn(), 2);
+        // Resume gone after watching to the end → Play, the button before it; a stop stays put.
+        g.set_detail_focused_btn(1);
+        g.set_detail_can_resume(false);
+        fix_trailer_focus(&g);
+        assert_eq!(g.get_detail_focused_btn(), 0);
+        g.set_detail_focused_btn(4);
+        fix_trailer_focus(&g);
+        assert_eq!(g.get_detail_focused_btn(), 4);
     }
 }
