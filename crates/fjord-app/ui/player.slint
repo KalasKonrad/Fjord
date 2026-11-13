@@ -10,12 +10,15 @@
 //                         instant hard cut — see playback.rs's VideoState.pending_skip_seek.
 //                         duration = AppState.settings-skip-fade-ms (Settings-configurable) ×
 //                         settings-animation-speed — audio ramps/mutes alongside it (SkipFadeAudio)
-//   skip-segment prompt   floating "Skip →" button for ask mode; Enter confirms
-//   skip-timed prompt     two-button overlay for ask-timed mode: "Skip" + "Don't Skip" + countdown
+//   OsdPrompt / OsdPromptLabel  the end-of-episode prompts' one look (dark panel, large radius,
+//                         16px above the controls' area, width from the content up to max-w)
+//   skip-segment prompt   ask mode: one focused "Skip Intro →" button; Enter confirms
+//   skip-timed prompt     ask-timed mode: "Intro · 5s" + "Skip" / "Don't Skip"
 //                         Left/Right toggle focus; Enter activates; Back/Esc dismisses
 //   chapter OSD           top-left pill (y:24px); shows chapter name for ~2 s after , / . nav
 //   delay OSD             top-left pill (y:68px); shows "Sub/Audio delay: ±N ms" for ~2 s after z/Z/x/X
-//   Up Next banner        shown at credits_start or dur-30s; Play Now / Skip buttons; next-ep-ends-at "Ends HH:MM"
+//   Up Next banner        shown at credits_start or dur-30s; Play Now / Keep Watching (hides the banner);
+//                         next-ep-ends-at "Ends HH:MM"; at most 420px × text-scale (the title elides)
 //   buffering overlay     centered pill; "Loading…" during initial load, "Buffering N%" + bar mid-stall;
 //                         always rendered, animates opacity in/out (350ms fade) so it doesn't snap
 //   stalled overlay       centered pill, "Reconnecting…"; driven by AppState.playback-stalled — distinct
@@ -47,6 +50,40 @@ import {
     PressPulse,
     VideoSpot,
 } from "widgets.slint";
+
+// ── End-of-episode prompt panel (Skip / Skip timed / Up Next — 9c E1, 2026-11-13) ──────
+// One look for the three: a dark panel with the large radius, 16px above the controls' area
+// (bottom-right — the user sets x/y), the width from its content (so it grows with Text size),
+// at most max-w; fades in. The children stack with the same padding and spacing.
+component OsdPrompt inherits Rectangle {
+    in property <length> max-w: 640px * AppState.text-scale;
+    width: min(inner.preferred-width, root.max-w);
+    height: inner.preferred-height;
+    border-radius: Theme.radius-lg;
+    background: Theme.osd-panel-solid;
+    drop-shadow-blur: 12px;
+    drop-shadow-color: Theme.shadow;
+    opacity: fade.fade-opacity;
+    animate opacity {
+        duration: 200ms * AppState.settings-animation-speed;
+        easing: ease-out-expo;
+    }
+    fade := FadeInTrigger { }
+
+    inner := VerticalLayout {
+        padding: 14px;
+        spacing: 10px;
+        @children
+    }
+}
+
+// A prompt's heading ("Intro · 5s", "Up Next · 10s").
+component OsdPromptLabel inherits Text {
+    color: Theme.accent;
+    font-size: 12px * AppState.text-scale;
+    font-weight: 700;
+    vertical-alignment: center;
+}
 
 // ── Reusable track-selection panel (Sub / Audio / Video) ─────────────────────
 // Positioned above the controls bar; keyboard scroll via kb-y/changed pattern;
@@ -346,156 +383,87 @@ export component PlayerScreen inherits Rectangle {
         }
     }
 
-    // ── skip segment prompt (Intro / Recap / Preview / Commercial) ───────────
-    if AppState.show-skip-segment: Rectangle {
-        x: parent.width - 170px - 16px;
-        y: parent.height - 158px - 50px;
-        width: 170px;
-        height: 40px;
-        border-radius: Theme.radius;
-        border-width: (skip-ta.pressed || skip-pulse.pulsing) ? 5px : 2px;
-        border-color: Theme.osd-border;
-        background: Theme.accent;
-        drop-shadow-blur: 10px;
-        drop-shadow-color: Theme.shadow-soft;
-        opacity: skip-fade.fade-opacity;
-        animate opacity {
-            duration: 200ms * AppState.settings-animation-speed;
-            easing: ease-out-expo;
-        }
-        skip-fade := FadeInTrigger { }
-
-        animate border-width {
-            duration: 90ms * AppState.settings-animation-speed;
-            easing: ease-out-expo;
-        }
-        skip-pulse := PressPulse {
-            trigger: AppState.kb-activate-pulse;
-            active: true;
-        }
-
-        skip-ta := TouchArea {
+    // ── End-of-episode prompts: one look (OsdPrompt, 9c E1) ──────────────────
+    // Skip (ask mode): the panel holds the one button, focused — Enter skips (keys/player.rs).
+    if AppState.show-skip-segment: OsdPrompt {
+        x: parent.width - self.width - 16px;
+        y: parent.height - 158px - self.height - 16px;
+        FjordButton {
+            on-dark: true;
+            text: AppState.skip-segment-label;
+            kbd-focused: true;
             clicked => { AppState.skip-segment(); }
+        }
+    }
+
+    // Skip timed (ask-timed mode): "Intro · 5s", then Skip / Don't Skip.
+    if AppState.show-skip-timed: OsdPrompt {
+        x: parent.width - self.width - 16px;
+        y: parent.height - 158px - self.height - 16px;
+        OsdPromptLabel {
+            text: AppState.skip-timed-label + "  ·  " + AppState.skip-timed-secs + "s";
+        }
+
+        HorizontalLayout {
+            spacing: 8px;
+            FjordButton {
+                on-dark: true;
+                text: "Skip";
+                kbd-focused: AppState.skip-timed-focused == 0;
+                clicked => { AppState.skip-segment(); }
+            }
+
+            FjordButton {
+                on-dark: true;
+                text: "Don't Skip";
+                kbd-focused: AppState.skip-timed-focused == 1;
+                clicked => { AppState.dismiss-skip-timed(); }
+            }
+        }
+    }
+
+    // Up Next: "Up Next · 10s" + its end time, the episode, then Play Now / Keep Watching (which
+    // only hides the banner — "Skip" read like skipping to the next episode, 9c E2).
+    if AppState.show-next-ep-banner: OsdPrompt {
+        x: parent.width - self.width - 16px;
+        y: parent.height - 158px - self.height - 16px;
+        max-w: 420px * AppState.text-scale;
+        HorizontalLayout {
+            spacing: 12px;
+            OsdPromptLabel {
+                text: "Up Next  ·  " + AppState.next-ep-secs + "s";
+                horizontal-stretch: 1;
+            }
+
+            if AppState.next-ep-ends-at != "": Text {
+                text: "Ends " + AppState.next-ep-ends-at;
+                color: Theme.text-soft;
+                font-size: 12px * AppState.text-scale;
+                vertical-alignment: center;
+            }
         }
 
         Text {
-            text: AppState.skip-segment-label;
+            text: AppState.next-ep-title;
             color: Theme.text-bright;
             font-size: 14px * AppState.text-scale;
-            font-weight: 700;
-            horizontal-alignment: center;
-            vertical-alignment: center;
+            overflow: elide;
         }
-    }
 
-    // ── skip timed prompt (ask-timed mode: "Skip" + "Don't Skip" + countdown) ─
-    if AppState.show-skip-timed: Rectangle {
-        x: parent.width - timed-inner.preferred-width - 16px;
-        y: parent.height - 158px - timed-inner.preferred-height - 8px;
-        width: timed-inner.preferred-width;
-        height: timed-inner.preferred-height;
-        border-radius: Theme.radius-lg;
-        background: Theme.osd-panel-solid;
-        drop-shadow-blur: 10px;
-        drop-shadow-color: Theme.shadow-soft;
-        opacity: timed-fade.fade-opacity;
-        animate opacity {
-            duration: 200ms * AppState.settings-animation-speed;
-            easing: ease-out-expo;
-        }
-        timed-fade := FadeInTrigger { }
-
-        timed-inner := VerticalLayout {
-            padding: 12px;
+        HorizontalLayout {
             spacing: 8px;
-
-            Text {
-                text: AppState.skip-timed-label + "  ·  " + AppState.skip-timed-secs + "s";
-                color: Theme.accent;
-                font-size: 13px * AppState.text-scale;
-                font-weight: 700;
+            FjordButton {
+                on-dark: true;
+                text: "Play Now";
+                kbd-focused: AppState.next-ep-banner-focused == 0;
+                clicked => { AppState.play-next-ep(); }
             }
 
-            HorizontalLayout {
-                spacing: 8px;
-                FjordButton {
-                    on-dark: true;
-                    text: "Skip";
-                    kbd-focused: AppState.skip-timed-focused == 0;
-                    clicked => { AppState.skip-segment(); }
-                }
-
-                FjordButton {
-                    on-dark: true;
-                    text: "Don't Skip";
-                    kbd-focused: AppState.skip-timed-focused == 1;
-                    clicked => { AppState.dismiss-skip-timed(); }
-                }
-            }
-        }
-    }
-
-    // ── Up Next banner ────────────────────────────────────────────────────────
-    if AppState.show-next-ep-banner: Rectangle {
-        x: parent.width - self.width - 16px;
-        y: parent.height - 158px - self.height - 16px;
-        width: 300px;
-        height: banner-inner.preferred-height;
-        border-radius: Theme.radius-lg;
-        background: Theme.osd-panel-solid;
-        drop-shadow-blur: 12px;
-        drop-shadow-color: Theme.shadow;
-        opacity: banner-fade.fade-opacity;
-        animate opacity {
-            duration: 200ms * AppState.settings-animation-speed;
-            easing: ease-out-expo;
-        }
-        banner-fade := FadeInTrigger { }
-
-        banner-inner := VerticalLayout {
-            padding: 16px;
-            spacing: 10px;
-
-            HorizontalLayout {
-                Text {
-                    text: "Up Next  ·  " + AppState.next-ep-secs + "s";
-                    color: Theme.accent;
-                    font-size: 11px * AppState.text-scale;
-                    font-weight: 700;
-                    vertical-alignment: center;
-                    horizontal-stretch: 1;
-                }
-
-                if AppState.next-ep-ends-at != "": Text {
-                    text: "Ends " + AppState.next-ep-ends-at;
-                    color: Theme.text-soft;
-                    font-size: 11px * AppState.text-scale;
-                    vertical-alignment: center;
-                }
-            }
-
-            Text {
-                text: AppState.next-ep-title;
-                color: Theme.text-bright;
-                font-size: 13px * AppState.text-scale;
-                overflow: elide;
-            }
-
-            HorizontalLayout {
-                spacing: 8px;
-                FjordButton {
-                    on-dark: true;
-                    text: "Play Now";
-                    kbd-focused: AppState.next-ep-banner-focused == 0;
-                    clicked => { AppState.play-next-ep(); }
-                }
-
-                FjordButton {
-                    on-dark: true;
-                    text: "Skip";
-                    kbd-focused: AppState.next-ep-banner-focused == 1;
-                    clicked => { AppState.cancel-auto-advance(); }
-                }
+            FjordButton {
+                on-dark: true;
+                text: "Keep Watching";
+                kbd-focused: AppState.next-ep-banner-focused == 1;
+                clicked => { AppState.cancel-auto-advance(); }
             }
         }
     }

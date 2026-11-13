@@ -23,6 +23,11 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Improved: the end-of-episode prompts look alike.** Skip Intro, the timed
+  Skip / Don't Skip prompt and the Up Next banner are now the same dark panel
+  in the same place, and grow with the Text size. Up Next's "Skip" is now
+  "Keep Watching" — it hides the banner, it never skipped anything.
+
 - **Improved: the mouse and the remote agree on where you are.** Right-clicking
   a poster (library, artist, collection, Browse) focuses it before its menu
   opens, so the remote continues from there when the menu closes; clicking a
