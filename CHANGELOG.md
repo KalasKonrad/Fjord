@@ -23,6 +23,14 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **New: the player's controls work with the remote.** Up or Down brings up
+  the controls (Down lands on Play/Pause); Left/Right move along the buttons —
+  Back, ±30 s, Play/Pause, Stop, Chapters, Sync, Sub, Audio, Video, Stats — and
+  Enter presses one, so the audio track and subtitles can be changed with just
+  a D-pad. Back hides the controls (a second Back stops). OK now pauses and
+  resumes. The volume moved from Up/Down to the + and - keys (and the game
+  pad's right stick); a saved key layout is updated once.
+
 - **Improved: audio and subtitle tracks have readable names.** "English · SDH
   · SRT" instead of "en (subrip)", "Spanish (Latin America)" instead of
   "es-419"; audio tracks show their format and channels ("E-AC3 5.1",

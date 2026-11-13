@@ -1,6 +1,9 @@
 // ── fjord-app · keys/player.rs ───────────────────────────────────────────────
-//   dispatch_player    ask-timed overlay; ask overlay; Up Next banner; panel nav; player controls;
-//                      chapter-prev/next (,/.); sub/audio delay (z/Z/x/X)
+//   dispatch_player    ask-timed overlay; ask overlay; Up Next banner; panel nav; the controls bar
+//                      with the remote (Up/Down: seek bar ↔ buttons — AppState.osd-focused/-buttons,
+//                      Left/Right along the row, Enter presses — AppState.osd-press; Back hides the
+//                      bar first); OK = play/pause otherwise; player controls; chapter-prev/next
+//                      (,/.); sub/audio delay (z/Z/x/X)
 //   handle_key_queue_panel / handle_key_now_playing  queue panel and Now Playing screen keys
 //                     (np_rows / np_step / np_down: Now Playing's two control rows, unit-tested)
 //                      (transport row 0-7, 8 = ☾ screensaver when it has a time)
@@ -75,6 +78,9 @@ pub(crate) fn dispatch_player(action: Action, window: &crate::MainWindow) -> boo
         if panel != 0 {
             g.set_player_open_panel(0);
             g.set_player_panel_cursor(0);
+        } else if action == Action::Back && g.get_controls_visible() {
+            // Back hides the controls first (9c P1); the next Back stops.
+            g.set_controls_visible(false);
         } else if action == Action::MinimizePlayer {
             g.invoke_minimize_player();
         } else {
@@ -85,8 +91,8 @@ pub(crate) fn dispatch_player(action: Action, window: &crate::MainWindow) -> boo
 
     if panel != 0 {
         match action {
-            // Up/Down are remapped to VolumeUp/VolumeDown in the player keymap,
-            // so match both forms here to keep panel nav working.
+            // Up/Down reach the player as Up/Down (since 9c P1); an older saved keymap may still
+            // send VolumeUp/VolumeDown for them, so match both forms.
             Action::Up | Action::VolumeUp => {
                 let c = g.get_player_panel_cursor();
                 if c > 0 {
@@ -116,6 +122,47 @@ pub(crate) fn dispatch_player(action: Action, window: &crate::MainWindow) -> boo
             _ => {}
         }
     }
+
+    // ── The controls bar with the remote (9c P1/P2) ───────────────────────────
+    // Up/Down bring the controls up (keys/mod.rs shows them) and step between the seek bar
+    // (osd-focused -1) and the button row (Down lands on ⏯); while a button has the focus,
+    // Left/Right move along the row and Enter presses it (AppState.osd-press — the mouse's path
+    // too). OK anywhere else — the controls hidden or the seek bar — is play/pause (P2).
+    let osd = if g.get_controls_visible() {
+        g.get_osd_focused()
+    } else {
+        -1
+    };
+    match action {
+        Action::Up => {
+            g.set_osd_focused(-1);
+            return true;
+        }
+        Action::Down => {
+            if osd < 0 {
+                g.set_osd_focused(2);
+            }
+            return true;
+        }
+        Action::SeekBackward | Action::SeekForward if osd >= 0 => {
+            let slots = super::stops(&g.get_osd_buttons());
+            let pos = slots.iter().position(|&s| s == osd).unwrap_or(0) as i32;
+            let dir = if action == Action::SeekForward { 1 } else { -1 };
+            let next = (pos + dir).clamp(0, slots.len() as i32 - 1);
+            g.set_osd_focused(slots[next as usize]);
+            return true;
+        }
+        Action::Confirm if osd >= 0 => {
+            g.invoke_osd_press(osd);
+            return true;
+        }
+        _ => {}
+    }
+    let action = if action == Action::Confirm {
+        Action::PausePlay
+    } else {
+        action
+    };
 
     match action {
         // Ignore PausePlay while the seek bar is held — Space during scrub would toggle mpv

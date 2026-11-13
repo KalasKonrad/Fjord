@@ -59,7 +59,9 @@
 //                         seek-hover-time, trickplay-thumb/-has-thumb/-aspect, seek-dragging,
 //                         buffering-active/pct, playback-stalled, buffered-pos,
 //                         playback-total-secs, track panels; chapter-marks/-osd/-entries, current-chapter,
-//                         chapter-prev/next/-jump; delay-osd-*, sub/audio-delay-ms + inc/dec
+//                         chapter-prev/next/-jump; delay-osd-*, sub/audio-delay-ms + inc/dec;
+//                         osd-focused + osd-buttons (the controls bar with the remote) + osd-press(id)
+//                         (what a bar button does — the mouse and Enter both press through it)
 //   Detail page           detail-id/-item-type/-resume-secs/-title/-tagline/-studio/-is-favorite/-has-played,
 //                         detail-focused-row/-btn, detail-cast/-similar/-collection/-recommended (+ -focused),
 //                         detail-series-id, detail-scroll, detail-ends-at, detail-trailer-state/-url +
@@ -982,6 +984,57 @@ export global AppState {
     in-out property <string> chapter-osd-text:    "";   // "Chapter N" or chapter title; shown for ~2 s
     in-out property <[TrackEntry]> chapter-entries:    [];    // id=index, label="M:SS · Title"; populated when chapters load
     in-out property <int> current-chapter:    -1;   // index of active chapter (-1 = none loaded)
+    // ── The controls bar with the remote (9c P1, 2026-11-13) ──────────────────
+    // osd-focused: -1 = the seek bar (or nothing), else a button: 0 ← Back, 1 ◀◀ 30s, 2 ⏯, 3 30s ▶▶,
+    // 4 ■ Stop, 10 Ch ▾, 11 Sync ▾, 12 Sub ▾, 13 Audio ▾, 14 Video ▾, 15 Stats. osd-buttons is the row in
+    // on-screen order — player.slint mounts the Ch button by osd-btn-chapters, keys/player.rs walks it.
+    in-out property <int> osd-focused: -1;
+    out property <bool> osd-btn-chapters: chapter-entries.length > 0;
+    out property <[ZoneSlot]> osd-buttons: [
+        { id: 0, stop: true },
+        { id: 1, stop: true },
+        { id: 2, stop: true },
+        { id: 3, stop: true },
+        { id: 4, stop: true },
+        { id: 10, stop: osd-btn-chapters },
+        { id: 11, stop: true },
+        { id: 12, stop: true },
+        { id: 13, stop: true },
+        { id: 14, stop: true },
+        { id: 15, stop: true },
+    ];
+    // A controls-bar button pressed — by the mouse or by Enter on the focused one; either way it
+    // takes the keyboard focus (CLAUDE.md: mouse = remote).
+    public function osd-press(id: int) {
+        osd-focused = id;
+        if id == 0 {
+            minimize-player();
+        } else if id == 1 {
+            seek-backward-long();
+        } else if id == 2 {
+            pause-play-toggle();
+        } else if id == 3 {
+            seek-forward-long();
+        } else if id == 4 {
+            stop-playback();
+        } else if id == 10 {
+            player-open-panel = player-open-panel == 4 ? 0 : 4;
+            player-panel-cursor = max(current-chapter, 0);
+        } else if id == 11 {
+            player-open-panel = player-open-panel == 5 ? 0 : 5;
+        } else if id == 12 {
+            player-open-panel = player-open-panel == 1 ? 0 : 1;
+            player-panel-cursor = 0;
+        } else if id == 13 {
+            player-open-panel = player-open-panel == 2 ? 0 : 2;
+            player-panel-cursor = 0;
+        } else if id == 14 {
+            player-open-panel = player-open-panel == 3 ? 0 : 3;
+            player-panel-cursor = 0;
+        } else if id == 15 {
+            toggle-stats();
+        }
+    }
     callback chapter-prev();
     callback chapter-next();
     callback chapter-jump(int);   // seek to chapter by index; called from Chapters panel click or kbd Enter

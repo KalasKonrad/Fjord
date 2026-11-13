@@ -65,7 +65,8 @@
 //   write_private   owner-only (0600) file write from the first byte (config.json's temp file)
 //   config I/O      load_config, save_config (one save at a time), ensure_device_id — every failure
 //                   is logged, including a config.json that matches neither shape
-//   keybindings I/O load_keybindings, save_keybindings
+//   keybindings I/O load_keybindings (+ migrate_player_volume_keys, saved back when it changed),
+//                   save_keybindings
 //   fmt_resume_label  resume position as "1h 23m 45s"
 //   upsert_media_item  replace-by-id or append; WS delta-sync merge helper
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1962,10 +1963,17 @@ pub(crate) fn load_keybindings() -> Keybindings {
     let Ok(data) = std::fs::read_to_string(keybindings_path()) else {
         return default_keybindings();
     };
-    serde_json::from_str(&data).unwrap_or_else(|e| {
+    let mut kb: Keybindings = serde_json::from_str(&data).unwrap_or_else(|e| {
         tracing::warn!("keybindings.json parse error: {e:#} — using defaults");
         default_keybindings()
-    })
+    });
+    if crate::keys::migrate_player_volume_keys(&mut kb) {
+        tracing::info!(
+            "keybindings: player Up/Down now open the controls bar — volume moved to +/= and -"
+        );
+        save_keybindings(&kb);
+    }
+    kb
 }
 
 /// Save the full effective keybindings to `~/.config/fjord/keybindings.json`.

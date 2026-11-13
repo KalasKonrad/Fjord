@@ -9,7 +9,9 @@
 //                      same KeyCombo deliberately (explicit modifier prefix wins), logged
 //   Keybindings        normal + player KeyMaps; the user's keybindings.json replaces the defaults
 //   PendingKeybindRebind  (row, combo) stashed while the rebind-collision dialog is open
-//   default_keybindings  built-in defaults (one entry per shift-insensitive letter; z/x shifted)
+//   default_keybindings  built-in defaults (one entry per shift-insensitive letter; z/x shifted;
+//                      the player map leaves Up/Down to the normal map, volume on +/= and -)
+//   migrate_player_volume_keys  an older saved keymap's player Up/Down → volume pair dropped (load)
 //   remappable_actions ordered (Action, label, ActionMap) rows for Settings → Key Bindings
 //   key_display_name / action_key_labels  display labels
 //   push_keybinding_rows  build + push the keybinding model to AppState
@@ -310,6 +312,30 @@ pub enum ActionMap {
 
 // ── Default keybindings ───────────────────────────────────────────────────────
 
+/// A saved keymap from before 9c P1 (2026-11-13) still sends player Up/Down to the volume, which
+/// would keep the remote out of the controls bar: drop exactly that pair, and give the volume
+/// +/= and - where those keys are free. Returns whether anything changed (the caller saves).
+/// Unit-tested.
+pub fn migrate_player_volume_keys(kb: &mut Keybindings) -> bool {
+    let up = KeyCombo::plain(key::UP);
+    let down = KeyCombo::plain(key::DOWN);
+    if kb.player.get(&up) != Some(&Action::VolumeUp)
+        || kb.player.get(&down) != Some(&Action::VolumeDown)
+    {
+        return false;
+    }
+    kb.player.remove(&up);
+    kb.player.remove(&down);
+    for (k, a) in [
+        ("+", Action::VolumeUp),
+        ("=", Action::VolumeUp),
+        ("-", Action::VolumeDown),
+    ] {
+        kb.player.entry(KeyCombo::plain(k)).or_insert(a);
+    }
+    true
+}
+
 pub fn default_keybindings() -> Keybindings {
     Keybindings {
         normal: default_normal_map(),
@@ -368,8 +394,11 @@ fn default_player_map() -> KeyMap {
     m.insert(KeyCombo::plain(key::RIGHT), Action::SeekForward);
     m.insert(KeyCombo::shifted(key::LEFT), Action::SeekBackwardLong);
     m.insert(KeyCombo::shifted(key::RIGHT), Action::SeekForwardLong);
-    m.insert(KeyCombo::plain(key::UP), Action::VolumeUp);
-    m.insert(KeyCombo::plain(key::DOWN), Action::VolumeDown);
+    // Up/Down aren't here (9c P1, 2026-11-13): they fall through to the normal map's Up/Down,
+    // which bring up the controls bar and move in it (keys/player.rs). Volume: +/= and -.
+    m.insert(KeyCombo::plain("+"), Action::VolumeUp);
+    m.insert(KeyCombo::plain("="), Action::VolumeUp);
+    m.insert(KeyCombo::plain("-"), Action::VolumeDown);
 
     m.insert(KeyCombo::plain(" "), Action::PausePlay);
     m.insert(KeyCombo::plain("k"), Action::PausePlay);
@@ -858,5 +887,49 @@ pub(crate) fn wire_keybindings(
             state_kc2.lock().unwrap().pending_keybind_rebind = None;
             AppState::get(&w).set_show_keybinding_collision_confirm(false);
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_old_saved_keymap_gets_up_down_back_for_the_controls_bar() {
+        let mut kb = default_keybindings();
+        // The defaults no longer bind player Up/Down; volume is on +/= and -.
+        assert!(!kb.player.contains_key(&KeyCombo::plain(key::UP)));
+        assert_eq!(
+            kb.player.get(&KeyCombo::plain("-")),
+            Some(&Action::VolumeDown)
+        );
+        assert!(
+            !migrate_player_volume_keys(&mut kb),
+            "nothing to do on the defaults"
+        );
+        // A keymap saved before: Up/Down = volume, and "-" rebound by the user.
+        kb.player.remove(&KeyCombo::plain("+"));
+        kb.player.remove(&KeyCombo::plain("="));
+        kb.player.insert(KeyCombo::plain("-"), Action::Mute);
+        kb.player.insert(KeyCombo::plain(key::UP), Action::VolumeUp);
+        kb.player
+            .insert(KeyCombo::plain(key::DOWN), Action::VolumeDown);
+        assert!(migrate_player_volume_keys(&mut kb));
+        assert!(!kb.player.contains_key(&KeyCombo::plain(key::UP)));
+        assert!(!kb.player.contains_key(&KeyCombo::plain(key::DOWN)));
+        assert_eq!(
+            kb.player.get(&KeyCombo::plain("+")),
+            Some(&Action::VolumeUp)
+        );
+        assert_eq!(
+            kb.player.get(&KeyCombo::plain("-")),
+            Some(&Action::Mute),
+            "the user's own binding stays"
+        );
+        // A user who bound Up to something else keeps it.
+        kb.player.insert(KeyCombo::plain(key::UP), Action::Mute);
+        kb.player
+            .insert(KeyCombo::plain(key::DOWN), Action::VolumeDown);
+        assert!(!migrate_player_volume_keys(&mut kb));
     }
 }

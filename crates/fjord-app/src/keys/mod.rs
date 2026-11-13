@@ -359,6 +359,9 @@ pub(crate) fn handle_key(
                     | Action::PrevTrack
                     | Action::NextTrack
                     | Action::Confirm
+                    // Back/Minimize hide the bar or leave — they never bring it up (9c P1).
+                    | Action::Back
+                    | Action::MinimizePlayer
             );
             if shows_controls {
                 g.invoke_show_controls();

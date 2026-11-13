@@ -31,6 +31,8 @@
 //                         display-pos = drag-ratio | seek-bar-pos (accumulation) | playback-pos.
 //                         Trickplay thumbnail (trickplay-has-thumb): above the hover tooltip, or
 //                         above the bar at the D-pad seek target while seek-osd-visible.
+//                         the remote's focus: AppState.osd-focused (cleared when the bar hides), each
+//                         button presses through AppState.osd-press(id) (click and Enter alike).
 //                         transport left | Ch ▾ (panel-id=4, conditional) | Sync ▾ (panel-id=5) |
 //                         Sub ▾ (1) | Audio ▾ (2) | Video ▾ (3) | Stats right (full only).
 //   pause/play flash      84 px circle with ▶/⏸ icon; fades out 600 ms after pause toggle
@@ -231,6 +233,15 @@ component TrackPanel inherits Rectangle {
 }
 
 export component PlayerScreen inherits Rectangle {
+    // The remote's focus in the controls bar goes when the bar does (any hide path: the idle timer,
+    // a seek, Back, play/pause).
+    property <bool> controls-up: AppState.controls-visible;
+    changed controls-up => {
+        if !controls-up {
+            AppState.osd-focused = -1;
+        }
+    }
+
     // Transparent while the video is drawn on the subsurface below the
     // window (HDR Stage 5, AppState.video-surface-active).
     background: AppState.video-surface-active ? transparent : Theme.video-bg;
@@ -784,7 +795,8 @@ export component PlayerScreen inherits Rectangle {
                         on-dark: true;
                         text: "← Back";
                         width: 76px * AppState.text-scale;
-                        clicked => { AppState.minimize-player(); }
+                        kbd-focused: AppState.osd-focused == 0;
+                        clicked => { AppState.osd-press(0); }
                     }
 
                     FjordButton {
@@ -792,7 +804,8 @@ export component PlayerScreen inherits Rectangle {
                         icon-left: "◀◀";
                         text: "30s";
                         width: 80px * AppState.text-scale;
-                        clicked => { AppState.seek-backward-long(); }
+                        kbd-focused: AppState.osd-focused == 1;
+                        clicked => { AppState.osd-press(1); }
                     }
 
                     FjordButton {
@@ -800,7 +813,8 @@ export component PlayerScreen inherits Rectangle {
                         icon-left: AppState.is-paused ? "▶" : "⏸";
                         text: AppState.is-paused ? "Play" : "Pause";
                         width: 80px * AppState.text-scale;
-                        clicked => { AppState.pause-play-toggle(); }
+                        kbd-focused: AppState.osd-focused == 2;
+                        clicked => { AppState.osd-press(2); }
                     }
 
                     FjordButton {
@@ -808,7 +822,8 @@ export component PlayerScreen inherits Rectangle {
                         text: "30s";
                         icon-right: "▶▶";
                         width: 80px * AppState.text-scale;
-                        clicked => { AppState.seek-forward-long(); }
+                        kbd-focused: AppState.osd-focused == 3;
+                        clicked => { AppState.osd-press(3); }
                     }
 
                     FjordButton {
@@ -817,7 +832,8 @@ export component PlayerScreen inherits Rectangle {
                         text: "Stop";
                         width: 72px * AppState.text-scale;
                         danger: true;
-                        clicked => { AppState.stop-playback(); }
+                        kbd-focused: AppState.osd-focused == 4;
+                        clicked => { AppState.osd-press(4); }
                     }
                 }
 
@@ -825,24 +841,21 @@ export component PlayerScreen inherits Rectangle {
                     width: parent.width;
                     alignment: end;
                     spacing: 8px;
-                    if AppState.chapter-entries.length > 0: FjordButton {
+                    if AppState.osd-btn-chapters: FjordButton {
                         on-dark: true;
                         text: "Ch";
                         icon-right: "▾";
                         width: 60px * AppState.text-scale;
-                        clicked => {
-                            AppState.player-open-panel = AppState.player-open-panel == 4 ? 0 : 4;
-                            AppState.player-panel-cursor = AppState.current-chapter.max(0);
-                        }
+                        kbd-focused: AppState.osd-focused == 10;
+                        clicked => { AppState.osd-press(10); }
                     }
                     FjordButton {
                         on-dark: true;
                         text: "Sync";
                         icon-right: "▾";
                         width: 70px * AppState.text-scale;
-                        clicked => {
-                            AppState.player-open-panel = AppState.player-open-panel == 5 ? 0 : 5;
-                        }
+                        kbd-focused: AppState.osd-focused == 11;
+                        clicked => { AppState.osd-press(11); }
                     }
 
                     FjordButton {
@@ -850,10 +863,8 @@ export component PlayerScreen inherits Rectangle {
                         text: "Sub";
                         icon-right: "▾";
                         width: 68px * AppState.text-scale;
-                        clicked => {
-                            AppState.player-open-panel = AppState.player-open-panel == 1 ? 0 : 1;
-                            AppState.player-panel-cursor = 0;
-                        }
+                        kbd-focused: AppState.osd-focused == 12;
+                        clicked => { AppState.osd-press(12); }
                     }
 
                     FjordButton {
@@ -861,10 +872,8 @@ export component PlayerScreen inherits Rectangle {
                         text: "Audio";
                         icon-right: "▾";
                         width: 76px * AppState.text-scale;
-                        clicked => {
-                            AppState.player-open-panel = AppState.player-open-panel == 2 ? 0 : 2;
-                            AppState.player-panel-cursor = 0;
-                        }
+                        kbd-focused: AppState.osd-focused == 13;
+                        clicked => { AppState.osd-press(13); }
                     }
 
                     FjordButton {
@@ -872,17 +881,16 @@ export component PlayerScreen inherits Rectangle {
                         text: "Video";
                         icon-right: "▾";
                         width: 76px * AppState.text-scale;
-                        clicked => {
-                            AppState.player-open-panel = AppState.player-open-panel == 3 ? 0 : 3;
-                            AppState.player-panel-cursor = 0;
-                        }
+                        kbd-focused: AppState.osd-focused == 14;
+                        clicked => { AppState.osd-press(14); }
                     }
 
                     FjordButton {
                         on-dark: true;
                         text: AppState.stats-visible ? "Hide Stats" : "Stats";
                         width: 82px * AppState.text-scale;
-                        clicked => { AppState.toggle-stats(); }
+                        kbd-focused: AppState.osd-focused == 15;
+                        clicked => { AppState.osd-press(15); }
                     }
                 }
             }
