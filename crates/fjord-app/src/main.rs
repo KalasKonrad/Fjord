@@ -878,16 +878,16 @@ fn main() -> Result<()> {
         "error" | "warn" | "debug" => user_level.as_str(),
         _ => "info",
     };
-    let console_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
-        EnvFilter::new(format!(
-            "warn,fjord_app={level_str},fjord_player={level_str},fjord_api={level_str}"
-        ))
-    });
-    let file_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
-        EnvFilter::new(format!(
-            "warn,fjord_app={level_str},fjord_player={level_str},fjord_api={level_str}"
-        ))
-    });
+    // gilrs logs an ERROR when it can't reset rumble on a pad that just switched off (its event
+    // node is already gone) — harmless, and Fjord never uses rumble: that one module is off.
+    let directives = format!(
+        "warn,fjord_app={level_str},fjord_player={level_str},fjord_api={level_str},\
+         gilrs_core::platform::platform::ff=off"
+    );
+    let console_filter =
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(&directives));
+    let file_filter =
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(&directives));
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::fmt::layer()
