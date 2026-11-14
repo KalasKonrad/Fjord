@@ -575,7 +575,8 @@ fn spawn_display_sync_prestart(
         };
         if stopped {
             info!("display_sync prestart: playback stopped during the switch — reverting");
-            crate::display_sync::revert_to_default(Arc::clone(&state_ds)).await;
+            crate::display_sync::revert_to_default(Arc::clone(&state_ds), Arc::clone(&video_ds))
+                .await;
             return;
         }
         if !prestart_still_current(&video_ds, my_gen) { return; }

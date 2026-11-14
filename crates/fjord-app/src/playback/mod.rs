@@ -702,11 +702,14 @@ pub(crate) fn quit_cleanup(
     // stall app exit indefinitely. A no-op fast-return inside
     // revert_to_default when the feature is off or nothing was ever applied
     // this session, so this costs nothing for the overwhelmingly common case.
+    // free_all_retiring above already closed mpv's audio device, so its wait
+    // for that is only the 0.5 s settle.
     let state2 = Arc::clone(state);
+    let video2 = Arc::clone(video);
     rt.block_on(async move {
         if tokio::time::timeout(
             std::time::Duration::from_secs(5),
-            crate::display_sync::revert_to_default(state2),
+            crate::display_sync::revert_to_default(state2, video2),
         )
         .await
         .is_err()
@@ -819,8 +822,13 @@ pub(crate) fn do_stop_playback(
     // (unlike quit_cleanup's own bounded block_on): the app keeps running,
     // so there's no risk of the runtime dropping this task before it
     // finishes. No-op fast-return inside revert_to_default when the feature
-    // is off or nothing was ever applied this session.
-    rt_handle.spawn(crate::display_sync::revert_to_default(Arc::clone(state)));
+    // is off or nothing was ever applied this session. It switches only once
+    // the tick has freed the player retired just above (mpv may hold the HDMI
+    // audio device until then, #45).
+    rt_handle.spawn(crate::display_sync::revert_to_default(
+        Arc::clone(state),
+        Arc::clone(video),
+    ));
 
     // A user stop keeps the playlist and queue: the panel stays reachable via `q` while
     // idle and Enter resumes from it (Clear All or sign-out empties it).

@@ -2187,7 +2187,7 @@ fn on_natural_end(t: &Tick) {
                 // whatever the display needs, don't fight it.
                 return;
             }
-            crate::display_sync::revert_to_default(state2).await;
+            crate::display_sync::revert_to_default(state2, video2).await;
         });
     }
 

@@ -35,7 +35,10 @@
 //                          MediaStreams, called by start_playback before mpv loads the file (no
 //                          mid-playback blink); the post-decode trigger is then a cached no-op
 //   revert_to_default      from the 3 real-stop sites (quit_cleanup, do_stop_playback, natural EOF
-//                          with nothing next) — never from a replace-in-place teardown
+//                          with nothing next) — never from a replace-in-place teardown; switches
+//                          only after the retired player is freed (wait_for_audio_release: mpv
+//                          holding the HDMI audio device loses PipeWire's sink, #45) + 0.5 s,
+//                          and not when something started playing meanwhile
 //   needs_revert           pure: revert only if Fjord changed the display this session and it
 //                          isn't back at default (unit-tested)
 //   wire_display_sync      callbacks moved from main() (0.5.0 step 3): output list (fetched once,
@@ -808,6 +811,36 @@ fn needs_revert(
     current_mode.is_some_and(|m| m != default) || current_hdr == Some(true)
 }
 
+/// How long a revert waits for the tick to free retired players (mpv's own wait is
+/// RETIRE_CAP, 2 s; the rest is tick slack).
+const AUDIO_RELEASE_CAP: Duration = Duration::from_secs(3);
+/// After mpv let go of the audio device, before the mode switch re-trains HDMI.
+const AUDIO_RELEASE_SETTLE: Duration = Duration::from_millis(500);
+
+/// A stop hands the player to the retiring list and the tick frees it ~450 ms later — until
+/// then mpv may still hold the HDMI audio device (an `alsa/hdmi:…` audio device). A mode switch
+/// re-trains HDMI and PipeWire recreates its sink: a busy device makes WirePlumber give up on
+/// it, and the desktop is left on "Dummy Output" until WirePlumber restarts (#45). Waits until
+/// no retired player is left (capped), then lets the device settle.
+async fn wait_for_audio_release(video: &Arc<Mutex<crate::playback::VideoState>>) {
+    let start = std::time::Instant::now();
+    while !video.lock().unwrap().retiring.is_empty() {
+        if start.elapsed() >= AUDIO_RELEASE_CAP {
+            tracing::warn!(
+                "display_sync: a retired player still runs after {} s — reverting anyway",
+                AUDIO_RELEASE_CAP.as_secs()
+            );
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    tracing::debug!(
+        "display_sync: mpv let go of the audio device {:.0} ms into the revert",
+        start.elapsed().as_secs_f64() * 1000.0
+    );
+    tokio::time::sleep(AUDIO_RELEASE_SETTLE).await;
+}
+
 /// Called from the 3 genuine-stop call sites (`quit_cleanup`,
 /// `do_stop_playback`, `wire_mpv_timer`'s natural-EOF branch once its own
 /// deferred check confirms nothing started next) — never from a
@@ -815,7 +848,12 @@ fn needs_revert(
 /// item's own `sync_to_source` instead. A no-op whenever the feature is off
 /// or nothing was ever actually applied this session (the common case for
 /// most stops — e.g. quitting without having played anything since launch).
-pub(crate) async fn revert_to_default(state: Arc<Mutex<FjordState>>) {
+/// Switches only once mpv has let go of the audio device (wait_for_audio_release), and not
+/// at all when something started playing meanwhile — its own sync handles the display.
+pub(crate) async fn revert_to_default(
+    state: Arc<Mutex<FjordState>>,
+    video: Arc<Mutex<crate::playback::VideoState>>,
+) {
     let (screen, default_res, default_hz, needs_revert) = {
         let s = state.lock().unwrap();
         if !s.config.device.display_sync_enabled {
@@ -836,6 +874,11 @@ pub(crate) async fn revert_to_default(state: Arc<Mutex<FjordState>>) {
         )
     };
     if !needs_revert || screen.is_empty() {
+        return;
+    }
+    wait_for_audio_release(&video).await;
+    if video.lock().unwrap().player.is_some() {
+        tracing::info!("display_sync: something started playing — not reverting the display");
         return;
     }
 

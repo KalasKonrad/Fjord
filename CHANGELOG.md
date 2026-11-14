@@ -23,6 +23,11 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Fixed: no desktop sound after stopping a film that switched the TV's mode**
+  (with the audio device set to the HDMI output). Fjord switched the TV back
+  while the player still held the HDMI audio device, and the desktop's sound
+  system gave up on it. The switch back now waits until the player has let go.
+
 - **New: game pad buttons in Settings → Key Bindings.** Each action shows the
   pad button that runs it, and X, Y, Start, Select, Guide and the shoulder
   buttons can be rebound like keys — Enter on an action, then press the pad
