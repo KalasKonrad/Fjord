@@ -8,7 +8,9 @@
 //                     logs its capabilities, then handles HdrCommands (handle_set_hdr). Failures
 //                     log and skip; a protocol/dispatch error (fatal to the shared connection) ends
 //                     the thread — it must never destabilize the app
-//   HdrCommand        SetHdr(HdrParams, target) | Unset, via send_command(); target = the video
+//   shutdown          quit: Shutdown command, waits ≤1 s for the thread (HDR_WORKER) — it
+//                     destroys its objects and ends while winit's display is still connected (#46)
+//   HdrCommand        SetHdr(HdrParams, target) | Unset | Shutdown, via send_command(); target = the video
 //                     subsurface's wl_surface (Stage 5) or None for the window; one Target
 //                     (surface + colour-management object, wrap_surface) per surface, Unset clears
 //                     the last tagged one
@@ -126,6 +128,8 @@ pub(crate) enum HdrCommand {
     /// `tear_down_player` on every playback teardown — cheap when nothing
     /// was ever set (no Wayland call at all in that case).
     Unset,
+    /// Quit (`shutdown`): destroy this worker's objects and end the thread.
+    Shutdown,
 }
 
 /// See this file's own header for why this is a `static LazyLock` rather
@@ -142,6 +146,30 @@ static HDR_CHANNEL: LazyLock<HdrChannel> = LazyLock::new(|| {
     let (tx, rx) = mpsc::channel();
     (tx, Mutex::new(Some(rx)))
 });
+
+/// The worker thread, for `shutdown` to wait on.
+static HDR_WORKER: Mutex<Option<std::thread::JoinHandle<()>>> = Mutex::new(None);
+
+/// Quit (quit_cleanup): ends the worker while winit's Wayland display is still connected, so
+/// its objects and event queue don't outlive the connection at exit (#46). True once it's gone
+/// (or never ran); false if it didn't finish within 1 s (busy in a roundtrip) — the video
+/// backplane then keeps its child surface, which the worker may hold.
+pub(crate) fn shutdown() -> bool {
+    let Some(worker) = HDR_WORKER.lock().unwrap().take() else {
+        return true;
+    };
+    let _ = HDR_CHANNEL.0.send(HdrCommand::Shutdown);
+    let start = Instant::now();
+    while !worker.is_finished() {
+        if start.elapsed() >= Duration::from_secs(1) {
+            tracing::warn!("hdr worker: still busy 1 s into the quit — leaving it");
+            return false;
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    let _ = worker.join();
+    true
+}
 
 /// Best-effort: a no-op if the worker was never spawned (not Wayland) or has exited (no
 /// colour-management global, or a fatal protocol error).
@@ -215,7 +243,7 @@ pub(crate) fn spawn_worker(display: NonNull<c_void>, surface: NonNull<c_void>) {
     // before the process itself does).
     let display_addr = display.as_ptr() as usize;
     let surface_addr = surface.as_ptr() as usize;
-    if let Err(e) = std::thread::Builder::new()
+    match std::thread::Builder::new()
         .name("fjord-hdr-worker".into())
         .spawn(move || {
             // Safety: `display_addr`/`surface_addr` come from a
@@ -227,9 +255,9 @@ pub(crate) fn spawn_worker(display: NonNull<c_void>, surface: NonNull<c_void>) {
             // safety contract), and Fjord's single window lives for the
             // whole process.
             unsafe { run_worker(display_addr as *mut c_void, surface_addr as *mut c_void) };
-        })
-    {
-        tracing::warn!("couldn't spawn HDR worker thread: {e}");
+        }) {
+        Ok(worker) => *HDR_WORKER.lock().unwrap() = Some(worker),
+        Err(e) => tracing::warn!("couldn't spawn HDR worker thread: {e}"),
     }
 }
 
@@ -439,6 +467,21 @@ unsafe fn run_worker(display_ptr: *mut c_void, surface_ptr: *mut c_void) {
                 // actually active.
                 set_status(HdrStatus::Idle);
             }
+            HdrCommand::Shutdown => {
+                // No unset: the window's surface may already be gone (Slint hid the window),
+                // and a destroyed surface's colour-management object is inert — destroying
+                // it is still allowed.
+                if let Some((_, t)) = child_target.take() {
+                    t.destroy();
+                }
+                main_target.destroy();
+                manager.destroy();
+                if let Err(e) = event_queue.roundtrip(&mut state) {
+                    tracing::debug!("hdr worker: roundtrip at quit failed: {e}");
+                }
+                tracing::debug!("hdr worker: shut down");
+                return;
+            }
         }
     }
 }
@@ -451,6 +494,13 @@ struct Target {
 }
 
 impl Target {
+    /// Quit: its colour-management object goes; the surface isn't ours.
+    fn destroy(self) {
+        if let Some(cms) = self.cms {
+            cms.destroy();
+        }
+    }
+
     fn unset(&self) {
         if let Some(cms) = self.cms.as_ref() {
             cms.unset_image_description();

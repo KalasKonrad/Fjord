@@ -29,7 +29,9 @@
 //                           the UI thread waited, 205–262 ms on the HTPC), return the stop data;
 //                           reports 0 ticks while credits_auto_marked_played so the stop report
 //                           can't re-add a resume point; debug line "teardown on the UI thread: …"
-//   quit_cleanup            synchronous stop report + screensaver release after window.run() exits
+//   quit_cleanup            synchronous stop report + screensaver release after window.run() exits;
+//                           ends the HDR worker and frees the video backplane while winit's display
+//                           is still connected (#46)
 //   reset_playback_ui       clears all player UI state (video-surface-active first, so the window is
 //                           opaque before the next frame; music bar, Now Playing, buffering, overlays)
 //   do_stop_playback        user stop: tear down, keep playlist + queue (idle queue panel), reset the
@@ -670,6 +672,10 @@ pub(crate) fn quit_cleanup(
     let (item_id, client, ss_cookie, final_ticks) = tear_down_player(&mut video.lock().unwrap());
     // Quitting: no tick will reap them.
     free_all_retiring(&mut video.lock().unwrap());
+    // Fjord's own users of winit's Wayland display go while it's still connected (#46): the
+    // HDR worker, then the video backplane (whose child surface the worker may hold).
+    let worker_gone = crate::hdr::shutdown();
+    crate::video_surface::shutdown(worker_gone);
     uninhibit_screensaver(ss_cookie);
     if let (Some(id), Some(cli)) = (item_id, client) {
         info!(
@@ -717,6 +723,7 @@ pub(crate) fn quit_cleanup(
             warn!("display_sync: revert_to_default (quit) timed out after 5 s");
         }
     });
+    info!("quit: cleanup done");
 }
 
 // ── reset_playback_ui ─────────────────────────────────────────────────────────

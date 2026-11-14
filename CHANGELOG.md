@@ -23,6 +23,10 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Fixed: Fjord could crash while quitting** on NVIDIA after playing a video.
+  It now closes the video surface and its HDR connection before the window's
+  connection to the desktop goes away.
+
 - **Fixed: no desktop sound after stopping a film that switched the TV's mode**
   (with the audio device set to the HDMI output). Fjord switched the TV back
   while the player still held the HDMI audio device, and the desktop's sound

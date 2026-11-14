@@ -1314,6 +1314,7 @@ fn main() -> Result<()> {
     auth::wire_sign_out(&window, &state, &video, &rt);
 
     AppState::get(&window).on_quit(|| {
+        info!("quit requested");
         slint::quit_event_loop().ok();
     });
 

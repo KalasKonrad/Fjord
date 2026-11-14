@@ -47,10 +47,12 @@
 //   mark_broken          stop using it after an error mid-item (kept alive
 //                        until its render context is freed)
 //   idle_fill            repaint the plain background once after a stop
+//   shutdown             quit: frees the plane while winit's display is still connected
+//                        (#46) — all of it once hdr.rs's worker is gone (release), else unmapped
 //   Backplane            child surface + our EGL context + Present. create()
 //                        picks the mode and logs every setup step; resize()/
 //                        sync_size() follow window size/scale (Dmabuf:
-//                        reallocates); drop_present()/destroy() tear down
+//                        reallocates); drop_present()/destroy()/discard()/release() tear down
 //   OurGl                our display/context/surface: with_current() runs GL on
 //                        our context and always restores Slint's
 //   SavedCurrent         Slint's current EGL display/surfaces/context
@@ -335,6 +337,23 @@ pub(crate) fn free_render_ctx(ctx: MpvRenderCtx) {
             bp.destroy();
         }
     })
+}
+
+/// Quit (quit_cleanup, after the last render context was freed and hdr::shutdown): releases
+/// the plane while winit's Wayland display is still connected. Left to the exit-time
+/// destructors, our EGL surface and context and the Wayland objects outlived winit's
+/// connection (#46). `worker_gone` = hdr.rs's worker has ended, so the child surface it may
+/// hold can be destroyed too; otherwise it's only unmapped (destroy()).
+pub(crate) fn shutdown(worker_gone: bool) {
+    let taken = BACKPLANE.with(|slot| slot.replace(Slot::Failed));
+    if let Slot::Ready(bp) | Slot::Broken(bp) = taken {
+        CHILD_ADDR.store(0, Ordering::Relaxed);
+        if worker_gone {
+            bp.release();
+        } else {
+            bp.destroy();
+        }
+    }
 }
 
 /// Stop drawing to the plane after an error mid-item; the in-window path is
@@ -1224,14 +1243,32 @@ impl Backplane {
     /// A setup failure inside create(): nothing is published yet, so the
     /// Wayland objects can go too.
     fn discard(mut self) {
+        self.destroy_all();
+        let _ = self.conn.flush();
+    }
+
+    /// Quit, once nothing else holds the child surface (shutdown()): everything goes, then a
+    /// roundtrip, so KWin's answers for frames still waiting for presentation feedback
+    /// (discarded) arrive before our event queue does.
+    fn release(mut self) {
+        self.destroy_all();
+        match self.queue.roundtrip(&mut self.state) {
+            Ok(_) => debug!("video backplane: released at quit"),
+            Err(e) => debug!("video backplane: released at quit (roundtrip failed: {e})"),
+        }
+    }
+
+    fn destroy_all(&mut self) {
         self.drop_present();
+        if let Some(p) = self.presentation.take() {
+            p.destroy();
+        }
         if let Some(dm) = self.dmabuf.take() {
             dm.destroy();
         }
         self.viewport.destroy();
         self.subsurface.destroy();
         self.child.destroy();
-        let _ = self.conn.flush();
     }
 }
 

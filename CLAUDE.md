@@ -117,6 +117,8 @@ Needs `mpv`/libmpv (`pacman -S mpv`). Optional at runtime: `yt-dlp` (trailers), 
   Fjord's own 10-bit buffers" — Fjord's own GBM/dmabuf 10-bit buffers (`dmabuf_plane.rs`). Own buffers: mpv `flip_y = false`
   (buffer row 0 is the top), spot rects top-origin, `glFinish` before attach, only format/modifier pairs KWin
   advertised, linux-dmabuf `create` (async) — never `create_immed` (a refusal is fatal on winit's display).
+  Whatever holds objects on winit's display is released in `quit_cleanup` while it's still connected
+  (`hdr::shutdown`, then `video_surface::shutdown`) — never left to exit-time destructors (#46).
 - The UI thread is mpv's render thread: what the tick and playback steps read from mpv comes from what mpv reports
   (`Player::observed()` / `video_info()` / `tracks()` / `chapters()` / `stats()`, kept current by `poll` from observed
   properties),
