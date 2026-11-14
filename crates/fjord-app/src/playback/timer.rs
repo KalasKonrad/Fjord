@@ -41,7 +41,8 @@
 //                           trailer open retry (TRAILER_OPEN_RETRY_SECS, once), gapless commit
 //   mpris_publish           every ~0.5 s (VideoState.mpris_tick, also with no player): what's playing
 //                           → mpris::publish (title/artist, the cover as a file:// URL into the poster
-//                           cache, mpv's reported length/position/volume, Stopped without a player)
+//                           cache, mpv's reported length/position, the user's volume-level (not the
+//                           skip fade's ramp), Stopped without a player)
 //   dispatch / spawn_up_next / on_natural_end  after the lock: reloads, toasts, mark-played,
 //                           gapless UI, the Up Next countdown task (counts unpaused time only), and
 //                           the natural-end advance (resolve_true_next_episode, EOF-before-fetch
@@ -1148,7 +1149,9 @@ fn mpris_publish(vs: &mut VideoState, t: &Tick) {
                 art_url,
                 length_us: (o.duration.max(0.0) * 1e6) as i64,
                 position_us: (o.time_pos.max(0.0) * 1e6) as i64,
-                volume: o.volume.map_or(1.0, |v| (v / 100.0).clamp(0.0, 1.0)),
+                // The user's level, not mpv's: a skip fade ramps mpv's volume (HTPC 2026-11-14:
+                // three volume changes signalled per intro skip).
+                volume: (g.get_volume_level() as f64 / 100.0).clamp(0.0, 1.0),
                 audio,
             }
         }
