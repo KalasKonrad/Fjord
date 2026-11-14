@@ -400,6 +400,8 @@ export component PlayerScreen inherits Rectangle {
         x: parent.width - self.width - 16px;
         y: parent.height - 158px - self.height - 16px;
         FjordButton {
+            // FjordButton has no side padding of its own: without a width it hugs its text.
+            min-width: 120px * AppState.text-scale;
             on-dark: true;
             text: AppState.skip-segment-label;
             kbd-focused: true;
@@ -418,6 +420,8 @@ export component PlayerScreen inherits Rectangle {
         HorizontalLayout {
             spacing: Theme.sp-sm;
             FjordButton {
+                // FjordButton has no side padding of its own: without a width it hugs its text.
+                min-width: 120px * AppState.text-scale;
                 on-dark: true;
                 text: "Skip";
                 kbd-focused: AppState.skip-timed-focused == 0;
@@ -425,6 +429,10 @@ export component PlayerScreen inherits Rectangle {
             }
 
             FjordButton {
+
+                // FjordButton has no side padding of its own: without a width it hugs its text.
+
+                min-width: 120px * AppState.text-scale;
                 on-dark: true;
                 text: "Don't Skip";
                 kbd-focused: AppState.skip-timed-focused == 1;
@@ -464,6 +472,8 @@ export component PlayerScreen inherits Rectangle {
         HorizontalLayout {
             spacing: Theme.sp-sm;
             FjordButton {
+                // FjordButton has no side padding of its own: without a width it hugs its text.
+                min-width: 120px * AppState.text-scale;
                 on-dark: true;
                 text: "Play Now";
                 kbd-focused: AppState.next-ep-banner-focused == 0;
@@ -471,6 +481,10 @@ export component PlayerScreen inherits Rectangle {
             }
 
             FjordButton {
+
+                // FjordButton has no side padding of its own: without a width it hugs its text.
+
+                min-width: 120px * AppState.text-scale;
                 on-dark: true;
                 text: "Keep Watching";
                 kbd-focused: AppState.next-ep-banner-focused == 1;
