@@ -3564,6 +3564,20 @@ What the 0.5.1 checklist confirmed before it was cleaned out of PLAN.md (dev = A
 - **Settings crash watch:** closed 2026-11-08, `--cfg slint_debug_property` removed.
 - **Release:** tag run green, "Fjord v0.5.1" Latest on 2026-11-08; `fjord` and `fjord-bin` bumped to 0.5.1.
 
+### 0.5.2 live tests (2026-11-09 – 2026-11-15)
+
+What the 0.5.2 checklist confirmed before it was cleaned out of PLAN.md (dev = AMD machine, HTPC = NVIDIA Pascal). The user went through the whole list on 2026-11-15; the HTPC logs r1329–r1351 (2026-11-12 – 15) back up part of it.
+
+- **From the logs as well:**
+  - **HD video in 4K:** 1080p films went to 3840x2160@23.98 with FSR 1 (SCALER "FSR 1 · 1920→3840 px wide", 45 min with 3 drops, back to 1080p@119.88 after). With the option switched off (2026-11-14), 1080p episodes went to 1920x1080@23.98. A 50/60 fps video staying at 1080p is covered only by its unit test (no such file here).
+  - **Video sync default:** the HTPC kept its saved display-vdrop at every start.
+  - **End-of-episode prompts:** "Ask, then skip" ran out and skipped the intro 6 times, Up Next ran out and started the next episode 4 times. The user checked the look and the buttons.
+  - **Game controller:** the Xbox 360 pad, ~140 D-pad/A presses in one evening, its switching itself off logged once. **Pad keeps KDE awake:** `pad input counts as activity for KWin` at the first press. The user confirmed the screen stays on and a pad press wakes a dimmed screen.
+  - **MPRIS:** served at `/org/mpris/MediaPlayer2`, Playing/Paused/Stopped followed every change. The user checked the widget, the media keys and the rest.
+- **The user's word (2026-11-15):** pad buttons in Key Bindings, Sizes (Text and Card size at Huge for a whole episode on the HTPC), player controls with the remote, track names, mouse = remote, Back at the edges, Resume after playback, empty pages, the stats overlay's color rows, Seerr unreachable, the Upscaler (Sharp, the HDR copy, "not scaling up"), interpolation and its stats row, dragging dashboard rows, the light theme, the accent color, colours from `Theme`, interpolation on the HTPC, and the remote pass over every screen (no notes).
+- **Closed without the case happening:** the log folder going away (it never dropped out while Fjord ran).
+- **Still open at the cleanup:** #45 (no desktop sound after a stop with display sync) and #46 (segfault at quit). Both were fixed on 2026-11-15 (r1358/r1359) and wait for a run on that build.
+
 ### History rewrite: personal data out of the repo (2026-11-08)
 
 The repo is public. A scan before the 0.5.1 release (every tracked file, every commit's added lines and every commit message, against the server and Seerr addresses, IPs, host names, home paths, email, the ids and profile names in the local config, tokens, and the ~1,800 titles in Fjord's library cache) found titles from the user's library used as examples in DEVLOG, SLINT.md, PLAN.md, CLAUDE.md, code comments and commit messages, one real item id, and a mention of a family member. Addresses, ids, names and tokens had never been committed. The current files were cleaned first; then, at the user's request, the history.
