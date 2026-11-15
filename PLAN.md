@@ -16,7 +16,7 @@ Version history: [CHANGELOG.md](CHANGELOG.md) (git tags `v0.1.0`–`v0.5.1`). Im
 
 Still open:
 - [ ] **Interpolation on the HTPC (item 4).** Settings → Picture → Motion interpolation on (tscale `oversample`), an episode: with the display on the film's rate (ratio 1.0000 — expect little change), with display sync's mode switching off (desktop 119.88 Hz = exactly 5 refreshes per 23.976 fps frame — also little) and on a 60 Hz mode (3:2 judder — where it should help). Watch drops and the slowest mpv render call (GTX 1050 Ti load). Outcome: the description says when it helps; the default stays off unless the test says otherwise. (Dev 2026-11-09: tscale `bicubic` looked soft, `oversample` fine.)
-- [ ] **Remote pass with the user (9b).** Every screen with the remote / the pad; each note becomes a line here and gets fixed. Last, after the test week's fixes.
+- [x] **Remote pass with the user (9b).** Every screen with the remote / the pad; each note becomes a line here and gets fixed. Last, after the test week's fixes. Done — no notes, works (user, 2026-11-15).
 
 ---
 
