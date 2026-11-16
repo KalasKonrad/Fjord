@@ -30,7 +30,9 @@
 //                        (upscaler.rs), periodic timers, apply saved
 //                        config + the startup gate (profile picker or auto-login), then one wire_*
 //                        call per area — the callbacks live in that area's module; helpers that
-//                        moved out of main.rs are re-exported below the `mod` list
+//                        moved out of main.rs are re-exported below the `mod` list; logs how
+//                        Fjord was left: `quit requested` (its Quit) or `the desktop closed the
+//                        window` (KDE's close), then quit_cleanup
 // ─────────────────────────────────────────────────────────────────────────────
 slint::include_modules!();
 
@@ -1316,6 +1318,11 @@ fn main() -> Result<()> {
     AppState::get(&window).on_quit(|| {
         info!("quit requested");
         slint::quit_event_loop().ok();
+    });
+    // The other way out: KDE closing the window (Alt+F4, the taskbar's Close…).
+    window.window().on_close_requested(|| {
+        info!("the desktop closed the window");
+        slint::CloseRequestResponse::HideWindow
     });
 
     prewarm::wire_prewarm(&window, &state, &rt);
