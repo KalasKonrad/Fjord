@@ -12,7 +12,7 @@
 //     track panels select_sub/audio/video, commit_panel_selection (panels 1-4; 4 = chapter jump);
 //                  panels 1/2 also remember the picked language per series
 //                  (state.remembered_tracks), read back by the track auto-select
-//     volume / misc volume_up/down, show_controls, resume_player, mute, stats, minimize (clears the
+//     volume / misc volume_up/down/set_volume (change_volume), show_controls, resume_player, mute, stats, minimize (clears the
 //                       bar's remote focus)
 //     chapters     chapter_prev/chapter_next: step ±1, set chapter-osd for ~2 s;
 //                  chapter_jump(idx): seek to vs.chapters[idx].0 (also from commit_panel, panel 4)
@@ -509,6 +509,43 @@ fn wire_track_panels(
     }
 }
 
+/// One volume change on the playing player — not on passthrough, where mpv's volume can't touch the
+/// bitstream — mirrored into volume-level, with the overlay shown for 1.5 s (only the latest change
+/// hides it). The volume keys' ±5 steps and MPRIS's absolute level.
+fn change_volume(
+    w: &MainWindow,
+    video: &Arc<Mutex<VideoState>>,
+    rt: &tokio::runtime::Handle,
+    vgen: &Arc<AtomicU32>,
+    change: impl FnOnce(&fjord_player::Player) -> f64,
+) {
+    let g = AppState::get(w);
+    let passthrough = g.get_audio_passthrough_active();
+    {
+        let vs = video.lock().unwrap();
+        let Some(player) = vs.player.as_ref() else {
+            return;
+        };
+        if !passthrough {
+            g.set_volume_level(change(player).round() as i32);
+        }
+    }
+    g.set_show_volume_overlay(true);
+    let generation = vgen.fetch_add(1, Ordering::Relaxed) + 1;
+    let vgen = Arc::clone(vgen);
+    let ww = w.as_weak();
+    rt.spawn(async move {
+        tokio::time::sleep(Duration::from_millis(1500)).await;
+        if vgen.load(Ordering::Relaxed) == generation {
+            let _ = slint::invoke_from_event_loop(move || {
+                if let Some(w) = ww.upgrade() {
+                    AppState::get(&w).set_show_volume_overlay(false);
+                }
+            });
+        }
+    });
+}
+
 /// Volume and mute (with the overlay), the OSD controls, video track, resume/minimize, stats.
 fn wire_volume_and_overlay(
     window: &MainWindow,
@@ -520,72 +557,31 @@ fn wire_volume_and_overlay(
     // Generation counter: only the latest volume-change task hides the overlay.
     let volume_gen = Arc::new(AtomicU32::new(0));
     {
-        let video = Arc::clone(video);
-        let ww = window.as_weak();
-        let rt = rt_handle.clone();
-        let vgen = Arc::clone(&volume_gen);
+        let (video, ww) = (Arc::clone(video), window.as_weak());
+        let (rt, vgen) = (rt_handle.clone(), Arc::clone(&volume_gen));
         AppState::get(window).on_volume_up(move || {
             let Some(w) = ww.upgrade() else { return };
-            let g = AppState::get(&w);
-            let passthrough = g.get_audio_passthrough_active();
-            {
-                let vs = video.lock().unwrap();
-                if vs.player.is_none() {
-                    return;
-                }
-                if !passthrough {
-                    let vol = vs.player.as_ref().unwrap().adjust_volume(5.0);
-                    g.set_volume_level(vol.round() as i32);
-                }
-            }
-            g.set_show_volume_overlay(true);
-            let generation = vgen.fetch_add(1, Ordering::Relaxed) + 1;
-            let vg2 = Arc::clone(&vgen);
-            let ww2 = ww.clone();
-            rt.spawn(async move {
-                tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
-                if vg2.load(Ordering::Relaxed) == generation {
-                    let _ = slint::invoke_from_event_loop(move || {
-                        if let Some(w) = ww2.upgrade() {
-                            AppState::get(&w).set_show_volume_overlay(false);
-                        }
-                    });
-                }
-            });
+            change_volume(&w, &video, &rt, &vgen, |p| p.adjust_volume(5.0));
         });
     }
     {
-        let video = Arc::clone(video);
-        let ww = window.as_weak();
-        let rt = rt_handle.clone();
-        let vgen = Arc::clone(&volume_gen);
+        let (video, ww) = (Arc::clone(video), window.as_weak());
+        let (rt, vgen) = (rt_handle.clone(), Arc::clone(&volume_gen));
         AppState::get(window).on_volume_down(move || {
             let Some(w) = ww.upgrade() else { return };
-            let g = AppState::get(&w);
-            let passthrough = g.get_audio_passthrough_active();
-            {
-                let vs = video.lock().unwrap();
-                if vs.player.is_none() {
-                    return;
-                }
-                if !passthrough {
-                    let vol = vs.player.as_ref().unwrap().adjust_volume(-5.0);
-                    g.set_volume_level(vol.round() as i32);
-                }
-            }
-            g.set_show_volume_overlay(true);
-            let generation = vgen.fetch_add(1, Ordering::Relaxed) + 1;
-            let vg2 = Arc::clone(&vgen);
-            let ww2 = ww.clone();
-            rt.spawn(async move {
-                tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
-                if vg2.load(Ordering::Relaxed) == generation {
-                    let _ = slint::invoke_from_event_loop(move || {
-                        if let Some(w) = ww2.upgrade() {
-                            AppState::get(&w).set_show_volume_overlay(false);
-                        }
-                    });
-                }
+            change_volume(&w, &video, &rt, &vgen, |p| p.adjust_volume(-5.0));
+        });
+    }
+    // An absolute level — MPRIS's Volume (KDE Connect's slider), mpris.rs.
+    {
+        let (video, ww) = (Arc::clone(video), window.as_weak());
+        let (rt, vgen) = (rt_handle.clone(), Arc::clone(&volume_gen));
+        AppState::get(window).on_set_volume(move |percent| {
+            let Some(w) = ww.upgrade() else { return };
+            let level = percent.clamp(0, 130);
+            change_volume(&w, &video, &rt, &vgen, |p| {
+                p.set_volume(level as f64);
+                level as f64
             });
         });
     }

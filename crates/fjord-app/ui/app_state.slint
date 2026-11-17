@@ -43,7 +43,8 @@
 //   Browse list           media-items, current-item, browse-query, browse-header-focused
 //   Dashboard data        continue-watching, next-up, recently-added, recently-added-albums, …
 //   Auto-advance          show-next-ep-banner, next-ep-title/-ends-at/-secs
-//   Volume overlay        show-volume-overlay, volume-level, audio-passthrough-active (~1.5 s)
+//   Volume overlay        show-volume-overlay, volume-level, audio-passthrough-active (~1.5 s);
+//                         volume-up/-down (±5), set-volume(percent) (MPRIS)
 //   Segment skip          show-skip-segment/-label (ask), show-skip-timed + -label/-secs/-focused (ask-timed);
 //                         skip-fade-active (fade-to-black around the seek)
 //   Player state          is-playing, is-paused, playing-artist, video-frame, playback-ends-at;
@@ -2479,6 +2480,7 @@ export global AppState {
     callback mute-toggle;
     callback volume-up;
     callback volume-down;
+    callback set-volume(int);  // an absolute level in percent, 0–130 (MPRIS's Volume)
     callback show-controls;
     callback toggle-stats;
     callback minimize-player;

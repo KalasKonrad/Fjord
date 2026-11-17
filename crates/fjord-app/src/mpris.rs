@@ -6,7 +6,7 @@
 //                   poster cache — never a server URL, those carry the token), length/position (µs)
 //   Command         what the desktop asked for, run on the UI thread by `run` (the keys' callbacks:
 //                   video → pause-play-toggle/stop-playback/seek-to, music → music-bar-*; next/previous
-//                   → queue-next/prev-track)
+//                   → queue-next/prev-track; Volume set → set-volume)
 //   spawn           its own thread: the connection (name org.mpris.MediaPlayer2.fjord, or
 //                   …fjord.instance<pid> when taken) serving Root + Player at /org/mpris/MediaPlayer2;
 //                   then it applies each published state and signals what changed (PropertiesChanged
@@ -14,7 +14,7 @@
 //   publish         from the player tick (playback/timer.rs, every ~0.5 s): the current state, cheap
 //                   (a channel send; the thread compares)
 //   Root / Player   the two interfaces (zbus); Player's methods only hand a Command to the sink
-//   metadata_map / seek_target  pure, unit-tested; an in-process peer-to-peer test drives the real
+//   metadata_map / seek_target / volume_percent  pure, unit-tested; an in-process peer-to-peer test drives the real
 //                   interfaces (no bus daemon)
 // ─────────────────────────────────────────────────────────────────────────────
 use std::collections::HashMap;
@@ -93,6 +93,13 @@ pub(crate) enum Command {
         position_us: i64,
         length_us: i64,
     },
+    /// The volume in percent (MPRIS's 1.0 = 100), 0–130 like Fjord's own volume keys.
+    SetVolume(i32),
+}
+
+/// MPRIS's volume (1.0 = 100 %, "a negative value should be treated as 0.0") → Fjord's percent.
+fn volume_percent(volume: f64) -> i32 {
+    (volume.max(0.0) * 100.0).round().min(130.0) as i32
 }
 
 /// mpris:trackid for an item: an object path (Jellyfin ids are hex, so always valid).
@@ -265,6 +272,11 @@ impl Player {
     #[zbus(property)]
     fn volume(&self) -> f64 {
         self.now().volume
+    }
+    /// KDE Connect's volume slider and the like (the spec: read/write while CanControl).
+    #[zbus(property)]
+    fn set_volume(&self, volume: f64) {
+        (self.sink)(Command::SetVolume(volume_percent(volume)));
     }
     /// Clients poll it (the spec: no change signal; Seeked covers jumps).
     #[zbus(property(emits_changed_signal = "false"))]
@@ -468,6 +480,7 @@ pub(crate) fn run(w: &MainWindow, cmd: Command) {
                 g.invoke_seek_to(ratio);
             }
         }
+        Command::SetVolume(percent) => g.invoke_set_volume(percent),
     }
 }
 
@@ -565,6 +578,7 @@ mod tests {
         assert!(meta.contains_key("xesam:title"));
         player.call_method("PlayPause", &()).unwrap();
         player.call_method("Seek", &(5_000_000i64)).unwrap();
+        player.set_property("Volume", 0.42f64).unwrap();
         let root = zbus::blocking::Proxy::new(
             &client,
             "org.mpris.MediaPlayer2.fjord",
@@ -581,8 +595,11 @@ mod tests {
                 Command::SeekTo {
                     position_us: 15_000_000,
                     length_us: 200_000_000
-                }
+                },
+                Command::SetVolume(42)
             ]
         );
+        assert_eq!(volume_percent(-0.5), 0);
+        assert_eq!(volume_percent(2.0), 130);
     }
 }
