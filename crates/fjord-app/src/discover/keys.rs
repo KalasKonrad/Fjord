@@ -5,8 +5,8 @@
 //                              same function (discover-popup-confirm)
 //   handle_key_discover_filter_bar  Left/Right over the 7 pills (… Clear), Up → search field, Down →
 //                              grid/landing, Confirm opens the pill's popup; mouse via discover-filter-bar-confirm
-//   handle_key                 Discover grid: the Retry button while discover-retry-focused (Enter
-//                              retries, Left → sidebar, Up → search); fs<0 sidebar (Up/Down tabs, Right enters), fs>=0 grid with
+//   handle_key                 Discover grid: the Retry button while discover-retry-focused and shown
+//                              (Enter retries, Left/Back → sidebar, Up → search; unit-tested); fs<0 sidebar (Up/Down tabs, Right enters), fs>=0 grid with
 //                              LibraryGrid's 2D math; Left at col 0 / Back → sidebar; C → context menu
 //   handle_key_landing         landing rows; the Coming Up sentinel opens the calendar
 //   existing_zones / zone_focus_reset / handle_key_request_detail  RequestDetailScreen: back → button row
@@ -230,11 +230,16 @@ pub(crate) fn handle_key(action: &Action, g: &AppState) -> bool {
         return handle_key_discover_filter_bar(action, g);
     }
 
-    // "Couldn't reach Seerr" → the Retry button has the keys while focused.
+    // "Couldn't reach Seerr" → the Retry button has the keys while focused — and only while it's
+    // there: a retry hides it until the rows answer (or it comes back), and the keys go on below.
+    if g.get_discover_retry_focused() && !g.get_discover_landing_failed() {
+        g.set_discover_retry_focused(false);
+    }
     if g.get_discover_retry_focused() {
         match action {
             Action::Confirm => g.invoke_discover_landing_retry(),
-            Action::Left => g.set_discover_retry_focused(false),
+            // Back goes where Left goes — to the sidebar.
+            Action::Left | Action::Back => g.set_discover_retry_focused(false),
             Action::Up => {
                 g.set_discover_retry_focused(false);
                 g.set_discover_header_focused(true);
@@ -941,6 +946,32 @@ pub(crate) fn handle_key_request_options(action: &Action, g: &AppState) -> bool 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// "Couldn't reach Seerr": Back leaves the Retry button like Left; once the button is gone (a
+    /// retry running) the keys go on as usual; a flag left set doesn't take the sidebar's
+    /// highlight on another tab (left Discover with the mouse).
+    #[test]
+    fn retry_focus_follows_the_button() {
+        i_slint_backend_testing::init_no_event_loop();
+        let w = crate::MainWindow::new().unwrap();
+        let g = AppState::get(&w);
+        g.set_active_nav(6);
+        g.set_focused_section(-1);
+        g.set_discover_landing_failed(true);
+        g.set_discover_retry_focused(true);
+        assert!(!g.get_sidebar_kb_active());
+        assert!(handle_key(&Action::Back, &g));
+        assert!(!g.get_discover_retry_focused() && g.get_sidebar_kb_active());
+        // A retry hides the button: the focus goes with it.
+        g.set_discover_retry_focused(true);
+        g.set_discover_landing_failed(false);
+        handle_key(&Action::Left, &g);
+        assert!(!g.get_discover_retry_focused());
+        // Another tab with the flag still set: the sidebar keeps its highlight.
+        g.set_discover_retry_focused(true);
+        g.set_active_nav(1);
+        assert!(g.get_sidebar_kb_active());
+    }
 
     /// The request page's lists follow the conditions request_detail.slint shows things by.
     #[test]

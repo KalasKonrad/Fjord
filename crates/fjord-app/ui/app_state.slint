@@ -575,7 +575,8 @@ export global AppState {
         && !show-profile-edit
         && ((show-browse && current-item < 0 && !browse-header-focused)
         || (!show-browse && active-nav == 10 && settings-section == "")
-        || (!show-browse && active-nav != 10 && focused-section < 0 && !discover-retry-focused));
+        || (!show-browse && active-nav != 10 && focused-section < 0
+        && !(active-nav == 6 && discover-retry-focused)));
         // show-sidebar-profile-menu / -manage-profiles / -profile-edit keep active-nav at
         // 7 and don't touch focused-section, so without this exclusion the sidebar's
         // Profile row would flash its press-pulse with every Enter inside those overlays
