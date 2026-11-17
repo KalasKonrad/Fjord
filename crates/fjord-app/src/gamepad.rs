@@ -8,7 +8,7 @@
 //   PadInput      what a pad does: the four directions, Confirm/Back, the other buttons, volume
 //   PadState      held directions repeat like a held key (REPEAT_DELAY, then REPEAT_EVERY); the
 //                 left stick is a D-pad with hysteresis (STICK_ON / STICK_OFF), the right stick's
-//                 up/down is volume — unit-tested
+//                 up/down is volume; disconnected() forgets it all (no release comes) — unit-tested
 //   raw_key       directions, A (Return) and B (Escape) as keys — never through the bindings, so a
 //                 text field gets Escape, not Backspace
 //   pad_name / action_for  the other buttons → a Fjord action, by screen (browsing / video player),
@@ -305,6 +305,12 @@ impl PadState {
         self.held.retain(|(i, _)| *i != input);
     }
 
+    /// A pad went away: gilrs sends no release for what it held, so forget everything — a held
+    /// direction would otherwise repeat until the pad came back.
+    pub(crate) fn disconnected(&mut self) {
+        *self = Self::default();
+    }
+
     /// Repeats that are due.
     pub(crate) fn tick(&mut self, now: Instant) -> Vec<PadOut> {
         let mut out = Vec::new();
@@ -515,7 +521,10 @@ fn run(window: slint::Weak<MainWindow>, state: Arc<Mutex<FjordState>>, clock: Ac
                 EventType::Connected => {
                     info!("gamepad: {} connected", gilrs.gamepad(event.id).name())
                 }
-                EventType::Disconnected => info!("gamepad: a pad disconnected"),
+                EventType::Disconnected => {
+                    info!("gamepad: a pad disconnected");
+                    pad.disconnected();
+                }
                 _ => {}
             }
         }
@@ -627,6 +636,10 @@ mod tests {
             [(PadInput::Down, true)]
         );
         pad.release(PadInput::Down);
+        assert!(pad.tick(t + REPEAT_DELAY * 4).is_empty());
+        // A pad that goes away mid-hold sends no release: the repeat stops anyway.
+        pad.press(PadInput::Down, t);
+        pad.disconnected();
         assert!(pad.tick(t + REPEAT_DELAY * 4).is_empty());
         // Buttons don't repeat.
         assert_eq!(

@@ -27,6 +27,7 @@ are bumped together as one step, not separately.
   - After stopping (or minimizing) a video with the remote on the controls bar, the next video's bar started on that same button, so OK could stop it; it starts on ⏯ again.
   - A film watched to the end from its page left that page offering "Resume from" where it was opened; it's refreshed after the end too, not only after a stop.
   - On a film's page, the remote's focus on ← Back (or the overview) jumped to Play when the trailer check finished; it stays where it is.
+  - A direction held on the game pad when it switched off or was unplugged kept repeating until it came back.
 
 - **Fixed: Fjord could crash while quitting** on NVIDIA after playing a video.
   It now closes the video surface and its HDR connection before the window's
