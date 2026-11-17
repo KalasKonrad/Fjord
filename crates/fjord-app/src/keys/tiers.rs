@@ -6,6 +6,7 @@
 //                             confirms, profile edit, the startup gate, search fields, the playlist
 //                             picker, the loading guard, rebind capture, the library sort-bar Tab
 //   RawKey                    one key press as the tiers see it (key, Shift, Ctrl)
+//   open_raw_tier             the tier that owns a key now (handle_key; gamepad.rs)
 //   confirm_dialog_keys       the global ConfirmDialogs (Sign Out, Cancel Request, Delete Profile):
 //                             Left/Right pick, Enter confirms the focused button, Back closes
 //   remember_login_confirm_keys / profile_edit_keys / playlist_picker_keys / loading_keys /
@@ -25,8 +26,17 @@ type TierOpen = fn(&crate::AppState<'_>, &RawKey<'_>) -> bool;
 type TierKeys =
     fn(&crate::AppState<'_>, &RawKey<'_>, &crate::MainWindow, &Arc<Mutex<FjordState>>) -> bool;
 
+type RawTier = (&'static str, TierOpen, TierKeys);
+
+/// The raw-key tier that owns `raw` now, if one is open (the first in RAW_TIERS order). handle_key
+/// hands it the key; gamepad.rs keeps the rebindable pad buttons out of it (they reach the keys as
+/// their binding's key, which a search field would type).
+pub(crate) fn open_raw_tier(g: &crate::AppState<'_>, raw: &RawKey<'_>) -> Option<&'static RawTier> {
+    RAW_TIERS.iter().find(|(_, open, _)| open(g, raw))
+}
+
 /// Checked top to bottom; the first open tier owns the key.
-pub(crate) const RAW_TIERS: &[(&str, TierOpen, TierKeys)] = &[
+pub(crate) const RAW_TIERS: &[RawTier] = &[
     // First: the keyboard can be open over any text-entry screen; only Ctrl+Q passes.
     (
         "on-screen keyboard",

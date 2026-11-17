@@ -10,7 +10,8 @@
 //                 left stick is a D-pad with hysteresis (STICK_ON / STICK_OFF), the right stick's
 //                 up/down is volume; disconnected() forgets it all (no release comes) — unit-tested
 //   raw_key       directions, A (Return) and B (Escape) as keys — never through the bindings, so a
-//                 text field gets Escape, not Backspace
+//                 text field gets Escape, not Backspace; the other buttons go as their binding's key
+//                 and are skipped while a raw-key tier (a text field, an overlay) owns the keys
 //   pad_name / action_for  the other buttons → a Fjord action, by screen (browsing / video player),
 //                 from the user's pad table (Keybindings.pad_normal/-player — Settings → Key
 //                 Bindings; the agreed Xbox 360 table by default); unit-tested. While a Key
@@ -604,6 +605,19 @@ fn deliver(
                     debug!("gamepad: {input:?} → {action:?}, but no key is bound to it");
                     return;
                 };
+                // A text field, overlay or confirm owns the keys (keys::RAW_TIERS): the key would
+                // be typed there ('c' for X, a space for Start), not run the action.
+                let raw = crate::keys::RawKey {
+                    key: &combo.key,
+                    shift: combo.shift,
+                    ctrl: combo.ctrl,
+                };
+                if let Some((tier, _, _)) = crate::keys::open_raw_tier(&g, &raw) {
+                    if !repeat {
+                        debug!("gamepad: {input:?} → {action:?} skipped — the {tier} has the keys");
+                    }
+                    return;
+                }
                 combo
             }
         };
@@ -617,6 +631,30 @@ fn deliver(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// X reaches the keys as its binding's key ("c"); a search field's tier owns that key, and
+    /// deliver skips the button then instead of typing it.
+    #[test]
+    fn a_search_field_owns_the_rebindable_buttons_keys() {
+        i_slint_backend_testing::init_no_event_loop();
+        let w = crate::MainWindow::new().unwrap();
+        let g = crate::AppState::get(&w);
+        g.set_show_login(false);
+        let kb = crate::keys::default_keybindings();
+        let action = action_for(&kb, PadInput::ContextMenu, false).unwrap();
+        let combo = key_for(&kb, &action, false).unwrap();
+        assert_eq!(combo.key, "c");
+        let raw = crate::keys::RawKey {
+            key: &combo.key,
+            shift: combo.shift,
+            ctrl: combo.ctrl,
+        };
+        assert!(crate::keys::open_raw_tier(&g, &raw).is_none());
+        g.set_show_library(true);
+        g.set_library_header_focused(true);
+        let tier = crate::keys::open_raw_tier(&g, &raw).map(|t| t.0);
+        assert_eq!(tier, Some("library search"));
+    }
 
     #[test]
     fn a_held_direction_repeats_like_a_held_key() {

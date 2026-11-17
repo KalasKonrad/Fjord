@@ -128,7 +128,7 @@ pub(crate) fn handle_key(
 
     // Raw-key tiers first (tiers.rs): overlays, confirms, the startup gate, search fields…
     let raw = RawKey { key, shift, ctrl };
-    if let Some((_, _, keys)) = RAW_TIERS.iter().find(|(_, open, _)| open(&g, &raw)) {
+    if let Some((_, _, keys)) = open_raw_tier(&g, &raw) {
         return keys(&g, &raw, window, state);
     }
 
