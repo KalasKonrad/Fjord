@@ -694,7 +694,8 @@ pub(crate) fn apply_rebind(
     };
     debug!("keybindings: rebinding {action:?} ({map:?}) -> {new_combo:?}");
 
-    {
+    // Saved after the lock is dropped (CLAUDE.md: no disk I/O under `state`).
+    let kb = {
         let mut st = state.lock().unwrap();
         match map {
             ActionMap::Normal => {
@@ -706,8 +707,9 @@ pub(crate) fn apply_rebind(
                 st.keybindings.player.insert(new_combo, action.clone());
             }
         }
-        crate::config::save_keybindings(&st.keybindings);
-    }
+        st.keybindings.clone()
+    };
+    crate::config::save_keybindings(&kb);
 
     push_keybinding_rows(window, state);
 }
@@ -801,7 +803,7 @@ pub(crate) fn apply_pad_rebind(
         return;
     };
     debug!("keybindings: pad {button} → {action:?} ({map:?})");
-    {
+    let kb = {
         let mut st = state.lock().unwrap();
         let pad = match map {
             ActionMap::Normal => &mut st.keybindings.pad_normal,
@@ -809,8 +811,9 @@ pub(crate) fn apply_pad_rebind(
         };
         pad.retain(|_, v| v != action);
         pad.insert(button.to_string(), action.clone());
-        crate::config::save_keybindings(&st.keybindings);
-    }
+        st.keybindings.clone()
+    };
+    crate::config::save_keybindings(&kb);
     push_keybinding_rows(window, state);
 }
 
@@ -1001,11 +1004,9 @@ pub(crate) fn wire_keybindings(
                 return;
             };
             info!("keybindings: reset to defaults");
-            {
-                let mut st = state2.lock().unwrap();
-                st.keybindings = keys::default_keybindings();
-                config::save_keybindings(&st.keybindings);
-            }
+            let kb = keys::default_keybindings();
+            state2.lock().unwrap().keybindings = kb.clone();
+            config::save_keybindings(&kb);
             keys::push_keybinding_rows(&w, &state2);
         });
     }
