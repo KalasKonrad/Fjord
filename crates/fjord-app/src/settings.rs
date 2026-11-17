@@ -4096,6 +4096,11 @@ mod tests {
         assert!(!row_blocked(VID_VF, &g));
         g.set_settings_separate_video_surface(false);
         assert!(row_blocked(VID_OWN_BUFFERS, &g));
+        // HD video in 4K waits for Sync refresh rate.
+        g.set_settings_display_sync_sync_refresh_rate(false);
+        assert!(row_blocked(VID_DISPLAY_SYNC_HD_IN_4K, &g));
+        g.set_settings_display_sync_sync_refresh_rate(true);
+        assert!(!row_blocked(VID_DISPLAY_SYNC_HD_IN_4K, &g));
         // An ordinary row is never grayed.
         assert!(!row_blocked(VID_HWDEC, &g));
     }

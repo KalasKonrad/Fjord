@@ -25,6 +25,7 @@ Version history: [CHANGELOG.md](CHANGELOG.md) (git tags `v0.1.0`–`v0.5.1`). Im
 - [ ] **Detail page after a film's end (2026-11-17, review).** Open a film's page, play it (or skip to its last minutes) and let it end with nothing next → back on the page, Resume is gone, the film shows as watched and the focus is on Play. Log (Debug): `detail: refreshed <id> after playback`.
 - [ ] **Back keeps its focus (2026-11-17, review).** Open a film's page and press Left at once to ← Back (before the Trailer button finishes checking) → the focus stays on Back when the check ends; Enter closes the page.
 - [ ] **Pad unplugged mid-hold (2026-11-17, review).** Dev or HTPC, wired pad: hold the D-pad down in a library grid and pull the cable (or switch the wireless pad off) while holding → the cursor stops moving. Plug it back in → it works as before.
+- [ ] **HD video in 4K needs Sync refresh rate (2026-11-17, review).** Settings → TV & display: switch Sync refresh rate off → HD video in 4K is grayed, "Needs Sync refresh rate on (below)", Enter/Right leave it alone; on again → usable. (The HTPC keeps refresh-rate sync on, so its 4K switching doesn't change.)
 
 ---
 

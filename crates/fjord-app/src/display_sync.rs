@@ -9,7 +9,8 @@
 //                          DeviceConfig once per trigger
 //   compute_target_mode    pure, unit-tested: the script's fps→Hz cadence table, a true 24/30/60 fps
 //                          file on its exact rate when the output has it, "HD video in 4K" (smaller
-//                          video at 24/25/30 fps on the 4K mode, for the Upscaler), + fallback chain
+//                          video at 24/25/30 fps on the 4K mode, for the Upscaler — only with Sync
+//                          refresh rate on), + fallback chain
 //                          (exact → closest Hz at the same resolution → the default mode)
 //   keeps_current_mode     pure, unit-tested: mpv's post-decode estimate never moves the display
 //                          between two rates of one cadence (23.98 ↔ 24.00)
@@ -176,8 +177,12 @@ pub(crate) fn compute_target_mode(
 ) -> (String, String) {
     let fps_r = fps.round() as i64;
     // "HD video in 4K": smaller video at a rate the 4K table has (not 50/60 — a 4K mode at those
-    // rates may be more than the HDMI chain carries) is placed like 4K video.
-    let hd_as_4k = cfg.hd_in_4k && width > 0 && matches!(fps_r, 23 | 24 | 25 | 29 | 30);
+    // rates may be more than the HDMI chain carries) is placed like 4K video. Only while the
+    // refresh rate follows the video: else it would get 4K at the desktop's rate (e.g. 4K@60).
+    let hd_as_4k = cfg.hd_in_4k
+        && cfg.sync_refresh_rate
+        && width > 0
+        && matches!(fps_r, 23 | 24 | 25 | 29 | 30);
     let is_4k = cfg.sync_resolution && (width >= 3840 || hd_as_4k);
 
     let (mut target_res, mut target_hz) = if is_4k {
@@ -1322,6 +1327,15 @@ mod tests {
         assert_eq!(
             compute_target_mode(1920, 23.976, &cfg, &full).0,
             "1920x1080"
+        );
+        // Sync refresh rate off: the default mode, never 4K at the desktop's rate (4K@59.94
+        // offered here).
+        cfg.sync_resolution = true;
+        cfg.sync_refresh_rate = false;
+        let with_4k60 = modes(&[(RES_4K, "23.98"), (RES_4K, "59.94"), ("1920x1080", "59.94")]);
+        assert_eq!(
+            compute_target_mode(1920, 23.976, &cfg, &with_4k60),
+            mode("1920x1080", "59.94")
         );
     }
 

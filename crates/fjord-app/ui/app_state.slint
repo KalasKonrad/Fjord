@@ -119,7 +119,7 @@
 //   Settings state        hwdec, interpolation, audio-spdif, sub-lang, skip-*-mode/secs, display-sync-*, …;
 //                         settings-row-shown(key) — every row condition once (settings.slint + row_shown);
 //                         settings-row-blocked(key) — why a shown row is grayed ("" = usable; SettingsRow,
-//                         row_blocked);
+//                         row_blocked: interpolation, vf, own buffers, HD video in 4K);
 //                         setting-options/-label/-choose (fixed-choice rows ↔ settings.rs CHOICES);
 //                         settings-card-size → card-scale (0.8/1/1.25/1.5/2) for every poster card;
 //                         settings-copy-sources-display + the Copy settings confirm (show-/-focused,
@@ -783,6 +783,10 @@ export global AppState {
         }
         if key == "video.video_own_buffers" && !settings-separate-video-surface {
             return "Needs Separate video surface on (above)";
+        }
+        // Without it, HD video would get 4K at the desktop's rate (compute_target_mode).
+        if key == "video.display_sync_hd_in_4k" && !settings-display-sync-sync-refresh-rate {
+            return "Needs Sync refresh rate on (below)";
         }
         ""
     }
