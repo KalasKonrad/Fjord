@@ -27,6 +27,7 @@ Version history: [CHANGELOG.md](CHANGELOG.md) (git tags `v0.1.0`–`v0.5.1`). Im
 - [ ] **Pad unplugged mid-hold (2026-11-17, review).** Dev or HTPC, wired pad: hold the D-pad down in a library grid and pull the cable (or switch the wireless pad off) while holding → the cursor stops moving. Plug it back in → it works as before.
 - [ ] **HD video in 4K needs Sync refresh rate (2026-11-17, review).** Settings → TV & display: switch Sync refresh rate off → HD video in 4K is grayed, "Needs Sync refresh rate on (below)", Enter/Right leave it alone; on again → usable. (The HTPC keeps refresh-rate sync on, so its 4K switching doesn't change.)
 - [ ] **Discover Retry with Back (2026-11-17, review).** Seerr stopped: Discover → Right to Retry → Back → the sidebar has the focus (as with Left). Retry focused, then click another tab (Home) with the mouse → the sidebar's highlight is there with the remote. Retry with Enter while Seerr is still down → the keys keep working while it loads.
+- [ ] **Sync panel with the remote (2026-11-17, review).** HTPC with the pad: during a film, Down, Right to Sync ▾, OK → the panel opens with a ring on Sub −100ms; OK → "−100 ms"; Right → +100ms, OK → back to 0; Down → the Audio row; OK changes the audio delay (the speech moves against the picture). Back closes the panel with the bar's focus still on Sync ▾. A mouse click on a −/+ button moves the ring there.
 
 ---
 

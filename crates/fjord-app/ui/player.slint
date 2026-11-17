@@ -1178,7 +1178,11 @@ export component PlayerScreen inherits Rectangle {
                     on-dark: true;
                     text: "−100ms";
                     width: 72px * AppState.text-scale;
-                    clicked => { AppState.sub-delay-dec(); }
+                    kbd-focused: AppState.player-panel-cursor == 0;
+                    clicked => {
+                        AppState.player-panel-cursor = 0;
+                        AppState.sub-delay-dec();
+                    }
                 }
 
                 Text {
@@ -1195,7 +1199,11 @@ export component PlayerScreen inherits Rectangle {
                     on-dark: true;
                     text: "+100ms";
                     width: 72px * AppState.text-scale;
-                    clicked => { AppState.sub-delay-inc(); }
+                    kbd-focused: AppState.player-panel-cursor == 1;
+                    clicked => {
+                        AppState.player-panel-cursor = 1;
+                        AppState.sub-delay-inc();
+                    }
                 }
             }
 
@@ -1216,7 +1224,11 @@ export component PlayerScreen inherits Rectangle {
                     on-dark: true;
                     text: "−100ms";
                     width: 72px * AppState.text-scale;
-                    clicked => { AppState.audio-delay-dec(); }
+                    kbd-focused: AppState.player-panel-cursor == 2;
+                    clicked => {
+                        AppState.player-panel-cursor = 2;
+                        AppState.audio-delay-dec();
+                    }
                 }
 
                 Text {
@@ -1233,7 +1245,11 @@ export component PlayerScreen inherits Rectangle {
                     on-dark: true;
                     text: "+100ms";
                     width: 72px * AppState.text-scale;
-                    clicked => { AppState.audio-delay-inc(); }
+                    kbd-focused: AppState.player-panel-cursor == 3;
+                    clicked => {
+                        AppState.player-panel-cursor = 3;
+                        AppState.audio-delay-inc();
+                    }
                 }
             }
         }

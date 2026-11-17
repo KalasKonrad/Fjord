@@ -1,5 +1,6 @@
 // ── fjord-app · keys/player.rs ───────────────────────────────────────────────
-//   dispatch_player    ask-timed overlay; ask overlay; Up Next banner; panel nav; the controls bar
+//   dispatch_player    ask-timed overlay; ask overlay; Up Next banner; panel nav (the Sync panel's
+//                      four −/+ buttons too — unit-tested); the controls bar
 //                      with the remote (Up/Down: seek bar ↔ buttons — AppState.osd-focused/-buttons,
 //                      Left/Right along the row, Enter presses — AppState.osd-press; Back hides the
 //                      bar first); OK = play/pause otherwise; player controls; chapter-prev/next
@@ -87,6 +88,34 @@ pub(crate) fn dispatch_player(action: Action, window: &crate::MainWindow) -> boo
             g.invoke_stop_playback();
         }
         return true;
+    }
+
+    // The Sync panel: two rows (subtitles, audio) of −/+ — cursor 0 Sub −, 1 Sub +, 2 Audio −,
+    // 3 Audio +. Up/Down pick the row, Left/Right the button, Enter presses it and the panel stays
+    // open (Back closes it, above).
+    if panel == 5 {
+        let c = g.get_player_panel_cursor().clamp(0, 3);
+        let (row, plus) = (c / 2, c % 2);
+        let handled = match action {
+            Action::Up | Action::VolumeUp => Some(plus),
+            Action::Down | Action::VolumeDown => Some(2 + plus),
+            Action::Left | Action::SeekBackward => Some(row * 2),
+            Action::Right | Action::SeekForward => Some(row * 2 + 1),
+            Action::Confirm => {
+                match c {
+                    0 => g.invoke_sub_delay_dec(),
+                    1 => g.invoke_sub_delay_inc(),
+                    2 => g.invoke_audio_delay_dec(),
+                    _ => g.invoke_audio_delay_inc(),
+                }
+                Some(c)
+            }
+            _ => None,
+        };
+        if let Some(next) = handled {
+            g.set_player_panel_cursor(next);
+            return true;
+        }
     }
 
     if panel != 0 {
@@ -524,5 +553,50 @@ mod tests {
         assert_eq!(np_down(2), Some(6));
         assert_eq!(np_down(0), None);
         assert_eq!(np_down(8), None);
+    }
+
+    /// The Sync panel with the remote: Sync ▾ opens it on Sub −; Right/Down/Left/Up walk the four
+    /// buttons; Enter presses the focused one and the panel stays open; Back closes it.
+    #[test]
+    fn sync_panel_works_with_the_remote() {
+        use std::cell::Cell;
+        use std::rc::Rc;
+        i_slint_backend_testing::init_no_event_loop();
+        let w = crate::MainWindow::new().unwrap();
+        let g = crate::AppState::get(&w);
+        let pressed = Rc::new(Cell::new(""));
+        let p = Rc::clone(&pressed);
+        g.on_sub_delay_dec(move || p.set("sub-"));
+        let p = Rc::clone(&pressed);
+        g.on_sub_delay_inc(move || p.set("sub+"));
+        let p = Rc::clone(&pressed);
+        g.on_audio_delay_dec(move || p.set("audio-"));
+        let p = Rc::clone(&pressed);
+        g.on_audio_delay_inc(move || p.set("audio+"));
+        g.set_is_playing(true);
+        g.set_controls_visible(true);
+        g.invoke_osd_press(11);
+        assert_eq!(
+            (g.get_player_open_panel(), g.get_player_panel_cursor()),
+            (5, 0)
+        );
+        assert!(dispatch_player(Action::Confirm, &w));
+        assert_eq!(pressed.get(), "sub-");
+        assert_eq!(g.get_player_open_panel(), 5, "Enter keeps the panel open");
+        dispatch_player(Action::SeekForward, &w);
+        dispatch_player(Action::Down, &w);
+        assert_eq!(g.get_player_panel_cursor(), 3);
+        dispatch_player(Action::Confirm, &w);
+        assert_eq!(pressed.get(), "audio+");
+        dispatch_player(Action::SeekBackward, &w);
+        dispatch_player(Action::Up, &w);
+        assert_eq!(g.get_player_panel_cursor(), 0);
+        assert_eq!(
+            g.get_osd_focused(),
+            11,
+            "the bar's focus stays on Sync ▾ behind the panel"
+        );
+        dispatch_player(Action::Back, &w);
+        assert_eq!(g.get_player_open_panel(), 0);
     }
 }

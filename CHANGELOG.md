@@ -30,6 +30,7 @@ are bumped together as one step, not separately.
   - A direction held on the game pad when it switched off or was unplugged kept repeating until it came back.
   - "HD video in 4K" with "Sync refresh rate" off could put HD video on a 4K mode at the desktop's rate (e.g. 4K@60). It now needs Sync refresh rate, and its row is grayed with that reason while it's off.
   - With Seerr unreachable, Back did nothing on Discover's Retry button, and leaving Discover with the mouse could leave the sidebar without its highlight on the other tabs.
+  - The player's Sync ▾ panel (subtitle and audio delay) now works with the remote: Up/Down pick subtitles or audio, Left/Right the −100 ms / +100 ms button, OK presses it.
 
 - **Fixed: Fjord could crash while quitting** on NVIDIA after playing a video.
   It now closes the video surface and its HDR connection before the window's
