@@ -1452,5 +1452,13 @@ mod tests {
         g.set_detail_focused_btn(4);
         fix_trailer_focus(&g);
         assert_eq!(g.get_detail_focused_btn(), 4);
+        // ← Back (-1) and the Overview (5) aren't header buttons: the trailer check finishing
+        // while they're focused leaves them alone (it moved the focus to Play).
+        for outside in [-1, 5] {
+            g.set_detail_focused_btn(outside);
+            g.set_detail_trailer_state("error".into());
+            fix_trailer_focus(&g);
+            assert_eq!(g.get_detail_focused_btn(), outside);
+        }
     }
 }
