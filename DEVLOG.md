@@ -3580,7 +3580,9 @@ What the 0.5.2 checklist confirmed before it was cleaned out of PLAN.md (dev = A
   - **MPRIS:** served at `/org/mpris/MediaPlayer2`, Playing/Paused/Stopped followed every change. The user checked the widget, the media keys and the rest.
 - **The user's word (2026-11-15):** pad buttons in Key Bindings, Sizes (Text and Card size at Huge for a whole episode on the HTPC), player controls with the remote, track names, mouse = remote, Back at the edges, Resume after playback, empty pages, the stats overlay's color rows, Seerr unreachable, the Upscaler (Sharp, the HDR copy, "not scaling up"), interpolation and its stats row, dragging dashboard rows, the light theme, the accent color, colours from `Theme`, interpolation on the HTPC, and the remote pass over every screen (no notes).
 - **Closed without the case happening:** the log folder going away (it never dropped out while Fjord ran).
-- **Still open at the cleanup:** #45 (no desktop sound after a stop with display sync) and #46 (segfault at quit). Both were fixed on 2026-11-15 (r1358/r1359) and wait for a run on that build.
+- **#45 and #46** (open at the first cleanup, fixed 2026-11-15 in r1358/r1359): on r1359, four stops after a mode switch (2026-11-16 06:33, 06:57, 18:41; 2026-11-17 18:11) — each time mpv let go of the audio device 364–547 ms in, the switch came 0.5 s later, PipeWire/WirePlumber logged nothing. Four quits (one by KDE closing the window, three by Fjord's Quit) ran the whole cleanup; no core dump or kernel segfault since r1351 (whose every quit had crashed). Both GitHub issues closed 2026-11-16. Not tried: a film ending by itself before a revert, quitting straight from the player.
+- **The desktop closing Fjord is logged:** dev, r1384 (2026-11-16) — `the desktop closed the window`, then the cleanup.
+- **Stable:** 2026-11-14 – 17 on r1351/r1359, the HTPC started playback 18 times (films and episodes, Up Next included; three episodes in a row on 11-17) with at most 1 frame drop per item, vsync ratio 1.0000, at most 2 frames discarded by KWin per episode, no crash.
 
 ### History rewrite: personal data out of the repo (2026-11-08)
 
