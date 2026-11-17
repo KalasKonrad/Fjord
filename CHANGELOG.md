@@ -23,6 +23,9 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Fixed: a round of small fixes from a code review before the release.**
+  - After stopping (or minimizing) a video with the remote on the controls bar, the next video's bar started on that same button, so OK could stop it; it starts on ⏯ again.
+
 - **Fixed: Fjord could crash while quitting** on NVIDIA after playing a video.
   It now closes the video surface and its HDR connection before the window's
   connection to the desktop goes away.

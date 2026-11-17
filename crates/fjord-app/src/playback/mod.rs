@@ -33,7 +33,8 @@
 //                           ends the HDR worker and frees the video backplane while winit's display
 //                           is still connected (#46)
 //   reset_playback_ui       clears all player UI state (video-surface-active first, so the window is
-//                           opaque before the next frame; music bar, Now Playing, buffering, overlays)
+//                           opaque before the next frame; music bar, Now Playing, buffering, overlays,
+//                           the bar's remote focus)
 //   do_stop_playback        user stop: tear down, keep playlist + queue (idle queue panel), reset the
 //                           UI, stop report, then the Detail page's resume state (if it shows) and the
 //                           home refresh
@@ -758,6 +759,9 @@ pub(crate) fn reset_playback_ui(w: &MainWindow) {
     g.set_audio_tracks(ModelRc::new(VecModel::<TrackEntry>::default()));
     g.set_video_tracks(ModelRc::new(VecModel::<TrackEntry>::default()));
     g.set_player_open_panel(0);
+    // The bar's remote focus belongs to this playback: the next one starts on the seek bar, so
+    // Down lands on ⏯ again (it was left on ■ after a stop with it, and OK stopped the next video).
+    g.set_osd_focused(-1);
     g.set_controls_visible(true);
     g.set_pause_bar_visible(false);
     g.set_seek_osd_visible(false);

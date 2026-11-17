@@ -12,7 +12,8 @@
 //     track panels select_sub/audio/video, commit_panel_selection (panels 1-4; 4 = chapter jump);
 //                  panels 1/2 also remember the picked language per series
 //                  (state.remembered_tracks), read back by the track auto-select
-//     volume / misc volume_up/down, show_controls, resume_player, mute, stats, minimize
+//     volume / misc volume_up/down, show_controls, resume_player, mute, stats, minimize (clears the
+//                       bar's remote focus)
 //     chapters     chapter_prev/chapter_next: step ±1, set chapter-osd for ~2 s;
 //                  chapter_jump(idx): seek to vs.chapters[idx].0 (also from commit_panel, panel 4)
 //     delays       sub_delay_inc/dec (z/Z ±100 ms), audio_delay_inc/dec (x/X ±100 ms); delay OSD
@@ -653,6 +654,9 @@ fn wire_volume_and_overlay(
             g.set_has_background_player(true);
             g.set_video_behind_ui(behind);
             g.set_stats_visible(false);
+            // Back to the seek bar: the player comes back without a bar button focused (see
+            // reset_playback_ui).
+            g.set_osd_focused(-1);
             let from_series = g.get_playback_from_series();
             if from_detail {
                 // Return to detail page. Video continues in background.

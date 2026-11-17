@@ -3584,6 +3584,12 @@ What the 0.5.2 checklist confirmed before it was cleaned out of PLAN.md (dev = A
 - **The desktop closing Fjord is logged:** dev, r1384 (2026-11-16) — `the desktop closed the window`, then the cleanup.
 - **Stable:** 2026-11-14 – 17 on r1351/r1359, the HTPC started playback 18 times (films and episodes, Up Next included; three episodes in a row on 11-17) with at most 1 frame drop per item, vsync ratio 1.0000, at most 2 frames discarded by KWin per episode, no crash.
 
+### 0.5.2 code review fixes (2026-11-17, branch `release-0.5.2`)
+
+A review of everything 0.5.2 changes against `main` (85 commits) found 15 points; each was checked against the code and the HTPC logs. One was wrong (music started right after a film keeps the film's mode until it stops — on purpose: switching while mpv holds the HDMI device is #45), three were left (the audio race at Up Next — never seen, four transitions had sound; the MPRIS cover check every 0.5 s; the resume code shared by open_detail and refresh_user_data). The rest, one commit each:
+
+**The controls bar's focus carried into the next video.** `AppState.osd-focused` was cleared only by PlayerScreen's `changed controls-up`, and PlayerScreen is unmounted at a stop while `controls-visible` stays true — the next video mounted it with the controls already hidden, so no `changed` fired. After a stop with ■ (osd-press(4) sets the focus first), the next video's first Down showed the ring on ■ (Down moves to ⏯ only from the seek bar) and OK stopped it; the same with ← and minimize. Now `reset_playback_ui` (stop, natural end, sign-out), the minimize handler and `reset_session_state` set it back to −1.
+
 ### History rewrite: personal data out of the repo (2026-11-08)
 
 The repo is public. A scan before the 0.5.1 release (every tracked file, every commit's added lines and every commit message, against the server and Seerr addresses, IPs, host names, home paths, email, the ids and profile names in the local config, tokens, and the ~1,800 titles in Fjord's library cache) found titles from the user's library used as examples in DEVLOG, SLINT.md, PLAN.md, CLAUDE.md, code comments and commit messages, one real item id, and a mention of a family member. Addresses, ids, names and tokens had never been committed. The current files were cleaned first; then, at the user's request, the history.

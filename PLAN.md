@@ -21,7 +21,7 @@ Version history: [CHANGELOG.md](CHANGELOG.md) (git tags `v0.1.0`–`v0.5.1`). Im
 **Check an item off only once it has been clicked through on real hardware** — a clean build/clippy/test says nothing about whether it works. Add a line here the moment something ships "not live-tested". Ticked items are removed at the next cleanup; their story lives in `DEVLOG.md`.
 
 ### 0.5.2
-Nothing open (2026-11-17).
+- [ ] **Bar focus per video (2026-11-17, review).** With the remote: Down, Right to ■ Stop, Enter → stopped. Play another video, Down → the focus is on ⏯ (not ■); OK pauses. Same after ← (minimize) and back to the player.
 
 ---
 
