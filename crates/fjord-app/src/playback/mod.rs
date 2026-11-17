@@ -869,22 +869,12 @@ pub(crate) fn do_stop_playback(
             }
             // The Detail page shown again (playback started there) reads its resume position at
             // open: refresh it now that the server has the new one.
-            {
-                let (cli, state, ww, rth2) = (
-                    Arc::clone(&cli),
-                    Arc::clone(&state),
-                    ww.clone(),
-                    rth.clone(),
-                );
-                let _ = slint::invoke_from_event_loop(move || {
-                    let Some(w) = ww.upgrade() else { return };
-                    let g = crate::AppState::get(&w);
-                    let detail_id = g.get_detail_id().to_string();
-                    if g.get_show_detail() && !detail_id.is_empty() {
-                        rth2.spawn(crate::detail::refresh_user_data(cli, state, ww, detail_id));
-                    }
-                });
-            }
+            crate::detail::refresh_after_playback(
+                Arc::clone(&cli),
+                Arc::clone(&state),
+                ww.clone(),
+                rth.clone(),
+            );
             let home_data = fetch_home_data(&cli, Some(&state)).await;
             let sections = home_data_sections(&home_data);
             let ww2 = ww.clone();

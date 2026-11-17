@@ -22,6 +22,7 @@ Version history: [CHANGELOG.md](CHANGELOG.md) (git tags `v0.1.0`–`v0.5.1`). Im
 
 ### 0.5.2
 - [ ] **Bar focus per video (2026-11-17, review).** With the remote: Down, Right to ■ Stop, Enter → stopped. Play another video, Down → the focus is on ⏯ (not ■); OK pauses. Same after ← (minimize) and back to the player.
+- [ ] **Detail page after a film's end (2026-11-17, review).** Open a film's page, play it (or skip to its last minutes) and let it end with nothing next → back on the page, Resume is gone, the film shows as watched and the focus is on Play. Log (Debug): `detail: refreshed <id> after playback`.
 
 ---
 

@@ -48,7 +48,8 @@
 //                           the natural-end advance (resolve_true_next_episode, EOF-before-fetch
 //                           fallback; duration guard: an EOF far short of the duration is never a
 //                           real end); the song/playlist/queue step is queue.rs's peek + commit,
-//                           the same as the gapless path
+//                           the same as the gapless path; after the stop report the Detail page is
+//                           refreshed if it's shown again (detail::refresh_after_playback)
 //   loaded_since/loaded_ok  time since mpv's FileLoaded — chapters, tracks, Branch B and the skip-segment
 //                           check key off it, not play_start (before FileLoaded time-pos reads a fake 0)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2221,6 +2222,13 @@ fn on_natural_end(t: &Tick) {
             if let Err(e) = cli.report_playback_stopped(&id, final_ticks).await {
                 warn!("report_playback_stopped (natural end) failed: {e}");
             }
+            // A film watched to the end from its page: the page comes back — Resume gone, played.
+            crate::detail::refresh_after_playback(
+                Arc::clone(&cli),
+                Arc::clone(&state_home),
+                ww_home.clone(),
+                rth_home.clone(),
+            );
             let home_data = fetch_home_data(&cli, Some(&state_home)).await;
             let sections = home_data_sections(&home_data);
             let ww2 = ww_home.clone();

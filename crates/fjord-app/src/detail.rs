@@ -17,7 +17,9 @@
 //                       Resume, Series →, Trailer when "ok", ♥, ✓) — read from AppState.detail-buttons,
 //                       the list detail.slint mounts them by; a focused button that went away
 //                       moves to the one before it (keys::settle)
-//   refresh_user_data   after playback (do_stop_playback, once the stop is reported): resume
+//   refresh_after_playback  after a stop report (do_stop_playback and the natural end): runs
+//                       refresh_user_data when the Detail page is shown again
+//   refresh_user_data   after playback (refresh_after_playback, once the stop is reported): resume
 //                       position/label/progress, end time, played, favorite from the server, so
 //                       the page shown again doesn't resume from where it was opened
 //   handle_key          rows: 0 header, 1 cast, 2 collection, 3 similar, 4 recommended (only
@@ -736,10 +738,29 @@ pub(crate) fn fix_trailer_focus(g: &AppState) {
     ));
 }
 
+/// After a playback's stop report — a stop (do_stop_playback) or the end of the file
+/// (on_natural_end): refresh_user_data for the Detail page if it's the one shown again. From a
+/// Tokio task; the page check runs on the UI thread.
+pub(crate) fn refresh_after_playback(
+    client: Arc<fjord_api::JellyfinClient>,
+    state: Arc<Mutex<FjordState>>,
+    ww: slint::Weak<MainWindow>,
+    rt: tokio::runtime::Handle,
+) {
+    let _ = slint::invoke_from_event_loop(move || {
+        let Some(w) = ww.upgrade() else { return };
+        let g = AppState::get(&w);
+        let detail_id = g.get_detail_id().to_string();
+        if g.get_show_detail() && !detail_id.is_empty() {
+            rt.spawn(refresh_user_data(client, state, ww, detail_id));
+        }
+    });
+}
+
 /// After playback: the Detail page's resume position, played/favorite and end time again from the
 /// server. They're read when the page opens, so a page shown again after playback offered "Resume
-/// from" the old position — and Resume started there (2026-11-13). From do_stop_playback, once the
-/// stop is reported; only while that page still shows `id`. Session-guarded.
+/// from" the old position — and Resume started there (2026-11-13). From refresh_after_playback, once
+/// the stop is reported; only while that page still shows `id`. Session-guarded.
 pub(crate) async fn refresh_user_data(
     client: Arc<fjord_api::JellyfinClient>,
     state: Arc<Mutex<FjordState>>,
