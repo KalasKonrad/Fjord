@@ -60,7 +60,8 @@
 //                         buffering-active/pct, playback-stalled, buffered-pos,
 //                         playback-total-secs, track panels; chapter-marks/-osd/-entries, current-chapter,
 //                         chapter-prev/next/-jump; delay-osd-*, sub/audio-delay-ms + inc/dec;
-//                         osd-focused + osd-buttons (the controls bar with the remote) + osd-press(id)
+//                         osd-focused + osd-buttons (the controls bar with the remote) + osd-press(id),
+//                         osd-prompt-up / osd-ring(id) (no bar ring while a skip prompt or Up Next shows)
 //                         (what a bar button does — the mouse and Enter both press through it)
 //   Detail page           detail-id/-item-type/-resume-secs/-title/-tagline/-studio/-is-favorite/-has-played,
 //                         detail-focused-row/-btn, detail-cast/-similar/-collection/-recommended (+ -focused),
@@ -994,6 +995,12 @@ export global AppState {
     // 4 ■ Stop, 10 Ch ▾, 11 Sync ▾, 12 Sub ▾, 13 Audio ▾, 14 Video ▾, 15 Stats. osd-buttons is the row in
     // on-screen order — player.slint mounts the Ch button by osd-btn-chapters, keys/player.rs walks it.
     in-out property <int> osd-focused: -1;
+    // A skip prompt or Up Next takes Left/Right/Enter first (keys/player.rs), so while one shows the
+    // bar's ring is hidden and Down doesn't focus it — one ring on screen, where the keys go.
+    out property <bool> osd-prompt-up: show-skip-timed || show-skip-segment || show-next-ep-banner;
+    public pure function osd-ring(id: int) -> bool {
+        osd-focused == id && !osd-prompt-up
+    }
     out property <bool> osd-btn-chapters: chapter-entries.length > 0;
     out property <[ZoneSlot]> osd-buttons: [
         { id: 0, stop: true },

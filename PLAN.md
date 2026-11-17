@@ -29,6 +29,7 @@ Version history: [CHANGELOG.md](CHANGELOG.md) (git tags `v0.1.0`–`v0.5.1`). Im
 - [ ] **Discover Retry with Back (2026-11-17, review).** Seerr stopped: Discover → Right to Retry → Back → the sidebar has the focus (as with Left). Retry focused, then click another tab (Home) with the mouse → the sidebar's highlight is there with the remote. Retry with Enter while Seerr is still down → the keys keep working while it loads.
 - [ ] **Sync panel with the remote (2026-11-17, review).** HTPC with the pad: during a film, Down, Right to Sync ▾, OK → the panel opens with a ring on Sub −100ms; OK → "−100 ms"; Right → +100ms, OK → back to 0; Down → the Audio row; OK changes the audio delay (the speech moves against the picture). Back closes the panel with the bar's focus still on Sync ▾. A mouse click on a −/+ button moves the ring there.
 - [ ] **Pad buttons in search fields (2026-11-17, review).** With the pad: a library's search (Up to the bar above the grid), Browse All's search and Discover's search — X, Y, Start, LB/RB type nothing; the D-pad, A and B work as before. On the posters again, X opens the context menu and Y jumps to search as before. Log (Debug): `gamepad: … skipped — the library search has the keys`.
+- [ ] **One ring with Up Next (2026-11-17, review).** HTPC with the pad: when Up Next (or Skip Intro / Skip · Don't Skip) shows, press Down → the controls come up with no ring on the bar, only on the prompt's button; OK presses that. After the prompt is gone (Keep Watching, or skipped), Down → ⏯ as usual.
 
 ---
 

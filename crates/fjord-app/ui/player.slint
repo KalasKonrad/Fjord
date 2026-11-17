@@ -31,7 +31,8 @@
 //                         display-pos = drag-ratio | seek-bar-pos (accumulation) | playback-pos.
 //                         Trickplay thumbnail (trickplay-has-thumb): above the hover tooltip, or
 //                         above the bar at the D-pad seek target while seek-osd-visible.
-//                         the remote's focus: AppState.osd-focused (cleared when the bar hides), each
+//                         the remote's focus: AppState.osd-focused (cleared when the bar hides; drawn
+//                         through AppState.osd-ring — none while a skip prompt or Up Next shows), each
 //                         button presses through AppState.osd-press(id) (click and Enter alike).
 //                         transport left | Ch ▾ (panel-id=4, conditional) | Sync ▾ (panel-id=5) |
 //                         Sub ▾ (1) | Audio ▾ (2) | Video ▾ (3) | Stats right (full only).
@@ -809,7 +810,7 @@ export component PlayerScreen inherits Rectangle {
                         on-dark: true;
                         text: "← Back";
                         width: 76px * AppState.text-scale;
-                        kbd-focused: AppState.osd-focused == 0;
+                        kbd-focused: AppState.osd-ring(0);
                         clicked => { AppState.osd-press(0); }
                     }
 
@@ -818,7 +819,7 @@ export component PlayerScreen inherits Rectangle {
                         icon-left: "◀◀";
                         text: "30s";
                         width: 80px * AppState.text-scale;
-                        kbd-focused: AppState.osd-focused == 1;
+                        kbd-focused: AppState.osd-ring(1);
                         clicked => { AppState.osd-press(1); }
                     }
 
@@ -827,7 +828,7 @@ export component PlayerScreen inherits Rectangle {
                         icon-left: AppState.is-paused ? "▶" : "⏸";
                         text: AppState.is-paused ? "Play" : "Pause";
                         width: 80px * AppState.text-scale;
-                        kbd-focused: AppState.osd-focused == 2;
+                        kbd-focused: AppState.osd-ring(2);
                         clicked => { AppState.osd-press(2); }
                     }
 
@@ -836,7 +837,7 @@ export component PlayerScreen inherits Rectangle {
                         text: "30s";
                         icon-right: "▶▶";
                         width: 80px * AppState.text-scale;
-                        kbd-focused: AppState.osd-focused == 3;
+                        kbd-focused: AppState.osd-ring(3);
                         clicked => { AppState.osd-press(3); }
                     }
 
@@ -846,7 +847,7 @@ export component PlayerScreen inherits Rectangle {
                         text: "Stop";
                         width: 72px * AppState.text-scale;
                         danger: true;
-                        kbd-focused: AppState.osd-focused == 4;
+                        kbd-focused: AppState.osd-ring(4);
                         clicked => { AppState.osd-press(4); }
                     }
                 }
@@ -860,7 +861,7 @@ export component PlayerScreen inherits Rectangle {
                         text: "Ch";
                         icon-right: "▾";
                         width: 60px * AppState.text-scale;
-                        kbd-focused: AppState.osd-focused == 10;
+                        kbd-focused: AppState.osd-ring(10);
                         clicked => { AppState.osd-press(10); }
                     }
                     FjordButton {
@@ -868,7 +869,7 @@ export component PlayerScreen inherits Rectangle {
                         text: "Sync";
                         icon-right: "▾";
                         width: 70px * AppState.text-scale;
-                        kbd-focused: AppState.osd-focused == 11;
+                        kbd-focused: AppState.osd-ring(11);
                         clicked => { AppState.osd-press(11); }
                     }
 
@@ -877,7 +878,7 @@ export component PlayerScreen inherits Rectangle {
                         text: "Sub";
                         icon-right: "▾";
                         width: 68px * AppState.text-scale;
-                        kbd-focused: AppState.osd-focused == 12;
+                        kbd-focused: AppState.osd-ring(12);
                         clicked => { AppState.osd-press(12); }
                     }
 
@@ -886,7 +887,7 @@ export component PlayerScreen inherits Rectangle {
                         text: "Audio";
                         icon-right: "▾";
                         width: 76px * AppState.text-scale;
-                        kbd-focused: AppState.osd-focused == 13;
+                        kbd-focused: AppState.osd-ring(13);
                         clicked => { AppState.osd-press(13); }
                     }
 
@@ -895,7 +896,7 @@ export component PlayerScreen inherits Rectangle {
                         text: "Video";
                         icon-right: "▾";
                         width: 76px * AppState.text-scale;
-                        kbd-focused: AppState.osd-focused == 14;
+                        kbd-focused: AppState.osd-ring(14);
                         clicked => { AppState.osd-press(14); }
                     }
 
@@ -903,7 +904,7 @@ export component PlayerScreen inherits Rectangle {
                         on-dark: true;
                         text: AppState.stats-visible ? "Hide Stats" : "Stats";
                         width: 82px * AppState.text-scale;
-                        kbd-focused: AppState.osd-focused == 15;
+                        kbd-focused: AppState.osd-ring(15);
                         clicked => { AppState.osd-press(15); }
                     }
                 }

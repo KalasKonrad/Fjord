@@ -157,7 +157,10 @@ pub(crate) fn dispatch_player(action: Action, window: &crate::MainWindow) -> boo
     // (osd-focused -1) and the button row (Down lands on ⏯); while a button has the focus,
     // Left/Right move along the row and Enter presses it (AppState.osd-press — the mouse's path
     // too). OK anywhere else — the controls hidden or the seek bar — is play/pause (P2).
-    let osd = if g.get_controls_visible() {
+    // A skip prompt or Up Next on screen has the keys (above): the bar shows no ring then
+    // (AppState.osd-ring) and Down doesn't give it one.
+    let prompt_up = g.get_osd_prompt_up();
+    let osd = if g.get_controls_visible() && !prompt_up {
         g.get_osd_focused()
     } else {
         -1
@@ -168,7 +171,7 @@ pub(crate) fn dispatch_player(action: Action, window: &crate::MainWindow) -> boo
             return true;
         }
         Action::Down => {
-            if osd < 0 {
+            if osd < 0 && !prompt_up {
                 g.set_osd_focused(2);
             }
             return true;
@@ -553,6 +556,28 @@ mod tests {
         assert_eq!(np_down(2), Some(6));
         assert_eq!(np_down(0), None);
         assert_eq!(np_down(8), None);
+    }
+
+    /// Up Next (or a skip prompt) has the keys: Down brings the controls up without a bar ring, so
+    /// only the prompt's button is lit; once it's gone, Down focuses ⏯ as usual.
+    #[test]
+    fn a_prompt_keeps_the_bar_unfocused() {
+        i_slint_backend_testing::init_no_event_loop();
+        let w = crate::MainWindow::new().unwrap();
+        let g = crate::AppState::get(&w);
+        g.set_is_playing(true);
+        g.set_controls_visible(true);
+        g.set_show_next_ep_banner(true);
+        dispatch_player(Action::Down, &w);
+        assert_eq!(g.get_osd_focused(), -1);
+        // A bar focus from before the banner showed isn't drawn while it's there.
+        g.set_osd_focused(4);
+        assert!(!g.invoke_osd_ring(4));
+        g.set_show_next_ep_banner(false);
+        assert!(g.invoke_osd_ring(4));
+        g.set_osd_focused(-1);
+        dispatch_player(Action::Down, &w);
+        assert_eq!(g.get_osd_focused(), 2);
     }
 
     /// The Sync panel with the remote: Sync ▾ opens it on Sub −; Right/Down/Left/Up walk the four
