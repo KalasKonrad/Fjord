@@ -14,8 +14,8 @@
 //                        Keyboard (keys.rs's show_profile_picker tier): profile-picker-section =
 //                        row, profile-picker-cursor = column (Left/Right clamped in the row,
 //                        Up/Down between sections keep the column); Up from the tiles → Back,
-//                        Down → Quit. Under the tiles: the error, and "Can't reach the Jellyfin
-//                        server — retrying…" while AppState.picker-server-unreachable.
+//                        Down → Quit. Under the tiles: the error, or "Can't reach the Jellyfin
+//                        server — retrying…" while AppState.picker-server-unreachable and no error.
 //                        PIN entry: a layered sub-state (show-profile-pin-entry) — dim backdrop +
 //                        box with VirtualKeyboard (numeric) and a Cancel button. Loading overlay
 //                        (profile-picker-loading) declared last, over tiles and PIN box.
@@ -241,7 +241,8 @@ export component ProfilePickerScreen inherits Rectangle {
             font-size: Theme.fs-md * AppState.text-scale;
             horizontal-alignment: center;
         }
-        if AppState.picker-server-unreachable: Text {
+        // One line at a time: an error (the answer to picking a profile) takes this one's place.
+        if AppState.picker-server-unreachable && AppState.profile-picker-error == "": Text {
             text: "Can't reach the Jellyfin server — retrying…";
             color: Theme.text-muted;
             font-size: Theme.fs-md * AppState.text-scale;
