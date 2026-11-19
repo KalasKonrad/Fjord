@@ -1335,7 +1335,6 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
- "thiserror 2.0.18",
  "tokio",
  "tracing",
  "url",
@@ -1391,7 +1390,6 @@ dependencies = [
  "libmpv2-sys",
  "serde",
  "serde_json",
- "thiserror 2.0.18",
  "tracing",
 ]
 
@@ -1404,7 +1402,6 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
- "thiserror 2.0.18",
  "tokio",
  "tracing",
  "url",

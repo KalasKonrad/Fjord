@@ -6,7 +6,6 @@ authors.workspace = true
 
 [dependencies]
 anyhow.workspace = true
-thiserror.workspace = true
 tracing.workspace = true
 # mpv's track-list / chapter-list arrive as JSON (Player's observed properties)
 serde.workspace = true
