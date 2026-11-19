@@ -288,6 +288,9 @@ export global AppState {
     in-out property <int> account-picker-cursor: 0;
     in-out property <string> account-picker-error: "";
     in-out property <bool> account-picker-loading: false;
+    // The loading overlay's line: "Signing in…", or "Connecting…" while profile.rs checks a chosen
+    // account's server first.
+    in-out property <string> account-picker-loading-text: "Signing in…";
     // Same "reopened from a live session vs. the startup-only gate" shape
     // profile-picker-cancelable already established.
     in-out property <bool> account-picker-cancelable: false;

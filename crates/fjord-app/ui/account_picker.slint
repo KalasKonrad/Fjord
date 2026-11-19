@@ -6,7 +6,8 @@
 //   AccountPickerScreen  the tier above ProfilePickerScreen, shown when 2+ ACCOUNTS are known (a
 //                        plain login, or a Bonfire household via its master — profile.rs's
 //                        AccountGroup). Centered tile row (no scrolling) + "+ Add Account" tile +
-//                        a loading overlay while a switch runs. A single-profile account switches
+//                        a loading overlay while a switch runs (account-picker-loading-text: "Signing
+//                        in…", or "Connecting…" while a chosen account's server is checked first). A single-profile account switches
 //                        directly (or opens ProfilePickerScreen's PIN modal — no account-level
 //                        PIN); 2+ profiles open ProfilePickerScreen scoped to it. Kept separate from
 //                        ProfilePickerScreen on purpose (different data and per-tile behaviour).
@@ -286,7 +287,7 @@ export component AccountPickerScreen inherits Rectangle {
             LoadingSpinner { }
 
             Text {
-                text: "Signing in…";
+                text: AppState.account-picker-loading-text;
                 color: Theme.text;
                 font-size: Theme.fs-base * AppState.text-scale;
                 horizontal-alignment: center;

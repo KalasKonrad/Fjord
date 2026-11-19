@@ -21,7 +21,8 @@
 //                       remember_login gate for picker switches (not for the account already in use);
 //                       require_login_for_account mirrors StartupGate::RequireLogin's dispatch
 //   on_profile_picker_select / on_account_picker_select / on_profile_pin_key  picker callbacks
-//                       (an account whose server didn't answer the picker's check isn't opened)
+//                       (an account whose server didn't answer the picker's check isn't opened; one
+//                       chosen before its check answered is checked first, "Connecting…")
 //                       (need state/rt, which keys.rs's raw-key tiers don't hold)
 //   on_account_picker_add_account / on_settings_add_account / on_cancel_add_account  Add Account
 //                       → LoginScreen in append mode; login-append-source decides where Back returns
@@ -57,7 +58,7 @@
 //   wire_picker_server_watch  1 s timer: while a picker shows, checks its servers one by one with
 //                       /System/Info/Public (picker_servers / check_servers, unit-tested) — once when the
 //                       picker or its account changes, every 5 s while one doesn't answer → the ones down
-//                       in FjordState.picker_unreachable_servers, the line in AppState.picker-server-
+//                       in FjordState.picker_server_status, the line in AppState.picker-server-
 //                       unreachable (the profile picker's server, or all on the account picker)
 //   open_bonfire_group_screen / on_bonfire_group_generate/-join_submit/-kick/-leave/-delete/
 //   -settings_changed / existing_bonfire_group_zones  Settings → Profiles → "Bonfire Group"
@@ -809,7 +810,7 @@ struct PickerServerWatch {
 /// someone is picked. A 1 s timer starts a check when a picker (or another account's profiles)
 /// appears and every 5 s while a server doesn't answer; all answering ends it until the picker
 /// changes. Each server is checked on its own with `/System/Info/Public` (no sign-in; Jellyfin
-/// answers it from memory). The ones that don't answer go into FjordState.picker_unreachable_servers
+/// answers it from memory). What each answered goes into FjordState.picker_server_status
 /// (the account picker won't open such an account — on_account_picker_select);
 /// AppState.picker-server-unreachable — a line under the tiles — is the profile picker's server
 /// down, or every server on the account picker.
@@ -847,7 +848,7 @@ pub(crate) fn wire_picker_server_watch(
                     ..Default::default()
                 };
                 g.set_picker_server_unreachable(false);
-                state.lock().unwrap().picker_unreachable_servers.clear();
+                state.lock().unwrap().picker_server_status.clear();
             }
             if picker.is_none()
                 || wt.answered
@@ -879,8 +880,7 @@ pub(crate) fn wire_picker_server_watch(
                         .filter(|(_, up)| !up)
                         .map(|(s, _)| s)
                         .collect();
-                    state.lock().unwrap().picker_unreachable_servers =
-                        down.iter().map(|s| s.to_string()).collect();
+                    state.lock().unwrap().picker_server_status = results.iter().cloned().collect();
                     if down.is_empty() {
                         wt.answered = true;
                         if g.get_picker_server_unreachable() {
@@ -1324,6 +1324,7 @@ pub(crate) fn open_account_picker(
     g.set_account_picker_cursor(0);
     g.set_account_picker_error(ss(""));
     g.set_account_picker_loading(false);
+    g.set_account_picker_loading_text(ss("Signing in…"));
     g.set_account_picker_cancelable(cancelable);
     g.set_account_picker_quit_focused(false);
     g.set_account_picker_back_focused(false);
@@ -1368,17 +1369,51 @@ pub(crate) fn on_account_picker_select(
         .first()
         .map(|r| r.server_url.clone())
         .unwrap_or_default();
-    if state
+    let status = state
         .lock()
         .unwrap()
-        .picker_unreachable_servers
-        .contains(&server)
-    {
-        debug!("on_account_picker_select({root_id}): its server doesn't answer — staying");
-        g.set_account_picker_error(ss(
-            "Can't reach this account's Jellyfin server — try again in a moment",
-        ));
-        return;
+        .picker_server_status
+        .get(&server)
+        .copied();
+    match status {
+        Some(false) => {
+            debug!("on_account_picker_select({root_id}): its server doesn't answer — staying");
+            g.set_account_picker_error(ss(
+                "Can't reach this account's Jellyfin server — try again in a moment",
+            ));
+            return;
+        }
+        // Chosen before the picker's check answered: check this server now, then choose again —
+        // the same outcome however quickly someone picks.
+        None if !server.is_empty() => {
+            debug!("on_account_picker_select({root_id}): its server isn't checked yet — checking");
+            g.set_account_picker_error(ss(""));
+            g.set_account_picker_loading_text(ss("Connecting…"));
+            g.set_account_picker_loading(true);
+            let device_id = state.lock().unwrap().config.device.device_id.clone();
+            let (state, video, ww) = (Arc::clone(state), Arc::clone(video), window.as_weak());
+            let (rt2, root_id) = (rt.clone(), root_id.to_string());
+            rt.spawn(async move {
+                let answered = server_answers(&server, device_id).await;
+                let _ = slint::invoke_from_event_loop(move || {
+                    let Some(w) = ww.upgrade() else { return };
+                    let g = AppState::get(&w);
+                    g.set_account_picker_loading(false);
+                    g.set_account_picker_loading_text(ss("Signing in…"));
+                    if !g.get_show_account_picker() {
+                        return;
+                    }
+                    state
+                        .lock()
+                        .unwrap()
+                        .picker_server_status
+                        .insert(server, answered);
+                    on_account_picker_select(&state, &video, &w, &rt2, root_id.into());
+                });
+            });
+            return;
+        }
+        _ => {}
     }
     if !already_active_account(state, &group.root_id)
         && let Some(root) = {
