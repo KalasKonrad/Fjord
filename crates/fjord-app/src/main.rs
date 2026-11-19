@@ -1028,6 +1028,13 @@ fn main() -> Result<()> {
         activity_clock.clone(),
     );
     std::mem::forget(idle_lock_timer);
+    // Whether the open picker's Jellyfin server answers (the pickers come from saved profiles).
+    let picker_server_timer = profile::wire_picker_server_watch(
+        window.as_weak(),
+        Arc::clone(&state),
+        rt.handle().clone(),
+    );
+    std::mem::forget(picker_server_timer);
 
     // ── random logo index — pick from available icons at startup ─────────────
     {

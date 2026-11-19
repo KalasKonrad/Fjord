@@ -289,6 +289,7 @@ pub(crate) fn reset_session_state(
         g.set_show_next_ep_banner(false);
         g.set_has_background_player(false);
         g.set_osd_focused(-1);
+        g.set_picker_server_unreachable(false);
         {
             let mut vs = video2.lock().unwrap();
             vs.playlist.clear();

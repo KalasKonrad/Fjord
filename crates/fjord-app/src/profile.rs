@@ -53,6 +53,9 @@
 //   wire_idle_lock_timer  15 s timer: once activity::ActivityClock::idle_for() exceeds the active
 //                       profile's lockout_minutes (Bonfire profile with has_pin), reset_session_state
 //                       + PIN picker (or require_login_for_account); unpaused playback counts as activity
+//   wire_picker_server_watch  1 s timer: while a picker shows, checks its server(s) with
+//                       /System/Info/Public (picker_servers / any_server_answers, unit-tested) — once
+//                       when it appears, every 5 s while none answers → AppState.picker-server-unreachable
 //   open_bonfire_group_screen / on_bonfire_group_generate/-join_submit/-kick/-leave/-delete/
 //   -settings_changed / existing_bonfire_group_zones  Settings → Profiles → "Bonfire Group"
 //                       (true master): host/join a cross-household group, Kick/Leave, visibility
@@ -777,6 +780,151 @@ pub(crate) fn open_profile_picker_with_pin(
     g.set_profile_pin_cancel_focused(false);
     state.lock().unwrap().profile_pin_buffer.clear();
     g.set_show_profile_pin_entry(true);
+}
+
+// ── wire_picker_server_watch ──────────────────────────────────────────────────
+/// A picker's server check: one after the picker appears, then every RETRY while it doesn't
+/// answer; each at most CHECK_CAP.
+const PICKER_SERVER_RETRY: std::time::Duration = std::time::Duration::from_secs(5);
+const PICKER_SERVER_CHECK_CAP: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// The watch's state, on the UI thread (behind an Arc only because the check's result comes back
+/// through invoke_from_event_loop). `generation` changes whenever a picker appears or goes, so a
+/// late answer for an earlier picker is dropped.
+#[derive(Default)]
+struct PickerServerWatch {
+    showing: bool,
+    generation: u32,
+    in_flight: bool,
+    answered: bool,
+    next: Option<std::time::Instant>,
+}
+
+/// While the account or profile picker shows: does its Jellyfin server answer?
+/// (AppState.picker-server-unreachable — a line under the tiles.) The pickers are built from the
+/// saved profiles alone, so without this nothing says the server is down until a profile is
+/// picked. A 1 s timer starts a check when a picker appears and every 5 s while the server doesn't
+/// answer; one answer ends it until a picker opens again. The check is `/System/Info/Public` (no
+/// sign-in; Jellyfin answers it from memory). The account picker's servers count as reachable when
+/// any of them answers.
+pub(crate) fn wire_picker_server_watch(
+    window_weak: slint::Weak<MainWindow>,
+    state: Arc<Mutex<FjordState>>,
+    rt_handle: tokio::runtime::Handle,
+) -> slint::Timer {
+    let watch: Arc<Mutex<PickerServerWatch>> = Arc::default();
+    let timer = slint::Timer::default();
+    timer.start(
+        slint::TimerMode::Repeated,
+        std::time::Duration::from_secs(1),
+        move || {
+            let Some(w) = window_weak.upgrade() else {
+                return;
+            };
+            let g = AppState::get(&w);
+            let showing = g.get_show_profile_picker() || g.get_show_account_picker();
+            let mut wt = watch.lock().unwrap();
+            if showing != wt.showing {
+                let generation = wt.generation.wrapping_add(1);
+                *wt = PickerServerWatch {
+                    showing,
+                    generation,
+                    ..Default::default()
+                };
+                g.set_picker_server_unreachable(false);
+            }
+            if !showing
+                || wt.answered
+                || wt.in_flight
+                || wt.next.is_some_and(|t| std::time::Instant::now() < t)
+            {
+                return;
+            }
+            let (servers, device_id) = picker_servers(&state, &g);
+            if servers.is_empty() {
+                return;
+            }
+            wt.in_flight = true;
+            let generation = wt.generation;
+            drop(wt);
+            let (watch, ww) = (Arc::clone(&watch), window_weak.clone());
+            rt_handle.spawn(async move {
+                let answered = any_server_answers(servers, device_id).await;
+                let _ = slint::invoke_from_event_loop(move || {
+                    let mut wt = watch.lock().unwrap();
+                    if wt.generation != generation {
+                        return;
+                    }
+                    wt.in_flight = false;
+                    let Some(w) = ww.upgrade() else { return };
+                    let g = AppState::get(&w);
+                    if answered {
+                        wt.answered = true;
+                        if g.get_picker_server_unreachable() {
+                            debug!("picker: the Jellyfin server answers again");
+                        }
+                    } else {
+                        wt.next = Some(std::time::Instant::now() + PICKER_SERVER_RETRY);
+                    }
+                    g.set_picker_server_unreachable(!answered);
+                });
+            });
+        },
+    );
+    timer
+}
+
+/// The servers the open picker's profiles are on (the profile picker: its account's root; the
+/// account picker: every account's root), and the device id for the request.
+fn picker_servers(state: &Arc<Mutex<FjordState>>, g: &AppState) -> (Vec<url::Url>, String) {
+    let s = state.lock().unwrap();
+    let profiles = &s.config.profiles;
+    let mut urls: Vec<String> = if g.get_show_profile_picker() {
+        let root = g.get_profile_picker_account_root_id().to_string();
+        profiles
+            .iter()
+            .filter(|p| p.user_id == root)
+            .map(|p| p.server_url.clone())
+            .collect()
+    } else {
+        group_into_accounts(profiles)
+            .iter()
+            .filter_map(|a| a.profiles.first())
+            .map(|r| r.server_url.clone())
+            .collect()
+    };
+    urls.sort();
+    urls.dedup();
+    let servers = urls
+        .iter()
+        .filter_map(|u| url::Url::parse(u).ok())
+        .collect();
+    (servers, s.config.device.device_id.clone())
+}
+
+/// Whether one of `servers` answers `/System/Info/Public` within PICKER_SERVER_CHECK_CAP.
+async fn any_server_answers(servers: Vec<url::Url>, device_id: String) -> bool {
+    for server in servers {
+        let host = server.host_str().unwrap_or_default().to_string();
+        let client = match fjord_api::JellyfinClient::new(
+            server,
+            String::new(),
+            String::new(),
+            device_id.clone(),
+        ) {
+            Ok(c) => c,
+            Err(e) => {
+                debug!("picker: no client for {host}: {e:#}");
+                continue;
+            }
+        };
+        match tokio::time::timeout(PICKER_SERVER_CHECK_CAP, client.get_system_info()).await {
+            Ok(Ok(_)) => return true,
+            Ok(Err(e)) => debug!("picker: {host} doesn't answer: {}", crate::short_error(&e)),
+            Err(_) => debug!("picker: {host} didn't answer within {PICKER_SERVER_CHECK_CAP:?}"),
+        }
+    }
+    false
 }
 
 /// Inactivity auto-lock (see this file's TOC): a repeating `slint::Timer` like
@@ -2565,6 +2713,35 @@ pub(crate) fn wire_bonfire_group(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The pickers' server check: a server that refuses the connection doesn't answer, one that
+    /// serves /System/Info/Public does — and one answering is enough.
+    #[tokio::test]
+    async fn the_picker_server_check_needs_one_answer() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let closed = std::net::TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port();
+        let down = url::Url::parse(&format!("http://127.0.0.1:{closed}")).unwrap();
+        assert!(!any_server_answers(vec![down.clone()], "dev".into()).await);
+        // A one-shot server answering like Jellyfin's public endpoint.
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let up = url::Url::parse(&format!("http://{}", listener.local_addr().unwrap())).unwrap();
+        tokio::spawn(async move {
+            let (mut sock, _) = listener.accept().await.unwrap();
+            let mut buf = [0u8; 2048];
+            let _ = sock.read(&mut buf).await;
+            let body = r#"{"ServerName":"s","Version":"10.11.0"}"#;
+            let reply = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            );
+            sock.write_all(reply.as_bytes()).await.unwrap();
+        });
+        assert!(any_server_answers(vec![down, up], "dev".into()).await);
+    }
 
     /// A failed sign-in's message: a server that doesn't answer says so (never "expired"), the
     /// rest is a short reason — no request URL or user id on screen.

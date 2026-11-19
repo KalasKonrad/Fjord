@@ -10,6 +10,8 @@
 //                        directly (or opens ProfilePickerScreen's PIN modal — no account-level
 //                        PIN); 2+ profiles open ProfilePickerScreen scoped to it. Kept separate from
 //                        ProfilePickerScreen on purpose (different data and per-tile behaviour).
+//                        Under the tiles: the error, and "Can't reach the Jellyfin server — retrying…"
+//                        while AppState.picker-server-unreachable.
 //                        Keyboard: Down from the tiles → Quit; Up → Back, shown only when opened
 //                        from a live session (account-picker-cancelable); Enter/Escape/Backspace on
 //                        Back close the picker and refocus() `fs`.
@@ -226,6 +228,12 @@ export component AccountPickerScreen inherits Rectangle {
         if AppState.account-picker-error != "": Text {
             text: AppState.account-picker-error;
             color: Theme.error;
+            font-size: Theme.fs-md * AppState.text-scale;
+            horizontal-alignment: center;
+        }
+        if AppState.picker-server-unreachable: Text {
+            text: "Can't reach the Jellyfin server — retrying…";
+            color: Theme.text-muted;
             font-size: Theme.fs-md * AppState.text-scale;
             horizontal-alignment: center;
         }

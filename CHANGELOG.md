@@ -23,6 +23,11 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **New: the profile and account pickers say when the Jellyfin server isn't answering.**
+  They're built from the profiles saved on the device, so they open even while the server is
+  down — now with "Can't reach the Jellyfin server — retrying…" under the tiles until it
+  answers again, instead of finding out only after picking someone.
+
 - **Fixed: a Jellyfin server that was down looked like an expired sign-in.** Choosing a
   profile then said its "saved sign-in has expired" and showed the raw error with the server
   address. It now says "Couldn't reach the Jellyfin server — try again in a moment"; "expired"

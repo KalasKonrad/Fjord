@@ -5,7 +5,8 @@
 //   Profile picker        show-profile-picker + profile-picker-sections ([ProfileSection] { header,
 //                         tiles }) + -section (row) / -cursor (column) / -error; section 0 = the
 //                         account's own household, further sections = Bonfire-linked households;
-//                         show-profile-pin-entry + profile-pin-target-id/-name/-value/-cursor/-error
+//                         show-profile-pin-entry + profile-pin-target-id/-name/-value/-cursor/-error;
+//                         picker-server-unreachable (both pickers' "Can't reach the server" line)
 //   Account picker        show-account-picker + account-picker-accounts ([AccountTile]) — above the
 //                         profile picker, only with 2+ accounts; account-picker-select/-add-account;
 //                         login-append-mode/-source/-server-prefill/-username-prefill/-remember thread
@@ -224,6 +225,9 @@ export global AppState {
     // Column within the focused section — see the block comment above.
     in-out property <int> profile-picker-cursor: 0;
     in-out property <string> profile-picker-error: "";
+    // The open picker's Jellyfin server doesn't answer (profile.rs's wire_picker_server_watch keeps
+    // checking) — both pickers say so under the tiles.
+    in-out property <bool> picker-server-unreachable: false;
     // Section 0 is always scoped to one account (profile-picker-account-root-id),
     // not the flat Config.profiles list — see profile.rs::should_show_picker_at_startup.
     in-out property <string> profile-picker-account-root-id: "";
