@@ -117,6 +117,7 @@ pub(crate) fn reset_session_state(
     // Admin capability and per-profile PIN requirements must not leak into the next session,
     // even for the moment before spawn_jellyfin_admin_check re-fetches the admin flag.
     s.live_requires_pin.clear();
+    s.picker_unreachable_servers.clear();
     s.jellyfin_is_server_admin = false;
     drop(s);
 

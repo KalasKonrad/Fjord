@@ -49,7 +49,7 @@
 //                   series/episode caches + series_season_generation, keybindings,
 //                   audio_devices / system_fonts (startup fetches), movie_collections,
 //                   remembered_tracks, ws_abort, ws_connected / ws_last_keepalive_at (stall-recovery
-//                   budget), PIN buffers, live_requires_pin, available_plugins, the screen-open
+//                   budget), PIN buffers, live_requires_pin, picker_unreachable_servers, available_plugins, the screen-open
 //                   BoundedCaches (persisted together) + person caches, hero_discover_cache, Seerr state
 //                   (client, regions, languages, permissions, watchlist/calendar/known requests,
 //                   jellyfin_watchlist_ids + its resync generation), screen_revalidate_last_run,
@@ -2138,6 +2138,10 @@ pub(crate) struct FjordState {
     // decision prefers it over has_pin and falls back to has_pin when nothing was
     // captured yet.
     pub live_requires_pin: std::collections::HashMap<String, bool>,
+    // Session-only: the servers (Config.profiles' server_url as stored) the open picker's check
+    // found not answering (profile.rs's wire_picker_server_watch) — choosing an account on such a
+    // server stays on the account picker. Cleared whenever the picker or its account changes.
+    pub picker_unreachable_servers: std::collections::HashSet<String>,
     // Plugin names installed on the server, fetched once per login (GET /Plugins) —
     // Bonfire's quick presence check before /plugins/profiles/list. By NAME, not GUID
     // (GUIDs weren't verifiable here). Session-scoped, cleared by reset_session_state.
@@ -2422,6 +2426,7 @@ impl FjordState {
             profile_edit_master_pin_buffer: String::new(),
             manage_profiles_cache: vec![],
             live_requires_pin: std::collections::HashMap::new(),
+            picker_unreachable_servers: std::collections::HashSet::new(),
             keybindings: load_keybindings(),
             all_movies: vec![],
             all_series: vec![],

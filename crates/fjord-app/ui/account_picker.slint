@@ -10,8 +10,10 @@
 //                        directly (or opens ProfilePickerScreen's PIN modal — no account-level
 //                        PIN); 2+ profiles open ProfilePickerScreen scoped to it. Kept separate from
 //                        ProfilePickerScreen on purpose (different data and per-tile behaviour).
-//                        Under the tiles: the error, and "Can't reach the Jellyfin server — retrying…"
-//                        while AppState.picker-server-unreachable.
+//                        Under the tiles: the error (also "Can't reach this account's Jellyfin server"
+//                        when a chosen account's server didn't answer — profile.rs stays here), and
+//                        "Can't reach the Jellyfin server — retrying…" while no account's server answers
+//                        (AppState.picker-server-unreachable).
 //                        Keyboard: Down from the tiles → Quit; Up → Back, shown only when opened
 //                        from a live session (account-picker-cancelable); Enter/Escape/Backspace on
 //                        Back close the picker and refocus() `fs`.
