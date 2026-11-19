@@ -28,7 +28,9 @@
 //                       sub-profile; the target's own token, re-validated by check_auth, for a plain
 //                       account), only then reset_session_state + finish_session_setup — a failed
 //                       switch leaves the current session intact; clear_loading clears both pickers'
-//                       loading/error and the PIN buffer on every failure path
+//                       loading/error and the PIN buffer on every failure path; switch_error_message
+//                       is what they show (no URL; "expired" only on a 401, a server that doesn't
+//                       answer says so — unit-tested)
 //   sync_bonfire_subprofiles  after every session start: GET /list, upsert reported profiles
 //                       (sub-profile vs. group account by bp.is_master; skips the master's own entry
 //                       and independently-known accounts), prune vanished ones, record linked
@@ -1335,6 +1337,24 @@ pub(crate) fn on_profile_pin_key(
     }
 }
 
+/// What the pickers (and the PIN box) show when a sign-in fails; the whole error is in the log.
+/// Never the raw error: it carries the request URL with the user id (CLAUDE.md), and "expired" is
+/// only for the server answering 401 — a server that's down or doesn't answer says so.
+fn switch_error_message(e: &anyhow::Error) -> String {
+    // Bonfire rate-limits /switch and /verify-pin (5 failures / 15 min) — reachable from manual
+    // PIN entry and the idle-lock unlock.
+    if crate::is_rate_limited(e) {
+        return "Too many attempts — please wait a few minutes and try again".into();
+    }
+    // A request that got no answer at all (refused, timed out): the server isn't there.
+    if e.downcast_ref::<reqwest::Error>()
+        .is_some_and(|re| re.status().is_none())
+    {
+        return "Couldn't reach the Jellyfin server — try again in a moment".into();
+    }
+    format!("Couldn't sign in — {}", crate::short_error(e))
+}
+
 /// The real switch. Resolves a valid token for the target BEFORE tearing
 /// down the current session (`reset_session_state`) — so a failed switch
 /// (wrong PIN, a stale stored token for an independent account, a removed
@@ -1424,8 +1444,15 @@ pub(crate) fn switch_to_profile(
                 let probe = fjord_api::JellyfinClient::new(
                     server_url, target.user_id.clone(), target.token.clone(), device_id.clone(),
                 )?;
-                probe.check_auth().await
-                    .map_err(|e| anyhow!("saved sign-in for this profile has expired: {e}"))?;
+                // Only the server saying no (401) means the saved sign-in is gone; anything else
+                // (the server down, no answer in time) keeps the request error for the message.
+                probe.check_auth().await.map_err(|e| {
+                    if crate::is_unauthorized(&e) {
+                        anyhow!("saved sign-in for this profile has expired")
+                    } else {
+                        e
+                    }
+                })?;
                 Ok((target.server_url.clone(), target.token.clone()))
             }
         }.await;
@@ -1434,15 +1461,7 @@ pub(crate) fn switch_to_profile(
             Ok(v) => v,
             Err(e) => {
                 warn!("switch_to_profile({target_user_id}) failed after {:.2}s: {e:#}", started.elapsed().as_secs_f64());
-                // Bonfire rate-limits /switch and /verify-pin (5 failures / 15 min): show a readable
-                // message instead of a raw 429 — reachable from manual PIN entry and the idle-lock
-                // unlock.
-                let msg = if crate::is_rate_limited(&e) {
-                    "Too many attempts — please wait a few minutes and try again".to_string()
-                } else {
-                    format!("{e:#}")
-                };
-                clear_loading(&state, &ww, Some(msg));
+                clear_loading(&state, &ww, Some(switch_error_message(&e)));
                 return;
             }
         };
@@ -2546,6 +2565,33 @@ pub(crate) fn wire_bonfire_group(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A failed sign-in's message: a server that doesn't answer says so (never "expired"), the
+    /// rest is a short reason — no request URL or user id on screen.
+    #[tokio::test]
+    async fn a_failed_sign_in_says_why_without_the_url() {
+        // A port nothing listens on: the request is refused, like a server that's down.
+        let port = std::net::TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port();
+        let refused = reqwest::get(format!("http://127.0.0.1:{port}/Items?userId=abc"))
+            .await
+            .unwrap_err();
+        assert_eq!(
+            switch_error_message(&refused.into()),
+            "Couldn't reach the Jellyfin server — try again in a moment"
+        );
+        assert_eq!(
+            switch_error_message(&anyhow!("saved sign-in for this profile has expired")),
+            "Couldn't sign in — saved sign-in for this profile has expired"
+        );
+        let msg = switch_error_message(&anyhow!(
+            "something failed (http://server/Items?userId=abc)"
+        ));
+        assert!(!msg.contains("http") && !msg.contains("userId"), "{msg}");
+    }
 
     /// "Copy settings from…" labels: the active profile is left out, unique names stay plain, a
     /// name shared across households gets the account's name, and every label maps back to one

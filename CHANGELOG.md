@@ -23,6 +23,11 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Fixed: a Jellyfin server that was down looked like an expired sign-in.** Choosing a
+  profile then said its "saved sign-in has expired" and showed the raw error with the server
+  address. It now says "Couldn't reach the Jellyfin server — try again in a moment"; "expired"
+  only when the server really turns the sign-in down.
+
 - **Fixed: a round of small fixes from a code review before the release.**
   - After stopping (or minimizing) a video with the remote on the controls bar, the next video's bar started on that same button, so OK could stop it; it starts on ⏯ again.
   - A film watched to the end from its page left that page offering "Resume from" where it was opened; it's refreshed after the end too, not only after a stop.
