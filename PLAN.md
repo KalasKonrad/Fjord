@@ -27,7 +27,6 @@ Nothing open (2026-11-21).
 
 ## Pending
 
-- **CLAUDE.md rule for sizes (from 9d):** font sizes and corner radii only from `Theme` tokens (fs-*, radius-sm/radius/radius-lg; round things as half their size), spacing from the sp-* tokens where one fits — next to the existing "every colour from Theme" rule.
 
 ## Issues
 

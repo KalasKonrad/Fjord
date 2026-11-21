@@ -229,6 +229,8 @@ Needs `mpv`/libmpv (`pacman -S mpv`). Optional at runtime: `yt-dlp` (trailers), 
 - Every colour comes from `Theme` (theme.slint) — no hex colour anywhere else (only exception: the avatar palette in
   profile_edit.slint, which is stored data). Backdrops, OSD panels, shadows and text over images: `scrim*`, `osd-*`,
   `shadow*`, `hero-fade-*`, `text-bright`/`text-soft`; a missing role gets a new token.
+- Sizes come from `Theme`'s scales too: font sizes `fs-*` (10 … 64px), corner radii `radius-sm`/`radius`/`radius-lg`
+  (4/6/12px; a round thing is half its size), spacing and padding `sp-*` (2/4/8/12/14/20/32/48px) where one fits.
 - Two themes (`Theme.light`, per profile): the general tokens (`bg`, `surface*`, `text*`, `border*`, `row-*`, `accent`)
   switch. `text-bright`/`text-soft` (white) only over pictures, video or accent fills — on a plain surface use `text*`.
   What stays dark in the light theme (player, Now Playing, toasts) uses the `dark-*` tokens and `on-dark: true` on its
@@ -248,7 +250,7 @@ Needs `mpv`/libmpv (`pacman -S mpv`). Optional at runtime: `yt-dlp` (trailers), 
   `shown-nav`/`nav-fade` mechanism in `main.slint`.
 - `BrowseScreen`, `LibraryGrid`, `DiscoverScreen` stay mounted and toggle `visible:` (big lists built once).
 - Multiply every `animate` duration by `AppState.settings-animation-speed` (`settings-scroll-speed` for scrolling).
-- Font sizes under 24px are `Npx * AppState.text-scale` (Text size setting); a dashboard row's title + padding is
+- Font sizes under 24px are `Theme.fs-* * AppState.text-scale` (Text size setting); a dashboard row's title + padding is
   `AppState.row-chrome-h`, not a literal 56px. A fixed width around text is `Npx * AppState.text-scale` (buttons,
   labels, menus, dialogs); fixed heights need room for +50% (badges/pills: `Npx * AppState.text-scale`).
 - Icons: only glyphs covered by the bundled fonts in `assets/fonts` (Noto Sans Symbols 2/Math; Adwaita Sans
@@ -348,7 +350,7 @@ every commit.
   pre-built by `.github/workflows/build-release.yml` on the dev machine's self-hosted runner).
 
 ## Style
-- Layout comes from the formatters (above), never by hand. `anyhow::Result` at the top level, `thiserror` for library errors, no `unwrap()` in library code.
+- Layout comes from the formatters (above), never by hand. `anyhow::Result` throughout (the library crates too), no `unwrap()` in library code.
 - `fjord-api`, `fjord-player`, `fjord-seerr` never import Slint.
 - Edition 2024: nested `if let`s are let-chains (clippy `collapsible_if`); an `unsafe fn` body puts its unsafe
   calls in an explicit `unsafe {}` block with a `// SAFETY:` line.
