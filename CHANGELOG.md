@@ -23,203 +23,80 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
-- **New: the profile and account pickers say when the Jellyfin server isn't answering.**
-  They're built from the profiles saved on the device, so they open even while the server is
-  down — now with "Can't reach the Jellyfin server — retrying…" under the tiles until it
-  answers again, instead of finding out only after picking someone. On the account picker,
-  an account whose server doesn't answer isn't opened: it says so and you stay there.
+## [0.5.2] — 2026-11-21
 
-- **Fixed: a Jellyfin server that was down looked like an expired sign-in.** Choosing a
-  profile then said its "saved sign-in has expired" and showed the raw error with the server
-  address. It now says "Couldn't reach the Jellyfin server — try again in a moment"; "expired"
-  only when the server really turns the sign-in down.
+Game pads, a light theme, the desktop's media keys and a player you can work
+with just the remote — plus a regrouped Settings and an upscaler. The full
+story of each change is in `DEVLOG.md`.
 
-- **Fixed: a round of small fixes from a code review before the release.**
-  - After stopping (or minimizing) a video with the remote on the controls bar, the next video's bar started on that same button, so OK could stop it; it starts on ⏯ again.
-  - A film watched to the end from its page left that page offering "Resume from" where it was opened; it's refreshed after the end too, not only after a stop.
-  - On a film's page, the remote's focus on ← Back (or the overview) jumped to Play when the trailer check finished; it stays where it is.
-  - A direction held on the game pad when it switched off or was unplugged kept repeating until it came back.
-  - "HD video in 4K" with "Sync refresh rate" off could put HD video on a 4K mode at the desktop's rate (e.g. 4K@60). It now needs Sync refresh rate, and its row is grayed with that reason while it's off.
-  - With Seerr unreachable, Back did nothing on Discover's Retry button, and leaving Discover with the mouse could leave the sidebar without its highlight on the other tabs.
-  - The player's Sync ▾ panel (subtitle and audio delay) now works with the remote: Up/Down pick subtitles or audio, Left/Right the −100 ms / +100 ms button, OK presses it.
-  - Game pad buttons such as X, Y or Start typed a character into a search field ("c", "/", a space) instead of doing nothing there; while a text field or dialog has the keys they're ignored (the D-pad, A and B work as before).
-  - With Up Next or a skip prompt on screen, the controls bar could show a second focus ring (on ⏯) although OK went to the prompt; the bar shows none while a prompt is up.
-  - The desktop's media controls can now set Fjord's volume too (KDE Connect's volume slider, scrolling on KDE's media widget), with Fjord's volume overlay showing the new level.
+### New
 
-- **Fixed: Fjord could crash while quitting** on NVIDIA after playing a video.
-  It now closes the video surface and its HDR connection before the window's
-  connection to the desktop goes away.
+- **Game controller support:** an Xbox 360 pad (or another pad gilrs knows)
+  works like the remote — D-pad or left stick to move, A to select, B to go
+  back, and menu, search, play/pause, seeking and volume on the other buttons.
+  Its buttons show in Settings → Key Bindings and can be rebound. Pads can be
+  plugged in while Fjord runs.
+- **The player's controls work with the remote:** Up or Down brings them up,
+  Left/Right move along the buttons and Enter presses one, so audio tracks,
+  subtitles and the subtitle/audio delay can be changed with just a D-pad. OK
+  pauses and resumes; Back hides the controls, a second Back stops. The volume
+  moved to + and - (and the pad's right stick).
+- **Media keys and the desktop's media controls (MPRIS):** Play/Pause, Next,
+  Previous and Stop keys work, and KDE's media widget, the lock screen and KDE
+  Connect show what's playing with its cover and can pause, skip, seek and set
+  the volume.
+- **A light theme** (Settings → Interface → Theme: Dark, Light or Like the
+  desktop) and an **accent color** (blue, purple, teal, green, orange or pink),
+  both per profile.
+- **Upscaler** (Settings → Picture): Default, Sharp or FSR 1, with a SCALER line
+  in the stats overlay. **HD video in 4K** (TV & display): 1080p and smaller
+  video at 24, 25 or 30 fps switches the TV to 4K so the Upscaler scales it,
+  while the desktop can stay at 1080p.
+- **The profile and account pickers say when the Jellyfin server isn't
+  answering,** and an account whose server is down isn't opened.
 
-- **Fixed: no desktop sound after stopping a film that switched the TV's mode**
-  (with the audio device set to the HDMI output). Fjord switched the TV back
-  while the player still held the HDMI audio device, and the desktop's sound
-  system gave up on it. The switch back now waits until the player has let go.
+### Improved
 
-- **New: game pad buttons in Settings → Key Bindings.** Each action shows the
-  pad button that runs it, and X, Y, Start, Select, Guide and the shoulder
-  buttons can be rebound like keys — Enter on an action, then press the pad
-  button (one another action uses asks first). Reset to Defaults resets them too.
+- **Settings are easier to find:** new Picture and Music sections, Display is
+  now TV & display, each section starts with a line saying what it's for, and
+  a setting another one rules out is grayed with the reason instead of hidden.
+- **Readable track names:** "English · SDH · SRT", "Spanish (Latin America)",
+  "E-AC3 5.1" instead of bare codes.
+- **The remote and the mouse agree:** Left reaches ← Back on every page, and
+  clicking a button, poster or setting moves the remote's focus there.
+- **The end-of-episode prompts** (Skip Intro, Skip / Don't Skip, Up Next) are
+  one panel in one place; Up Next's "Skip" is now "Keep Watching".
+- Consistent text sizes, spacing and rounded corners; empty pages say so; the
+  stats overlay's color rows say what they mean; Motion interpolation shows
+  when it can work; dashboard rows can be dragged with the mouse.
+- A shorter pause when a video ends or the next episode starts.
+- **New installs use Video sync = display-vdrop,** which is smoother than
+  "audio". Existing settings stay as they are.
+- A log folder on a network drive that drops out keeps its lines until it's
+  back.
 
-- **Improved: consistent sizes.** Text, spacing and rounded corners now come
-  from one set of sizes, so similar things look the same everywhere; a few odd
-  sizes moved by a pixel or two, and the dropdown lists now have the same
-  rounded corners.
+### Fixed
 
-- **New: media keys and the desktop's media controls.** Fjord now tells the
-  desktop what it plays (MPRIS): Play/Pause, Next, Previous and Stop keys work
-  — on a keyboard, or a remote that sends media keys — and KDE's media widget,
-  the lock screen and KDE Connect on a phone show the film, episode or song
-  with its cover and can pause, skip and seek it.
+- **No desktop sound after stopping a film that switched the TV's mode**
+  (HDMI audio device): the TV now switches back only once the player has let
+  go of the audio device.
+- **Fjord could crash while quitting** on NVIDIA after playing a video.
+- **A film could play in the desktop's mode** when the graphics driver refused
+  the 4K switch right after the HTPC woke; Fjord now checks and tries again.
+- **The stats overlay made playback stutter** while it was open.
+- **Resume on a film's page** started from where you were when you opened the
+  page; the page now updates after playback.
+- **KDE dimmed the screen while you used the game pad,** and a pad press didn't
+  wake it.
+- **Discover stuck on "Loading…"** when Seerr couldn't be reached; it now
+  offers Retry.
+- **A Jellyfin server that was down looked like an expired sign-in,** with the
+  raw error on screen.
+- Smaller remote and pad fixes from a code review: the controls bar's focus no
+  longer carries into the next video, ← Back keeps its focus, pad buttons don't
+  type into search fields, one focus ring while Up Next shows, and more.
 
-- **New: the player's controls work with the remote.** Up or Down brings up
-  the controls (Down lands on Play/Pause); Left/Right move along the buttons —
-  Back, ±30 s, Play/Pause, Stop, Chapters, Sync, Sub, Audio, Video, Stats — and
-  Enter presses one, so the audio track and subtitles can be changed with just
-  a D-pad. Back hides the controls (a second Back stops). OK now pauses and
-  resumes. Clicking a button on the controls, the music bar or Now Playing
-  moves the remote's focus there too. The volume moved from Up/Down to the + and - keys (and the game
-  pad's right stick); a saved key layout is updated once.
-
-- **Improved: audio and subtitle tracks have readable names.** "English · SDH
-  · SRT" instead of "en (subrip)", "Spanish (Latin America)" instead of
-  "es-419"; audio tracks show their format and channels ("E-AC3 5.1",
-  "DTS-HD MA 7.1") and which track is the file's default.
-
-- **Improved: the end-of-episode prompts look alike.** Skip Intro, the timed
-  Skip / Don't Skip prompt and the Up Next banner are now the same dark panel
-  in the same place, and grow with the Text size. Up Next's "Skip" is now
-  "Keep Watching" — it hides the banner, it never skipped anything.
-
-- **Improved: the mouse and the remote agree on where you are.** Right-clicking
-  a poster (library, artist, collection, Browse) focuses it before its menu
-  opens, so the remote continues from there when the menu closes; clicking a
-  page's buttons (Play, ♥, ✓, Trailer…), a Settings switch, dropdown or button,
-  a library sort/filter pill or a letter in the A–Z strip moves the focus there
-  too.
-
-- **Improved: Left reaches Back on every page.** On a film's page, an album,
-  artist, collection or request page, Left from the first button now moves to
-  ← Back (as on series and season pages), and Right from Back goes to the first
-  button. In a library grid, Left on the first item moves up to the bar above
-  instead of doing nothing.
-
-- **Fixed: Resume on a film's page started from where you were when you opened
-  the page.** After watching from that page and stopping (or finishing), the
-  page showed the old "Resume from" time, and Resume started there instead of
-  where you stopped. The page now updates once playback ends; after watching to
-  the end, Resume goes away and the focus moves to Play.
-
-- **Improved: empty pages say so.** An empty playlist says "This playlist is
-  empty", a collection with nothing in it "This collection is empty", and a
-  person with no titles in your library "None of their titles are in your
-  library" — instead of a blank space under the header.
-
-- **Improved: the stats overlay's color rows say what they mean** — "BT.709
-  colors · BT.1886 gamma (SDR)" instead of "bt.709 · bt.1886", which read like
-  a conversion from one to the other; HDR reads "BT.2020 colors · PQ (HDR10,
-  peak 1000 nits)".
-
-- **Fixed: the stats overlay (I) made playback stutter while it was open.** It
-  asked the player for about 45 values every half second and waited for each
-  answer on the thread that also draws the video, which caused late and
-  dropped frames. It now shows what the player reports by itself, so opening
-  it no longer affects playback.
-
-- **Fixed: a film could play in the desktop's mode when the switch was
-  refused.** Right after the HTPC wakes, the graphics driver can refuse a 4K
-  HDR mode for a few seconds — and the whole film then played at the
-  desktop's refresh rate. Fjord now reads the mode back after switching,
-  tries once more if the TV isn't there (that worked on the first morning it
-  happened), and tries again when the video has started if it still isn't.
-
-- **Improved: Settings are easier to find.** Two new sections: **Picture**
-  (video sync, motion interpolation, upscaler, HDR passthrough and tone
-  mapping — before split between Display and Advanced) and **Music** (gapless
-  playback, Now Playing, the screensaver — before under Audio). Display is now
-  **TV & display** (fullscreen and display sync), and Advanced keeps only the
-  fixes for particular hardware, buffering and logs. Each section starts with
-  a line saying what it's for and is split into groups. A setting that only
-  applies under another one sits right below it: Video latency hacks moved
-  under Video sync. Saved settings are unchanged.
-- **Improved: a setting another one rules out is grayed, not hidden,** and
-  says why: Motion interpolation (needs Video sync set to a display mode),
-  Video filter (only with NVDEC decoding) and Fjord's own 10-bit buffers
-  (needs Separate video surface). You can still move onto it to read the
-  reason; Enter and clicks leave it alone. Motion interpolation's description
-  now says when Sync refresh rate makes it unnecessary.
-
-- **Fixed: KDE dimmed the screen while you used the game pad,** and a pad
-  press didn't wake it (only the mouse or keyboard did). The desktop only
-  sees keyboard and mouse, so it thought nobody was there. Pad presses now
-  count as activity for KDE: the screen doesn't dim while you use the pad, a
-  dimmed screen wakes on the first press, and the desktop's own idle settings
-  apply as usual after the last one.
-
-- **Fixed: Discover stuck on "Loading Seerr's trending picks…"** when Seerr
-  couldn't be reached (down, or not reachable yet right after startup). It now
-  says "Couldn't reach Seerr" with a Retry button (Enter on the remote), and
-  opening Discover again tries again.
-
-- **New: Settings → Picture → Upscaler** — how the video is scaled up when
-  Fjord draws it larger than it is: Default (Lanczos), Sharp (EWA Lanczos) or
-  FSR 1 (AMD FidelityFX Super Resolution, bundled; an HDR copy is used for HDR
-  files). The stats overlay's new SCALER line shows which one runs and whether
-  anything is scaled up at all — when the TV's mode matches the video, the TV
-  upscales instead — and its OUT line now shows the size the video is drawn
-  at (it used to repeat the video's own size).
-- **New: Settings → TV & display → HD video in 4K** (display sync, under "Sync
-  resolution"): a 1080p or smaller video at 24, 25 or 30 fps switches the TV
-  to 4K too, so the Upscaler scales it instead of the TV — while the desktop
-  can stay at 1080p with a high refresh rate. Only when the TV offers 4K at the
-  video's own rate; 50/60 fps video keeps the default resolution.
-
-- **Improved: Interpolation shows when it can work.** Settings → Picture →
-  Motion interpolation (and its temporal scaler) only appear with a display
-  Video sync (display-vdrop, -resample or -adrop) — with "audio" mpv ignored
-  it without saying so. The stats overlay (I) has a new INTERP line: on (with
-  the scaler), waiting for display sync, or off.
-
-- **Improved: shorter pause when a video ends or the next episode starts.**
-  Fjord stopped for about a quarter of a second each time while the previous
-  video was shut down; mpv now does that in the background.
-
-- **New: game controller support.** An Xbox 360 pad (or another pad gilrs
-  knows) works like the remote: D-pad or left stick to move (held = repeat),
-  A to select, B to go back, X for the menu, Y for search (subtitles in the
-  player), Start for play/pause, Back for Now Playing (stats in the player),
-  LB/RB for the previous/next song (seek ±10 s in the player), LT/RT to seek
-  ±60 s, the right stick for volume, and the Xbox button for Home (minimize in
-  the player). It follows your key bindings, wakes the screensaver, and works
-  only while Fjord's window has the focus. Pads can be plugged in while Fjord
-  runs.
-
-- **Improved: drag dashboard rows with the mouse.** Settings → Interface →
-  Dashboard rows → Edit…: drag a row by its name (≡) to a new place; a line
-  shows where it lands. The remote keeps ▲ ▼.
-
-- **New: a light theme.** Settings → Interface → Theme: Dark (as before),
-  Light, or Like the desktop (follows KDE's light/dark choice, also when it
-  changes). Saved per profile and copied by "Copy settings from…". The player,
-  Now Playing and messages stay dark. In the light theme the accent colour is a
-  darker shade so it reads well on the light background, and the focus ring's
-  "White" is drawn black.
-
-- **New: Settings → Interface → Accent color** — blue (as before), purple,
-  teal, green, orange or pink for buttons, pills, progress bars and the
-  selected tab. Saved per profile and copied by "Copy settings from…". The
-  focus ring's "Accent blue" option is now "Accent color" and follows the
-  choice.
-
-- **Changed: new installs use Settings → Picture → Video sync =
-  display-vdrop.** The old default (audio) times frames by the audio clock,
-  which can make video choppy for a few seconds now and then. Existing
-  settings stay as they are; pick display-vdrop there to get the smoother
-  timing. The setting's description now says when to pick which.
-
-- **Improved: a log folder on a network drive that drops out.** While the
-  folder is away, Fjord keeps the log lines and writes them once it's back,
-  instead of losing them. The system journal gets one message when the folder
-  goes and one when it's back, instead of one every 2 seconds.
+*Range: [`v0.5.1...v0.5.2`](https://github.com/KalasKonrad/Fjord/compare/v0.5.1...v0.5.2)*
 
 ## [0.5.1] — 2026-11-08
 
