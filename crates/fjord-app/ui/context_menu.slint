@@ -43,7 +43,7 @@ component MenuRowItem inherits Rectangle {
     HorizontalLayout {
         padding-left: Theme.sp-md;
         padding-right: Theme.sp-md;
-        spacing: 10px;
+        spacing: Theme.sp-md;
         alignment: start;
         Text {
             text: root.icon-text;
@@ -212,7 +212,7 @@ export component PlaylistPicker inherits Rectangle {
                 if !AppState.playlist-picker-naming: HorizontalLayout {
                     padding-left: Theme.sp-md;
                     padding-right: Theme.sp-md;
-                    spacing: 10px;
+                    spacing: Theme.sp-md;
                     alignment: start;
                     Text {
                         text: "+";

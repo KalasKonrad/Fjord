@@ -46,7 +46,7 @@ export component FjordButton inherits FocusGlow {
 
     HorizontalLayout {
         alignment: center;
-        spacing: 6px;
+        spacing: Theme.sp-sm;
         if root.icon-left != "": Text {
             text: root.icon-left;
             color: root.enabled ? Theme.text-bright : (root.on-dark ? Theme.dark-text-subtle : Theme.text-subtle);

@@ -63,7 +63,7 @@ component ToggleRow inherits Rectangle {
     HorizontalLayout {
         padding-left: Theme.sp-sm;
         padding-right: Theme.sp-sm;
-        spacing: 10px;
+        spacing: Theme.sp-md;
 
         Rectangle {
             width: 20px * AppState.text-scale;
@@ -312,7 +312,7 @@ export component ProfileEditScreen inherits Rectangle {
                 }
 
                 avatar-row := HorizontalLayout {
-                    spacing: 10px;
+                    spacing: Theme.sp-md;
                     alignment: start;
 
                     Rectangle {
@@ -355,7 +355,7 @@ export component ProfileEditScreen inherits Rectangle {
                 }
 
                 HorizontalLayout {
-                    spacing: 10px;
+                    spacing: Theme.sp-md;
                     alignment: start;
                     HorizontalLayout {
                         spacing: Theme.sp-sm;
@@ -739,7 +739,7 @@ export component ProfileEditScreen inherits Rectangle {
                 }
 
                 button-row := HorizontalLayout {
-                    spacing: 10px;
+                    spacing: Theme.sp-md;
                     alignment: end;
 
                     // Index scheme accounts for Delete's conditional

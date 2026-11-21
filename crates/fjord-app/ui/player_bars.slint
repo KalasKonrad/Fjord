@@ -127,7 +127,7 @@ export component MiniPlayerBar inherits Rectangle {
             }
 
             HorizontalLayout {
-                spacing: 6px;
+                spacing: Theme.sp-sm;
                 alignment: start;
                 FjordButton {
                     icon-left: "▶";
@@ -177,7 +177,7 @@ export component MiniPlayerBar inherits Rectangle {
         }
 
         HorizontalLayout {
-            spacing: 6px;
+            spacing: Theme.sp-sm;
             alignment: end;
             FjordButton {
                 icon-left: "▶";
@@ -264,7 +264,7 @@ export component MusicPlayerBar inherits Rectangle {
 
                 HorizontalLayout {
                     padding: Theme.sp-sm;
-                    spacing: 10px;
+                    spacing: Theme.sp-md;
                     alignment: center;
 
                     // Album art 56×56
@@ -683,9 +683,9 @@ export component QueuePanel inherits Rectangle {
                                 }
 
                                 HorizontalLayout {
-                                    padding-left: 10px;
+                                    padding-left: Theme.sp-md;
                                     padding-right: Theme.sp-md;
-                                    spacing: 10px;
+                                    spacing: Theme.sp-md;
                                     alignment: center;
 
                                     // Album art thumbnail (40×40)
@@ -906,7 +906,7 @@ export component VolumeOverlay inherits Rectangle {
         padding-right: Theme.sp;
         padding-top: 0;
         padding-bottom: 0;
-        spacing: 10px;
+        spacing: Theme.sp-md;
         alignment: center;
 
         Text {
@@ -958,7 +958,7 @@ export component StatRow inherits Rectangle {
     HorizontalLayout {
         padding-top: Theme.sp-2xs;
         padding-bottom: Theme.sp-2xs;
-        spacing: 10px;
+        spacing: Theme.sp-md;
         Text {
             text: label;
             color: Theme.text-disabled;

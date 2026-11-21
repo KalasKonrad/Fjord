@@ -20,8 +20,8 @@ Version history: [CHANGELOG.md](CHANGELOG.md) (git tags `v0.1.0`–`v0.5.2`). Im
 
 **Check an item off only once it has been clicked through on real hardware** — a clean build/clippy/test says nothing about whether it works. Add a line here the moment something ships "not live-tested". Ticked items are removed at the next cleanup; their story lives in `DEVLOG.md`.
 
-### 0.5.2
-Nothing open (2026-11-21).
+### 0.5.3
+- [ ] **Spacings 6/10 → 8/12 px (2026-11-21).** Dev, Text size Normal and Huge: every screen still looks right — nothing cut off or overlapping, a pixel or two more room in places: the sidebar, dashboards and card rows (the remote's scrolling still centers the focused card), a film/album/artist/collection page, the context menu and the playlist picker, Settings (section headers, rows), the Dashboard rows editor (✓ ▲ ▼ centered in each row), the on-screen keyboard (letters and the PIN pad), the profile picker and Edit Profile, Connect Seerr, the calendar, a request page (2K/4K buttons, tag pills), the player's controls, the Sub/Audio panels (Up/Down still keeps the focused track in view in a long list), the Sync ▾ panel (all four buttons whole, also at Huge), the music bar, the queue panel and Now Playing.
 
 ---
 
@@ -41,7 +41,6 @@ Nothing open (2026-11-21).
 - **Own 10-bit buffers** (`dmabuf_plane.rs`, opt-in) only help where the driver can send 10-bit but EGL windows are 8-bit — e.g. NVIDIA Ampere+ over HDMI, or Pascal over DisplayPort (see DEVLOG, 2026-10-08). If they're ever used for real: explicit sync (`wp_linux_drm_syncobj_v1`) instead of `glFinish`.
 - **Layout customisation** beyond the dashboard rows (order, visibility, dragging — 0.5.2), the accent colour and the focus ring's look: needs a real layout system first.
 - **IR remotes and HDMI-CEC** — untested (no receiver or CEC adapter here). The game pad (0.5.2), keyboards and anything sending media keys (MPRIS, 0.5.2) work.
-- **Spacing 6/10 px → the scale (9d leftover).** 52 paddings/spacings of 6 and 10 px stayed literal: they sit in FjordButton's padding (fixed-width buttons), the on-screen keyboard grid, the OSD panels and card internals. Fold them to 8/12 with a screenshot pass of every screen.
 - **Vulkan rendering path — blocked upstream (checked 2026-10-09).** Idea: Slint's UI and mpv's video on Vulkan instead of OpenGL ES. mpv's libmpv render API (what Fjord embeds mpv through) only offers `opengl` and `sw` — in 0.41 and in current master; an RFC adding a Vulkan render API (mpv PR #18258, July 2026) was closed unmerged. Only possible with a patched mpv until that lands. Also less gain than this entry used to claim: with an AMD card, `hwdec=vaapi` into OpenGL is already zero-copy (dmabuf import), and the GTX 1050 Ti's driver supports Vulkan, so nothing forces OpenGL either way.
 - **Refactors not planned** (low gain or high churn): splitting `AppState` into several globals (every Rust access would change), `reset_session_state` (a list by nature), `main()` (setup + `wire_*` calls).
 - **Windows build (possible future, discussed 2026-11-08).** The core runs there as is: Slint (winit + OpenGL/WGL), libmpv's render API (`libmpv-2.dll`), reqwest/WebSocket (native TLS → SChannel), the bundled fonts, yt-dlp (`yt-dlp.exe`). Needed:

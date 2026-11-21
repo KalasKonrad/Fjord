@@ -23,6 +23,12 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **Improved: the last odd spacings follow the size scale.** About fifty gaps
+  and paddings of 6 and 10 px (buttons, the on-screen keyboard, the player's
+  panels, the sidebar, menus, card rows) are now 8 and 12 px like the rest, so
+  some things sit a pixel or two further apart. The player's Sync ▾ panel now
+  grows with Text size instead of cutting off its buttons from Large up.
+
 ## [0.5.2] — 2026-11-21
 
 Game pads, a light theme, the desktop's media keys and a player you can work

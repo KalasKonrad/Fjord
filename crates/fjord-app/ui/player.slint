@@ -39,7 +39,8 @@
 //   pause/play flash      84 px circle with ▶/⏸ icon; fades out 600 ms after pause toggle
 //   stats overlay         video/audio codec, sync ratios, SPEED (A+V corrections), DROP (VO/decoder/mistimed), bitrate, cache
 //   TrackPanel (×4)       subtitle (panel-id=1, has-off-row), audio (2), video (3), chapters (4, no off-row)
-//   sync panel (id=5)     custom panel: Sub −/+ | Audio −/+ with live delay display
+//   sync panel (id=5)     custom panel: Sub −/+ | Audio −/+ with live delay display, as wide as its rows
+//                         (they grow with Text size); the remote's cursor 0–3 over the four buttons
 //   cursor hider          full-size TouchArea; enabled when controls hidden; tracks cursor pos
 // ─────────────────────────────────────────────────────────────────────────────
 import { Theme, TrackEntry } from "theme.slint";
@@ -75,7 +76,7 @@ component OsdPrompt inherits Rectangle {
 
     inner := VerticalLayout {
         padding: Theme.sp;
-        spacing: 10px;
+        spacing: Theme.sp-md;
         @children
     }
 }
@@ -111,7 +112,7 @@ component TrackPanel inherits Rectangle {
     clip: true;
 
     property <length> kb-y: clamp(
-        -(AppState.player-panel-cursor * 34px) + self.height / 2 - 17px,
+        -(AppState.player-panel-cursor * 38px) + self.height / 2 - 19px,
         min(0px, self.height - panel-list.preferred-height),
         0px);
     changed kb-y => { panel-fl.content-y = kb-y; }
@@ -161,8 +162,8 @@ component TrackPanel inherits Rectangle {
                 }
 
                 HorizontalLayout {
-                    padding-left: 10px;
-                    padding-right: 10px;
+                    padding-left: Theme.sp-md;
+                    padding-right: Theme.sp-md;
                     alignment: center;
                     Text {
                         text: "Off";
@@ -208,10 +209,10 @@ component TrackPanel inherits Rectangle {
                 }
 
                 HorizontalLayout {
-                    padding-top: 6px;
-                    padding-bottom: 6px;
-                    padding-left: 10px;
-                    padding-right: 10px;
+                    padding-top: Theme.sp-sm;
+                    padding-bottom: Theme.sp-sm;
+                    padding-left: Theme.sp-md;
+                    padding-right: Theme.sp-md;
                     Text {
                         text: t.label;
                         color: root.current-id == t.id ? Theme.accent : Theme.dark-text;
@@ -1143,7 +1144,8 @@ export component PlayerScreen inherits Rectangle {
     if AppState.player-open-panel == 5: Rectangle {
         y: parent.height - 158px - self.height - 8px;
         x: parent.width - self.width - 16px;
-        width: min(parent.width - 32px, 300px);
+        // As wide as its rows (they grow with Text size; a fixed 300 px cut them off from Large up).
+        width: min(parent.width - 32px, sync-inner.preferred-width);
         height: sync-inner.preferred-height;
         background: Theme.osd-panel-opaque;
         border-radius: Theme.radius-lg;
@@ -1165,7 +1167,7 @@ export component PlayerScreen inherits Rectangle {
             // Sub delay row
             HorizontalLayout {
                 height: 36px;
-                spacing: 6px;
+                spacing: Theme.sp-sm;
                 alignment: center;
                 Text {
                     text: "Sub";
@@ -1211,7 +1213,7 @@ export component PlayerScreen inherits Rectangle {
             // Audio delay row
             HorizontalLayout {
                 height: 36px;
-                spacing: 6px;
+                spacing: Theme.sp-sm;
                 alignment: center;
                 Text {
                     text: "Audio";

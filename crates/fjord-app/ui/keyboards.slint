@@ -65,13 +65,13 @@ export component VirtualKeyboard {
     property <[string]> vals:   ["1", "2", "3", "4", "5", "6", "7", "8", "9", "backspace", "0", "confirm"];
     property <[string]> labels: ["1", "2", "3", "4", "5", "6", "7", "8", "9", "⌫", "0", "✓"];
 
-    width: 3 * 68px + 2 * 10px;
-    height: 4 * 68px + 3 * 10px;
+    width: 3 * 68px + 2 * Theme.sp-md;
+    height: 4 * 68px + 3 * Theme.sp-md;
 
     VerticalLayout {
-        spacing: 10px;
+        spacing: Theme.sp-md;
         for row in 4: HorizontalLayout {
-            spacing: 10px;
+            spacing: Theme.sp-md;
             for col in 3: VirtualKeyboardKey {
                 property <int> idx: row * 3 + col;
                 label: root.labels[self.idx];
@@ -174,14 +174,14 @@ export component QwertyKeyboard inherits Rectangle {
         return max(lens[0], max(lens[1], max(lens[2], lens[3])));
     }
 
-    width: root.max-row-len() * 68px + (root.max-row-len() - 1) * 10px + kb-pad * 2;
-    height: AppState.onscreen-keyboard-row-lens.length * 68px + (AppState.onscreen-keyboard-row-lens.length - 1) * 10px + kb-pad * 2;
+    width: root.max-row-len() * 68px + (root.max-row-len() - 1) * Theme.sp-md + kb-pad * 2;
+    height: AppState.onscreen-keyboard-row-lens.length * 68px + (AppState.onscreen-keyboard-row-lens.length - 1) * Theme.sp-md + kb-pad * 2;
 
     VerticalLayout {
         padding: kb-pad;
-        spacing: 10px;
+        spacing: Theme.sp-md;
         for row in AppState.onscreen-keyboard-row-lens.length: HorizontalLayout {
-            spacing: 10px;
+            spacing: Theme.sp-md;
             alignment: center; // shorter rows (9/9/5 keys) center under the widest (10-key) row
             for col in AppState.onscreen-keyboard-row-lens[row]: VirtualKeyboardKey {
                 property <int> flat-idx: (row == 0 ? 0 : row == 1 ? row1-start : row == 2 ? row2-start : row3-start) + col;

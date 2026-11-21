@@ -75,7 +75,7 @@ export component SectionRow inherits Rectangle {
         // Reading fl.width from a parent element is safe (no self-reference).
         property <length> kb-x: focused-card <= 0 ? 0px
             : clamp(
-                        -(focused-card * (root.card-w + 10px) + root.card-w / 2 - fl.width / 2),
+                        -(focused-card * (root.card-w + Theme.sp-md) + root.card-w / 2 - fl.width / 2),
                         min(0px, fl.width - hbox.preferred-width - Theme.sp),
                         0px);
         changed kb-x => { fl.content-x = kb-x; }
@@ -89,7 +89,7 @@ export component SectionRow inherits Rectangle {
             }
 
             hbox := HorizontalLayout {
-                spacing: 10px;
+                spacing: Theme.sp-md;
                 alignment: start;
                 padding-top: root.zoom-y;
                 padding-bottom: root.zoom-y;
@@ -200,7 +200,7 @@ export component LibraryGrid inherits Rectangle {
             HorizontalLayout {
                 padding-left: Theme.sp;
                 padding-right: Theme.sp;
-                spacing: 6px;
+                spacing: Theme.sp-sm;
                 alignment: start;
 
                 // Music: view pills (Artists/Albums/Playlists) at LEFT of sort pills (cursor 0-2)

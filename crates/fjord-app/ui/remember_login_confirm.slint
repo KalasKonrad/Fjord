@@ -101,7 +101,7 @@ export component RememberLoginConfirmOverlay inherits Rectangle {
             if AppState.remember-login-confirm-loading: LoadingSpinner { }
 
             if !AppState.remember-login-confirm-loading: HorizontalLayout {
-                spacing: 10px;
+                spacing: Theme.sp-md;
                 FjordButton {
                     text: "Cancel";
                     clicked => { AppState.remember-login-confirm-cancel(); }

@@ -3611,6 +3611,17 @@ A review of everything 0.5.2 changes against `main` (85 commits) found 15 points
 
 **MPRIS Volume was read-only.** The Player interface reported `CanControl` true but had no `Volume` setter, which the MPRIS spec defines as read/write — KDE Connect's volume slider (and any client setting Volume) was rejected by zbus. Now `set_volume` hands the desktop a `Command::SetVolume(percent)` (`volume_percent`: 1.0 = 100 %, negative → 0, capped at 130 like the volume keys), and `run` calls the new AppState `set-volume(percent)`. In controls.rs the volume keys and it share `change_volume` (apply unless passthrough, mirror into volume-level, the overlay for 1.5 s, only the latest change hides it) instead of two copied closures. The peer-to-peer test sets Volume over D-Bus.
 
+### Spacings 6/10 px folded into the scale (2026-11-21, branch `release-0.5.3`)
+
+The 9d leftover from PLAN's Deferred: 52 paddings and spacings of 6 and 10 px in 21 Slint files, not on the `sp-*` scale (2/4/8/12/14/20/32/48). All became `Theme.sp-sm` (8) and `Theme.sp-md` (12); `letter-spacing: 6px` in Connect Seerr's join code is the gap between its letters, not layout, and stays. Each spot was checked for what depends on it:
+- **Formulas with the gap written out** changed with it: the on-screen keyboard's and the PIN pad's width/height (`n * 68px + (n - 1) * gap`), and the card rows' keyboard scroll (`focused-card * (card-w + gap)`). The request page's pill rows scroll by `130px + 16px` / `110px + 16px` — a 16 px gap, untouched.
+- **The Sub/Audio/Video panels** scroll by an estimated row pitch: their rows grew 4 px (padding 6 → 8 top and bottom), so the estimate went from 34 to 38 px (half: 17 → 19).
+- **The Dashboard rows editor** has fixed 50 px rows around a 38 px ✓ button: 8 px padding would squeeze it, so the vertical padding is now `(row-h - 38px) / 2` (still 6 px, and says why).
+- **Fixed-width pills** (a request page's tags, 110 px) lose 4 px of text room — enough for tag names.
+- **The Sync ▾ panel** was fixed at 300 px and clipped; its rows need ~274 px at Normal and ~417 px at Huge, so from Large up its + buttons were cut off (before this change too). It is now as wide as its rows (`min(parent.width - 32px, sync-inner.preferred-width)`). A temporary headless probe (the real window at 1920×1080, the panel open) put the four buttons inside the panel at Normal and Huge; deleted afterwards.
+
+No screenshots can be taken from here: a visual pass on the dev machine is the PLAN checklist line.
+
 ### UI freezes at a 4K HDR start: shader compiles the driver caches (2026-11-21, branch `release-0.5.2`)
 
 PLAN's Issues had two UI-thread stalls at 4K starts since 2026-11-13: a 150–320 ms frame when a display switch resizes the window (Slint redraws everything at the new size — expected), and a 330–540 ms `event loop busy` about a second into a 4K HDR start, guessed to be mpv compiling HDR shaders on the render (UI) thread, with the open question whether mpv's shader cache is used there.

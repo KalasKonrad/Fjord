@@ -103,8 +103,9 @@ export component DashboardRowsScreen inherits Rectangle {
                         HorizontalLayout {
                             padding-left: Theme.sp-sm;
                             padding-right: Theme.sp-sm;
-                            padding-top: 6px;
-                            padding-bottom: 6px;
+                            // Centers the 38 px ✓ button in the fixed row (row-pitch math relies on row-h).
+                            padding-top: (root.row-h - 38px) / 2;
+                            padding-bottom: (root.row-h - 38px) / 2;
                             spacing: Theme.sp;
 
                             IconCircleButton {

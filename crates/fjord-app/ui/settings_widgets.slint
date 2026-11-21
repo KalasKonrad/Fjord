@@ -64,7 +64,7 @@ export component SectionHeader inherits Rectangle {
     height: 28px;
 
     HorizontalLayout {
-        spacing: 10px;
+        spacing: Theme.sp-md;
         alignment: start;
         Text {
             text: root.text;
@@ -112,9 +112,9 @@ export component SettingsDropdown inherits Rectangle {
     }
 
     HorizontalLayout {
-        padding-left: 10px;
+        padding-left: Theme.sp-md;
         padding-right: Theme.sp-sm;
-        spacing: 6px;
+        spacing: Theme.sp-sm;
         alignment: start;
         val := Text {
             text: root.display-value;

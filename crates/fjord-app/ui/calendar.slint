@@ -43,7 +43,7 @@ component CalendarDayCell inherits Rectangle {
     }
 
     if root.day > 0: VerticalLayout {
-        padding: 6px;
+        padding: Theme.sp-sm;
         spacing: Theme.sp-xs;
         alignment: start;
         Text {
@@ -215,7 +215,7 @@ export component CalendarScreen inherits StackPage {
                 x: 16px;
                 y: 16px;
                 width: parent.width - 32px;
-                spacing: 6px;
+                spacing: Theme.sp-sm;
                 for entry[idx] in AppState.calendar-day-popup-entries: Rectangle {
                     height: 52px;
                     border-radius: Theme.radius;
