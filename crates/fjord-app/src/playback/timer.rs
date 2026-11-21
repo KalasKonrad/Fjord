@@ -41,7 +41,7 @@
 //                           trailer open retry (TRAILER_OPEN_RETRY_SECS, once), gapless commit
 //   mpris_publish           every ~0.5 s (VideoState.mpris_tick, also with no player): what's playing
 //                           → mpris::publish (title/artist, the cover as a file:// URL into the poster
-//                           cache, mpv's reported length/position, the user's volume-level (not the
+//                           cache — looked up once per item, VideoState.mpris_art — mpv's reported length/position, the user's volume-level (not the
 //                           skip fade's ramp), Stopped without a player)
 //   dispatch / spawn_up_next / on_natural_end  after the lock: reloads, toasts, mark-played,
 //                           gapless UI, the Up Next countdown task (counts unpaused time only), and
@@ -1131,12 +1131,21 @@ fn mpris_publish(vs: &mut VideoState, t: &Tick) {
                         .collect(),
                 )
             };
-            let art_url = art_ids
-                .iter()
-                .filter_map(|id| crate::config::poster_cache_path(id))
-                .find(|p| p.exists())
-                .map(|p| format!("file://{}", p.display()).replace(' ', "%20"))
-                .unwrap_or_default();
+            // Looked up once per item, not every publish (two stat() calls on the UI thread).
+            let (ids, url, since) = &mut vs.mpris_art;
+            if *ids != art_ids || (url.is_empty() && *since >= 16) {
+                *url = art_ids
+                    .iter()
+                    .filter_map(|id| crate::config::poster_cache_path(id))
+                    .find(|p| p.exists())
+                    .map(|p| format!("file://{}", p.display()).replace(' ', "%20"))
+                    .unwrap_or_default();
+                *ids = art_ids;
+                *since = 0;
+            } else {
+                *since += 1;
+            }
+            let art_url = url.clone();
             crate::mpris::MprisState {
                 status: if o.paused {
                     crate::mpris::Status::Paused

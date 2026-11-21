@@ -212,6 +212,10 @@ pub(crate) struct VideoState {
     pub pos_tick: u32,
     /// Ticks since start, for mpris::publish's ~0.5 s cadence (pos_tick only runs with a player).
     pub mpris_tick: u32,
+    /// MPRIS's cover (timer.rs's mpris_publish): the ids it was looked up for, the file:// URL ("" =
+    /// none in the poster cache yet) and publishes since — looked up again only for other ids, or
+    /// every 16 publishes (~8 s) while none was found.
+    pub mpris_art: (Vec<String>, String, u32),
     pub controls_idle_ticks: u32,
     pub seek_pending_secs: f64, // accumulated keyboard seek; executed after debounce
     pub seek_pending_ticks: u32, // countdown to execution; 0 = idle
@@ -378,6 +382,7 @@ impl Default for VideoState {
             tracks_loaded: false,
             pos_tick: 0,
             mpris_tick: 0,
+            mpris_art: Default::default(),
             controls_idle_ticks: 0,
             seek_pending_secs: 0.0,
             seek_pending_ticks: 0,
