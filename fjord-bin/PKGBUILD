@@ -9,7 +9,7 @@
 # Bumped as the last step of every release: pkgver, then sha256sums
 # (`updpkgsums`, or `sha256sum` of the downloaded tarball).
 pkgname=fjord-bin
-pkgver=0.5.1
+pkgver=0.5.2
 pkgrel=1
 pkgdesc="Jellyfin media frontend with smooth mpv playback on NVIDIA legacy hardware (pre-built release)"
 arch=('x86_64')
@@ -22,7 +22,7 @@ conflicts=('fjord' 'fjord-git' 'fjord-bin-nightly')
 install=../fjord.install
 options=('!debug' '!strip') # already stripped by CI
 source=("fjord-$pkgver-x86_64.tar.gz::$url/releases/download/v$pkgver/fjord-x86_64.tar.gz")
-sha256sums=('cbad86ada0016385e6b30897dbd3232ff319baa5267e6733da9d076642903c0d')
+sha256sums=('cf4773a495d58d1ddf0a8a71502d980af4d83ad83b4f92d660402873d9c45621')
 
 package() {
     cd "$srcdir/fjord-bin"
