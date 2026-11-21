@@ -19,6 +19,8 @@
 //                       moves to the one before it (keys::settle)
 //   refresh_after_playback  after a stop report (do_stop_playback and the natural end): runs
 //                       refresh_user_data when the Detail page is shown again
+//   DetailUserData      the page's progress (resume point/label/bar, end time, played, favorite) from
+//                       an item's detail — one place for open_detail and refresh_user_data
 //   refresh_user_data   after playback (refresh_after_playback, once the stop is reported): resume
 //                       position/label/progress, end time, played, favorite from the server, so
 //                       the page shown again doesn't resume from where it was opened
@@ -240,14 +242,7 @@ impl DetailCtx {
                 .map(|s| s.name.clone())
                 .unwrap_or_default();
 
-            let resume_secs = detail.resume_position_secs().unwrap_or(0.0);
-            let runtime_secs = detail.run_time_ticks.unwrap_or(0) as f64 / 10_000_000.0;
-            let remaining = if resume_secs > 0.0 {
-                runtime_secs - resume_secs
-            } else {
-                runtime_secs
-            };
-            let ends_str = crate::playback::fmt_ends_at(remaining).to_string();
+            let user_data = DetailUserData::from_detail(&detail);
 
             let mut meta_parts: Vec<String> = vec![];
             if let Some(y) = detail.production_year {
@@ -338,14 +333,11 @@ impl DetailCtx {
                 g.set_detail_series_label(series_label.as_str().into());
                 g.set_detail_series_id(series_id_for_detail.as_str().into());
                 g.set_detail_meta(meta.as_str().into());
-                g.set_detail_ends_at(ends_str.as_str().into());
                 g.set_detail_genres(genres.as_str().into());
                 g.set_detail_overview(overview.as_str().into());
                 g.set_detail_rating_label(rating_label.as_str().into());
                 g.set_detail_item_type(detail.item_type.as_str().into());
-                g.set_detail_resume_secs(resume_secs as f32);
-                g.set_detail_can_resume(resume_secs > 0.0);
-                g.set_detail_resume_label(fmt_resume_label(resume_secs).into());
+                user_data.apply(&g);
                 // Build cast with portraits already fetched — no trickle-in.
                 let cast: Vec<CastMember> = cast_data
                     .into_iter()
@@ -368,9 +360,6 @@ impl DetailCtx {
                 g.set_detail_cast(ModelRc::new(VecModel::from(cast)));
                 g.set_detail_tagline(tagline.as_str().into());
                 g.set_detail_studio(studio.as_str().into());
-                g.set_detail_is_favorite(detail.user_data.is_favorite);
-                g.set_detail_has_played(detail.user_data.played);
-                g.set_detail_resume_pct(detail.resume_pct());
                 g.set_detail_loading(false);
                 if let Some(bytes) = poster_bytes
                     && let Some(buf) = decode_poster_buffer(&bytes)
@@ -782,36 +771,62 @@ pub(crate) async fn refresh_user_data(
         .unwrap()
         .item_detail_cache
         .insert(id.clone(), detail.clone());
-    let resume_secs = detail.resume_position_secs().unwrap_or(0.0);
-    let runtime_secs = detail.run_time_ticks.unwrap_or(0) as f64 / 10_000_000.0;
-    let remaining = if resume_secs > 0.0 {
-        runtime_secs - resume_secs
-    } else {
-        runtime_secs
-    };
-    let ends = crate::playback::fmt_ends_at(remaining).to_string();
-    let label = fmt_resume_label(resume_secs);
-    let pct = detail.resume_pct();
-    let (played, favorite) = (detail.user_data.played, detail.user_data.is_favorite);
+    let user_data = DetailUserData::from_detail(&detail);
     let _ = slint::invoke_from_event_loop(move || {
         let Some(w) = ww.upgrade() else { return };
         let g = AppState::get(&w);
         if g.get_detail_id().as_str() != id {
             return;
         }
-        g.set_detail_resume_secs(resume_secs as f32);
-        g.set_detail_can_resume(resume_secs > 0.0);
-        g.set_detail_resume_label(label.as_str().into());
-        g.set_detail_resume_pct(pct);
-        g.set_detail_ends_at(ends.as_str().into());
-        g.set_detail_has_played(played);
-        g.set_detail_is_favorite(favorite);
+        user_data.apply(&g);
         fix_trailer_focus(&g);
         debug!(
-            "detail: refreshed {id} after playback — resume {resume_secs:.0}s, played={played}, focus {}",
+            "detail: refreshed {id} after playback — resume {:.0}s, played={}, focus {}",
+            user_data.resume_secs,
+            user_data.played,
             g.get_detail_focused_btn()
         );
     });
+}
+
+/// What the Detail page shows of the viewer's progress — resume point (+ label, bar), end time,
+/// played, favorite. Built from the item's detail off the UI thread, applied on it: by open_detail
+/// and by refresh_user_data after playback, so the page shows the same either way.
+struct DetailUserData {
+    resume_secs: f64,
+    resume_pct: f32,
+    ends_at: String,
+    played: bool,
+    favorite: bool,
+}
+
+impl DetailUserData {
+    fn from_detail(detail: &fjord_api::models::MediaItem) -> Self {
+        let resume_secs = detail.resume_position_secs().unwrap_or(0.0);
+        let runtime_secs = detail.run_time_ticks.unwrap_or(0) as f64 / 10_000_000.0;
+        let remaining = if resume_secs > 0.0 {
+            runtime_secs - resume_secs
+        } else {
+            runtime_secs
+        };
+        Self {
+            resume_secs,
+            resume_pct: detail.resume_pct(),
+            ends_at: crate::playback::fmt_ends_at(remaining).to_string(),
+            played: detail.user_data.played,
+            favorite: detail.user_data.is_favorite,
+        }
+    }
+
+    fn apply(&self, g: &AppState) {
+        g.set_detail_resume_secs(self.resume_secs as f32);
+        g.set_detail_can_resume(self.resume_secs > 0.0);
+        g.set_detail_resume_label(fmt_resume_label(self.resume_secs).into());
+        g.set_detail_resume_pct(self.resume_pct);
+        g.set_detail_ends_at(self.ends_at.as_str().into());
+        g.set_detail_has_played(self.played);
+        g.set_detail_is_favorite(self.favorite);
+    }
 }
 
 pub(crate) fn handle_key(action: &crate::keys::Action, g: &AppState) -> bool {
