@@ -3568,7 +3568,7 @@ What the 0.5.1 checklist confirmed before it was cleaned out of PLAN.md (dev = A
 - **Settings crash watch:** closed 2026-11-08, `--cfg slint_debug_property` removed.
 - **Release:** tag run green, "Fjord v0.5.1" Latest on 2026-11-08; `fjord` and `fjord-bin` bumped to 0.5.1.
 
-### 0.5.2 live tests (2026-11-09 – 2026-11-15)
+### 0.5.2 live tests (2026-11-09 – 2026-11-21)
 
 What the 0.5.2 checklist confirmed before it was cleaned out of PLAN.md (dev = AMD machine, HTPC = NVIDIA Pascal). The user went through the whole list on 2026-11-15; the HTPC logs r1329–r1351 (2026-11-12 – 15) back up part of it.
 
@@ -3583,6 +3583,7 @@ What the 0.5.2 checklist confirmed before it was cleaned out of PLAN.md (dev = A
 - **#45 and #46** (open at the first cleanup, fixed 2026-11-15 in r1358/r1359): on r1359, four stops after a mode switch (2026-11-16 06:33, 06:57, 18:41; 2026-11-17 18:11) — each time mpv let go of the audio device 364–547 ms in, the switch came 0.5 s later, PipeWire/WirePlumber logged nothing. Four quits (one by KDE closing the window, three by Fjord's Quit) ran the whole cleanup; no core dump or kernel segfault since r1351 (whose every quit had crashed). Both GitHub issues closed 2026-11-16. Not tried: a film ending by itself before a revert, quitting straight from the player.
 - **The desktop closing Fjord is logged:** dev, r1384 (2026-11-16) — `the desktop closed the window`, then the cleanup.
 - **Stable:** 2026-11-14 – 17 on r1351/r1359, the HTPC started playback 18 times (films and episodes, Up Next included; three episodes in a row on 11-17) with at most 1 frame drop per item, vsync ratio 1.0000, at most 2 frames discarded by KWin per episode, no crash.
+- **The code review's fixes (2026-11-17, r1397) and the pickers' server check (2026-11-19, r1401–r1407):** ticked by the user on 2026-11-21 — the bar focus per video, the Detail page after a film's end, Back keeping its focus, a pad unplugged mid-hold, HD video in 4K needing Sync refresh rate, Discover's Retry with Back, the Sync panel with the remote, pad buttons in search fields, one ring with Up Next, MPRIS volume, the sign-in message with the server down, and the pickers showing a server that's down (on dev: the account picker stays, also when chosen before its check answered). The HTPC ran r1407 on 2026-11-20 (two sessions, 0 frame drops, the morning 4K HDR switch refused once and retried, sound fine after every stop).
 
 ### 0.5.2 code review fixes (2026-11-17, branch `release-0.5.2`)
 

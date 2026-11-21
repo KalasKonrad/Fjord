@@ -6,13 +6,13 @@ A native Jellyfin frontend for Linux built with Rust and Slint. Uses the mpv ren
 
 ## Completed
 
-Version history: [CHANGELOG.md](CHANGELOG.md) (git tags `v0.1.0`–`v0.5.1`). Implementation detail per feature: `DEVLOG.md` (dated sections). Each version's live tests are summed up in DEVLOG → "0.5.x live tests".
+Version history: [CHANGELOG.md](CHANGELOG.md) (git tags `v0.1.0`–`v0.5.2`). Implementation detail per feature: `DEVLOG.md` (dated sections). Each version's live tests are summed up in DEVLOG → "0.5.x live tests".
 
 ---
 
 ## 0.5.2 (branch `release-0.5.2`)
 
-**Release plan (user, 2026-11-13):** release Friday/Saturday 2026-11-20/21 (CLAUDE.md → Releasing); decide 0.5.2 vs 0.6.0 then (a game controller, a light theme, MPRIS and remote control of the player). All planned work is in, and its checklist was gone through by 2026-11-15 (DEVLOG → "0.5.2 live tests"). #45 and #46 were fixed and verified on r1359 (2026-11-16). Since then: the code review's fixes (2026-11-17) and the pickers' server check (2026-11-19) — the release can wait a couple of days (user, 2026-11-19) until the HTPC has run the latest nightly (r1407 or later) and the checklist below is through.
+**Released 2026-11-21** (`v0.5.2`): game controller support and pad rebinding, the player's controls with the remote, MPRIS, a light theme and accent color, the Upscaler and HD video in 4K, Settings regrouped, and the fixes of the test week (#45, #46, the code review, the pickers' server check). Live tests: DEVLOG → "0.5.2 live tests".
 
 ---
 
@@ -21,18 +21,7 @@ Version history: [CHANGELOG.md](CHANGELOG.md) (git tags `v0.1.0`–`v0.5.1`). Im
 **Check an item off only once it has been clicked through on real hardware** — a clean build/clippy/test says nothing about whether it works. Add a line here the moment something ships "not live-tested". Ticked items are removed at the next cleanup; their story lives in `DEVLOG.md`.
 
 ### 0.5.2
-- [x] **Bar focus per video (2026-11-17, review).** With the remote: Down, Right to ■ Stop, Enter → stopped. Play another video, Down → the focus is on ⏯ (not ■); OK pauses. Same after ← (minimize) and back to the player.
-- [x] **Detail page after a film's end (2026-11-17, review).** Open a film's page, play it (or skip to its last minutes) and let it end with nothing next → back on the page, Resume is gone, the film shows as watched and the focus is on Play. Log (Debug): `detail: refreshed <id> after playback`.
-- [x] **Back keeps its focus (2026-11-17, review).** Open a film's page and press Left at once to ← Back (before the Trailer button finishes checking) → the focus stays on Back when the check ends; Enter closes the page.
-- [x] **Pad unplugged mid-hold (2026-11-17, review).** Dev or HTPC, wired pad: hold the D-pad down in a library grid and pull the cable (or switch the wireless pad off) while holding → the cursor stops moving. Plug it back in → it works as before.
-- [x] **HD video in 4K needs Sync refresh rate (2026-11-17, review).** Settings → TV & display: switch Sync refresh rate off → HD video in 4K is grayed, "Needs Sync refresh rate on (below)", Enter/Right leave it alone; on again → usable. (The HTPC keeps refresh-rate sync on, so its 4K switching doesn't change.)
-- [x] **Discover Retry with Back (2026-11-17, review).** Seerr stopped: Discover → Right to Retry → Back → the sidebar has the focus (as with Left). Retry focused, then click another tab (Home) with the mouse → the sidebar's highlight is there with the remote. Retry with Enter while Seerr is still down → the keys keep working while it loads.
-- [x] **Sync panel with the remote (2026-11-17, review).** HTPC with the pad: during a film, Down, Right to Sync ▾, OK → the panel opens with a ring on Sub −100ms; OK → "−100 ms"; Right → +100ms, OK → back to 0; Down → the Audio row; OK changes the audio delay (the speech moves against the picture). Back closes the panel with the bar's focus still on Sync ▾. A mouse click on a −/+ button moves the ring there.
-- [x] **Pad buttons in search fields (2026-11-17, review).** With the pad: a library's search (Up to the bar above the grid), Browse All's search and Discover's search — X, Y, Start, LB/RB type nothing; the D-pad, A and B work as before. On the posters again, X opens the context menu and Y jumps to search as before. Log (Debug): `gamepad: … skipped — the library search has the keys`.
-- [x] **One ring with Up Next (2026-11-17, review).** HTPC with the pad: when Up Next (or Skip Intro / Skip · Don't Skip) shows, press Down → the controls come up with no ring on the bar, only on the prompt's button; OK presses that. After the prompt is gone (Keep Watching, or skipped), Down → ⏯ as usual.
-- [x] **MPRIS volume (2026-11-17, review).** Dev or HTPC: during a film without passthrough (or music), KDE Connect's media volume slider (or `busctl --user set-property org.mpris.MediaPlayer2.fjord /org/mpris/MediaPlayer2 org.mpris.MediaPlayer2.Player Volume d 0.5`) → Fjord's volume goes to 50 %, its volume overlay shows it; the + and - keys step on from there. With passthrough audio only the overlay shows (as with the keys).
-- [x] **Sign-in message with the server down (2026-11-19).** With the Jellyfin server stopped (or its address briefly wrong), pick a profile → after a few seconds "Couldn't reach the Jellyfin server — try again in a moment" under the tiles, no address or long error. Start the server, pick again → signs in. A Bonfire profile with a wrong PIN → "Couldn't sign in — <the server's reason>". **Dev 2026-11-19 (r1399–r1407):** the server unreachable → the clear message, no address. Still to check: a wrong Bonfire PIN.
-- [x] **Pickers show a server that's down (2026-11-19).** With the Jellyfin server stopped (or the HTPC's network unplugged), start Fjord → the profile picker (the HTPC: one account) opens as usual and within a few seconds says "Can't reach the Jellyfin server — retrying…" under the tiles. Start the server → the line goes away within ~5 s; pick a profile → signs in. Dev (two accounts): the account picker says the same when no account's server answers; choose the household's account while its server is down → "Can't reach this account's Jellyfin server — try again in a moment" and the account picker stays (its profiles don't open) — also when chosen right after the picker opened (then "Connecting…" for a few seconds first); with the server back, choosing it opens the profiles. Server running: no line, accounts open as before. Log (Debug): `picker: <host> doesn't answer: …`, `on_account_picker_select(…): its server doesn't answer — staying`, `picker: the Jellyfin server answers again`. **Dev 2026-11-19 (r1405/r1407):** server down → the account picker stays with the message, also when chosen 2–3 s after it opened ("Connecting…", ~1 s); only one line shows at a time; server up → the account opens at once and a profile signs in. Still to check: the HTPC's profile picker line (one account) and the line going away when the server comes back.
+Nothing open (2026-11-21).
 
 ---
 
