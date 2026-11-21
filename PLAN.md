@@ -42,12 +42,12 @@ Version history: [CHANGELOG.md](CHANGELOG.md) (git tags `v0.1.0`–`v0.5.1`). Im
 
 ## Issues
 
-- **UI stalls left at a playback start (HTPC, 2026-11-13, not urgent — the screen is re-syncing then anyway).** (1) A 150–280 ms slow frame when a display switch resizes the window (1080p ↔ 4K: Slint redraws everything at the new size). (2) ~350–370 ms `event loop busy` about a second into a 4K HDR start on the 4K mode (3 of 3 such starts since the Upscaler; none at 1080p SDR starts, none when the TV stayed at 1080p) — likely mpv compiling its HDR shaders for the 4K target on the render (UI) thread. mpv's `gpu-shader-cache` is on by default; whether it's used under the render API on the HTPC (GLES 3.2, `~/.cache/mpv`) is unchecked.
 
 ---
 
 ## Deferred / future
 
+- **UI freezes at a 4K HDR film's first start — understood, accepted (2026-11-21).** A 150–320 ms frame when a display switch resizes the window (Slint redraws at the new size), and 330–540 ms of busy UI thread about a second into a 4K HDR film — only the first time that film plays: NVIDIA's driver compiles its tone-mapping shaders (which likely carry the film's HDR values) and keeps them in `~/.cache/nvidia/GLCache`, so the next start of the same film doesn't freeze. Both happen while the TV switches modes, so nothing visible. Only fix: mpv rendering off the UI thread — not planned. DEVLOG → "UI freezes at a 4K HDR start".
 - **Pull-request checks, once outside contributors send PRs.** A workflow on `pull_request` running `cargo fmt --check`, `slint-lsp format` (diff must be empty), clippy and tests — on GitHub-hosted runners (needs libmpv from apt), **never** on the self-hosted runner, which would run strangers' code on the dev machine.
 - **New HTPC GPU (user plans an AMD card, 2026-10-08).** Afterwards: Settings → Advanced → Hardware decode `nvdec` → `auto`/`vaapi`, drop the NVDEC video-filter workaround, re-check HDR and 10-bit (KWin controls the bit depth on amdgpu). Optional: pick these defaults from the detected GPU vendor.
 - **Own 10-bit buffers** (`dmabuf_plane.rs`, opt-in) only help where the driver can send 10-bit but EGL windows are 8-bit — e.g. NVIDIA Ampere+ over HDMI, or Pascal over DisplayPort (see DEVLOG, 2026-10-08). If they're ever used for real: explicit sync (`wp_linux_drm_syncobj_v1`) instead of `glFinish`.
