@@ -16,7 +16,8 @@
 //                        delete_before_grapheme / delete_at_grapheme / with_caret — caret editing by
 //                        grapheme cluster for the hand-drawn text fields (unit-tested)
 //   set_server_url_ui    server-url + server-unencrypted together
-//   close_login_screen   the one close path for the login screen (also closes the on-screen keyboard)
+//   close_login_screen   the one close path for the login screen (also closes the on-screen keyboard
+//                        and ends a Quick Connect wait)
 //   logging              LocalTimer; LOG_GENERATIONS_KEPT, rotate_logs, restrict_log_permissions
 //                        (folder 0700, files 0600, best-effort; unit-tested); LazyLogFile —
 //                        the folder is created/rotated/opened on the log writer's thread at its
@@ -643,6 +644,10 @@ impl tracing_subscriber::fmt::time::FormatTime for LocalTimer {
 // show-onscreen-keyboard would swallow input app-wide (keys.rs checks it first).
 pub(crate) fn close_login_screen(g: &AppState) {
     g.set_show_login(false);
+    // A Quick Connect wait ends with the screen (its poll Timer unmounts; a code still on its way
+    // is dropped — auth.rs checks busy).
+    g.set_login_qc_code(ss(""));
+    g.set_login_qc_busy(false);
     g.set_show_onscreen_keyboard(false);
     g.set_onscreen_keyboard_target(ss(""));
     g.set_onscreen_keyboard_cursor(0);

@@ -7,12 +7,19 @@
 //                account re-login only needs the password); init focuses the first field that
 //                needs typing (deferred one tick, after main.rs's own focus grab) — skipped when
 //                Login was closed meanwhile (a cold start straight to a picker keeps `fs` focused).
+//   Quick Connect  the button below Connect (login-quickconnect-start with the server field's
+//                text; auth.rs requests a code). While login-qc-code is set, a code card takes the
+//                password card's place (the card stays mounted, invisible — its fields' ids stay
+//                reachable): the code, where to enter it, Cancel; its Timer polls every 2 s and
+//                stops with the card.
 //   D-pad zones  (login-zone, see app_state.slint) 0 server, 1 username, 2 password (native
 //                LineEdit focus; Tab cycles them), 3 Remember, 4 Connect, 5 Back (append mode,
-//                Up from Server), 6 Quit (Down from Connect). Fields hand keys back to `fs` with
+//                Up from Server), 6 Quit (Down from Quick Connect), 7 Quick Connect (Down from
+//                Connect; the code card's Cancel while it shows). Fields hand keys back to `fs` with
 //                AppState.refocus(); _zone-mirror gives a field real focus again (Rust can't call
 //                .focus()). Escape/Backspace on Quit un-focuses rather than quitting.
-//   Enter in a field  opens the on-screen keyboard (QwertyKeyboard, below the card). With the
+//   Enter in a field  opens the on-screen keyboard (QwertyKeyboard, below the card, clamped to the
+//                window bottom). With the
 //                keyboard off in Settings (open-onscreen-keyboard returns false): Server →
 //                Username → Password, and Enter in Password presses Connect.
 //   On-screen keyboard  a focus-ring wrapper (FieldFocusWrap) shows the target field while it's
@@ -51,6 +58,10 @@ export component LoginScreen inherits Rectangle {
         AppState.show-onscreen-keyboard = false;
         AppState.onscreen-keyboard-target = "";
         AppState.onscreen-keyboard-cursor = 0;
+        // No Quick Connect wait carried over from a cold start (close_login_screen clears it
+        // otherwise).
+        AppState.login-qc-code = "";
+        AppState.login-qc-busy = false;
         focus-kick-timer.running = true;
     }
     focus-kick-timer := Timer {
@@ -72,6 +83,8 @@ export component LoginScreen inherits Rectangle {
     }
 
     card := Rectangle {
+        // Hidden behind Quick Connect's code card (below) while a code waits for approval.
+        visible: AppState.login-qc-code == "";
         width: min(420px, parent.width - 48px);
         height: inner.preferred-height;
         x: (parent.width - self.width) / 2;
@@ -308,12 +321,91 @@ export component LoginScreen inherits Rectangle {
                 }
             }
 
+            // Zone 7: sign in by approving a code in another Jellyfin app (only the server is needed).
+            FjordButton {
+                text: AppState.login-qc-busy ? "Requesting code…" : "Quick Connect";
+                enabled: !AppState.login-qc-busy;
+                kbd-focused: AppState.login-zone == 7;
+                clicked => {
+                    AppState.login-zone = 7;
+                    AppState.login-quickconnect-start(server-input.text);
+                }
+            }
+
             if AppState.status != "": Text {
                 text: AppState.status;
                 color: Theme.text-muted;
                 font-size: Theme.fs-md * AppState.text-scale;
                 horizontal-alignment: center;
                 wrap: word-wrap;
+            }
+        }
+    }
+
+    // Quick Connect's code card, in the password card's place while a code waits for approval.
+    if AppState.login-qc-code != "": Rectangle {
+        width: min(420px, parent.width - 48px);
+        height: qc-inner.preferred-height;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2 - 24px;
+        background: Theme.surface;
+        border-radius: Theme.radius-lg;
+        drop-shadow-blur: 28px;
+        drop-shadow-color: Theme.shadow;
+
+        qc-inner := VerticalLayout {
+            padding: Theme.sp-xl;
+            spacing: Theme.sp;
+
+            Text {
+                text: "Quick Connect";
+                color: Theme.text;
+                font-size: Theme.fs-xl * AppState.text-scale;
+                font-weight: 700;
+                horizontal-alignment: center;
+            }
+
+            Text {
+                text: AppState.login-qc-code;
+                color: Theme.accent;
+                font-size: Theme.fs-5xl;
+                font-weight: 700;
+                letter-spacing: 6px;
+                horizontal-alignment: center;
+            }
+
+            Text {
+                text: "In a Jellyfin app or web page where you're signed in, open Quick Connect in your user menu and enter this code.";
+                color: Theme.text-muted;
+                font-size: Theme.fs-md * AppState.text-scale;
+                horizontal-alignment: center;
+                wrap: word-wrap;
+            }
+
+            Text {
+                text: "Waiting for approval…";
+                color: Theme.text-subtle;
+                font-size: Theme.fs-sm * AppState.text-scale;
+                horizontal-alignment: center;
+            }
+
+            FjordButton {
+                text: "Cancel";
+                kbd-focused: AppState.login-zone == 7;
+                clicked => {
+                    AppState.login-zone = 7;
+                    AppState.login-quickconnect-cancel();
+                }
+            }
+        }
+
+        // The poll: auth.rs checks the code (one check at a time) and ends the wait on approval,
+        // expiry or a lost server.
+        Timer {
+            interval: 2s;
+            running: AppState.show-login;
+            triggered => {
+                AppState.login-quickconnect-poll();
             }
         }
     }
@@ -376,7 +468,9 @@ export component LoginScreen inherits Rectangle {
 
     if AppState.show-onscreen-keyboard && AppState.settings-onscreen-keyboard-enabled: QwertyKeyboard {
         x: (parent.width - self.width) / 2;
-        y: card.y + card.height + 16px;
+        // Clamped to the window bottom (like Connect Seerr's): with the Quick Connect button the
+        // card grew, and at 1920×1080 the keyboard's bottom row (Done) ended 27 px off-screen.
+        y: min(card.y + card.height + 16px, parent.height - self.height - 16px);
         cursor: AppState.onscreen-keyboard-cursor;
         active: AppState.show-onscreen-keyboard;
         key-pressed(k) => { root.dispatch-onscreen-key(k); }
@@ -418,12 +512,20 @@ export component LoginScreen inherits Rectangle {
         else if _zone-mirror == 2 { pass-input.focus(); }
     }
 
-    // Zone 4's D-pad Enter (keys.rs) bumps kb-activate-pulse instead of calling do-login —
-    // Rust can't read the live LineEdit.text. Same idiom as ProfileEditScreen's _pulse-mirror.
+    // Zone 4's and 7's D-pad Enter (keys.rs) bump kb-activate-pulse instead of calling do-login /
+    // login-quickconnect-start — Rust can't read the live LineEdit.text. Same idiom as
+    // ProfileEditScreen's _pulse-mirror. Zone 7 is Cancel while a code shows (decided here, not
+    // in Rust: a cancel there would land before this runs and start a new code).
     property <int> _pulse-mirror: AppState.kb-activate-pulse;
     changed _pulse-mirror => {
         if AppState.show-login && AppState.login-zone == 4 {
             AppState.do-login(server-input.text, user-input.text, pass-input.text, AppState.login-append-mode, AppState.login-remember);
+        } else if AppState.show-login && AppState.login-zone == 7 {
+            if AppState.login-qc-code != "" {
+                AppState.login-quickconnect-cancel();
+            } else if !AppState.login-qc-busy {
+                AppState.login-quickconnect-start(server-input.text);
+            }
         }
     }
 }

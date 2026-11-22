@@ -1,12 +1,14 @@
 // ── fjord-app · auth.rs ──────────────────────────────────────────────────────
-//   candidate_server_urls / authenticate_with_fallback / is_connectivity_failure  a typed address
-//             without a scheme tries https, then http (only on a real connectivity failure)
+//   candidate_server_urls / first_answering_candidate / is_connectivity_failure  a typed address
+//             without a scheme tries https, then http (only on a real connectivity failure);
+//             authenticate_with_fallback = the password login through it
 //   fell_back_to_http / note_if_http_fallback  a schemeless address that only answered over http →
 //             one log line + toast (Jellyfin login, Seerr connects; unit-tested)
 //   LoginOptions  { append, remember }
-//   do_login  authenticate (30 s timeout), update or add the profile (append = Add Account; a direct
-//             login resets Bonfire-discovery fields; display_name backfilled), persist, then
-//             finish_session_setup
+//   do_login  authenticate (30 s timeout), then complete_login
+//   complete_login  shared by password and Quick Connect sign-ins: update or add the profile
+//             (append = Add Account; a direct login resets Bonfire-discovery fields; display_name
+//             backfilled), persist, then finish_session_setup
 //   finish_session_setup  shared tail of login and profile switch: profile settings + Seerr client for
 //             the new profile, sidebar tile, warm start from this user's cached home/series/screen
 //             caches, then home data/series/system info/plugins in parallel; persists caches, starts
@@ -14,7 +16,12 @@
 //   spawn_not_watched_rows / push_not_watched_row  the "Not watched" rows off the login path: TV
 //             at once (home::not_watched_tv), Movies after its server query; each row then its
 //             posters (session-guarded)
-//   wire_login             callbacks moved from main() (0.5.0 step 3): the login screen
+//   wire_login             callbacks moved from main() (0.5.0 step 3): the login screen, + wire_quick_connect
+//   wire_quick_connect     Login's Quick Connect: start (resolve the address, /QuickConnect/Enabled, a
+//             code → login-qc-code), poll (login.slint's 2 s Timer; one check at a time; approval →
+//             finish_quick_connect → complete_login; expiry, Quick Connect turned off or
+//             QC_MAX_FAILURES checks without an answer end the wait), cancel; QuickConnectState's
+//             attempt counter drops answers of an older attempt; quick_connect_next (unit-tested)
 //   wire_sign_out          callbacks moved from main() (0.5.0 step 3): Sign Out — removes the account and
 //             its Bonfire sub-profiles/group accounts, logs their server sessions out, keeps
 //             device_id and settings, then the account picker (if any account is left) or Login
@@ -23,8 +30,8 @@ use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
 use fjord_api::JellyfinClient;
-use slint::SharedString;
-use tracing::{error, info, warn};
+use slint::{ComponentHandle, SharedString};
+use tracing::{debug, error, info, warn};
 use url::Url;
 
 use crate::AppState;
@@ -97,31 +104,31 @@ pub(crate) fn is_connectivity_failure(e: &anyhow::Error) -> bool {
         .is_some_and(|re| re.is_connect() || re.is_timeout())
 }
 
-/// Tries each of `candidate_server_urls`'s candidates in order, moving on
-/// to the next one ONLY when a candidate fails with a genuine connectivity
-/// error (see `is_connectivity_failure`). A candidate that reaches the
-/// server and gets a real error back (401 wrong password, 500, etc.) is
-/// treated as the final answer — retrying that same request under a
-/// different scheme would never fix a wrong password, and would just
-/// double the wait before showing the real error.
-pub(crate) async fn authenticate_with_fallback(
-    http: &reqwest::Client,
+/// Runs `attempt` against each of `candidate_server_urls(server)` in order, moving on to the next
+/// candidate ONLY when one fails with a genuine connectivity error (see `is_connectivity_failure`).
+/// A candidate that reaches the server and gets a real error back (401 wrong password, 500, etc.)
+/// is the final answer — retrying the same request under a different scheme would never fix a
+/// wrong password, and would just double the wait before showing the real error. `what` names the
+/// request in the log.
+pub(crate) async fn first_answering_candidate<T, F, Fut>(
     server: &str,
-    user: &str,
-    pass: &str,
-    device_id: &str,
-) -> Result<(Url, fjord_api::models::AuthResponse)> {
+    what: &str,
+    mut attempt: F,
+) -> Result<(Url, T)>
+where
+    F: FnMut(Url) -> Fut,
+    Fut: std::future::Future<Output = Result<T>>,
+{
     let candidates = candidate_server_urls(server);
     let mut last_err: Option<anyhow::Error> = None;
     for (i, candidate) in candidates.iter().enumerate() {
         let server_url = Url::parse(candidate)?;
-        match fjord_api::authenticate(http, &server_url, user, pass, device_id).await {
-            Ok(auth) => return Ok((server_url, auth)),
+        match attempt(server_url.clone()).await {
+            Ok(answer) => return Ok((server_url, answer)),
             Err(e) => {
-                let is_connectivity = is_connectivity_failure(&e);
                 let is_last = i + 1 == candidates.len();
-                if is_connectivity && !is_last {
-                    info!("authenticate: {candidate} unreachable ({e:#}), trying next candidate");
+                if is_connectivity_failure(&e) && !is_last {
+                    info!("{what}: {candidate} unreachable ({e:#}), trying next candidate");
                     last_err = Some(e);
                     continue;
                 }
@@ -130,6 +137,20 @@ pub(crate) async fn authenticate_with_fallback(
         }
     }
     Err(last_err.unwrap_or_else(|| anyhow::anyhow!("no server address given")))
+}
+
+/// The password login through `first_answering_candidate`.
+pub(crate) async fn authenticate_with_fallback(
+    http: &reqwest::Client,
+    server: &str,
+    user: &str,
+    pass: &str,
+    device_id: &str,
+) -> Result<(Url, fjord_api::models::AuthResponse)> {
+    first_answering_candidate(server, "authenticate", move |url| async move {
+        fjord_api::authenticate(http, &url, user, pass, device_id).await
+    })
+    .await
 }
 
 /// The two "how to handle this login" flags, grouped instead of more loose parameters
@@ -182,90 +203,16 @@ pub(crate) fn do_login(
             .await?;
             info!("authenticated as {}", auth.user.name);
             note_if_http_fallback(&window_weak, "Jellyfin", &server, &server_url);
-            // `append`: keep every profile and add this one alongside (a normal sign-in replaces
-            // the active slot — right after a sign-out, wrong for adding a second account). An
-            // already-known user_id (re-authenticating a stale token) is updated in place, not
-            // duplicated.
-            if append {
-                if let Some(p) = cfg.profiles.iter_mut().find(|p| p.user_id == auth.user.id) {
-                    p.server_url = server_url.to_string();
-                    p.token = auth.access_token.clone();
-                    // Backfill an empty display_name from the real Jellyfin username (old migrated
-                    // profiles had none, and the tile then showed the raw user_id).
-                    if p.display_name.is_empty() {
-                        p.display_name = auth.user.name.clone();
-                    }
-                    // "Remember this login" is a per-attempt choice: a re-login takes the checkbox as it
-                    // is now.
-                    p.remember_login = remember;
-                    // A successful direct username/password login proves independent access: reset the
-                    // Bonfire-discovery fields (is_bonfire/is_group_account/master_user_id) so this account
-                    // switches directly again — re-adding an account is the recovery for a Bonfire
-                    // misclassification and must actually restore direct access.
-                    p.is_bonfire = false;
-                    p.is_group_account = false;
-                    p.master_user_id.clear();
-                    p.synced_via.clear();
-                    // `has_pin` is cached from Bonfire's /list; a plain independent account has no PIN, so
-                    // a stale true must not keep demanding one.
-                    p.has_pin = false;
-                } else {
-                    cfg.profiles.push(crate::config::ProfileSettings {
-                        server_url: server_url.to_string(),
-                        user_id: auth.user.id.clone(),
-                        token: auth.access_token.clone(),
-                        display_name: auth.user.name.clone(),
-                        remember_login: remember,
-                        ..Default::default()
-                    });
-                }
-            } else {
-                let p = cfg.active_mut();
-                p.server_url = server_url.to_string();
-                p.user_id = auth.user.id.clone();
-                p.token = auth.access_token.clone();
-                if p.display_name.is_empty() {
-                    p.display_name = auth.user.name.clone();
-                }
-                p.remember_login = remember;
-                // Same fix as the append-existing-entry branch above, for
-                // the identical reason — a plain (non-append) sign-in can
-                // also land on an already-known, Bonfire-discovery-tainted
-                // entry (e.g. cfg.active_mut()'s own fallback-to-first-entry
-                // path, or a RequireLogin re-prompt against one), and a real
-                // successful direct login is equally proof of independent
-                // access here.
-                p.is_bonfire = false;
-                p.is_group_account = false;
-                p.master_user_id.clear();
-                p.synced_via.clear();
-                p.has_pin = false;
-            }
-            // active_profile_id doubles as the active profile's own user_id
-            // (Config::active()'s lookup key) — keep it in sync with the
-            // identity just written above so it still names a real entry.
-            cfg.active_profile_id = auth.user.id.clone();
-            let user_id = cfg.active_profile_id.clone();
-            save_config(&cfg);
-
-            let client = Arc::new(JellyfinClient::new(
-                server_url.clone(),
-                auth.user.id,
-                auth.access_token.clone(),
-                cfg.device.device_id.clone(),
-            )?);
-
-            finish_session_setup(
-                client,
-                cfg,
-                user_id,
+            complete_login(
                 server_url,
+                auth,
+                LoginOptions { append, remember },
+                cfg,
                 state,
                 window_weak.clone(),
                 rt_handle,
             )
-            .await;
-            Ok(())
+            .await
         }
         .await;
 
@@ -279,6 +226,105 @@ pub(crate) fn do_login(
             });
         }
     });
+}
+
+/// The shared tail of a password and a Quick Connect sign-in, once the server has handed out a
+/// token: update or add the profile (`opts.append` = Add Account), persist, then
+/// finish_session_setup. `cfg` is a copy of the current config with a device id.
+async fn complete_login(
+    server_url: Url,
+    auth: fjord_api::models::AuthResponse,
+    opts: LoginOptions,
+    mut cfg: crate::config::Config,
+    state: Arc<Mutex<FjordState>>,
+    window_weak: slint::Weak<MainWindow>,
+    rt_handle: tokio::runtime::Handle,
+) -> Result<()> {
+    let LoginOptions { append, remember } = opts;
+    // `append`: keep every profile and add this one alongside (a normal sign-in replaces
+    // the active slot — right after a sign-out, wrong for adding a second account). An
+    // already-known user_id (re-authenticating a stale token) is updated in place, not
+    // duplicated.
+    if append {
+        if let Some(p) = cfg.profiles.iter_mut().find(|p| p.user_id == auth.user.id) {
+            p.server_url = server_url.to_string();
+            p.token = auth.access_token.clone();
+            // Backfill an empty display_name from the real Jellyfin username (old migrated
+            // profiles had none, and the tile then showed the raw user_id).
+            if p.display_name.is_empty() {
+                p.display_name = auth.user.name.clone();
+            }
+            // "Remember this login" is a per-attempt choice: a re-login takes the checkbox as it
+            // is now.
+            p.remember_login = remember;
+            // A successful direct login (password or Quick Connect) proves independent access: reset the
+            // Bonfire-discovery fields (is_bonfire/is_group_account/master_user_id) so this account
+            // switches directly again — re-adding an account is the recovery for a Bonfire
+            // misclassification and must actually restore direct access.
+            p.is_bonfire = false;
+            p.is_group_account = false;
+            p.master_user_id.clear();
+            p.synced_via.clear();
+            // `has_pin` is cached from Bonfire's /list; a plain independent account has no PIN, so
+            // a stale true must not keep demanding one.
+            p.has_pin = false;
+        } else {
+            cfg.profiles.push(crate::config::ProfileSettings {
+                server_url: server_url.to_string(),
+                user_id: auth.user.id.clone(),
+                token: auth.access_token.clone(),
+                display_name: auth.user.name.clone(),
+                remember_login: remember,
+                ..Default::default()
+            });
+        }
+    } else {
+        let p = cfg.active_mut();
+        p.server_url = server_url.to_string();
+        p.user_id = auth.user.id.clone();
+        p.token = auth.access_token.clone();
+        if p.display_name.is_empty() {
+            p.display_name = auth.user.name.clone();
+        }
+        p.remember_login = remember;
+        // Same fix as the append-existing-entry branch above, for
+        // the identical reason — a plain (non-append) sign-in can
+        // also land on an already-known, Bonfire-discovery-tainted
+        // entry (e.g. cfg.active_mut()'s own fallback-to-first-entry
+        // path, or a RequireLogin re-prompt against one), and a real
+        // successful direct login is equally proof of independent
+        // access here.
+        p.is_bonfire = false;
+        p.is_group_account = false;
+        p.master_user_id.clear();
+        p.synced_via.clear();
+        p.has_pin = false;
+    }
+    // active_profile_id doubles as the active profile's own user_id
+    // (Config::active()'s lookup key) — keep it in sync with the
+    // identity just written above so it still names a real entry.
+    cfg.active_profile_id = auth.user.id.clone();
+    let user_id = cfg.active_profile_id.clone();
+    save_config(&cfg);
+
+    let client = Arc::new(JellyfinClient::new(
+        server_url.clone(),
+        auth.user.id,
+        auth.access_token.clone(),
+        cfg.device.device_id.clone(),
+    )?);
+
+    finish_session_setup(
+        client,
+        cfg,
+        user_id,
+        server_url,
+        state,
+        window_weak.clone(),
+        rt_handle,
+    )
+    .await;
+    Ok(())
 }
 
 // ── finish_session_setup ─────────────────────────────────────────────────────
@@ -673,6 +719,315 @@ pub(crate) fn wire_login(
             );
         });
     }
+    wire_quick_connect(&window, &state, rt);
+}
+
+// ── Quick Connect ────────────────────────────────────────────────────────────
+// Sign in by approving a 6-digit code in another Jellyfin app — no password typed with the
+// remote. Login's Quick Connect button → start (resolve the typed address like a password login,
+// check the server allows it, request a code); login.slint shows the code and calls poll every
+// 2 s while it does; approval → authenticate with the secret → complete_login, like a password.
+
+/// How long a Quick Connect call may take (the poll runs every 2 s).
+const QC_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+/// Checks in a row that got no answer before the wait ends (~20 s of a vanished server).
+const QC_MAX_FAILURES: u32 = 10;
+
+/// The request the login screen is waiting on.
+struct QuickConnectWait {
+    server_url: Url,
+    device_id: String,
+    secret: String,
+}
+
+/// Shared by the start/poll/cancel callbacks.
+#[derive(Default)]
+struct QuickConnectState {
+    /// Bumped by every start and cancel: an answer for an older attempt is dropped.
+    attempt: u64,
+    wait: Option<QuickConnectWait>,
+    /// One status check at a time — a check may take longer than the 2 s poll interval.
+    poll_in_flight: bool,
+    /// Checks in a row without an answer.
+    failures: u32,
+}
+
+/// What a status check means for the wait.
+#[derive(Debug, PartialEq)]
+enum QcNext {
+    KeepWaiting,
+    Approved,
+    /// Stop waiting and show this.
+    End(&'static str),
+}
+
+/// The wait's next step after a status check (`failures` = checks in a row without an answer,
+/// this one included).
+fn quick_connect_next(status: &Result<fjord_api::QuickConnectStatus>, failures: u32) -> QcNext {
+    use fjord_api::QuickConnectStatus as S;
+    match status {
+        Ok(S::Waiting) => QcNext::KeepWaiting,
+        Ok(S::Approved) => QcNext::Approved,
+        Ok(S::Expired) => QcNext::End("The code expired — press Quick Connect for a new one"),
+        Ok(S::Disabled) => QcNext::End("Quick Connect was turned off on the server"),
+        Err(_) if failures >= QC_MAX_FAILURES => {
+            QcNext::End("Lost the connection to the Jellyfin server — try Quick Connect again")
+        }
+        Err(_) => QcNext::KeepWaiting,
+    }
+}
+
+/// The login screen's line for a failed step: a request that got no answer says the server
+/// isn't there; anything else names the step and the server's reason.
+fn quick_connect_error(what: &str, e: &anyhow::Error) -> String {
+    if is_connectivity_failure(e) {
+        return "Couldn't reach a Jellyfin server at that address".into();
+    }
+    format!("{what} — {}", crate::short_error(e))
+}
+
+fn wire_quick_connect(
+    window: &MainWindow,
+    state: &Arc<Mutex<FjordState>>,
+    rt: &tokio::runtime::Runtime,
+) {
+    let qc = Arc::new(Mutex::new(QuickConnectState::default()));
+    let http = reqwest::Client::builder()
+        .timeout(QC_TIMEOUT)
+        .build()
+        .unwrap_or_default();
+    let g = AppState::get(window);
+
+    g.on_login_quickconnect_start({
+        let qc = Arc::clone(&qc);
+        let state = Arc::clone(state);
+        let ww = window.as_weak();
+        let rt = rt.handle().clone();
+        let http = http.clone();
+        move |server| {
+            let Some(w) = ww.upgrade() else { return };
+            let g = AppState::get(&w);
+            let server = server.trim().to_string();
+            if server.is_empty() {
+                g.set_status(ss("Enter the server address first"));
+                return;
+            }
+            let attempt = {
+                let mut q = qc.lock().unwrap();
+                q.attempt += 1;
+                q.wait = None;
+                q.failures = 0;
+                q.attempt
+            };
+            g.set_login_qc_busy(true);
+            g.set_status(ss(""));
+            let device_id = state.lock().unwrap().config.device.device_id.clone();
+            let (qc, ww, http) = (Arc::clone(&qc), ww.clone(), http.clone());
+            rt.spawn(async move {
+                let found = first_answering_candidate(&server, "quick connect", |url| {
+                    let http = http.clone();
+                    async move { fjord_api::quick_connect_enabled(&http, &url).await }
+                })
+                .await;
+                let outcome = match found {
+                    Ok((url, true)) => fjord_api::quick_connect_initiate(&http, &url, &device_id)
+                        .await
+                        .map(|r| Some((url, r)))
+                        .map_err(|e| {
+                            warn!("quick connect: couldn't get a code: {e:#}");
+                            quick_connect_error("Couldn't start Quick Connect", &e)
+                        }),
+                    Ok((url, false)) => {
+                        info!("quick connect: turned off on {url}");
+                        Ok(None)
+                    }
+                    Err(e) => {
+                        warn!("quick connect: no server at {server}: {e:#}");
+                        Err(quick_connect_error("Couldn't start Quick Connect", &e))
+                    }
+                };
+                let _ = slint::invoke_from_event_loop(move || {
+                    let Some(w) = ww.upgrade() else { return };
+                    let g = AppState::get(&w);
+                    // Cancelled, restarted or Login closed meanwhile (close_login_screen clears busy).
+                    if qc.lock().unwrap().attempt != attempt || !g.get_login_qc_busy() {
+                        debug!("quick connect: dropped the answer of an older attempt");
+                        return;
+                    }
+                    g.set_login_qc_busy(false);
+                    match outcome {
+                        Ok(Some((url, r))) => {
+                            info!("quick connect: waiting for approval of a code from {url}");
+                            note_if_http_fallback(&ww, "Jellyfin", &server, &url);
+                            qc.lock().unwrap().wait = Some(QuickConnectWait {
+                                server_url: url,
+                                device_id,
+                                secret: r.secret,
+                            });
+                            // The password card hides behind the code: the keys go to `fs` and
+                            // its Cancel button.
+                            g.set_show_onscreen_keyboard(false);
+                            g.set_login_qc_code(ss(&r.code));
+                            g.set_login_zone(7);
+                            g.invoke_refocus();
+                        }
+                        Ok(None) => g.set_status(ss(
+                            "Quick Connect is turned off on this server — an administrator can \
+                             turn it on in the Dashboard (General)",
+                        )),
+                        Err(msg) => g.set_status(ss(&msg)),
+                    }
+                });
+            });
+        }
+    });
+
+    g.on_login_quickconnect_poll({
+        let qc = Arc::clone(&qc);
+        let state = Arc::clone(state);
+        let ww = window.as_weak();
+        let rt = rt.handle().clone();
+        move || {
+            let (attempt, server_url, device_id, secret) = {
+                let mut q = qc.lock().unwrap();
+                let Some(wait) = &q.wait else { return };
+                if q.poll_in_flight {
+                    return;
+                }
+                let found = (
+                    q.attempt,
+                    wait.server_url.clone(),
+                    wait.device_id.clone(),
+                    wait.secret.clone(),
+                );
+                q.poll_in_flight = true;
+                found
+            };
+            let (qc, state, ww, rt2, http) = (
+                Arc::clone(&qc),
+                Arc::clone(&state),
+                ww.clone(),
+                rt.clone(),
+                http.clone(),
+            );
+            rt.spawn(async move {
+                let status =
+                    fjord_api::quick_connect_status(&http, &server_url, &device_id, &secret).await;
+                let _ = slint::invoke_from_event_loop(move || {
+                    // Decided under the lock, acted on after it (the UI calls below).
+                    let next = {
+                        let mut q = qc.lock().unwrap();
+                        q.poll_in_flight = false;
+                        if q.attempt != attempt || q.wait.is_none() {
+                            return;
+                        }
+                        q.failures = if status.is_err() { q.failures + 1 } else { 0 };
+                        let next = quick_connect_next(&status, q.failures);
+                        match next {
+                            QcNext::KeepWaiting => None,
+                            QcNext::Approved => Some(Ok(q.wait.take())),
+                            QcNext::End(msg) => {
+                                q.wait = None;
+                                Some(Err(msg))
+                            }
+                        }
+                    };
+                    if let Err(e) = &status {
+                        debug!("quick connect: status check failed: {e:#}");
+                    }
+                    let Some(next) = next else { return };
+                    let Some(w) = ww.upgrade() else { return };
+                    let g = AppState::get(&w);
+                    g.set_login_qc_code(ss(""));
+                    match next {
+                        Ok(Some(wait)) => {
+                            info!("quick connect: approved — signing in");
+                            g.set_status(ss("Signing in…"));
+                            let opts = LoginOptions {
+                                append: g.get_login_append_mode(),
+                                remember: g.get_login_remember(),
+                            };
+                            rt2.spawn(finish_quick_connect(
+                                wait,
+                                opts,
+                                state,
+                                ww.clone(),
+                                rt2.clone(),
+                            ));
+                        }
+                        Ok(None) => {}
+                        Err(msg) => {
+                            info!("quick connect: stopped waiting — {msg}");
+                            g.set_status(ss(msg));
+                        }
+                    }
+                });
+            });
+        }
+    });
+
+    g.on_login_quickconnect_cancel({
+        let qc = Arc::clone(&qc);
+        let ww = window.as_weak();
+        move || {
+            {
+                let mut q = qc.lock().unwrap();
+                q.attempt += 1;
+                q.wait = None;
+                q.failures = 0;
+            }
+            info!("quick connect: cancelled");
+            if let Some(w) = ww.upgrade() {
+                let g = AppState::get(&w);
+                g.set_login_qc_code(ss(""));
+                g.set_login_qc_busy(false);
+                g.set_status(ss(""));
+            }
+        }
+    });
+}
+
+/// After approval: the session for the secret, then the same sign-in as a password login.
+async fn finish_quick_connect(
+    wait: QuickConnectWait,
+    opts: LoginOptions,
+    state: Arc<Mutex<FjordState>>,
+    window_weak: slint::Weak<MainWindow>,
+    rt_handle: tokio::runtime::Handle,
+) {
+    let result: Result<()> = async {
+        let http = reqwest::Client::builder().timeout(QC_TIMEOUT).build()?;
+        let auth = fjord_api::authenticate_with_quick_connect(
+            &http,
+            &wait.server_url,
+            &wait.device_id,
+            &wait.secret,
+        )
+        .await?;
+        info!("quick connect: authenticated as {}", auth.user.name);
+        let mut cfg = state.lock().unwrap().config.clone();
+        ensure_device_id(&mut cfg);
+        complete_login(
+            wait.server_url,
+            auth,
+            opts,
+            cfg,
+            state,
+            window_weak.clone(),
+            rt_handle,
+        )
+        .await
+    }
+    .await;
+    if let Err(e) = result {
+        error!("quick connect: sign-in failed: {e:#}");
+        let msg = quick_connect_error("Couldn't finish Quick Connect", &e);
+        let _ = slint::invoke_from_event_loop(move || {
+            if let Some(w) = window_weak.upgrade() {
+                AppState::get(&w).set_status(ss(&msg));
+            }
+        });
+    }
 }
 
 // ── wire_sign_out (moved from main(), 0.5.0 step 3) ──────────────────────
@@ -795,8 +1150,36 @@ pub(crate) fn wire_sign_out(
 
 #[cfg(test)]
 mod tests {
-    use super::{candidate_server_urls, fell_back_to_http};
+    use super::{
+        QC_MAX_FAILURES, QcNext, candidate_server_urls, fell_back_to_http, quick_connect_next,
+    };
+    use fjord_api::QuickConnectStatus as S;
     use url::Url;
+
+    /// Approval signs in; expiry and a server that turned Quick Connect off end the wait at once;
+    /// a check without an answer ends it only after QC_MAX_FAILURES in a row.
+    #[test]
+    fn the_quick_connect_wait_follows_the_server() {
+        assert_eq!(quick_connect_next(&Ok(S::Waiting), 0), QcNext::KeepWaiting);
+        assert_eq!(quick_connect_next(&Ok(S::Approved), 0), QcNext::Approved);
+        assert!(
+            matches!(quick_connect_next(&Ok(S::Expired), 0), QcNext::End(m) if m.contains("expired"))
+        );
+        assert!(matches!(
+            quick_connect_next(&Ok(S::Disabled), 0),
+            QcNext::End(_)
+        ));
+        let lost = || Err(anyhow::anyhow!("connection refused"));
+        assert_eq!(quick_connect_next(&lost(), 1), QcNext::KeepWaiting);
+        assert_eq!(
+            quick_connect_next(&lost(), QC_MAX_FAILURES - 1),
+            QcNext::KeepWaiting
+        );
+        assert!(matches!(
+            quick_connect_next(&lost(), QC_MAX_FAILURES),
+            QcNext::End(_)
+        ));
+    }
 
     #[test]
     fn http_fallback_is_noticed() {

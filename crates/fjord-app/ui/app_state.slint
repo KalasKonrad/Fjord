@@ -10,7 +10,8 @@
 //   Account picker        show-account-picker + account-picker-accounts ([AccountTile]) — above the
 //                         profile picker, only with 2+ accounts; account-picker-select/-add-account;
 //                         login-append-mode/-source/-server-prefill/-username-prefill/-remember thread
-//                         through LoginScreen for both "Add Account" entry points and RequireLogin
+//                         through LoginScreen for both "Add Account" entry points and RequireLogin;
+//                         login-qc-code/-busy + login-quickconnect-start/-poll/-cancel (Quick Connect)
 //   On-screen keyboard    show-onscreen-keyboard, onscreen-keyboard-target/-cursor/-caret,
 //                         onscreen-keyboard-row-lens (topology shared with QwertyKeyboard),
 //                         onscreen-keyboard-trim-last/-byte-len/-edit, caret-text, text-field-caret;
@@ -2376,7 +2377,8 @@ export global AppState {
     // passes login-append-mode / login-remember verbatim.
     callback do-login(string, string, string, bool, bool);
     // Login screen D-pad zones: 0=server 1=username 2=password 3=Remember toggle
-    // 4=Connect 5=Back/Cancel (append mode only) 6=Quit. Zones 0-2 hold native
+    // 4=Connect 5=Back/Cancel (append mode only) 6=Quit 7=Quick Connect (below Connect; while a
+    // code shows, the code card's Cancel). Zones 0-2 hold native
     // LineEdit focus (Tab cycles them); login.slint's key-pressed hooks refocus() fs
     // when leaving zone 2 (and from zone 0 up to Back), and a changed login-zone
     // tracker calls the right field's .focus() when re-entering 0-2 (Rust can't call
@@ -2400,6 +2402,14 @@ export global AppState {
     // remember_login's own default (today's actual behavior, unchanged
     // unless explicitly turned off).
     in-out property <bool> login-remember: true;
+    // Quick Connect (auth.rs wire_quick_connect): the code to show while waiting for approval
+    // ("" = not waiting; login.slint shows its code card and polls every 2 s only then), and busy
+    // while the code is being requested. close_login_screen clears both.
+    in-out property <string> login-qc-code: "";
+    in-out property <bool> login-qc-busy: false;
+    callback login-quickconnect-start(string);  // the server field's text
+    callback login-quickconnect-poll();
+    callback login-quickconnect-cancel();
     callback cancel-add-account();  // LoginScreen's "← Back to Profiles" (append mode only)
     callback sign-out;
     // Sign Out confirmation. Reachable from 3 places (Settings → Profiles, the

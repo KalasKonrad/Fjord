@@ -23,6 +23,12 @@ are bumped together as one step, not separately.
 
 ## [Unreleased]
 
+- **New: Quick Connect sign-in.** The login screen has a Quick Connect button:
+  type only the server address, and Fjord shows a 6-digit code to enter in
+  another Jellyfin app or the web page where you're signed in (user menu →
+  Quick Connect) — no password to type with the remote. It works for Add
+  Account too and follows "Remember this login". If the server has Quick
+  Connect turned off, the login screen says so.
 - **Improved: the last odd spacings follow the size scale.** About fifty gaps
   and paddings of 6 and 10 px (buttons, the on-screen keyboard, the player's
   panels, the sidebar, menus, card rows) are now 8 and 12 px like the rest, so

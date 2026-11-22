@@ -2,6 +2,7 @@
 //   AuthResponse  top-level login response (AccessToken + User)
 //   UserDto       user id + display name + admin policy from login/GET /Users/{id}
 //   UserPolicy    IsAdministrator (Jellyfin's server-admin flag; gates Bonfire Admin)
+//   QuickConnectResult  a Quick Connect request: Code (shown), Secret (polled with), Authenticated
 // ─────────────────────────────────────────────────────────────────────────────
 use serde::Deserialize;
 
@@ -32,6 +33,18 @@ pub struct UserDto {
     pub policy: UserPolicy,
 }
 
+/// `POST /QuickConnect/Initiate` and `GET /QuickConnect/Connect` (also DeviceId, DeviceName, AppName,
+/// AppVersion, DateAdded — unused). The secret is 64 hex characters, the code 6 digits.
+#[derive(Debug, Deserialize)]
+pub struct QuickConnectResult {
+    #[serde(rename = "Authenticated", default)]
+    pub authenticated: bool,
+    #[serde(rename = "Secret")]
+    pub secret: String,
+    #[serde(rename = "Code")]
+    pub code: String,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -60,5 +73,15 @@ mod tests {
         let json = r#"{"AccessToken":"tok123","User":{"Id":"user-uuid","Name":"Alice","Policy":{"IsAdministrator":true,"IsHidden":false}}}"#;
         let resp: AuthResponse = serde_json::from_str(json).unwrap();
         assert!(resp.user.policy.is_administrator);
+    }
+
+    #[test]
+    fn quick_connect_result_deserializes() {
+        // The shape a 12.4 server sent (values replaced).
+        let json = r#"{"Authenticated":false,"Secret":"AB12","Code":"123456","DeviceId":"d","DeviceName":"Linux","AppName":"Fjord","AppVersion":"0.1.0","DateAdded":"2026-11-22T13:02:54.9280853Z"}"#;
+        let r: QuickConnectResult = serde_json::from_str(json).unwrap();
+        assert!(!r.authenticated);
+        assert_eq!(r.secret, "AB12");
+        assert_eq!(r.code, "123456");
     }
 }

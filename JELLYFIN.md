@@ -18,6 +18,24 @@ Authorization: MediaBrowser Client="Fjord", Device="Desktop", DeviceId="<uuid>",
 ```
 Returns `{ "AccessToken": "...", "User": { "Id": "..." } }`.
 
+### Quick Connect **[used]** (verified 2026-11-22 in jellyfin/jellyfin 10.9 → 12.x and live on 12.4)
+Sign in by approving a 6-digit code in another Jellyfin app (web: user menu → Quick Connect). All
+four calls carry the token-less `Authorization: MediaBrowser Client=…, Device=…, DeviceId=…, Version=…`
+header — `Initiate` answers 400 without it, and the approved session is created for exactly that
+DeviceId/Device/Client/Version (`QuickConnectManager.AuthorizeRequest` → `AuthenticateDirect`).
+```
+GET  /QuickConnect/Enabled                → true | false (anonymous; Dashboard → General)
+POST /QuickConnect/Initiate               → QuickConnectResult (401 "Quick connect is disabled")
+GET  /QuickConnect/Connect?secret=<s>     → QuickConnectResult; 404 unknown/expired secret, 401 off
+POST /Users/AuthenticateWithQuickConnect  { "Secret": "<s>" } → same body as AuthenticateByName;
+                                            404 before approval
+```
+`QuickConnectResult`: `Authenticated`, `Secret` (64 hex), `Code` (6 digits), `DeviceId`,
+`DeviceName`, `AppName`, `AppVersion`, `DateAdded`. A request lives 10 minutes; once approved it is
+kept one more minute so the client sees it. `GET /QuickConnect/Initiate` is a 10.x leftover
+(obsolete, gone on 12.x) — use POST. `POST /QuickConnect/Authorize?code=` (`[Authorize]`) is the
+approving side; Fjord doesn't offer it.
+
 ### Subsequent requests **[used]**
 Every request carries:
 ```

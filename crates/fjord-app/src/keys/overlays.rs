@@ -2,7 +2,8 @@
 //   Raw-key handlers for overlays that show before (or on top of) any AppMode — handle_key calls
 //   each one first, while its show-* flag is set:
 //   handle_onscreen_keyboard_keys  the on-screen keyboard (swallows every key but Ctrl+Q while open)
-//   handle_login_keys          LoginScreen zones 3-6 (Remember/Connect/Back/Quit); 0-2 are LineEdits
+//   handle_login_keys          LoginScreen zones 3-7 (Remember/Connect/Back/Quit/Quick Connect); 0-2 are
+//                              LineEdits; Escape stops a Quick Connect wait first
 //   handle_profile_picker_keys 2D tile nav (section × cursor), PIN entry sub-state, Back/Quit buttons;
 //                              Escape/Backspace per profile-picker-back-mode ("accounts" / "cancel")
 //   handle_account_picker_keys tile row + "+ Add Account"; Escape/Backspace close only when cancelable
@@ -86,37 +87,51 @@ pub(crate) fn handle_login_keys(g: &crate::AppState, key: &str, ctrl: bool) -> b
         g.invoke_quit();
         return true;
     }
+    let zone = g.get_login_zone();
+    // A Quick Connect code on screen (or on its way): Escape — and Backspace outside the text
+    // fields — stops waiting first; the next Escape cancels Add Account.
+    let qc_waiting = !g.get_login_qc_code().is_empty() || g.get_login_qc_busy();
+    if qc_waiting && (key == key::ESCAPE || (key == key::BACKSPACE && zone >= 3)) {
+        g.invoke_login_quickconnect_cancel();
+        return true;
+    }
     // Escape = the Back/Cancel button (append mode only; a first login has nothing to
     // cancel back to).
     if key == key::ESCAPE && g.get_login_append_mode() {
         g.invoke_cancel_add_account();
         return true;
     }
-    // Zones 3-6 only (Remember, Connect, Back, Quit) — they hold no native focus
+    // Zones 3-7 only (Remember, Connect, Back, Quit, Quick Connect) — they hold no native focus
     // (login.slint's hooks refocus() fs when leaving zone 2). Zones 0-2 return false: the
     // LineEdit handles Tab/typing/Enter, and a `changed login-zone` tracker in login.slint
     // focuses the right field when Rust sets the zone back to 0-2.
-    let zone = g.get_login_zone();
-    if (3..=6).contains(&zone) {
+    if (3..=7).contains(&zone) {
         if key == key::RETURN {
             g.set_kb_activate_pulse(g.get_kb_activate_pulse().wrapping_add(1));
         }
         let append = g.get_login_append_mode();
-        // Zone 4 (Connect) has no Rust arm: do-login needs the live LineEdit texts, so Rust
-        // only bumps kb-activate-pulse and login.slint's _pulse-mirror submits (like Profile
-        // Edit's Save). Back (zone 5) hangs off Up from Server (handled in that field's own
-        // hook) and Down returns to Server; Quit (zone 6) is Down from Connect — matching their
-        // on-screen positions.
+        // Zones 4 (Connect) and 7 (Quick Connect / the code card's Cancel) have no Rust arm:
+        // they need the live LineEdit texts, so Rust only bumps kb-activate-pulse and
+        // login.slint's _pulse-mirror acts (like Profile Edit's Save). Back (zone 5) hangs off Up
+        // from Server (handled in that field's own hook) and Down returns to Server; Quick
+        // Connect is Down from Connect and Quit (zone 6) Down from Quick Connect — matching their
+        // on-screen positions. While a code shows, only Back, Cancel and Quit are on screen.
+        let code_shown = !g.get_login_qc_code().is_empty();
         match key {
             key::UP => g.set_login_zone(match zone {
                 3 => 2,
                 4 => 3,
-                6 => 4,
+                7 if code_shown && append => 5,
+                7 if code_shown => 7,
+                7 => 4,
+                6 => 7,
                 _ => zone, // zone == 5 (Back) — nothing above it, stays put
             }),
             key::DOWN => match zone {
                 3 => g.set_login_zone(4),
-                4 => g.set_login_zone(6),
+                4 => g.set_login_zone(7),
+                7 => g.set_login_zone(6),
+                5 if code_shown => g.set_login_zone(7),
                 5 => g.set_login_zone(0),
                 _ => {} // zone == 6, bottom of the chain
             },
@@ -130,7 +145,7 @@ pub(crate) fn handle_login_keys(g: &crate::AppState, key: &str, ctrl: bool) -> b
             // handler above already intercepts the key first, matching
             // how Escape already behaves at every OTHER zone in append
             // mode (always cancels, not zone-specific).
-            key::ESCAPE | key::BACKSPACE if zone == 6 && !append => g.set_login_zone(4),
+            key::ESCAPE | key::BACKSPACE if zone == 6 && !append => g.set_login_zone(7),
             _ => {}
         }
         return true;
@@ -893,4 +908,74 @@ pub(crate) fn handle_offline_keys(g: &crate::AppState, key: &str) -> bool {
         _ => {}
     }
     true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use slint::ComponentHandle;
+    use std::cell::RefCell;
+    use std::rc::Rc;
+    use std::time::Duration;
+
+    /// Login's Quick Connect with the remote: it sits between Connect and Quit; Enter starts it with
+    /// the server field's text; while a code shows, Enter on Cancel and Escape stop the wait instead
+    /// of starting another, and Up reaches only Back (Add Account).
+    #[test]
+    fn quick_connect_works_with_the_remote() {
+        i_slint_backend_testing::init_no_event_loop();
+        let w = crate::MainWindow::new().unwrap();
+        let g = crate::AppState::get(&w);
+        g.set_login_server_prefill("jellyfin.example.com".into());
+        w.show().unwrap();
+        let calls = Rc::new(RefCell::new(Vec::<String>::new()));
+        let c = Rc::clone(&calls);
+        g.on_login_quickconnect_start(move |server| c.borrow_mut().push(format!("start {server}")));
+        let c = Rc::clone(&calls);
+        g.on_login_quickconnect_cancel(move || c.borrow_mut().push("cancel".into()));
+        let settle = || i_slint_backend_testing::mock_elapsed_time(Duration::from_millis(50));
+        settle();
+
+        g.set_login_zone(4);
+        assert!(handle_login_keys(&g, key::DOWN, false));
+        assert_eq!(g.get_login_zone(), 7);
+        handle_login_keys(&g, key::DOWN, false);
+        assert_eq!(g.get_login_zone(), 6);
+        handle_login_keys(&g, key::UP, false);
+        assert_eq!(g.get_login_zone(), 7);
+        handle_login_keys(&g, key::UP, false);
+        assert_eq!(g.get_login_zone(), 4);
+        handle_login_keys(&g, key::DOWN, false);
+        handle_login_keys(&g, key::RETURN, false);
+        settle();
+        assert_eq!(*calls.borrow(), ["start jellyfin.example.com"]);
+
+        // The code arrived (as auth.rs sets it).
+        g.set_login_qc_code("123456".into());
+        handle_login_keys(&g, key::UP, false);
+        assert_eq!(
+            g.get_login_zone(),
+            7,
+            "nothing above Cancel outside Add Account"
+        );
+        handle_login_keys(&g, key::RETURN, false);
+        settle();
+        assert_eq!(
+            *calls.borrow(),
+            ["start jellyfin.example.com", "cancel"],
+            "Enter on Cancel doesn't ask for a new code"
+        );
+        assert!(handle_login_keys(&g, key::ESCAPE, false));
+        assert_eq!(calls.borrow().last().map(String::as_str), Some("cancel"));
+
+        g.set_login_append_mode(true);
+        handle_login_keys(&g, key::UP, false);
+        assert_eq!(
+            g.get_login_zone(),
+            5,
+            "Back sits above Cancel in Add Account"
+        );
+        handle_login_keys(&g, key::DOWN, false);
+        assert_eq!(g.get_login_zone(), 7);
+    }
 }

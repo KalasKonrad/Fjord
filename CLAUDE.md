@@ -73,7 +73,7 @@ Needs `mpv`/libmpv (`pacman -S mpv`). Optional at runtime: `yt-dlp` (trailers), 
   `browse`, `home`/`movies`/`poster` (dashboards, library grid, poster loading), `discover/` (Discover,
   RequestDetail, Calendar, Watchlist — one file per area, list in `discover/mod.rs`), `blocklist`, `settings`, `context_menu`,
   `dashboard_rows` (per-profile row order/visibility + its editor), `hero` (the dashboards' hero band).
-- Accounts/profiles: `auth.rs` (login, `finish_session_setup`), `profile.rs` (pickers, `switch_to_profile`,
+- Accounts/profiles: `auth.rs` (login + Quick Connect, `finish_session_setup`), `profile.rs` (pickers, `switch_to_profile`,
   Bonfire sync, idle lock), `profile_edit.rs`, `bonfire_admin.rs`, `secrets.rs` (secrets encrypted at rest).
 - `open_item.rs` — the item router (type → page) behind `AppState.open-detail`.
 - `ui_watch.rs` — debug log of UI-thread stalls and slow frames (`ui: event loop busy …`, `ui: slow frame …`), and a
